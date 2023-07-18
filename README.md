@@ -28,8 +28,19 @@ Jax.
 
 ## Initial Development
 
-Currently, development is being done by checking out iree and torch-mlir
-as siblings and then doing the following from shark-turbine:
+Note that you will need a compatible side-by-side checkout of the following
+projects:
+
+* [IREE](https://github.com/openxla/iree.git)
+* [torch-mlir](https://github.com/llvm/torch-mlir.git)
+
+Run `python sync_deps.py` to fetch both and bring them to the last known
+good commit. If you already have them checked out, running this script will
+update them to the correct commit. If doing active development on either,
+you may want to manage this yourself (see the top of the script for the
+commit hashes).
+
+### Building for development
 
 ```
 cmake -GNinja -Bbuild -S. \
@@ -42,4 +53,58 @@ cmake -GNinja -Bbuild -S. \
   -DCMAKE_CXX_COMPILER=clang++ \
   -DIREE_ENABLE_LLD=ON \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+# Python projects.
+pip install -e frontend
+source build/iree/.env
+```
+
+## Project Maintenance
+
+This section is a work in progress describing various project maintenance
+tasks.
+
+### Pre-requisite: Install SHARK-devtools
+
+```
+pip install git+https://github.com/nod-ai/SHARK-devtools.git
+```
+
+### Sync all deps to pinned versions
+
+```
+shark-ws sync
+```
+
+### Update IREE to head
+
+This updates the pinned IREE revision to the HEAD revision at the remote.
+
+```
+# Updates the sync_deps.py metadata.
+shark-ws roll iree
+# Brings all dependencies to pinned versions.
+shark-ws sync
+```
+
+### Full update of all deps
+
+This updates the pinned revisions of all dependencies. This is presently done
+by updating `iree` and `torch-mlir` to remote HEAD.
+
+```
+# Updates the sync_deps.py metadata.
+shark-ws roll nightly
+# Brings all dependencies to pinned versions.
+shark-ws sync
+```
+
+### Pin current versions of all deps
+
+This can be done if local, cross project changes have been made and landed.
+It snapshots the state of all deps as actually checked out and updates
+the metadata.
+
+```
+shark-ws pin
 ```
