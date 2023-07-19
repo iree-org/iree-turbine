@@ -1,4 +1,5 @@
 # SHARK Turbine
+![image](https://netl.doe.gov/sites/default/files/2020-11/Turbine-8412270026_83cfc8ee8f_c.jpg)
 
 This project provides a unified build of [IREE](https://github.com/openxla/iree),
 [torch-mlir](https://github.com/llvm/torch-mlir), and auxilliary support for
