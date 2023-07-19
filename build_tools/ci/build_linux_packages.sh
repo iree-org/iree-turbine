@@ -13,13 +13,13 @@
 #
 # Usage:
 # Build everything (all packages, all python versions):
-#   ./build_tools/python_deploy/build_linux_packages.sh
+#   ./build_tools/ci/build_linux_packages.sh
 #
 # Build specific Python versions and packages to custom directory:
 #   override_python_versions="cp38-cp38 cp39-cp39" \
 #   packages="iree-runtime iree-runtime-instrumented" \
 #   output_dir="/tmp/wheelhouse" \
-#   ./build_tools/python_deploy/build_linux_packages.sh
+#   ./build_tools/ci/build_linux_packages.sh
 #
 # Valid Python versions match a subdirectory under /opt/python in the docker
 # image. Typically:
@@ -78,7 +78,7 @@ manylinux_docker_image="${manylinux_docker_image:-${default_docker_image}}"
 python_versions="${override_python_versions:-}"
 output_dir="${output_dir:-${this_dir}/wheelhouse}"
 cache_dir="${cache_dir:-}"
-packages="${packages:-shark-turbine iree-runtime}"
+packages="${packages:-shark-turbine iree-runtime iree-compiler}"
 package_suffix="${package_suffix:-}"
 
 function run_on_host() {
@@ -161,9 +161,23 @@ function run_in_docker() {
 
   # Configure native builds to use ccache.
   export CCACHE_DIR="${cache_dir}/ccache"
-  export CCACHE_MAXSIZE="2G"
+  export CCACHE_MAXSIZE="640M"
   export CMAKE_C_COMPILER_LAUNCHER=ccache
   export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+  # Add some CMake quality of life improvements for packaging.
+  # This both sets toolchain defaults and disables features
+  # that we don't want.
+  export CMAKE_TOOLCHAIN_FILE="$this_dir/linux_packages_toolchain.cmake"
+  export CC=clang
+  export CXX=clang++
+  export CFLAGS=""
+  export CXXFLAGS=""
+  export LDFLAGS=""
+
+  # Configure package names.
+  export IREE_COMPILER_CUSTOM_PACKAGE_PREFIX="shark-turbine-"
+  export IREE_RUNTIME_CUSTOM_PACKAGE_PREFIX="shark-turbine-"
 
   # Configure yum to keep its cache.
   echo "keepcache = 1" >> /etc/yum.conf
@@ -206,21 +220,21 @@ function run_in_docker() {
           ;;
         iree-runtime)
           install_native_build_deps
-          clean_wheels "iree_runtime${package_suffix}" "${python_version}"
+          clean_wheels "shark_turbine_iree_runtime${package_suffix}" "${python_version}"
           build_iree_runtime
-          run_audit_wheel "iree_runtime${package_suffix}" "${python_version}"
+          run_audit_wheel "shark_turbine_iree_runtime${package_suffix}" "${python_version}"
           ;;
         iree-runtime-instrumented)
           install_native_build_deps
-          clean_wheels "iree_runtime_instrumented${package_suffix}" "${python_version}"
+          clean_wheels "shark_turbine_iree_runtime_instrumented${package_suffix}" "${python_version}"
           build_iree_runtime_instrumented
-          run_audit_wheel "iree_runtime_instrumented${package_suffix}" "${python_version}"
+          run_audit_wheel "shark_turbine_iree_runtime_instrumented${package_suffix}" "${python_version}"
           ;;
         iree-compiler)
           install_native_build_deps        
-          clean_wheels "iree_compiler${package_suffix}" "${python_version}"
+          clean_wheels "shark_turbine_iree_compiler${package_suffix}" "${python_version}"
           build_iree_compiler
-          run_audit_wheel "iree_compiler${package_suffix}" "${python_version}"
+          run_audit_wheel "shark_turbine_iree_compiler${package_suffix}" "${python_version}"
           ;;
         *)
           echo "Unrecognized package '${package}'"
@@ -240,11 +254,31 @@ function build_shark_turbine() {
 }
 
 function build_iree_runtime() {
+  # Configure IREE runtime builds to keep some limited debug information.
+  #  -g1: Output limited line tables
+  #  -gz: Compress with zlib
+  # Verify binaries with:
+  #   readelf --debug-dump=decodedline
+  #   readelf -t (will print "ZLIB" on debug sections)
+  export IREE_CMAKE_BUILD_TYPE="RelWithDebInfo"
+  export CFLAGS="$CFLAGS -g1 -gz"
+  export CXXFLAGS="$CXXFLAGS -g1 -gz"
+
   IREE_HAL_DRIVER_CUDA=$(uname -m | awk '{print ($1 == "x86_64") ? "ON" : "OFF"}') \
   build_wheel runtime/
 }
 
 function build_iree_runtime_instrumented() {
+  # Configure IREE runtime builds to keep some limited debug information.
+  #  -g1: Output limited line tables
+  #  -gz: Compress with zlib
+  # Verify binaries with:
+  #   readelf --debug-dump=decodedline
+  #   readelf -t (will print "ZLIB" on debug sections)
+  export IREE_CMAKE_BUILD_TYPE="RelWithDebInfo"
+  export CFLAGS="$CFLAGS -g1 -gz"
+  export CXXFLAGS="$CXXFLAGS -g1 -gz"
+
   IREE_HAL_DRIVER_CUDA=$(uname -m | awk '{print ($1 == "x86_64") ? "ON" : "OFF"}') \
   IREE_BUILD_TRACY=ON IREE_ENABLE_RUNTIME_TRACING=ON \
   IREE_RUNTIME_CUSTOM_PACKAGE_SUFFIX="-instrumented" \
@@ -288,7 +322,7 @@ function install_native_build_deps() {
   # Check if the output is aarch64
   if [[ "$uname_m" == "aarch64" ]] || [[ "$uname_m" == "x86_64" ]]; then
     echo "The architecture is aarch64 and we use manylinux 2_28 so install deps"
-    needed_packages="ccache capstone-devel tbb-devel libzstd-devel"
+    needed_packages="ccache clang lld capstone-devel tbb-devel libzstd-devel"
     if ! (yum --config /etc/yum.conf install -C -y epel-release $needed_packages); then
       echo "Could not install from yum cache... doing it the slow way."
       yum --config /etc/yum.conf install -y epel-release
