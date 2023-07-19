@@ -37,7 +37,7 @@
 #
 # It can be run on a workstation but recommend using a git worktree dedicated
 # to packaging to avoid stomping on development artifacts.
-set -xeu -o errtrace
+set -eu -o errtrace
 
 # Function to find the directory the ".git" directory is in.
 # We do this instead of using git directly because `git` may complain about
@@ -82,6 +82,17 @@ packages="${packages:-shark-turbine iree-runtime}"
 package_suffix="${package_suffix:-}"
 
 function run_on_host() {
+  local cmd="$1"
+  if [[ "${cmd}" == "pull_docker_image" ]]; then
+    echo "Pulling docker image ${manylinux_docker_image}"
+    docker image pull "${manylinux_docker_image}"
+    exit 0
+  elif ! [[ -z "${cmd}" ]]; then
+    echo "Unrecognized commend: $cmd"
+    exit 1
+  fi
+
+  # Default path.
   echo "Running on host"
   echo "Launching docker image ${manylinux_docker_image}"
 
@@ -120,6 +131,7 @@ function run_on_host() {
 
   # Note that /root/.cache/pip is pretty standard but can be printed
   # in the container with `/opt/python/cp310-cp310/bin/pip cache dir`
+  set -o xtrace
   docker run --rm \
     -v "${super_project_root}:${super_project_root}" \
     -v "${output_dir}:${output_dir}" \
@@ -158,6 +170,7 @@ function run_in_docker() {
   echo 'cachedir=/var/cache/yum/$basearch/$releasever' >> /etc/yum.conf
 
   # Build phase.
+  set -o xtrace
   for package in ${packages}; do
     echo "******************** BUILDING PACKAGE ${package} ********************"
 
