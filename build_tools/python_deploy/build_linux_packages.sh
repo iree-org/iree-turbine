@@ -82,7 +82,7 @@ packages="${packages:-shark-turbine iree-runtime}"
 package_suffix="${package_suffix:-}"
 
 function run_on_host() {
-  local cmd="$1"
+  local cmd="${1:-}"
   if [[ "${cmd}" == "pull_docker_image" ]]; then
     echo "Pulling docker image ${manylinux_docker_image}"
     docker image pull "${manylinux_docker_image}"
@@ -137,7 +137,6 @@ function run_on_host() {
     -v "${output_dir}:${output_dir}" \
     -v "${cache_dir}:${cache_dir}" \
     -v "${cache_dir}/yum:/var/cache/yum" \
-    -v "${cache_dir}/pip:/root/.cache/pip" \
     -e __MANYLINUX_BUILD_WHEELS_IN_DOCKER=1 \
     -e "override_python_versions=${python_versions}" \
     -e "packages=${packages}" \
@@ -162,12 +161,20 @@ function run_in_docker() {
 
   # Configure native builds to use ccache.
   export CCACHE_DIR="${cache_dir}/ccache"
+  export CCACHE_MAXSIZE="2G"
   export CMAKE_C_COMPILER_LAUNCHER=ccache
   export CMAKE_CXX_COMPILER_LAUNCHER=ccache
 
   # Configure yum to keep its cache.
   echo "keepcache = 1" >> /etc/yum.conf
   echo 'cachedir=/var/cache/yum/$basearch/$releasever' >> /etc/yum.conf
+
+  # Configure pip cache dir.
+  # We make it two levels down from within the container because pip likes
+  # to know that it is owned by the current user.
+  export PIP_CACHE_DIR="${cache_dir}/pip/in/container"
+  mkdir -p "${PIP_CACHE_DIR}"
+  chown -R "$(whoami)" "${cache_dir}/pip" 
 
   # Build phase.
   set -o xtrace
