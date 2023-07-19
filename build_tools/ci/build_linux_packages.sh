@@ -261,8 +261,8 @@ function build_iree_runtime() {
   #   readelf --debug-dump=decodedline
   #   readelf -t (will print "ZLIB" on debug sections)
   export IREE_CMAKE_BUILD_TYPE="RelWithDebInfo"
-  export CFLAGS="$CFLAGS -g1 -gz"
-  export CXXFLAGS="$CXXFLAGS -g1 -gz"
+  export CFLAGS="-g1 -gz"
+  export CXXFLAGS="-g1 -gz"
 
   IREE_HAL_DRIVER_CUDA=$(uname -m | awk '{print ($1 == "x86_64") ? "ON" : "OFF"}') \
   build_wheel runtime/
@@ -276,8 +276,8 @@ function build_iree_runtime_instrumented() {
   #   readelf --debug-dump=decodedline
   #   readelf -t (will print "ZLIB" on debug sections)
   export IREE_CMAKE_BUILD_TYPE="RelWithDebInfo"
-  export CFLAGS="$CFLAGS -g1 -gz"
-  export CXXFLAGS="$CXXFLAGS -g1 -gz"
+  export CFLAGS="-g1 -gz"
+  export CXXFLAGS="-g1 -gz"
 
   IREE_HAL_DRIVER_CUDA=$(uname -m | awk '{print ($1 == "x86_64") ? "ON" : "OFF"}') \
   IREE_BUILD_TRACY=ON IREE_ENABLE_RUNTIME_TRACING=ON \
@@ -286,6 +286,9 @@ function build_iree_runtime_instrumented() {
 }
 
 function build_iree_compiler() {
+  export IREE_CMAKE_BUILD_TYPE="Release"
+  export CFLAGS=""
+  export CXXFLAGS=""
   IREE_TARGET_BACKEND_CUDA=$(uname -m | awk '{print ($1 == "x86_64") ? "ON" : "OFF"}') \
   build_wheel compiler/
 }
