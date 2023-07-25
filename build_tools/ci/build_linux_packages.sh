@@ -168,7 +168,7 @@ function run_in_docker() {
   # Add some CMake quality of life improvements for packaging.
   # This both sets toolchain defaults and disables features
   # that we don't want.
-  export CMAKE_TOOLCHAIN_FILE="$this_dir/linux_packages_toolchain.cmake"
+  export CMAKE_TOOLCHAIN_FILE="$this_dir/linux_default_toolchain.cmake"
   export CC=clang
   export CXX=clang++
   export CFLAGS=""
