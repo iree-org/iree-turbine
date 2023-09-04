@@ -44,6 +44,7 @@ commit hashes).
 ### Building for development
 
 ```
+# Configure
 cmake -GNinja -Bbuild -S. \
   -DIREE_BUILD_PYTHON_BINDINGS=ON \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -55,9 +56,19 @@ cmake -GNinja -Bbuild -S. \
   -DIREE_ENABLE_LLD=ON \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
+# Build
+cmake --build build/
+
 # Python projects.
+# Note that the generated .env file should be sufficient to make things like
+# VSCode work with auto-completion, etc. When you have a Python file open,
+# make sure to point it at the `python` executable in your venv to pick
+# everything up (i.e. click on the "Python" version slot in the lower
+# right status bar). If I've made a lot of changes, I often also reload the
+# VSCode window (CTRL-SHIFT-P -> Developer: Reload Window). Not necessary
+# but consider it experience.
 pip install -e frontend
-source build/iree/.env
+source .env && export PYTHONPATH
 ```
 
 ## Project Maintenance
