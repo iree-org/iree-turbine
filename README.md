@@ -27,96 +27,57 @@ optimizers and collectives -- both of which we are eager to integrate with
 PyTorch to a similar level as can be achieved with whole-graph frameworks like
 Jax.
 
-## Initial Development
+## Getting Up and Running
 
-Note that you will need a compatible side-by-side checkout of the following
-projects:
+If only looking to develop against this project, then you need to install Python
+deps for the following:
 
-* [IREE](https://github.com/openxla/iree.git)
-* [torch-mlir](https://github.com/llvm/torch-mlir.git)
+* PyTorch
+* iree-compiler (with Torch input support)
+* iree-runtime
 
-Run `python sync_deps.py` to fetch both and bring them to the last known
-good commit. If you already have them checked out, running this script will
-update them to the correct commit. If doing active development on either,
-you may want to manage this yourself (see the top of the script for the
-commit hashes).
+The pinned deps at HEAD require pre-release versions of all of the above, and
+therefore require additional pip flags to install. Therefore, to satisfy
+development, we provide a `requirements.txt` file which installs precise
+versions and has all flags. This can be installed prior to the package:
 
-### Building for development
+Installing into a venv is highly recommended.
 
 ```
-# Configure
-cmake -GNinja -Bbuild -S. \
-  -DIREE_BUILD_PYTHON_BINDINGS=ON \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DIREE_ENABLE_ASSERTIONS=ON \
-  -DIREE_ENABLE_SPLIT_DWARF=ON \
-  -DIREE_ENABLE_THIN_ARCHIVES=ON \
-  -DCMAKE_C_COMPILER=clang \
-  -DCMAKE_CXX_COMPILER=clang++ \
-  -DIREE_ENABLE_LLD=ON \
-  -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+pip install --upgrade -r requirements.txt
+pip install --upgrade -e .[torch,testing]
+```
 
-# Build
-cmake --build build/
+Run tests:
 
-# Python projects.
-# Note that the generated .env file should be sufficient to make things like
-# VSCode work with auto-completion, etc. When you have a Python file open,
-# make sure to point it at the `python` executable in your venv to pick
-# everything up (i.e. click on the "Python" version slot in the lower
-# right status bar). If I've made a lot of changes, I often also reload the
-# VSCode window (CTRL-SHIFT-P -> Developer: Reload Window). Not necessary
-# but consider it experience.
-pip install -e frontend
+```
+pytest
+```
+
+## Using a development compiler
+
+If doing native development of the compiler, it can be useful to switch to
+source builds for iree-compiler and iree-runtime.
+
+In order to do this, check out [IREE](https://github.com/openxla/iree) and
+follow the instructions to [build from source](https://openxla.github.io/iree/building-from-source/getting-started/#configuration-settings), making
+sure to specify [additional options](https://openxla.github.io/iree/building-from-source/getting-started/#building-with-cmake):
+
+```
+-DIREE_BUILD_PYTHON_BINDINGS=ON -DPython3_EXECUTABLE="$(which python)"
+```
+
+### Configuring Python
+
+Uninstall existing packages:
+
+```
+pip uninstall iree-compiler
+pip uninstall iree-runtime
+```
+Copy the `.env` file from `iree/` to this source directory to get IDE
+support and add to your path for use from your shell:
+
+```
 source .env && export PYTHONPATH
-```
-
-## Project Maintenance
-
-This section is a work in progress describing various project maintenance
-tasks.
-
-### Pre-requisite: Install SHARK-devtools
-
-```
-pip install git+https://github.com/nod-ai/SHARK-devtools.git
-```
-
-### Sync all deps to pinned versions
-
-```
-shark-ws sync
-```
-
-### Update IREE to head
-
-This updates the pinned IREE revision to the HEAD revision at the remote.
-
-```
-# Updates the sync_deps.py metadata.
-shark-ws roll iree
-# Brings all dependencies to pinned versions.
-shark-ws sync
-```
-
-### Full update of all deps
-
-This updates the pinned revisions of all dependencies. This is presently done
-by updating `iree` and `torch-mlir` to remote HEAD.
-
-```
-# Updates the sync_deps.py metadata.
-shark-ws roll nightly
-# Brings all dependencies to pinned versions.
-shark-ws sync
-```
-
-### Pin current versions of all deps
-
-This can be done if local, cross project changes have been made and landed.
-It snapshots the state of all deps as actually checked out and updates
-the metadata.
-
-```
-shark-ws pin
 ```
