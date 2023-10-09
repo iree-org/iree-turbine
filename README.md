@@ -36,7 +36,8 @@ please reach out to us on the `#turbine` channel of the
 1. Install from source:
 
 ```
-pip install .
+pip install shark-turbine
+# Or editable: pip install -e .
 ```
 
 The above does install some unecessary cuda/cudnn packages for cpu use. To avoid this you
@@ -45,16 +46,24 @@ can specify pytorch-cpu and install via:
 pip install --index-url https://download.pytorch.org/whl/cpu \
     -r pytorch-cpu-requirements.txt \
     -r torchvision-requirements.txt
-pip install .
+pip install shark-turbine
 ```
 
 (or follow the "Developers" instructions below for installing from head/nightly)
 
-2. Try one of the sample:
+2. Try one of the samples:
 
-  * [AOT MNIST](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_simple.py) (and [dynamic batch size variant](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_dynamic.py))
-  * [Eager with `torch.compile`](TODO)
-  * [AOT llama2](TODO)
+Generally, we use Turbine to produce valid, dynamic shaped Torch IR (from the 
+[`torch-mlir torch` dialect](https://github.com/llvm/torch-mlir/tree/main/include/torch-mlir/Dialect/Torch/IR)
+with various approaches to handling globals). Depending on the use-case and status of the
+compiler, these should be compilable via IREE with `--iree-input-type=torch` for
+end to end execution. Dynamic shape support in torch-mlir is a work in progress,
+and not everything works at head with release binaries at present.
+
+  * [AOT MLP With Static Shapes](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_simple.py)
+  * [AOT MLP with a dynamic batch size](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_dynamic.py)
+  * [AOT llama2](https://github.com/nod-ai/SHARK-Turbine/blob/3c892b8bb6ed044084367a35544e9c95cbf461a7/examples/llama2_inference/llama2.ipynb):
+    Dynamic sequence length custom compiled module with state management internal to the model.
 
 ## Developers
 
