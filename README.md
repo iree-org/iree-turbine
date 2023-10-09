@@ -1,33 +1,55 @@
 # SHARK Turbine
 ![image](https://netl.doe.gov/sites/default/files/2020-11/Turbine-8412270026_83cfc8ee8f_c.jpg)
 
-This project provides a unified build of [IREE](https://github.com/openxla/iree),
-[torch-mlir](https://github.com/llvm/torch-mlir), and auxilliary support for
-providing a tight integration with PyTorch and other related frameworks. It
-presently uses IREE's compiler plugin API to achieve this coupling, allowing
-us to build a specialized compiler with tight coupling to PyTorch concepts.
+Turbine is the set of development tools that the [SHARK Team](https://github.com/nod-ai/SHARK)
+is building for deploying all of our models for deployment to the cloud and devices. We
+are building it as we transition from our TorchScript-era 1-off export and compilation 
+to a unified approach based on PyTorch 2 and Dynamo. While we use it heavily ourselves, it 
+is intended to be a general purpose model compilation and execution tool.
 
-WARNING: This project is still under construction and is at an early phase.
+Turbine provides three primary tools:
 
-As things progress, we will be building out:
+* *AOT Export*: For compiling one or more `nn.Module`s to compiled, deployment
+  ready artifacts. This operates via both a [simple one-shot export API](TODO)
+  for simple models and an underlying [advanced API](TODO) for complicated models
+  and accessing the full features of the runtime.
+* *Eager Execution*: A `torch.compile` backend is provided and a Turbine Tensor/Device
+  is available for more native, interactive use within a PyTorch session.
+* *Turbine Kernels*: (coming soon) A union of the [Triton](https://github.com/openai/triton) approach and
+  [Pallas](https://jax.readthedocs.io/en/latest/pallas/index.html) but based on
+  native PyTorch constructs and tracing. It is intended to complement for simple
+  cases where direct emission to the underlying, cross platform, vector programming model
+  is desirable.
 
-* Native Dynamo support.
-* Integration to allow use of the compiler flow as part of the eager flow.
-* Compiler support for hallmark PyTorch features such as strided tensors,
-  in-place semantics, dynamic shapes, etc (IREE mostly supports these
-  features under the covers but they need adaptation for good interop with
-  PyTorch).
-* Custom op and type support for emerging low-precision numerics.
-* Triton code generation and retargeting.
-* Cleaned up APIs and options for AOT compiling and standalone deployment.
+Under the covers, Turbine is based heavily on [IREE](https://github.com/openxla/iree) and
+[torch-mlir](https://github.com/llvm/torch-mlir) and we use it to drive evolution
+of both, upstreaming infrastructure as it becomes timely to do so.
 
-We would also like to engage with the community to continue to push the bounds
-on what Dynamo can do, especially when it comes to tighter integration with
-optimizers and collectives -- both of which we are eager to integrate with
-PyTorch to a similar level as can be achieved with whole-graph frameworks like
-Jax.
+## Contact Us
 
-## Getting Up and Running
+Turbine is under active development. If you would like to participate as it comes online,
+please reach out to us on the `#turbine` channel of the 
+[nod-ai Discord server](https://discord.gg/QMmR6f8rGb).
+
+## Quick Start for Users
+
+1. Install from source:
+
+```
+pip install .
+```
+
+(or follow the "Developers" instructions below for installing from head/nightly)
+
+2. Try one of the sample:
+
+  * [AOT MNIST](TODO)
+  * [Eager with `torch.compile`](TODO)
+  * [AOT llama2](TODO)
+
+## Developers
+
+### Getting Up and Running
 
 If only looking to develop against this project, then you need to install Python
 deps for the following:
@@ -45,7 +67,7 @@ Installing into a venv is highly recommended.
 
 ```
 pip install --upgrade -r requirements.txt
-pip install --upgrade -e .[torch,testing]
+pip install --upgrade -e .[torch-cpu-nightly,testing]
 ```
 
 Run tests:
@@ -54,7 +76,7 @@ Run tests:
 pytest
 ```
 
-## Using a development compiler
+### Using a development compiler
 
 If doing native development of the compiler, it can be useful to switch to
 source builds for iree-compiler and iree-runtime.
@@ -67,7 +89,7 @@ sure to specify [additional options](https://openxla.github.io/iree/building-fro
 -DIREE_BUILD_PYTHON_BINDINGS=ON -DPython3_EXECUTABLE="$(which python)"
 ```
 
-### Configuring Python
+#### Configuring Python
 
 Uninstall existing packages:
 
