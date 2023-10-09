@@ -62,7 +62,7 @@ and not everything works at head with release binaries at present.
 
   * [AOT MLP With Static Shapes](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_simple.py)
   * [AOT MLP with a dynamic batch size](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_dynamic.py)
-  * [AOT llama2](https://github.com/nod-ai/SHARK-Turbine/blob/3c892b8bb6ed044084367a35544e9c95cbf461a7/examples/llama2_inference/llama2.ipynb):
+  * [AOT llama2](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/llama2_inference/llama2.ipynb):
     Dynamic sequence length custom compiled module with state management internal to the model.
 
 ## Developers
