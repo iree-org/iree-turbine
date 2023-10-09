@@ -43,7 +43,7 @@ pip install .
 
 2. Try one of the sample:
 
-  * [AOT MNIST](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_simple.py)
+  * [AOT MNIST](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_simple.py) (and [dynamic batch size variant](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_dynamic.py))
   * [Eager with `torch.compile`](TODO)
   * [AOT llama2](TODO)
 
