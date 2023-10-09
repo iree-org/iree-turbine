@@ -10,8 +10,8 @@ is intended to be a general purpose model compilation and execution tool.
 Turbine provides three primary tools:
 
 * *AOT Export*: For compiling one or more `nn.Module`s to compiled, deployment
-  ready artifacts. This operates via both a [simple one-shot export API](TODO)
-  for simple models and an underlying [advanced API](TODO) for complicated models
+  ready artifacts. This operates via both a [simple one-shot export API](https://github.com/nod-ai/SHARK-Turbine/blob/main/python/shark_turbine/aot/exporter.py)
+  for simple models and an underlying [advanced API](https://github.com/nod-ai/SHARK-Turbine/blob/main/python/shark_turbine/aot/compiled_module.py) for complicated models
   and accessing the full features of the runtime.
 * *Eager Execution*: A `torch.compile` backend is provided and a Turbine Tensor/Device
   is available for more native, interactive use within a PyTorch session.
@@ -43,7 +43,7 @@ pip install .
 
 2. Try one of the sample:
 
-  * [AOT MNIST](TODO)
+  * [AOT MNIST](https://github.com/nod-ai/SHARK-Turbine/blob/main/examples/aot_mlp/mlp_export_simple.py)
   * [Eager with `torch.compile`](TODO)
   * [AOT llama2](TODO)
 
