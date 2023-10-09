@@ -39,6 +39,15 @@ please reach out to us on the `#turbine` channel of the
 pip install .
 ```
 
+The above does install some unecessary cuda/cudnn packages for cpu use. To avoid this you
+can specify pytorch-cpu and install via:
+```
+pip install --index-url https://download.pytorch.org/whl/cpu \
+    -r pytorch-cpu-requirements.txt \
+    -r torchvision-requirements.txt
+pip install .
+```
+
 (or follow the "Developers" instructions below for installing from head/nightly)
 
 2. Try one of the sample:
