@@ -25,6 +25,8 @@ Under the covers, Turbine is based heavily on [IREE](https://github.com/openxla/
 [torch-mlir](https://github.com/llvm/torch-mlir) and we use it to drive evolution
 of both, upstreaming infrastructure as it becomes timely to do so.
 
+See [the roadmap](docs/roadmap.md) for upcoming work and places to contribute.
+
 ## Contact Us
 
 Turbine is under active development. If you would like to participate as it comes online,
