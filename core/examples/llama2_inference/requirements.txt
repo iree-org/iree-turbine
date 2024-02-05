@@ -1,0 +1,4 @@
+protobuf
+sentencepiece
+shark_turbine
+transformers @ git+https://github.com/huggingface/transformers.git@7d8ff3629b2725ec43ace99c1a6e87ac1978d433

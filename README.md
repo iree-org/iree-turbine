@@ -39,15 +39,15 @@ please reach out to us on the `#turbine` channel of the
 
 ```
 pip install shark-turbine
-# Or editable: pip install -e .
+# Or editable: pip install -e core
 ```
 
 The above does install some unecessary cuda/cudnn packages for cpu use. To avoid this you
 can specify pytorch-cpu and install via:
 ```
 pip install --index-url https://download.pytorch.org/whl/cpu \
-    -r pytorch-cpu-requirements.txt \
-    -r torchvision-requirements.txt
+    -r core/pytorch-cpu-requirements.txt \
+    -r core torchvision-requirements.txt
 pip install shark-turbine
 ```
 
@@ -87,14 +87,14 @@ versions and has all flags. This can be installed prior to the package:
 Installing into a venv is highly recommended.
 
 ```
-pip install --upgrade -r requirements.txt
-pip install --upgrade -e .[torch-cpu-nightly,testing]
+pip install --upgrade -r core/requirements.txt
+pip install --upgrade -e core[torch-cpu-nightly,testing]
 ```
 
 Run tests:
 
 ```
-pytest
+pytest core/
 ```
 
 ### Using a development compiler

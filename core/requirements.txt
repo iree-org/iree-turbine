@@ -1,0 +1,11 @@
+# These requirements are here for one-stop development
+# setup with pinned deps and will fulfill all install
+# requirements for the package (which pins to minimum
+# versions, not specific).
+-f https://openxla.github.io/iree/pip-release-links.html
+
+-r pytorch-cpu-requirements.txt
+-r torchvision-requirements.txt
+
+iree-compiler==20240129.785
+iree-runtime==20240129.785
