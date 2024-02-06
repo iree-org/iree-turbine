@@ -1,0 +1,4 @@
+numpy>=1.26.3
+onnx>=1.15.0
+pytest>=8.0.0
+pytest-xdist>=3.5.0

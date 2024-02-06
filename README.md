@@ -47,7 +47,7 @@ can specify pytorch-cpu and install via:
 ```
 pip install --index-url https://download.pytorch.org/whl/cpu \
     -r core/pytorch-cpu-requirements.txt \
-    -r core torchvision-requirements.txt
+    -r core/torchvision-requirements.txt
 pip install shark-turbine
 ```
 

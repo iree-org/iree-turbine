@@ -6,6 +6,4 @@
 
 -r pytorch-cpu-requirements.txt
 -r torchvision-requirements.txt
-
-iree-compiler==20240129.785
-iree-runtime==20240129.785
+-r iree-requirements.txt

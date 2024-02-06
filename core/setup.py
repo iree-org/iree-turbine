@@ -54,7 +54,8 @@ def load_requirement_pins(requirements_file: str):
     requirement_pins.update(dict(pin_pairs))
 
 
-load_requirement_pins("requirements.txt")
+load_requirement_pins("iree-requirements.txt")
+load_requirement_pins("misc-requirements.txt")
 load_requirement_pins("pytorch-cpu-requirements.txt")
 
 
@@ -97,7 +98,7 @@ setup(
         ],
     },
     install_requires=[
-        "numpy",
+        f"numpy{get_version_spec('numpy')}",
         f"iree-compiler{get_version_spec('iree-compiler')}",
         f"iree-runtime{get_version_spec('iree-runtime')}",
         # Use the [torch-cpu-nightly] spec to get a more recent/specific version.
@@ -106,12 +107,12 @@ setup(
     extras_require={
         "torch-cpu-nightly": [f"torch{get_version_spec('torch')}"],
         "onnx": [
-            "onnx>=1.15.0",
+            f"onnx{get_version_spec('onnx')}",
         ],
         "testing": [
-            "onnx==1.15.0",
-            "pytest",
-            "pytest-xdist",
+            f"onnx{get_version_spec('onnx')}",
+            f"pytest{get_version_spec('pytest')}",
+            f"pytest-xdist{get_version_spec('pytest-xdist')}",
         ],
     },
     cmdclass={"build": BuildCommand},
