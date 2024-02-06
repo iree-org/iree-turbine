@@ -96,6 +96,49 @@ class ImportTests(unittest.TestCase):
         opt_foo = torch.compile(foo, backend=create_backend())
         opt_foo(torch.randn(4, 4, 4, 4))
 
+    def testScalarLiteralConversion(self):
+        """
+        Test whether scalar tensors are appropriately converted to literals
+        """
+
+        def foo():
+            a = torch.tensor(0, dtype=torch.int32)
+            b = torch.tensor(0, dtype=torch.int64)
+            c = torch.tensor(0, dtype=torch.float32)
+            d = torch.tensor(0, dtype=torch.float64)
+            e = torch.tensor(0, dtype=torch.complex64)
+            f = torch.tensor(0, dtype=torch.complex128)
+            g = torch.tensor(0, dtype=torch.bool)
+            h = torch.tensor(0, dtype=torch.uint8)
+            i = torch.tensor(0, dtype=torch.int8)
+            j = torch.tensor(0, dtype=torch.int16)
+            return a, b, c, d, e, f, g, h, i, j
+
+        opt_foo = torch.compile(foo, backend=create_backend())
+        opt_foo()
+        print(opt_foo())
+
+    def testSingleElementTensor(self):
+        """
+        Test whether single element tensors are properly converted to scalars
+        """
+
+        def foo():
+            a = torch.tensor([0], dtype=torch.int32)
+            b = torch.tensor([0], dtype=torch.int64)
+            c = torch.tensor([0], dtype=torch.float32)
+            d = torch.tensor([0], dtype=torch.float64)
+            e = torch.tensor([0], dtype=torch.complex64)
+            f = torch.tensor([0], dtype=torch.complex128)
+            g = torch.tensor([0], dtype=torch.bool)
+            h = torch.tensor([0], dtype=torch.uint8)
+            i = torch.tensor([0], dtype=torch.int8)
+            j = torch.tensor([0], dtype=torch.int16)
+            return a[0], b[0], c[0], d[0], e[0], f[0], g[0], h[0], i[0], j[0]
+
+        opt_foo = torch.compile(foo, backend=create_backend())
+        opt_foo()
+
     def testPromoteScalarTensor(self):
         """
         Test whether scalar arguments are properly promoted to 0-rank Tensors for torch ops with no Scalar equivalent

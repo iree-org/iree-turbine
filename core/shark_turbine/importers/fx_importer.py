@@ -41,6 +41,7 @@ from .ir import (
     Attribute,
     Block,
     Context,
+    DenseElementsAttr,
     DenseResourceElementsAttr,
     FloatAttr,
     BF16Type,
@@ -573,9 +574,11 @@ class GraphNodeImporter:
         # operations on symbolic arguments as regular python expressions rather than as torch ops
         if is_builtin_function_or_method(target):
             arg_types = [
-                arg.meta["val"].node.pytype
-                if isinstance(arg, torch.fx.Node)
-                else type(arg)
+                (
+                    arg.meta["val"].node.pytype
+                    if isinstance(arg, torch.fx.Node)
+                    else type(arg)
+                )
                 for arg in node.args
             ]
             is_int = [item == int for item in arg_types]
@@ -905,7 +908,7 @@ def create_mlir_tensor_type(tensor: torch.Tensor) -> IrType:
         tensor_type = RankedTensorType.get(tuple(tensor.size()), element_type)
         return tensor_type
     except KeyError:
-        raise TypeError(f"Could not map Torch dtype {dtype} to an IREE type")
+        raise TypeError(f"Could not map Torch dtype {dtype} to an MLIR type")
 
 
 def _make_vtensor_literal_op(
@@ -925,15 +928,28 @@ def _make_vtensor_literal_op(
         # buffer is via the indirection: Tensor -> list -> numpy array. This allows us to create a vtensor literal as
         # desired, but also limits which data types we can support in this function (see TORCH_DTYPE_TO_NPY_TYPE above)
         np_tensor = np.array(tensor.tolist()).astype(npy_dtype)
-        bytes_view = memoryview(np_tensor)
-        tensor_type = create_mlir_tensor_type(tensor)
-        shape_desc = "_".join([str(d) for d in tensor.shape])
-        blob_name = f"torch_tensor_{shape_desc}_{str(tensor.dtype)}"
-        elements_attr = DenseResourceElementsAttr.get_from_buffer(
-            bytes_view,
-            blob_name,
-            tensor_type,
-        )
+        # One element constants are more optimizable as splat DenseElementsAttr. DenseResourceElementsAttr does not
+        # support splats, so don't use it for that case. In addition, at the time of writing, it has bugs with handling
+        # 0d tensors.
+        if np_tensor.size == 1:
+            try:
+                dtype = tensor.dtype
+                element_type = TORCH_DTYPE_TO_MLIR_TYPE[dtype]()
+            except KeyError:
+                raise TypeError(f"Could not map Torch dtype {dtype} to an MLIR type")
+            elements_attr = DenseElementsAttr.get(
+                type=element_type, array=np_tensor, shape=np_tensor.shape
+            )
+        else:
+            bytes_view = memoryview(np_tensor)
+            tensor_type = create_mlir_tensor_type(tensor)
+            shape_desc = "_".join([str(d) for d in tensor.shape])
+            blob_name = f"torch_tensor_{shape_desc}_{str(tensor.dtype)}"
+            elements_attr = DenseResourceElementsAttr.get_from_buffer(
+                bytes_view,
+                blob_name,
+                tensor_type,
+            )
         mapping.value = elements_attr
     else:
         elements_attr = mapping.value
