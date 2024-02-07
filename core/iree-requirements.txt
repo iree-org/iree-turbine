@@ -1,2 +1,2 @@
-iree-compiler==20240129.785
-iree-runtime==20240129.785
+iree-compiler==20240207.794
+iree-runtime==20240207.794
