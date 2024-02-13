@@ -18,12 +18,13 @@ K = tk.lang.sym.K
 class Test(unittest.TestCase):
     def testIotaEager(self):
         @tk.gen.thread(M)
-        def iota_kernel(out: tk.lang.KernelBuffer[M]):
+        def iota_kernel(out: tk.lang.OutputBuffer[M]):
             i = tk.lang.program_id(0)
             out[i] = i
 
         out = torch.empty(8, dtype=torch.int32)
-        iota_kernel[8](out)
+        with tk.gen.TestLaunchContext():
+            iota_kernel(out)
         print(out)
 
     def testIotaFx(self):
@@ -32,7 +33,7 @@ class Test(unittest.TestCase):
             i = tk.lang.program_id(0)
             out[i] = i
 
-        print(iota_kernel._trace.region_graph)
+        print(iota_kernel._trace().region_graph)
         # Prints:
         # .graph():
         #     %out : shark_turbine.kernel.lang.types.KernelBuffer [num_users=1] = placeholder[target=out]
@@ -43,7 +44,7 @@ class Test(unittest.TestCase):
     def testSoftmax(self):
         @tk.gen.thread(M)
         def softmax_kernel(
-            input: tk.lang.KernelBuffer[M, K], output: tk.lang.KernelBuffer[M, K]
+            input: tk.lang.InputBuffer[M, K], output: tk.lang.OutputBuffer[M, K]
         ):
             row_index = tk.lang.program_id(0)
             input_row = input[row_index, :]
@@ -70,7 +71,7 @@ class Test(unittest.TestCase):
         # generated = softmax(input)
         # actual = torch.softmax(input, -1)
         # torch.testing.assert_close(generated, actual)
-        print(softmax_kernel._trace.region_graph)
+        print(softmax_kernel._trace().region_graph)
         # Prints:
         # graph():
         #     %input_1 : shark_turbine.kernel.lang.types.KernelBuffer [num_users=1] = placeholder[target=input]

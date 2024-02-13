@@ -7,6 +7,7 @@ from shark_turbine.kernel._support.indexing import *
 
 M = sym.M
 N = sym.N
+K = sym.K
 
 
 class TestTypes(unittest.TestCase):
@@ -23,23 +24,18 @@ class TestTypes(unittest.TestCase):
         self.assertIs(T.symbolic_shape[1], N)
         self.assertEqual(2, T.rank)
 
-    def testGenericGridInstance(self):
-        g = Grid(1, 2, 3)
+    def testShapedGridInstance(self):
+        G = Grid[M, N, K]
+        with IndexingContext() as idxc:
+            idxc.bind_constant(M, 1)
+            idxc.bind_constant(N, 2)
+            idxc.bind_constant(K, 3)
+            idxc.finalize()
+            g = G()
         self.assertEqual(3, len(g))
         self.assertEqual(1, g[0])
         self.assertEqual([1, 2, 3], list(g))
         self.assertEqual(3, g.rank)
-
-    def testShapedGridInstance(self):
-        G = Grid[M, N]
-        with self.assertRaisesRegex(ValueError, "mismatched symbolic rank"):
-            g = G(1, 2, 3)
-
-        g = G(2, 3)
-        self.assertEqual(2, len(g))
-        self.assertEqual(2, g[0])
-        self.assertEqual([2, 3], list(g))
-        self.assertEqual(2, g.rank)
 
     def testKernelBufferRepr(self):
         self.assertEqual("KernelBuffer", repr(KernelBuffer))

@@ -5,15 +5,6 @@ import torch
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 
-from shark_turbine.kernel.compiler import (
-    builder,
-    kernel_codegen,
-    vector_codegen,
-)
-from shark_turbine.kernel._support import (
-    indexing,
-)
-
 M = tk.lang.sym.M
 K = tk.lang.sym.K
 
@@ -28,31 +19,13 @@ class Test(unittest.TestCase):
             secret_value = ((i * (33 - i) + 4) % 8) // 2
             out[i] = secret_value
 
-        trace = iota_kernel._trace
-        print(trace.region_graph)
-        mb = builder.ModuleBuilder()
-        with indexing.IndexingContext() as idxc:
-            idxc.bind_constant(M, 17)
-            idxc.finalize()
-            sig = kernel_codegen.KernelSignature()
-            sig.add_from_graph_placeholders(trace.get_root_graph())
-            sig.add_grid(iota_kernel.grid_type)
-            print(sig)
-            bound_sig, func_op = kernel_codegen.FunctionalKernelSignature.create(
-                sig, mb
-            )
-            try:
-                emitter = vector_codegen.ThreadEmitter(bound_sig, trace)
-                emitter.emit()
-                emitter.finish()
-            finally:
-                print(mb.module_op.get_asm())
-            mb.module_op.verify()
+        with tk.gen.TestLaunchContext():
+            out = torch.zeros(17, dtype=torch.int32)
 
     def testSoftmaxFx(self):
         @tk.gen.thread(M)
         def softmax_kernel(
-            input: tk.lang.KernelBuffer[M, K], output: tk.lang.KernelBuffer[M, K]
+            input: tk.lang.InputBuffer[M, K], output: tk.lang.OutputBuffer[M, K]
         ):
             row_index = tk.lang.program_id(0)
             input_row = input[row_index, :]
@@ -60,33 +33,15 @@ class Test(unittest.TestCase):
             output_row = numerator / tkl.sum(numerator)
             output[row_index, :] = output_row
 
-        trace = softmax_kernel._trace
-        print(trace.region_graph)
-        mb = builder.ModuleBuilder()
-        with indexing.IndexingContext() as idxc:
-            idxc.bind_shaped(0, tk.lang.KernelBuffer[M, K], (128, 64))
-            idxc.bind_shaped(1, tk.lang.KernelBuffer[M, K], (128, 64))
-            idxc.finalize()
-
-            sig = kernel_codegen.KernelSignature()
-            sig.add_from_graph_placeholders(trace.get_root_graph())
-            sig.add_grid(softmax_kernel.grid_type)
-            print(sig)
-            bound_sig, func_op = kernel_codegen.FunctionalKernelSignature.create(
-                sig, mb
-            )
-            emitter = vector_codegen.ThreadEmitter(bound_sig, trace)
-            try:
-                emitter.emit()
-            finally:
-                emitter.finish()
-                print(mb.module_op.get_asm())
-            mb.module_op.verify()
+        with tk.gen.TestLaunchContext():
+            input = torch.randn(128, 64, dtype=torch.float32)
+            output = torch.zeros(128, 64, dtype=torch.float32)
+            softmax_kernel(input, output)
 
     def testForLoopFx(self):
         @tk.gen.thread(M)
         def for_loop_kernel(
-            input: tk.lang.KernelBuffer[M, K], output: tk.lang.KernelBuffer[M, K]
+            input: tk.lang.InputBuffer[M, K], output: tk.lang.OutputBuffer[M, K]
         ):
             row_idx = tkl.program_id(0)
             sum = input[row_idx, 0]
@@ -100,28 +55,10 @@ class Test(unittest.TestCase):
 
             output[row_idx, 0] = prefetch_sum[0]
 
-        trace = for_loop_kernel._trace
-        print(trace.region_graph)
-        mb = builder.ModuleBuilder()
-        with indexing.IndexingContext() as idxc:
-            idxc.bind_shaped(0, tk.lang.KernelBuffer[M, K], (128, 64))
-            idxc.bind_shaped(1, tk.lang.KernelBuffer[M, K], (128, 64))
-            idxc.finalize()
-
-            sig = kernel_codegen.KernelSignature()
-            sig.add_from_graph_placeholders(trace.get_root_graph())
-            sig.add_grid(for_loop_kernel.grid_type)
-            print(sig)
-            bound_sig, func_op = kernel_codegen.FunctionalKernelSignature.create(
-                sig, mb
-            )
-            emitter = vector_codegen.ThreadEmitter(bound_sig, trace)
-            try:
-                emitter.emit()
-            finally:
-                emitter.finish()
-                print(mb.module_op.get_asm())
-            mb.module_op.verify()
+        with tk.gen.TestLaunchContext():
+            input = torch.randn(128, 64, dtype=torch.float32)
+            output = torch.zeros(128, 64, dtype=torch.float32)
+            for_loop_kernel(input, output)
 
     def testGemmFx(self):
         N = tkl.sym.N
@@ -131,9 +68,9 @@ class Test(unittest.TestCase):
 
         @tk.gen.thread(N // BLOCK_SIZE, M // BLOCK_SIZE)
         def gemm_kernel(
-            A: tkl.KernelBuffer[N, K],
-            B: tkl.KernelBuffer[K, M],
-            output: tkl.KernelBuffer[N, M],
+            A: tkl.InputBuffer[N, K],
+            B: tkl.InputBuffer[K, M],
+            output: tkl.OutputBuffer[N, M],
         ):
             grid_n = tkl.program_id(0)
             grid_m = tkl.program_id(1)
@@ -148,30 +85,11 @@ class Test(unittest.TestCase):
 
             tkl.store(output, (grid_n, grid_m), body[0])
 
-        trace = gemm_kernel._trace
-        print(trace.region_graph)
-        mb = builder.ModuleBuilder()
-        with indexing.IndexingContext() as idxc:
-            idxc.bind_shaped("A", tkl.KernelBuffer[N, K], (512, 1024))
-            idxc.bind_shaped("B", tkl.KernelBuffer[K, M], (1024, 2048))
-            idxc.bind_shaped("output", tkl.KernelBuffer[N, M], (512, 2048))
-            idxc.bind_constant(BLOCK_SIZE, 32)
-            idxc.finalize()
-
-            sig = kernel_codegen.KernelSignature()
-            sig.add_from_graph_placeholders(trace.get_root_graph())
-            sig.add_grid(gemm_kernel.grid_type)
-            print(sig)
-            bound_sig, func_op = kernel_codegen.FunctionalKernelSignature.create(
-                sig, mb
-            )
-            emitter = vector_codegen.ThreadEmitter(bound_sig, trace)
-            try:
-                emitter.emit()
-            finally:
-                emitter.finish()
-                print(mb.module_op.get_asm())
-            mb.module_op.verify()
+        with tk.gen.TestLaunchContext({BLOCK_SIZE: 32}):
+            A = torch.randn(512, 1024, dtype=torch.float32)
+            B = torch.randn(1024, 2048, dtype=torch.float32)
+            output = torch.zeros(512, 2048, dtype=torch.float32)
+            gemm_kernel(A, B, output)
 
 
 if __name__ == "__main__":

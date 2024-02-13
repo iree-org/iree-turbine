@@ -118,7 +118,6 @@ class KernelSignature:
     @property
     def kernel_buffer_input_bindings(self) -> list[BindingDesc]:
         """Gets all kernel buffer bindings with input usage."""
-        print("ALL=", self.bindings)
         return [
             b
             for b in self.bindings

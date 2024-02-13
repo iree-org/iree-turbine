@@ -104,13 +104,6 @@ class _GridMeta(type):
         new_class.__qualname__ = repr(new_class)
         return new_class
 
-    def __class_getitem__(
-        cls, symbolic_shape: Union[SymbolicDimable, tuple[SymbolicShapeable]]
-    ) -> Type["Grid"]:
-        if not isinstance(symbolic_shape, tuple):
-            symbolic_shape = (symbolic_shape,)
-        return cast(Grid, _make_shaped_grid(cls, make_symbolic_shape(symbolic_shape)))
-
     def __repr__(self):
         if self.symbolic_shape:
             return f"Grid[{', '.join(repr(s) for s in self.symbolic_shape)}]"
@@ -122,20 +115,31 @@ class Grid(metaclass=_GridMeta, symbolic_shape=None):
     """Grid with bounding symbolic shape information in the type."""
 
     symbolic_shape: ClassVar[Optional[SymbolicShapeExpr]]
+    # TODO: dims should also allow dynamic dimensions.
+    dims: list[int]
     rank: int
 
-    def __init__(self, *dims: int):
-        rank = len(dims)
-        if self.symbolic_shape is not None:
-            if rank != len(self.symbolic_shape):
-                raise ValueError(
-                    f"Cannot create {type(self)}({', '.join(str(i) for i in dims)}): mismatched symbolic rank"
-                )
+    def __init__(self):
+        # Resolve the symbolic shape to concrete values.
+        idxc = IndexingContext.current()
+        if self.symbolic_shape:
+            dims = [idxc.get_static_value(dim) for dim in self.symbolic_shape]
+            if None in dims:
+                raise ValueError(f"NYI: Dynamic dims in Grid")
+            self.dims = cast(list[int], dims)
+        else:
+            self.dims = []
 
-        self.dims = dims
         # Shadow the type rank with the actual, which makes it concrete
         # for the generic case.
-        self.rank = rank
+        self.rank = len(self.dims)
+
+    def __class_getitem__(
+        cls, symbolic_shape: Union[SymbolicDimable, tuple[SymbolicShapeable]]
+    ) -> Type["Grid"]:
+        if not isinstance(symbolic_shape, tuple):
+            symbolic_shape = (symbolic_shape,)
+        return cast(Grid, _make_shaped_grid(cls, make_symbolic_shape(symbolic_shape)))
 
     def __repr__(self):
         return f"{repr(type(self))}({', '.join(str(i) for i in self.dims)})"
@@ -160,6 +164,8 @@ def _make_shaped_grid(cls: Type[Grid], symbolic_shape: tuple[IndexExpr]):
 ###############################################################################
 # KernelBuffer
 ###############################################################################
+
+Dims = list[Union[None, IndexSymbol, int]]
 
 
 class KernelBufferUsage(Enum):
@@ -331,7 +337,6 @@ class TemporaryBuffer(KernelBuffer):
 ###############################################################################
 
 ShapedType = Union[Type[KernelBuffer], Type[Grid]]
-Dims = list[Union[None, IndexSymbol, int]]
 
 
 @dataclass(slots=True)

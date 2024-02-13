@@ -23,9 +23,11 @@ from .indexing import (
     backed_sym_index_type,
     BoundedRelation,
     IndexExpr,
+    IndexSymbol,
     Grid,
     KernelBuffer,
     SymIndex,
+    IndexingContext,
 )
 
 from ..lang.types import (
@@ -388,9 +390,15 @@ class Launchable(ABC):
     def eager_execute(self, args, kwargs):
         ...
 
+    def test_execute(self, args, kwargs):
+        ...
+
 
 class LaunchContext(ABC):
     __tk_context_idname__ = "ExecutionContext"
+
+    def __init__(self, constant_bindings: Dict[IndexSymbol, int] = {}):
+        self.constant_bindings = constant_bindings
 
     @staticmethod
     def current() -> "LaunchContext":
@@ -404,9 +412,21 @@ class LaunchContext(ABC):
             return DebugLaunchContext()
 
     def __enter__(self) -> "LaunchContext":
+        # Push an indexing context with the constand bindings for this launch
+        # context in it.
+        # TODO: Is creating a IndexingContext as part of LaunchContext the
+        # correct layering?
+        idxc = IndexingContext()
+        context.push(IndexingContext, idxc)
+        for s, val in self.constant_bindings.items():
+            idxc.bind_constant(s, val)
         return context.push(LaunchContext, self)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        # Pop the indexing context created as part of this launch.
+        # TODO: Is creating a IndexingContext as part of LaunchContext the
+        # correct layering?
+        context.pop(IndexingContext, IndexingContext().current())
         context.pop(LaunchContext, self)
 
     @abstractmethod
@@ -417,6 +437,11 @@ class LaunchContext(ABC):
 class DebugLaunchContext(LaunchContext):
     def launch(self, launchable: Launchable, args, kwargs):
         return launchable.eager_execute(args, kwargs)
+
+
+class TestLaunchContext(LaunchContext):
+    def launch(self, launchable: Launchable, args, kwargs):
+        return launchable.test_execute(args, kwargs)
 
 
 ###############################################################################

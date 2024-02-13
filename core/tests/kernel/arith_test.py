@@ -19,8 +19,6 @@ K = tk.lang.sym.K
 
 
 class Test(unittest.TestCase):
-    # This test is using the compiler "the hard way" until we have all of the
-    # API layering in place.
     def testIotaFx(self):
         @tk.gen.thread(M)
         def iota_kernel(out: tk.lang.OutputBuffer[M]):
@@ -48,26 +46,8 @@ class Test(unittest.TestCase):
                 c = (a * b) / c
                 c = c + a - b
 
-        trace = iota_kernel._trace
-        print(trace.region_graph)
-        mb = builder.ModuleBuilder()
-        with indexing.IndexingContext() as idxc:
-            idxc.bind_constant(M, 17)
-            idxc.finalize()
-            sig = kernel_codegen.KernelSignature()
-            sig.add_from_graph_placeholders(trace.get_root_graph())
-            sig.add_grid(iota_kernel.grid_type)
-            print(sig)
-            bound_sig, func_op = kernel_codegen.FunctionalKernelSignature.create(
-                sig, mb
-            )
-            try:
-                emitter = vector_codegen.ThreadEmitter(bound_sig, trace)
-                emitter.emit()
-                emitter.finish()
-            finally:
-                print(mb.module_op.get_asm())
-            mb.module_op.verify()
+        with tk.gen.TestLaunchContext():
+            iota_kernel(torch.zeros(17))
 
 
 if __name__ == "__main__":

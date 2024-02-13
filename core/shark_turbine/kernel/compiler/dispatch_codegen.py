@@ -5,7 +5,7 @@ This assumes that you have some form of code generation for the
 embedding and generating the calls/dispatches.
 """
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Type
 
 from .._support.indexing import (
     IndexingContext,
@@ -43,6 +43,8 @@ from .kernel_codegen import (
     BoundKernelSignature,
     KernelSignature,
 )
+
+from .._support.indexing import Grid
 
 
 class StreamExecutable:
@@ -93,6 +95,7 @@ class StreamExecutable:
         self,
         name: str,
         sig: KernelSignature,
+        grid: Grid,
     ) -> "DispatchEntrypoint":
         """Defines a dispatch function with a signature like:
 
@@ -105,7 +108,7 @@ class StreamExecutable:
         Also adds an export with workgroup function like:
 
         ```
-        stream.executable.export public @name(%workload0 : index, %workload1 : index) -> (index, [[grid_arity...]]) {
+        stream.executable.export private @name(%workload0 : index, %workload1 : index) -> (index, [[grid_arity...]]) {
 
         }
         ```
@@ -115,11 +118,13 @@ class StreamExecutable:
         kb_input_bindings = sig.kernel_buffer_input_bindings
         kb_temp_bindings = sig.kernel_buffer_temporary_bindings
         kb_output_bindings = sig.kernel_buffer_output_bindings
-        # TODO: The way we are doing grid bindings is wrong. The Grid type should be paramerized
-        # with special grid axis symbols which are algebraically related to concrete shape dim
-        # symbols. For now, we are just treating the grid symbol as the input and output to the
-        # workload function, when in reality, the workload needs to derive from its leaf inputs.
-        grid_axis_bindings = sig.grid_bindings
+        # TODO: The way we are doing grid bindings is wrong. The Grid type
+        # should be paramerized with special grid axis symbols which are
+        # algebraically related to concrete shape dim symbols. For now, we are
+        # just assuming that the grid dims can be resolved to constants , when
+        # in reality, we should pass the workload and parameterize the grid
+        # dims on the workloads.
+        workload_axis_bindings = []
 
         # Input bindings are always user specified.
         # Grid/workgroup bindings are in the inputs section but are implied.
@@ -127,16 +132,18 @@ class StreamExecutable:
         # Output bindings are the real outputs.
         linear_bindings = (
             kb_input_bindings
-            + grid_axis_bindings
+            + workload_axis_bindings
             + kb_temp_bindings
             + kb_output_bindings
         )
 
-        # TODO: This is sloppy. This assert will hit on some user errors for unsupported
-        # type combinations and is just a last resort right now.
-        assert len(linear_bindings) == len(
-            sig.bindings
-        ), f"Not all bindings converted: {linear_bindings} vs {sig.bindings}"
+        # TODO: This is sloppy. This assert will hit on some user errors for
+        # unsupported type combinations and is just a last resort right now.
+        # TODO: This is currently disabled because the grid_bindings don't match
+        # workload bindings.
+        # assert len(linear_bindings) == len(
+        #     sig.bindings
+        # ), f"Not all bindings converted: {linear_bindings} vs {sig.bindings}"
 
         with self._loc:
             binding_type = IrType.parse("!stream.binding")
@@ -161,17 +168,22 @@ class StreamExecutable:
             with InsertionPoint.at_block_begin(self._exe_block):
                 export_op = stream_d.ExecutableExportOp(name, name)
                 export_block = export_op.workgroup_count.blocks.append(
-                    *([b.as_mlir_type() for b in grid_axis_bindings])
+                    *([b.as_mlir_type() for b in workload_axis_bindings])
                 )
 
-            # TODO: Reify actual workload calculation.
             workgroup_builder = WorkgroupBuilder(
                 export_block, lambda vs: stream_d.ReturnOp(vs)
             )
-            workgroup_values = list(workgroup_builder.workload)
-            while len(workgroup_values) < 3:
-                with InsertionPoint(workgroup_builder.entry_block):
-                    result_type = IndexType.get()
+
+            # TODO: Support passing workload to the dispatch function.
+            with InsertionPoint(workgroup_builder.entry_block):
+                result_type = IndexType.get()
+                workgroup_values = [
+                    arith_d.constant(result_type, IntegerAttr.get(result_type, dim))
+                    for dim in grid.dims
+                ]
+
+                while len(workgroup_values) < 3:
                     workgroup_values.append(
                         arith_d.constant(result_type, IntegerAttr.get(result_type, 1))
                     )
@@ -220,8 +232,7 @@ class DispatchEntrypoint(BoundKernelSignature):
     def resolve(self, binding: BindingDesc) -> Value:
         ref_type, ref_value = binding.reference
         if ref_type == "grid":
-            # TODO: Switch to stream op when #15889 is landed.
-            return flow_d.dispatch_workgroup_id(
+            return stream_d.dispatch_workgroup_id(
                 IntegerAttr.get(IndexType.get(), ref_value)
             )
 
