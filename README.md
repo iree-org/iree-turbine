@@ -88,7 +88,7 @@ Installing into a venv is highly recommended.
 
 ```
 pip install --upgrade -r core/requirements.txt
-pip install --upgrade -e core[torch-cpu-nightly,testing]
+pip install --upgrade -e "core[torch-cpu-nightly,testing]"
 ```
 
 Run tests:
