@@ -1,2 +1,3 @@
 --pre
 torch==2.1.0
+mpmath==1.3.0
