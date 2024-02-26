@@ -39,12 +39,7 @@ import torch
 from torch._dynamo.backends.common import aot_autograd
 from ..passes import turbine_cpu_pass_pipeline
 
-DEFAULT_COMPILER_FLAGS = (
-    # Enable asynchronous calling convention.
-    # TODO: Enable async execution mode.
-    # "--iree-execution-model=async-external",
-    "--iree-input-type=tm_tensor",
-)
+DEFAULT_COMPILER_FLAGS = ("--iree-input-type=torch",)
 
 
 def _base_backend(gm: torch.fx.GraphModule, example_inputs):

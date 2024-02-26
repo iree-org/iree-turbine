@@ -53,11 +53,7 @@ from iree.compiler.passmanager import PassManager
 
 from ..importers.fx_importer import FxImporter
 
-DEFAULT_COMPILER_FLAGS = (
-    # Enable asynchronous calling convention.
-    "--iree-execution-model=async-external",
-    "--iree-input-type=torch",
-)
+DEFAULT_COMPILER_FLAGS = ("--iree-input-type=torch",)
 
 ###############################################################################
 # Factories and device enablement

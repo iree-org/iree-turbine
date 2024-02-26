@@ -153,7 +153,7 @@ class EagerSpecializedExecutable:
         self,
         user_module: VmModule,
         device_state: DeviceState,
-        entry_name: str = "main",
+        entry_name: str = "main$async",
     ):
         self.user_module = user_module
         self.vm_context = VmContext(
