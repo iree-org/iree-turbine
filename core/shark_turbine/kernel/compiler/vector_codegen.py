@@ -16,15 +16,14 @@ import torch.fx as fx
 import torch.utils._pytree as pytree
 
 from .._support.indexing import (
-    Grid,
     IndexExpr,
     IndexingContext,
-    KernelBuffer,
     IndexSymbol,
     SymIndex,
     index_expr,
-    is_kernel_buffer_meta_derived,
 )
+
+from ..lang.kernel_buffer import KernelBuffer
 
 from .._support import dtype
 

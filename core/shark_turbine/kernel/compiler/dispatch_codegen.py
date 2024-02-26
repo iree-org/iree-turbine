@@ -44,7 +44,7 @@ from .kernel_codegen import (
     KernelSignature,
 )
 
-from .._support.indexing import Grid
+from ..lang.grid import Grid
 
 
 class StreamExecutable:

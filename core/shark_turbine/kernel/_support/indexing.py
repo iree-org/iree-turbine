@@ -1,32 +1,24 @@
-from typing import Any, ClassVar, Optional, Type, TypeVar, Union, cast
+from typing import Any, ClassVar, Optional, Type, TypeVar, Union
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
-from enum import Enum
 
 import sympy
-import torch
-
-from .. import ops
 
 from . import context
 from . import dtype
+from .shaped_type import ShapedType, ShapedDataType
 
 __all__ = [
     "backed_sym_index_type",
     "sym",
     "BoundedRelation",
     "EqualRelation",
-    "Grid",
     "IndexingContext",
     "IndexRelation",
     "IndexExpr",
     "IndexSymbol",
-    "InputBuffer",
-    "KernelBuffer",
-    "OutputBuffer",
     "SymIndex",
-    "TemporaryBuffer",
 ]
 
 DataType = dtype.DataType
@@ -74,269 +66,11 @@ sym = _IndexSymbolExpando()
 SymbolicDimable = Union[str, IndexExpr]
 SymbolicShapeable = tuple[SymbolicDimable]
 SymbolicShapeExpr = tuple[IndexExpr]
-
-
-def make_symbolic_shape(elements: SymbolicShapeable) -> SymbolicShapeExpr:
-    return tuple(
-        index_symbol(expr) if isinstance(expr, str) else expr for expr in elements
-    )
-
-
-###############################################################################
-# Grid
-###############################################################################
-
-
-class _GridMeta(type):
-    """Meta-class for a symbolically shaped grid."""
-
-    def __new__(
-        mcls,
-        name: str,
-        bases,
-        dct,
-        *,
-        symbolic_shape: Optional[SymbolicShapeExpr],
-    ):
-        new_class = type.__new__(mcls, name, bases, dct)
-        new_class.symbolic_shape = symbolic_shape
-        new_class.rank = len(symbolic_shape) if symbolic_shape is not None else None
-        new_class.__qualname__ = repr(new_class)
-        return new_class
-
-    def __repr__(self):
-        if self.symbolic_shape:
-            return f"Grid[{', '.join(repr(s) for s in self.symbolic_shape)}]"
-        else:
-            return "Grid"
-
-
-class Grid(metaclass=_GridMeta, symbolic_shape=None):
-    """Grid with bounding symbolic shape information in the type."""
-
-    symbolic_shape: ClassVar[Optional[SymbolicShapeExpr]]
-    # TODO: dims should also allow dynamic dimensions.
-    dims: list[int]
-    rank: int
-
-    def __init__(self):
-        # Resolve the symbolic shape to concrete values.
-        idxc = IndexingContext.current()
-        if self.symbolic_shape:
-            dims = [idxc.get_static_value(dim) for dim in self.symbolic_shape]
-            if None in dims:
-                raise ValueError(f"NYI: Dynamic dims in Grid")
-            self.dims = cast(list[int], dims)
-        else:
-            self.dims = []
-
-        # Shadow the type rank with the actual, which makes it concrete
-        # for the generic case.
-        self.rank = len(self.dims)
-
-    def __class_getitem__(
-        cls, symbolic_shape: Union[SymbolicDimable, tuple[SymbolicShapeable]]
-    ) -> Type["Grid"]:
-        if not isinstance(symbolic_shape, tuple):
-            symbolic_shape = (symbolic_shape,)
-        return cast(Grid, _make_shaped_grid(cls, make_symbolic_shape(symbolic_shape)))
-
-    def __repr__(self):
-        return f"{repr(type(self))}({', '.join(str(i) for i in self.dims)})"
-
-    def __getitem__(self, index: int) -> int:
-        return self.dims[index]
-
-    def __len__(self) -> int:
-        return len(self.dims)
-
-    def __iter__(self):
-        return iter(self.dims)
-
-
-def _make_shaped_grid(cls: Type[Grid], symbolic_shape: tuple[IndexExpr]):
-    class ShapedGrid(Grid, symbolic_shape=symbolic_shape):
-        ...
-
-    return ShapedGrid
-
-
-###############################################################################
-# KernelBuffer
-###############################################################################
-
 Dims = list[Union[None, IndexSymbol, int]]
-
-
-class KernelBufferUsage(Enum):
-    NONE = 0
-    INPUT = 1
-    OUTPUT = 2
-    TEMPORARY = 3
-
-    @staticmethod
-    def _type_name(v) -> str:
-        if v == KernelBufferUsage.NONE:
-            return "KernelBuffer"
-        elif v == KernelBufferUsage.INPUT:
-            return "InputBuffer"
-        elif v == KernelBufferUsage.OUTPUT:
-            return "OutputBuffer"
-        elif v == KernelBufferUsage.TEMPORARY:
-            return "TemporaryBuffer"
-        else:
-            raise AssertionError(f"uncovered KernelBufferUsage enum ({v})")
-
-
-class _KernelBufferMeta(type):
-    """Meta-class for kernel buffers.
-
-    This lets us specialize with symbolic shape information.
-    """
-
-    element_type: DataType
-    usage: KernelBufferUsage
-    symbolic_shape: Optional[SymbolicShapeExpr]
-    rank: Optional[int]
-
-    def __new__(
-        mcls,
-        name: str,
-        bases,
-        dct,
-    ):
-        element_type = dct.get("element_type") or DefaultDataType
-        dct["element_type"] = element_type
-        usage = dct.get("usage") or KernelBufferUsage.NONE
-        dct["usage"] = usage
-        if "usage" not in dct:
-            dct["usage"] = KernelBufferUsage.NONE
-        symbolic_shape = dct.get("symbolic_shape")
-        dct["symbolic_shape"] = symbolic_shape
-        dct["rank"] = len(symbolic_shape) if symbolic_shape is not None else None
-        dct["__qualname__"] = _kernel_buffer_type_repr(
-            element_type=element_type, usage=usage, symbolic_shape=symbolic_shape
-        )
-        new_class = type.__new__(mcls, name, bases, dct)
-        return new_class
-
-    def new_subtype(
-        cls: Type[SubtypeT],
-        *,
-        element_type: Union[NotSetType, DataType] = NotSet,
-        symbolic_shape: Union[NotSetType, Optional[SymbolicShapeable]] = NotSet,
-        usage: Union[NotSetType, KernelBufferUsage] = NotSet,
-    ) -> Type[SubtypeT]:
-        init_element_type = (
-            element_type if element_type is not NotSet else cls.element_type
-        )
-        init_symbolic_shape = (
-            symbolic_shape if symbolic_shape is not NotSet else cls.symbolic_shape
-        )
-        init_usage = usage if usage is not NotSet else cls.usage
-
-        class Subtype(cls):
-            element_type = init_element_type
-            symbolic_shape = make_symbolic_shape(init_symbolic_shape)
-            usage = init_usage
-
-        return Subtype
-
-    def of(cls: Type[SubtypeT], element_type: Union[Any, DataType]) -> Type[SubtypeT]:
-        return cls.new_subtype(element_type=element_type)
-
-    def __repr__(cls):
-        return _kernel_buffer_type_repr(
-            element_type=cls.element_type,
-            usage=cls.usage,
-            symbolic_shape=cls.symbolic_shape,
-        )
-
-
-def is_kernel_buffer_meta_derived(t: type) -> bool:
-    return isinstance(t, _KernelBufferMeta)
-
-
-def _kernel_buffer_type_repr(
-    *,
-    element_type: DataType,
-    usage: KernelBufferUsage,
-    symbolic_shape: Optional[tuple[IndexExpr]],
-) -> str:
-    root = KernelBufferUsage._type_name(usage)
-    if symbolic_shape:
-        stem = f"{root}[{', '.join(repr(s) for s in symbolic_shape)}]"
-    else:
-        stem = f"{root}"
-    if element_type != DefaultDataType:
-        stem += f".of({element_type})"
-    return stem
-
-
-class KernelBuffer(metaclass=_KernelBufferMeta):
-    """Represents a buffer in global memory.
-
-    Top level kernels always operate on global memory via these
-    buffers, and the primary operations that can be performed on
-    them are loads/stores and DMAs to some form of compute
-    capable local buffer.
-
-    When executing eagerly, these are backed by a normal torch
-    Tensor. When compiling, an appropriate duck-typed proxy
-    is used.
-    """
-
-    usage: ClassVar[KernelBufferUsage]
-    symbolic_shape: ClassVar[Optional[SymbolicShapeExpr]]
-    rank: Optional[int]
-
-    def __init__(self, tensor: torch.Tensor):
-        assert isinstance(tensor, torch.Tensor), f"Expected Tensor but got {tensor}"
-        type_rank = type(self).rank
-        tensor_rank = len(tensor.shape)
-        if type_rank is not None and type_rank != tensor_rank:
-            raise ValueError(
-                f"Cannot create {type(self)}(tensor({tensor.shape})): mismatched symbolic rank"
-            )
-        self._tensor = tensor
-        self.rank = tensor_rank
-
-    def __class_getitem__(
-        cls, symbolic_shape: Union[IndexExpr, SymbolicShapeExpr]
-    ) -> Type["KernelBuffer"]:
-        if not isinstance(symbolic_shape, tuple):
-            symbolic_shape = (symbolic_shape,)
-        return cast(
-            cls, cls.new_subtype(symbolic_shape=make_symbolic_shape(symbolic_shape))
-        )
-
-    def __repr__(self):
-        return f"{type(self)}({self._tensor})"
-
-    def __setitem__(self, key, item):
-        ops.kernel_buffer_setitem(self, key, item)
-
-    def __getitem__(self, key):
-        return ops.kernel_buffer_getitem(self, key)
-
-
-class InputBuffer(KernelBuffer):
-    usage = KernelBufferUsage.INPUT
-
-
-class OutputBuffer(KernelBuffer):
-    usage = KernelBufferUsage.OUTPUT
-
-
-class TemporaryBuffer(KernelBuffer):
-    usage = KernelBufferUsage.TEMPORARY
-
 
 ###############################################################################
 # IndexingContext
 ###############################################################################
-
-ShapedType = Union[Type[KernelBuffer], Type[Grid]]
 
 
 @dataclass(slots=True)
@@ -377,7 +111,7 @@ class IndexingContext:
         # Indexed by .instance
         self.shaped_bindings: dict[Any, _ShapedBinding] = {}
         self.dyn_dims: list[IndexSymbol] = []
-        self.frozen_subs: list[IndexSymbol, int] = []
+        self.frozen_subs: list[tuple[IndexSymbol, int]] = []
         self.unbacked_symbols: list[IndexSymbol] = []
 
     def next_dyn_dim(self) -> IndexSymbol:
@@ -390,9 +124,7 @@ class IndexingContext:
         self.unbacked_symbols.append(s)
         return s
 
-    def bind_shaped(
-        self, instance: Any, shaped_type: ShapedType, dims: Dims
-    ) -> _ShapedBinding:
+    def bind_shaped(self, instance: Any, shaped_type: ShapedType, dims: Dims) -> None:
         if instance in self.shaped_bindings:
             raise ValueError(f"Argument binding {instance} is already bound")
         symbolic_shape = shaped_type.symbolic_shape
@@ -406,7 +138,7 @@ class IndexingContext:
         )
         self.shaped_bindings[instance] = binding
 
-    def bind_constant(self, sym: IndexSymbol, value: int):
+    def bind_constant(self, sym: IndexSymbol, value: int) -> None:
         try:
             self._bind_symbol(sym, value)
         except ValueError:

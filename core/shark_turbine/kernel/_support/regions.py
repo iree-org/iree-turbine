@@ -137,7 +137,7 @@ class SubgraphTracer(fx.Tracer):
         kwargs,
         name=None,
         type_expr=None,
-        proxy_factor_fn=None,
+        proxy_factory_fn=None,
     ):
         if self.parent is not None:
             flat_args, tree_spec = pytree.tree_flatten((args, kwargs))
@@ -154,7 +154,7 @@ class SubgraphTracer(fx.Tracer):
             kwargs,
             name,
             type_expr,
-            proxy_factor_fn,
+            proxy_factory_fn,
         )
 
         return rv

@@ -14,14 +14,14 @@ from shark_turbine.kernel._support import (
     indexing,
 )
 
-M = tk.lang.sym.M
-K = tk.lang.sym.K
+M = tkl.sym.M
+K = tkl.sym.K
 
 
 class Test(unittest.TestCase):
     def testIotaFx(self):
         @tk.gen.thread(M)
-        def iota_kernel(out: tk.lang.OutputBuffer[M]):
+        def iota_kernel(out: tkl.OutputBuffer[M, tkl.f32]):
             # Integer types
             for dtype in [
                 tkl.bool,

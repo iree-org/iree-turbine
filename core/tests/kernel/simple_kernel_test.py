@@ -10,6 +10,7 @@ import unittest
 import torch
 
 import shark_turbine.kernel as tk
+import shark_turbine.kernel.lang as tkl
 
 M = tk.lang.sym.M
 K = tk.lang.sym.K
@@ -18,7 +19,7 @@ K = tk.lang.sym.K
 class Test(unittest.TestCase):
     def testIotaEager(self):
         @tk.gen.thread(M)
-        def iota_kernel(out: tk.lang.OutputBuffer[M]):
+        def iota_kernel(out: tk.lang.OutputBuffer[M, tkl.index]):
             i = tk.lang.program_id(0)
             out[i] = i
 
@@ -29,7 +30,7 @@ class Test(unittest.TestCase):
 
     def testIotaFx(self):
         @tk.gen.thread(M)
-        def iota_kernel(out: tk.lang.KernelBuffer[M]):
+        def iota_kernel(out: tk.lang.KernelBuffer[M, tkl.index]):
             i = tk.lang.program_id(0)
             out[i] = i
 
@@ -44,7 +45,8 @@ class Test(unittest.TestCase):
     def testSoftmax(self):
         @tk.gen.thread(M)
         def softmax_kernel(
-            input: tk.lang.InputBuffer[M, K], output: tk.lang.OutputBuffer[M, K]
+            input: tk.lang.InputBuffer[M, K, tkl.f32],
+            output: tk.lang.OutputBuffer[M, K, tkl.f32],
         ):
             row_index = tk.lang.program_id(0)
             input_row = input[row_index, :]

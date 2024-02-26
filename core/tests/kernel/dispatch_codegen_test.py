@@ -24,7 +24,8 @@ class Test(unittest.TestCase):
     def testEmptyStreamExecutable(self):
         @tk.gen.thread(M)
         def softmax_kernel(
-            input: tk.lang.InputBuffer[M, K], output: tk.lang.OutputBuffer[M, K]
+            input: tk.lang.InputBuffer[M, K, tkl.f32],
+            output: tk.lang.OutputBuffer[M, K, tkl.f32],
         ):
             row_index = tk.lang.program_id(0)
             input_row = input[row_index, :]

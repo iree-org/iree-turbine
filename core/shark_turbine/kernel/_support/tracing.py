@@ -24,11 +24,11 @@ from .indexing import (
     BoundedRelation,
     IndexExpr,
     IndexSymbol,
-    Grid,
-    KernelBuffer,
-    SymIndex,
     IndexingContext,
 )
+
+from ..lang.kernel_buffer import KernelBuffer
+from ..lang.grid import Grid
 
 from ..lang.types import (
     Index,

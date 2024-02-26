@@ -14,7 +14,7 @@ class Test(unittest.TestCase):
     # API layering in place.
     def testIotaFx(self):
         @tk.gen.thread(M)
-        def iota_kernel(out: tk.lang.OutputBuffer[M]):
+        def iota_kernel(out: tk.lang.OutputBuffer[M, tkl.index]):
             i = tk.lang.program_id(0)
             secret_value = ((i * (33 - i) + 4) % 8) // 2
             out[i] = secret_value
@@ -25,7 +25,8 @@ class Test(unittest.TestCase):
     def testSoftmaxFx(self):
         @tk.gen.thread(M)
         def softmax_kernel(
-            input: tk.lang.InputBuffer[M, K], output: tk.lang.OutputBuffer[M, K]
+            input: tk.lang.InputBuffer[M, K, tkl.f32],
+            output: tk.lang.OutputBuffer[M, K, tkl.f32],
         ):
             row_index = tk.lang.program_id(0)
             input_row = input[row_index, :]
@@ -41,7 +42,8 @@ class Test(unittest.TestCase):
     def testForLoopFx(self):
         @tk.gen.thread(M)
         def for_loop_kernel(
-            input: tk.lang.InputBuffer[M, K], output: tk.lang.OutputBuffer[M, K]
+            input: tk.lang.InputBuffer[M, K, tkl.f32],
+            output: tk.lang.OutputBuffer[M, K, tkl.f32],
         ):
             row_idx = tkl.program_id(0)
             sum = input[row_idx, 0]
@@ -68,9 +70,9 @@ class Test(unittest.TestCase):
 
         @tk.gen.thread(N // BLOCK_SIZE, M // BLOCK_SIZE)
         def gemm_kernel(
-            A: tkl.InputBuffer[N, K],
-            B: tkl.InputBuffer[K, M],
-            output: tkl.OutputBuffer[N, M],
+            A: tkl.InputBuffer[N, K, tkl.f32],
+            B: tkl.InputBuffer[K, M, tkl.f32],
+            output: tkl.OutputBuffer[N, M, tkl.f32],
         ):
             grid_n = tkl.program_id(0)
             grid_m = tkl.program_id(1)

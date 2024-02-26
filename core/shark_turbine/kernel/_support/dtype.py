@@ -17,6 +17,7 @@ _FLOAT_TYPES = ["f16", "f32", "f64"]
 _INDEX_TYPES = ["index"]
 
 
+# TODO: this should really be a type.
 class DataType:
     _name: str
     _ir_type_asm: str

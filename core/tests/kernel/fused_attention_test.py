@@ -18,10 +18,10 @@ class Test(unittest.TestCase):
     def testFusedAttention(self):
         @tk.gen.thread(N_CTX // BLOCK_M, BATCH * N_HEADS)
         def fused_attention(
-            Q: tkl.InputBuffer[BATCH, N_HEADS, N_CTX, D_HEAD].of(tkl.f16),
-            K: tkl.InputBuffer[BATCH, N_HEADS, N_CTX, D_HEAD].of(tkl.f16),
-            V: tkl.InputBuffer[BATCH, N_HEADS, N_CTX, D_HEAD].of(tkl.f16),
-            O: tkl.OutputBuffer[BATCH, N_HEADS, N_CTX, D_HEAD].of(tkl.f16),
+            Q: tkl.InputBuffer[BATCH, N_HEADS, N_CTX, D_HEAD, tkl.f16],
+            K: tkl.InputBuffer[BATCH, N_HEADS, N_CTX, D_HEAD, tkl.f16],
+            V: tkl.InputBuffer[BATCH, N_HEADS, N_CTX, D_HEAD, tkl.f16],
+            O: tkl.OutputBuffer[BATCH, N_HEADS, N_CTX, D_HEAD, tkl.f16],
         ):
             grid_n = tkl.program_id(0)
             grid_m = tkl.program_id(1)

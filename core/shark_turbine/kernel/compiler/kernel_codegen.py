@@ -22,13 +22,16 @@ from dataclasses import dataclass
 import torch.fx as fx
 
 from .._support.indexing import (
-    Grid,
     IndexingContext,
     IndexSymbol,
+)
+
+from ..lang.kernel_buffer import (
     KernelBuffer,
     KernelBufferUsage,
     is_kernel_buffer_meta_derived,
 )
+from ..lang.grid import Grid
 
 from .base import (
     CodegenError,
@@ -88,7 +91,7 @@ class BindingDesc:
         binding_type = self.binding_type
         if binding_type == BindingType.KERNEL_BUFFER:
             kb_t = self.kernel_buffer_type  # type: KernelBuffer
-            element_type_asm = kb_t.element_type.ir_type_asm()
+            element_type_asm = kb_t.dtype.ir_type_asm()
             symbolic_shape = kb_t.symbolic_shape
             if symbolic_shape is not None:
                 shape_asm = "x".join(sym_to_dim_asm(s) for s in kb_t.symbolic_shape)
