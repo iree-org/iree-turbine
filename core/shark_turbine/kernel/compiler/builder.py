@@ -32,12 +32,12 @@ from .ir import (
     F64Type,
 )
 
-# TODO: Have a way upstream to check if a floating point type.
-FLOAT_TYPES_ASM = {
-    "bf16",
-    "f16",
-    "f32",
-    "f64",
+# TODO: Use FloatType from upstream when available.
+FLOAT_BITWIDTHS = {
+    "bf16": 16,
+    "f16": 16,
+    "f32": 32,
+    "f64": 64,
     # TODO: FP8 types.
 }
 
@@ -87,7 +87,8 @@ class ModuleBuilder:
 
 class _ScalarBuilder:
     def is_floating_point_type(self, t: IrType) -> bool:
-        return str(t) in FLOAT_TYPES_ASM
+        # TODO: Use FloatType from upstream when available.
+        return str(t) in FLOAT_BITWIDTHS
 
     def is_integer_type(self, t: IrType) -> bool:
         return IntegerType.isinstance(t)
@@ -95,20 +96,45 @@ class _ScalarBuilder:
     def is_index_type(self, t: IrType) -> bool:
         return IndexType.isinstance(t)
 
-    def promote(self, value: Value, to_type: IrType) -> Value:
-        value_type = value.type
+    def get_typeclass(self, t: IrType, index_same_as_integer=False) -> str:
+        # If this is a vector type, get the element type.
+        if isinstance(t, VectorType):
+            t = t.element_type
+        if self.is_floating_point_type(t):
+            return "float"
+        if self.is_integer_type(t):
+            return "integer"
+        if self.is_index_type(t):
+            return "integer" if index_same_as_integer else "index"
+        raise CodegenError(f"Unknown typeclass for type `{t}`")
+
+    def get_float_bitwidth(self, t: IrType) -> int:
+        # If this is a vector type, get the element type.
+        if isinstance(t, VectorType):
+            t = t.element_type
+        return FLOAT_BITWIDTHS[str(t)]
+
+    def to_dtype(self, value: IRProxyValue, dtype: IrType) -> IRProxyValue:
+        value_type = value.ir_value.type
+        # Create a vector type for dtype if value is a vector.
+        to_type = dtype
+        if isinstance(value_type, VectorType):
+            to_type = VectorType.get(value_type.shape, dtype)
+
         # Short-circuit if already the right type.
         if value_type == to_type:
             return value
 
-        attr_name = f"promote_{value_type}_to_{to_type}"
+        value_typeclass = self.get_typeclass(value_type)
+        to_typeclass = self.get_typeclass(dtype)
+        attr_name = f"to_dtype_{value_typeclass}_to_{to_typeclass}"
         try:
             handler = getattr(self, attr_name)
         except AttributeError:
             raise CodegenError(
                 f"No implemented path to implicitly promote scalar `{value_type}` to `{to_type}` (tried '{attr_name}')"
             )
-        return handler(value, to_type)
+        return IRProxyValue(handler(value.ir_value, to_type))
 
     def constant_attr(self, val: int | float, element_type: IrType) -> Attribute:
         if self.is_integer_type(element_type) or self.is_index_type(element_type):
@@ -153,7 +179,7 @@ class _ScalarBuilder:
                 f"Cannot perform binary arithmetic operation '{op}' between {lhs_ir_type} and {rhs_ir_type} due to element type mismatch"
             )
 
-        typeclass = "float" if self.is_floating_point_type(lhs_ir_type) else "integer"
+        typeclass = self.get_typeclass(lhs_ir_type, True)
         attr_name = f"binary_{op}_{typeclass}"
         try:
             handler = getattr(self, attr_name)
@@ -176,9 +202,7 @@ class _ScalarBuilder:
                 f"Cannot perform binary arithmetic operation '{op}' between {lhs_ir.type} and {rhs_ir.type} due to element type mismatch"
             )
 
-        typeclass = (
-            "float" if self.is_floating_point_type(lhs_element_type) else "integer"
-        )
+        typeclass = self.get_typeclass(lhs_element_type, True)
         attr_name = f"binary_{op}_{typeclass}"
         try:
             handler = getattr(self, attr_name)
@@ -190,7 +214,7 @@ class _ScalarBuilder:
 
     def unary_arithmetic(self, op: str, val: IRProxyValue) -> IRProxyValue:
         val_ir_type = val.ir_value.type
-        typeclass = "float" if self.is_floating_point_type(val_ir_type) else "integer"
+        typeclass = self.get_typeclass(val_ir_type, True)
         attr_name = f"unary_{op}_{typeclass}"
         try:
             handler = getattr(self, attr_name)
@@ -203,9 +227,7 @@ class _ScalarBuilder:
     def unary_vector_arithmetic(self, op: str, val: IRProxyValue) -> IRProxyValue:
         val_ir = val.ir_value
         val_element_type = VectorType(val_ir.type).element_type
-        typeclass = (
-            "float" if self.is_floating_point_type(val_element_type) else "integer"
-        )
+        typeclass = self.get_typeclass(val_element_type, True)
         attr_name = f"unary_{op}_{typeclass}"
         try:
             handler = getattr(self, attr_name)
@@ -217,10 +239,33 @@ class _ScalarBuilder:
 
     ### Specializations
 
-    def promote_index_to_f32(self, value: Value, to_type: IrType) -> Value:
-        i32_type = IntegerType.get_signless(32)
-        i32 = arith_d.index_cast(i32_type, value)
-        return arith_d.sitofp(to_type, i32)
+    # Casting
+    def to_dtype_index_to_integer(self, value: Value, to_type: IrType) -> Value:
+        return arith_d.index_cast(to_type, value)
+
+    def to_dtype_index_to_float(self, value: Value, to_type: IrType) -> Value:
+        # Cast index to integer, and then ask for a integer to float cast.
+        # TODO: I don't really know how to query the machine bitwidth here,
+        # so using 64.
+        casted_to_int = arith_d.index_cast(IntegerType.get_signless(64), value)
+        return self.to_dtype(IRProxyValue(casted_to_int), to_type).ir_value
+
+    def to_dtype_integer_to_float(self, value: Value, to_type: IrType) -> Value:
+        # sitofp
+        casted_to_float = arith_d.sitofp(to_type, value)
+        return self.to_dtype(IRProxyValue(casted_to_float), to_type).ir_value
+
+    def to_dtype_float_to_float(self, value: Value, to_type: IrType) -> Value:
+        # Check bitwidth to determine if we need to extend or narrow
+        from_type = value.type
+        from_bitwidth = self.get_float_bitwidth(from_type)
+        to_bitwidth = self.get_float_bitwidth(to_type)
+        if from_bitwidth < to_bitwidth:
+            return arith_d.extf(to_type, value)
+        elif from_bitwidth > to_bitwidth:
+            return arith_d.truncf(to_type, value)
+        else:
+            raise CodegenError(f"NYI: Cast from {from_type} to {to_type}")
 
     # Binary integer/integer arithmetic.
     def binary_add_integer(self, lhs: IRProxyValue, rhs: IRProxyValue) -> IRProxyValue:

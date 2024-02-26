@@ -203,6 +203,14 @@ class CompiledContext(BaseContext):
         )
         return proxy
 
+    def handle_to_dtype(self, op, val, dtype):
+        return self.region_graph.create_proxy(
+            "call_function",
+            op,
+            args=(val, dtype),
+            kwargs={},
+        )
+
     def handle_kernel_buffer_getitem(self, op, kernel_buffer: KernelBuffer, key):
         return self.region_graph.create_proxy(
             "call_function",
@@ -349,7 +357,6 @@ class CompiledContext(BaseContext):
             i for i in range(len(shape)) if i not in broadcast_dimensions
         )
         permutation = permutation + tuple(broadcast_dimensions)
-        print(permutation)
 
         # Transpose
         return self.region_graph.create_proxy(

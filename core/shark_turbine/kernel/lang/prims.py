@@ -21,6 +21,7 @@ __all__ = [
     "broadcast",
     "broadcast_in_dim",
     "transpose",
+    "to_dtype",
 ]
 
 
@@ -31,6 +32,7 @@ def is_debug() -> bool:
 
 # Core language operations
 program_id = ops.thread_program_id
+to_dtype = ops.to_dtype
 
 # Math Operations
 exp2 = ops.exp2

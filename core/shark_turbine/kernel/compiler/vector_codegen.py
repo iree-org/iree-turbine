@@ -358,6 +358,18 @@ def _(emitter: ThreadEmitter, node: fx.Node):
     )
 
 
+@handle_op(tkl.to_dtype)
+def _(emitter: ThreadEmitter, node: fx.Node):
+    try:
+        (val, dtype) = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    ir_type = cast_dtype(emitter, dtype)
+    casted = cast_vector(emitter, val, element_type=ir_type)
+    emitter.bind_node_proxy(node, IRProxyValue(casted))
+
+
 @handle_op(ops.kernel_buffer_getitem)
 def _(emitter: ThreadEmitter, node: fx.Node):
     try:
@@ -828,24 +840,19 @@ def cast_vector(
     emitter: ThreadEmitter, value, *, element_type: Optional[IrType] = None
 ):
     proxy_value = cast_py_value(emitter, value)
-    value = proxy_value.ir_value
 
-    # Promote scalar types correctly first.
-    if element_type and not ShapedType.isinstance(value.type):
+    # Cast scalar types correctly first.
+    if element_type and not ShapedType.isinstance(proxy_value.ir_value.type):
         # Implicit scalar type promotion.
-        value = ScalarBuilder.promote(value, element_type)
+        proxy_value = ScalarBuilder.to_dtype(proxy_value, element_type)
+
+    value = proxy_value.ir_value
 
     # After scalar promotion, promote to vector.
     if VectorType.isinstance(value.type):
         # Already a vector. Coerce or return.
         if element_type is not None:
-            vector_type = VectorType(value.type)
-            if vector_type.element_type == element_type:
-                return value
-            # TODO: Implement vector element type conversion.
-            raise CodegenError(
-                f"Implicit conversion of vector element types not supported (`{vector_type.element_type}` -> `{element_type}`)"
-            )
+            value = ScalarBuilder.to_dtype(proxy_value, element_type).ir_value
         # No target element_type.
         return value
     else:
