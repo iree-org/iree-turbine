@@ -5,17 +5,14 @@ from typing import (
     Callable,
     Type,
     cast,
-    List,
     Dict,
     Tuple,
-    Any,
 )
+
+from ..compiler.ir import Operation
 
 import functools
 import warnings
-import contextlib
-import torch.utils._pytree as pytree
-import random
 
 import torch.fx as fx
 
@@ -32,11 +29,9 @@ from ..lang.grid import Grid
 
 from ..lang.types import (
     Index,
-    Vector,
 )
 
 from .regions import RegionGraph, SubgraphTracer
-
 
 from .. import ops
 from ..ops.base import (
@@ -397,6 +392,9 @@ class Launchable(ABC):
     def eager_execute(self, args, kwargs):
         ...
 
+    def aot_execute(self, args, kwargs):
+        ...
+
     def test_execute(self, args, kwargs):
         ...
 
@@ -449,6 +447,19 @@ class DebugLaunchContext(LaunchContext):
 class TestLaunchContext(LaunchContext):
     def launch(self, launchable: Launchable, args, kwargs):
         return launchable.test_execute(args, kwargs)
+
+
+class AOTLaunchContext(LaunchContext):
+    module: Operation
+
+    def __init__(
+        self, module: Operation, constant_bindings: Dict[IndexSymbol, int] = {}
+    ):
+        self.module = module
+        super().__init__(constant_bindings)
+
+    def launch(self, launchable: Launchable, args, kwargs):
+        return launchable.aot_execute(args, kwargs)
 
 
 ###############################################################################

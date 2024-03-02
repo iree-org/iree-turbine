@@ -1,6 +1,7 @@
 from typing import (
     Type,
     Callable,
+    Optional,
 )
 
 import inspect
@@ -20,6 +21,8 @@ from .._support.tracing import (
     EagerContext,
     Launchable,
     KernelRegionGraph,
+    LaunchContext,
+    AOTLaunchContext,
 )
 
 from .._support.indexing import IndexingContext
@@ -30,6 +33,11 @@ from ..compiler import (
     builder,
     vector_codegen,
     host_codegen,
+)
+
+from ..compiler.ir import (
+    Context,
+    Operation,
 )
 
 __all__ = [
@@ -93,7 +101,13 @@ class LaunchableThread(Launchable):
                 current_thread[-1] = it
                 self._eager_function(*bound.args, **bound.kwargs)
 
-    def test_execute(self, args, kwargs):
+    def _trace_and_get_kernel_signature(
+        self,
+        args,
+        kwargs,
+        context: Optional[Context] = None,
+        module_op: Optional[Operation] = None,
+    ):
         # Trace the function.
         trace = self._trace()
         idxc = IndexingContext.current()
@@ -118,9 +132,9 @@ class LaunchableThread(Launchable):
 
         grid = self.grid_type()
 
-        mb = builder.ModuleBuilder()
-        exe = dispatch_codegen.StreamExecutable(mb)
+        mb = builder.ModuleBuilder(context=context, module_op=module_op)
         entrypoint_name = self._name
+        exe = dispatch_codegen.StreamExecutable(mb, name=entrypoint_name)
         dispatch_entrypoint = exe.define_entrypoint(entrypoint_name, kernel_sig, grid)
         emitter = vector_codegen.ThreadEmitter(dispatch_entrypoint, trace)
         emitter.emit()
@@ -128,9 +142,25 @@ class LaunchableThread(Launchable):
 
         mb.module_op.verify()
 
+        return mb, exe, kernel_sig, entrypoint_name
+
+    def test_execute(self, args, kwargs):
+        mb, exe, kernel_sig, entrypoint_name = self._trace_and_get_kernel_signature(
+            args, kwargs
+        )
         host_codegen.isolated_test_call(mb, exe, kernel_sig, entrypoint_name)
 
         print(mb.module_op.get_asm())
+
+    def aot_execute(self, args, kwargs):
+        launch_context = LaunchContext.current()
+        assert isinstance(launch_context, AOTLaunchContext)
+
+        module = launch_context.module
+
+        mb, exe, kernel_sig, entrypoint_name = self._trace_and_get_kernel_signature(
+            args, kwargs, context=module.context, module_op=module.operation
+        )
 
     def __repr__(self):
         return f"tk.gen.thread @{self._name}[{self.grid_type}]"

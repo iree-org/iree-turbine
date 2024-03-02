@@ -26,6 +26,7 @@ from ..support.ir_imports import (
     PassManager,
     StringAttr,
 )
+from ..transforms.general.custom_op_expansion import ExpandCustomOpsPass
 
 from .support.procedural import (
     GlobalsDef,
@@ -51,13 +52,21 @@ __all__ = [
 
 
 class ImportPhase(enum.IntEnum):
-    # Compiles to valid MLIR that IREE can ingest as an input.
-    IMPORT = 0
+    # Imports to torch dialect IR.
+    TORCH_IR = 0
+
+    # Performs custom op expansion and post processing for known custom ops.
+    CUSTOM_OP_EXPANSION = 1
+
+    # Compiles to valid MLIR that IREE can ingest as an input with the
+    # input-type of torch.
+    IMPORT = CUSTOM_OP_EXPANSION
+
     # Runs the IREE input pipeline to compile to internal form.
-    INPUT = 1
+    IREE_INTERNAL = 2
 
     # The full import pipeline (this is an alias for another enum value).
-    FULL = 1
+    FULL = IREE_INTERNAL
 
     @staticmethod
     def parse(spec: Union[str, None, "ImportPhase"]) -> "ImportPhase":
@@ -259,7 +268,7 @@ class CompiledModuleInstanceInfo:
         # The shadow dict holds instance attributes. We stash them here and the
         # Program instance itself arbitrates access via getattr/setattr.
         self.shadow_dict = dict()
-        self.current_import_phase = ImportPhase.IMPORT
+        self.current_import_phase = ImportPhase.TORCH_IR
 
 
 ################################################################################
@@ -294,6 +303,7 @@ def _uncallable_public_export(*args, **kwargs):
 
 
 _COMPILED_MODULE_API_ATTRIBUTES = [
+    "expand_custom_ops",
     "export_global",
     "get_class_info",
     "get_info",
@@ -398,23 +408,39 @@ class CompiledModule(metaclass=CompiledModuleMeta):
 
     @staticmethod
     def run_import(
-        inst: "CompiledModule", import_to: Union[ImportPhase, str, None] = "full"
+        inst: "CompiledModule", import_to: Union[ImportPhase, str, None] = "import"
     ):
         import_to = ImportPhase.parse(import_to)
         info = CompiledModule.get_info(inst)
-        if info.current_import_phase >= import_to:
-            return
-
-        for phase in [ImportPhase.IMPORT, ImportPhase.INPUT]:
+        for phase in [
+            ImportPhase.TORCH_IR,
+            ImportPhase.CUSTOM_OP_EXPANSION,
+            ImportPhase.IREE_INTERNAL,
+        ]:
+            if phase > import_to:
+                logger.debug("Stopped import at phase %s", info.current_import_phase)
+                break
             if info.current_import_phase >= phase:
                 continue
             logger.debug("Run import phase %s", phase)
-            if phase == ImportPhase.IMPORT:
+            if phase == ImportPhase.TORCH_IR:
+                # Starting phase. Do nothing.
                 ...
-            if phase == ImportPhase.INPUT:
+            elif phase == ImportPhase.CUSTOM_OP_EXPANSION:
+                CompiledModule.expand_custom_ops(inst)
+            elif phase == ImportPhase.IREE_INTERNAL:
                 CompiledModule.run_pass_pipeline(inst, "builtin.module(torch-to-iree)")
             else:
                 assert False, f"Phase {phase} not handled in switch"
+            info.current_import_phase = phase
+
+    @staticmethod
+    def expand_custom_ops(inst: "CompiledModule"):
+        """Performs custom torch.operator expansion for known custom ops."""
+        logger.debug("Expand known torch.operator custom ops")
+        module_op = CompiledModule.get_mlir_module(inst)
+        p = ExpandCustomOpsPass(module_op)
+        p.run()
 
     @staticmethod
     def run_pass_pipeline(
@@ -483,7 +509,7 @@ class CompiledModule(metaclass=CompiledModuleMeta):
         *,
         context: Optional[Context] = None,
         module_op: Optional[Operation] = None,
-        import_to: Union[ImportPhase, None, str] = "full",
+        import_to: Union[ImportPhase, None, str] = "import",
     ):
         import_to = ImportPhase.parse(import_to)
         self = super().__new__(cls)

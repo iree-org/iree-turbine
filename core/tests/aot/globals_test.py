@@ -215,7 +215,7 @@ class GlobalsTest(unittest.TestCase):
             def read(self):
                 return self.state_index
 
-        inst = DerivedState(context=Context())
+        inst = DerivedState(context=Context(), import_to="full")
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertIn("@_state_index.global {noinline} = 0 : index", module_str)

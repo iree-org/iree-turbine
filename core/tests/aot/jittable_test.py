@@ -35,7 +35,7 @@ class JittableTests(unittest.TestCase):
         self.assertIn(
             "func private @compute() -> !torch.vtensor<[2,2],f32>", module_str
         )
-        CompiledModule.run_import(inst)
+        CompiledModule.run_import(inst, import_to="full")
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertNotIn("!torch.vtensor", module_str)

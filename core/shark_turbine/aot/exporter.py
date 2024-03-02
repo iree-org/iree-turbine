@@ -13,7 +13,6 @@ import platform
 import torch
 
 from iree.compiler.api import (
-    Invocation,
     Session,
     Source,
     Output,
@@ -29,6 +28,7 @@ from .compiled_module import (
     CompiledModule,
     CompiledModuleMeta,
     ExportProcDef,
+    ImportPhase,
 )
 from .support.procedural import (
     AbstractTypedef,
@@ -81,8 +81,12 @@ class ExportOutput:
             else:
                 self.mlir_module.print(file=f, binary=True)
 
-    def _run_import(self):
-        CompiledModule.run_import(self.compiled_module)
+    def import_to(self, import_to: Union[ImportPhase, str]):
+        """Compiles the modules to a mnemonic import phase.
+
+        This is a no-op if already compiled to this phase.
+        """
+        CompiledModule.run_import(self.compiled_module, import_to)
 
     def compile(
         self,

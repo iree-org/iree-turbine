@@ -15,6 +15,7 @@ import functools
 import logging
 import re
 import textwrap
+import threading
 
 import torch
 from torch import Tensor
@@ -57,6 +58,8 @@ logger = logging.getLogger("turbine.runtime.op_reg")
 # Op library management
 ###############################################################################
 
+_CONFIG_LOCK = threading.Lock()
+
 
 def def_library(ns) -> torch.library.Library:
     """Creates a new 'DEF' library which contains custom ops.
@@ -80,6 +83,14 @@ def default_dispatch_keys() -> list[str]:
 # We also allow extending existing libraries outside of this, but that is
 # the non default case.
 TURBINE_LIBRARY = def_library("turbine")
+
+# Set of all programmatically registered op names in libraries we manage.
+# This is used to detect name collisions eagerly and providing name uniqueing.
+# Keys are (Library.ns, name)
+DEFINED_OP_NAMES: set[tuple[str, str]] = set()
+
+# Mapping of (Library.ns, name_spec) to an integer counter used to unique it.
+UNIQUE_OP_NAME_COUNTER: dict[tuple[str, str], int] = {}
 
 
 class CustomOp(ABC):
@@ -133,9 +144,7 @@ class CustomOp(ABC):
         register_meta: bool,
         register_impl: bool,
     ):
-        fq_schema = self.signature
-        name = _extract_name_from_signature(fq_schema)
-        library.define(fq_schema)
+        self.name = name = _define_signature_in_library(library, self.signature)
         self.library = library
         self.cache_key_base = f"{library.ns}.{library.kind}::{name}"
         self.op = _get_library_op(library, name)
@@ -166,6 +175,10 @@ class CustomOp(ABC):
         ```
         my_op(Tensor t) -> Tensor
         ```
+
+        The signature can have some special tokens in the name part:
+
+        * "@UNIQUE@": Generates a name-specific numeric value and replaces it.
         """
         ...
 
@@ -771,11 +784,44 @@ def _create_impl_trampoline(op: CustomOp):
     return handler
 
 
-_SIGNATURE_NAME_PATTERN = re.compile(r"^([^(]+)")
+def _define_signature_in_library(lib: torch.library.Library, signature: str) -> str:
+    """Helper to define a schema in the library.
+
+    This handles the interlocked process of uniqueing, reserving the name,
+    and calling `lib.define` on the resulting schema.
+    """
+    ns = lib.ns
+    with _CONFIG_LOCK:
+        name, call_args = _split_signature(signature)
+
+        # Unique the name.
+        if "@UNIQUE@" in name:
+            # Uniqueify.
+            unique_key = (ns, name)
+            counter = UNIQUE_OP_NAME_COUNTER.get(unique_key, 0)
+            counter += 1
+            name = name.replace("@UNIQUE@", str(counter))
+            UNIQUE_OP_NAME_COUNTER[unique_key] = counter
+
+        # Define it, recording in the defined op names.
+        key = (lib.ns, name)
+        schema = f"{name}{call_args}"
+        if key in DEFINED_OP_NAMES:
+            raise RuntimeError(
+                f"Duplicate turbine custom op registration: library={lib.ns}, "
+                f"name={name}"
+            )
+        lib.define(schema)
+        DEFINED_OP_NAMES.add(key)
+    return name
 
 
-def _extract_name_from_signature(sig: str) -> str:
+_SIGNATURE_NAME_PATTERN = re.compile(r"^([^(]+)(\(.+)$")
+
+
+def _split_signature(sig: str) -> tuple[str, str]:
+    """Splits a signature into name and call-args parts."""
     m = re.match(_SIGNATURE_NAME_PATTERN, sig)
     if not m:
-        raise ValueError(f"Expected signature of form `name() -> (). Got: {sig}")
-    return m.group(1)
+        raise ValueError(f"Expected signature of form `name(...) -> type. Got: {sig}")
+    return m.group(1), m.group(2)

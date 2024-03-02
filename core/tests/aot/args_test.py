@@ -20,7 +20,7 @@ class ArgsTest(unittest.TestCase):
             def foobar(self, a=AbstractTensor(3, 2), b=AbstractTensor(1, 1)):
                 return b, a
 
-        inst = ProcArgsModule(context=Context())
+        inst = ProcArgsModule(context=Context(), import_to="full")
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertIn(
@@ -37,7 +37,7 @@ class ArgsTest(unittest.TestCase):
             def compute(a, b):
                 return a + b
 
-        inst = testProcToJitArgs(context=Context())
+        inst = testProcToJitArgs(context=Context(), import_to="full")
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertIn(
@@ -56,7 +56,7 @@ class ArgsTest(unittest.TestCase):
             def compute(a, b):
                 return a + b
 
-        inst = ProcArgsModule(context=Context())
+        inst = ProcArgsModule(context=Context(), import_to="full")
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertEqual(
