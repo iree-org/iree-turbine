@@ -8,3 +8,4 @@ from .compiled_module import CompiledModule
 from .exporter import export
 
 from .builtins import *
+from .fx_programs import FxPrograms, FxProgramsBuilder
