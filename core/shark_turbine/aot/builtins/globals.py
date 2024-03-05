@@ -22,7 +22,7 @@ from ..support.ir_utils import (
     GlobalAttributes,
 )
 
-from ..support.utils import (
+from torch.utils._pytree import (
     TreeSpec,
     tree_flatten,
     tree_map,
@@ -48,7 +48,7 @@ class export_global(GlobalsDef, Abstractifiable):
     ):
         if attrs is None:
             attrs = GlobalAttributes(
-                mutable=mutable,
+                mutable=bool(mutable),
                 external=external,
                 external_scope=external_scope,
                 name_mapper=name_mapper,
@@ -85,7 +85,7 @@ class export_global_tree(GlobalsDef, Abstractifiable):
     ):
         if attrs is None:
             attrs = GlobalAttributes(
-                mutable=mutable,
+                mutable=bool(mutable),
                 external=external,
                 external_scope=external_scope,
                 name_mapper=name_mapper,
@@ -135,7 +135,7 @@ class export_parameters(GlobalsDef, TreeAbstractifiable):
     ):
         if attrs is None:
             attrs = GlobalAttributes(
-                mutable=mutable,
+                mutable=bool(mutable),
                 external=external,
                 external_scope=external_scope,
                 name_mapper=name_mapper,

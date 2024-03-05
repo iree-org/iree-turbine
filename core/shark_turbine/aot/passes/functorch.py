@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Callable
+from typing import Any, Callable
 
 import torch
 from torch.fx import (
@@ -40,8 +40,8 @@ from torch.utils import _pytree as pytree
 # since that does not result in load bearing information loss. Note that
 # ONNX applies this post export, which suffers from the loss of output
 # destructuring rewrites that torch.export does.
-def functorch_functionalize(gm: GraphModule, *args) -> GraphModule:
-    functionalized_callable = _functionalize_callabale(gm)
+def functorch_functionalize(gm_callable: Any, *args) -> GraphModule:
+    functionalized_callable = _functionalize_callabale(gm_callable)
     # TODO: There is more of a dance needed if the user has entered with a fake_mode.
     with proxy_tensor.maybe_disable_fake_tensor_mode():
         new_gm = proxy_tensor.make_fx(

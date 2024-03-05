@@ -22,7 +22,7 @@ if torch.__version__ < "2.2.0":
         is_causal: bool = False,
         return_debug_mask: bool = False,
         *,
-        scale: float = None,
+        scale: Optional[float] = None,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, int, int, Tensor, Tensor, Tensor]:
         dtype = query.dtype
         batchSize, num_head, qSize, headSize = (

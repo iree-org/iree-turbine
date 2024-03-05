@@ -42,7 +42,7 @@ class NativeTypeConverter:
     def __init__(self, context: Context):
         self._context = context
         # Cache per instance.
-        self.torch_type_to_native = functools.lru_cache(maxsize=None)(
+        self.torch_type_to_native = functools.lru_cache(maxsize=None)(  # type: ignore[method-assign]
             self.torch_type_to_native
         )
 

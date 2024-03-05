@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Optional, Sequence, Union
+from typing import Any, Optional, Sequence, Union
 import functools
 import io
 from pathlib import Path
@@ -116,8 +116,8 @@ class ExportOutput:
             save_to = Path(save_to)
             output = Output.open_file(str(save_to))
         else:
-            assert isinstance(output, Output)
             output = save_to
+            assert isinstance(output, Output)
 
         target_backends = (
             target_backends
@@ -153,7 +153,7 @@ class ExportOutput:
 # Decorator which explicitly exports a function.
 # TODO: Make this a public API on CompiledModule.
 # See https://github.com/nod-ai/SHARK-Turbine/issues/126
-def export_proc(f=None, *, signature: Sequence[AbstractTypedef]) -> ExportProcDef:
+def export_proc(f=None, *, signature: Sequence[AbstractTypedef]) -> Any:
     if f is None:
         return functools.partial(export_proc, signature=signature)
     return ExportProcDef(f.__name__, f, signature=signature)
@@ -177,19 +177,22 @@ def export(mdl: ModuleLike, *example_args: torch.Tensor) -> ExportOutput:
       An ExportOutput object that wraps the compilation and provides
       easy access.
     """
+    TransformedModule: Any
     if isinstance(mdl, torch.nn.Module):
+        nn_module = mdl
         signature = [abstractify(t) for t in example_args]
 
-        class Exported(CompiledModule, export_name=mdl._get_name()):
-            params = export_parameters(mdl)
+        class Exported(CompiledModule, export_name=nn_module._get_name()):
+            params = export_parameters(nn_module)
 
             @export_proc(signature=signature)
             def main(self, *args):
-                return jittable(mdl.forward)(*args)
+                return jittable(nn_module.forward)(*args)
 
+        TransformedModule = Exported
     else:
         assert isinstance(mdl, CompiledModuleMeta)
-        Exported = mdl
+        TransformedModule = mdl
 
     session = Session()
     # There are some bugs with respect to Session/context interop that we
@@ -201,5 +204,5 @@ def export(mdl: ModuleLike, *example_args: torch.Tensor) -> ExportOutput:
     else:
         context = Context()
 
-    cm = Exported(context=context, import_to="import")
+    cm = TransformedModule(context=context, import_to="import")
     return ExportOutput(session, cm, importer_uses_session=importer_uses_session)

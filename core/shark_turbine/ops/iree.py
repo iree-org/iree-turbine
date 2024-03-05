@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 """Custom ops for built-in IREE functionality."""
+from typing import cast
 
 from ..support.ir_imports import (
     RankedTensorType,
@@ -18,6 +19,7 @@ from ..runtime.op_reg import (
     CustomOp,
     KernelBuilder,
     KernelSelection,
+    AttrArg,
     def_library,
 )
 
@@ -55,7 +57,8 @@ class trace_tensor(CustomOp):
         ksel.arg_tensor(1)
 
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
-        _emit_tensor_trace(kb, ksel.arg_descs[0].v, [kb.arg_bindings[1]])
+        key = cast(AttrArg, ksel.arg_descs[0])
+        _emit_tensor_trace(kb, cast(str, key.v), [kb.arg_bindings[1]])
         kb.yield_results()
 
 
@@ -68,7 +71,8 @@ class trace_tensors(CustomOp):
         ksel.arg_tensor_list(1)
 
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
+        key = cast(AttrArg, ksel.arg_descs[0])
         ts = kb.arg_bindings[1]
         if len(ts) >= 1:
-            _emit_tensor_trace(kb, ksel.arg_descs[0].v, ts)
+            _emit_tensor_trace(kb, cast(str, key.v), ts)
         kb.yield_results()

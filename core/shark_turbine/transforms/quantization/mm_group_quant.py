@@ -40,7 +40,7 @@ class TransposedMMResult(OpMatchResult):
         return f"TransposedMM(weight={self.param_name}, m={self.m}, n={self.n}, k={self.k}, element_type={self.element_type})"
 
 
-class TransposedMMMatcher(NamedOpMatcher):
+class TransposedMMMatcher(NamedOpMatcher[TransposedMMResult]):
     def __init__(self, globals: GlobalsDict, builder: Builder):
         super().__init__("torch.aten.mm")
         self.globals = globals
@@ -146,6 +146,9 @@ class MMGroupQuantRewriterPass(Pass):
 
     def rewrite(self, mr: TransposedMMResult):
         none_to_q = lambda x: "?" if x is None else x
+        static_n = mr.n
+        if static_n is None:
+            return
         # TODO (ian): make generalizable and not specific for brevitas
         if "lm_head.weight" not in mr.param_name:
             inline_module_asm = GROUP_MATMUL_TEMPLATE.format(
@@ -155,8 +158,8 @@ class MMGroupQuantRewriterPass(Pass):
                 m=none_to_q(mr.m),
                 n=none_to_q(mr.n),
                 k=none_to_q(mr.k),
-                n_div=mr.n // 2,
-                group0=mr.n // self.group_size,
+                n_div=static_n // 2,
+                group0=static_n // self.group_size,
                 group1=self.group_size,
                 element_type=mr.element_type,
             )

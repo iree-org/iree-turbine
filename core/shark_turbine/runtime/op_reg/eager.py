@@ -30,6 +30,8 @@ from ..device import (
 )
 
 from .base import (
+    AttrArg,
+    IntArg,
     KernelSelection,
 )
 
@@ -50,12 +52,14 @@ def eager_dispatch(ksel: KernelSelection):
     device: Optional[Device] = None
     torch_device: Optional[torch.device] = None
     for arg_desc in ksel.arg_descs:
+        assert arg_desc is not None, "NYI: None arguments"
         if not arg_desc.is_list:
             if arg_desc.ir_arity == 1:
                 # One arg has maybe_tensor_value as a single element (common case).
                 tensor_arg = arg_desc.maybe_tensor_value
                 if tensor_arg is None:
                     continue
+                assert isinstance(tensor_arg, torch.Tensor)
                 torch_device = tensor_arg.device
                 device = lookup_device_from_torch(torch_device)
                 if device is not None:
@@ -66,6 +70,7 @@ def eager_dispatch(ksel: KernelSelection):
                 continue
         else:
             # List. maybe_tensor_value is a list. Uncommon case.
+            assert isinstance(arg_desc.maybe_tensor_value, list)
             for tensor_arg in arg_desc.maybe_tensor_value:
                 if tensor_arg is None:
                     continue
@@ -79,6 +84,9 @@ def eager_dispatch(ksel: KernelSelection):
         logger.debug("Fallback to CPU device due to no supported device in arguments")
         torch_device = torch.device("cpu")
         device = lookup_device_from_torch(torch_device)
+        assert (
+            device is not None
+        ), "Could not resolve lookup_device_from_torch for argument"
 
     # Compile.
     # TODO: We can do compilation asynchronously with the device movement
@@ -111,6 +119,7 @@ def eager_dispatch(ksel: KernelSelection):
         arg_list.push_ref(device.import_torch_tensor(tensor_arg))
 
     for arg_desc in ksel.arg_descs:
+        assert arg_desc is not None, "NYI: None arguments"
         arity = arg_desc.ir_arity
         if not arg_desc.is_list:
             # Non-list.
@@ -119,6 +128,7 @@ def eager_dispatch(ksel: KernelSelection):
                 if tensor_arg is not None:
                     push_tensor(tensor_arg)
                 else:
+                    assert isinstance(arg_desc, (IntArg, AttrArg))
                     push_scalar(arg_desc.v)
             else:
                 continue
@@ -130,7 +140,10 @@ def eager_dispatch(ksel: KernelSelection):
                     push_tensor(tensor_arg[i])
             else:
                 for i in range(arity):
-                    push_scalar(arg_desc.v[i])
+                    assert isinstance(arg_desc, (IntArg, AttrArg))
+                    list_arg = arg_desc.v
+                    assert isinstance(list_arg, list)
+                    push_scalar(list_arg[i])
 
     if config.async_invocations:
         raise NotImplementedError("Async execution not yet implemented")
@@ -146,11 +159,13 @@ def eager_dispatch(ksel: KernelSelection):
     results = []
     for i, result_desc in enumerate(ksel.result_descs):
         arity = result_desc.ir_arity
-        assert arity == 1, "NYI: Optional and result lists"
         meta_tensor_value = result_desc.maybe_tensor_value
         if meta_tensor_value is None:
             # Scalar return.
             raise NotImplementedError("CustomOp scalar return")
+        assert isinstance(
+            meta_tensor_value, torch.Tensor
+        ), "NYI: Optional and result lists"
 
         # Tensor return. The meta tensor value already has the correct torch
         # dtype and shape, so we just need to export and return it for the

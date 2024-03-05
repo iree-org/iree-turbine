@@ -115,7 +115,7 @@ def cast_scalar_to_element_type(scalar: Value, element_type: IrType) -> Value:
     if scalar_type == IndexType.get() and IntegerType.isinstance(element_type):
         return arith_d.IndexCastUIOp(element_type, scalar).result
     raise ValueError(
-        f"Provided splat value ({type(value)}) does not match dtype {dtype} (and cannot be cast)"
+        f"Provided splat value ({scalar_type}) does not match dtype {element_type} (and cannot be cast)"
     )
 
 
@@ -345,7 +345,7 @@ class IREEEmitter:
         dynamic_dims = []
         for t in ts:
             dynamic_dims.extend(t.get_only_dynamic_dim_values())
-        ts = [cast_tensor_value(t).ir_value for t in ts]
+        ts = tuple(cast_tensor_value(t).ir_value for t in ts)
         flow_d.TensorTraceOp(StringAttr.get(key), ts, dynamic_dims)
 
 

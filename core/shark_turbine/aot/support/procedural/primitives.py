@@ -9,6 +9,7 @@
 # operate on instances of these.
 
 from typing import (
+    cast,
     Dict,
     List,
     Optional,
@@ -36,9 +37,6 @@ from ..ir_utils import (
     build_tensor_dim_value,
     _is_float_type,
     _is_integer_like_type,
-)
-
-from ..utils import (
     Empty,
     EmptyType,
 )
@@ -124,16 +122,16 @@ class IrImmediateScalar(IrScalar):
     """Represents an IR scalar value."""
 
     __slots__ = [
-        "ir_value",
+        "_ir_value",
     ]
 
     def __init__(self, ir_value: Value):
         super().__init__(ir_value.type)
         assert isinstance(ir_value, Value)
-        self.ir_value = ir_value
+        self._ir_value = ir_value
 
     def resolve_ir_values(self, proc_trace: IrTrace) -> Sequence[Value]:
-        return (self.ir_value,)
+        return (self._ir_value,)
 
 
 class IrTensor(Intrinsic):
@@ -179,8 +177,8 @@ class IrTensor(Intrinsic):
 
     def dynamic_dim(self, i: int) -> Constraint:
         """Access the dynamic_dim constraint for the i'th dimension."""
-        self._populate_meta_tensor()
-        c = self._meta_tensor_constraints[i]
+        mt, constraints = self._get_meta_tensor_constraints()
+        c = constraints[i]
         if c is None:
             raise TypeError(
                 f"Requested dynamic_dim constraint for dimension {i} of {self.ir_type} which is not dynamic"
@@ -280,9 +278,9 @@ class IrTensor(Intrinsic):
     def __torch_function__(cls, func, types, args=(), kwargs=None):
         return NotImplemented
 
-    def _populate_meta_tensor(self):
-        if self._meta_tensor is not None:
-            return
+    def _get_meta_tensor_constraints(self) -> tuple[torch.Tensor, list[Constraint]]:
+        if self._meta_tensor is not None and self._meta_tensor_constraints is not None:
+            return self._meta_tensor, self._meta_tensor_constraints
 
         ir_tensor_type = self.ir_type
         shape = ir_tensor_type.shape
@@ -301,31 +299,30 @@ class IrTensor(Intrinsic):
         mt = self._meta_tensor = torch.empty(extents, dtype=self.dtype)
         # Generate constraints that are aligned with any dynamic dimensions or None
         # if static.
-        self._meta_tensor_constraints = [
+        self._meta_tensor_constraints = constraints = [
             dynamic_dim(mt, i) if d < 0 else None for i, d in enumerate(shape)
         ]
+        return mt, constraints
 
     def _to_meta_tensor(self) -> Tuple[torch.Tensor, List[Constraint]]:
         """Converts to a fake Tensor that dynamo can handle."""
-        self._populate_meta_tensor()
-        return self._meta_tensor, [
-            c for c in self._meta_tensor_constraints if c is not None
-        ]
+        mt, constraints = self._get_meta_tensor_constraints()
+        return mt, [c for c in constraints if c is not None]
 
 
 class IrImmediateTensor(IrTensor):
     """Represents a Value in the IR under construction during procedural tracing."""
 
     __slots__ = [
-        "ir_value",
+        "_ir_value",
     ]
 
     def __init__(self, ir_value: Value, dtype: torch.dtype):
         super().__init__(ir_value.type, dtype)
-        self.ir_value = ir_value
+        self._ir_value = ir_value
 
     def __repr__(self):
         return f"IrValueTensor(@{self.ir_value})"
 
     def resolve_ir_values(self, proc_trace: IrTrace) -> Sequence[Value]:
-        return (self.ir_value,)
+        return (self._ir_value,)

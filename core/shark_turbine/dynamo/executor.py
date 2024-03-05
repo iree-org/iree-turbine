@@ -119,7 +119,7 @@ class SpecializedExecutable:
             device_buffer_view = HalBufferView.__iree_vm_cast__(ret_list.get_as_ref(i))
             device_array = DeviceArray(device, device_buffer_view)
             host_array = device_array.to_host()
-            user_returns[i] = torch_from_numpy(host_array)
+            user_returns[i] = torch_from_numpy(host_array)  # type: ignore
 
         return user_returns
 
@@ -213,7 +213,7 @@ class EagerSpecializedExecutable:
             dtype = _element_type_to_dtype(device_buffer_view.element_type)
             size = torch.Size(device_buffer_view.shape)
             device_buffer = device_buffer_view.get_buffer()
-            user_returns[i] = EagerExecResult(device_buffer, size, dtype, signal)
+            user_returns[i] = EagerExecResult(device_buffer, size, dtype, signal)  # type: ignore
         return user_returns
 
     def _initialize_fences(self, device: Device, inputs: list, arg_list: VmVariantList):

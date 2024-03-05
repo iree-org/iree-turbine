@@ -14,8 +14,10 @@ from typing import (
 )
 
 from contextlib import contextmanager
+import threading
 
 import torch
+from torch.utils._pytree import tree_map
 
 from ....support.ir_imports import (
     F32Type,
@@ -34,12 +36,8 @@ from ..ir_utils import (
     ModuleBuilder,
 )
 
-from ..utils import (
-    thread_state,
-    tree_map,
-)
-
 ShapedTypeDynamicSizeSentinel = ShapedType.get_dynamic_size()
+_thread_state = threading.local()
 
 ###############################################################################
 # Tracing intrinsics
@@ -71,9 +69,9 @@ class IrTrace(FunctionBuilder):
 
 def _trace_scopes() -> List[IrTrace]:
     try:
-        trace_scopes = thread_state.trace_scopes
+        trace_scopes = _thread_state.trace_scopes
     except AttributeError:
-        trace_scopes = thread_state.trace_scopes = []
+        trace_scopes = _thread_state.trace_scopes = []
     return trace_scopes
 
 

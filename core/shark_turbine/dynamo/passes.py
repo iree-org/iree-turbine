@@ -3,7 +3,7 @@ from torch.fx.experimental.proxy_tensor import make_fx
 from torch._decomp import get_decompositions
 from shark_turbine.dynamo import utils
 from torch.func import functionalize
-from typing import List
+from typing import List, Optional
 
 # default decompositions pulled from SHARK / torch._decomp
 DEFAULT_DECOMPOSITIONS = [
@@ -57,7 +57,7 @@ DEFAULT_DECOMPOSITIONS = [
 def apply_decompositions(
     gm: torch.fx.GraphModule,
     example_inputs,
-    decompose_ops: List[torch._ops.OpOverload] = None,
+    decompose_ops: Optional[List[torch._ops.OpOverload]] = None,
 ):
     if decompose_ops is None:
         return gm

@@ -217,6 +217,7 @@ class Device:
         s = self._s
         return create_hal_module(s.instance, s.device)
 
+    @staticmethod
     def current() -> "Device":
         try:
             return _CURRENT_THREAD.stack[-1]
@@ -229,6 +230,7 @@ class Device:
             _CURRENT_THREAD.stack.append(self)
         except AttributeError:
             _CURRENT_THREAD.stack = [self]
+        return self
 
     def clear(self):
         """Clears the current device without a context manager."""

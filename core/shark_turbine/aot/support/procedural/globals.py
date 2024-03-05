@@ -19,6 +19,11 @@ from typing import (
 
 import torch
 
+from torch.utils._pytree import (
+    TreeSpec,
+    tree_unflatten,
+)
+
 from ....support.ir_imports import (
     IrType,
     Operation,
@@ -26,15 +31,11 @@ from ....support.ir_imports import (
     util_d,
 )
 
+from ....support.logging import aot_logger as logger
+
 from ..ir_utils import (
     GlobalAttributes,
     ModuleBuilder,
-)
-
-from ..utils import (
-    TreeSpec,
-    logger,
-    tree_unflatten,
 )
 
 from .base import (
@@ -194,7 +195,10 @@ class GlobalsDef:
 class MaterializedGlobal:
     """Tags an Ir* that is duck-typed as a global."""
 
-    ...
+    ir_type: IrType
+    symbol_name: str
+    global_op: Operation
+    global_type: IrType
 
 
 class IrGlobalScalar(IrScalar, MaterializedGlobal):

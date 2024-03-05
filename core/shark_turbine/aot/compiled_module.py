@@ -5,7 +5,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Callable, Dict, Generator, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
 import enum
 import inspect
@@ -26,6 +26,7 @@ from ..support.ir_imports import (
     PassManager,
     StringAttr,
 )
+from ..support.logging import aot_logger as logger
 from ..transforms.general.custom_op_expansion import ExpandCustomOpsPass
 
 from .support.procedural import (
@@ -38,9 +39,6 @@ from .support.ir_utils import (
     ModuleBuilder,
 )
 
-from .support.utils import (
-    logger,
-)
 
 __all__ = [
     "CompiledModule",
@@ -155,21 +153,21 @@ class CompiledModuleClassInfo:
         return filter(
             lambda kv_tuple: isinstance(kv_tuple[1], ExportProcDef),
             self.all_exports.items(),
-        )
+        )  # type: ignore
 
     @property
     def py_only_defs(self) -> Generator[Tuple[str, PyOnlyDef], None, None]:
         return filter(
             lambda kv_tuple: isinstance(kv_tuple[1], PyOnlyDef),
             self.all_exports.items(),
-        )
+        )  # type: ignore
 
     @property
     def globals_defs(self) -> Generator[Tuple[str, GlobalsDef], None, None]:
         return filter(
             lambda kv_tuple: isinstance(kv_tuple[1], GlobalsDef),
             self.all_exports.items(),
-        )
+        )  # type: ignore
 
     def def_attribute(self, key, value):
         # Some decorators, the only thing we do is convert them to PyOnlyDef.
@@ -209,11 +207,11 @@ class CompiledModuleClassInfo:
         file_line_loc = None
         try:
             sourcefile = inspect.getsourcefile(f)
-            _, linenums = sourcelines = inspect.getsourcelines(f)
-            if sourcefile and linenums:
-                file_line_loc = [sourcefile, linenums[0]]
-        except TypeError:
-            pass
+            _, linenum = sourcelines = inspect.getsourcelines(f)
+        except OSError:
+            ...
+        else:
+            file_line_loc = (sourcefile or "<unnamed>", linenum)
 
         sig = inspect.signature(f)
         if len(sig.parameters) < 1:
@@ -267,7 +265,7 @@ class CompiledModuleInstanceInfo:
         self.module_builder = module_builder
         # The shadow dict holds instance attributes. We stash them here and the
         # Program instance itself arbitrates access via getattr/setattr.
-        self.shadow_dict = dict()
+        self.shadow_dict: dict[str, Any] = dict()
         self.current_import_phase = ImportPhase.TORCH_IR
 
 
@@ -275,11 +273,10 @@ class CompiledModuleInstanceInfo:
 # Live reference accounting
 ################################################################################
 
-_all_compiled_module_class_infos: Dict[
+_all_compiled_module_class_infos: weakref.WeakKeyDictionary[
     "CompiledModuleMeta", CompiledModuleClassInfo
 ] = weakref.WeakKeyDictionary()
-
-_all_compiled_module_instance_infos: Dict[
+_all_compiled_module_instance_infos: weakref.WeakKeyDictionary[
     "CompiledModule", CompiledModuleInstanceInfo
 ] = weakref.WeakKeyDictionary()
 
@@ -292,7 +289,7 @@ _all_compiled_module_instance_infos: Dict[
 _metaclass_setup_complete = False
 
 
-@property
+@property  # type: ignore
 def _blackhole_instance_attribute(self):
     # We're not here.
     raise AttributeError

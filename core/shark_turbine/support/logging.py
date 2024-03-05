@@ -6,4 +6,5 @@
 
 import logging
 
+aot_logger = logging.getLogger("shark_turbine.aot")
 runtime_logger = logging.getLogger("shark_turbine.runtime")

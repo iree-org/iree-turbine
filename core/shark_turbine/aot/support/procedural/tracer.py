@@ -14,6 +14,12 @@ from typing import (
     Sequence,
 )
 
+from torch.utils._pytree import (
+    tree_flatten,
+    tree_unflatten,
+    treespec_dumps,
+)
+
 from ....support.ir_imports import (
     Location,
     StringAttr,
@@ -21,15 +27,10 @@ from ....support.ir_imports import (
     func_d,
 )
 
+from ....support.logging import aot_logger as logger
+
 from ..ir_utils import (
     ModuleBuilder,
-)
-
-from ..utils import (
-    logger,
-    tree_flatten,
-    tree_unflatten,
-    treespec_dumps,
 )
 
 from .base import (

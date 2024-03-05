@@ -1612,7 +1612,7 @@ class RefMapping:
     def __init__(self, referrent: Any):
         if referrent is not Empty:
             self._referrent = weakref.ref(referrent)
-        self.value = Empty
+        self.value: Any = Empty
 
     @property
     def is_empty(self):

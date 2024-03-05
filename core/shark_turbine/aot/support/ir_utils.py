@@ -15,10 +15,9 @@ import torch
 
 from ...importers.fx_importer import (
     ContextCache,
-)
-
-from ...importers.utils import (
-    RefTracker as FxRefTracker,
+    Empty,
+    EmptyType,
+    RefTracker,
 )
 
 from ...dynamo.type_conversion import (
@@ -58,10 +57,7 @@ from ...support.conversions import (
     TORCH_DTYPE_TO_IREE_TYPE,
 )
 
-from .utils import (
-    RefTracker,
-    logger,
-)
+from ...support.logging import aot_logger as logger
 
 ###############################################################################
 # Configuration
@@ -150,7 +146,7 @@ class ModuleBuilder:
         # Usually the FxImporter makes a new ref tracker for each invocation,
         # but we want to preserve it across individual JIT evaluations so
         # as to better intern tensors to attributes.
-        self.fx_py_attr_tracker = FxRefTracker()
+        self.fx_py_attr_tracker = RefTracker()
         self.native_type_converter = NativeTypeConverter(self.context)
 
     def handle_mlir_error(self, op: Operation, e: MLIRError, message: str):

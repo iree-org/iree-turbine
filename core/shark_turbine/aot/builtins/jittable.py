@@ -21,6 +21,10 @@ from torch.fx import (
     GraphModule,
 )
 from torch.fx.passes.shape_prop import TensorMetadata
+from torch.utils._pytree import (
+    tree_flatten,
+    tree_unflatten,
+)
 
 # TODO: Switch to upstream fx_importer vs local fork when ready.
 # from iree.compiler.extras.fx_importer import (
@@ -51,14 +55,10 @@ from ...support.ir_imports import (
     util_d,
 )
 
+from ...support.logging import aot_logger as logger
+
 from ..passes import (
     functorch_functionalize,
-)
-
-from ..support.utils import (
-    logger,
-    tree_flatten,
-    tree_unflatten,
 )
 
 from ..support.ir_utils import (
@@ -153,10 +153,8 @@ class jittable(CallableIntrinsic):
         self,
         wrapped_f,
         *,
-        decompose_ops: Optional[List[torch._ops.OpOverload]] = None,
-        decomposition_table: Optional[
-            Dict[torch._ops.OpOverload, Callable[..., Any]]
-        ] = None,
+        decompose_ops: Optional[List[Any]] = None,
+        decomposition_table: Optional[Dict[Any, Callable[..., Any]]] = None,
         constraints: Optional[List[Constraint]] = None,
         function_name: Optional[str] = None,
         passes: Sequence[str] = DEFAULT_PASSES,
@@ -311,6 +309,7 @@ class jittable(CallableIntrinsic):
         assert len(flat_ir_results) == len(result_tensor_infos)
         flat_py_results = []
         for ir_result, result_tensor_info in zip(flat_ir_results, result_tensor_infos):
+            assert result_tensor_info is not None
             (dtype,) = result_tensor_info
             native_ir_result = type_converter.materialize_torch_to_native(ir_result)
             if dtype is not None:
@@ -478,5 +477,5 @@ def _extract_graph_output_metadata(
                 dtype = tensor_meta.dtype
             elif fake_val is not None:
                 dtype = fake_val.dtype
-            output_metadata.append((dtype,))
+            output_metadata.append((dtype,) if dtype is not None else None)
     return out_spec, output_metadata

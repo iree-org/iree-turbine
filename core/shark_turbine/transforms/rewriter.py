@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Dict, List, Optional, Set, Union, Type, cast
+from typing import Dict, Generic, List, Optional, Set, Union, Type, TypeVar, cast
 
 import argparse
 import sys
@@ -46,24 +46,27 @@ __all__ = [
 # Matching
 ###############################################################################
 
+OpMatchT = TypeVar("OpMatchT", bound=Operation)
 
-class OpMatchResult:
-    def __init__(self, op: Operation):
+
+class OpMatchResult(Generic[OpMatchT]):
+    def __init__(self, op: OpMatchT):
         self.op = op
 
     def __repr__(self):
         return f"{type(self).__name__}({self.op})"
 
 
+OpMatchResultT = TypeVar("OpMatchResultT", bound=OpMatchResult)
 OperationParent = Union[None, Operation, OpView, Region, Block, OpMatchResult]
 OperationParentOrList = Union[OperationParent, List[OperationParent]]
 MaybeOperation = Union[None, Value, OpMatchResult, Operation, OpView]
 
 
-class OpMatcher:
+class OpMatcher(Generic[OpMatchResultT]):
     """Base class for things that match an operation."""
 
-    def __call__(self, maybe_op: MaybeOperation) -> Optional[OpMatchResult]:
+    def __call__(self, maybe_op: MaybeOperation) -> Optional[OpMatchResultT]:
         if maybe_op is None:
             return None
         if isinstance(maybe_op, OpMatchResult):
@@ -82,23 +85,23 @@ class OpMatcher:
 
         return self._match(op)
 
-    def _match(self, op: Operation) -> Optional[OpMatchResult]:
+    def _match(self, op: Operation) -> Optional[OpMatchResultT]:
         raise NotImplementedError
 
 
-class NamedOpMatcher(OpMatcher):
+class NamedOpMatcher(OpMatcher[OpMatchResultT]):
     """Matches operations by name."""
 
     def __init__(self, *op_names: str):
         self.op_names = op_names
 
-    def _match(self, op: Operation) -> Optional[OpMatchResult]:
+    def _match(self, op: Operation) -> Optional[OpMatchResultT]:
         if op.name in self.op_names:
             return self.match(op)
         return None
 
-    def match(self, op: Operation) -> Optional[OpMatchResult]:
-        return OpMatchResult(op)
+    def match(self, op: Operation) -> Optional[OpMatchResultT]:
+        return OpMatchResult(op)  # type: ignore
 
 
 def get_child_blocks(of: OperationParentOrList) -> List[Block]:
@@ -165,7 +168,7 @@ class GlobalOpResult(OpMatchResult):
         return StringAttr(self.op.attributes["sym_name"]).value
 
 
-class GlobalOpMatcher(NamedOpMatcher):
+class GlobalOpMatcher(NamedOpMatcher[GlobalOpResult]):
     """Matches global operations."""
 
     def __init__(self):
@@ -181,7 +184,7 @@ class Transpose2DResult(OpMatchResult):
         return self.op.operands[0]
 
 
-class Transpose2DMatcher(NamedOpMatcher):
+class Transpose2DMatcher(NamedOpMatcher[Transpose2DResult]):
     def __init__(self):
         super().__init__("torch.aten.transpose.int")
 
@@ -216,7 +219,7 @@ class GlobalLoadResult(OpMatchResult):
         return FlatSymbolRefAttr(self.op.attributes["global"]).value
 
 
-class GlobalLoadMatcher(NamedOpMatcher):
+class GlobalLoadMatcher(NamedOpMatcher[GlobalLoadResult]):
     def __init__(self, globals: Optional["GlobalsDict"] = None):
         super().__init__("util.global.load", "torch_c.from_builtin_tensor")
         self.globals = globals
@@ -258,7 +261,7 @@ class Pass:
     @property
     def globals(self) -> GlobalsDict:
         results = match_children(self.root_op, GlobalOpMatcher())
-        return {r.sym_name: r for r in results}
+        return {r.sym_name: r for r in cast(list[GlobalOpResult], results)}
 
     def merge_module(self, source_module: Operation) -> Merger:
         """Merges the given source module into the root.

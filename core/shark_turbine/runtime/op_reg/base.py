@@ -8,7 +8,7 @@
 dispatcher.
 """
 
-from typing import Any, Callable, Optional, Sequence, Type, Union
+from typing import Any, Callable, Optional, Sequence, Type, Union, cast
 
 from abc import ABC, abstractmethod, abstractproperty
 import functools
@@ -43,6 +43,7 @@ from ...support.conversions import (
 
 __all__ = [
     "ArgDescriptor",
+    "AttrArg",
     "CustomOp",
     "FreeFuncKernelBuilder",
     "IntArg",
@@ -245,7 +246,7 @@ class KernelSelection(ABC):
 
     def __init__(self, op: CustomOp, arg_arity: int):
         self.op = op
-        self.arg_descs: list[Optional[ArgDescriptor]] = arg_arity * [None]
+        self.arg_descs = cast(list[Optional[ArgDescriptor]], arg_arity * [None])
         self.result_descs: list[ArgDescriptor] = []
         self.variant: str = "default"
 
@@ -279,8 +280,12 @@ class KernelSelection(ABC):
     @property
     def spec_key(self) -> str:
         try:
-            arg_keys = ",".join(d.spec_key for d in self.arg_descs)
-            return_keys = ",".join(d.spec_key for d in self.result_descs)
+            arg_keys = ",".join(
+                d.spec_key if d is not None else "None" for d in self.arg_descs
+            )
+            return_keys = ",".join(
+                d.spec_key if d is not None else "None" for d in self.result_descs
+            )
             return (
                 f"{self.op.cache_key_base}::{self.variant}({arg_keys})->({return_keys})"
             )
@@ -365,7 +370,7 @@ class EagerKernelSelection(KernelSelection):
         assert arg_descs[arg] is None, f"Already constrained argument {arg}"
         assert isinstance(
             arg_value, list
-        ), f"Argument type mismatch from Torch for {arg}: Expected tensor, got {type(arg_value)}"
+        ), f"Argument type mismatch from Torch for {arg}: Expected list, got {type(arg_value)}"
         arg_descs[arg] = desc = TensorListArg(arg_value)
         return desc
 
@@ -476,7 +481,7 @@ class TensorArg:
     def __init__(self, t: Tensor):
         self.t = t
         # Any static dims that we are specializing. Defaults to all dynamic.
-        self.spec_dims: list[Optional[int]] = len(t.shape) * [None]
+        self.spec_dims: Sequence[Optional[int]] = len(t.shape) * [None]
         # All descriptors have an attribute to indicate their value
         # as a tensor, and those that aren't are fixated to None.
         # This is to enable fast lookup in the hot path of determining
@@ -527,16 +532,16 @@ class TensorListArg:
 
     is_list: bool = True
 
-    def __init__(self, ts: Tensor):
+    def __init__(self, ts: list[Tensor]):
         self.ts = ts
         self.ir_arity = len(ts)
         # Any static dims that we are specializing. Defaults to all dynamic.
-        self.spec_dims: list[list[Optional[int]]] = [len(t.shape) * [None] for t in ts]
+        self.spec_dims: list[list[Optional[int]]] = [len(t.shape) * [None] for t in ts]  # type: ignore
         # All descriptors have an attribute to indicate their value
         # as a tensor, and those that aren't are fixated to None.
         # This is to enable fast lookup in the hot path of determining
         # how to dispatch.
-        self.maybe_tensor_value: Tensor = ts
+        self.maybe_tensor_value: list[Tensor] = ts
 
     def __repr__(self):
         return (
@@ -658,6 +663,7 @@ class FreeFuncKernelBuilder(KernelBuilder):
             # Assemble arg types.
             arg_types = []
             for d in ksel.arg_descs:
+                assert d is not None, "NYI: None arguments"
                 arity = d.ir_arity
                 if not d.is_list:
                     if arity == 1:
@@ -692,6 +698,7 @@ class FreeFuncKernelBuilder(KernelBuilder):
         block_arg_index = 0
         arg_bindings: list[Optional[Value]] = []
         for desc in ksel.arg_descs:
+            assert desc is not None, "NYI: None arguments"
             arity = desc.ir_arity
             if not desc.is_list:
                 if arity == 1:

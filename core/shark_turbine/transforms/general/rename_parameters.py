@@ -44,7 +44,7 @@ class RenameParametersPass(Pass):
     ):
         super().__init__(root_op)
         self.context = root_op.context
-        self.rename_map = rename_map
+        self.rename_map = rename_map or {}
         self.rename_callback = rename_callback
         with self.context:
             # Make a prototype named parameter attribute so we can get its

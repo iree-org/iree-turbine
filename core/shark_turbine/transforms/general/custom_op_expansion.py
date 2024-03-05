@@ -208,6 +208,7 @@ class InlineKernelBuilder(KernelBuilder):
             operands = list(torch_op.operands)
             arg_bindings = []
             for desc, operand in zip(ksel.arg_descs, operands):
+                assert desc is not None, "NYI: None arguments"
                 arity = desc.ir_arity
                 if not desc.is_list:
                     if arity == 1:
