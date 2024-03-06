@@ -51,7 +51,7 @@ from iree.runtime import (
 from iree.compiler.api import Session, Output
 from iree.compiler.passmanager import PassManager
 
-from ..importers.fx_importer import FxImporter
+from iree.compiler.extras.fx_importer import FxImporter
 
 DEFAULT_COMPILER_FLAGS = ("--iree-input-type=torch",)
 

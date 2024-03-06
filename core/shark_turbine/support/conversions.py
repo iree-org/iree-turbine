@@ -13,7 +13,7 @@ from iree.runtime import (
     HalElementType,
 )
 
-from ..importers.fx_importer import (
+from iree.compiler.extras.fx_importer import (
     TORCH_DTYPE_TO_MLIR_TYPE_ASM,
 )
 

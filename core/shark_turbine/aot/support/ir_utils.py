@@ -13,7 +13,7 @@ import tempfile
 import numpy as np
 import torch
 
-from ...importers.fx_importer import (
+from iree.compiler.extras.fx_importer import (
     ContextCache,
     Empty,
     EmptyType,

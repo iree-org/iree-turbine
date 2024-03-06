@@ -1,7 +1,7 @@
 from stats import ErrorAggregatorDict
 import logging
 
-from shark_turbine.importers.fx_importer import FxImporter
+from iree.compiler.extras.fx_importer import FxImporter
 from shark_turbine.dynamo.passes import turbine_cpu_pass_pipeline
 import torch
 import torch._dynamo as dynamo
