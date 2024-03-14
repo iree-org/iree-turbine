@@ -39,7 +39,7 @@ please reach out to us on the `#turbine` channel of the
 
 ```
 pip install shark-turbine
-# Or editable: pip install -e core
+# Or for editable: see instructions under developers
 ```
 
 The above does install some unecessary cuda/cudnn packages for cpu use. To avoid this you
