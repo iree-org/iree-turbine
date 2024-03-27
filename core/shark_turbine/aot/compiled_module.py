@@ -15,6 +15,8 @@ import re
 import weakref
 import sys
 
+from torch.export import ExportedProgram
+
 from . import builtins
 
 from ..support.ir_imports import (
@@ -34,6 +36,8 @@ from .support.procedural import (
     ProcedureTrace,
     current_ir_trace,
 )
+
+from .support.procedural.exported_program import import_exported_program
 
 from .support.ir_utils import (
     ModuleBuilder,
@@ -130,7 +134,28 @@ class ExportProcDef:
         return f"<def {self.export_name}({self.signature})>"
 
 
-Exportable = Union[ExportProcDef, PyOnlyDef, GlobalsDef]
+class ExportedProgramDef:
+    def __init__(
+        self,
+        ep: ExportedProgram,
+        *,
+        export_name: Optional[str] = None,
+        public: bool = False,
+    ):
+        self.export_name = export_name
+        self.exported_program = ep
+        self.public = public
+
+    def copy(self) -> "ExportedProgramDef":
+        return ExportedProgramDef(
+            self.exported_program, export_name=self.export_name, public=self.public
+        )
+
+    def __repr__(self):
+        return f"<exported_program {self.exported_program}>"
+
+
+Exportable = Union[ExportProcDef, ExportedProgramDef, PyOnlyDef, GlobalsDef]
 
 
 class CompiledModuleClassInfo:
@@ -156,6 +181,15 @@ class CompiledModuleClassInfo:
         )  # type: ignore
 
     @property
+    def exported_programs(
+        self,
+    ) -> Generator[Tuple[str, ExportedProgramDef], None, None]:
+        return filter(
+            lambda kv_tuple: isinstance(kv_tuple[1], ExportedProgramDef),
+            self.all_exports.items(),
+        )  # type: ignore
+
+    @property
     def py_only_defs(self) -> Generator[Tuple[str, PyOnlyDef], None, None]:
         return filter(
             lambda kv_tuple: isinstance(kv_tuple[1], PyOnlyDef),
@@ -175,6 +209,12 @@ class CompiledModuleClassInfo:
         if isinstance(value, builtins.jittable):
             value = PyOnlyDef(value)
 
+        # Promote a torch ExportedProgram to an ExportedProgramDef.
+        if isinstance(value, ExportedProgram):
+            value = ExportedProgramDef(
+                value, export_name=key, public=not key.startswith("_")
+            )
+
         # Detect our own descriptors.
         if isinstance(value, GlobalsDef):
             logging.debug("DEFINE GLOBALS: %s = %r", key, value)
@@ -186,9 +226,15 @@ class CompiledModuleClassInfo:
                 value.export_name = key
             self.add_export(key, value)
             return value
-
         if isinstance(value, PyOnlyDef):
             logging.debug("DEFINE PY_ONLY: %s = %r", key, value)
+            self.add_export(key, value)
+            return value
+        if isinstance(value, ExportedProgramDef):
+            if value.export_name is None:
+                value = value.copy()
+                value.export_name = key
+            logging.debug("DEFINE EXPORTED_PROGRAM: %r", value.export_name)
             self.add_export(key, value)
             return value
 
@@ -541,6 +587,17 @@ class CompiledModule(metaclass=CompiledModuleMeta):
         # Make PyOnly defs visible.
         for key, py_def in info.class_info.py_only_defs:
             info.shadow_dict[key] = py_def.py_value
+
+        # Instantiate exported programs.
+        # TODO: This should be done in two phases along with export_procs
+        # in order to enable dependence.
+        for key, ep_def in info.class_info.exported_programs:
+            info.shadow_dict[key] = import_exported_program(
+                module_builder,
+                ep_def.exported_program,
+                symbol_name=ep_def.export_name or "main",
+                symbol_visibility=None if ep_def.public else "private",
+            )
 
         # Instantiate procs.
         # TODO: This should be done in two phases, first binding the symbols

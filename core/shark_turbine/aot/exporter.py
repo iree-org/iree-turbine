@@ -4,8 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Any, Optional, Sequence, Union
-import functools
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import io
 from pathlib import Path
 import platform
@@ -27,18 +26,14 @@ from .builtins import *
 from .compiled_module import (
     CompiledModule,
     CompiledModuleMeta,
-    ExportProcDef,
     ImportPhase,
-)
-from .support.procedural import (
-    AbstractTypedef,
 )
 
 
 _is_windows = platform.system() == "Windows"
 
 
-ModuleLike = Union[torch.nn.Module, CompiledModuleMeta]
+ModuleLike = Union[torch.nn.Module, CompiledModuleMeta, torch.export.ExportedProgram]
 SaveableTarget = Union[str, Path, None, Output]
 
 
@@ -150,48 +145,89 @@ class ExportOutput:
             return None
 
 
-# Decorator which explicitly exports a function.
-# TODO: Make this a public API on CompiledModule.
-# See https://github.com/nod-ai/SHARK-Turbine/issues/126
-def export_proc(f=None, *, signature: Sequence[AbstractTypedef]) -> Any:
-    if f is None:
-        return functools.partial(export_proc, signature=signature)
-    return ExportProcDef(f.__name__, f, signature=signature)
+def export(
+    mdl: ModuleLike,
+    *example_args: torch.Tensor,
+    args: Optional[tuple] = None,
+    kwargs: Optional[Dict[str, Any]] = None,
+    dynamic_shapes: Dict[str, Any] | Tuple[Any] | List[Any] | None = None,
+    external_params: bool = False,
+) -> ExportOutput:
+    """One shot export of an nn.Module or CompiledModule.
 
+    This function behaves differently based on the type of the `mdl` argument:
 
-def export(mdl: ModuleLike, *example_args: torch.Tensor) -> ExportOutput:
-    """One shot export of an nn.Module.
-
-    This is a very restrictive API vs the lower level `CompiledModule`
-    facility. It is suitable for one-shot modules, with a single
-    entrypoint and static example arguments where no additional
-    configuration is needed for mutable parameters/buffers or state
-    management. Dynamic shape constraints are also not presently
-    exposed via this API, but we expect to allow this in the future.
+    * nn.Module: The module is traced with torch.export.export passing it
+      `args`, `kwargs`, and `dynamic_shapes`.
+    * CompiledModule: The module is imported to IR. Additional arguments are
+      illegal in this case.
+    * torch.export.ExportedProgram: A pre-exported program can be passed and
+      it will be used to construct a single-entrypoint module.
 
     Args:
       mdl: The nn.Module to export.
       *example_args: Example tensors.
+      args: Example arguments to torch.export (if present, then *example_args
+        must be empty.
+      kwargs: Example keyword arguments.
+      dynamic_shapes: Dynamic shape specs to pass to torch.export.
+      external_params: Whether to declare parameters as external vs inlining
+        contents.
 
     Returns:
       An ExportOutput object that wraps the compilation and provides
       easy access.
     """
     TransformedModule: Any
-    if isinstance(mdl, torch.nn.Module):
+    if isinstance(mdl, torch.export.ExportedProgram):
+        if (
+            len(example_args) > 0
+            or args is not None
+            or kwargs is not None
+            or dynamic_shapes is not None
+        ):
+            raise ValueError(
+                "If passing an ExportedProgram to aot.export, cannot also pass "
+                "args, example_args, kwargs, or dynamic_dims"
+            )
+
+        class EpExported(CompiledModule, export_name=mdl.graph_module._get_name()):
+            params = export_global_tree(
+                dict(list(mdl.named_parameters())), external=external_params
+            )
+            main = mdl
+
+        TransformedModule = EpExported
+    elif isinstance(mdl, torch.nn.Module):
+        # Normalize arguments for torch.export.
+        if args is None:
+            args = example_args
+        elif len(example_args) > 0:
+            raise ValueError(
+                "Cannot pass args= and positional example_args at the same time"
+            )
         nn_module = mdl
-        signature = [abstractify(t) for t in example_args]
+        exported_program = torch.export.export(
+            nn_module, args=args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+        )
 
         class Exported(CompiledModule, export_name=nn_module._get_name()):
-            params = export_parameters(nn_module)
-
-            @export_proc(signature=signature)
-            def main(self, *args):
-                return jittable(nn_module.forward)(*args)
+            params = export_parameters(nn_module, external=external_params)
+            main = exported_program
 
         TransformedModule = Exported
     else:
         assert isinstance(mdl, CompiledModuleMeta)
+        if (
+            len(example_args) > 0
+            or args is not None
+            or kwargs is not None
+            or dynamic_shapes is not None
+        ):
+            raise ValueError(
+                "If passing a CompiledModule to aot.export, cannot also pass "
+                "args, example_args, kwargs, or dynamic_dims"
+            )
         TransformedModule = mdl
 
     session = Session()

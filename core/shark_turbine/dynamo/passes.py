@@ -1,7 +1,6 @@
 import torch
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch._decomp import get_decompositions
-from shark_turbine.dynamo import utils
 from torch.func import functionalize
 from typing import List, Optional
 

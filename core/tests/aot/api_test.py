@@ -14,6 +14,7 @@ from iree.compiler.ir import (
 from shark_turbine.aot import *
 
 import torch
+import torch.nn as nn
 
 
 class GeneralAPI(unittest.TestCase):
@@ -69,6 +70,55 @@ class CompiledModuleAPI(unittest.TestCase):
         inst = ExportedProcModule(context=Context())
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
+
+
+class ExportAPI(unittest.TestCase):
+    def testStaticNNModule(self):
+        mdl = SimpleParams()
+        exported = export(mdl, args=(torch.empty([128, 20]),))
+        exported.print_readable()
+        asm = str(exported.mlir_module)
+        self.assertIn("dense_resource", asm)
+
+    def testDynamicNNModule(self):
+        mdl = SimpleParams()
+        batch = torch.export.Dim("batch")
+        exported = export(
+            mdl, args=(torch.empty([128, 20]),), dynamic_shapes={"x": {0: batch}}
+        )
+        exported.print_readable()
+        asm = str(exported.mlir_module)
+        self.assertIn(
+            "func.func @main(%arg0: !torch.vtensor<[?,20],f32>) -> !torch.vtensor<[?,30],f32>",
+            asm,
+        )
+
+    def testExternalParamsNNModule(self):
+        mdl = SimpleParams()
+        exported = export(mdl, args=(torch.empty([128, 20]),), external_params=True)
+        exported.print_readable()
+        asm = str(exported.mlir_module)
+        self.assertNotIn("dense_resource", asm)
+        self.assertIn("util.global.load", asm)
+
+    def testTorchExportedProgram(self):
+        mdl = SimpleParams()
+        prg = torch.export.export(mdl, args=(torch.empty([128, 20]),))
+        exported = export(prg, external_params=True)
+        exported.print_readable()
+        asm = str(exported.mlir_module)
+        self.assertNotIn("dense_resource", asm)
+        self.assertIn("util.global private @_params.classifier.weight", asm)
+        self.assertIn("util.global private @_params.classifier.bias", asm)
+
+
+class SimpleParams(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.classifier = nn.Linear(20, 30)
+
+    def forward(self, x):
+        return self.classifier(x)
 
 
 if __name__ == "__main__":

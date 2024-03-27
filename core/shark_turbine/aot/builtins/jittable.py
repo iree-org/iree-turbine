@@ -9,18 +9,14 @@
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
+import warnings
+
 import torch
 from torch._decomp import get_decompositions
 import torch._dynamo as dynamo
-from torch.export import (
-    Constraint,
-    dynamic_dim,
-)
 from torch.fx import (
-    Graph,
     GraphModule,
 )
-from torch.fx.passes.shape_prop import TensorMetadata
 from torch.utils._pytree import (
     tree_flatten,
     tree_unflatten,
@@ -148,7 +144,7 @@ class jittable(CallableIntrinsic):
         *,
         decompose_ops: Optional[List[Any]] = None,
         decomposition_table: Optional[Dict[Any, Callable[..., Any]]] = None,
-        constraints: Optional[List[Constraint]] = None,
+        constraints: Optional[List[Any]] = None,
         function_name: Optional[str] = None,
         passes: Sequence[str] = DEFAULT_PASSES,
     ):
@@ -176,7 +172,7 @@ class jittable(CallableIntrinsic):
         self,
         proc_trace: IrTrace,
         *py_args,
-        constraints: Optional[List[Constraint]] = None,
+        constraints: Optional[List[Any]] = None,
         **py_kwargs,
     ):
         type_converter = proc_trace.module_builder.native_type_converter
@@ -187,6 +183,17 @@ class jittable(CallableIntrinsic):
             constraints = list(constraints)
         if self.constraints is not None:
             constraints.extend(self.constraints)
+
+        export_kwargs = {}
+        if len(constraints) > 0:
+            warnings.warn(
+                "Compiling program with the old PyTorch constraints system "
+                "for dynamic shapes is deprecated and will break on PyTorch "
+                "nightlies after the 2.3 release cut (expect either a PyTorch "
+                "warning or exception to follow)",
+                DeprecationWarning,
+            )
+            export_kwargs["constraints"] = constraints
 
         # Convert procedural trace values to things that Dynamo can handle.
         flat_py_args, args_tree = tree_flatten((py_args, py_kwargs))
@@ -220,8 +227,8 @@ class jittable(CallableIntrinsic):
             transformed_f,
             aten_graph=True,
             decomposition_table=self.decomposition_table,
-            constraints=constraints,
             assume_static_by_default=True,
+            **export_kwargs,  # type: ignore
         )
         logger.debug("Invoking dynamo trace")
         gm, guards = exported_f(*flat_pytorch_args)
@@ -315,7 +322,7 @@ class jittable(CallableIntrinsic):
         tree_py_results = tree_unflatten(flat_py_results, out_spec)
         return tree_py_results
 
-    def _split_py_arg(self, arg, constraints: List[Constraint]) -> Tuple[Value, Any]:
+    def _split_py_arg(self, arg, constraints: List[Any]) -> Tuple[Value, Any]:
         if isinstance(arg, IrTensor):
             meta_tensor, meta_constraints = arg._to_meta_tensor()
             constraints.extend(meta_constraints)

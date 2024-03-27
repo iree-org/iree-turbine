@@ -239,6 +239,7 @@ class KernelSelection(ABC):
 
     __slots__ = [
         "arg_descs",
+        "inplace_tied_arg_descs",
         "op",
         "result_descs",
         "variant",
@@ -247,6 +248,7 @@ class KernelSelection(ABC):
     def __init__(self, op: CustomOp, arg_arity: int):
         self.op = op
         self.arg_descs = cast(list[Optional[ArgDescriptor]], arg_arity * [None])
+        self.inplace_tied_arg_descs: list[ArgDescriptor] = []
         self.result_descs: list[ArgDescriptor] = []
         self.variant: str = "default"
 
@@ -295,12 +297,16 @@ class KernelSelection(ABC):
             ) from e
 
     @abstractmethod
-    def arg_tensor(self, arg: int) -> "TensorArg":
+    def arg_tensor(self, arg: int, *, inplace_tied: bool = False) -> "TensorArg":
         """Declares an argument to allow any ranked tensor and to specialize for each rank
         and dtype.
 
         Returns the argument descriptor, which can be used to further inspect or constrain
         the selection. It will default to allowing all dimensions to be dynamic.
+
+        If inplace_tied is True, then this argument participates in in-place
+        semantics. The kernel must yield the result-mutated after all normal
+        results in the order declared.
         """
         ...
 
@@ -354,7 +360,7 @@ class EagerKernelSelection(KernelSelection):
         super().__init__(op, len(args))
         self.args = args
 
-    def arg_tensor(self, arg: int) -> "TensorArg":
+    def arg_tensor(self, arg: int, *, inplace_tied: bool = False) -> "TensorArg":
         arg_descs = self.arg_descs
         arg_value = self.args[arg]
         assert arg_descs[arg] is None, f"Already constrained argument {arg}"
@@ -362,6 +368,8 @@ class EagerKernelSelection(KernelSelection):
             arg_value, Tensor
         ), f"Argument type mismatch from Torch for {arg}: Expected tensor, got {type(arg_value)}"
         arg_descs[arg] = desc = TensorArg(arg_value)
+        if inplace_tied:
+            self.inplace_tied_arg_descs.append(desc)
         return desc
 
     def arg_tensor_list(self, arg: int) -> "TensorListArg":
@@ -676,7 +684,7 @@ class FreeFuncKernelBuilder(KernelBuilder):
 
             # Assemble result types.
             result_types = []
-            for d in ksel.result_descs:
+            for d in (*ksel.result_descs, *ksel.inplace_tied_arg_descs):
                 if not d.is_list:
                     if d.ir_arity == 1:
                         result_types.append(IrType.parse(d.mlir_type_asm))
@@ -744,6 +752,11 @@ class FreeFuncKernelBuilder(KernelBuilder):
     def yield_results(self, *results: Value):
         """Yields results of the kernel computation."""
         assert not self.yielded, "yield_results has already been called"
+        ksel = self.ksel
+        expected_count = len(ksel.result_descs) + len(ksel.inplace_tied_arg_descs)
+        assert (
+            len(results) == expected_count
+        ), f"Mismatched yielded results and declared+inplace: Expected={expected_count}, Got={len(results)}"
         with self.ip, Location.unknown():
             func_d.ReturnOp(results)
         self.yielded = True

@@ -124,7 +124,7 @@ class AOTKernelSelection(KernelSelection):
         self.results = results
         self.type_converter = type_converter
 
-    def arg_tensor(self, arg: int) -> TensorArg:
+    def arg_tensor(self, arg: int, *, inplace_tied: bool = False) -> TensorArg:
         # This is annoying: We have to go from the Torch MLIR type system to the
         # original torch.tensor Python type system. We do this by way of the native
         # type converter because it has the mapping pathway we need. This is one of the
@@ -154,6 +154,8 @@ class AOTKernelSelection(KernelSelection):
             )
         t = torch.empty(rtt.shape, dtype=dtype, device="meta")
         arg_descs[arg] = desc = TensorArg(t)
+        if inplace_tied:
+            self.inplace_tied_arg_descs.append(desc)
         return desc
 
     def arg_tensor_list(self, arg: int) -> TensorListArg:
@@ -235,6 +237,11 @@ class InlineKernelBuilder(KernelBuilder):
     def yield_results(self, *results: Value):
         """Yields results of the kernel computation."""
         assert not self.yielded, "yield_results has already been called"
+        ksel = self.ksel
+        expected_count = len(ksel.result_descs) + len(ksel.inplace_tied_arg_descs)
+        assert (
+            len(results) == expected_count
+        ), f"Mismatched yielded results and declared+inplace: Expected={expected_count}, Got={len(results)}"
         with self.ip, self.location:
             torch_op_results: list[Value] = list(self.torch_op.results)
             assert len(results) == len(

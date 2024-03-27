@@ -50,29 +50,13 @@ def _emit_tensor_trace(kb: KernelBuilder, key: str, ts: list[Value]):
 
 @CustomOp.register(library=IREE_LIBRARY)
 class trace_tensor(CustomOp):
-    signature = "trace_tensor(str trace_key, Tensor tensor) -> ()"
+    signature = "trace_tensor(str trace_key, Tensor(a!) tensor) -> ()"
 
     def select(self, ksel: KernelSelection):
         ksel.attr_str(0)
-        ksel.arg_tensor(1)
+        ksel.arg_tensor(1, inplace_tied=True)
 
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
         key = cast(AttrArg, ksel.arg_descs[0])
         _emit_tensor_trace(kb, cast(str, key.v), [kb.arg_bindings[1]])
-        kb.yield_results()
-
-
-@CustomOp.register(library=IREE_LIBRARY)
-class trace_tensors(CustomOp):
-    signature = "trace_tensors(str trace_key, Tensor[] tensors) -> ()"
-
-    def select(self, ksel: KernelSelection):
-        ksel.attr_str(0)
-        ksel.arg_tensor_list(1)
-
-    def generate(self, ksel: KernelSelection, kb: KernelBuilder):
-        key = cast(AttrArg, ksel.arg_descs[0])
-        ts = kb.arg_bindings[1]
-        if len(ts) >= 1:
-            _emit_tensor_trace(kb, cast(str, key.v), ts)
-        kb.yield_results()
+        kb.yield_results(kb.arg_bindings[1])

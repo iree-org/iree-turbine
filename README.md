@@ -45,9 +45,7 @@ pip install shark-turbine
 The above does install some unecessary cuda/cudnn packages for cpu use. To avoid this you
 can specify pytorch-cpu and install via:
 ```
-pip install --index-url https://download.pytorch.org/whl/cpu \
-    -r core/pytorch-cpu-requirements.txt \
-    -r core/torchvision-requirements.txt
+pip install -r core/pytorch-cpu-requirements.txt
 pip install shark-turbine
 ```
 

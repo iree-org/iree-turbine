@@ -49,7 +49,12 @@ class CompiledMLP(aot.CompiledModule):
         )
 
 
-exported = aot.export(CompiledMLP)
+batch = torch.export.Dim("batch")
+exported = aot.export(
+    model,
+    args=(torch.empty([2, 97, 8], dtype=torch.float32),),
+    dynamic_shapes={"x": {0: batch}},
+)
 # Note that dynamic Torch IR is created below.
 exported.print_readable()
 

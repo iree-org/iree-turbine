@@ -1,5 +1,4 @@
 include README.md
 include requirements.txt
 include pytorch-cpu-requirements.txt
-include torchvision-requirements.txt
 include version_info.json

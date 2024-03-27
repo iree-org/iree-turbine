@@ -73,7 +73,7 @@ class JittableTests(unittest.TestCase):
         print(module_str)
 
     def testDynamicDims(self):
-        class ProcArgsModule(CompiledModule):
+        class DynamicDimsModule(CompiledModule):
             def dynamic_dim(self, a=AbstractTensor(None, 2), b=AbstractTensor(None, 1)):
                 return self.compute(
                     a,
@@ -87,7 +87,7 @@ class JittableTests(unittest.TestCase):
             def compute(a, b):
                 return a * b
 
-        inst = ProcArgsModule(context=Context(), import_to=None)
+        inst = DynamicDimsModule(context=Context(), import_to=None)
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
 

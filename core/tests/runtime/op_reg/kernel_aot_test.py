@@ -49,6 +49,7 @@ class KernelRegTest(unittest.TestCase):
 
         print("CUSTOM OP CONVERTED:")
         module_asm = str(prog.mlir_module)
+        print(module_asm)
         self.assertIn('flow.tensor.trace "LAYER0"', module_asm)
         self.assertIn('flow.tensor.trace "LAYER1"', module_asm)
         self.assertIn('flow.tensor.trace "LAYER3"', module_asm)

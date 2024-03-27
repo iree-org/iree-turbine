@@ -17,12 +17,6 @@ class KernelRegTest(unittest.TestCase):
         t = torch.randn(3, 4)
         ops.iree.trace_tensor("TEST", t)
 
-    def testTraceList(self):
-        t1 = torch.randn(3, 4)
-        t2 = torch.randn(1, 8)
-        ops.iree.trace_tensors("TEST 2", [t1, t2])
-        ops.iree.trace_tensors("TEST 1", [t1])
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
