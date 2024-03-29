@@ -28,7 +28,12 @@ from .compiled_module import (
     CompiledModuleMeta,
     ImportPhase,
 )
+from . import decompositions
 
+__all__ = [
+    "export",
+    "ExportOutput",
+]
 
 _is_windows = platform.system() == "Windows"
 
@@ -179,6 +184,7 @@ def export(
       easy access.
     """
     TransformedModule: Any
+    current_decomps = decompositions.current_aot_decompositions()
     if isinstance(mdl, torch.export.ExportedProgram):
         if (
             len(example_args) > 0
@@ -210,6 +216,11 @@ def export(
         exported_program = torch.export.export(
             nn_module, args=args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
         )
+        if current_decomps:
+            from .decompositions import _patch_op_dispatch_for_export
+
+            _patch_op_dispatch_for_export()
+            exported_program = exported_program.run_decompositions(current_decomps)
 
         class Exported(CompiledModule, export_name=nn_module._get_name()):
             params = export_parameters(nn_module, external=external_params)

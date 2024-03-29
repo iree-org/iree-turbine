@@ -20,6 +20,8 @@ import functools
 import torch
 import torch.nn as nn
 
+from .decompositions import current_aot_decompositions
+
 # The dynamic_shapes support showed up in the Torch 2.3 timeframe.
 _supports_dynamic_shapes = hasattr(torch.export, "Dim")
 
@@ -224,6 +226,12 @@ class FxProgramsBuilder(FxPrograms):
         program = torch.export.export(
             lambda_module, args=args, kwargs=kwargs, **extra_kwargs
         )
+        current_decomps = current_aot_decompositions()
+        if current_decomps:
+            from .decompositions import _patch_op_dispatch_for_export
+
+            _patch_op_dispatch_for_export()
+            program = program.run_decompositions(current_decomps)
         fx_builder.programs[name] = program
         return program
 

@@ -28,10 +28,6 @@ from iree.compiler.extras.fx_importer import (
     FxImporterHooks,
 )
 
-from ...dynamo.passes import (
-    DEFAULT_DECOMPOSITIONS,
-)
-
 from ...support.ir_imports import (
     FlatSymbolRefAttr,
     FunctionType,
@@ -46,6 +42,7 @@ from ...support.ir_imports import (
 
 from ...support.logging import aot_logger as logger
 
+from ..decompositions import current_aot_decompositions
 from ..passes import (
     functorch_functionalize,
 )
@@ -149,10 +146,7 @@ class jittable(CallableIntrinsic):
         passes: Sequence[str] = DEFAULT_PASSES,
     ):
         if decomposition_table is None:
-            decomposition_table = {}
-        if decompose_ops is None:
-            decompose_ops = DEFAULT_DECOMPOSITIONS
-
+            decomposition_table = current_aot_decompositions()
         if decompose_ops:
             decomposition_table.update(get_decompositions(decompose_ops))
 
@@ -226,7 +220,7 @@ class jittable(CallableIntrinsic):
         exported_f = dynamo.export(
             transformed_f,
             aten_graph=True,
-            decomposition_table=self.decomposition_table,
+            decomposition_table=self.decomposition_table,  # type: ignore
             assume_static_by_default=True,
             **export_kwargs,  # type: ignore
         )

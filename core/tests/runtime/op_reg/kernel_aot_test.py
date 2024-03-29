@@ -42,8 +42,8 @@ class MLP(nn.Module):
 class KernelRegTest(unittest.TestCase):
     def testTrace(self):
         mlp = MLP()
-        prog = aot.export(mlp, torch.empty(97, 8, dtype=torch.float32))
 
+        prog = aot.export(mlp, torch.empty(97, 8, dtype=torch.float32))
         p = ExpandCustomOpsPass(prog.mlir_module)
         p.run()
 
