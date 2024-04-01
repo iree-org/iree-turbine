@@ -132,6 +132,13 @@ class Merger:
             self._nested_symbol_table_ops.append(init_op)
             self._target_body.append(init_op)
 
+        # Merge external dispatches.
+        sources = get_top_level_ops(self.source_module, "hal.executable.source")
+        for source in sources:
+            source.detach_from_parent()
+            self._nested_symbol_table_ops.append(source)
+            self._target_body.append(source)
+
         # Merge functions.
         funcs = get_top_level_ops(self.source_module, "func.func")
         for func_op in funcs:

@@ -320,7 +320,7 @@ def pass_main(pass_class: Type[Pass], *, argv=None):
     parser = argparse.ArgumentParser(description="Rewrite driver")
     parser.add_argument("input_file", help="File to process")
     parser.add_argument("-o", dest="output_file", help="Output file")
-    args = parser.parse_args(argv)
+    args, _ = parser.parse_known_args(argv)
 
     with Context() as context:
         with open(args.input_file, "r") as f:
