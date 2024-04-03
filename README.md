@@ -85,6 +85,7 @@ versions and has all flags. This can be installed prior to the package:
 Installing into a venv is highly recommended.
 
 ```
+pip install -r core/pytorch-cpu-requirements.txt
 pip install --upgrade -r core/requirements.txt
 pip install --upgrade -e "core[torch-cpu-nightly,testing]"
 ```
