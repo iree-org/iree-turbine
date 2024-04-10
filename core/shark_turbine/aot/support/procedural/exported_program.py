@@ -8,6 +8,7 @@
 from typing import Any, Dict, List, Optional
 
 import inspect
+import math
 
 import torch
 
@@ -42,12 +43,22 @@ from ....support.ir_imports import (
     Value,
 )
 
+from ...tensor_traits import (
+    ExternalTensorTrait,
+)
+
 from ..ir_utils import (
+    GlobalAttributes,
     ModuleBuilder,
 )
 
 from .base import (
     CallableIntrinsic,
+)
+
+from .globals import (
+    GlobalsDef,
+    MaterializedGlobal,
 )
 
 from .primitives import (
@@ -58,6 +69,10 @@ from .primitives import (
 from .tracer import (
     IrTrace,
 )
+
+# Limit of tensor volumes. Over this limit, otherwise uncategorized tensor
+# constants will be emitted out-of-line. Under the limit, inline.
+INLINE_TENSOR_VOLUME_LIMIT = 1024
 
 
 class ExportedProgramIntrinsic(CallableIntrinsic):
@@ -205,8 +220,6 @@ class _Hooks(FxImporterHooks):
         self.module_builder = module_builder
 
     def resolve_literal(self, gni: GraphNodeImporter, literal: Any) -> Optional[Value]:
-        module_builder = self.module_builder
-
         # We support resolution of tracked reference types. Currently this
         # only includes Tensors. All others we let the importer do what it
         # is going to do.
@@ -214,14 +227,10 @@ class _Hooks(FxImporterHooks):
             return None
 
         # See if we know about it.
-        mapping = module_builder.global_ref_tracker.track(literal)
-        if mapping.is_empty:
+        materialized_global = self._lift_tensor_to_global(literal)
+        if not materialized_global:
             # If it is unknown, just let the default importer take it on.
             return None
-
-        # Already materialized.
-        logger.debug("Resolved defined global for literal %r", mapping)
-        materialized_global: MaterializedGlobal = mapping.value  # type: ignore
 
         # Emit a global load and conversion.
         vtensor_type = gni._cc.tensor_to_vtensor_type(literal)
@@ -234,6 +243,72 @@ class _Hooks(FxImporterHooks):
             operands=[loaded_value],
         ).result
         return converted_value
+
+    def _lift_tensor_to_global(
+        self, literal: torch.Tensor
+    ) -> Optional[MaterializedGlobal]:
+        module_builder = self.module_builder
+        mapping = module_builder.global_ref_tracker.track(literal)
+        if not mapping.is_empty:
+            # Already materialized.
+            logger.debug("Resolved defined global for literal %r", mapping)
+            materialized_global: MaterializedGlobal = mapping.value  # type: ignore
+            return materialized_global
+
+        # Policy check: Should we auto-import? Generally, we keep "small"
+        # tensors as inline as they can be optimized.
+        external_trait = ExternalTensorTrait.get(literal)
+        if not self._should_lift_tensor_to_global(literal, external_trait):
+            return None
+
+        # If it is a tensor we haven't seen yet, materialize it
+        # as a global and return.
+        if external_trait is not None:
+            # If it is an external tensor, we can generate a nicer
+            # symbol name.
+            name = external_trait.external_name
+        else:
+            # Otherwise, generate a name based on what we have.
+            shape_desc = "_".join([str(d) for d in literal.shape])
+            name = f"constant_{shape_desc}_{str(literal.dtype)}"
+
+        name = module_builder.unique_auto_symbol(name)
+        # TODO: We may want to unique this somehow in the module builder.
+        auto_def = AutoGlobalTensorDef(name, literal, GlobalAttributes())
+        materialized_global = auto_def.track(module_builder, "_auto")
+        assert isinstance(materialized_global, MaterializedGlobal)
+        return materialized_global
+
+    def _should_lift_tensor_to_global(
+        self, literal: torch.Tensor, external_trait: Optional[ExternalTensorTrait]
+    ) -> bool:
+        if external_trait is not None:
+            return True
+        volume = math.prod(literal.shape)
+        return volume > INLINE_TENSOR_VOLUME_LIMIT
+
+
+class AutoGlobalTensorDef(GlobalsDef):
+    """Global definition that is used for arbitrary tensor literals encountered
+    during processing."""
+
+    __slots__ = [
+        "_name",
+        "_value",
+        "_schema",
+    ]
+
+    def __init__(self, name: str, value: torch.Tensor, attrs: GlobalAttributes):
+        super().__init__(attrs)
+        self._name = name
+        self._value = value
+        _, self._schema = tree_flatten(self._value)
+
+    def items(self):
+        yield (self._name, self._value)
+
+    def schema(self):
+        return self._schema
 
 
 # In https://github.com/llvm/torch-mlir/pull/3046, the FxImporter was

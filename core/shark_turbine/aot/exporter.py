@@ -4,10 +4,11 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import overload, Any, Dict, List, Optional, Sequence, Tuple, Type, Union
 import io
 from pathlib import Path
 import platform
+import warnings
 
 import torch
 
@@ -25,9 +26,9 @@ from ..support.ir_imports import (
 from .builtins import *
 from .compiled_module import (
     CompiledModule,
-    CompiledModuleMeta,
     ImportPhase,
 )
+from .fx_programs import FxPrograms
 from . import decompositions
 
 __all__ = [
@@ -38,7 +39,12 @@ __all__ = [
 _is_windows = platform.system() == "Windows"
 
 
-ModuleLike = Union[torch.nn.Module, CompiledModuleMeta, torch.export.ExportedProgram]
+ModuleLike = Union[
+    torch.nn.Module,
+    Type[CompiledModule],
+    torch.export.ExportedProgram,
+    FxPrograms,
+]
 SaveableTarget = Union[str, Path, None, Output]
 
 
@@ -150,15 +156,67 @@ class ExportOutput:
             return None
 
 
+@overload
+def export(
+    module: torch.nn.Module,
+    /,
+    *,
+    args: Optional[tuple] = None,
+    kwargs: Optional[Dict[str, Any]] = None,
+    dynamic_shapes: Dict[str, Any] | Tuple[Any] | List[Any] | None = None,
+    module_name: Optional[str] = None,
+    function_name: Optional[str] = None,
+) -> ExportOutput:
+    """Exports a torch.nn.Module.
+
+    This is done by first invoking torch.export.export with args, kwargs,
+    and dynamic_shapes.
+    """
+    ...
+
+
+@overload
+def export(compiled_module: Type[CompiledModule], /) -> ExportOutput:
+    """Exports a CompiledModule and returns the output."""
+    ...
+
+
+@overload
+def export(
+    exported_program: torch.export.ExportedProgram,
+    /,
+    *,
+    module_name: Optional[str] = None,
+    function_name: Optional[str] = None,
+) -> ExportOutput:
+    """Exports a single entry-point module consisting of an ExportedProgram."""
+    ...
+
+
+@overload
+def export(
+    exported_programs: FxPrograms,
+    /,
+    *,
+    module_name: Optional[str] = None,
+) -> ExportOutput:
+    """Exports a multi entry-point ExportedProgram."""
+    ...
+
+
 def export(
     mdl: ModuleLike,
+    /,
     *example_args: torch.Tensor,
     args: Optional[tuple] = None,
     kwargs: Optional[Dict[str, Any]] = None,
     dynamic_shapes: Dict[str, Any] | Tuple[Any] | List[Any] | None = None,
-    external_params: bool = False,
+    module_name: Optional[str] = None,
+    function_name: Optional[str] = None,
 ) -> ExportOutput:
-    """One shot export of an nn.Module or CompiledModule.
+    """Generic export of supported entities.
+
+    See a more specific overload for accepted forms.
 
     This function behaves differently based on the type of the `mdl` argument:
 
@@ -176,34 +234,31 @@ def export(
         must be empty.
       kwargs: Example keyword arguments.
       dynamic_shapes: Dynamic shape specs to pass to torch.export.
-      external_params: Whether to declare parameters as external vs inlining
-        contents.
 
     Returns:
       An ExportOutput object that wraps the compilation and provides
       easy access.
     """
+    if len(example_args) > 0:
+        warnings.warn(
+            DeprecationWarning(
+                "extra `example_args` positional parameters are deprecated: pass `args=tuple(...)` instead."
+            )
+        )
+
     TransformedModule: Any
     current_decomps = decompositions.current_aot_decompositions()
     if isinstance(mdl, torch.export.ExportedProgram):
-        if (
-            len(example_args) > 0
-            or args is not None
-            or kwargs is not None
-            or dynamic_shapes is not None
-        ):
-            raise ValueError(
-                "If passing an ExportedProgram to aot.export, cannot also pass "
-                "args, example_args, kwargs, or dynamic_dims"
-            )
+        TransformedModule = CompiledModule.create_from_dict(
+            "LambdaCompiledModule",
+            {(function_name or "main"): mdl},
+            export_name=module_name or "module",
+        )
 
-        class EpExported(CompiledModule, export_name=mdl.graph_module._get_name()):
-            params = export_global_tree(
-                dict(list(mdl.named_parameters())), external=external_params
-            )
-            main = mdl
-
-        TransformedModule = EpExported
+    elif isinstance(mdl, FxPrograms):
+        TransformedModule = CompiledModule.create_from_dict(
+            "LambdaCompiledModule", mdl.programs, export_name=module_name or "module"
+        )
     elif isinstance(mdl, torch.nn.Module):
         # Normalize arguments for torch.export.
         if args is None:
@@ -222,23 +277,13 @@ def export(
             _patch_op_dispatch_for_export()
             exported_program = exported_program.run_decompositions(current_decomps)
 
-        class Exported(CompiledModule, export_name=nn_module._get_name()):
-            params = export_parameters(nn_module, external=external_params)
-            main = exported_program
-
-        TransformedModule = Exported
+        TransformedModule = CompiledModule.create_from_dict(
+            "LambdaCompiledModule",
+            {(function_name or "main"): exported_program},
+            export_name=module_name or "module",
+        )
     else:
-        assert isinstance(mdl, CompiledModuleMeta)
-        if (
-            len(example_args) > 0
-            or args is not None
-            or kwargs is not None
-            or dynamic_shapes is not None
-        ):
-            raise ValueError(
-                "If passing a CompiledModule to aot.export, cannot also pass "
-                "args, example_args, kwargs, or dynamic_dims"
-            )
+        assert issubclass(type(mdl), CompiledModule)
         TransformedModule = mdl
 
     session = Session()

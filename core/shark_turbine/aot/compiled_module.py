@@ -346,6 +346,7 @@ def _uncallable_public_export(*args, **kwargs):
 
 
 _COMPILED_MODULE_API_ATTRIBUTES = [
+    "create_from_dict",
     "expand_custom_ops",
     "export_global",
     "get_class_info",
@@ -427,6 +428,25 @@ class CompiledModuleMeta(type):
 
 class CompiledModule(metaclass=CompiledModuleMeta):
     """Base class for all staged modules."""
+
+    @classmethod
+    def create_from_dict(
+        cls: CompiledModuleMeta,
+        name: str,
+        dct: dict,
+        *,
+        export_name: Optional[str] = None,
+    ) -> CompiledModuleMeta:
+        """Creates a CompiledModule subclass with an explicit dictionary of members.
+
+        This is the unsugared form of:
+
+        ```
+        class Foo(CompiledModule, export_name="bar"):
+          def member(): ...
+        ```
+        """
+        return CompiledModuleMeta(name, (cls,), dct, export_name=export_name)
 
     @staticmethod
     def get_class_info(cls: CompiledModuleMeta) -> CompiledModuleClassInfo:

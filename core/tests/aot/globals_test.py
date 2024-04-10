@@ -179,12 +179,12 @@ class GlobalsTest(unittest.TestCase):
         inst = ScalarState(context=Context())
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
-        self.assertIn("@_state_index.global {noinline} = 0 : index", module_str)
-        self.assertIn("@_state_f32.global {noinline} = 0.000000e+00 : f32", module_str)
-        self.assertIn("@_state_f64.global {noinline} = 0.000000e+00 : f64", module_str)
-        self.assertIn("@_state_i32.global {noinline} = 0 : i32", module_str)
-        self.assertIn("@_state_i64.global {noinline} = 0 : i64", module_str)
-        self.assertIn("@_state_bool.global {noinline} = false", module_str)
+        self.assertIn("@_state_index.global = 0 : index", module_str)
+        self.assertIn("@_state_f32.global = 0.000000e+00 : f32", module_str)
+        self.assertIn("@_state_f64.global = 0.000000e+00 : f64", module_str)
+        self.assertIn("@_state_i32.global = 0 : i32", module_str)
+        self.assertIn("@_state_i64.global = 0 : i64", module_str)
+        self.assertIn("@_state_bool.global = false", module_str)
 
     def testInheritExportScalars(self):
         class BaseState(CompiledModule):
@@ -200,8 +200,8 @@ class GlobalsTest(unittest.TestCase):
         inst = DerivedState(context=Context())
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
-        self.assertIn("@_state_index.global {noinline} = 0 : index", module_str)
-        self.assertIn("@_state_f32.global {noinline} = 0.000000e+00 : f32", module_str)
+        self.assertIn("@_state_index.global = 0 : index", module_str)
+        self.assertIn("@_state_f32.global = 0.000000e+00 : f32", module_str)
 
     def testInheritOverrideBase(self):
         class BaseState(CompiledModule):
@@ -218,10 +218,8 @@ class GlobalsTest(unittest.TestCase):
         inst = DerivedState(context=Context(), import_to="full")
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
-        self.assertIn("@_state_index.global {noinline} = 0 : index", module_str)
-        self.assertNotIn(
-            "@_state_f32.global {noinline} = 0.000000e+00 : f32", module_str
-        )
+        self.assertIn("@_state_index.global = 0 : index", module_str)
+        self.assertNotIn("@_state_f32.global = 0.000000e+00 : f32", module_str)
         self.assertIn("return %_state_index.global : index", module_str)
 
     def testInheritExportModules(self):
@@ -266,15 +264,15 @@ class GlobalsTest(unittest.TestCase):
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertIn(
-            "util.global private mutable @_state0.seq.0 {noinline} = dense<0> : tensor<1xi32>",
+            "util.global private mutable @_state0.seq.0 = dense<0> : tensor<1xi32>",
             module_str,
         )
         self.assertIn(
-            "util.global private mutable @_state0.seq.1 {noinline} = dense<0.000000e+00> : tensor<2xf64>",
+            "util.global private mutable @_state0.seq.1 = dense<0.000000e+00> : tensor<2xf64>",
             module_str,
         )
         self.assertIn(
-            "util.global private mutable @_state0.seq.2 {noinline} = dense<0> : tensor<3xi64>",
+            "util.global private mutable @_state0.seq.2 = dense<0> : tensor<3xi64>",
             module_str,
         )
         self.assertIn("util.global private mutable @_state0.data", module_str)

@@ -95,7 +95,8 @@ class ExportAPI(unittest.TestCase):
 
     def testExternalParamsNNModule(self):
         mdl = SimpleParams()
-        exported = export(mdl, args=(torch.empty([128, 20]),), external_params=True)
+        externalize_module_parameters(mdl)
+        exported = export(mdl, args=(torch.empty([128, 20]),))
         exported.print_readable()
         asm = str(exported.mlir_module)
         self.assertNotIn("dense_resource", asm)
@@ -103,13 +104,20 @@ class ExportAPI(unittest.TestCase):
 
     def testTorchExportedProgram(self):
         mdl = SimpleParams()
+        externalize_module_parameters(mdl)
         prg = torch.export.export(mdl, args=(torch.empty([128, 20]),))
-        exported = export(prg, external_params=True)
+        exported = export(prg)
         exported.print_readable()
         asm = str(exported.mlir_module)
         self.assertNotIn("dense_resource", asm)
-        self.assertIn("util.global private @_params.classifier.weight", asm)
-        self.assertIn("util.global private @_params.classifier.bias", asm)
+        self.assertIn(
+            'util.global private @__auto.classifier.weight = #stream.parameter.named<"model"::"classifier.weight">',
+            asm,
+        )
+        self.assertIn(
+            'util.global private @__auto.classifier.bias = #stream.parameter.named<"model"::"classifier.bias">',
+            asm,
+        )
 
 
 class SimpleParams(nn.Module):

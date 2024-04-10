@@ -107,12 +107,8 @@ class TorchExportTests(unittest.TestCase):
         inst = ParamsAsGlobalsModule(context=Context(), import_to="import")
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
-        self.assertIn(
-            "util.global private @_params.classifier.weight {noinline}", module_str
-        )
-        self.assertIn(
-            "util.global private @_params.classifier.bias {noinline}", module_str
-        )
+        self.assertIn("util.global private @_params.classifier.weight", module_str)
+        self.assertIn("util.global private @_params.classifier.bias", module_str)
         # Should only be two.
         self.assertEqual(2, module_str.count("util.global private"))
         # And two loads each loads.
