@@ -15,6 +15,8 @@ THIS_DIR = os.path.realpath(os.path.dirname(__file__))
 REPO_DIR = os.path.dirname(THIS_DIR)
 VERSION_INFO_FILE = os.path.join(REPO_DIR, "version_info.json")
 
+# Transitional as we migrate from shark-turbine -> iree-turbine.
+TURBINE_PACKAGE_NAME = os.getenv("TURBINE_PACKAGE_NAME", "shark-turbine")
 
 with open(
     os.path.join(
@@ -32,10 +34,12 @@ def load_version_info():
 
 
 version_info = load_version_info()
-PACKAGE_VERSION = version_info["package-version"]
+PACKAGE_VERSION = version_info["core-version"]
 
 packages = find_namespace_packages(
     include=[
+        "iree.turbine",
+        "iree.turbine.*",
         "shark_turbine",
         "shark_turbine.*",
     ],
@@ -77,7 +81,7 @@ class BuildCommand(distutils.command.build.build):
 
 
 setup(
-    name=f"shark-turbine",
+    name=f"{TURBINE_PACKAGE_NAME}",
     version=f"{PACKAGE_VERSION}",
     author="SHARK Authors",
     author_email="stella@nod.ai",
@@ -87,7 +91,7 @@ setup(
     url="https://github.com/nod-ai/SHARK-Turbine",
     license="Apache-2.0",
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 5 - Production/Stable",
         "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
     ],
@@ -102,6 +106,9 @@ setup(
         f"iree-compiler{get_version_spec('iree-compiler')}",
         f"iree-runtime{get_version_spec('iree-runtime')}",
         # Use the [torch-cpu-nightly] spec to get a more recent/specific version.
+        # Note that during the transition to torch 2.3.0 we technically support
+        # back to torch 2.1, which is why we pin here in this way. However,
+        # the CI tests on 2.3.
         "torch>=2.1.0",
     ],
     extras_require={

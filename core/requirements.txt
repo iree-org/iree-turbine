@@ -6,3 +6,7 @@
 
 -r pytorch-requirements.txt
 -r iree-requirements.txt
+
+# From pyproject.toml.
+setuptools
+wheel
