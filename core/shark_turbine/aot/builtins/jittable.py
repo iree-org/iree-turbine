@@ -226,7 +226,7 @@ class jittable(CallableIntrinsic):
         )
         logger.debug("Invoking dynamo trace")
         gm, guards = exported_f(*flat_pytorch_args)
-        logger.debug("Dyanmo trace complete")
+        logger.debug("Dynamo trace complete")
 
         # TODO: Add debug logging for the exported graph module.
         # gm.print_readable()
