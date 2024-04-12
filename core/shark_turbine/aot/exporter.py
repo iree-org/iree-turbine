@@ -282,9 +282,10 @@ def export(
             {(function_name or "main"): exported_program},
             export_name=module_name or "module",
         )
-    else:
-        assert issubclass(type(mdl), CompiledModule)
+    elif issubclass(mdl, CompiledModule):
         TransformedModule = mdl
+    else:
+        raise TypeError(f"mdl argument (type: {type(mdl)}) is not a supported type")
 
     session = Session()
     # There are some bugs with respect to Session/context interop that we

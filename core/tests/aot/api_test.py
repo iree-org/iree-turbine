@@ -119,6 +119,22 @@ class ExportAPI(unittest.TestCase):
             asm,
         )
 
+    def testCompiledModuleExportedProgram(self):
+        class BasicModule(CompiledModule):
+            ...
+
+        exported = export(BasicModule)
+        module_str = str(exported.mlir_module)
+        print(module_str)
+        self.assertIn("module @basic", module_str)
+
+    def testUnsupportedExportedProgram(self):
+        class UnsupportedExportType:
+            ...
+
+        with self.assertRaises(TypeError):
+            export(UnsupportedExportType)
+
 
 class SimpleParams(nn.Module):
     def __init__(self):
