@@ -1,13 +1,14 @@
 # SHARK Turbine
+
 ![image](https://netl.doe.gov/sites/default/files/2020-11/Turbine-8412270026_83cfc8ee8f_c.jpg)
 
 Turbine is the set of development tools that the [SHARK Team](https://github.com/nod-ai/SHARK)
 is building for deploying all of our models for deployment to the cloud and devices. We
-are building it as we transition from our TorchScript-era 1-off export and compilation 
-to a unified approach based on PyTorch 2 and Dynamo. While we use it heavily ourselves, it 
+are building it as we transition from our TorchScript-era 1-off export and compilation
+to a unified approach based on PyTorch 2 and Dynamo. While we use it heavily ourselves, it
 is intended to be a general purpose model compilation and execution tool.
 
-Turbine provides three primary tools:
+Turbine provides a collection of tools:
 
 * *AOT Export*: For compiling one or more `nn.Module`s to compiled, deployment
   ready artifacts. This operates via both a simple one-shot export API (Already upstreamed to [torch-mlir](https://github.com/llvm/torch-mlir/blob/main/python/torch_mlir/extras/fx_importer.py))
@@ -20,6 +21,8 @@ Turbine provides three primary tools:
   native PyTorch constructs and tracing. It is intended to complement for simple
   cases where direct emission to the underlying, cross platform, vector programming model
   is desirable.
+* *Turbine-LLM*: a repository of layers, model recipes, and conversion tools
+  from popular Large Language Model (LLM) quantization tooling.
 
 Under the covers, Turbine is based heavily on [IREE](https://github.com/openxla/iree) and
 [torch-mlir](https://github.com/llvm/torch-mlir) and we use it to drive evolution
@@ -30,7 +33,7 @@ See [the roadmap](docs/roadmap.md) for upcoming work and places to contribute.
 ## Contact Us
 
 Turbine is under active development. If you would like to participate as it comes online,
-please reach out to us on the `#turbine` channel of the 
+please reach out to us on the `#turbine` channel of the
 [nod-ai Discord server](https://discord.gg/QMmR6f8rGb).
 
 ## Quick Start for Users
@@ -53,7 +56,7 @@ pip install shark-turbine
 
 2. Try one of the samples:
 
-Generally, we use Turbine to produce valid, dynamic shaped Torch IR (from the 
+Generally, we use Turbine to produce valid, dynamic shaped Torch IR (from the
 [`torch-mlir torch` dialect](https://github.com/llvm/torch-mlir/tree/main/include/torch-mlir/Dialect/Torch/IR)
 with various approaches to handling globals). Depending on the use-case and status of the
 compiler, these should be compilable via IREE with `--iree-input-type=torch` for
@@ -102,8 +105,8 @@ If doing native development of the compiler, it can be useful to switch to
 source builds for iree-compiler and iree-runtime.
 
 In order to do this, check out [IREE](https://github.com/openxla/iree) and
-follow the instructions to [build from source](https://openxla.github.io/iree/building-from-source/getting-started/#configuration-settings), making
-sure to specify [additional options](https://openxla.github.io/iree/building-from-source/getting-started/#building-with-cmake):
+follow the instructions to [build from source](https://iree.dev/building-from-source/getting-started/), making
+sure to specify [additional options for the Python bindings](https://iree.dev/building-from-source/getting-started/#building-with-cmake):
 
 ```
 -DIREE_BUILD_PYTHON_BINDINGS=ON -DPython3_EXECUTABLE="$(which python)"
@@ -117,6 +120,7 @@ Uninstall existing packages:
 pip uninstall iree-compiler
 pip uninstall iree-runtime
 ```
+
 Copy the `.env` file from `iree/` to this source directory to get IDE
 support and add to your path for use from your shell:
 

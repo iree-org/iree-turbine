@@ -1,3 +1,7 @@
+"""
+Toolkit for ahead-of-time (AOT) compilation and export of PyTorch programs.
+"""
+
 # Copyright 2023 Nod Labs, Inc
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions.
