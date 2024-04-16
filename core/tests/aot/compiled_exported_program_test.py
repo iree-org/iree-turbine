@@ -119,6 +119,23 @@ class TorchExportTests(unittest.TestCase):
             2, module_str.count("util.global.load @_params.classifier.bias")
         )
 
+    def testBuffersAsGlobals(self):
+        fxb = FxProgramsBuilder(SimpleBuffers())
+
+        @fxb.export_program(args=(torch.empty([128]),))
+        def _compute1(module, x):
+            return module.forward(x)
+
+        class BuffersAsGlobalsModule(CompiledModule):
+            buffers = export_buffers(fxb.root_module, mutable=True)
+            compute1 = _compute1
+
+        inst = BuffersAsGlobalsModule(context=Context(), import_to="import")
+        module_str = str(CompiledModule.get_mlir_module(inst))
+        self.assertIn("util.global private mutable @_buffers.buf", module_str)
+        self.assertIn("%_buffers.buf = util.global.load @_buffers.buf", module_str)
+        self.assertIn("util.global.store", module_str)
+
 
 class SimpleParams(nn.Module):
     def __init__(self):
@@ -127,6 +144,18 @@ class SimpleParams(nn.Module):
 
     def forward(self, x):
         return self.classifier(x)
+
+
+class SimpleBuffers(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("buf", torch.randn(1))
+
+    def forward(self, x: torch.Tensor):
+        sumx = (x).sum()
+        output = x * self.buf
+        self.buf.copy_(sumx)
+        return output
 
 
 if __name__ == "__main__":

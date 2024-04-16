@@ -27,6 +27,7 @@ from iree.compiler.extras.fx_importer import (
     FxImporter,
     FxImporterHooks,
     GraphNodeImporter,
+    InputInfo,
 )
 
 from ....support.logging import aot_logger as logger
@@ -218,6 +219,27 @@ def import_exported_program(
 class _Hooks(FxImporterHooks):
     def __init__(self, module_builder: ModuleBuilder):
         self.module_builder = module_builder
+
+    def store_produced_value(
+        self,
+        gni: GraphNodeImporter,
+        py_value: Any,
+        produced_ir_value: Any,
+        info: InputInfo,
+    ):
+        module_builder = self.module_builder
+        # See if we know about it.
+        mapping = module_builder.global_ref_tracker.track(py_value)
+        if mapping.is_empty:
+            raise ValueError(f"Cannot store value to unmapped global for: {info}")
+        logger.debug("Resolved  global for store %r", mapping)
+        materialized_global: MaterializedGlobal = mapping.value  # type: ignore
+        converted_value = Operation.create(
+            "torch_c.to_builtin_tensor",
+            results=[materialized_global.ir_type],
+            operands=[produced_ir_value],
+        ).result
+        util_d.GlobalStoreOp(converted_value, materialized_global.symbol_name)
 
     def resolve_literal(self, gni: GraphNodeImporter, literal: Any) -> Optional[Value]:
         # We support resolution of tracked reference types. Currently this

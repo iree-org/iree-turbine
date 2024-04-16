@@ -25,6 +25,7 @@ from ...dynamo.type_conversion import (
 )
 
 from ...support.ir_imports import (
+    AsmState,
     Attribute,
     BF16Type,
     DenseElementsAttr,
@@ -197,7 +198,7 @@ class ModuleBuilder:
         try:
             with open(dump_path, "wb") as f:
                 op.print(
-                    f,
+                    file=f,
                     binary=True,
                     print_generic_op_form=True,
                     large_elements_limit=100,

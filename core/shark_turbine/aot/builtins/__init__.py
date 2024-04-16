@@ -36,5 +36,6 @@ __all__ = [
     "export_global",
     "export_global_tree",
     "export_parameters",
+    "export_buffers",
     "jittable",
 ]

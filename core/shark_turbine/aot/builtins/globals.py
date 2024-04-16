@@ -29,6 +29,14 @@ from torch.utils._pytree import (
 )
 
 
+__all__ = [
+    "export_global",
+    "export_global_tree",
+    "export_parameters",
+    "export_buffers",
+]
+
+
 class export_global(GlobalsDef, Abstractifiable):
     """Exports a single global into a CompiledModule."""
 
@@ -162,6 +170,60 @@ class export_parameters(GlobalsDef, TreeAbstractifiable):
     def __repr__(self):
         names = [name for name, _ in self._param_list]
         return f"<export_parameters {', '.join(names)}>"
+
+
+class export_buffers(GlobalsDef, TreeAbstractifiable):
+    """Exports buffers from an nn.Module.
+
+    These are exposed to procedural programs as a dictionary of param/values.
+    """
+
+    __slots__ = [
+        "_buffer_list",
+        "_schema",
+        "_tree",
+    ]
+
+    def __init__(
+        self,
+        nn_module: nn.Module,
+        *,
+        mutable: Optional[bool] = None,
+        external: Optional[bool] = None,
+        external_scope: Optional[str] = None,
+        name_mapper: Optional[NameMapCallback] = None,
+        uninitialized: Optional[bool] = None,
+        attrs: Optional[GlobalAttributes] = None,
+    ):
+        if attrs is None:
+            attrs = GlobalAttributes(
+                mutable=bool(mutable),
+                external=external,
+                external_scope=external_scope,
+                name_mapper=name_mapper,
+                uninitialized=uninitialized,
+            )
+        super().__init__(attrs)
+        self._buffer_list = list(nn_module.named_buffers())
+        self._tree = dict(self._buffer_list)
+        _, self._schema = tree_flatten(self._tree)
+
+    def items(self):
+        for name, value in self._buffer_list:
+            yield (name, value)
+
+    def schema(self) -> TreeSpec:
+        return self._schema
+
+    def abstractify_tree(self):
+        return tree_map(abstractify_single_value, self._tree)
+
+    def __getitem__(self, key):
+        return self._tree[key]
+
+    def __repr__(self):
+        names = [name for name, _ in self._param_list]
+        return f"<export_buffers {', '.join(names)}>"
 
 
 def _transform_tree_to_names(prefix: str, tree):

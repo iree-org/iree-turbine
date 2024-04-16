@@ -8,6 +8,7 @@
 """Unifies all imports of iree.compiler.ir into one place."""
 
 from iree.compiler.ir import (
+    AsmState,
     Attribute,
     Block,
     BlockArgument,
