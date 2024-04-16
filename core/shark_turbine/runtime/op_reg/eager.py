@@ -13,6 +13,8 @@ import torch
 
 from iree.runtime import (
     HalBufferView,
+    HalElementType,
+    VmRef,
     VmVariantList,
 )
 
@@ -29,6 +31,8 @@ from ..device import (
     lookup_device_from_torch,
 )
 
+from ..tracing import tracer
+
 from .base import (
     AttrArg,
     IntArg,
@@ -37,6 +41,7 @@ from .base import (
 
 from .compiler import (
     compile_standalone_kernel,
+    KernelCompileConfig,
 )
 
 __all__ = [
@@ -153,7 +158,8 @@ def eager_dispatch(ksel: KernelSelection):
     start = default_timer()
     vm_context.invoke(vm_f, arg_list, ret_list)
     invoke_time = default_timer() - start
-    logger.debug("Kernel invocation %s: %sms", config.key, invoke_time * 1000)
+    if tracer.enabled:
+        _log_eager_dispatch(config, arg_list, invoke_time * 1000)
 
     # Unpack results.
     results = []
@@ -179,3 +185,62 @@ def eager_dispatch(ksel: KernelSelection):
         return None
     else:
         return tuple(results)
+
+
+def _log_eager_dispatch(
+    config: KernelCompileConfig, arg_list: VmVariantList, invoke_time_millis: float
+):
+    args = []
+    try:
+        for i in range(arg_list.size):
+            variant = arg_list.get_variant(i)
+            if isinstance(variant, VmRef):
+                if variant.isinstance(HalBufferView):
+                    args.append(_log_format_buffer_view(variant.deref(HalBufferView)))
+                    continue
+            args.append(variant)
+    except:
+        tracer.exception("Exception while pretty-printing arguments")
+
+    msg = ""
+    tracer.log_structured(
+        tag="INVOKE_KERNEL",
+        msg=msg,
+        columns=[config.tracing_key, invoke_time_millis] + args,
+    )
+
+
+def _log_format_buffer_view(bv: HalBufferView) -> str:
+    # TODO: We should expose this as a method on HalBufferView upstream instead
+    # of half doing it here.
+    shape = "x".join(str(i) for i in bv.shape)
+    dtype_desc = _LOG_HAL_ELEMENT_TYPE_DESC.get(bv.element_type)
+    if dtype_desc is None:
+        dtype_desc = f"<{bv.element_type}>"
+    return f"{shape}x{dtype_desc}"
+
+
+_LOG_HAL_ELEMENT_TYPE_DESC = {
+    HalElementType.BFLOAT_16: "bf16",
+    HalElementType.BOOL_8: "i1",
+    HalElementType.COMPLEX_64: "cf64",
+    HalElementType.COMPLEX_128: "cf128",
+    HalElementType.FLOAT_16: "f16",
+    HalElementType.FLOAT_32: "f32",
+    HalElementType.FLOAT_64: "f64",
+    HalElementType.INT_4: "i4",
+    HalElementType.INT_8: "i8",
+    HalElementType.INT_16: "i16",
+    HalElementType.INT_32: "i32",
+    HalElementType.INT_64: "i64",
+    HalElementType.SINT_4: "si4",
+    HalElementType.SINT_8: "si8",
+    HalElementType.SINT_16: "si16",
+    HalElementType.SINT_32: "si32",
+    HalElementType.SINT_64: "si64",
+    HalElementType.UINT_4: "ui4",
+    HalElementType.UINT_8: "ui8",
+    HalElementType.UINT_16: "ui16",
+    HalElementType.UINT_32: "ui32",
+    HalElementType.UINT_64: "ui64",
+}

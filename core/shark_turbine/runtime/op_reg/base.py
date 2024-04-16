@@ -10,7 +10,7 @@ dispatcher.
 
 from typing import Any, Callable, Optional, Sequence, Type, Union, cast
 
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
 import functools
 import logging
 import re
@@ -37,6 +37,8 @@ from ...support.ir_imports import (
     func_d,
 )
 
+from ...support.logging import runtime_logger as logger
+
 from ...support.conversions import (
     TORCH_DTYPE_TO_IREE_TYPE_ASM,
 )
@@ -53,7 +55,6 @@ __all__ = [
     "def_library",
 ]
 
-logger = logging.getLogger("turbine.runtime.op_reg")
 
 ###############################################################################
 # Op library management
@@ -167,7 +168,8 @@ class CustomOp(ABC):
         fq_name = f"{library.ns}.{name}"
         ALL_CUSTOM_OP_REGS[fq_name] = self
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def signature(self) -> str:
         """PyTorch function signature.
 
@@ -616,6 +618,7 @@ class KernelBuilder(ABC):
         self.arg_bindings = arg_bindings
         self.ip = ip
         self.module_body = module_body
+        self.context = module_body.owner.context
         self.symbol_table = symbol_table
         self.yielded = False
 

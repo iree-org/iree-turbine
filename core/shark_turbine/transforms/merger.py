@@ -79,6 +79,7 @@ class Merger:
         target_module: Operation,
         *,
         user_rename_map: Optional[Dict[str, str]] = None,
+        target_symbol_table: Optional[SymbolTable] = None,
         _logger=None,
     ):
         self._context = source_module.context
@@ -88,7 +89,11 @@ class Merger:
         self.user_rename_map = user_rename_map if user_rename_map is not None else {}
         self._logger = _logger if _logger else null_logger
         self._source_symbol_table = SymbolTable(self.source_module)
-        self._target_symbol_table = SymbolTable(self.target_module)
+        self._target_symbol_table = (
+            target_symbol_table
+            if target_symbol_table is not None
+            else SymbolTable(self.target_module)
+        )
         self._rename_map: Dict[StringAttr, StringAttr] = {}
 
         self._nested_symbol_ops: List[Operation] = []
@@ -140,7 +145,7 @@ class Merger:
             self._target_body.append(source)
 
         # Merge functions.
-        funcs = get_top_level_ops(self.source_module, "func.func")
+        funcs = get_top_level_ops(self.source_module, "func.func", "util.func")
         for func_op in funcs:
             self._import_symbol_op(func_op)
             self._nested_symbol_table_ops.append(func_op)

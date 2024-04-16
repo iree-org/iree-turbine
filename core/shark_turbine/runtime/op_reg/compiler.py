@@ -6,7 +6,7 @@
 
 from dataclasses import dataclass
 from timeit import default_timer
-from typing import Any
+from typing import Any, Optional
 
 from iree.compiler.api import (
     Session,
@@ -35,6 +35,8 @@ from ...support.logging import (
 from ..device import (
     Device,
 )
+
+from ..tracing import tracer
 
 from .base import (
     FreeFuncKernelBuilder,
@@ -69,6 +71,10 @@ class KernelCompileConfig:
     # things like unbacked memory mappings, etc.
     keep_alive: Any = None
 
+    # If tracing is enabled, this may contain a sanitized key that can be
+    # used to log additional information against the kernel.
+    tracing_key: Optional[str] = None
+
 
 # TODO: The cache should be more than just a simple dict. Can be persistent
 KERNEL_CACHE: dict[str, tuple[VmContext, VmFunction, KernelCompileConfig]] = {}
@@ -95,7 +101,7 @@ def compile_standalone_kernel(
         ksel.op.generate(ksel, kb)
     kb.module_op.verify()
     module_asm = kb.module_op.get_asm(
-        binary=True, enable_debug_info=True, print_generic_op_form=True
+        binary=True, enable_debug_info=True, print_generic_op_form=False
     )
     generation_time = default_timer() - start
 
@@ -129,14 +135,23 @@ def compile_standalone_kernel(
     vm_context = VmContext(vm_instance, [device.create_hal_module(), vm_module])
     main_function = vm_module.lookup_function("main")
 
-    logger.debug(
-        "Compiled kernel %s: mlir=%d bytes, vmfb=%d bytes (generation: %sms, compilation: %sms)",
-        cache_key,
-        len(module_asm),
-        len(mapped_memory),
-        generation_time * 1000,
-        compilation_time * 1000,
-    )
+    if tracer.enabled:
+        config.tracing_key = tracer.save_jit_kernel_artifacts(
+            cache_key=cache_key, module_asm=module_asm, binary=mapped_memory
+        )
+        tracer.log_structured(
+            tag="COMPILE",
+            msg=f"Compiled kernel {config.tracing_key}, cache_key={cache_key}",
+            columns=[
+                config.tracing_key,
+                main_function.name,
+                len(module_asm),
+                len(mapped_memory),
+                generation_time * 1000,
+                compilation_time * 1000,
+                " ".join(session.get_flags(non_default_only=True)),
+            ],
+        )
     cache_hit = (vm_context, main_function, config)
     KERNEL_CACHE[cache_key] = cache_hit
     return cache_hit

@@ -298,7 +298,10 @@ TORCH_TENSOR_EXPORTERS: dict[
 }
 
 DEVICE_TARGET_COMPILE_FLAGS: dict[str, tuple[str, ...]] = {
-    "local-task": ("--iree-hal-target-backends=llvm-cpu",),
+    "local-task": (
+        "--iree-hal-target-backends=llvm-cpu",
+        "--iree-llvmcpu-target-cpu-features=host",
+    ),
 }
 
 # Aliases.
