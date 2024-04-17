@@ -2,7 +2,7 @@
 # setup with pinned deps and will fulfill all install
 # requirements for the package (which pins to minimum
 # versions, not specific).
--f https://openxla.github.io/iree/pip-release-links.html
+-f https://iree.dev/pip-release-links.html
 
 -r pytorch-requirements.txt
 -r iree-requirements.txt

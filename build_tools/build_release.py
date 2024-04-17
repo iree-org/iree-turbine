@@ -114,7 +114,7 @@ def download_iree_binaries():
         args.extend(platform_args)
         args += [
             "-f",
-            "https://openxla.github.io/iree/pip-release-links.html",
+            "https://iree.dev/pip-release-links.html",
             "-f",
             WHEEL_DIR,
             "-r",
