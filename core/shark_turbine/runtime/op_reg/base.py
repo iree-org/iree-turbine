@@ -350,6 +350,14 @@ class KernelSelection(ABC):
         """
         ...
 
+    def return_new_tensor(self, size: list, dtype: torch.dtype) -> "TensorArg":
+        """Constructs a new symbolic tensor and marks the next result as returning it.
+
+        This delegates to `return_tensor` but takes care of some easy to mess
+        up boiler plate for dynamic shapes.
+        """
+        return self.return_tensor(torch.empty(size, dtype=dtype, device="meta"))
+
 
 class EagerKernelSelection(KernelSelection):
     """Kernel selection specialized for eager arguments."""

@@ -4,8 +4,12 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from typing import Callable
+
 import torch
 from torch import Tensor
+from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 from ...dynamo.type_conversion import (
     NativeTypeConverter,
@@ -52,6 +56,8 @@ class ExpandCustomOpsPass(Pass):
         self.ops_to_delete: dict[Operation, None] = {}
         self.type_converter = NativeTypeConverter(root_op.context)
         self.symbol_table = SymbolTable(root_op)
+        self.shape_env = ShapeEnv()
+        self.fake_mode = FakeTensorMode(shape_env=self.shape_env)
 
     def delete_op(self, op):
         self.ops_to_delete[op.operation] = None
@@ -86,9 +92,15 @@ class ExpandCustomOpsPass(Pass):
     def expand_custom_op(self, op_reg: CustomOp, op: Operation):
         original_operands: list[Value] = list(op.operands)
         ksel = AOTKernelSelection(
-            op_reg, original_operands, list(op.results), self.type_converter
+            op_reg,
+            original_operands,
+            list(op.results),
+            self.type_converter,
+            self.shape_env,
         )
-        op_reg.select(ksel)
+        with self.fake_mode:
+            op_reg.select(ksel)
+        ksel._run_validators()
 
         module_body = self.root_op.regions[0].blocks[0]
         kb = InlineKernelBuilder(
@@ -110,6 +122,8 @@ class AOTKernelSelection(KernelSelection):
         "operands",
         "results",
         "type_converter",
+        "shape_env",
+        "_validators",
     ]
 
     def __init__(
@@ -118,11 +132,18 @@ class AOTKernelSelection(KernelSelection):
         operands: list[Value],
         results: list[Value],
         type_converter: NativeTypeConverter,
+        shape_env: ShapeEnv,
     ):
         super().__init__(op, len(operands))
         self.operands = operands
         self.results = results
         self.type_converter = type_converter
+        self.shape_env = shape_env
+        self._validators: list[Callable] = []
+
+    def _run_validators(self):
+        for v in self._validators:
+            v()
 
     def arg_tensor(self, arg: int, *, inplace_tied: bool = False) -> TensorArg:
         # This is annoying: We have to go from the Torch MLIR type system to the
@@ -133,18 +154,15 @@ class AOTKernelSelection(KernelSelection):
         arg_descs = self.arg_descs
         assert arg_descs[arg] is None, f"Already constrained argument {arg}"
         operand = self.operands[arg]
-        signed_native_type = self.type_converter.torch_type_to_native(operand.type)
+        signed_native_type = self.type_converter.torch_type_to_native(
+            operand.type, signless=False
+        )
         try:
             rtt = RankedTensorType(signed_native_type)
-            # TODO: We need to do the FakeMode/ShapeEnv dance to create a symbolic
-            # fake tensor here.
         except TypeError as e:
             raise TypeError(
                 f"Argument type mismatch from Torch IR for arg {arg}: Expected ranked tensor, got {signed_native_type}"
             ) from e
-        assert not any(
-            rtt.is_dynamic_dim(i) for i in range(rtt.rank)
-        ), "NYI: Dynamic shape tensors in custom op AOT mode"
         element_type_asm = str(rtt.element_type)
         try:
             dtype = MLIR_TYPE_ASM_TO_TORCH_DTYPE[element_type_asm]
@@ -152,10 +170,39 @@ class AOTKernelSelection(KernelSelection):
             raise AssertionError(
                 f"Could not find dtype mapping for {element_type_asm} in MLIR_TYPE_ASM_TO_TORCH_DTYPE"
             )
-        t = torch.empty(rtt.shape, dtype=dtype, device="meta")
+
+        # Because we are operating in fake_mode, replace MLIR dyn dims with
+        # symints for the PyTorch type system.
+        shape_env = self.shape_env
+        sym_shape = [
+            d if d >= 0 else shape_env.create_unbacked_symint() for d in rtt.shape
+        ]
+        t = torch.empty(sym_shape, dtype=dtype)
         arg_descs[arg] = desc = TensorArg(t)
         if inplace_tied:
             self.inplace_tied_arg_descs.append(desc)
+
+        def validator():
+            rank = rtt.rank
+            for i in range(rank):
+                spec_dim = desc.spec_dims[i]
+                if rtt.is_dynamic_dim(i):
+                    # Make sure that it wasn't specialized.
+                    if spec_dim is not None:
+                        raise ValueError(
+                            f"Custom op {self.op}, arg {arg} requires a static dim "
+                            f"at index {i} but it is dynamic: {rtt}"
+                        )
+                else:
+                    # Make sure specialized dim matches.
+                    actual_dim = rtt.get_dim_size(i)
+                    if spec_dim is not None and actual_dim != spec_dim:
+                        raise ValueError(
+                            f"Custom op {self.op}, arg {arg} has a mismatched static "
+                            f"dim at index {i}: actual = {actual_dim}, expected = {spec_dim}"
+                        )
+
+        self._validators.append(validator)
         return desc
 
     def arg_tensor_list(self, arg: int) -> TensorListArg:
