@@ -32,6 +32,7 @@ from ...support.conversions import (
 
 from ...support.ir_imports import (
     Block,
+    IrType,
     InsertionPoint,
     OpResult,
     Operation,
@@ -262,7 +263,10 @@ class InlineKernelBuilder(KernelBuilder):
                 if not desc.is_list:
                     if arity == 1:
                         arg_bindings.append(
-                            type_converter.materialize_torch_to_native(operand)
+                            type_converter.materialize_torch_to_native(
+                                operand,
+                                static_info_cast_to=IrType.parse(desc.mlir_type_asm),
+                            )
                         )
                     else:
                         arg_bindings.append(None)
@@ -297,7 +301,9 @@ class InlineKernelBuilder(KernelBuilder):
             for new_result, old_result in zip(results, torch_op_results):
                 torch_type = old_result.type
                 new_result = self.type_converter.materialize_native_to_torch(
-                    new_result, torch_type
+                    new_result,
+                    torch_type,
+                    static_info_cast=True,
                 )
                 old_result.replace_all_uses_with(new_result)
         self.yielded = True

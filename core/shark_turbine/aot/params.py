@@ -6,9 +6,11 @@
 
 from typing import Iterator, List, Optional, Set, Tuple, Union
 
-from dataclasses import dataclass
+import json
 from pathlib import Path
+import warnings
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -26,6 +28,7 @@ __all__ = [
     "externalize_module_parameters",
     "save_module_parameters",
     "ParameterArchive",
+    "ParameterArchiveEntry",
     "ParameterArchiveBuilder",
 ]
 
@@ -47,6 +50,64 @@ def externalize_module_parameters(
 
 
 ################################################################################
+# Metadata
+################################################################################
+
+_dtype_to_name: dict[torch.dtype, str] = {
+    torch.float32: "float32",
+    torch.float64: "float64",
+    torch.complex64: "complex64",
+    torch.complex128: "complex128",
+    torch.float16: "float16",
+    torch.bfloat16: "bfloat16",
+    torch.float8_e4m3fn: "float8_e4m3fn",
+    torch.float8_e4m3fnuz: "float8_e4m3fnuz",
+    torch.float8_e5m2: "float8_e5m2",
+    torch.float8_e5m2fnuz: "float8_e5m2fnuz",
+    torch.int8: "int8",
+    torch.int16: "int16",
+    torch.int32: "int32",
+    torch.int64: "int64",
+    torch.uint16: "uint16",
+    torch.uint32: "uint32",
+    torch.uint64: "uint64",
+    torch.uint8: "uint8",
+    torch.bool: "bool",
+}
+
+_name_to_dtype: dict[str, torch.dtype] = {v: k for k, v in _dtype_to_name.items()}
+
+_metadata_prefix = "PYTORCH:"
+
+
+def _make_tensor_metadata(t: torch.Tensor) -> str:
+    """Makes a tensor metadata blob that can be used to reconstruct the tensor."""
+    dtype = t.dtype
+    try:
+        dtype_name = _dtype_to_name[dtype]
+    except KeyError:
+        dtype_name = "unknown"
+        warnings.warn(
+            f"Unknown dtype saving params: {dtype} (missing entry in params._dtype_to_name)"
+        )
+    dtype_desc = {
+        "class_name": type(dtype).__name__,
+        "is_complex": dtype.is_complex,
+        "is_floating_point": dtype.is_floating_point,
+        "is_signed": dtype.is_signed,
+        "itemsize": dtype.itemsize,
+    }
+    d = {
+        "type": "Tensor",
+        "dtype": dtype_name,
+        "shape": list(t.shape),
+        "dtype_desc": dtype_desc,
+    }
+    encoded = f"{_metadata_prefix}{json.dumps(d)}"
+    return encoded
+
+
+################################################################################
 # Parameter archives save/load
 ################################################################################
 
@@ -63,6 +124,73 @@ def save_module_parameters(
     builder.save(file_path)
 
 
+class ParameterArchiveEntry:
+    """Wraps a raw ParameterIndexEntry with additional helpers."""
+
+    def __init__(self, raw: ParameterIndexEntry):
+        self.raw = raw
+
+    @property
+    def key(self) -> str:
+        return self.raw.key
+
+    def as_flat_tensor(self) -> torch.Tensor:
+        """Accesses the contents as a uint8 flat tensor.
+
+        If it is a splat, then the tensor will be a view of the splat pattern.
+
+        Raises a ValueError on unsupported entries.
+        """
+        if self.raw.is_file:
+            wrapper = np.array(self.raw.file_view, copy=False)
+        elif self.raw.is_splat:
+            wrapper = np.array(self.raw.splat_pattern, copy=True)
+        else:
+            raise ValueError(f"Unsupported ParameterIndexEntry: {self.raw}")
+
+        return torch.from_numpy(wrapper)
+
+    def as_tensor(self) -> torch.Tensor:
+        """Returns a tensor viewed with appropriate shape/dtype from metadata.
+
+        Raises a ValueError if unsupported.
+        """
+        # Decode metadata.
+        metadata = self.raw.metadata.decode()
+        if not metadata.startswith(_metadata_prefix):
+            raise ValueError(
+                f"No metadata for parameter entry {self.key}: Cannot convert to tensor"
+            )
+        metadata = metadata[len(_metadata_prefix) :]
+        d = json.loads(metadata)
+        try:
+            type_name = d["type"]
+            if d["type"] != "Tensor":
+                raise ValueError(
+                    f"Metadata for parameter entry {self.key} is not a Tensor ('{type_name}')"
+                )
+            dtype_name = d["dtype"]
+            shape = d["shape"]
+        except KeyError as e:
+            raise ValueError(f"Bad metadata for parameter entry {self.key}") from e
+
+        # Unpack/validate.
+        try:
+            dtype = _name_to_dtype[dtype_name]
+        except KeyError:
+            raise ValueError(f"Unknown dtype name '{dtype_name}'")
+        try:
+            shape = [int(d) for d in shape]
+        except ValueError as e:
+            raise ValueError(f"Illegal shape for parameter entry {self.key}") from e
+
+        t = self.as_flat_tensor()
+        return t.view(dtype=dtype).view(shape)
+
+    def __repr__(self):
+        return f"ParameterArchiveEntry({self.raw}, metadata={self.raw.metadata})"
+
+
 class ParameterArchive:
     """Allows access to a parameter archive as CPU tensors.
 
@@ -71,11 +199,16 @@ class ParameterArchive:
     """
 
     def __init__(
-        self, file_path: Optional[Union[str, Path]] = None, *, mmap: bool = True
+        self,
+        file_path: Optional[Union[str, Path]] = None,
+        *,
+        mmap: bool = True,
+        readable: bool = True,
+        writable: bool = False,
     ):
         self._index = ParameterIndex()
         if file_path is not None:
-            self.load(file_path, mmap=mmap)
+            self.load(file_path, mmap=mmap, readable=readable, writable=writable)
 
     def load(
         self,
@@ -94,8 +227,12 @@ class ParameterArchive:
     def index(self) -> ParameterIndex:
         return self._index
 
-    def items(self) -> List[Tuple[str, ParameterIndexEntry]]:
-        return self._index.items()
+    def items(self) -> List[Tuple[str, ParameterArchiveEntry]]:
+        """Returns the items in the archive.
+
+        Note that there can be duplicates if the archive was constructed that way.
+        """
+        return [(k, ParameterArchiveEntry(v)) for k, v in self._index.items()]
 
     def __repr__(self):
         return repr(self._index)
@@ -113,13 +250,21 @@ class ParameterArchiveBuilder:
 
     def add_tensor(self, name: str, tensor: torch.Tensor):
         """Adds an named tensor to the archive."""
-        host_array = tensor.detach().cpu().contiguous().numpy()
-        self._index.add_buffer(name, host_array)
+        flat_array = tensor.detach().flatten().contiguous().cpu().view(torch.uint8)
+        host_array = flat_array.numpy()
+        self._index.add_buffer(name, host_array, metadata=_make_tensor_metadata(tensor))
 
     def add_module(self, module: nn.Module, *, prefix: str = ""):
         """Adds all parameters and persistent buffers from a module hierarchy."""
         for name, t in _yield_saveable_tensors(module, prefix=prefix):
             self.add_tensor(name, t)
+
+    def add_blob(self, key: str, blob):
+        """Adds a raw blob to the index.
+
+        The blob must be interpretable as a buffer.
+        """
+        self._index.add_buffer(key, blob)
 
 
 def _yield_saveable_tensors(

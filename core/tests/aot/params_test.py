@@ -12,11 +12,6 @@ import unittest
 import torch
 import torch.nn as nn
 
-from iree.runtime import (
-    ParameterIndex,
-    ParameterProvider,
-)
-
 from shark_turbine.aot import (
     export,
     externalize_module_parameters,
@@ -50,8 +45,10 @@ class ParamsTest(unittest.TestCase):
                 # lock the file for an arbitrary duration.
                 archive = ParameterArchive(file_path, mmap=False)
                 items = dict(archive.items())
-                self.assertIn("classifier.weight", items)
-                self.assertIn("classifier.bias", items)
+                weight = items["classifier.weight"].as_tensor()
+                bias = items["classifier.bias"].as_tensor()
+                torch.testing.assert_close(weight, m.classifier.weight)
+                torch.testing.assert_close(bias, m.classifier.bias)
             finally:
                 file_path.unlink()
 
@@ -65,8 +62,10 @@ class ParamsTest(unittest.TestCase):
                 # lock the file for an arbitrary duration.
                 archive = ParameterArchive(file_path, mmap=False)
                 items = dict(archive.items())
-                self.assertIn("foobar.model.classifier.weight", items)
-                self.assertIn("foobar.model.classifier.bias", items)
+                weight = items["foobar.model.classifier.weight"].as_tensor()
+                bias = items["foobar.model.classifier.bias"].as_tensor()
+                torch.testing.assert_close(weight, m.classifier.weight)
+                torch.testing.assert_close(bias, m.classifier.bias)
             finally:
                 file_path.unlink()
 

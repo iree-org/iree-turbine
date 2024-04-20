@@ -9,22 +9,24 @@
 Note that there are ad-hoc type conversions spread around a bit, and we
 should consolidate them here.
 """
-from typing import List
+from typing import List, Optional
 
 import functools
 import re
 
-from iree.compiler.ir import (
+from ..support.ir_imports import (
+    tensor_d,
     Context,
     F64Type,
     IntegerType,
     RankedTensorType,
     ShapedType,
-    Type as IrType,
+    IrType,
     Location,
     Operation,
     Value,
 )
+
 
 # Match an overall torch type declaration. Groups:
 #   1. Local name (int, float, vtensor)
@@ -103,11 +105,15 @@ class NativeTypeConverter:
         return torch_type
 
     def materialize_native_to_torch(
-        self, native_value: Value, torch_type: IrType
+        self, native_value: Value, torch_type: IrType, *, static_info_cast: bool = False
     ) -> Value:
         native_type = native_value.type
         if RankedTensorType.isinstance(native_type):
             # Convert to vtensor.
+            if static_info_cast:
+                required_native_type = self.torch_type_to_native(torch_type)
+                if required_native_type != native_type:
+                    native_value = tensor_d.cast(required_native_type, native_value)
             return Operation.create(
                 "torch_c.from_builtin_tensor",
                 results=[torch_type],
@@ -138,15 +144,23 @@ class NativeTypeConverter:
                 f"Unsupported native->torch ABI type conversion: {native_type} -> {torch_type}"
             )
 
-    def materialize_torch_to_native(self, torch_value: Value) -> Value:
+    def materialize_torch_to_native(
+        self, torch_value: Value, *, static_info_cast_to: Optional[IrType] = None
+    ) -> Value:
         native_type = self.torch_type_to_native(torch_value.type)
         if RankedTensorType.isinstance(native_type):
             # Convert to vtensor.
-            return Operation.create(
+            builtin_tensor_value = Operation.create(
                 "torch_c.to_builtin_tensor",
                 results=[native_type],
                 operands=[torch_value],
             ).result
+            # Detect type difference and assume a static cast is needed.
+            if static_info_cast_to is not None and static_info_cast_to != native_type:
+                builtin_tensor_value = tensor_d.cast(
+                    static_info_cast_to, builtin_tensor_value
+                )
+            return builtin_tensor_value
         elif IntegerType.isinstance(native_type):
             # Convert to !torch.int
             int_type = IntegerType(native_type)

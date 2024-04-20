@@ -68,6 +68,10 @@ class ExportOutput:
         """Gets the MLIR module resulting from the last compilation phase."""
         return CompiledModule.get_mlir_module(self.compiled_module)
 
+    def verify(self):
+        """Runs the verifier on the module, raising an exception on failure."""
+        self.mlir_module.verify()
+
     def print_readable(self, large_elements_limit: int = 50):
         """Prints a human readable version of the current compilation IR."""
         self.mlir_module.print(large_elements_limit=large_elements_limit)

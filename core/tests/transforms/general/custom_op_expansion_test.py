@@ -34,16 +34,18 @@ class PassTest(unittest.TestCase):
     def testTensorArgReturn(self):
         m = self.run_test_case("custom_op_simple.mlir")
         m_asm = str(m)
+        print(m_asm)
         self.assertNotIn("torch.operator", m_asm)
         self.assertIn(
             "%0 = torch_c.to_builtin_tensor %arg0 : !torch.vtensor<[97,8],f32> -> tensor<97x8xf32>",
             m_asm,
         )
+        # TODO: Upgrade to a FileCheck style test so we can pattern match that
+        # the casts are inserted properly.
         self.assertIn(
-            "%1 = torch_c.from_builtin_tensor %0 : tensor<97x8xf32> -> !torch.vtensor<[97,8],f32>",
+            "%1 = torch_c.from_builtin_tensor %cast_0 : tensor<97x8xf32> -> !torch.vtensor<[97,8],f32>",
             m_asm,
         )
-        print(m_asm)
 
     def testStringAttrArg(self):
         global _TEST_STRING_ATTR
