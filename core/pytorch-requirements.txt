@@ -1,3 +1,0 @@
-torch==2.3.0
-torchaudio
-torchvision

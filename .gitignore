@@ -1,0 +1,32 @@
+# Visual Studio files
+.env
+.vs/
+.vscode/
+*.sdf
+*.opensdf
+*.VC.opendb
+*.suo
+*.user
+
+# macOS files
+.DS_Store
+
+# CMake artifacts
+build/
+build-*/
+
+# Python
+__pycache__
+_python_build/
+deps/
+dist/
+wheelhouse
+*.egg-info
+*.whl
+*.venv
+
+#Model artifacts
+*.pt
+*.safetensors
+*.gguf
+*.vmfb

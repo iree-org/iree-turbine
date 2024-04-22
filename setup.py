@@ -12,7 +12,7 @@ from pathlib import Path
 from setuptools import find_namespace_packages, setup
 
 THIS_DIR = os.path.realpath(os.path.dirname(__file__))
-REPO_DIR = os.path.dirname(THIS_DIR)
+REPO_DIR = THIS_DIR
 VERSION_INFO_FILE = os.path.join(REPO_DIR, "version_info.json")
 
 # Transitional as we migrate from shark-turbine -> iree-turbine.
@@ -58,9 +58,7 @@ def load_requirement_pins(requirements_file: str):
     requirement_pins.update(dict(pin_pairs))
 
 
-load_requirement_pins("iree-requirements.txt")
-load_requirement_pins("misc-requirements.txt")
-load_requirement_pins("pytorch-cpu-requirements.txt")
+load_requirement_pins("requirements.txt")
 
 
 def get_version_spec(dep: str):
@@ -105,19 +103,10 @@ setup(
         f"numpy{get_version_spec('numpy')}",
         f"iree-compiler{get_version_spec('iree-compiler')}",
         f"iree-runtime{get_version_spec('iree-runtime')}",
-        # Use the [torch-cpu-nightly] spec to get a more recent/specific version.
-        # Note that during the transition to torch 2.3.0 we technically support
-        # back to torch 2.1, which is why we pin here in this way. However,
-        # the CI tests on 2.3.
-        "torch>=2.1.0",
+        "torch>=2.3.0",
     ],
     extras_require={
-        "torch-cpu-nightly": [f"torch{get_version_spec('torch')}"],
-        "onnx": [
-            f"onnx{get_version_spec('onnx')}",
-        ],
         "testing": [
-            f"onnx{get_version_spec('onnx')}",
             f"pytest{get_version_spec('pytest')}",
             f"pytest-xdist{get_version_spec('pytest-xdist')}",
         ],

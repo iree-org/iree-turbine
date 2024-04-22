@@ -1,3 +1,5 @@
 --pre
 --index-url https://download.pytorch.org/whl/test/cpu
--r pytorch-requirements.txt
+torch==2.3.0
+torchaudio
+torchvision

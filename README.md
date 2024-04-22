@@ -1,55 +1,40 @@
-# SHARK Turbine
+# IREE Turbine
 
 ![image](https://netl.doe.gov/sites/default/files/2020-11/Turbine-8412270026_83cfc8ee8f_c.jpg)
 
-Turbine is the set of development tools that the [SHARK Team](https://github.com/nod-ai/SHARK)
-is building for deploying all of our models for deployment to the cloud and devices. We
-are building it as we transition from our TorchScript-era 1-off export and compilation
-to a unified approach based on PyTorch 2 and Dynamo. While we use it heavily ourselves, it
-is intended to be a general purpose model compilation and execution tool.
+Turbine is IREE's frontend for PyTorch.
 
 Turbine provides a collection of tools:
 
 * *AOT Export*: For compiling one or more `nn.Module`s to compiled, deployment
   ready artifacts. This operates via both a simple one-shot export API (Already upstreamed to [torch-mlir](https://github.com/llvm/torch-mlir/blob/main/python/torch_mlir/extras/fx_importer.py))
-  for simple models and an underlying [advanced API](https://github.com/nod-ai/SHARK-Turbine/blob/main/core/shark_turbine/aot/compiled_module.py) for complicated models
+  for simple models and an underlying [advanced API](shark_turbine/aot/compiled_module.py) for complicated models
   and accessing the full features of the runtime.
 * *Eager Execution*: A `torch.compile` backend is provided and a Turbine Tensor/Device
   is available for more native, interactive use within a PyTorch session.
-* *Turbine Kernels*: (coming soon) A union of the [Triton](https://github.com/openai/triton) approach and
-  [Pallas](https://jax.readthedocs.io/en/latest/pallas/index.html) but based on
-  native PyTorch constructs and tracing. It is intended to complement for simple
-  cases where direct emission to the underlying, cross platform, vector programming model
-  is desirable.
-* *Turbine-LLM*: a repository of layers, model recipes, and conversion tools
-  from popular Large Language Model (LLM) quantization tooling.
-
-Under the covers, Turbine is based heavily on [IREE](https://github.com/openxla/iree) and
-[torch-mlir](https://github.com/llvm/torch-mlir) and we use it to drive evolution
-of both, upstreaming infrastructure as it becomes timely to do so.
-
-See [the roadmap](docs/roadmap.md) for upcoming work and places to contribute.
+* *Custom Ops*: Integration for defining custom PyTorch ops and implementing them in
+  terms of IREE's backend IR or a Pythonic kernel language.
 
 ## Contact Us
 
-Turbine is under active development. If you would like to participate as it comes online,
-please reach out to us on the `#turbine` channel of the
-[nod-ai Discord server](https://discord.gg/QMmR6f8rGb).
+Turbine is under active development. Feel free to reach out on one of 
+[IREE's communication channels](https://github.com/iree-org/iree?tab=readme-ov-file#communication-channels) (specifically, we monitor the 
+#pytorch channel on the IREE Discord server).
 
 ## Quick Start for Users
 
 1. Install from source:
 
 ```
-pip install shark-turbine
+pip install iree-turbine
 # Or for editable: see instructions under developers
 ```
 
 The above does install some unecessary cuda/cudnn packages for cpu use. To avoid this you
 can specify pytorch-cpu and install via:
 ```
-pip install -r core/pytorch-cpu-requirements.txt
-pip install shark-turbine
+pip install -r pytorch-cpu-requirements.txt
+pip install iree-turbine
 ```
 
 (or follow the "Developers" instructions below for installing from head/nightly)
@@ -63,41 +48,64 @@ compiler, these should be compilable via IREE with `--iree-input-type=torch` for
 end to end execution. Dynamic shape support in torch-mlir is a work in progress,
 and not everything works at head with release binaries at present.
 
-  * [AOT MLP With Static Shapes](https://github.com/nod-ai/SHARK-Turbine/blob/main/core/examples/aot_mlp/mlp_export_simple.py)
-  * [AOT MLP with a dynamic batch size](https://github.com/nod-ai/SHARK-Turbine/blob/main/core/examples/aot_mlp/mlp_export_dynamic.py)
-  * [AOT llama2](https://github.com/nod-ai/SHARK-Turbine/blob/main/core/examples/llama2_inference/llama2.ipynb):
+  * [AOT MLP With Static Shapes](examples/aot_mlp/mlp_export_simple.py)
+  * [AOT MLP with a dynamic batch size](examples/aot_mlp/mlp_export_dynamic.py)
+  * [AOT llama2](examples/llama2_inference/llama2.ipynb):
     Dynamic sequence length custom compiled module with state management internal to the model.
-  * [Eager MNIST with `torch.compile`](https://github.com/nod-ai/SHARK-Turbine/blob/main/core/examples/eager_mlp/mlp_eager_simple.py)
+  * [Eager MNIST with `torch.compile`](examples/eager_mlp/mlp_eager_simple.py)
 
 ## Developers
 
-### Getting Up and Running
+Use this as a guide to get started developing the project using pinned,
+pre-release dependencies. You are welcome to deviate as you see fit, but
+these canonical directions mirror what the CI does.
 
-If only looking to develop against this project, then you need to install Python
-deps for the following:
+### Setup a venv
 
-* PyTorch
-* iree-compiler (with Torch input support)
-* iree-runtime
-
-The pinned deps at HEAD require pre-release versions of all of the above, and
-therefore require additional pip flags to install. Therefore, to satisfy
-development, we provide a `requirements.txt` file which installs precise
-versions and has all flags. This can be installed prior to the package:
-
-Installing into a venv is highly recommended.
+We recommend setting up a virtual environment (venv). The project is configured
+to ignore `.venv` directories, and editors like VSCode pick them up by default.
 
 ```
-pip install -r core/pytorch-cpu-requirements.txt
-pip install --upgrade -r core/requirements.txt
-pip install --upgrade -e "core[torch-cpu-nightly,testing]"
+python -m venv --prompt iree-turbine .venv
+source .venv/bin/activate
 ```
 
-Run tests:
+### Install PyTorch for Your System
+
+If no explicit action is taken, the default PyTorch version will be installed.
+This will give you a current CUDA-based version. Install a different variant
+by doing so explicitly first:
+
+*CPU:*
 
 ```
-pytest core/
+pip install -r pytorch-cpu-requirements.txt
 ```
+
+*ROCM:*
+
+```
+pip install -r pytorch-rocm-requirements.txt
+```
+
+### Install Development Packages
+
+```
+# Install editable local projects.
+pip install -r requirements.txt -e .
+```
+
+### Running Tests
+
+```
+pytest .
+```
+
+### Optional: Pre-commits and developer settings
+
+This project is set up to use the `pre-commit` tooling. To install it in
+your local repo, run: `pre-commit install`. After this point, when making
+commits locally, hooks will run. See https://pre-commit.com/
 
 ### Using a development compiler
 
