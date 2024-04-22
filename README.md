@@ -17,8 +17,8 @@ Turbine provides a collection of tools:
 
 ## Contact Us
 
-Turbine is under active development. Feel free to reach out on one of 
-[IREE's communication channels](https://github.com/iree-org/iree?tab=readme-ov-file#communication-channels) (specifically, we monitor the 
+Turbine is under active development. Feel free to reach out on one of
+[IREE's communication channels](https://github.com/iree-org/iree?tab=readme-ov-file#communication-channels) (specifically, we monitor the
 #pytorch channel on the IREE Discord server).
 
 ## Quick Start for Users

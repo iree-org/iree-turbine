@@ -10,7 +10,7 @@ Don't forget to put in your huggingface token from https://huggingface.co/settin
 
 # if you don't insert it, you will be prompted to log in later;
 # you may need to rerun this script after logging in
-YOUR_HF_TOKEN="insert token for headless" 
+YOUR_HF_TOKEN="insert token for headless"
 
 # clone and install dependencies
 sudo apt install -y git
@@ -29,7 +29,7 @@ if [[ $YOUR_HF_TOKEN == hf_* ]]; then
 elif [ -f ~/.cache/huggingface/token ]; then
     # Read token from the file
     TOKEN_CONTENT=$(cat ~/.cache/huggingface/token)
-    
+
     # Check if the token starts with "hf_"
     if [[ $TOKEN_CONTENT == hf_* ]]; then
         echo "Already logged in with a Hugging Face token."
