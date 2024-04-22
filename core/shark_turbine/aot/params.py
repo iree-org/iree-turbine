@@ -60,20 +60,32 @@ _dtype_to_name: dict[torch.dtype, str] = {
     torch.complex128: "complex128",
     torch.float16: "float16",
     torch.bfloat16: "bfloat16",
-    torch.float8_e4m3fn: "float8_e4m3fn",
-    torch.float8_e4m3fnuz: "float8_e4m3fnuz",
-    torch.float8_e5m2: "float8_e5m2",
-    torch.float8_e5m2fnuz: "float8_e5m2fnuz",
     torch.int8: "int8",
     torch.int16: "int16",
     torch.int32: "int32",
     torch.int64: "int64",
-    torch.uint16: "uint16",
-    torch.uint32: "uint32",
-    torch.uint64: "uint64",
     torch.uint8: "uint8",
     torch.bool: "bool",
 }
+
+
+# Deal with datatypes not yet added in all versions of Torch.
+def _add_optional_dtype(name: str):
+    try:
+        dtype = getattr(torch, name)
+    except AttributeError:
+        return
+    _dtype_to_name[dtype] = name
+
+
+_add_optional_dtype("float8_e4m3fn")
+_add_optional_dtype("float8_e4m3fnuz")
+_add_optional_dtype("float8_e5m2")
+_add_optional_dtype("float8_e5m2fnuz")
+_add_optional_dtype("uint16")
+_add_optional_dtype("uint32")
+_add_optional_dtype("uint64")
+
 
 _name_to_dtype: dict[str, torch.dtype] = {v: k for k, v in _dtype_to_name.items()}
 
