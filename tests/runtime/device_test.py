@@ -151,10 +151,10 @@ class TorchCUDAInterop(unittest.TestCase):
         print(device.dump_device_info())
 
     def testJit(self):
-        t = torch.tensor([1, 2, 3, 4, 5]).to("cuda:0")
         from shark_turbine.ops import iree as iree_ops
 
-        iree_ops.trace_tensor("FOO", t)
+        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0]).to("cuda:0")
+        print(iree_ops._test_add(t, t))
 
 
 if __name__ == "__main__":
