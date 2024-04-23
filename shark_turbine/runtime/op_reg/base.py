@@ -74,11 +74,10 @@ def def_library(ns) -> torch.library.Library:
 
 
 def default_dispatch_keys() -> list[str]:
-    # TODO: Dynamically determine what devices to register against.
-    # Note that we have to register against specific keys instead of the
-    # fallback, as fallback is too broad and breaks certain elements of
-    # fx tracing.
-    return ["CPU"]
+    keys = ["CPU"]
+    if torch.cuda.is_available():
+        keys.append("CUDA")
+    return keys
 
 
 # All such custom kernels are registered in the 'turbine' library/namespace.

@@ -7,6 +7,7 @@
 from functools import lru_cache
 from typing import Callable, Optional, Union
 from threading import local, Lock
+import warnings
 
 import torch
 
@@ -73,6 +74,7 @@ class DeviceState:
         "device",
         "driver",
         "instance",
+        "enumerated_info",
     ]
 
     def __init__(
@@ -81,10 +83,33 @@ class DeviceState:
         driver: Union[str, HalDriver],
         device: Optional[HalDevice] = None,
         vm_instance: Optional[VmInstance] = None,
+        enumerated_info: Optional[dict] = None,
     ):
         self.instance = vm_instance or get_vm_instance()
         self.driver = driver if isinstance(driver, HalDriver) else get_driver(driver)
         self.device = device if device else self.driver.create_default_device()
+        self.enumerated_info = enumerated_info or {}
+
+    @property
+    def enumerated_device_id(self) -> int:
+        try:
+            return self.enumerated_info["device_id"]
+        except KeyError as e:
+            raise RuntimeError("No enumerated device_id for device") from e
+
+    @property
+    def enumerated_path(self) -> str:
+        try:
+            return self.enumerated_device_id["path"]
+        except KeyError as e:
+            raise RuntimeError("No enumerated path for device") from e
+
+    @property
+    def enumerated_name(self) -> str:
+        try:
+            return self.enumerated_device_id["name"]
+        except KeyError as e:
+            raise RuntimeError("No enumerated name for device") from e
 
     @staticmethod
     @lru_cache(maxsize=None)
@@ -243,6 +268,9 @@ class Device:
             ...
         raise MismatchedDeviceSetClearError()
 
+    def dump_device_info(self) -> str:
+        return self._s.driver.dump_device_info(self._s.enumerated_device_id)
+
     def __repr__(self):
         return f"<Turbine Device: {self._s.device}>"
 
@@ -271,6 +299,27 @@ def _device_import_torch_tensor_cpu(device: Device, t: torch.Tensor) -> HalBuffe
     return bv
 
 
+def _device_import_torch_tensor_hip(device: Device, t: torch.Tensor) -> HalBufferView:
+    assert hasattr(t, "__dlpack__")
+    # TODO: The '0' below is the stream (on real-CUDA, it is 1) signifying
+    # the default stream. It should be the stream upon which we schedule.
+    bv = device.hal_device.from_dlpack(t)
+    print("FROM DLPACK:", bv)
+    return bv
+    # hal_device = device.hal_device
+    # element_type = dtype_to_element_type(t.dtype)
+    # # TODO: In this case, we should be importing the raw buffer, but this is not
+    # # generically exposed to Python in the IREE runtime.
+    # bv = device.hal_device.allocator.allocate_buffer_copy(
+    #     memory_type=MemoryType.DEVICE_LOCAL,
+    #     allowed_usage=BufferUsage.DEFAULT,
+    #     device=hal_device,
+    #     buffer=t.detach().numpy(),
+    #     element_type=element_type,
+    # )
+    # return bv
+
+
 def _device_export_torch_tensor_cpu(
     device: Device, bv: HalBufferView, like: torch.Tensor
 ) -> torch.Tensor:
@@ -286,6 +335,8 @@ def _device_export_torch_tensor_cpu(
 
 # Mapping of torch tensor importers keyed by driver name.
 TORCH_TENSOR_IMPORTERS: dict[str, Callable[[Device, torch.Tensor], HalBufferView]] = {
+    "cuda": None,
+    "hip": _device_import_torch_tensor_hip,
     "local-sync": _device_import_torch_tensor_cpu,
     "local-task": _device_import_torch_tensor_cpu,
 }
@@ -293,11 +344,15 @@ TORCH_TENSOR_IMPORTERS: dict[str, Callable[[Device, torch.Tensor], HalBufferView
 TORCH_TENSOR_EXPORTERS: dict[
     str, Callable[[Device, HalBufferView, torch.Tensor], torch.Tensor]
 ] = {
+    "cuda": None,
+    "hip": None,
     "local-sync": _device_export_torch_tensor_cpu,
     "local-task": _device_export_torch_tensor_cpu,
 }
 
 DEVICE_TARGET_COMPILE_FLAGS: dict[str, tuple[str, ...]] = {
+    "cuda": ("--iree-hal-target-backends=cuda",),
+    "hip": ("--iree-hal-target-backends=rocm",),
     "local-task": (
         "--iree-hal-target-backends=llvm-cpu",
         "--iree-llvmcpu-target-cpu-features=host",
@@ -357,14 +412,64 @@ def get_device_from_torch(torch_device: torch.device) -> Device:
 
 def _create_device_from_torch(torch_device: torch.device) -> Optional[Device]:
     torch_type = torch_device.type
-    uri = None
     if torch_type == "cpu":
-        uri = "local-task"
+        return Device("local-task")
+    elif torch_type == "cuda":
+        # Fork based on HIP or real CUDA.
+        props = torch.cuda.get_device_properties(torch_device)
+        if not hasattr(props, "gcnArchName"):
+            # Real CUDA.
+            return _create_cuda_device(torch_device, props)
+        else:
+            # HIP as CUDA.
+            return _create_hip_device(torch_device, props)
 
-    if uri is None:
+    return None
+
+
+def _create_cuda_device(torch_device: torch.device, props) -> Optional[Device]:
+    device = _create_cuda_like_device(torch_device, props, "hip")
+    if device:
+        device.compile_target_flags = device.compile_target_flags + (
+            f"--iree-hal-cuda-llvm-target-arch=sm_{props.major}{props.minor}",
+        )
+    return device
+
+
+def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
+    device = _create_cuda_like_device(torch_device, props, "hip")
+    if device:
+        gcn_arch_name = props.gcnArchName
+        device.compile_target_flags = device.compile_target_flags + (
+            f"--iree-rocm-target-chip={gcn_arch_name}",
+        )
+    return device
+
+
+def _create_cuda_like_device(
+    torch_device: torch.device, props, driver_name: str
+) -> Optional[Device]:
+    if torch.cuda.device_count() > 1:
+        warnings.warn(
+            f"Multiple {driver_name} devices detected: Turbine does not yet "
+            f"guarantee stable device mapping"
+        )
+
+    requested_index = torch_device.index
+    driver = get_driver(driver_name)
+    available_infos = driver.query_available_devices()
+    if requested_index >= len(available_infos):
         return None
-
-    return Device(uri)
+    device_info = available_infos[requested_index]
+    hal_device = driver.create_device(device_info)
+    device_state = DeviceState(
+        driver=driver,
+        device=hal_device,
+        vm_instance=get_vm_instance(),
+        enumerated_info=device_info,
+    )
+    device = Device(device_state=device_state)
+    return device
 
 
 ###############################################################################
