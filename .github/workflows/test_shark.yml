@@ -1,0 +1,52 @@
+name: Test SHARK
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  # A PR number if a pull request and otherwise the commit hash. This cancels
+  # queued and in-progress runs for the same PR (presubmit) or commit
+  # (postsubmit). The workflow name is prepended to avoid conflicts between
+  # different workflows.
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  test-shark:
+    strategy:
+      matrix:
+        version: [3.11]
+        os: [ubuntu-22.04-64core]
+
+    runs-on: ${{matrix.os}}
+    steps:
+      - name: "Setting up Python"
+        uses: actions/setup-python@75f3110429a8c05be0e1bf360334e4cced2b63fa # v2.3.3
+        with:
+          python-version: ${{matrix.version}}
+
+      - name: "Checkout SHARK"
+        uses: actions/checkout@v4
+        with:
+          repository: "nod-ai/SHARK.git"
+          path: SHARK
+          ref: "iree-turbine-switch"
+
+      # TODO: Replace with a sh script from shark repo
+      - name: "Install SHARK"
+        run: |
+          cd $GITHUB_WORKSPACE/SHARK
+          python${{ matrix.version }} -m venv shark.venv
+          source shark.venv/bin/activate
+          sed -i 's/iree-turbine#/iree-turbine.git@${{github.sha}}#/g' requirements.txt
+          pip install -r requirements.txt --no-cache-dir
+          pip install -e .
+          pip uninstall -y torch
+          pip install torch==2.1.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+          pip uninstall -y mpmath
+          pip install mpmath==1.3.0
+          python apps/shark_studio/tests/api_test.py

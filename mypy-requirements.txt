@@ -1,0 +1,3 @@
+# Typing packages needed for full mypy execution at the project level.
+mypy==1.8.0
+types-requests
