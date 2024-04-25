@@ -156,7 +156,7 @@ class ModuleBuilder:
         "cache",
         "context",
         "fx_py_attr_tracker",
-        "global_ip",
+        "last_global_op",
         "ip",
         "module_op",
         "symbol_table",
@@ -170,7 +170,10 @@ class ModuleBuilder:
         self.context = module_op.context
         self.body = module_op.regions[0].blocks[0]
         self.symbol_table = SymbolTable(module_op)
-        self.global_ip = InsertionPoint.at_block_begin(self.body)
+        # We organize globals in order of declaration at the top of the module.
+        # To do so, record the last one emitted so that newly created ones
+        # can be ordered properly.
+        self.last_global_op: Optional[Operation] = None
         self.ip = InsertionPoint(self.body)
         self.cache = ContextCache(self.context)
         # Tracks global references to a MaterializedGlobal.
@@ -250,7 +253,10 @@ class ModuleBuilder:
         element_type = self.torch_dtype_to_iree_type(t.dtype)
         external, external_scope, external_name = attrs.infer_external_from_tensor(t)
 
-        with self.global_ip, Location.unknown():
+        # Always create globals at the top. Then after created, if there was
+        # a prior one, move the new one to after it to maintain declaration
+        # order.
+        with InsertionPoint.at_block_begin(self.body), Location.unknown():
             tensor_type = RankedTensorType.get(list(t.shape), element_type)
             ir_attrs = {
                 "sym_name": StringAttr.get(symbol_name),
@@ -297,6 +303,9 @@ class ModuleBuilder:
 
             global_op = Operation.create("util.global", attributes=ir_attrs)
             self.symbol_table.insert(global_op)
+            if self.last_global_op is not None:
+                global_op.move_after(self.last_global_op)
+            self.last_global_op = global_op
             actual_symbol_name = StringAttr(global_op.attributes["sym_name"]).value
             return actual_symbol_name, global_op, tensor_type
 
@@ -308,7 +317,10 @@ class ModuleBuilder:
         attrs: GlobalAttributes,
         logical_name: Optional[str] = None,
     ) -> Tuple[str, Operation]:
-        with self.global_ip, Location.unknown():
+        # Always create globals at the top. Then after created, if there was
+        # a prior one, move the new one to after it to maintain declaration
+        # order.
+        with InsertionPoint.at_block_begin(self.body), Location.unknown():
             ir_attrs = {
                 "sym_name": StringAttr.get(symbol_name),
                 "sym_visibility": StringAttr.get("private"),
@@ -332,6 +344,9 @@ class ModuleBuilder:
                 )
             global_op = Operation.create("util.global", attributes=ir_attrs)
             self.symbol_table.insert(global_op)
+            if self.last_global_op is not None:
+                global_op.move_after(self.last_global_op)
+            self.last_global_op = global_op
             actual_symbol_name = StringAttr(global_op.attributes["sym_name"]).value
             return actual_symbol_name, global_op
 

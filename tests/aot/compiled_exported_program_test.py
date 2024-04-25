@@ -90,7 +90,7 @@ class TorchExportTests(unittest.TestCase):
         self.assertIn("func.func @compute1", module_str)
         self.assertIn("func.func @compute2", module_str)
 
-    def testParametersAsGlobals(self):
+    def testParametersAsExplicitGlobals(self):
         fxb = FxProgramsBuilder(SimpleParams())
 
         @fxb.export_program(
@@ -117,6 +117,47 @@ class TorchExportTests(unittest.TestCase):
         )
         self.assertEqual(
             2, module_str.count("util.global.load @_params.classifier.bias")
+        )
+
+    def testParametersAsGlobalsViaExternalizeModuleParameters(self):
+        mdl = SimpleParams()
+        externalize_module_parameters(mdl)
+
+        fxb = FxProgramsBuilder(mdl)
+
+        @fxb.export_program(
+            args=(torch.empty([128, 20]),),
+        )
+        def _compute1(module, x):
+            return module.forward(x)
+
+        class ParamsAsGlobalsModule(CompiledModule):
+            compute1 = _compute1
+            compute2 = _compute1
+
+        inst = ParamsAsGlobalsModule(context=Context(), import_to="import")
+        module_str = str(CompiledModule.get_mlir_module(inst))
+        print(module_str)
+        self.assertIn("util.global private @__auto.classifier.weight", module_str)
+        self.assertIn("util.global private @__auto.classifier.bias", module_str)
+
+        # It's clunky to verify ordering, but we explicitly guarantee that
+        # implicitly exported globals are emitted in order of declaration,
+        # preceeding all functions.
+        g1_index = module_str.index("util.global private @__auto.classifier.weight")
+        g2_index = module_str.index("util.global private @__auto.classifier.bias")
+        f_index = module_str.index("func")
+        self.assertGreater(g2_index, g1_index)
+        self.assertGreater(f_index, g2_index)
+
+        # Should only be two.
+        self.assertEqual(2, module_str.count("util.global private"))
+        # And two loads each loads.
+        self.assertEqual(
+            2, module_str.count("util.global.load @__auto.classifier.weight")
+        )
+        self.assertEqual(
+            2, module_str.count("util.global.load @__auto.classifier.bias")
         )
 
     def testBuffersAsGlobals(self):
