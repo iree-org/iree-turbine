@@ -6,7 +6,7 @@ mypy==1.8.0
 # It is expected that you have installed a PyTorch version/variant specific
 # to your needs, so we only include a minimum version spec.
 # TODO: Use a versioned release once 2.3.0 drops.
-torch>=2.3.0.dev1
+torch==2.3.0
 torchaudio
 torchvision
 
