@@ -7,6 +7,7 @@
 import logging
 import unittest
 import threading
+import warnings
 
 import torch
 
@@ -120,6 +121,52 @@ class TorchCPUInterop(unittest.TestCase):
     def testCompilerFlags(self):
         d = get_device_from_torch(torch.device("cpu"))
         self.assertIn("--iree-hal-target-backends=llvm-cpu", d.compile_target_flags)
+
+
+# Make CUDA testing conditional.
+test_cuda_device = None
+if torch.cuda.is_available():
+    try:
+        test_cuda_device = torch.device("cuda:0")
+    except:
+        ...
+if test_cuda_device is None:
+    warnings.warn("Not testing CUDA interop (device not available)")
+
+
+@unittest.skipUnless(test_cuda_device, "CUDA not available")
+class TorchCUDAInterop(unittest.TestCase):
+    def setUp(self):
+        self._cuda_props = torch.cuda.get_device_properties(test_cuda_device)
+        print(self._cuda_props)
+        print(dir(self._cuda_props))
+        self._is_hip = False
+        if hasattr(self._cuda_props, "gcnArchName"):
+            print("Detected HIP device as CUDA")
+            self._is_hip = True
+
+    def testFromTorchDevice(self):
+        torch_device = torch.device("cuda:0")
+        device = get_device_from_torch(torch_device)
+        print(device.dump_device_info())
+
+    def testJit(self):
+        from shark_turbine.ops import iree as iree_ops
+
+        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cuda:0")
+        result = iree_ops._test_add(t, t)
+        expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
+        torch.testing.assert_close(result.cpu(), expected)
+
+
+class TorchCPUInterop(unittest.TestCase):
+    def testJit(self):
+        from shark_turbine.ops import iree as iree_ops
+
+        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu")
+        result = iree_ops._test_add(t, t)
+        expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
+        torch.testing.assert_close(result, expected)
 
 
 if __name__ == "__main__":
