@@ -334,6 +334,9 @@ def _device_export_torch_tensor_cpu(
 def _device_import_torch_tensor_cuda_hip(
     device: Device, t: torch.Tensor
 ) -> HalBufferView:
+    # We currently only support contiguous, so ensure that.
+    if not t.is_contiguous():
+        t = t.contiguous()
     # TODO: The 'None' here tells the producer to synchronize on the default
     # stream. For async, we should advance our timeline and signal when an
     # event is raised on Torch's stream at the current position.
