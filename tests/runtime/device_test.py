@@ -155,7 +155,7 @@ class TorchCUDAInterop(unittest.TestCase):
 
         t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cuda:0")
         result = iree_ops._test_add(t, t)
-        expected = torch.tensor([ 2.,  4.,  6.,  8., 10.], device="cpu")
+        expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
         torch.testing.assert_close(result.cpu(), expected)
 
 
@@ -165,7 +165,7 @@ class TorchCPUInterop(unittest.TestCase):
 
         t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu")
         result = iree_ops._test_add(t, t)
-        expected = torch.tensor([ 2.,  4.,  6.,  8., 10.], device="cpu")
+        expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
         torch.testing.assert_close(result, expected)
 
 
