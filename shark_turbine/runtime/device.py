@@ -106,14 +106,14 @@ class DeviceState:
     @property
     def enumerated_path(self) -> str:
         try:
-            return self.enumerated_device_id["path"]
+            return self.enumerated_info["path"]
         except KeyError as e:
             raise RuntimeError("No enumerated path for device") from e
 
     @property
     def enumerated_name(self) -> str:
         try:
-            return self.enumerated_device_id["name"]
+            return self.enumerated_info["name"]
         except KeyError as e:
             raise RuntimeError("No enumerated name for device") from e
 
@@ -351,7 +351,9 @@ def _device_export_torch_tensor_cuda_hip(
     state = device._s
     device_type_code = state.dlpack_device_type_code
     assert device_type_code > 0
-    device_index = state.torch_device.index
+    torch_device = state.torch_device
+    assert torch_device is not None
+    device_index = torch_device.index
     t = torch.from_dlpack(
         device.hal_device.create_dlpack_capsule(bv, device_type_code, device_index)
     )

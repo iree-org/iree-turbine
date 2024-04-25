@@ -72,12 +72,13 @@ class _test_add(CustomOp):
         t1_desc.specialize_all_dims()
         t2_desc = ksel.arg_tensor(1)
         t2_desc.specialize_all_dims()
-        result_desc = ksel.return_new_tensor(t1_desc.t.shape, t1_desc.t.dtype)
+        result_desc = ksel.return_new_tensor(list(t1_desc.t.shape), t1_desc.t.dtype)
         result_desc.specialize_all_dims()
 
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
         t1, t2 = kb.arg_bindings
+        result_type = t1.type  # type: ignore
         result = Operation.create(
-            "tosa.add", results=[t1.type], operands=[t1, t2]
+            "tosa.add", results=[result_type], operands=[t1, t2]
         ).result
         kb.yield_results(result)
