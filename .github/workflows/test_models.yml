@@ -43,7 +43,7 @@ jobs:
           pip install --no-compile -r pytorch-cpu-requirements.txt
           pip install --no-compile --pre --upgrade -r requirements.txt
           pip install --no-compile --pre -e .[testing]
-          pip install --no-compile --pre --upgrade -e models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt
+          pip install --no-compile --pre --upgrade -e ${{ github.workspace }}/SHARK-Turbine/models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt
       - name: Show current free memory
         run: |
           free -mh
@@ -56,8 +56,6 @@ jobs:
           source turbine_venv/bin/activate
           pytest -v ${{ github.workspace }}/SHARK-Turbine/models/turbine_models/tests/sd_test.py
           pytest -v ${{ github.workspace }}/SHARK-Turbine/models/turbine_models/tests/sdxl_test.py --device cpu --rt_device local-task --iree_target_triple x86_64-linux-gnu
-          pytest -v models/turbine_models/tests/sdxl_test.py --device vulkan --rt_device vulkan --iree_target_triple rdna3-unknown-linux
-          pytest -v models/turbine_models/tests/sdxl_test.py --device rocm --rt_device hip --iree_target_triple gfx90a --precision fp16
   test-turbine-models-gpu:
     runs-on: nodai-amdgpu-mi250-x86-64
     steps:
@@ -81,7 +79,7 @@ jobs:
           pip install --no-compile -r pytorch-cpu-requirements.txt
           pip install --no-compile --pre --upgrade -r requirements.txt
           pip install --no-compile --pre -e .[testing]
-          pip install --no-compile --pre --upgrade -e models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt
+          pip install --no-compile --pre --upgrade -e ${{ github.workspace }}/SHARK-Turbine/models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt
       - name: Show current free memory
         run: |
           free -mh
