@@ -30,7 +30,7 @@ jobs:
         with:
           repository: nod-ai/SHARK-Turbine
           # TODO: Let the ref be passed as a parameter to run integration tests.
-          path: shark-turbine
+          path: SHARK-Turbine
       - name: Sync source deps
         # build IREE from source with -DIREE_BUILD_TRACY=ON if getting tracy profile
         run: |
@@ -66,7 +66,7 @@ jobs:
         with:
           repository: nod-ai/SHARK-Turbine
           # TODO: Let the ref be passed as a parameter to run integration tests.
-          path: shark-turbine
+          path: SHARK-Turbine
       - name: Sync source deps
         # build IREE from source with -DIREE_BUILD_TRACY=ON if getting tracy profile
         run: |
