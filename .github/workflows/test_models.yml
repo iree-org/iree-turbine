@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: 3.11
       - name: "Checkout This Repo"
-        uses: actions/checkout@v4        
+        uses: actions/checkout@v4
       - name: "Checkout SHARK-Turbine repo"
         uses: actions/checkout@v4
         with:
@@ -43,7 +43,7 @@ jobs:
           pip install --no-compile -r pytorch-cpu-requirements.txt
           pip install --no-compile --pre --upgrade -r requirements.txt
           pip install --no-compile --pre -e .[testing]
-          pip install --no-compile --pre --upgrade -e models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt     
+          pip install --no-compile --pre --upgrade -e models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt
       - name: Show current free memory
         run: |
           free -mh
@@ -81,7 +81,7 @@ jobs:
           pip install --no-compile -r pytorch-cpu-requirements.txt
           pip install --no-compile --pre --upgrade -r requirements.txt
           pip install --no-compile --pre -e .[testing]
-          pip install --no-compile --pre --upgrade -e models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt      
+          pip install --no-compile --pre --upgrade -e models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt
       - name: Show current free memory
         run: |
           free -mh
