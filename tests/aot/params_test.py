@@ -36,38 +36,32 @@ class SimpleParamsModule(nn.Module):
 
 class ParamsTest(unittest.TestCase):
     def testCreateArchive(self):
-        with tempfile.NamedTemporaryFile("wb", delete=False, suffix=".irpa") as f:
-            file_path = Path(f.name)
-            try:
-                m = SimpleParamsModule()
-                save_module_parameters(file_path, m)
-                # mmap=False is a bit nicer for tests on Windows because it doesn't
-                # lock the file for an arbitrary duration.
-                archive = ParameterArchive(file_path, mmap=False)
-                items = dict(archive.items())
-                weight = items["classifier.weight"].as_tensor()
-                bias = items["classifier.bias"].as_tensor()
-                torch.testing.assert_close(weight, m.classifier.weight)
-                torch.testing.assert_close(bias, m.classifier.bias)
-            finally:
-                file_path.unlink()
+        with tempfile.TemporaryDirectory() as td:
+            file_path = Path(td) / "archive.irpa"
+            m = SimpleParamsModule()
+            save_module_parameters(file_path, m)
+            # mmap=False is a bit nicer for tests on Windows because it doesn't
+            # lock the file for an arbitrary duration.
+            archive = ParameterArchive(file_path, mmap=False)
+            items = dict(archive.items())
+            weight = items["classifier.weight"].as_tensor()
+            bias = items["classifier.bias"].as_tensor()
+            torch.testing.assert_close(weight, m.classifier.weight)
+            torch.testing.assert_close(bias, m.classifier.bias)
 
     def testCreateArchiveWithPrefixScope(self):
-        with tempfile.NamedTemporaryFile("wb", delete=False, suffix=".irpa") as f:
-            file_path = Path(f.name)
-            try:
-                m = SimpleParamsModule()
-                save_module_parameters(file_path, m, prefix="foobar.model")
-                # mmap=False is a bit nicer for tests on Windows because it doesn't
-                # lock the file for an arbitrary duration.
-                archive = ParameterArchive(file_path, mmap=False)
-                items = dict(archive.items())
-                weight = items["foobar.model.classifier.weight"].as_tensor()
-                bias = items["foobar.model.classifier.bias"].as_tensor()
-                torch.testing.assert_close(weight, m.classifier.weight)
-                torch.testing.assert_close(bias, m.classifier.bias)
-            finally:
-                file_path.unlink()
+        with tempfile.TemporaryDirectory() as td:
+            file_path = Path(td) / "archive.irpa"
+            m = SimpleParamsModule()
+            save_module_parameters(file_path, m, prefix="foobar.model")
+            # mmap=False is a bit nicer for tests on Windows because it doesn't
+            # lock the file for an arbitrary duration.
+            archive = ParameterArchive(file_path, mmap=False)
+            items = dict(archive.items())
+            weight = items["foobar.model.classifier.weight"].as_tensor()
+            bias = items["foobar.model.classifier.bias"].as_tensor()
+            torch.testing.assert_close(weight, m.classifier.weight)
+            torch.testing.assert_close(bias, m.classifier.bias)
 
     def testExportExternalized(self):
         m = SimpleParamsModule()
