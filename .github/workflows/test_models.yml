@@ -1,0 +1,104 @@
+name: Test Turbine Models
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  # A PR number if a pull request and otherwise the commit hash. This cancels
+  # queued and in-progress runs for the same PR (presubmit) or commit
+  # (postsubmit). The workflow name is prepended to avoid conflicts between
+  # different workflows.
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  test-turbine-models-cpu:
+    runs-on: ubuntu-22.04-64core
+    steps:
+      - name: "Setting up Python"
+        uses: actions/setup-python@75f3110429a8c05be0e1bf360334e4cced2b63fa # v2.3.3
+        with:
+          python-version: 3.11
+
+      - name: "Checkout This Repo"
+        uses: actions/checkout@v4
+        
+      - name: "Checkout SHARK-Turbine repo"
+        uses: actions/checkout@v4
+        with:
+          repository: nod-ai/SHARK-Turbine
+          # TODO: Let the ref be passed as a parameter to run integration tests.
+          path: shark-turbine
+
+      - name: Sync source deps
+        # build IREE from source with -DIREE_BUILD_TRACY=ON if getting tracy profile
+        run: |
+          python3 -m venv turbine_venv
+          source turbine_venv/bin/activate
+          python3 -m pip install --upgrade pip
+          # Note: We install in three steps in order to satisfy requirements
+          # from non default locations first. Installing the PyTorch CPU
+          # wheels saves multiple minutes and a lot of bandwidth on runner setup.
+          pip install --no-compile -r pytorch-cpu-requirements.txt
+          pip install --no-compile --pre --upgrade -r requirements.txt
+          pip install --no-compile --pre -e .[testing]
+          pip install --no-compile --pre --upgrade -e models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt
+      
+      - name: Show current free memory
+        run: |
+          free -mh
+
+      - name: Run stateless_llama tests
+        run: |
+          source turbine_venv/bin/activate
+          pytest -v ${{ github.workspace }}/SHARK-Turbine/models/turbine_models/tests/stateless_llama_test.py
+
+      - name: Run sd tests
+        run: |
+          source turbine_venv/bin/activate
+
+          pytest -v ${{ github.workspace }}/SHARK-Turbine/models/turbine_models/tests/sd_test.py
+          pytest -v ${{ github.workspace }}/SHARK-Turbine/models/turbine_models/tests/sdxl_test.py --device cpu --rt_device local-task --iree_target_triple x86_64-linux-gnu
+          pytest -v models/turbine_models/tests/sdxl_test.py --device vulkan --rt_device vulkan --iree_target_triple rdna3-unknown-linux
+          pytest -v models/turbine_models/tests/sdxl_test.py --device rocm --rt_device hip --iree_target_triple gfx90a --precision fp16
+  test-turbine-models-gpu:
+    runs-on: nodai-amdgpu-mi250-x86-64
+    steps:
+      - name: "Checkout This Repo"
+        uses: actions/checkout@v4
+        
+      - name: "Checkout SHARK-Turbine repo"
+        uses: actions/checkout@v4
+        with:
+          repository: nod-ai/SHARK-Turbine
+          # TODO: Let the ref be passed as a parameter to run integration tests.
+          path: shark-turbine
+
+      - name: Sync source deps
+        # build IREE from source with -DIREE_BUILD_TRACY=ON if getting tracy profile
+        run: |
+          python3 -m venv turbine_venv
+          source turbine_venv/bin/activate
+          python3 -m pip install --upgrade pip
+          # Note: We install in three steps in order to satisfy requirements
+          # from non default locations first. Installing the PyTorch CPU
+          # wheels saves multiple minutes and a lot of bandwidth on runner setup.
+          pip install --no-compile -r pytorch-cpu-requirements.txt
+          pip install --no-compile --pre --upgrade -r requirements.txt
+          pip install --no-compile --pre -e .[testing]
+          pip install --no-compile --pre --upgrade -e models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt
+      
+      - name: Show current free memory
+        run: |
+          free -mh
+
+      - name: Run sdxl gpu tests
+        run: |
+          source turbine_venv/bin/activate
+          
+          pytest -v ${{ github.workspace }}/SHARK-Turbine/models/turbine_models/tests/sdxl_test.py --device vulkan --rt_device vulkan --iree_target_triple rdna3-unknown-linux
+          pytest -v ${{ github.workspace }}/SHARK-Turbine/models/turbine_models/tests/sdxl_test.py --device rocm --rt_device hip --iree_target_triple gfx90a --precision fp16
