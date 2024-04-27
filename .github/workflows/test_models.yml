@@ -17,7 +17,12 @@ concurrency:
 
 jobs:
   test-turbine-models-cpu:
-    runs-on: ubuntu-22.04-64core
+    runs-on:
+      - self-hosted
+      - runner-group=presubmit
+      - environment=prod
+      - cpu
+      - os-family=Linux
     steps:
       - name: "Setting up Python"
         uses: actions/setup-python@75f3110429a8c05be0e1bf360334e4cced2b63fa # v2.3.3
