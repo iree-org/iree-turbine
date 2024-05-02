@@ -8,7 +8,6 @@
 from typing import cast
 
 from ..support.ir_imports import (
-    Operation,
     RankedTensorType,
     StringAttr,
     Value,
@@ -61,24 +60,3 @@ class trace_tensor(CustomOp):
         key = cast(AttrArg, ksel.arg_descs[0])
         _emit_tensor_trace(kb, cast(str, key.v), [kb.arg_bindings[1]])
         kb.yield_results(kb.arg_bindings[1])
-
-
-@CustomOp.register(library=IREE_LIBRARY)
-class _test_add(CustomOp):
-    signature = "_test_add(Tensor t1, Tensor t2) -> (Tensor)"
-
-    def select(self, ksel: KernelSelection):
-        t1_desc = ksel.arg_tensor(0)
-        t1_desc.specialize_all_dims()
-        t2_desc = ksel.arg_tensor(1)
-        t2_desc.specialize_all_dims()
-        result_desc = ksel.return_new_tensor(list(t1_desc.t.shape), t1_desc.t.dtype)
-        result_desc.specialize_all_dims()
-
-    def generate(self, ksel: KernelSelection, kb: KernelBuilder):
-        t1, t2 = kb.arg_bindings
-        result_type = t1.type  # type: ignore
-        result = Operation.create(
-            "tosa.add", results=[result_type], operands=[t1, t2]
-        ).result
-        kb.yield_results(result)

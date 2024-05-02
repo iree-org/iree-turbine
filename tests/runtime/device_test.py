@@ -151,20 +151,28 @@ class TorchCUDAInterop(unittest.TestCase):
         print(device.dump_device_info())
 
     def testJit(self):
-        from shark_turbine.ops import iree as iree_ops
+        from shark_turbine.ops import _str_format_test_ops as test_ops
 
         t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cuda:0")
-        result = iree_ops._test_add(t, t)
+        result = test_ops.test_add(t, t)
         expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
         torch.testing.assert_close(result.cpu(), expected)
 
 
 class TorchCPUInterop(unittest.TestCase):
-    def testJit(self):
-        from shark_turbine.ops import iree as iree_ops
+    def testJitStrFormat(self):
+        from shark_turbine.ops import _str_format_test_ops as test_ops
 
         t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu")
-        result = iree_ops._test_add(t, t)
+        result = test_ops.test_add(t, t)
+        expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
+        torch.testing.assert_close(result, expected)
+
+    def testJitJinja(self):
+        from shark_turbine.ops import _jinja_test_ops as test_ops
+
+        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu")
+        result = test_ops.test_add(t, t)
         expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
         torch.testing.assert_close(result, expected)
 

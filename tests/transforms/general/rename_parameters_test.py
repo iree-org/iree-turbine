@@ -38,9 +38,9 @@ class RenameTest(unittest.TestCase):
                     "WEIGHT": "weight",
                     ("foo", "params.classifier.bias"): ("bar", "BIAS"),
                 },
-                rename_callback=lambda scope, name: ("XXX", "YYY")
-                if name == "default"
-                else None,
+                rename_callback=lambda scope, name: (
+                    ("XXX", "YYY") if name == "default" else None
+                ),
             ).run()
             module_asm = str(module_op)
             print(module_asm)
