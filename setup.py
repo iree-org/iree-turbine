@@ -104,6 +104,7 @@ setup(
         f"iree-compiler{get_version_spec('iree-compiler')}",
         f"iree-runtime{get_version_spec('iree-runtime')}",
         "torch>=2.3.0",
+        f"Jinja2{get_version_spec('Jinja2')}",
     ],
     extras_require={
         "testing": [
