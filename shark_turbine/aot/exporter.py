@@ -170,6 +170,7 @@ def export(
     dynamic_shapes: Dict[str, Any] | Tuple[Any] | List[Any] | None = None,
     module_name: Optional[str] = None,
     function_name: Optional[str] = None,
+    strict_export: bool = True,
 ) -> ExportOutput:
     """Exports a torch.nn.Module.
 
@@ -217,6 +218,7 @@ def export(
     dynamic_shapes: Dict[str, Any] | Tuple[Any] | List[Any] | None = None,
     module_name: Optional[str] = None,
     function_name: Optional[str] = None,
+    strict_export: bool = True,
 ) -> ExportOutput:
     """Generic export of supported entities.
 
@@ -273,7 +275,11 @@ def export(
             )
         nn_module = mdl
         exported_program = torch.export.export(
-            nn_module, args=args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+            nn_module,
+            args=args,
+            kwargs=kwargs,
+            dynamic_shapes=dynamic_shapes,
+            strict=strict_export,
         )
         if current_decomps:
             from .decompositions import _patch_op_dispatch_for_export
