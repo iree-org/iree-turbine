@@ -1,2 +1,4 @@
+-f https://iree.dev/pip-release-links.html
+
 iree-compiler==20240427.876
 iree-runtime==20240427.876
