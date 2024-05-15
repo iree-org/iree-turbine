@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from parameterized import parameterized_class
 import torch
 import unittest
 
@@ -36,24 +37,30 @@ func.func @main(%arg0: tensor<4xi32>, %arg1: tensor<4xi32>) -> tensor<4xi32> {
 }
 """
 
+# TODO: Move this to a common utility controlled by project wide env vars.
+devices = [[torch.device("cpu")]]
+if torch.cuda.is_available():
+    devices.append([torch.device("cuda:0")])
 
+
+@parameterized_class(["device"], devices)
 class LaunchableTest(unittest.TestCase):
     def testLaunchJit(self):
         launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
-        t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
-        t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32)
+        t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(self.device)
+        t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32).to(self.device)
         result = launch(t1, t2)
-        expected = torch.tensor([10, 40, 90, 160], dtype=torch.int32)
+        expected = torch.tensor([10, 40, 90, 160], dtype=torch.int32).to(self.device)
         torch.testing.assert_close(expected, result)
 
     def testLaunchPreload(self):
         launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
-        launch.preload(torch.device("cpu"))
+        launch.preload(self.device)
         launch._loader = None  # Don't let it load anything more.
-        t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
-        t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32)
+        t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(self.device)
+        t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32).to(self.device)
         result = launch(t1, t2)
-        expected = torch.tensor([10, 40, 90, 160], dtype=torch.int32)
+        expected = torch.tensor([10, 40, 90, 160], dtype=torch.int32).to(self.device)
         torch.testing.assert_close(expected, result)
 
     def testLaunchParamsWithoutParams(self):
@@ -61,7 +68,7 @@ class LaunchableTest(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError, "required module 'io_parameters' not registered"
         ):
-            launch.preload(torch.device("cpu"))
+            launch.preload(self.device)
 
     def testLaunchParams(self):
         param_archive = ParameterArchiveBuilder()
@@ -69,11 +76,11 @@ class LaunchableTest(unittest.TestCase):
         provider = param_archive.index.create_provider()
 
         launch = Launchable.jit_compile(MLIR_PARAMS_ASM, parameter_providers=[provider])
-        launch.preload(torch.device("cpu"))
-        t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32)
-        t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32)
+        launch.preload(self.device)
+        t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(self.device)
+        t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32).to(self.device)
         result = launch(t1, t2)
-        expected = torch.tensor([12, 44, 96, 168], dtype=torch.int32)
+        expected = torch.tensor([12, 44, 96, 168], dtype=torch.int32).to(self.device)
         torch.testing.assert_close(expected, result)
 
 
