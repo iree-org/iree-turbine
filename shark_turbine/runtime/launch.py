@@ -134,13 +134,14 @@ class Launchable:
                 tensor_device = arg.device
                 if device is None:
                     device = tensor_device
-                    turbine_device = get_device_from_torch(tensor_device)
                 else:
                     if tensor_device != device:
                         raise RuntimeError(
                             f"Cannot launch with tensors from multiple devices: "
                             f"{tensor_device} vs {device}"
                         )
+                if turbine_device is None:
+                    turbine_device = get_device_from_torch(tensor_device)
                 # Since we know we are on the same device, we can use the unsafe
                 # import_torch_tensor.
                 arg_list.push_ref(turbine_device.import_torch_tensor(arg))
