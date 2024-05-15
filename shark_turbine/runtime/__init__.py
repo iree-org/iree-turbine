@@ -5,4 +5,5 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from .device import *
+from .launch import *
 from . import op_reg

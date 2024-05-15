@@ -130,6 +130,9 @@ def compile_standalone_kernel(
 
     # Load.
     vm_instance = device.vm_instance
+    # TODO: VmModule.wrap_buffer would be better here, but it is still
+    # unreliable capturing mapped memory from the compiler.
+    # See: https://github.com/iree-org/iree/issues/17403
     vm_module = VmModule.copy_buffer(vm_instance, mapped_memory)
     # TODO: We should be able to wrap the buffer as below but there are some
     # subtle ref-counting/shutdown sequencing issues that need to be resolved.

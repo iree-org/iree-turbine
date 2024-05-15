@@ -256,6 +256,10 @@ class ParameterArchiveBuilder:
     def __init__(self):
         self._index = ParameterIndex()
 
+    @property
+    def index(self) -> ParameterIndex:
+        return self._index
+
     def save(self, file_path: Union[str, Path]):
         """Saves the archive."""
         self._index.create_archive_file(str(file_path))

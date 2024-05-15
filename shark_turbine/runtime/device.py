@@ -139,6 +139,7 @@ class Device:
         "_tx_timepoint",
         "_fence_capacity",
         "compile_target_flags",
+        "driver_id",
         "export_torch_tensor",
         "import_torch_tensor",
         "instance_cache_key",
@@ -156,6 +157,9 @@ class Device:
     # Devices can also export a torch tensor from a HalBufferView, given
     # a meta tensor that describes it.
     export_torch_tensor: Callable[[HalBufferView, torch.Tensor], torch.Tensor]
+
+    # Unique name of the IREE runtime driver associated with this device.
+    driver_id: str
 
     # Cache key that uniquely identifies this device.
     instance_cache_key: str
@@ -222,6 +226,7 @@ class Device:
         colon_pos = driver_id.find(":")
         if colon_pos >= 0:
             driver_id = driver_id[0:colon_pos]
+        self.driver_id = driver_id
         try:
             import_fn = TORCH_TENSOR_IMPORTERS[driver_id]
             export_fn = TORCH_TENSOR_EXPORTERS[driver_id]
@@ -237,7 +242,10 @@ class Device:
         # TODO: The type cache key should actually be based on the driver id
         # and device characteristics hash.
         self.instance_cache_key = repr(d)
-        self.type_cache_key = driver_id
+        self._recompute_target_keys()
+
+    def _recompute_target_keys(self):
+        self.type_cache_key = f"{self.driver_id}:{';'.join(self.compile_target_flags)}"
 
     @property
     def hal_device(self) -> HalDevice:
@@ -477,17 +485,27 @@ def _create_cuda_device(torch_device: torch.device, props) -> Optional[Device]:
         device.compile_target_flags = device.compile_target_flags + (
             f"--iree-hal-cuda-llvm-target-arch=sm_{props.major}{props.minor}",
         )
+        device._recompute_target_keys()
     return device
 
 
 def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
     # Note that the dlpack device type code for ROCM is 10.
     device = _create_cuda_like_device(torch_device, props, "hip", 10)
+    # The gcnArchName comes back like gfx90a:sramecc+:xnack- for a fully
+    # specified target. However the IREE target-chip flag only expects the
+    # prefix. See: https://github.com/iree-org/iree/issues/17402
+    # This should be changed to tunnel through target information unmolested.
+    gcn_arch_name: str = props.gcnArchName
+    colon_pos = gcn_arch_name.find(":")
+    if colon_pos >= 0:
+        gcn_arch_name = gcn_arch_name[0:colon_pos]
     if device:
-        gcn_arch_name = props.gcnArchName
+        gcn_arch_name = gcn_arch_name
         device.compile_target_flags = device.compile_target_flags + (
             f"--iree-rocm-target-chip={gcn_arch_name}",
         )
+        device._recompute_target_keys()
     return device
 
 
