@@ -59,6 +59,7 @@ def load_requirement_pins(requirements_file: str):
 
 
 load_requirement_pins("requirements.txt")
+load_requirement_pins("iree-requirements.txt")
 
 
 def get_version_spec(dep: str):
