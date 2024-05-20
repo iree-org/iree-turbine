@@ -1,2 +1,3 @@
+--find-links https://iree.dev/pip-release-links.html
 iree-compiler==20240514.893
 iree-runtime==20240514.893
