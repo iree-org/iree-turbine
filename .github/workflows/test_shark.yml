@@ -45,4 +45,5 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/SHARK
           ./setup_venv.sh
+          source shark.venv/bin/activate
           python apps/shark_studio/tests/api_test.py
