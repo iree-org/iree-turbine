@@ -91,12 +91,12 @@ module {{
     %empty_0 = tensor.empty() : tensor<{k}x{group0}x{group1}x{element_type}>
     %weight_cast = linalg.generic {{
         indexing_maps = [
-            affine_map<(d0, d1, d2) -> (d0, d1, d2)>, 
-            affine_map<(d0, d1, d2) -> (d0, d1)>, 
-            affine_map<(d0, d1, d2) -> (d0, d1)>, 
-            affine_map<(d0, d1, d2) -> (d0, d1, d2)>], 
-        iterator_types = ["parallel", "parallel", "parallel"] }} 
-        ins(%weight_exp, %scale, %zp : tensor<{k}x{group0}x{group1}x{lowp_type}>, tensor<{k}x{group0}x{element_type}>, tensor<{k}x{group0}x{element_type}>) 
+            affine_map<(d0, d1, d2) -> (d0, d1, d2)>,
+            affine_map<(d0, d1, d2) -> (d0, d1)>,
+            affine_map<(d0, d1, d2) -> (d0, d1)>,
+            affine_map<(d0, d1, d2) -> (d0, d1, d2)>],
+        iterator_types = ["parallel", "parallel", "parallel"] }}
+        ins(%weight_exp, %scale, %zp : tensor<{k}x{group0}x{group1}x{lowp_type}>, tensor<{k}x{group0}x{element_type}>, tensor<{k}x{group0}x{element_type}>)
         outs(%empty_0 : tensor<{k}x{group0}x{group1}x{element_type}>) {{
     ^bb0(%in: {lowp_type}, %in_1: {element_type}, %in_2: {element_type}, %out: {element_type}):
         %16 = arith.extui %in : {lowp_type} to i32
@@ -112,10 +112,10 @@ module {{
     %result = linalg.generic {{
         indexing_maps = [
             affine_map<(d0, d1, d2, d3) -> (d0, d2, d3)>,
-            affine_map<(d0, d1, d2, d3) -> (d1, d2, d3)>, 
-            affine_map<(d0, d1, d2, d3) -> (d0, d1)>], 
-        iterator_types = ["parallel", "parallel", "reduction", "reduction"] }} 
-        ins(%a_exp, %weight_cast : tensor<{m}x{group0}x{group1}x{element_type}>, tensor<{k}x{group0}x{group1}x{element_type}>) 
+            affine_map<(d0, d1, d2, d3) -> (d1, d2, d3)>,
+            affine_map<(d0, d1, d2, d3) -> (d0, d1)>],
+        iterator_types = ["parallel", "parallel", "reduction", "reduction"] }}
+        ins(%a_exp, %weight_cast : tensor<{m}x{group0}x{group1}x{element_type}>, tensor<{k}x{group0}x{group1}x{element_type}>)
         outs(%zero_init : tensor<{m}x{k}x{element_type}>) {{
     ^bb0(%in: {element_type}, %in_1: {element_type}, %out: {element_type}):
         %16 = arith.mulf %in, %in_1 : {element_type}
