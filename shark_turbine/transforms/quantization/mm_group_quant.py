@@ -75,7 +75,7 @@ module {{
   util.global private @{param_name}.quant.zero_point {{noinline}} = #stream.parameter.named<"model"::"{param_name}_zp"> : tensor<{k}x{group0}x{element_type}>
 
   func.func private @compute_mm_group_quant(%a : tensor<{m}x{n}x{element_type}>) -> tensor<{m}x{k}x{element_type}> {{
-    %c0 = arith.constant 0 : index        
+    %c0 = arith.constant 0 : index
     %weight_raw = util.global.load @{param_name} : tensor<{k}x{n_div}xi8>
     %m = tensor.dim %a, %c0 : tensor<{m}x{n}x{element_type}>
     %k = tensor.dim %weight_raw, %c0 : tensor<{k}x{n_div}xi8>
