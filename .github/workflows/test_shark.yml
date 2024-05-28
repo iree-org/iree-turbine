@@ -40,7 +40,6 @@ jobs:
           path: SHARK
           ref: "iree-turbine-switch"
 
-      # TODO: Replace with a sh script from shark repo
       - name: "Install SHARK"
         run: |
           cd $GITHUB_WORKSPACE/SHARK
