@@ -43,6 +43,7 @@ jobs:
       - name: "Install SHARK"
         run: |
           cd $GITHUB_WORKSPACE/SHARK
+          sed -i 's/iree-turbine#/iree-turbine.git@${{github.sha}}#/g' requirements.txt
           ./setup_venv.sh
           source shark.venv/bin/activate
           python apps/shark_studio/tests/api_test.py
