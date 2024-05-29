@@ -79,11 +79,15 @@ module {{
     %weight_raw = util.global.load @{param_name} : tensor<{k}x{n_div}xi8>
     %m = tensor.dim %a, %c0 : tensor<{m}x{n}x{element_type}>
     %k = tensor.dim %weight_raw, %c0 : tensor<{k}x{n_div}xi8>
+    %m_1 = tensor.dim %a, %c0 : tensor<{m}x{n}x{element_type}>
+    %k_1 = tensor.dim %weight_raw, %c0 : tensor<{k}x{n_div}xi8>
+    %group0_dim = arith.constant {group0} : index
+    %group1_dim = arith.constant {group1} : index
     %scale = util.global.load @{param_name}.quant.scale : tensor<{k}x{group0}x{element_type}>
     %zp = util.global.load @{param_name}.quant.zero_point : tensor<{k}x{group0}x{element_type}>
     %weight = flow.tensor.bitcast %weight_raw : tensor<{k}x{n_div}xi8> -> tensor<{k}x{n}x{lowp_type}>
-    %a_exp = tensor.expand_shape %a [[0], [1, 2]] : tensor<{m}x{n}x{element_type}> into tensor<{m}x{group0}x{group1}x{element_type}>
-    %weight_exp = tensor.expand_shape %weight [[0], [1, 2]] : tensor<{k}x{n}x{lowp_type}> into tensor<{k}x{group0}x{group1}x{lowp_type}>
+    %a_exp = tensor.expand_shape %a [[0], [1, 2]] output_shape [%m_1, %group0_dim, %group1_dim]: tensor<{m}x{n}x{element_type}> into tensor<{m}x{group0}x{group1}x{element_type}>
+    %weight_exp = tensor.expand_shape %weight [[0], [1, 2]] output_shape [%k_1, %group0_dim, %group1_dim]: tensor<{k}x{n}x{lowp_type}> into tensor<{k}x{group0}x{group1}x{lowp_type}>
     %empty_0 = tensor.empty() : tensor<{k}x{group0}x{group1}x{element_type}>
     %weight_cast = linalg.generic {{
         indexing_maps = [
