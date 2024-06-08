@@ -13,7 +13,7 @@ D_HEAD = tkl.sym.D_HEAD
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_M = tkl.sym.BLOCK_M
 
-F8_TYPE = tkl.f8e5m2
+F8_TYPE = tkl.f8e4m3fnuz
 
 # Product of the Q and K scales for flash attention adjustment
 QK_SCALE = 1.1
