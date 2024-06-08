@@ -38,7 +38,10 @@ FLOAT_BITWIDTHS = {
     "f16": 16,
     "f32": 32,
     "f64": 64,
-    # TODO: FP8 types.
+    "f8E5M2": 8,
+    "f8E5M2FNUZ": 8,
+    "f8E4M3FN": 8,
+    "f8E4M3FNUZ": 8,
 }
 
 
