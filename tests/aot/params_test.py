@@ -18,6 +18,7 @@ from shark_turbine.aot import (
     save_module_parameters,
     ExternalTensorTrait,
     ParameterArchive,
+    ParameterArchiveBuilder,
 )
 
 
@@ -48,6 +49,32 @@ class ParamsTest(unittest.TestCase):
             bias = items["classifier.bias"].as_tensor()
             torch.testing.assert_close(weight, m.classifier.weight)
             torch.testing.assert_close(bias, m.classifier.bias)
+
+    def testRoundtripScalarTensor(self):
+        # See: https://github.com/iree-org/iree-turbine/issues/29
+        with tempfile.TemporaryDirectory() as td:
+            file_path = Path(td) / "archive.irpa"
+            orig_scalar = torch.tensor(0.5, dtype=torch.float32)
+            builder = ParameterArchiveBuilder()
+            builder.add_tensor("scalar", orig_scalar)
+            builder.save(file_path)
+            archive = ParameterArchive(file_path, mmap=False)
+            items = dict(archive.items())
+            scalar = items["scalar"].as_tensor()
+            torch.testing.assert_close(orig_scalar, scalar)
+
+    def testRoundtripScalarUint8(self):
+        # See: https://github.com/iree-org/iree-turbine/issues/29
+        with tempfile.TemporaryDirectory() as td:
+            file_path = Path(td) / "archive.irpa"
+            orig_scalar = torch.tensor(8, dtype=torch.uint8)
+            builder = ParameterArchiveBuilder()
+            builder.add_tensor("scalar", orig_scalar)
+            builder.save(file_path)
+            archive = ParameterArchive(file_path, mmap=False)
+            items = dict(archive.items())
+            scalar = items["scalar"].as_tensor()
+            torch.testing.assert_close(orig_scalar, scalar)
 
     def testCreateArchiveWithPrefixScope(self):
         with tempfile.TemporaryDirectory() as td:
