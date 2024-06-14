@@ -266,9 +266,15 @@ class ParameterArchiveBuilder:
 
     def add_tensor(self, name: str, tensor: torch.Tensor):
         """Adds an named tensor to the archive."""
-        flat_array = tensor.detach().flatten().contiguous().cpu().view(torch.uint8)
-        host_array = flat_array.numpy()
-        self._index.add_buffer(name, host_array, metadata=_make_tensor_metadata(tensor))
+        metadata = _make_tensor_metadata(tensor)
+        # See: https://github.com/iree-org/iree-turbine/issues/29
+        if len(tensor.shape) == 0:
+            flat_array = tensor.detach().cpu().numpy()
+            host_array = bytes(flat_array)
+        else:
+            flat_array = tensor.detach().flatten().contiguous().cpu().view(torch.uint8)
+            host_array = flat_array.numpy()
+        self._index.add_buffer(name, host_array, metadata=metadata)
 
     def add_module(self, module: nn.Module, *, prefix: str = ""):
         """Adds all parameters and persistent buffers from a module hierarchy."""
