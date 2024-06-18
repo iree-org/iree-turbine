@@ -32,8 +32,10 @@ from ...support.conversions import (
 
 from ...support.ir_imports import (
     Block,
+    DenseElementsAttr,
     IrType,
     InsertionPoint,
+    IntegerAttr,
     OpResult,
     Operation,
     RankedTensorType,
@@ -224,6 +226,54 @@ class AOTKernelSelection(KernelSelection):
         arg_descs[arg] = desc = AttrArg(str_value)
         return desc
 
+    def attr_int(self, arg: int) -> AttrArg:
+        arg_descs = self.arg_descs
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        operand = self.operands[arg]
+        ty = operand.type
+        assert (
+            str(ty) == "!torch.int"
+        ), f"Argument type mismatch from Torch IR for {arg}: Expected !torch.int, got {ty}"
+        int_value = _get_constant_int_from_value(operand)
+        arg_descs[arg] = desc = AttrArg(int_value)
+        return desc
+
+    def attr_list_int(self, arg: int) -> AttrArg:
+        arg_descs = self.arg_descs
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        operand = self.operands[arg]
+        ty = operand.type
+        assert (
+            str(ty) == "!torch.list<int>"
+        ), f"Argument type mismatch from Torch IR for {arg}: Expected !torch.list<int>, got {ty}"
+        list_value = _get_constant_list_int_from_value(operand)
+        arg_descs[arg] = desc = AttrArg(list_value)
+        return desc
+
+    def attr_float(self, arg: float) -> AttrArg:
+        arg_descs = self.arg_descs
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        operand = self.operands[arg]
+        ty = operand.type
+        assert (
+            str(ty) == "!torch.float"
+        ), f"Argument type mismatch from Torch IR for {arg}: Expected !torch.float, got {ty}"
+        int_value = _get_constant_float_from_value(operand)
+        arg_descs[arg] = desc = AttrArg(int_value)
+        return desc
+
+    def attr_list_int(self, arg: float) -> AttrArg:
+        arg_descs = self.arg_descs
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        operand = self.operands[arg]
+        ty = operand.type
+        assert (
+            str(ty) == "!torch.list<float>"
+        ), f"Argument type mismatch from Torch IR for {arg}: Expected !torch.list<float>, got {ty}"
+        list_value = _get_constant_list_float_from_value(operand)
+        arg_descs[arg] = desc = AttrArg(list_value)
+        return desc
+
     def return_tensor(self, t: Tensor) -> TensorArg:
         desc = TensorArg(t)
         self.result_descs.append(desc)
@@ -240,6 +290,58 @@ def _get_constant_str_from_value(v: Value) -> str:
         constant_op.name == "torch.constant.str"
     ), f"Expected constant !torch.str to be produced by a torch.constant.str op but got: {constant_op}"
     return StringAttr(constant_op.attributes["value"]).value
+
+
+def _get_constant_int_from_value(v: Value) -> int:
+    """Given a constant int producer, return the int.
+
+    Example: %int = torch.constant.int 1
+    """
+    constant_op = OpResult(v).owner
+    assert (
+        constant_op.name == "torch.constant.int"
+    ), f"Expected constant !torch.int to be produced by a torch.constant.int op but got: {constant_op}"
+    return IntegerAttr(constant_op.attributes["value"]).value
+
+
+def _get_constant_list_int_from_value(v: Value) -> list[int]:
+    """Given a constant int list producer, return the list.
+    """
+    constant_op = OpResult(v).owner
+    assert (
+        constant_op.name == "torch.prim.ListConstruct"
+    ), f"Expected constant !torch.list<int> to be produced by a torch.prim.ListConstruct op but got: {constant_op}"
+    lst = []
+    for i in constant_op.operands:
+        v = _get_constant_int_from_value(i)
+        lst.append(v)
+    return lst
+
+
+def _get_constant_float_from_value(v: Value) -> float:
+    """Given a constant float producer, return the float.
+
+    Example: %int = torch.constant.int 1
+    """
+    constant_op = OpResult(v).owner
+    assert (
+        constant_op.name == "torch.constant.float"
+    ), f"Expected constant !torch.float to be produced by a torch.constant.float op but got: {constant_op}"
+    return FloatAttr(constant_op.attributes["value"]).value
+
+
+def _get_constant_list_float_from_value(v: Value) -> list[float]:
+    """Given a constant float list producer, return the list.
+    """
+    constant_op = OpResult(v).owner
+    assert (
+        constant_op.name == "torch.prim.ListConstruct"
+    ), f"Expected constant !torch.list<float> to be produced by a torch.prim.ListConstruct op but got: {constant_op}"
+    lst = []
+    for i in constant_op.operands:
+        v = _get_constant_int_from_value(i)
+        lst.append(v)
+    return lst
 
 
 class InlineKernelBuilder(KernelBuilder):
