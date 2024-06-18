@@ -49,6 +49,7 @@ jobs:
           pip install --no-compile --pre --upgrade -r requirements.txt
           pip install --no-compile --pre -e .[testing]
           pip install --no-compile --pre --upgrade -e ${{ github.workspace }}/SHARK-Turbine/models -r ${{ github.workspace }}/SHARK-Turbine/models/requirements.txt
+          pip install --no-cache-dir -r iree-requirements.txt -f https://iree.dev/pip-release-links.html
       - name: Show current free memory
         run: |
           free -mh
