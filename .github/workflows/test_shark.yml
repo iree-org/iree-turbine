@@ -38,7 +38,6 @@ jobs:
         with:
           repository: "nod-ai/SHARK"
           path: SHARK
-          ref: "diffusers-version"
 
       - name: "Install SHARK"
         run: |
