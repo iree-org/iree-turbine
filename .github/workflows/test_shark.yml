@@ -36,9 +36,9 @@ jobs:
       - name: "Checkout SHARK"
         uses: actions/checkout@v4
         with:
-          repository: "nod-ai/SHARK.git"
+          repository: "nod-ai/SHARK"
           path: SHARK
-          ref: "iree-turbine-switch"
+          ref: "diffusers-version"
 
       - name: "Install SHARK"
         run: |
