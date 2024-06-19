@@ -30,6 +30,7 @@ from ..lang.grid import Grid
 from ..lang.types import (
     Index,
 )
+from ..ops.wave_ops import CustomOp, Placeholder, Reduction, Unknown
 
 from .regions import RegionGraph, SubgraphTracer
 
@@ -177,6 +178,12 @@ class CompiledContext(BaseContext):
             backed_sym_index_type(BoundedRelation(0, n, upper_inclusive=False))
             for n in grid_type.symbolic_shape
         ]
+
+    def register_custom_op(self, name: str, op: CustomOp):
+        def handler(*args, **kwargs):
+            return op.handle(self.region_graph, *args, **kwargs)
+
+        setattr(self, f"handle_{name}", handler)
 
     ### ========================================================================
     ### Core Operations

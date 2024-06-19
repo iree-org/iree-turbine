@@ -1,6 +1,7 @@
 from .prims import *
 from .types import *
 from .kernel_buffer import *
+from .wave_types import *
 from .grid import *
 
 # Include publics from the _support library.

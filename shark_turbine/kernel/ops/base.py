@@ -7,6 +7,7 @@ import functools
 from .._support import context
 
 T = TypeVar("T")
+OpDispatcherT = TypeVar("OpDispatcherT", bound="OpDispatcher")
 
 
 class OpDispatcher:
@@ -18,9 +19,9 @@ class OpDispatcher:
 
     __tk_context_idname__ = "OpDispatcher"
 
-    @staticmethod
-    def current() -> "OpDispatcher":
-        return context.current(OpDispatcher)
+    @classmethod
+    def current(cls: Type[OpDispatcherT]) -> OpDispatcherT:
+        return context.current(cls)
 
     def __enter__(self) -> "OpDispatcher":
         return context.push(OpDispatcher, self)

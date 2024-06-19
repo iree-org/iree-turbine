@@ -10,6 +10,7 @@ from .._support.dtype import DataType, f32
 from .. import ops
 
 __all__ = [
+    "AddressSpace",
     "KernelBuffer",
     "InputBuffer",
     "OutputBuffer",
@@ -25,6 +26,12 @@ class NotSetType:
 
 
 NotSet = NotSetType()
+
+
+class AddressSpace(Enum):
+    REGISTER = 0
+    SHARED_MEMORY = 1
+    GLOBAL_MEMORY = 2
 
 
 class KernelBufferUsage(Enum):
@@ -47,32 +54,41 @@ class KernelBufferUsage(Enum):
             raise AssertionError(f"uncovered KernelBufferUsage enum ({v})")
 
 
-class _KernelBufferMeta(ShapedDataType):
+class KernelBufferMeta(ShapedDataType):
     usage: KernelBufferUsage = KernelBufferUsage.NONE
 
     def new_subtype(
         cls: Type[SubtypeT],
         *,
+        name: str | NotSetType = NotSet,
+        address_space: AddressSpace | NotSetType = NotSet,
         symbolic_shape: tuple[IndexExpr, ...] | NotSetType = NotSet,
         dtype: DataType | NotSetType = NotSet,
         usage: KernelBufferUsage | NotSetType = NotSet,
     ) -> Type[SubtypeT]:
+        init_address_space = (
+            address_space if address_space else AddressSpace.GLOBAL_MEMORY
+        )
         init_symbolic_shape = symbolic_shape if symbolic_shape is not NotSet else cls.symbolic_shape  # type: ignore
         init_dtype = dtype if dtype is not NotSet else cls.dtype  # type: ignore
         init_usage = usage if usage is not NotSet else cls.usage  # type: ignore
 
         class SubType(cls):
+            address_space = init_address_space
             symbolic_shape = init_symbolic_shape
             rank = len(init_symbolic_shape)  # type: ignore
             dtype = init_dtype
             usage = init_usage
 
-        SubType.__name__ = KernelBufferUsage._type_name(init_usage)
+        if name is not NotSet:
+            SubType.__name__ = name
+        else:
+            SubType.__name__ = KernelBufferUsage._type_name(init_usage)
 
         return cast(Type[SubtypeT], SubType)
 
 
-class KernelBuffer(metaclass=_KernelBufferMeta):
+class KernelBuffer(metaclass=KernelBufferMeta):
     """Represents a buffer in global memory.
 
     Top level kernels always operate on global memory via these
@@ -147,4 +163,4 @@ class TemporaryBuffer(KernelBuffer):
 
 
 def is_kernel_buffer_meta_derived(t: type) -> bool:
-    return isinstance(t, _KernelBufferMeta)
+    return isinstance(t, KernelBufferMeta)
