@@ -1,5 +1,3 @@
-# RUN: python %s
-
 import logging
 import pytest
 import torch
@@ -26,13 +24,17 @@ class Test(unittest.TestCase):
         LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
         STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
+        # Expose user-constraints
+        constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+        constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+
         # Wave-level micro-kernel.
         # Since warps are not directly addressable, there is no
         # explicit notion of a warp id (like a workgroup or thread id).
         # This kernel uses the input sizes M, N, K throughout, as the tiling
         # and data movement strategy is determined during the compilation process.
         # These can be influenced by introducing constraints.
-        @tkw.wave()
+        @tkw.wave(constraints)
         def gemm(
             a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
             b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
@@ -74,6 +76,14 @@ class Test(unittest.TestCase):
                 b = torch.randn(128, 256, dtype=torch.float16)
                 c = torch.zeros(64, 128, dtype=torch.float32)
                 gemm(a, b, c)
+
+                # TODO: Note this is currently not triggered as the stub exception
+                # is raised first. Remove this note when this successfully runs
+                # through codegen.
+                assert gemm.grid_type.symbolic_shape == (
+                    M // BLOCK_M,
+                    N // BLOCK_N,
+                )
 
 
 if __name__ == "__main__":

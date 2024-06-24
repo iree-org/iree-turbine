@@ -38,8 +38,8 @@ SubtypeT = TypeVar("SubtypeT")
 # These are just light-weight helpers around sympy symbols and expressions.
 ###############################################################################
 
-IndexSymbol = sympy.core.Symbol
-IndexExpr = sympy.core.Expr
+IndexSymbol = sympy.Symbol
+IndexExpr = sympy.Expr
 
 
 def index_symbol(name: str) -> IndexSymbol:
@@ -53,7 +53,7 @@ def index_expr(value: Any) -> IndexExpr:
 
 
 class _IndexSymbolExpando:
-    def __getattr__(self, n):
+    def __getattr__(self, n) -> IndexSymbol:
         return index_symbol(n)
 
 
