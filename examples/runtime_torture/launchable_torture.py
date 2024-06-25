@@ -35,14 +35,14 @@ class TestLinearModel(nn.Module):
         return nn.functional.tanh(result)
 
 
-def test_sequential(nreps, device):
+def test_sequential(nreps, device, dtype):
     print("*** run test_sequential:")
     print("------------------------")
     print("*** compiling model")
     torch.manual_seed(42)
-    initial_input = torch.rand([512, 512], dtype=torch.float16)
-    weight = torch.rand([512, 512], dtype=torch.float16)
-    bias = torch.rand([512], dtype=torch.float16)
+    initial_input = torch.rand([512, 512], dtype=dtype)
+    weight = torch.rand([512, 512], dtype=dtype)
+    bias = torch.rand([512], dtype=dtype)
     eo = aot.export(TestLinearModel(), args=(initial_input, weight, bias))
     launcher = Launchable.jit_compile(str(eo.mlir_module))
     launcher.preload(device)
@@ -81,11 +81,14 @@ def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--nreps", type=int, default=100)
     parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--dtype", type=str, default="float16")
     args = parser.parse_args(argv)
 
+    dtype = getattr(torch, args.dtype)
     device = torch.device(args.device)
     print("Running on device:", device)
-    test_sequential(nreps=args.nreps, device=device)
+    print("Using dtype:", dtype)
+    test_sequential(nreps=args.nreps, device=device, dtype=dtype)
 
 
 if __name__ == "__main__":
