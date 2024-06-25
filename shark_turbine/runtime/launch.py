@@ -212,7 +212,7 @@ def _export_torch_tensor(bv: HalBufferView, turbine_device: Device) -> Tensor:
     # But since the whole purpose of this is for interfacing a blackbox, we
     # just infer from IREE type -> torch type. This may be lossy on dtypes
     # that are not an exact match, and the user is expected to bitcast.
-    dtype = _INFERRED_ELEMENT_TYPE_TO_DTYPE[bv.element_type]
+    dtype = _INFERRED_ELEMENT_TYPE_TO_DTYPE[int(bv.element_type)]
     if dtype is None:
         raise NotImplementedError(
             f"HalBufferView.element_type({bv.element_type}) has no mapping to dtype"
@@ -226,23 +226,23 @@ def _export_torch_tensor(bv: HalBufferView, turbine_device: Device) -> Tensor:
 # signed/unsigned distinctions at this layer, so we do the best we can.
 # If this becomes less special purpose, move it to conversions.py
 _INFERRED_ELEMENT_TYPE_TO_DTYPE: dict[HalElementType, torch.dtype] = {
-    HalElementType.BFLOAT_16: torch.bfloat16,
-    HalElementType.BOOL_8: torch.bool,
-    HalElementType.COMPLEX_64: torch.complex64,
-    HalElementType.COMPLEX_128: torch.complex128,
-    HalElementType.FLOAT_16: torch.float16,
-    HalElementType.FLOAT_32: torch.float32,
-    HalElementType.FLOAT_64: torch.float64,
-    HalElementType.INT_8: torch.int8,
-    HalElementType.INT_16: torch.int16,
-    HalElementType.INT_32: torch.int32,
-    HalElementType.INT_64: torch.int64,
-    HalElementType.SINT_8: torch.int8,
-    HalElementType.SINT_16: torch.int16,
-    HalElementType.SINT_32: torch.int32,
-    HalElementType.SINT_64: torch.int64,
-    HalElementType.UINT_8: torch.uint8,
-    HalElementType.UINT_16: torch.uint16,
-    HalElementType.UINT_32: torch.uint32,
-    HalElementType.UINT_64: torch.uint64,
+    int(HalElementType.BFLOAT_16): torch.bfloat16,
+    int(HalElementType.BOOL_8): torch.bool,
+    int(HalElementType.COMPLEX_64): torch.complex64,
+    int(HalElementType.COMPLEX_128): torch.complex128,
+    int(HalElementType.FLOAT_16): torch.float16,
+    int(HalElementType.FLOAT_32): torch.float32,
+    int(HalElementType.FLOAT_64): torch.float64,
+    int(HalElementType.INT_8): torch.int8,
+    int(HalElementType.INT_16): torch.int16,
+    int(HalElementType.INT_32): torch.int32,
+    int(HalElementType.INT_64): torch.int64,
+    int(HalElementType.SINT_8): torch.int8,
+    int(HalElementType.SINT_16): torch.int16,
+    int(HalElementType.SINT_32): torch.int32,
+    int(HalElementType.SINT_64): torch.int64,
+    int(HalElementType.UINT_8): torch.uint8,
+    int(HalElementType.UINT_16): torch.uint16,
+    int(HalElementType.UINT_32): torch.uint32,
+    int(HalElementType.UINT_64): torch.uint64,
 }
