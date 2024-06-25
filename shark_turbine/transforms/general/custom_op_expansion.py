@@ -32,7 +32,6 @@ from ...support.conversions import (
 
 from ...support.ir_imports import (
     Block,
-    DenseElementsAttr,
     FloatAttr,
     IrType,
     InsertionPoint,
