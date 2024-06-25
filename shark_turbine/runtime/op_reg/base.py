@@ -340,6 +340,42 @@ class KernelSelection(ABC):
         ...
 
     @abstractmethod
+    def attr_int(self, arg: int) -> "AttrArg":
+        """Declares an argument to be an integer attribute.
+
+        Such arguments are not materialized in the IR as Values but may be used to
+        generate the IR. In AOT contexts, they must be derived from static values.
+        """
+        ...
+
+    @abstractmethod
+    def attr_list_int(self, arg: int) -> "AttrArg":
+        """Declares an argument to be a list<integer> attribute.
+
+        Such arguments are not materialized in the IR as Values but may be used to
+        generate the IR. In AOT contexts, they must be derived from static values.
+        """
+        ...
+
+    @abstractmethod
+    def attr_float(self, arg: int) -> "AttrArg":
+        """Declares an argument to be a float attribute.
+
+        Such arguments are not materialized in the IR as Values but may be used to
+        generate the IR. In AOT contexts, they must be derived from static values.
+        """
+        ...
+
+    @abstractmethod
+    def attr_list_float(self, arg: int) -> "AttrArg":
+        """Declares an argument to be a list<float> attribute.
+
+        Such arguments are not materialized in the IR as Values but may be used to
+        generate the IR. In AOT contexts, they must be derived from static values.
+        """
+        ...
+
+    @abstractmethod
     def return_tensor(self, t: Tensor) -> "TensorArg":
         """Marks the next return value as a Tensor.
 
@@ -407,7 +443,55 @@ class EagerKernelSelection(KernelSelection):
         assert arg_descs[arg] is None, f"Already constrained argument {arg}"
         assert isinstance(
             arg_value, str
+        ), f"Argument type mismatch from Torch for {arg}: Expected str, got {type(arg_value)}"
+        arg_descs[arg] = desc = AttrArg(arg_value)
+        return desc
+
+    def attr_int(self, arg: int) -> "AttrArg":
+        arg_descs = self.arg_descs
+        arg_value = self.args[arg]
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        assert isinstance(
+            arg_value, int
         ), f"Argument type mismatch from Torch for {arg}: Expected int, got {type(arg_value)}"
+        arg_descs[arg] = desc = AttrArg(arg_value)
+        return desc
+
+    def attr_list_int(self, arg: int) -> "AttrArg":
+        arg_descs = self.arg_descs
+        arg_value = self.args[arg]
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        assert isinstance(
+            arg_value, list
+        ), f"Argument type mismatch from Torch for {arg}: Expected list, got {type(arg_value)}"
+        if len(arg_value) > 0:
+            assert isinstance(
+                arg_value[0], int
+            ), f"Argument type mismatch from Torch for {arg}: Expected list of int, got element type of {type(arg_value[0])}"
+        arg_descs[arg] = desc = AttrArg(arg_value)
+        return desc
+
+    def attr_float(self, arg: int) -> "AttrArg":
+        arg_descs = self.arg_descs
+        arg_value = self.args[arg]
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        assert isinstance(
+            arg_value, float
+        ), f"Argument type mismatch from Torch for {arg}: Expected float, got {type(arg_value)}"
+        arg_descs[arg] = desc = AttrArg(arg_value)
+        return desc
+
+    def attr_list_float(self, arg: int) -> "AttrArg":
+        arg_descs = self.arg_descs
+        arg_value = self.args[arg]
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        assert isinstance(
+            arg_value, list
+        ), f"Argument type mismatch from Torch for {arg}: Expected list, got {type(arg_value)}"
+        for arg_value_i in arg_value:
+            assert isinstance(
+                arg_value_i, float
+            ), f"Argument type mismatch from Torch for {arg}: Expected list of float, got element type of {type(arg_value_i)}"
         arg_descs[arg] = desc = AttrArg(arg_value)
         return desc
 
