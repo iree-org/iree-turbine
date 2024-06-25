@@ -42,7 +42,7 @@ class WorkgroupConstraint(Constraint):
             case 1:
                 wg_dim = sym.WG1
             case _:
-                raise ValueError("Invalid workgroup dimension. Expected 0 or 1")
+                raise ValueError("Invalid workgroup dimension. Expected 0 or 1.")
         return wg_dim * self.tile_size
 
 
