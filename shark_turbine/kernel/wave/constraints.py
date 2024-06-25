@@ -42,15 +42,15 @@ class WorkgroupConstraint(Constraint):
             case 1:
                 wg_dim = sym.WG1
             case _:
-                raise ValueError("Invalid workgroup index. Expected 0 or 1")
+                raise ValueError("Invalid workgroup dimension. Expected 0 or 1")
         return wg_dim * self.tile_size
 
 
 def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]:
     sorted_constraints = sorted(wg_constraints, key=lambda x: x.workgroup_dim)
     # Currently not more than one constraint in each dimension supported.
-    if not all(
-        sorted_constraints[i].workgroup_dim != sorted_constraints[i + 1].workgroup_dim
+    if any(
+        sorted_constraints[i].workgroup_dim == sorted_constraints[i + 1].workgroup_dim
         for i in range(len(sorted_constraints) - 1)
     ):
         raise ValueError(
