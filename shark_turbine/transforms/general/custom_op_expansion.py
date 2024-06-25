@@ -250,7 +250,7 @@ class AOTKernelSelection(KernelSelection):
         arg_descs[arg] = desc = AttrArg(list_value)
         return desc
 
-    def attr_float(self, arg: float) -> AttrArg:
+    def attr_float(self, arg: int) -> AttrArg:
         arg_descs = self.arg_descs
         assert arg_descs[arg] is None, f"Already constrained argument {arg}"
         operand = self.operands[arg]
@@ -262,7 +262,7 @@ class AOTKernelSelection(KernelSelection):
         arg_descs[arg] = desc = AttrArg(int_value)
         return desc
 
-    def attr_list_float(self, arg: float) -> AttrArg:
+    def attr_list_float(self, arg: int) -> AttrArg:
         arg_descs = self.arg_descs
         assert arg_descs[arg] is None, f"Already constrained argument {arg}"
         operand = self.operands[arg]
