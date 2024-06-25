@@ -33,6 +33,7 @@ from ...support.conversions import (
 from ...support.ir_imports import (
     Block,
     DenseElementsAttr,
+    FloatAttr,
     IrType,
     InsertionPoint,
     IntegerAttr,
@@ -262,7 +263,7 @@ class AOTKernelSelection(KernelSelection):
         arg_descs[arg] = desc = AttrArg(int_value)
         return desc
 
-    def attr_list_int(self, arg: float) -> AttrArg:
+    def attr_list_float(self, arg: float) -> AttrArg:
         arg_descs = self.arg_descs
         assert arg_descs[arg] is None, f"Already constrained argument {arg}"
         operand = self.operands[arg]
