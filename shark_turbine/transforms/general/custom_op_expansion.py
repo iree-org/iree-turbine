@@ -305,8 +305,7 @@ def _get_constant_int_from_value(v: Value) -> int:
 
 
 def _get_constant_list_int_from_value(v: Value) -> list[int]:
-    """Given a constant int list producer, return the list.
-    """
+    """Given a constant int list producer, return the list."""
     constant_op = OpResult(v).owner
     assert (
         constant_op.name == "torch.prim.ListConstruct"
@@ -331,8 +330,7 @@ def _get_constant_float_from_value(v: Value) -> float:
 
 
 def _get_constant_list_float_from_value(v: Value) -> list[float]:
-    """Given a constant float list producer, return the list.
-    """
+    """Given a constant float list producer, return the list."""
     constant_op = OpResult(v).owner
     assert (
         constant_op.name == "torch.prim.ListConstruct"
