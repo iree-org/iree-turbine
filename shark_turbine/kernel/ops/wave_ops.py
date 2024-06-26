@@ -1,5 +1,5 @@
-from abc import ABC
-from dataclasses import dataclass, field
+from abc import ABC, abstractclassmethod
+from dataclasses import dataclass, field, fields
 from functools import wraps
 import sys
 from typing import (
@@ -7,16 +7,18 @@ from typing import (
     Any,
     Callable,
     Optional,
+    Self,
     Sequence,
     Type,
     TypeVar,
     final,
 )
+import sympy
 import torch.fx as fx
 
 if TYPE_CHECKING:
-    from ..lang.wave_types import Memory, Register
-from .._support.indexing import IndexExpr
+    from ..lang.wave_types import AddressSpace, Memory, Register
+from .._support.indexing import IndexExpr, IndexSymbol
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
@@ -44,7 +46,7 @@ def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
 
 
 def reduction(
-    axis: IndexExpr, init_args: Sequence["Register"]
+    axis: IndexExpr, args: Sequence["Register"]
 ) -> Callable[[Callable[[AccT], AccT]], AccT]:
     ...
 
@@ -52,7 +54,7 @@ def reduction(
 def write(
     register_: "Register",
     memory: "Memory",
-    elements_per_thread: Optional[IndexExpr] = None,
+    elements_per_thread: Optional[IndexExpr | int] = None,
 ):
     ...
 
@@ -84,6 +86,11 @@ def define_op(op_name: str) -> Callable[[T], T]:
 
 def get_custom(node: fx.Node) -> "CustomOp":
     """Get the corresponding CustomOp for a given fx.Node."""
+    if isinstance(node, CustomOp):
+        print("Careful! You passed a custom op where an fx.Node was required.")
+        return node
+    if not isinstance(node, fx.Node):
+        raise ValueError("Expected an fx.Node")
 
     if node.op == "placeholder":
         return Placeholder.from_fx_node(node)
@@ -103,6 +110,7 @@ class CustomOp(ABC):
     fx_node: Optional[fx.Node] = field(default=None, init=False)
     tkw_op_name: str = field(default="unknown", init=False)
     _tracing_function: Optional[Callable[..., Any]] = field(default=None, init=False)
+    index: Optional[IndexExpr] = field(default=None, init=False)
 
     @classmethod
     def from_fx_node(cls: Type[CustomOpT], node: fx.Node) -> CustomOpT:
@@ -110,6 +118,19 @@ class CustomOp(ABC):
         instance.fx_node = node
         instance.graph = node.graph
         return instance
+
+    def __post_init__(self):
+        # Subclasses do not inherit hash and eq from the superclass
+        self.__class__.__hash__ = CustomOp.__hash__
+        self.__class__.__eq__ = CustomOp.__eq__
+
+    def __hash__(self):
+        return hash(self.fx_node)
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, CustomOp):
+            return False
+        return self.fx_node == other.fx_node
 
     def __str__(self) -> str:
         return self.custom_string({})
@@ -143,6 +164,33 @@ class CustomOp(ABC):
             kwargs={},
         )
 
+    def update_arg(self, idx: int, value: Any):
+        """
+        Update the value of an argument in the node while keeping the
+        underlying fx.Node consistent.
+        """
+
+        # Skip the fields defined by the abstract base class
+        dataclass_fields = fields(self)[3:]
+        if 0 <= idx < len(dataclass_fields):
+            self.node_args[idx] = value
+            field_name = dataclass_fields[idx].name
+            # Set the new value for the field
+            setattr(self, field_name, value)
+            fx_val = value.fx_node if isinstance(value, CustomOp) else value
+            self.fx_node.update_arg(idx, fx_val)
+        else:
+            raise IndexError("Index out of range")
+
+    def copy(self, suffix: Optional[str] = None) -> Self:
+        """Returns a duplicate of this node in order to expand the graph."""
+        self.graph.inserting_after(self.fx_node)
+        new_node = self.graph.node_copy(self.fx_node)
+        new_node.tkw_op = self
+        if suffix:
+            new_node.name = new_node.name + suffix
+        return get_custom(new_node)
+
     @classmethod
     def handle(cls, graph, *args, **kwargs) -> fx.Node:
         node = cls(*args, **kwargs)
@@ -156,6 +204,23 @@ class CustomOp(ABC):
         if hasattr(self, "_name"):
             return self._name
         return self.fx_node.name
+
+    @property
+    def node_args(self) -> list[Any]:
+        """Returns the args to this custom op using subclasses of CustomOp if possible."""
+        return [
+            get_custom(arg) if isinstance(arg, fx.Node) else arg
+            for arg in self.fx_node.args
+        ]
+
+    @property
+    def users(self) -> list[Any]:
+        """Returns the users of this custom op using subclasses of CustomOp if possible."""
+        return [get_custom(user) for user in self.fx_node.users]
+
+    @property
+    def indexing_dims(self) -> list[sympy.Symbol]:
+        return []
 
 
 @final
@@ -172,6 +237,7 @@ class Unknown(CustomOp):
     def from_fx_node(cls, node: fx.Node) -> "Unknown":
         instance = cls(node.args, node.kwargs)
         instance.fx_node = node
+        instance.graph = node.graph
         return instance
 
     def custom_string(self, value_map: dict[str, str]) -> str:
@@ -188,18 +254,29 @@ class Placeholder(CustomOp):
     """
 
     _name: str
-    type: Optional[DataType]
+    _type: Optional[DataType]
     tkw_op_name: str = field(default="placeholder", init=False)
 
     @classmethod
     def from_fx_node(cls: Type[PlaceholderT], node: fx.Node) -> PlaceholderT:
-        return cls(node.name, node.type)
+        instance = cls(node.name, node.type)
+        instance.fx_node = node
+        instance.graph = node.graph
+        return instance
 
     def custom_string(self, value_map: dict[str, str]) -> str:
         # print all variables of the node apart from graph and op
-        vars_list = [f"{key}={value}" for key, value in vars(self).items()]
+        vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
         vars_str = ", ".join(vars_list)
         return f"{self.tkw_op_name}({vars_str})"
+
+    @property
+    def indexing_dims(self) -> list[sympy.Symbol]:
+        return list(self._type.symbolic_shape)
+
+    @property
+    def type(self) -> "Memory":
+        return self._type
 
 
 # Ops modeling TKW operations in the kernel language
@@ -212,6 +289,10 @@ class NewRegister(CustomOp):
     dtype: DataType
     value: float
 
+    @property
+    def indexing_dims(self) -> list[sympy.Symbol]:
+        return list(self.shape)
+
 
 @define_op("mma")
 @dataclass
@@ -220,13 +301,29 @@ class MMA(CustomOp):
     rhs: fx.Node
     acc: fx.Node
 
+    @property
+    def indexing_dims(self) -> list[sympy.Symbol]:
+        return (
+            get_custom(self.lhs).indexing_dims
+            + get_custom(self.rhs).indexing_dims
+            + get_custom(self.acc).indexing_dims
+        )
+
 
 @define_op("read")
 @dataclass
 class Read(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any] = None
-    type: Optional[Type["Register"]] = None
+
+    @property
+    def indexing_dims(self) -> list[sympy.Symbol]:
+        # TODO: This could contain ints.
+        return list(self.memory.type.symbolic_shape)
+
+    @property
+    def type(self) -> "Memory":
+        return self.memory.type
 
 
 @define_op("reduction")
@@ -248,11 +345,30 @@ class Reduction(CustomOp):
                 subgraph_name=subgraph_name,
                 implicit_captures=implicit_captures,
             )
+            # Remember which placeholders are init args. This connection gets
+            # lost otherwise
+            for nested_node in graph.subgraphs[subgraph_name].nodes:
+                if nested_node.op == "placeholder":
+                    if nested_node not in [
+                        var.node
+                        for var in graph.inner_freevars[graph.subgraphs[subgraph_name]]
+                    ]:
+                        nested_node.reduction_init_arg = True
+
             node._add_proxy_to_graph(graph)
             node.fx_node.node.tkw_op = cls
             return node.fx_node
 
         return wrapper
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        expand_dims: list[IndexSymbol] = []
+        for user in self.users:
+            for indexing_dim in user.indexing_dims:
+                if indexing_dim not in expand_dims:
+                    expand_dims.append(indexing_dim)
+        return expand_dims
 
 
 @define_op("write")
@@ -261,3 +377,23 @@ class Write(CustomOp):
     register_: fx.Proxy
     memory: fx.Proxy
     elements_per_thread: Optional[Any]
+
+    @property
+    def indexing_dims(self) -> list[sympy.Symbol]:
+        # TODO: This could contain ints.
+        return list(self.memory.type.symbolic_shape)
+
+    @property
+    def type(self) -> "Memory":
+        return self.memory.type
+
+
+@define_op("get_result")
+@dataclass
+class GetResult(CustomOp):
+    value: fx.Proxy
+    res_idx: int
+
+    @property
+    def type(self) -> "Memory":
+        return self.value.type

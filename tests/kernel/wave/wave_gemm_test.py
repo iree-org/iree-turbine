@@ -45,7 +45,7 @@ class Test(unittest.TestCase):
             # This microkernel encodes the fact that if the reduction
             # dimension were tiled, then we would need to materialize a loop.
             @tkw.reduction(K, init_args=[c_reg])
-            def repeat(acc: tkl.Register) -> tkl.Register[M, N, tkl.f32]:
+            def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
                 # a_reg: tkw.Register[M, K, tkl.f16]
                 a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
                 # b_reg: tkw.Register[N, K, tkl.f16]
