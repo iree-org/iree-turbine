@@ -5,3 +5,5 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from . import iree
+from . import _jinja_test_ops
+from . import _str_format_test_ops

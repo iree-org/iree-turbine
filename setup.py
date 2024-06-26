@@ -63,7 +63,7 @@ load_requirement_pins("requirements.txt")
 
 def get_version_spec(dep: str):
     if dep in requirement_pins:
-        return f">={requirement_pins[dep]}"
+        return f"=={requirement_pins[dep]}"
     else:
         return ""
 
@@ -103,13 +103,14 @@ setup(
         f"numpy{get_version_spec('numpy')}",
         f"iree-compiler{get_version_spec('iree-compiler')}",
         f"iree-runtime{get_version_spec('iree-runtime')}",
-        "torch>=2.3.0",
+        "torch==2.3.0",
         f"Jinja2{get_version_spec('Jinja2')}",
     ],
     extras_require={
         "testing": [
             f"pytest{get_version_spec('pytest')}",
             f"pytest-xdist{get_version_spec('pytest-xdist')}",
+            f"parameterized{get_version_spec('parameterized')}",
         ],
     },
     cmdclass={"build": BuildCommand},

@@ -21,7 +21,6 @@ import subprocess
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERSION_INFO_FILE = REPO_ROOT / "version_info.json"
-CORE_DIR = REPO_ROOT / "core"
 WHEEL_DIR = REPO_ROOT / "wheelhouse"
 
 # The platform flags that we will download IREE wheels for. This must match
@@ -118,7 +117,7 @@ def download_iree_binaries():
             "-f",
             WHEEL_DIR,
             "-r",
-            CORE_DIR / "iree-requirements.txt",
+            REPO_ROOT / "iree-requirements.txt",
         ]
         exec(args)
 
@@ -156,14 +155,14 @@ def main():
         print("Prefetching all IREE binaries")
         download_iree_binaries()
         print("Prefetching torch CPU")
-        download_requirements(CORE_DIR / "pytorch-cpu-requirements.txt")
+        download_requirements(REPO_ROOT / "pytorch-cpu-requirements.txt")
         print("Downloading remaining requirements")
-        download_requirements(CORE_DIR / "requirements.txt")
+        download_requirements(REPO_ROOT / "requirements.txt")
 
     print("Building shark-turbine")
-    build_wheel(CORE_DIR)
+    build_wheel(REPO_ROOT)
     print("Building iree-turbine")
-    build_wheel(CORE_DIR, env={"TURBINE_PACKAGE_NAME": "iree-turbine"})
+    build_wheel(REPO_ROOT, env={"TURBINE_PACKAGE_NAME": "iree-turbine"})
 
 
 if __name__ == "__main__":
