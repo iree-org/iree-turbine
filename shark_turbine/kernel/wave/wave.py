@@ -1,10 +1,14 @@
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional
 import inspect
-import os
 
 from ..compiler import builder, dispatch_codegen, kernel_codegen
 from ..compiler.ir import Context, Operation
 from .codegen import WaveEmitter
+from .constraints import (
+    Constraint,
+    WorkgroupConstraint,
+    get_grid_shape,
+)
 from ..lang import Grid
 from ..ops import wave_ops
 from .._support.tracing import (
@@ -17,16 +21,16 @@ from .._support.tracing import (
 __all__ = ["wave", "wave_trace_only"]
 
 
-def wave():
+def wave(constraints: Optional[list[Constraint]] = None):
     def decorator(f: Callable[..., Any]) -> "LaunchableWave":
-        return LaunchableWave(f.__name__, f)
+        return LaunchableWave(constraints, f.__name__, f)
 
     return decorator
 
 
-def wave_trace_only():
+def wave_trace_only(constraints: Optional[list[Constraint]] = None):
     def decorator(f: Callable[..., Any]) -> "Callable[[], CapturedTrace]":
-        wave = LaunchableWave(f.__name__, f)
+        wave = LaunchableWave(constraints, f.__name__, f)
         return wave._trace  # type: ignore
 
     return decorator
@@ -35,15 +39,26 @@ def wave_trace_only():
 class LaunchableWave(Launchable):
     def __init__(
         self,
+        constraints: Optional[list[Constraint]],
         name: str,
         eager_function: Callable[[Any], Any],
     ):
         super().__init__(eager_function)
 
-        self.grid_type = Grid[None, None]
+        self.constraints = constraints if constraints else []
         self._name = name
         self._f = eager_function
         self._sig = inspect.signature(eager_function)
+
+        self.grid_type = Grid[tuple(get_grid_shape(self.workgroup_constraints))]
+
+    @property
+    def workgroup_constraints(self) -> list[WorkgroupConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, WorkgroupConstraint)
+        ]
 
     def _trace(self) -> CapturedTrace:
         region_graph = KernelRegionGraph()
