@@ -39,20 +39,20 @@ def get_vm_instance() -> VmInstance:
 
 
 _ELEMENT_TYPE_TO_DTYPE = {
-    HalElementType.FLOAT_16: torch.float16,
-    HalElementType.BFLOAT_16: torch.bfloat16,
-    HalElementType.FLOAT_32: torch.float32,
-    HalElementType.FLOAT_64: torch.float64,
-    HalElementType.UINT_8: torch.uint8,
-    HalElementType.SINT_8: torch.int8,
-    HalElementType.SINT_16: torch.int16,
-    HalElementType.SINT_32: torch.int32,
-    HalElementType.SINT_64: torch.int64,
-    HalElementType.BOOL_8: torch.bool,
-    HalElementType.OPAQUE_8: torch.qint8,
-    HalElementType.OPAQUE_8: torch.quint8,
-    HalElementType.COMPLEX_64: torch.complex64,
-    HalElementType.COMPLEX_128: torch.complex128,
+    int(HalElementType.FLOAT_16): torch.float16,
+    int(HalElementType.BFLOAT_16): torch.bfloat16,
+    int(HalElementType.FLOAT_32): torch.float32,
+    int(HalElementType.FLOAT_64): torch.float64,
+    int(HalElementType.UINT_8): torch.uint8,
+    int(HalElementType.SINT_8): torch.int8,
+    int(HalElementType.SINT_16): torch.int16,
+    int(HalElementType.SINT_32): torch.int32,
+    int(HalElementType.SINT_64): torch.int64,
+    int(HalElementType.BOOL_8): torch.bool,
+    int(HalElementType.OPAQUE_8): torch.qint8,
+    int(HalElementType.OPAQUE_8): torch.quint8,
+    int(HalElementType.COMPLEX_64): torch.complex64,
+    int(HalElementType.COMPLEX_128): torch.complex128,
 }
 
 
@@ -134,7 +134,7 @@ class EagerExecResult:
 
 def _element_type_to_dtype(element_type) -> torch.dtype:
     try:
-        return _ELEMENT_TYPE_TO_DTYPE[element_type]
+        return _ELEMENT_TYPE_TO_DTYPE[int(element_type)]
     except KeyError:
         raise ValueError(f"Unable to map {element_type} to torch dtype.")
 
