@@ -592,27 +592,6 @@ def compute_method(super_fn, *args, **kwargs):
 # Conversions
 ###############################################################################
 
-_ELEMENT_TYPE_TO_NUMPY_DTYPE = {
-    HalElementType.FLOAT_16: np.float16,
-    HalElementType.FLOAT_32: np.float32,
-    HalElementType.FLOAT_64: np.float64,
-    HalElementType.UINT_8: np.uint8,
-    HalElementType.SINT_8: np.int8,
-    HalElementType.SINT_16: np.int16,
-    HalElementType.SINT_32: np.int32,
-    HalElementType.SINT_64: np.int64,
-    HalElementType.BOOL_8: np.bool_,
-    HalElementType.COMPLEX_64: np.complex64,
-    HalElementType.COMPLEX_128: np.complex128,
-}
-
-
-def _element_type_to_numpy_dtype(element_type: HalElementType) -> Any:
-    try:
-        return DTYPE_TO_ELEMENT_TYPE[element_type]
-    except KeyError:
-        raise UnknownDTypeError(element_type)
-
 
 def _create_pattern_for_dtype(dtype: torch.dtype, x):
     ctor = _simple_pattern_ctors.get(dtype, None)

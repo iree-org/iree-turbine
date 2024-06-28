@@ -6,6 +6,7 @@
 
 from . import gen
 from . import lang
+from . import wave
 
 
 # Helpers that are good to have in the global scope.

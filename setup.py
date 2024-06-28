@@ -94,6 +94,10 @@ setup(
         "Programming Language :: Python :: 3",
     ],
     packages=packages,
+    include_package_data=True,
+    package_data={
+        "shark_turbine": ["ops/templates/*.mlir"],  # Include MLIR templates
+    },
     entry_points={
         "torch_dynamo_backends": [
             "turbine_cpu = shark_turbine.dynamo.backends.cpu:backend",
@@ -110,6 +114,7 @@ setup(
         "testing": [
             f"pytest{get_version_spec('pytest')}",
             f"pytest-xdist{get_version_spec('pytest-xdist')}",
+            f"parameterized{get_version_spec('parameterized')}",
         ],
     },
     cmdclass={"build": BuildCommand},
