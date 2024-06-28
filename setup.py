@@ -96,7 +96,7 @@ setup(
     packages=packages,
     include_package_data=True,
     package_data={
-        'shark_turbine': ['ops/templates/*.mlir'],  # Include MLIR templates
+        "shark_turbine": ["ops/templates/*.mlir"],  # Include MLIR templates
     },
     entry_points={
         "torch_dynamo_backends": [
