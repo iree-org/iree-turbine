@@ -1,0 +1,41 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  # A PR number if a pull request and otherwise the commit hash. This cancels
+  # queued and in-progress runs for the same PR (presubmit) or commit
+  # (postsubmit). The workflow name is prepended to avoid conflicts between
+  # different workflows.
+  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "Test Build Release Process"
+    strategy:
+      matrix:
+        version: [3.11]
+        os: [ubuntu-latest]
+    runs-on: ${{matrix.os}}
+    steps:
+      - name: "Setting up Python"
+        id: setup_python
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{matrix.version}}
+
+      - name: "Checkout Code"
+        uses: actions/checkout@v3
+
+      - name: Build Release Wheels
+        run: ./build_tools/build_release.py --core-version 2.3.0
+
+      - name: Validate Release Build
+        if: ${{ !cancelled() }}
+        run: ./build_tools/post_build_release_test.sh
