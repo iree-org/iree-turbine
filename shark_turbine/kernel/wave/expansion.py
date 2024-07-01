@@ -67,6 +67,13 @@ def indexing_dims(all_dims: dict[Symbol, int], nodeOrDims: CustomOp | Sequence[S
     return tuple((key, all_dims[key]) for key in nodeOrDims)
 
 
+def get_expand_dims(
+    dims: dict[Symbol, int], selection: Sequence[Symbol]
+) -> dict[Symbol, int]:
+    """TODO: Example here."""
+    return {dim: val if dim in selection else 0 for dim, val in dims.items()}
+
+
 def expand_graph(trace: CapturedTrace, constraints: Optional[list[Constraint]] = None):
     """
     Create a graph that represents the expanded version of the wave function
@@ -122,12 +129,13 @@ def _expand_node(
         print(f"Already expanded node: {node} in {dims}")
         return context[(node, indexing_dims(dims, node))]
 
+    dims = get_expand_dims(dims, node.indexing_dims)
+
     print(f"Expanding node: {node} in {dims}")
     if (
         isinstance(node, Reduction)
         or hasattr(node, "indexing_dims")
         or hasattr(node, "type")
-        # and is_memory_meta_derived(node.type)
     ):
         pass
         # Expand in the corresponding dimensions
@@ -139,19 +147,22 @@ def _expand_node(
             new_node = (
                 node.copy() if expansion_needed(dims, node.indexing_dims) else node
             )
-            new_node.fx_node.name = get_suffixed_name(node, dims)
-
-            # TODO: adjust indexing when that is modeled
+            new_node.fx_node.dims = dims
 
             # TODO: for debugging only
             if new_node == node:
                 print(f"did not clone node: {node} in {dims}")
-                # new_node.fx_node.name = f"{node.fx_node.name}_{dim[0].name}"
+            old_name = new_node.fx_node.name
+            new_node.fx_node.name = get_suffixed_name(node, dims)
+
             # TODO: This special case should be handled better
             if isinstance(node, Placeholder) and hasattr(
                 node.fx_node, "reduction_init_arg"
             ):
                 new_node.fx_node.reduction_init_arg = True
+                context[(new_node, indexing_dims(dims, new_node))] = new_node
+                if new_node == node:
+                    new_node.fx_node.name = old_name
 
         for i, arg in enumerate(node.node_args):
             if is_expandable(arg):
@@ -175,6 +186,7 @@ def _expand_reduction(
     # TODO: Okay, rework this to expand the reduction completely, not in individual dimensions.
 
     # Find out in which dimensions to expand this.
+    # TODO: Think about whether this does the same as the function indexing_dims
     users = reduction.users
     expand_dims: list[Symbol] = []
     for user in users:
@@ -194,9 +206,9 @@ def _expand_reduction(
         for arg_idx, arg in enumerate(output.node_args):
             dims = {dim: val for dim, val in zip(dim_scaling.keys(), dim_vals)}
             # Add GetResult nodes for the corresponding dimensions
-            result_idx = dim_idx * len(expand_dims) + arg_idx
+            # result_idx = dim_idx * len(expand_dims) + arg_idx
             reduction.graph.inserting_after(reduction.fx_node)
-            new_node = GetResult(reduction.fx_node, result_idx)
+            new_node = GetResult(reduction.fx_node, len(new_output_args))
             new_node.add_to_graph(reduction.graph)
             if return_node is None:
                 return_node = new_node
@@ -267,7 +279,6 @@ def _handle_reduction_dim(
     context: dict[tuple[CustomOp, Symbol, int], CustomOp],
 ):
     print("Reduction Dim not handled yet.")
-    return
     # iter_arg_mapping: dict[CustomOp, CustomOp] = {}
     # Map iter args to output args
 
@@ -281,50 +292,22 @@ def _handle_reduction_dim(
         if hasattr(node, "reduction_init_arg"):
             iter_args.append(get_custom(node))
 
+    # Users of the iter arg will be duplicated
     for idx, iter_arg in enumerate(iter_args):
         for user in iter_arg.users:
-
-            new_node = _expand_node(user, trace, dim_scaling, context)
+            dims = {dim: 0 if dim != reduction.axis else 1 for dim in dim_scaling}
+            dims = user.fx_node.dims
+            dims[reduction.axis] = 1
+            new_node = _expand_node(user, trace, dims, context)
             # Adjust the arg
             new_node.node_args.index(iter_arg)
-            # Brittle: The correct order of the iterargs is not guaranteed
 
+            # TODO: user is not always an arg to the ouput node.
+            # For more complicated kernels we will have to represent this mapping
+            # differently.
+            outidx = output.node_args.index(user)
             new_node.update_arg(
-                new_node.node_args.index(iter_arg), output.node_args[idx]
+                new_node.node_args.index(iter_arg), output.node_args[outidx]
             )
             # Updating the output args is not yet handled nicely
-            output.fx_node.update_arg(idx, new_node.fx_node)
-
-    # for iter_arg in reduction.iter_args:
-    #     for user in iter_arg.users:
-    #         pass
-
-    # Users of the iter arg will be duplicated
-
-    # TODO: This will be factored out into its own thing.
-    # Expand in the reduction dimension if not already done:
-    # if not (reduction, reduction.axis, 0) in context:
-    #     for dim_idx in range(dim_scaling[reduction.axis]):
-    #         for i, arg in enumerate(output.node_args):
-    #             if is_expandable(arg):
-    #                 new_arg = _expand_node(
-    #                     arg, trace, (reduction.axis, dim_idx), dim_scaling, context
-    #                 )
-    #                 # Update args of the output node
-    #         context[(reduction, reduction.axis, dim_idx)] = reduction
-
-
-# Currently not needed because we branch for Reduction above
-# elif isinstance(arg, list):
-#     new_arg = []
-#     for sub_arg in arg:
-#         # subargs are not CustomOps yet
-#         if isinstance(sub_arg, CustomOp):
-#             custom_sub_arg = get_custom(sub_arg)
-#             new_sub_arg = _expand_node(
-#                 custom_sub_arg, trace, dim, dim_scaling, context
-#             )
-#             new_arg.append(new_sub_arg)
-#         else:
-#             new_arg.append(sub_arg)
-#     new_node.update_arg(i, new_arg)
+            output.fx_node.update_arg(outidx, new_node.fx_node)

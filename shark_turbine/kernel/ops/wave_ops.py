@@ -31,32 +31,29 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 # Stubs to enable type checking of the custom ops:
 # This is currently hand-written and should in future be generated from the custom ops
-def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
-    ...
+def register(
+    shape: tuple[IndexExpr, ...], dtype: DataType, value: float
+) -> "Register": ...
 
 
 def read(
     memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
-def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
-    ...
+def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register": ...
 
 
 def reduction(
     axis: IndexExpr, args: Sequence["Register"]
-) -> Callable[[Callable[[AccT], AccT]], AccT]:
-    ...
+) -> Callable[[Callable[[AccT], AccT]], AccT]: ...
 
 
 def write(
     register_: "Register",
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
-):
-    ...
+): ...
 
 
 def define_op(op_name: str) -> Callable[[T], T]:
@@ -169,11 +166,12 @@ class CustomOp(ABC):
         Update the value of an argument in the node while keeping the
         underlying fx.Node consistent.
         """
-
+        if isinstance(value, CustomOp):
+            value = value.fx_node
         # Skip the fields defined by the abstract base class
-        dataclass_fields = fields(self)[3:]
+        dataclass_fields = fields(self)[5:]
         if 0 <= idx < len(dataclass_fields):
-            self.node_args[idx] = value
+            self.node_args[idx] = value  # TODO: Does this make sense?
             field_name = dataclass_fields[idx].name
             # Set the new value for the field
             setattr(self, field_name, value)
