@@ -15,7 +15,8 @@ def run(func: Callable[[], None]) -> Callable[[], None]:
     """Run a function as part of the test suite."""
     if __name__ == "__main__":
         func()
-
+        # Print a separator between tests
+        print("-----")
     return func
 
 
@@ -28,8 +29,6 @@ def print_trace(trace: CapturedTrace):
     # The root graph is at the back so we print the subgraphs in reverse order
     for subgraph in reversed(list(trace.region_graph.subgraphs.values())):
         print(subgraph)
-        for node in subgraph.nodes:
-            print(get_custom(node))
 
 
 # Input sizes
@@ -47,7 +46,7 @@ ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
 
 @tkw.wave_trace_only()
-def read_write(
+def read_write_same_size(
     a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
 ):
@@ -55,11 +54,65 @@ def read_write(
     tkw.write(a_reg, c, elements_per_thread=4)
 
 
+@run
 def test_read_write():
     with tk.gen.TestLaunchContext({}):
-        graph = read_write()
+        graph = read_write_same_size()
         expand_graph(graph)
         print_trace(graph)
+        # CHECK: %a
+        # CHECK: %c
+        # CHECK: %read
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_1_1_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_1_0_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_0_1_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %write_0_0_0
+        # CHECK-SAME: (%read, %c, 4)
+        # CHECK: %write_1_1_0
+        # CHECK-SAME: (%read_1_1_0, %c, 4)
+        # CHECK: %write_1_0_0
+        # CHECK-SAME: (%read_1_0_0, %c, 4)
+        # CHECK: %write_0_1_0
+        # CHECK-SAME: (%read_0_1_0, %c, 4)
+
+        # CHECK: -----
+
+
+@tkw.wave_trace_only()
+def read_write_different_dims(
+    a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    c: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f32],
+):
+    a_reg = tkw.read(a, elements_per_thread=4)
+    tkw.write(a_reg, c, elements_per_thread=4)
+
+
+@run
+def test_read_write():
+    with tk.gen.TestLaunchContext({}):
+        graph = read_write_different_dims()
+        expand_graph(graph)
+        print_trace(graph)
+        # CHECK: %a
+        # CHECK: %c
+        # CHECK: %read_0_0_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_1_0_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %write_0_0_0
+        # CHECK-SAME: (%read_0_0_0, %c, 4)
+        # CHECK: %write_1_0_1
+        # CHECK-SAME: (%read_1_0_0, %c, 4)
+        # CHECK: %write_1_0_0
+        # CHECK-SAME: (%read_1_0_0, %c, 4)
+        # CHECK: %write_0_0_1
+        # CHECK-SAME: (%read_0_0_0, %c, 4)
+
+        # CHECK: -----
 
 
 @tkw.wave_trace_only()
@@ -86,6 +139,74 @@ def test_gemm():
         graph = gemm()
         expand_graph(graph)
         print_trace(graph)
+        # Root graph:
+        # CHECK: %a
+        # CHECK: %b
+        # CHECK: %c
+        # CHECK: %register_0_0_0
+        # CHECK: %register_1_1_0
+        # CHECK: %register_1_0_0
+        # CHECK: %register_0_1_0
+        # CHECK: %reduction
+        # CHECK: %getresult_1_1_0
+        # CHECK: %getresult_1_0_0
+        # CHECK: %getresult_0_1_0
+        # CHECK: %getresult_0_0_0
+        # CHECK: %write_0_0_0
+        # TODO: This link-up is not yet correct!
+        # CHECK-SAME: (%reduction, %c, 4)
+        # CHECK: %write_1_1_0
+        # CHECK-SAME: (%get_result_1_1_0, %c, 4)
+        # CHECK: %write_1_0_0
+        # CHECK-SAME: (%get_result_1_0_0, %c, 4)
+        # CHECK: %write_0_1_0
+        # CHECK-SAME: (%get_result_0_1_0, %c, 4)
+
+        # Reduction subgraph:
+
+        # CHECK: %acc
+        # CHECK: %acc_1_1_0
+        # CHECK: %acc_1_0_0
+        # CHECK: %acc_0_1_0
+
+        # CHECK: %a
+        # CHECK: %read_0_0_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_0_0_1
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_1_0_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_1_0_1
+        # CHECK-SAME: (%a, 4)
+
+        # CHECK: %b
+        # CHECK: %read_0_0_0
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_0_1
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_1_0
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_1_1
+        # CHECK-SAME: (%b, 4)
+
+        # CHECK: %mma_0_0_0
+        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc)
+        # CHECK: %mma_0_0_1
+        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
+        # CHECK: %mma_1_1_0
+        # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_1_1_0)
+        # CHECK: %mma_1_1_1
+        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_1_1_0)
+        # CHECK: %mma_1_0_0
+        # CHECK-SAME: (%read_1_0_0, %read_0_0_0, %acc_1_0_0)
+        # CHECK: %mma_1_0_1
+        # CHECK-SAME: (%read_1_0_1, %read_0_0_1, %mma_1_0_0)
+        # CHECK: %mma_0_1_0
+        # CHECK-SAME: (%read_0_0_0, %read_0_1_0, %acc_0_1_0)
+        # CHECK: %mma_0_1_1
+        # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0)
+
+        # CHECK: -----
 
 
 if __name__ == "__main__":
