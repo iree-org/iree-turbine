@@ -1,40 +1,19 @@
-from typing import Any, Optional
-
-
 import itertools
-from ..compiler.ir import Context, Operation
-from .constraints import (
-    Constraint,
-    WorkgroupConstraint,
-    get_grid_shape,
-)
-from .codegen import WaveEmitter
-from ..lang import Grid, sym
-from ..ops.wave_ops import *
-from .._support.tracing import (
-    CapturedTrace,
-    CompiledContext,
-    KernelRegionGraph,
-    Launchable,
-)
-from ..lang.wave_types import Memory, Register, is_memory_meta_derived
-import torch.fx as fx
-
 from sympy import Symbol
+import torch.fx as fx
+from typing import Any, Optional, TypeAlias
+
+from .constraints import Constraint
+from ..lang import sym
+from ..ops.wave_ops import *
+from .._support.tracing import CapturedTrace
+from ...support.logging import get_logger
 
 
-# Get the last element of the fx node_list structure
-def get_last(node_list: fx.graph._node_list) -> fx.Node:
-    return next(iter(reversed(node_list)))
-
-
-def is_expandable(arg: Any) -> bool:
-    # Special case for the init args of a reduction node
-    if isinstance(arg, Placeholder) and hasattr(arg.fx_node, "reduction_init_arg"):
-        return True
-    return isinstance(arg, CustomOp) and not isinstance(arg, Placeholder)
-
-
+logger = get_logger("turbine.wave.expansion")
+ExpandedNodeMap: TypeAlias = dict[
+    tuple[CustomOp, tuple[tuple[Symbol, int], ...]], CustomOp
+]
 dim_scaling = {
     sym.M: 2,
     sym.N: 2,
@@ -45,66 +24,93 @@ dim_scaling = {
 # sym.BLOCK_K: 2,
 
 
+def expansion_needed(dims: dict[Symbol, int], selection: Sequence[Symbol]) -> bool:
+    """Check if any of the dimensions in the selection are non-zero."""
+    return any(dim[1] != 0 and dim[0] in selection for dim in dims.items())
+
+
+def filter_and_zero_unselected_dims(
+    dims: dict[Symbol, int], selection: Sequence[Symbol]
+) -> dict[Symbol, int]:
+    """
+    Filters dimensions based on selection and sets unselected dimensions' values to zero.
+    """
+    return {dim: val if dim in selection else 0 for dim, val in dims.items()}
+
+
 def get_dim_combinations(all_dims: dict[Symbol, int], selection: Sequence[Symbol]):
     """
     Returns all combinations of sizes for the selected dimensions.
     Other dimensions are clamped to 0.
     """
     adjusted_dimension_sizes = [
-        list(range(dim_scaling[dim])) if dim in selection else [0]
-        for dim in dim_scaling
+        list(range(all_dims[dim])) if dim in selection else [0] for dim in all_dims
     ]
     return itertools.product(*adjusted_dimension_sizes)
 
 
-def expansion_needed(dims: dict[Symbol, int], selection: Sequence[Symbol]) -> bool:
-    return any(dim[1] != 0 and dim[0] in selection for dim in dims.items())
-
-
-def indexing_dims(all_dims: dict[Symbol, int], nodeOrDims: CustomOp | Sequence[Symbol]):
+def get_indexed_dims(
+    all_dims: dict[Symbol, int], nodeOrDims: CustomOp | Sequence[Symbol]
+) -> tuple[tuple[Symbol, int], ...]:
+    """
+    Generates a tuple of (key, value) pairs from the provided dimensions.
+    If given a CustomOp instance, it uses its indexing_dims attribute.
+    """
     if isinstance(nodeOrDims, CustomOp):
         nodeOrDims = nodeOrDims.indexing_dims
     return tuple((key, all_dims[key]) for key in nodeOrDims)
 
 
-def get_expand_dims(
-    dims: dict[Symbol, int], selection: Sequence[Symbol]
-) -> dict[Symbol, int]:
-    """TODO: Example here."""
-    return {dim: val if dim in selection else 0 for dim, val in dims.items()}
+def get_last(node_list: fx.graph._node_list) -> fx.Node:  # type: ignore
+    """Get the last element of the fx node_list structure"""
+    return next(iter(reversed(node_list)))  # type: ignore
+
+
+def is_expandable(arg: Any) -> bool:
+    """Check if an argument is expandable."""
+    # Placeholder nodes are only expanded if they are a reduction init arg
+    if isinstance(arg, Placeholder):
+        return hasattr(arg.fx_node, "reduction_init_arg")
+    return isinstance(arg, CustomOp)
 
 
 def expand_graph(trace: CapturedTrace, constraints: Optional[list[Constraint]] = None):
     """
-    Create a graph that represents the expanded version of the wave function
+    Create a graph that represents the expanded version of the wave function.
+    The expansion is done in the dimensions specified by the constraints.
     """
-
-    # Determine how many nodes there are in the final graph.
-
-    # Start from the back and always expand in the corresponding indexing dimensions
+    # Start from the back and expand in the corresponding indexing dimensions of a node
     # Then proceed to the operands
+    leaf_nodes: list[Type[CustomOp]] = [Write]
 
     for node in (
         get_custom(fx_node) for fx_node in reversed(list(trace.get_root_graph().nodes))
     ):
-        expansion_context: dict[Any, Any] = {}
-        # Start expansion with leaf nodes
-        if isinstance(node, Write):
-            for dim_vals in get_dim_combinations(dim_scaling, node.indexing_dims):
-                dims = {dim: val for dim, val in zip(dim_scaling.keys(), dim_vals)}
-                print(f"leaf: {dims}")
-                if not expansion_needed(dims, node.indexing_dims):
-                    print("skipping cloning")
+        expansion_context: ExpandedNodeMap = {}
+        # Expansion begins at the leaf nodes
+        if node.__class__ in leaf_nodes:
+            for dim_combination in get_dim_combinations(
+                dim_scaling, node.indexing_dims
+            ):
+                expand_dims = {
+                    dim: val for dim, val in zip(dim_scaling.keys(), dim_combination)
+                }
+                logger.debug(f"Starting expansion at leaf:{node} in dims:{expand_dims}")
+                if not expansion_needed(expand_dims, node.indexing_dims):
                     new_node = node
                 else:
                     node.graph.inserting_after(node.fx_node)
                     new_node = node.copy()
                     for arg_idx, arg in enumerate(node.node_args):
                         if is_expandable(arg):
-                            new_arg = _expand_node(arg, trace, dims, expansion_context)
+                            new_arg = _expand_node(
+                                arg, trace, expand_dims, expansion_context
+                            )
                             new_node.update_arg(arg_idx, new_arg)
-                new_node.fx_node.name = get_suffixed_name(node, dims)
-                expansion_context[(node, indexing_dims(dims, node))] = new_node
+                new_node.fx_node.name = get_suffixed_name(node, expand_dims)
+                expansion_context[(node, get_indexed_dims(expand_dims, node))] = (
+                    new_node
+                )
 
 
 def get_suffixed_name(node: CustomOp, dims: dict[Symbol, int]) -> str:
@@ -121,17 +127,17 @@ def _expand_node(
     node: CustomOp,
     trace: CapturedTrace,
     dims: dict[Symbol, int],
-    context: dict[tuple[CustomOp, dict[Symbol, int]], CustomOp],
+    context: ExpandedNodeMap,
 ) -> CustomOp:
     """Expand a single node in specific dimensions and recursively proceed to its inputs."""
 
-    if (node, indexing_dims(dims, node)) in context:
-        print(f"Already expanded node: {node} in {dims}")
-        return context[(node, indexing_dims(dims, node))]
+    if (node, get_indexed_dims(dims, node)) in context:
+        logger.debug(f"Already expanded node: {node} in {dims}")
+        return context[(node, get_indexed_dims(dims, node))]
 
-    dims = get_expand_dims(dims, node.indexing_dims)
+    dims = filter_and_zero_unselected_dims(dims, node.indexing_dims)
 
-    print(f"Expanding node: {node} in {dims}")
+    logger.debug(f"Expanding node: {node} in {dims}")
     if (
         isinstance(node, Reduction)
         or hasattr(node, "indexing_dims")
@@ -149,9 +155,8 @@ def _expand_node(
             )
             new_node.fx_node.dims = dims
 
-            # TODO: for debugging only
             if new_node == node:
-                print(f"did not clone node: {node} in {dims}")
+                logger.debug(f"did not clone node: {node} in {dims}")
             old_name = new_node.fx_node.name
             new_node.fx_node.name = get_suffixed_name(node, dims)
 
@@ -160,7 +165,10 @@ def _expand_node(
                 node.fx_node, "reduction_init_arg"
             ):
                 new_node.fx_node.reduction_init_arg = True
-                context[(new_node, indexing_dims(dims, new_node))] = new_node
+                # TODO: Think about how we can get rid of this special case
+                # Usually we only map from old nodes to new nodes. In this case we map from new iter_arg
+                # To itself to prevent its expansion during the expansion of the reduction dimension.
+                context[(new_node, get_indexed_dims(dims, new_node))] = new_node
                 if new_node == node:
                     new_node.fx_node.name = old_name
 
@@ -169,10 +177,10 @@ def _expand_node(
                 new_arg = _expand_node(arg, trace, dims, context)
                 new_node.update_arg(i, new_arg)
 
-        context[(node, indexing_dims(dims, node))] = new_node
+        context[(node, get_indexed_dims(dims, node))] = new_node
         return new_node
 
-    print(f"aborted expanding node:{node}, no type info.")
+    logger.debug(f"aborted expanding node:{node}, no type info.")
     return node
 
 
@@ -180,12 +188,9 @@ def _expand_reduction(
     reduction: Reduction,
     trace: CapturedTrace,
     initial_dims: dict[Symbol, int],
-    context: dict[tuple[CustomOp, Symbol, int], CustomOp],
+    context: ExpandedNodeMap,
 ) -> CustomOp:
     """Expand a reduction in a specific dimension and recursively proceed to its inputs."""
-    # TODO: Okay, rework this to expand the reduction completely, not in individual dimensions.
-
-    # Find out in which dimensions to expand this.
     # TODO: Think about whether this does the same as the function indexing_dims
     users = reduction.users
     expand_dims: list[Symbol] = []
@@ -193,7 +198,7 @@ def _expand_reduction(
         for indexing_dim in user.indexing_dims:
             if indexing_dim not in expand_dims:
                 expand_dims.append(indexing_dim)
-    print(f"expand dims: {expand_dims}")
+    logger.debug(f"expanding reduction in dims: {expand_dims}")
 
     # Get the output node of the reduction
     reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
@@ -213,7 +218,7 @@ def _expand_reduction(
             if return_node is None:
                 return_node = new_node
             new_node.fx_node.name = get_suffixed_name(new_node, dims)
-            context[(reduction, indexing_dims(dims, expand_dims))] = new_node
+            context[(reduction, get_indexed_dims(dims, expand_dims))] = new_node
 
             # Proceed with expansion inside the reduction
             new_output_args.append(_expand_node(arg, trace, dims, context))
@@ -248,28 +253,7 @@ def _expand_reduction(
     )
 
     _handle_reduction_dim(reduction, get_custom(new_output), trace, context)
-
-    # TODO: Next: What is conceptually missing is the semantics of the reduction.
-    # The reduction tells us that for the gemm example the return val of the region
-    # is the input to the next iteration of the region. This is not yet captured.
-    # Question: Is it always the case that this is done once, i.e. going from 4 MMAs to 8?
-    # If not, on which constraints does it depend?
-    # So TODO: Build a generic way of doing this, from this function. Possibly
-    # simply triggering expansion again from the output.
-    # This will only do expansion of the nodes that use the accumulator, as that is the value
-    # that in the second go is replaced with the output of the reduction, i.e. the 4 MMAs
-    # SO! In the second go this feels like normal expansion where the args of `output`
-    # are simply replaced? Not quite sure
-
-    # TODO: New note: the reduction node has a reduction dimension!
-    # Does that help us get to the 8 MMAs?
-
-    # TODO: When expanding along the reduction axis, I think we need to remap the accumulator values.
-    # I will try first without that and see.
-
-    # TODO: I think the outputs are all the expansions in dimension K?
-
-    return context[(reduction, indexing_dims(initial_dims, expand_dims))]
+    return context[(reduction, get_indexed_dims(initial_dims, expand_dims))]
 
 
 def _handle_reduction_dim(
@@ -278,7 +262,6 @@ def _handle_reduction_dim(
     trace: CapturedTrace,
     context: dict[tuple[CustomOp, Symbol, int], CustomOp],
 ):
-    print("Reduction Dim not handled yet.")
     # iter_arg_mapping: dict[CustomOp, CustomOp] = {}
     # Map iter args to output args
 
