@@ -31,29 +31,32 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 # Stubs to enable type checking of the custom ops:
 # This is currently hand-written and should in future be generated from the custom ops
-def register(
-    shape: tuple[IndexExpr, ...], dtype: DataType, value: float
-) -> "Register": ...
+def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
+    ...
 
 
 def read(
     memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
-) -> "Register": ...
+) -> "Register":
+    ...
 
 
-def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register": ...
+def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
+    ...
 
 
 def reduction(
     axis: IndexExpr, args: Sequence["Register"]
-) -> Callable[[Callable[[AccT], AccT]], AccT]: ...
+) -> Callable[[Callable[[AccT], AccT]], AccT]:
+    ...
 
 
 def write(
     register_: "Register",
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
-): ...
+):
+    ...
 
 
 def define_op(op_name: str) -> Callable[[T], T]:
@@ -89,11 +92,11 @@ def get_custom(node: fx.Node) -> "CustomOp":
     if not isinstance(node, fx.Node):
         raise ValueError("Expected an fx.Node")
 
-    if node.op == "placeholder":
-        return Placeholder.from_fx_node(node)
     # If the node was created as a CustomOp it has a corresponding field
     if hasattr(node, "tkw_op"):
         return node.tkw_op.from_fx_node(node)
+    if node.op == "placeholder":
+        return Placeholder.from_fx_node(node)
     return Unknown.from_fx_node(node)
 
 
@@ -180,13 +183,13 @@ class CustomOp(ABC):
         else:
             raise IndexError("Index out of range")
 
-    def copy(self, suffix: Optional[str] = None) -> Self:
+    def copy(self, new_name: Optional[str] = None) -> Self:
         """Returns a duplicate of this node in order to expand the graph."""
         self.graph.inserting_after(self.fx_node)
         new_node = self.graph.node_copy(self.fx_node)
         new_node.tkw_op = self
-        if suffix:
-            new_node.name = new_node.name + suffix
+        if new_name:
+            new_node.name = new_name
         return get_custom(new_node)
 
     @classmethod
@@ -277,6 +280,14 @@ class Placeholder(CustomOp):
         return self._type
 
 
+@dataclass
+class IterArg(Placeholder):
+    """
+    Represents a specific placeholder node in the graph that is an iter arg of
+    a reduction node.
+    """
+
+
 # Ops modeling TKW operations in the kernel language
 
 
@@ -301,11 +312,13 @@ class MMA(CustomOp):
 
     @property
     def indexing_dims(self) -> list[sympy.Symbol]:
-        return (
+        combined_dims = (
             get_custom(self.lhs).indexing_dims
             + get_custom(self.rhs).indexing_dims
             + get_custom(self.acc).indexing_dims
         )
+        unique_dims = list(dict.fromkeys(combined_dims))
+        return unique_dims
 
 
 @define_op("read")
@@ -351,7 +364,7 @@ class Reduction(CustomOp):
                         var.node
                         for var in graph.inner_freevars[graph.subgraphs[subgraph_name]]
                     ]:
-                        nested_node.reduction_init_arg = True
+                        nested_node.tkw_op = IterArg
 
             node._add_proxy_to_graph(graph)
             node.fx_node.node.tkw_op = cls
