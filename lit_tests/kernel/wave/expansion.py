@@ -6,6 +6,7 @@ import unittest
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
+from shark_turbine.kernel.wave.constraints import MMAType
 from shark_turbine.kernel.wave.expansion import expand_graph
 from shark_turbine.kernel._support.tracing import CapturedTrace
 from shark_turbine.kernel.ops.wave_ops import get_custom
@@ -137,7 +138,10 @@ def gemm(
 def test_gemm():
     with tk.gen.TestLaunchContext({}):
         graph = gemm()
-        expand_graph(graph)
+        constraints: list[tkw.Constraint] = [
+            tkw.HardwareConstraint(MMAType.F32_16x16x16_F16, 64, [1, 1, 1])
+        ]
+        expand_graph(graph, constraints)
         print_trace(graph)
         # Root graph:
         # CHECK: %a
@@ -205,6 +209,7 @@ def test_gemm():
         # CHECK-SAME: (%read_0_0_0, %read_0_1_0, %acc_0_1_0)
         # CHECK: %mma_0_1_1
         # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0)
+        # CHECK: return [mma_0_0_1, mma_1_1_1, mma_1_0_1, mma_0_1_1]
 
         # CHECK: -----
 

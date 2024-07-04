@@ -31,32 +31,29 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 # Stubs to enable type checking of the custom ops:
 # This is currently hand-written and should in future be generated from the custom ops
-def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
-    ...
+def register(
+    shape: tuple[IndexExpr, ...], dtype: DataType, value: float
+) -> "Register": ...
 
 
 def read(
     memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
-def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
-    ...
+def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register": ...
 
 
 def reduction(
     axis: IndexExpr, args: Sequence["Register"]
-) -> Callable[[Callable[[AccT], AccT]], AccT]:
-    ...
+) -> Callable[[Callable[[AccT], AccT]], AccT]: ...
 
 
 def write(
     register_: "Register",
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
-):
-    ...
+): ...
 
 
 def define_op(op_name: str) -> Callable[[T], T]:
@@ -97,6 +94,8 @@ def get_custom(node: fx.Node) -> "CustomOp":
         return node.tkw_op.from_fx_node(node)
     if node.op == "placeholder":
         return Placeholder.from_fx_node(node)
+    if node.op == "output":
+        return Output.from_fx_node(node)
     return Unknown.from_fx_node(node)
 
 
@@ -164,15 +163,21 @@ class CustomOp(ABC):
             kwargs={},
         )
 
-    def update_arg(self, idx: int, value: Any):
+    def update_arg(self, idx_or_name: int | str, value: Any):
         """
         Update the value of an argument in the node while keeping the
         underlying fx.Node consistent.
         """
+        dataclass_fields = fields(self)[5:]
+        if isinstance(idx_or_name, str):
+            if idx_or_name not in [field.name for field in dataclass_fields]:
+                raise ValueError(f"Field {idx_or_name} not found")
+            idx = [field.name for field in dataclass_fields].index(idx_or_name)
+        else:
+            idx = idx_or_name
         if isinstance(value, CustomOp):
             value = value.fx_node
         # Skip the fields defined by the abstract base class
-        dataclass_fields = fields(self)[5:]
         if 0 <= idx < len(dataclass_fields):
             self.node_args[idx] = value  # TODO: Does this make sense?
             field_name = dataclass_fields[idx].name
@@ -246,6 +251,34 @@ class Unknown(CustomOp):
         vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
         vars_str = ", ".join(vars_list)
         return f"unknown: {self.fx_node.name}({vars_str})"
+
+
+@dataclass
+class Output(CustomOp):
+    """
+    Represents an output node in the graph, representing the return value of a
+    traced function.
+    """
+
+    return_vals: Sequence[Any]
+
+    @classmethod
+    def from_fx_node(cls: Type[CustomOpT], node: fx.Node) -> CustomOpT:
+        instance = cls(node.args)
+        instance.fx_node = node
+        instance.graph = node.graph
+        return instance
+
+    def add_to_graph(self, region_graph: RegionGraph) -> fx.Node:
+        self.graph = region_graph
+        self.fx_node = region_graph.create_node(
+            "output",
+            target="output",
+            args=tuple([self.return_vals]),
+            kwargs={},
+        )
+        self.fx_node.tkw_op = self.__class__
+        return self.fx_node
 
 
 @dataclass
