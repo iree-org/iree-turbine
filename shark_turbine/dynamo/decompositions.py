@@ -115,6 +115,7 @@ def _get_default_decomposition_ops() -> DecompositionOpsList:
         aten.lift_fresh_copy.default,
         aten._unsafe_index.Tensor,
         aten.unbind.int,
+        aten.linspace.Tensor_Tensor,
     ]
 
 
