@@ -43,10 +43,11 @@ class HardwareConstraint(Constraint):
     This translates to a hardware specific index constraint.
     """
 
-    mma_type: MMAType
     threads_per_wave: int
-    waves_per_block: Optional[Sequence[int]]
+    waves_per_block: Optional[Sequence[int]] = None
+    mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
 
+    @property
     def mma_matrix_shapes(self):
         # TODO: Eventually the shapes and indices should be provided by a tool
         match self.mma_type:
@@ -54,6 +55,8 @@ class HardwareConstraint(Constraint):
                 return (16, 16, 16)
             case MMAType.F32_32x32x8_F16:
                 return (32, 32, 8)
+            case _:
+                return ()
 
     def apply(self) -> IndexExpr:
         raise NotImplementedError("Not yet implemented")

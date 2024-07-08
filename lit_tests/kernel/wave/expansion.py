@@ -6,10 +6,9 @@ import unittest
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
-from shark_turbine.kernel.wave.constraints import MMAType
 from shark_turbine.kernel.wave.expansion import expand_graph
 from shark_turbine.kernel._support.tracing import CapturedTrace
-from shark_turbine.kernel.ops.wave_ops import get_custom
+from shark_turbine.kernel._support.indexing import IndexingContext
 
 
 def run(func: Callable[[], None]) -> Callable[[], None]:
@@ -56,29 +55,39 @@ def read_write_same_size(
 
 
 @run
-def test_read_write():
-    with tk.gen.TestLaunchContext({}):
+def test_read_write_equal_sizes():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1])]
+
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+        }
+    ):
         graph = read_write_same_size()
-        expand_graph(graph)
+        IndexingContext.current().finalize()
+        expand_graph(graph, constraints)
         print_trace(graph)
         # CHECK: %a
         # CHECK: %c
         # CHECK: %read
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_1_1_0
+        # CHECK: %read_1_1
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_1_0_0
+        # CHECK: %read_1_0
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_0_1_0
+        # CHECK: %read_0_1
         # CHECK-SAME: (%a, 4)
-        # CHECK: %write_0_0_0
+        # CHECK: %write_0_0
         # CHECK-SAME: (%read, %c, 4)
-        # CHECK: %write_1_1_0
-        # CHECK-SAME: (%read_1_1_0, %c, 4)
-        # CHECK: %write_1_0_0
-        # CHECK-SAME: (%read_1_0_0, %c, 4)
-        # CHECK: %write_0_1_0
-        # CHECK-SAME: (%read_0_1_0, %c, 4)
+        # CHECK: %write_1_1
+        # CHECK-SAME: (%read_1_1, %c, 4)
+        # CHECK: %write_1_0
+        # CHECK-SAME: (%read_1_0, %c, 4)
+        # CHECK: %write_0_1
+        # CHECK-SAME: (%read_0_1, %c, 4)
 
         # CHECK: -----
 
@@ -94,9 +103,22 @@ def read_write_different_dims(
 
 @run
 def test_read_write():
-    with tk.gen.TestLaunchContext({}):
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1, 1])
+    ]
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 32,
+        }
+    ):
         graph = read_write_different_dims()
-        expand_graph(graph)
+        IndexingContext.current().finalize()
+        expand_graph(graph, constraints)
         print_trace(graph)
         # CHECK: %a
         # CHECK: %c
@@ -136,11 +158,21 @@ def gemm(
 
 @run
 def test_gemm():
-    with tk.gen.TestLaunchContext({}):
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1, 1])
+    ]
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 32,
+        }
+    ):
         graph = gemm()
-        constraints: list[tkw.Constraint] = [
-            tkw.HardwareConstraint(MMAType.F32_16x16x16_F16, 64, [1, 1, 1])
-        ]
+        IndexingContext.current().finalize()
         expand_graph(graph, constraints)
         print_trace(graph)
         # Root graph:
@@ -168,7 +200,7 @@ def test_gemm():
 
         # Reduction subgraph:
 
-        # CHECK: %acc
+        # CHECK: %acc_0_0_0
         # CHECK: %acc_1_1_0
         # CHECK: %acc_1_0_0
         # CHECK: %acc_0_1_0
@@ -210,6 +242,97 @@ def test_gemm():
         # CHECK: %mma_0_1_1
         # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0)
         # CHECK: return [mma_0_0_1, mma_1_1_1, mma_1_0_1, mma_0_1_1]
+
+        # CHECK: -----
+
+
+@run
+def test_gemm_reduction_expansion_only():
+    # Note: This does not implement an actual gemm computation but reuses the
+    # gemm kernel to test the expansion of the reduction subgraph.
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1, 1])
+    ]
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_M: 16,
+            BLOCK_N: 32,
+            BLOCK_K: 64,
+        }
+    ):
+        graph = gemm()
+        IndexingContext.current().finalize()
+        expand_graph(graph, constraints)
+        print_trace(graph)
+        # Root graph:
+        # CHECK: %a
+        # CHECK: %b
+        # CHECK: %c
+        # CHECK: %register_0_0_0
+        # CHECK: %register_0_1_0
+        # CHECK: %reduction
+        # CHECK: %getresult_0_1_0
+        # CHECK: %getresult_0_0_0
+        # CHECK: %write_0_0_0
+        # TODO: This link-up is not yet correct!
+        # CHECK-SAME: (%reduction, %c, 4)
+        # CHECK: %write_0_1_0
+        # CHECK-SAME: (%get_result_0_1_0, %c, 4)
+
+        # Reduction subgraph:
+
+        # CHECK: %acc_0_0_0
+        # CHECK: %acc_0_1_0
+
+        # CHECK: %a
+        # CHECK: %read_0_0_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_0_0_1
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_0_0_2
+        # CHECK-SAME: (%a, 4)
+        # CHECK: %read_0_0_3
+        # CHECK-SAME: (%a, 4)
+
+        # CHECK: %b
+        # CHECK: %read_0_0_0
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_0_1
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_0_2
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_0_3
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_1_0
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_1_1
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_1_2
+        # CHECK-SAME: (%b, 4)
+        # CHECK: %read_0_1_3
+        # CHECK-SAME: (%b, 4)
+
+        # CHECK: %mma_0_0_0
+        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0)
+        # CHECK: %mma_0_0_1
+        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
+        # CHECK: %mma_0_0_2
+        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_1)
+        # CHECK: %mma_0_0_3
+        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_2)
+        # CHECK: %mma_0_1_0
+        # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_0_1_0)
+        # CHECK: %mma_0_1_1
+        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_0_1_0)
+        # CHECK: %mma_0_1_2
+        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_0_1_1)
+        # CHECK: %mma_0_1_3
+        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_0_1_2)
+
+        # CHECK: return [mma_0_0_3, mma_0_1_3]
 
         # CHECK: -----
 

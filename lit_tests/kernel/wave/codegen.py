@@ -34,7 +34,11 @@ def launch(func: Callable[[], None]) -> Callable[[], None]:
 
 @launch
 def test_read():
-    @tkw.wave()
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1, 1])
+    ]
+
+    @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
         tkw.read(a)
 

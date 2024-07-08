@@ -13,6 +13,7 @@ from .codegen import WaveEmitter
 from .expansion import expand_graph
 from ..lang import Grid
 from ..ops import wave_ops
+from .._support.indexing import IndexingContext
 from .._support.tracing import (
     CapturedTrace,
     CompiledContext,
@@ -92,11 +93,11 @@ class LaunchableWave(Launchable):
         # Trace the function.
         graph = self._trace()
 
+        idxc = IndexingContext.current()
+        idxc.finalize()
+
         # Expansion
         expand_graph(graph, self.constraints)
-
-        print(f"Expanded:\n{graph.get_root_graph()}")
-        print(f"Expanded Reduce:\n{graph.get_subgraph('region_0')}")
 
         kernel_sig = kernel_codegen.KernelSignature()
         # Fixed values for now, will be determined through constraints

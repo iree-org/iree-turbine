@@ -1,10 +1,9 @@
 import itertools
 from sympy import Symbol
 import torch.fx as fx
-from typing import Any, Optional, TypeAlias
+from typing import Any, TypeAlias
 
-from .constraints import Constraint
-from ..lang import sym
+from .constraints import Constraint, HardwareConstraint, WorkgroupConstraint
 from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext
 from ...support.logging import get_logger
@@ -12,33 +11,29 @@ from .._support.tracing import CapturedTrace
 
 logger = get_logger("turbine.wave.expansion")
 ExpandedNodeMap: TypeAlias = dict[
-    tuple[CustomOp, tuple[tuple[Symbol, int], ...]], CustomOp
+    tuple[CustomOp, tuple[tuple[IndexSymbol, int], ...]], CustomOp
 ]
-dim_scaling = {
-    sym.M: 2,
-    sym.N: 2,
-    sym.K: 2,
-}
-# sym.BLOCK_M: 2,
-# sym.BLOCK_N: 2,
-# sym.BLOCK_K: 2,
 
 
-def expansion_needed(dims: dict[Symbol, int], selection: Sequence[Symbol]) -> bool:
+def expansion_needed(
+    dims: dict[IndexSymbol, int], selection: Sequence[IndexSymbol]
+) -> bool:
     """Check if any of the dimensions in the selection are non-zero."""
     return any(dim[1] != 0 and dim[0] in selection for dim in dims.items())
 
 
 def filter_and_zero_unselected_dims(
-    dims: dict[Symbol, int], selection: Sequence[Symbol]
-) -> dict[Symbol, int]:
+    dims: dict[IndexSymbol, int], selection: Sequence[IndexSymbol]
+) -> dict[IndexSymbol, int]:
     """
     Filters dimensions based on selection and sets unselected dimensions' values to zero.
     """
     return {dim: val if dim in selection else 0 for dim, val in dims.items()}
 
 
-def get_dim_combinations(all_dims: dict[Symbol, int], selection: Sequence[Symbol]):
+def get_dim_combinations(
+    all_dims: dict[IndexSymbol, int], selection: Sequence[IndexSymbol]
+):
     """
     Returns all combinations of sizes for the selected dimensions.
     Other dimensions are clamped to 0.
@@ -50,8 +45,8 @@ def get_dim_combinations(all_dims: dict[Symbol, int], selection: Sequence[Symbol
 
 
 def get_indexed_dims(
-    all_dims: dict[Symbol, int], nodeOrDims: CustomOp | Sequence[Symbol]
-) -> tuple[tuple[Symbol, int], ...]:
+    all_dims: dict[IndexSymbol, int], nodeOrDims: CustomOp | Sequence[IndexSymbol]
+) -> tuple[tuple[IndexSymbol, int], ...]:
     """
     Generates a tuple of (key, value) pairs from the provided dimensions.
     If given a CustomOp instance, it uses its indexing_dims attribute.
@@ -74,20 +69,19 @@ def is_expandable(arg: Any) -> bool:
     return isinstance(arg, CustomOp)
 
 
-def expand_graph(trace: CapturedTrace, constraints: Optional[list[Constraint]] = None):
+def expand_graph(
+    trace: CapturedTrace,
+    constraints_or_scaling: Sequence[Constraint] | dict[IndexSymbol, int],
+):
     """
     Create a graph that represents the expanded version of the wave function.
     The expansion is done in the dimensions specified by the constraints.
     """
 
-    # TODO: continue here!
-    idxc = IndexingContext.current()
-    # TODO:
-    # Get the names of the symbols from somewhere different
-    # Okay, initially I could do this with specific naming requirements on the
-    # symbols, e.g. BLOCK_M.
-
-    # TODO: get the values for the respective Symbols and compute the expansion values.
+    if isinstance(constraints_or_scaling, dict):
+        dim_scaling = constraints_or_scaling
+    else:
+        dim_scaling = get_dim_scaling(constraints_or_scaling)
 
     # Start from the back and expand in the corresponding indexing dimensions of a node
     # Then proceed to the operands
@@ -114,30 +108,18 @@ def expand_graph(trace: CapturedTrace, constraints: Optional[list[Constraint]] =
                 for arg_idx, arg in enumerate(node.node_args):
                     if is_expandable(arg):
                         new_arg = _expand_node(
-                            arg, trace, expand_dims, expansion_context
+                            arg, trace, expand_dims, dim_scaling, expansion_context
                         )
                         new_node.update_arg(arg_idx, new_arg)
             new_node.fx_node.name = get_expanded_name(node, expand_dims)
             expansion_context[(node, get_indexed_dims(expand_dims, node))] = new_node
 
 
-def get_expanded_name(node: CustomOp, dims: dict[Symbol, int]) -> str:
-    """Returns the name of a node with the dimensions appended."""
-
-    separated = node.fx_node.name.split("_")
-    node_name = separated[0]
-    # Special case for get_result op
-    if node_name == "get":
-        node_name = node_name + separated[1]
-    for val in dims.values():
-        node_name += f"_{val}"
-    return node_name
-
-
 def _expand_node(
     node: CustomOp,
     trace: CapturedTrace,
-    dim_query: dict[Symbol, int],
+    dim_query: dict[IndexSymbol, int],
+    dim_scaling: dict[IndexSymbol, int],
     context: ExpandedNodeMap,
 ) -> CustomOp:
     """Expand a single node in specific dimensions and recursively proceed to its inputs."""
@@ -145,7 +127,7 @@ def _expand_node(
     if (node, get_indexed_dims(dim_query, node)) in context:
         logger.debug(f"Already expanded node: {node} in {dim_query}")
         return context[(node, get_indexed_dims(dim_query, node))]
-    # Iter args are currently not expanded multiple times.
+    # Iter args are not expanded multiple times.
     elif (
         hasattr(node.fx_node, "expanded_dims")
         and isinstance(node, IterArg)
@@ -157,7 +139,7 @@ def _expand_node(
         logger.debug(f"Already expanded node: {node} in {node.fx_node.expanded_dims}")
         return node
     elif isinstance(node, Reduction):
-        return _expand_reduction(node, trace, dim_query, context)
+        return _expand_reduction(node, trace, dim_query, dim_scaling, context)
 
     # Filter out the dimensions that are not indexed by the node
     restricted_dims = filter_and_zero_unselected_dims(dim_query, node.indexing_dims)
@@ -177,7 +159,7 @@ def _expand_node(
     # Proceed with expansion of the arguments
     for i, arg in enumerate(node.node_args):
         if is_expandable(arg):
-            new_arg = _expand_node(arg, trace, restricted_dims, context)
+            new_arg = _expand_node(arg, trace, restricted_dims, dim_scaling, context)
             new_node.update_arg(i, new_arg)
 
     context[(node, get_indexed_dims(restricted_dims, node))] = new_node
@@ -187,13 +169,14 @@ def _expand_node(
 def _expand_reduction(
     reduction: Reduction,
     trace: CapturedTrace,
-    dim_query: dict[Symbol, int],
+    dim_query: dict[IndexSymbol, int],
+    dim_scaling: dict[IndexSymbol, int],
     context: ExpandedNodeMap,
 ) -> CustomOp:
     """Expand a reduction in a specific dimension and recursively proceed to its inputs."""
-    # TODO: Think about whether this does the same as the function indexing_dims
+    # Determine the dimensions to expand the reduction from the indexing of its users
     users = reduction.users
-    expand_dims: list[Symbol] = []
+    expand_dims: list[IndexSymbol] = []
     for user in users:
         for indexing_dim in user.indexing_dims:
             if indexing_dim not in expand_dims:
@@ -221,7 +204,7 @@ def _expand_reduction(
             context[(reduction, get_indexed_dims(dims, expand_dims))] = new_node
 
             # Proceed with expansion inside the reduction
-            new_output_args.append(_expand_node(arg, trace, dims, context))
+            new_output_args.append(_expand_node(arg, trace, dims, dim_scaling, context))
 
             # Proceed with expansion outside the reduction
             for init_arg in reduction.init_args:
@@ -230,6 +213,7 @@ def _expand_reduction(
                         get_custom(init_arg),
                         trace,
                         dims,
+                        dim_scaling,
                         context,
                     )
                 )
@@ -238,50 +222,103 @@ def _expand_reduction(
     reduction.update_arg(
         "init_args", [new_init_arg.fx_node for new_init_arg in new_init_args]
     )
-    output.update_arg("return_vals", new_output_args)
-    _handle_reduction_dim(reduction, output, trace, context)
+    output.update_arg("return_vals", [node.fx_node for node in new_output_args])
+    _handle_reduction_dim(reduction, output, trace, dim_scaling, context)
+    # Even though we expanded the reduction in multiple dimensions, we only return
+    # the node corresponding to the original query
     return context[(reduction, get_indexed_dims(dim_query, expand_dims))]
+
+
+def get_expanded_name(node: CustomOp, dims: dict[IndexSymbol, int]) -> str:
+    """Returns the name of a node with the dimensions appended."""
+
+    separated = node.fx_node.name.split("_")
+    node_name = separated[0]
+    # Special case for get_result op
+    if node_name == "get":
+        node_name = node_name + separated[1]
+    for val in dims.values():
+        node_name += f"_{val}"
+    return node_name
+
+
+def get_dim_scaling(constraints: Sequence[Constraint]) -> dict[IndexSymbol, int]:
+    """Get the number of expansions for the dimensions based on the constraints."""
+    dim_scaling: dict[IndexSymbol, int] = {}
+    hardware_constraints: list[HardwareConstraint] = [
+        constraint
+        for constraint in constraints
+        if isinstance(constraint, HardwareConstraint)
+    ]
+    if len(hardware_constraints) != 1:
+        raise ValueError("Exactly one hardware constraint must be provided")
+
+    idxc = IndexingContext.current()
+    for constraint in constraints:
+        if isinstance(constraint, WorkgroupConstraint):
+            tile_size = idxc.get_static_value(constraint.tile_size)
+            wave_count = hardware_constraints[0].waves_per_block[
+                constraint.workgroup_dim
+            ]
+            mma_size = hardware_constraints[0].mma_matrix_shapes[
+                constraint.workgroup_dim
+            ]
+            if tile_size is None or wave_count is None or mma_size is None:
+                raise ValueError(
+                    "Tile size, wave count and mma size must be statically known"
+                )
+            dim_scaling[constraint.dim] = tile_size // wave_count // mma_size
+    return dim_scaling
 
 
 def _handle_reduction_dim(
     reduction: Reduction,
     output: Output,
     trace: CapturedTrace,
+    dim_scaling: dict[IndexSymbol, int],
     context: dict[tuple[CustomOp, Symbol, int], CustomOp],
 ):
-    # iter_arg_mapping: dict[CustomOp, CustomOp] = {}
-    # Map iter args to output args
-
-    # for idx, arg in enumerate(output.node_args):
-    #     iter_arg_mapping[reduction.args[idx]] = arg
-
-    # TODO: Find a better way of getting to the iter args
+    # Rediscover iter args
+    # TODO: Register iter args with the reduction initially so accessing them is easier
     iter_args: list[CustomOp] = []
     reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
     for node in (get_custom(fx_node) for fx_node in reduction_subgraph.nodes):
         if isinstance(node, IterArg):
             iter_args.append(node)
 
-    # Users of the iter arg will be duplicated
-    new_outputs = []
-    # TODO: This needs to iterate over the number of expansions of the reduction dim
-    for idx, iter_arg in enumerate(iter_args):
-        for user in iter_arg.users:
-            dims = {dim: 0 if dim != reduction.axis else 1 for dim in dim_scaling}
-            dims = user.fx_node.expanded_dims
-            dims[reduction.axis] = 1
-            new_node = _expand_node(user, trace, dims, context)
-            # TODO: user is not always an arg to the ouput node.
-            # For more complicated kernels we will have to represent this mapping
-            # differently.
+    new_outputs = [iter_arg.fx_node for iter_arg in iter_args]
+    # Users of the loop carried nodes will be duplicated
+    for idx, carried_node in enumerate(iter_args):
+        # The initial nodes are expanded in the first dimension, so we start from 1
+        for scale_idx in range(1, dim_scaling[reduction.axis]):
+            for user in carried_node.users:
+                if isinstance(user, Output):
+                    continue
 
-            # Adjust the arg
-            outidx = [
-                get_custom(return_val) for return_val in output.return_vals
-            ].index(user)
-            new_node.update_arg(
-                new_node.node_args.index(iter_arg), output.return_vals[outidx]
-            )
-            new_outputs.append(new_node.fx_node)
+                dims = user.fx_node.expanded_dims
+                dims[reduction.axis] = scale_idx
+                # Temporarily replace the carried arg here to avoid duplicated expansion.
+                # Otherwise we have the following situation:
+                # Suppose we have:
+                #   mma_0_0_0(..., acc_0_0_0)
+                #   mma_0_0_1(..., mma_0_0_0)
+                # Expanding mma_0_0_1 to mma_0_0_2 will trigger expansion of its arg
+                # mma_0_0_0 in dims 0_0_2 as well, effectively duplicating the new node.
+                # To avoid this we temporarily replace the use of it with the original iter_arg
+                # Another option would be to pass a mask of which args to expand, but that
+                # complicates the expansion base case
+                saved_arg = user.node_args[2]
+                user.update_arg(2, iter_args[idx])
+                new_node = _expand_node(user, trace, dims, dim_scaling, context)
+                user.update_arg(2, saved_arg)
+
+                # This expansion always happens, user should never be reused
+                assert new_node != user
+                new_node.update_arg(
+                    2,
+                    user,  # output.return_vals[outidx]
+                )
+                carried_node = user
+                new_outputs[idx] = new_node.fx_node
 
     output.update_arg("return_vals", new_outputs)

@@ -47,7 +47,7 @@ def test_trace_empty():
     # Custom format:
     # CHECK: placeholder
     # CHECK-SAME: MemoryType[M, N].of(f16)
-    # CHECK: unknown: output
+    # CHECK: output
 
 
 @run
@@ -80,7 +80,7 @@ def test_trace_empty_then_add_nodes():
     # CHECK-SAME: MemoryType[M, N].of(f16)
     # CHECK: read(memory=a
     # CHECK: write(register_=read, memory=a
-    # CHECK: unknown: output
+    # CHECK: output
 
 
 @run
@@ -98,7 +98,7 @@ def test_trace_read():
     # Custom format:
     # CHECK: placeholder
     # CHECK: read(memory=a
-    # CHECK: unknown: output
+    # CHECK: output
 
 
 @run
@@ -119,7 +119,7 @@ def test_trace_register():
     # CHECK: placeholder
     # CHECK: register
     # CHECK-SAME: shape=[M, N], dtype=f16
-    # CHECK: unknown: output
+    # CHECK: output
 
 
 @run
@@ -142,7 +142,7 @@ def test_trace_write():
     # CHECK: placeholder
     # CHECK: register
     # CHECK: write
-    # CHECK: unknown: output
+    # CHECK: output
 
 
 @run
@@ -171,7 +171,7 @@ def test_trace_mma():
     # CHECK: read
     # CHECK: register
     # CHECK: mma
-    # CHECK: unknown: output
+    # CHECK: output
 
 
 @run
@@ -212,7 +212,7 @@ def test_trace_gemm():
     # CHECK: register
     # CHECK: reduction
     # CHECK: write
-    # CHECK: unknown: output
+    # CHECK: output
 
     # Subgraph:
     # CHECK: %acc
@@ -232,4 +232,4 @@ def test_trace_gemm():
     # CHECK: read
     # CHECK: register
     # CHECK: mma
-    # CHECK: unknown: output
+    # CHECK: output

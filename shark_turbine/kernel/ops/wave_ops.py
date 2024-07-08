@@ -31,29 +31,32 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 # Stubs to enable type checking of the custom ops:
 # This is currently hand-written and should in future be generated from the custom ops
-def register(
-    shape: tuple[IndexExpr, ...], dtype: DataType, value: float
-) -> "Register": ...
+def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
+    ...
 
 
 def read(
     memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
-) -> "Register": ...
+) -> "Register":
+    ...
 
 
-def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register": ...
+def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
+    ...
 
 
 def reduction(
     axis: IndexExpr, args: Sequence["Register"]
-) -> Callable[[Callable[[AccT], AccT]], AccT]: ...
+) -> Callable[[Callable[[AccT], AccT]], AccT]:
+    ...
 
 
 def write(
     register_: "Register",
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
-): ...
+):
+    ...
 
 
 def define_op(op_name: str) -> Callable[[T], T]:
@@ -189,7 +192,7 @@ class CustomOp(ABC):
             raise IndexError("Index out of range")
 
     def copy(self, new_name: Optional[str] = None) -> Self:
-        """Returns a duplicate of this node in order to expand the graph."""
+        """Returns a duplicate of this node."""
         self.graph.inserting_after(self.fx_node)
         new_node = self.graph.node_copy(self.fx_node)
         new_node.tkw_op = self
@@ -261,6 +264,7 @@ class Output(CustomOp):
     """
 
     return_vals: Sequence[Any]
+    tkw_op_name: str = field(default="output", init=False)
 
     @classmethod
     def from_fx_node(cls: Type[CustomOpT], node: fx.Node) -> CustomOpT:
@@ -373,7 +377,7 @@ class Read(CustomOp):
 @define_op("reduction")
 @dataclass
 class Reduction(CustomOp):
-    axis: IndexExpr
+    axis: IndexSymbol
     init_args: Sequence[Any]
     subgraph_name: str
     implicit_captures: Sequence[fx.Proxy]
