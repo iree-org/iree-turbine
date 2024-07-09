@@ -1,3 +1,4 @@
+from __future__ import annotations
 from abc import ABC, abstractclassmethod
 from dataclasses import dataclass, field, fields
 from functools import wraps
@@ -228,7 +229,7 @@ class CustomOp(ABC):
         return [get_custom(user) for user in self.fx_node.users]
 
     @property
-    def indexing_dims(self) -> list[sympy.Symbol]:
+    def indexing_dims(self) -> list[IndexSymbol]:
         return []
 
 
@@ -292,7 +293,7 @@ class Placeholder(CustomOp):
     """
 
     _name: str
-    _type: Optional[DataType]
+    _type: Optional[Type[DataType] | Type[Memory]] = None
     tkw_op_name: str = field(default="placeholder", init=False)
 
     @classmethod
@@ -302,6 +303,12 @@ class Placeholder(CustomOp):
         instance.graph = node.graph
         return instance
 
+    def add_to_graph(self, region_graph: RegionGraph) -> fx.Node:
+        self.graph = region_graph
+        self.fx_node = region_graph.create_node("placeholder", target=self._name)
+        self.fx_node.tkw_op = self.__class__
+        return self.fx_node
+
     def custom_string(self, value_map: dict[str, str]) -> str:
         # print all variables of the node apart from graph and op
         vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
@@ -309,8 +316,8 @@ class Placeholder(CustomOp):
         return f"{self.tkw_op_name}({vars_str})"
 
     @property
-    def indexing_dims(self) -> list[sympy.Symbol]:
-        return list(self._type.symbolic_shape)
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return list(self._type.symbolic_shape) if self._type else []
 
     @property
     def type(self) -> "Memory":
@@ -336,7 +343,7 @@ class NewRegister(CustomOp):
     value: float
 
     @property
-    def indexing_dims(self) -> list[sympy.Symbol]:
+    def indexing_dims(self) -> list[IndexSymbol]:
         return list(self.shape)
 
 
@@ -348,7 +355,7 @@ class MMA(CustomOp):
     acc: fx.Node
 
     @property
-    def indexing_dims(self) -> list[sympy.Symbol]:
+    def indexing_dims(self) -> list[IndexSymbol]:
         combined_dims = (
             get_custom(self.lhs).indexing_dims
             + get_custom(self.rhs).indexing_dims
@@ -365,7 +372,7 @@ class Read(CustomOp):
     elements_per_thread: Optional[Any] = None
 
     @property
-    def indexing_dims(self) -> list[sympy.Symbol]:
+    def indexing_dims(self) -> list[IndexSymbol]:
         # TODO: This could contain ints.
         return list(self.memory.type.symbolic_shape)
 
@@ -427,7 +434,7 @@ class Write(CustomOp):
     elements_per_thread: Optional[Any]
 
     @property
-    def indexing_dims(self) -> list[sympy.Symbol]:
+    def indexing_dims(self) -> list[IndexSymbol]:
         # TODO: This could contain ints.
         return list(self.memory.type.symbolic_shape)
 

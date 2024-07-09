@@ -141,10 +141,6 @@ def _expand_node(
     if (node, get_indexed_dims(dim_query, node)) in context:
         logger.debug(f"Already expanded node: {node} in {dim_query}")
         return context[(node, get_indexed_dims(dim_query, node))]
-    # Iter args are not expanded multiple times.
-    elif already_expanded_iter_arg(node, dim_query):
-        logger.debug(f"Already expanded node: {node} in {node.fx_node.expanded_dims}")
-        return node
     elif isinstance(node, Reduction):
         return _expand_reduction(node, trace, dim_query, dim_scaling, context)
 
@@ -287,7 +283,7 @@ def _handle_reduction_dim(
     output: Output,
     trace: CapturedTrace,
     dim_scaling: dict[IndexSymbol, int],
-    context: dict[tuple[CustomOp, Symbol, int], CustomOp],
+    context: ExpandedNodeMap,
 ):
     # Rediscover iter args
     # TODO: Register iter args with the reduction initially so accessing them is easier
@@ -308,27 +304,27 @@ def _handle_reduction_dim(
 
                 dims = user.fx_node.expanded_dims
                 dims[reduction.axis] = scale_idx
-                # Temporarily replace the carried arg here to avoid duplicated expansion.
-                # Otherwise we have the following situation:
+                # Temporarily replace the loop carried arg here to avoid
+                # duplicated expansion. Otherwise we have the following situation:
                 # Suppose we have:
                 #   mma_0_0_0(..., acc_0_0_0)
                 #   mma_0_0_1(..., mma_0_0_0)
                 # Expanding mma_0_0_1 to mma_0_0_2 will trigger expansion of its arg
                 # mma_0_0_0 in dims 0_0_2 as well, effectively duplicating the new node.
-                # To avoid this we temporarily replace the use of it with the original iter_arg
-                # Another option would be to pass a mask of which args to expand, but that
-                # complicates the expansion base case
-                saved_arg = user.node_args[2]
-                user.update_arg(2, iter_args[idx])
+                # To avoid this we temporarily replace the use of it with a dummy
+                # placeholder which will not trigger further expansion.
+                index = user.node_args.index(carried_node)
+                dummy = Placeholder("dummy").add_to_graph(user.graph)
+
+                saved_arg = user.node_args[index]
+                user.update_arg(index, dummy)
                 new_node = _expand_node(user, trace, dims, dim_scaling, context)
-                user.update_arg(2, saved_arg)
 
                 # This expansion always happens, user should never be reused
                 assert new_node != user
-                new_node.update_arg(
-                    2,
-                    user,  # output.return_vals[outidx]
-                )
+                user.update_arg(index, saved_arg)
+                new_node.update_arg(index, user)
+                user.graph.erase_node(dummy)
                 carried_node = user
                 new_outputs[idx] = new_node.fx_node
 

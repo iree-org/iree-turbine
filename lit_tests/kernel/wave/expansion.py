@@ -77,22 +77,22 @@ def test_read_write_equal_sizes():
         expand_graph(graph, constraints)
         print_trace(graph)
         # CHECK: %a
-        # CHECK: %c
-        # CHECK: %read
+        # CHECK-NEXT: %c
+        # CHECK-NEXT: %read
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_1_1
+        # CHECK-NEXT: %read_1_1
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_1_0
+        # CHECK-NEXT: %read_1_0
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_0_1
+        # CHECK-NEXT: %read_0_1
         # CHECK-SAME: (%a, 4)
-        # CHECK: %write_0_0
+        # CHECK-NEXT: %write_0_0
         # CHECK-SAME: (%read, %c, 4)
-        # CHECK: %write_1_1
+        # CHECK-NEXT: %write_1_1
         # CHECK-SAME: (%read_1_1, %c, 4)
-        # CHECK: %write_1_0
+        # CHECK-NEXT: %write_1_0
         # CHECK-SAME: (%read_1_0, %c, 4)
-        # CHECK: %write_0_1
+        # CHECK-NEXT: %write_0_1
         # CHECK-SAME: (%read_0_1, %c, 4)
 
         # CHECK: -----
@@ -127,18 +127,18 @@ def test_read_write():
         expand_graph(graph, constraints)
         print_trace(graph)
         # CHECK: %a
-        # CHECK: %c
-        # CHECK: %read_0_0_0
+        # CHECK-NEXT: %c
+        # CHECK-NEXT: %read_0_0_0
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_1_0_0
+        # CHECK-NEXT: %read_1_0_0
         # CHECK-SAME: (%a, 4)
-        # CHECK: %write_0_0_0
+        # CHECK-NEXT: %write_0_0_0
         # CHECK-SAME: (%read_0_0_0, %c, 4)
-        # CHECK: %write_1_0_1
+        # CHECK-NEXT: %write_1_0_1
         # CHECK-SAME: (%read_1_0_0, %c, 4)
-        # CHECK: %write_1_0_0
+        # CHECK-NEXT: %write_1_0_0
         # CHECK-SAME: (%read_1_0_0, %c, 4)
-        # CHECK: %write_0_0_1
+        # CHECK-NEXT: %write_0_0_1
         # CHECK-SAME: (%read_0_0_0, %c, 4)
 
         # CHECK: -----
@@ -183,73 +183,73 @@ def test_gemm():
         print_trace(graph)
         # Root graph:
         # CHECK: %a
-        # CHECK: %b
-        # CHECK: %c
-        # CHECK: %register_0_0_0
-        # CHECK: %register_1_1_0
-        # CHECK: %register_1_0_0
-        # CHECK: %register_0_1_0
-        # CHECK: %reduction
-        # CHECK: %getresult_1_1_0
-        # CHECK: %getresult_1_0_0
-        # CHECK: %getresult_0_1_0
-        # CHECK: %getresult_0_0_0
-        # CHECK: %write_0_0_0
+        # CHECK-NEXT: %b
+        # CHECK-NEXT: %c
+        # CHECK-NEXT: %register_0_0_0
+        # CHECK-NEXT: %register_1_1_0
+        # CHECK-NEXT: %register_1_0_0
+        # CHECK-NEXT: %register_0_1_0
+        # CHECK-NEXT: %reduction
+        # CHECK-NEXT: %getresult_1_1_0
+        # CHECK-NEXT: %getresult_1_0_0
+        # CHECK-NEXT: %getresult_0_1_0
+        # CHECK-NEXT: %getresult_0_0_0
+        # CHECK-NEXT: %write_0_0_0
         # TODO: This link-up is not yet correct!
         # CHECK-SAME: (%reduction, %c, 4)
-        # CHECK: %write_1_1_0
+        # CHECK-NEXT: %write_1_1_0
         # CHECK-SAME: (%get_result_1_1_0, %c, 4)
-        # CHECK: %write_1_0_0
+        # CHECK-NEXT: %write_1_0_0
         # CHECK-SAME: (%get_result_1_0_0, %c, 4)
-        # CHECK: %write_0_1_0
+        # CHECK-NEXT: %write_0_1_0
         # CHECK-SAME: (%get_result_0_1_0, %c, 4)
 
         # Reduction subgraph:
 
         # CHECK: %acc_0_0_0
-        # CHECK: %acc_1_1_0
-        # CHECK: %acc_1_0_0
-        # CHECK: %acc_0_1_0
+        # CHECK-NEXT: %acc_1_1_0
+        # CHECK-NEXT: %acc_1_0_0
+        # CHECK-NEXT: %acc_0_1_0
 
-        # CHECK: %a
-        # CHECK: %read_0_0_0
+        # CHECK-NEXT: %a
+        # CHECK-NEXT: %read_0_0_0
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_0_0_1
+        # CHECK-NEXT: %read_0_0_1
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_1_0_0
+        # CHECK-NEXT: %read_1_0_0
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_1_0_1
+        # CHECK-NEXT: %read_1_0_1
         # CHECK-SAME: (%a, 4)
 
-        # CHECK: %b
-        # CHECK: %read_0_0_0
+        # CHECK-NEXT: %b
+        # CHECK-NEXT: %read_0_0_0
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_0_1
+        # CHECK-NEXT: %read_0_0_1
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_1_0
+        # CHECK-NEXT: %read_0_1_0
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_1_1
+        # CHECK-NEXT: %read_0_1_1
         # CHECK-SAME: (%b, 4)
 
-        # CHECK: %mma_0_0_0
+        # CHECK-NEXT: %mma_0_0_0
         # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc)
-        # CHECK: %mma_0_0_1
+        # CHECK-NEXT: %mma_0_0_1
         # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
-        # CHECK: %mma_1_1_0
+        # CHECK-NEXT: %mma_1_1_0
         # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_1_1_0)
-        # CHECK: %mma_1_1_1
+        # CHECK-NEXT: %mma_1_1_1
         # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_1_1_0)
-        # CHECK: %mma_1_0_0
+        # CHECK-NEXT: %mma_1_0_0
         # CHECK-SAME: (%read_1_0_0, %read_0_0_0, %acc_1_0_0)
-        # CHECK: %mma_1_0_1
+        # CHECK-NEXT: %mma_1_0_1
         # CHECK-SAME: (%read_1_0_1, %read_0_0_1, %mma_1_0_0)
-        # CHECK: %mma_0_1_0
+        # CHECK-NEXT: %mma_0_1_0
         # CHECK-SAME: (%read_0_0_0, %read_0_1_0, %acc_0_1_0)
-        # CHECK: %mma_0_1_1
+        # CHECK-NEXT: %mma_0_1_1
         # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0)
-        # CHECK: return [mma_0_0_1, mma_1_1_1, mma_1_0_1, mma_0_1_1]
+        # CHECK-NEXT: return [mma_0_0_1, mma_1_1_1, mma_1_0_1, mma_0_1_1]
 
-        # CHECK: -----
+        # CHECK-NEXT: -----
 
 
 @run
@@ -275,72 +275,72 @@ def test_gemm_reduction_expansion_only():
         print_trace(graph)
         # Root graph:
         # CHECK: %a
-        # CHECK: %b
-        # CHECK: %c
-        # CHECK: %register_0_0_0
-        # CHECK: %register_0_1_0
-        # CHECK: %reduction
-        # CHECK: %getresult_0_1_0
-        # CHECK: %getresult_0_0_0
-        # CHECK: %write_0_0_0
+        # CHECK-NEXT: %b
+        # CHECK-NEXT: %c
+        # CHECK-NEXT: %register_0_0_0
+        # CHECK-NEXT: %register_0_1_0
+        # CHECK-NEXT: %reduction
+        # CHECK-NEXT: %getresult_0_1_0
+        # CHECK-NEXT: %getresult_0_0_0
+        # CHECK-NEXT: %write_0_0_0
         # TODO: This link-up is not yet correct!
         # CHECK-SAME: (%reduction, %c, 4)
-        # CHECK: %write_0_1_0
+        # CHECK-NEXT: %write_0_1_0
         # CHECK-SAME: (%get_result_0_1_0, %c, 4)
 
         # Reduction subgraph:
 
         # CHECK: %acc_0_0_0
-        # CHECK: %acc_0_1_0
+        # CHECK-NEXT: %acc_0_1_0
 
-        # CHECK: %a
-        # CHECK: %read_0_0_0
+        # CHECK-NEXT: %a
+        # CHECK-NEXT: %read_0_0_0
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_0_0_1
+        # CHECK-NEXT: %read_0_0_1
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_0_0_2
+        # CHECK-NEXT: %read_0_0_2
         # CHECK-SAME: (%a, 4)
-        # CHECK: %read_0_0_3
+        # CHECK-NEXT: %read_0_0_3
         # CHECK-SAME: (%a, 4)
 
-        # CHECK: %b
-        # CHECK: %read_0_0_0
+        # CHECK-NEXT: %b
+        # CHECK-NEXT: %read_0_0_0
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_0_1
+        # CHECK-NEXT: %read_0_0_1
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_0_2
+        # CHECK-NEXT: %read_0_0_2
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_0_3
+        # CHECK-NEXT: %read_0_0_3
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_1_0
+        # CHECK-NEXT: %read_0_1_0
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_1_1
+        # CHECK-NEXT: %read_0_1_1
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_1_2
+        # CHECK-NEXT: %read_0_1_2
         # CHECK-SAME: (%b, 4)
-        # CHECK: %read_0_1_3
+        # CHECK-NEXT: %read_0_1_3
         # CHECK-SAME: (%b, 4)
 
-        # CHECK: %mma_0_0_0
+        # CHECK-NEXT: %mma_0_0_0
         # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0)
-        # CHECK: %mma_0_0_1
+        # CHECK-NEXT: %mma_0_0_1
         # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
-        # CHECK: %mma_0_0_2
+        # CHECK-NEXT: %mma_0_0_2
         # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_1)
-        # CHECK: %mma_0_0_3
+        # CHECK-NEXT: %mma_0_0_3
         # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_2)
-        # CHECK: %mma_0_1_0
+        # CHECK-NEXT: %mma_0_1_0
         # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_0_1_0)
-        # CHECK: %mma_0_1_1
+        # CHECK-NEXT: %mma_0_1_1
         # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_0_1_0)
-        # CHECK: %mma_0_1_2
+        # CHECK-NEXT: %mma_0_1_2
         # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_0_1_1)
-        # CHECK: %mma_0_1_3
+        # CHECK-NEXT: %mma_0_1_3
         # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_0_1_2)
 
-        # CHECK: return [mma_0_0_3, mma_0_1_3]
+        # CHECK-NEXT: return [mma_0_0_3, mma_0_1_3]
 
-        # CHECK: -----
+        # CHECK-NEXT: -----
 
 
 if __name__ == "__main__":
