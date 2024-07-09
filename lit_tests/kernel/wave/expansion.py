@@ -39,7 +39,7 @@ K = tkl.sym.K
 # Workgroup tile sizes
 BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
-BLOCK_K = tkl.sym.BLOCK_L
+BLOCK_K = tkl.sym.BLOCK_K
 
 # Address space (for GPU, shared(1) or global(0))
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -58,7 +58,13 @@ def read_write_same_size(
 def test_read_write_equal_sizes():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1])]
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+        )
+    ]
 
     with tk.gen.TestLaunchContext(
         {
@@ -107,7 +113,7 @@ def test_read_write():
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
     constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1, 1])
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]
     with tk.gen.TestLaunchContext(
         {
@@ -162,7 +168,7 @@ def test_gemm():
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
     constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1, 1])
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]
     with tk.gen.TestLaunchContext(
         {
@@ -254,7 +260,7 @@ def test_gemm_reduction_expansion_only():
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
     constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1, 1])
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]
     with tk.gen.TestLaunchContext(
         {

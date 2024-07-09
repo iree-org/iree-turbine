@@ -30,7 +30,7 @@ class Test(unittest.TestCase):
         constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
 
         constraints += [
-            tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=[1, 1, 1])
+            tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
         ]
 
         # Wave-level micro-kernel.

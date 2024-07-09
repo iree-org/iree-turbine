@@ -44,7 +44,7 @@ class HardwareConstraint(Constraint):
     """
 
     threads_per_wave: int
-    waves_per_block: Optional[Sequence[int]] = None
+    waves_per_block: Optional[tuple[int, int, int]] = None
     mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
 
     @property

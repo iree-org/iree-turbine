@@ -10,9 +10,23 @@ from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
 
 logger = get_logger("turbine.wave.expansion")
+# This represents a mapping of a node + indexing into the dimensions to the
+# corresponding expanded node in these specific dimensions. An example for a
+# record in this map is (read_0_0_0, ((M,0),(N,0),(K,1)) -> read_0_0_1
 ExpandedNodeMap: TypeAlias = dict[
     tuple[CustomOp, tuple[tuple[IndexSymbol, int], ...]], CustomOp
 ]
+
+
+def already_expanded_iter_arg(node: CustomOp, dims: dict[IndexSymbol, int]) -> bool:
+    return (
+        hasattr(node.fx_node, "expanded_dims")
+        and isinstance(node, IterArg)
+        and (
+            filter_and_zero_unselected_dims(dims, node.indexing_dims)
+            == node.fx_node.expanded_dims  # type: ignore
+        )
+    )
 
 
 def expansion_needed(
@@ -128,14 +142,7 @@ def _expand_node(
         logger.debug(f"Already expanded node: {node} in {dim_query}")
         return context[(node, get_indexed_dims(dim_query, node))]
     # Iter args are not expanded multiple times.
-    elif (
-        hasattr(node.fx_node, "expanded_dims")
-        and isinstance(node, IterArg)
-        and (
-            filter_and_zero_unselected_dims(dim_query, node.indexing_dims)
-            == node.fx_node.expanded_dims
-        )
-    ):
+    elif already_expanded_iter_arg(node, dim_query):
         logger.debug(f"Already expanded node: {node} in {node.fx_node.expanded_dims}")
         return node
     elif isinstance(node, Reduction):
@@ -266,6 +273,10 @@ def get_dim_scaling(constraints: Sequence[Constraint]) -> dict[IndexSymbol, int]
             if tile_size is None or wave_count is None or mma_size is None:
                 raise ValueError(
                     "Tile size, wave count and mma size must be statically known"
+                )
+            if tile_size % wave_count != 0 or (tile_size / wave_count) % mma_size != 0:
+                raise ValueError(
+                    "Tile size must be divisible by wave count and mma size"
                 )
             dim_scaling[constraint.dim] = tile_size // wave_count // mma_size
     return dim_scaling
