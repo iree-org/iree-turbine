@@ -446,9 +446,18 @@ class Write(CustomOp):
 @define_op("get_result")
 @dataclass
 class GetResult(CustomOp):
-    value: fx.Proxy
+    value: fx.Node
     res_idx: int
 
     @property
     def type(self) -> "Memory":
         return self.value.type
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        expand_dims: list[IndexSymbol] = []
+        for user in self.users:
+            for indexing_dim in user.indexing_dims:
+                if indexing_dim not in expand_dims:
+                    expand_dims.append(indexing_dim)
+        return expand_dims

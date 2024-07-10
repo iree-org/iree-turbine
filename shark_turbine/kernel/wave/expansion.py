@@ -91,7 +91,6 @@ def expand_graph(
     Create a graph that represents the expanded version of the wave function.
     The expansion is done in the dimensions specified by the constraints.
     """
-
     if isinstance(constraints_or_scaling, dict):
         dim_scaling = constraints_or_scaling
     else:
@@ -114,19 +113,7 @@ def expand_graph(
                 dim: val for dim, val in zip(dim_scaling.keys(), dim_combination)
             }
             logger.debug(f"Starting expansion at leaf:{node} in dims:{expand_dims}")
-            if not expansion_needed(expand_dims, node.indexing_dims):
-                new_node = node
-            else:
-                node.graph.inserting_after(node.fx_node)
-                new_node = node.copy()
-                for arg_idx, arg in enumerate(node.node_args):
-                    if is_expandable(arg):
-                        new_arg = _expand_node(
-                            arg, trace, expand_dims, dim_scaling, expansion_context
-                        )
-                        new_node.update_arg(arg_idx, new_arg)
-            new_node.fx_node.name = get_expanded_name(node, expand_dims)
-            expansion_context[(node, get_indexed_dims(expand_dims, node))] = new_node
+            _expand_node(node, trace, expand_dims, dim_scaling, expansion_context)
 
 
 def _expand_node(
@@ -143,6 +130,11 @@ def _expand_node(
         return context[(node, get_indexed_dims(dim_query, node))]
     elif isinstance(node, Reduction):
         return _expand_reduction(node, trace, dim_query, dim_scaling, context)
+    elif isinstance(node, GetResult):
+        # The presence of a GetResult node indicates that the reduction has already
+        # been expanded. Simply return the corresponding node.
+        reduction = get_custom(node.value)
+        return context[(reduction, get_indexed_dims(dim_query, reduction))]
 
     # Filter out the dimensions that are not indexed by the node
     restricted_dims = filter_and_zero_unselected_dims(dim_query, node.indexing_dims)

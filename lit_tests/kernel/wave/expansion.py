@@ -78,7 +78,7 @@ def test_read_write_equal_sizes():
         print_trace(graph)
         # CHECK: %a
         # CHECK-NEXT: %c
-        # CHECK-NEXT: %read
+        # CHECK-NEXT: %read_0_0
         # CHECK-SAME: (%a, 4)
         # CHECK-NEXT: %read_1_1
         # CHECK-SAME: (%a, 4)
@@ -190,13 +190,13 @@ def test_gemm():
         # CHECK-NEXT: %register_1_0_0
         # CHECK-NEXT: %register_0_1_0
         # CHECK-NEXT: %reduction
+        # CHECK-SAME: %register_0_0_0, %register_0_1_0, %register_1_0_0, %register_1_1_0
         # CHECK-NEXT: %getresult_1_1_0
         # CHECK-NEXT: %getresult_1_0_0
         # CHECK-NEXT: %getresult_0_1_0
         # CHECK-NEXT: %getresult_0_0_0
         # CHECK-NEXT: %write_0_0_0
-        # TODO: This link-up is not yet correct!
-        # CHECK-SAME: (%reduction, %c, 4)
+        # CHECK-SAME: (%get_result_0_0_0, %c, 4)
         # CHECK-NEXT: %write_1_1_0
         # CHECK-SAME: (%get_result_1_1_0, %c, 4)
         # CHECK-NEXT: %write_1_0_0
@@ -283,8 +283,7 @@ def test_gemm_reduction_expansion_only():
         # CHECK-NEXT: %getresult_0_1_0
         # CHECK-NEXT: %getresult_0_0_0
         # CHECK-NEXT: %write_0_0_0
-        # TODO: This link-up is not yet correct!
-        # CHECK-SAME: (%reduction, %c, 4)
+        # CHECK-SAME: (%get_result_0_0_0, %c, 4)
         # CHECK-NEXT: %write_0_1_0
         # CHECK-SAME: (%get_result_0_1_0, %c, 4)
 
