@@ -50,7 +50,9 @@ class AddMetadataPass(Pass):
 
         metadata_dict_attr = parse_metadata_dict(self.inp_metadata)
         for func_op in self.funcs:
-            if func_op.op.attributes[1].attr.value == self.func_name:
+            ir_func_symbol = SymbolTable.get_symbol_name(func_op.op)
+            ir_func_symbol_name = StringAttr(ir_func_symbol).value
+            if ir_func_symbol_name == self.func_name:
                 func_op.op.attributes["iree.reflection"] = metadata_dict_attr
         return self.mlir_module
 
