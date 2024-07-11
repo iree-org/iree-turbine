@@ -42,12 +42,12 @@ def test_trace_empty():
     trace = test()
     print_trace(trace)
     # CHECK: %a
-    # CHECK: return None
+    # CHECK-NEXT: return None
 
     # Custom format:
-    # CHECK: placeholder
+    # CHECK-NEXT: placeholder
     # CHECK-SAME: MemoryType[M, N].of(f16)
-    # CHECK: unknown: output
+    # CHECK-NEXT: output
 
 
 @run
@@ -71,16 +71,16 @@ def test_trace_empty_then_add_nodes():
 
     print_trace(trace)
     # CHECK: %a
-    # CHECK: %read
-    # CHECK: %write
-    # CHECK: return None
+    # CHECK-NEXT: %read
+    # CHECK-NEXT: %write
+    # CHECK-NEXT: return None
 
     # Custom format:
-    # CHECK: placeholder
+    # CHECK-NEXT: placeholder
     # CHECK-SAME: MemoryType[M, N].of(f16)
-    # CHECK: read(memory=a
-    # CHECK: write(register_=read, memory=a
-    # CHECK: unknown: output
+    # CHECK-NEXT: read(memory=a
+    # CHECK-NEXT: write(register_=read, memory=a
+    # CHECK-NEXT: output
 
 
 @run
@@ -92,13 +92,13 @@ def test_trace_read():
     trace = test()
     print_trace(trace)
     # CHECK: %a
-    # CHECK: %read
-    # CHECK: return None
+    # CHECK-NEXT: %read
+    # CHECK-NEXT: return None
 
     # Custom format:
-    # CHECK: placeholder
-    # CHECK: read(memory=a
-    # CHECK: unknown: output
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: read(memory=a
+    # CHECK-NEXT: output
 
 
 @run
@@ -112,14 +112,14 @@ def test_trace_register():
     trace = test()
     print_trace(trace)
     # CHECK: %a
-    # CHECK: %register
-    # CHECK: return None
+    # CHECK-NEXT: %register
+    # CHECK-NEXT: return None
 
     # Custom format:
-    # CHECK: placeholder
-    # CHECK: register
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: register
     # CHECK-SAME: shape=[M, N], dtype=f16
-    # CHECK: unknown: output
+    # CHECK-NEXT: output
 
 
 @run
@@ -134,15 +134,15 @@ def test_trace_write():
     trace = test()
     print_trace(trace)
     # CHECK: %a
-    # CHECK: %register
-    # CHECK: %write
-    # CHECK: return None
+    # CHECK-NEXT: %register
+    # CHECK-NEXT: %write
+    # CHECK-NEXT: return None
 
     # Custom format:
-    # CHECK: placeholder
-    # CHECK: register
-    # CHECK: write
-    # CHECK: unknown: output
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: register
+    # CHECK-NEXT: write
+    # CHECK-NEXT: output
 
 
 @run
@@ -159,19 +159,19 @@ def test_trace_mma():
     trace = test()
     print_trace(trace)
     # CHECK: %a
-    # CHECK: %read
-    # CHECK: %read
-    # CHECK: %register
-    # CHECK: %mma
-    # CHECK: return None
+    # CHECK-NEXT: %read
+    # CHECK-NEXT: %read
+    # CHECK-NEXT: %register
+    # CHECK-NEXT: %mma
+    # CHECK-NEXT: return None
 
     # Custom format:
-    # CHECK: placeholder
-    # CHECK: read
-    # CHECK: read
-    # CHECK: register
-    # CHECK: mma
-    # CHECK: unknown: output
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: read
+    # CHECK-NEXT: read
+    # CHECK-NEXT: register
+    # CHECK-NEXT: mma
+    # CHECK-NEXT: output
 
 
 @run
@@ -198,38 +198,38 @@ def test_trace_gemm():
     print_trace(trace)
     # Root graph:
     # CHECK: %a
-    # CHECK: %b
-    # CHECK: %c
-    # CHECK: %register
-    # CHECK: %reduction
-    # CHECK: %write
-    # CHECK: return None
+    # CHECK-NEXT: %b
+    # CHECK-NEXT: %c
+    # CHECK-NEXT: %register
+    # CHECK-NEXT: %reduction
+    # CHECK-NEXT: %write
+    # CHECK-NEXT: return None
 
     # Root graph in custom format:
-    # CHECK: placeholder
-    # CHECK: placeholder
-    # CHECK: placeholder
-    # CHECK: register
-    # CHECK: reduction
-    # CHECK: write
-    # CHECK: unknown: output
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: register
+    # CHECK-NEXT: reduction
+    # CHECK-NEXT: write
+    # CHECK-NEXT: output
 
     # Subgraph:
     # CHECK: %acc
-    # CHECK: %a
-    # CHECK: %read
-    # CHECK: %b
-    # CHECK: %read_1
-    # CHECK: %register
-    # CHECK: %mma
-    # CHECK: return register
+    # CHECK-NEXT: %a
+    # CHECK-NEXT: %read
+    # CHECK-NEXT: %b
+    # CHECK-NEXT: %read_1
+    # CHECK-NEXT: %register
+    # CHECK-NEXT: %mma
+    # CHECK-NEXT: return register
 
     # Subgraph in custom format:
-    # CHECK: placeholder
-    # CHECK: placeholder
-    # CHECK: read
-    # CHECK: placeholder
-    # CHECK: read
-    # CHECK: register
-    # CHECK: mma
-    # CHECK: unknown: output
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: read
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: read
+    # CHECK-NEXT: register
+    # CHECK-NEXT: mma
+    # CHECK-NEXT: output

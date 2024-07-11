@@ -27,6 +27,11 @@ class Test(unittest.TestCase):
         # Expose user-constraints
         constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
         constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+        constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+
+        constraints += [
+            tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+        ]
 
         # Wave-level micro-kernel.
         # Since warps are not directly addressable, there is no
@@ -45,7 +50,7 @@ class Test(unittest.TestCase):
             # This microkernel encodes the fact that if the reduction
             # dimension were tiled, then we would need to materialize a loop.
             @tkw.reduction(K, init_args=[c_reg])
-            def repeat(acc: tkl.Register) -> tkl.Register[M, N, tkl.f32]:
+            def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
                 # a_reg: tkw.Register[M, K, tkl.f16]
                 a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
                 # b_reg: tkw.Register[N, K, tkl.f16]

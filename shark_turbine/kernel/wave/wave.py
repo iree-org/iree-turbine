@@ -9,8 +9,11 @@ from .constraints import (
     WorkgroupConstraint,
     get_grid_shape,
 )
+from .codegen import WaveEmitter
+from .expansion import expand_graph
 from ..lang import Grid
 from ..ops import wave_ops
+from .._support.indexing import IndexingContext
 from .._support.tracing import (
     CapturedTrace,
     CompiledContext,
@@ -88,7 +91,13 @@ class LaunchableWave(Launchable):
         module_op: Optional[Operation] = None,
     ) -> CapturedTrace:
         # Trace the function.
-        trace = self._trace()
+        graph = self._trace()
+
+        idxc = IndexingContext.current()
+        idxc.finalize()
+
+        # Expansion
+        expand_graph(graph, self.constraints)
 
         kernel_sig = kernel_codegen.KernelSignature()
         # Fixed values for now, will be determined through constraints
@@ -100,10 +109,10 @@ class LaunchableWave(Launchable):
         exe = dispatch_codegen.StreamExecutable(mb, name=entrypoint_name)
         dispatch_entrypoint = exe.define_entrypoint(entrypoint_name, kernel_sig, grid)
 
-        emitter = WaveEmitter(dispatch_entrypoint, trace)
-        emitter.emit(trace.get_root_graph())
+        emitter = WaveEmitter(dispatch_entrypoint, graph)
+        emitter.emit(graph.get_root_graph())
 
-        return trace
+        return graph
 
     def test_execute(self, args, kwargs):
         # For now only tracing
