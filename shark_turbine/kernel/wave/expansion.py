@@ -1,5 +1,4 @@
 import itertools
-from sympy import Symbol
 import torch.fx as fx
 from typing import Any, TypeAlias
 

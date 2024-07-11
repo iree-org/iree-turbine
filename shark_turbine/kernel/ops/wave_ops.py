@@ -1,7 +1,6 @@
 from __future__ import annotations
-from abc import ABC, abstractclassmethod
+from abc import ABC
 from dataclasses import dataclass, field, fields
-from functools import wraps
 import sys
 from typing import (
     TYPE_CHECKING,
@@ -14,11 +13,10 @@ from typing import (
     TypeVar,
     final,
 )
-import sympy
 import torch.fx as fx
 
 if TYPE_CHECKING:
-    from ..lang.wave_types import AddressSpace, Memory, Register
+    from ..lang.wave_types import Memory, Register
 from .._support.indexing import IndexExpr, IndexSymbol
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
@@ -167,28 +165,27 @@ class CustomOp(ABC):
             kwargs={},
         )
 
-    def update_arg(self, idx_or_name: int | str, value: Any):
+    def update_arg(self, idx_or_name: int | str, value: CustomOp | fx.Node):
         """
         Update the value of an argument in the node while keeping the
         underlying fx.Node consistent.
         """
-        dataclass_fields = fields(self)[5:]
+        inherited_field_count = len(CustomOp.__dataclass_fields__)
+        field_names = [field.name for field in fields(self)[inherited_field_count:]]
         if isinstance(idx_or_name, str):
-            if idx_or_name not in [field.name for field in dataclass_fields]:
+            if idx_or_name not in field_names:
                 raise ValueError(f"Field {idx_or_name} not found")
-            idx = [field.name for field in dataclass_fields].index(idx_or_name)
+            idx = field_names.index(idx_or_name)
         else:
             idx = idx_or_name
         if isinstance(value, CustomOp):
             value = value.fx_node
         # Skip the fields defined by the abstract base class
-        if 0 <= idx < len(dataclass_fields):
-            self.node_args[idx] = value  # TODO: Does this make sense?
-            field_name = dataclass_fields[idx].name
+        if 0 <= idx < len(field_names):
+            field_name = field_names[idx]
             # Set the new value for the field
             setattr(self, field_name, value)
-            fx_val = value.fx_node if isinstance(value, CustomOp) else value
-            self.fx_node.update_arg(idx, fx_val)
+            self.fx_node.update_arg(idx, value)
         else:
             raise IndexError("Index out of range")
 
