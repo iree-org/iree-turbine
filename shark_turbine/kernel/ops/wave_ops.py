@@ -30,32 +30,36 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 # Stubs to enable type checking of the custom ops:
 # This is currently hand-written and should in future be generated from the custom ops
-def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
-    ...
+
+
+def allocate(
+    shape: tuple[IndexExpr], dtype: DataType, address_space: IndexSymbol
+) -> "Memory": ...
 
 
 def read(
     memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
-) -> "Register":
-    ...
-
-
-def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
-    ...
+) -> "Register": ...
 
 
 def reduction(
     axis: IndexExpr, args: Sequence["Register"]
-) -> Callable[[Callable[[AccT], AccT]], AccT]:
-    ...
+) -> Callable[[Callable[[AccT], AccT]], AccT]: ...
+
+
+def register(
+    shape: tuple[IndexExpr, ...], dtype: DataType, value: float
+) -> "Register": ...
+
+
+def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register": ...
 
 
 def write(
     register_: "Register",
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
-):
-    ...
+): ...
 
 
 def define_op(op_name: str) -> Callable[[T], T]:
@@ -330,6 +334,22 @@ class IterArg(Placeholder):
 
 
 # Ops modeling TKW operations in the kernel language
+
+
+@define_op("allocate")
+@dataclass
+class Allocate(CustomOp):
+    """
+    Represents an allocation in an address space (such as shared memory).
+    """
+
+    shape: tuple[IndexExpr]
+    dtype: DataType
+    address_space: AddressSpace
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return list(self.shape)
 
 
 @define_op("register")
