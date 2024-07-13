@@ -34,32 +34,36 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 def allocate(
     shape: tuple[IndexExpr], dtype: DataType, address_space: IndexSymbol
-) -> "Memory": ...
+) -> "Memory":
+    ...
 
 
 def read(
     memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
-) -> "Register": ...
+) -> "Register":
+    ...
 
 
 def reduction(
     axis: IndexExpr, args: Sequence["Register"]
-) -> Callable[[Callable[[AccT], AccT]], AccT]: ...
+) -> Callable[[Callable[[AccT], AccT]], AccT]:
+    ...
 
 
-def register(
-    shape: tuple[IndexExpr, ...], dtype: DataType, value: float
-) -> "Register": ...
+def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
+    ...
 
 
-def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register": ...
+def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
+    ...
 
 
 def write(
     register_: "Register",
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
-): ...
+):
+    ...
 
 
 def define_op(op_name: str) -> Callable[[T], T]:
@@ -201,6 +205,25 @@ class CustomOp(ABC):
         if new_name:
             new_node.name = new_name
         return get_custom(new_node)
+
+    def copy_to_new_graph(
+        self, new_graph: fx.Graph, new_name: Optional[str] = None
+    ) -> Self:
+        """Returns a duplicate of this node."""
+        new_node = new_graph.node_copy(self.fx_node)
+        new_node.tkw_op = self
+        if new_name:
+            new_node.name = new_name
+        return get_custom(new_node)
+
+    def replace_all_uses_with(self, new_node: CustomOp):
+        """Replace all uses of the current node with the new node."""
+        for user in self.users:
+            user.update_arg(user.node_args.index(self), new_node)
+
+    def erase(self):
+        """Erase the current node from the graph where it exists."""
+        self.graph.erase_node(self.fx_node)
 
     @classmethod
     def handle(cls, graph, *args, **kwargs) -> fx.Node:

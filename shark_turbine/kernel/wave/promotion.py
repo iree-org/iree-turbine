@@ -8,26 +8,22 @@ import shark_turbine.kernel.lang as tkl
 logger = get_logger("turbine.wave.promotion")
 
 
-def apply_promotion_pattern_(
-    custom_node: Read | Write, allocate_node: Allocate, graph: fx.Graph
-) -> list[fx.Node]:
-    promoted_nodes = []
+def apply_promotion_pattern_(custom_node: Read | Write, allocate_node: Allocate):
     match custom_node:
         case Read(
             memory, elements_per_thread
         ) if memory.type.address_space != allocate_node.address_space:
-            promoted_write = Write(
-                custom_node.fx_node, allocate_node.fx_node, elements_per_thread
-            ).add_to_graph(graph)
             promoted_read = Read(
                 allocate_node.fx_node, elements_per_thread
-            ).add_to_graph(graph)
-            promoted_nodes = [promoted_write, promoted_read]
-            custom_node.fx_node.replace_all_uses_with(promoted_read)
-    return promoted_nodes
+            ).add_to_graph(custom_node.graph)
+            custom_node.replace_all_uses_with(promoted_read)
+            with custom_node.graph.inserting_before(promoted_read):
+                Write(
+                    custom_node.fx_node, allocate_node.fx_node, elements_per_thread
+                ).add_to_graph(custom_node.graph)
 
 
-def promote_node(node: fx.Node, graph: fx.Graph, address_space: IndexSymbol):
+def promote_node(node: CustomOp, address_space: IndexSymbol):
     """Promotes the given operand in the provided graph
     to the specified address space.
 
@@ -36,11 +32,10 @@ def promote_node(node: fx.Node, graph: fx.Graph, address_space: IndexSymbol):
     memory location and subsequent uses reading from there.
     """
 
-    custom_node = get_custom(node)
-    assert isinstance(custom_node, Read) or isinstance(custom_node, Write)
-    with graph.inserting_before(node.next):
+    assert isinstance(node, Read) or isinstance(node, Write)
+    with node.graph.inserting_before(node.fx_node.next):
         allocate_node = Allocate(
-            custom_node.type.symbolic_shape, custom_node.type.dtype, address_space
+            node.type.symbolic_shape, node.type.dtype, address_space
         )
-        allocate_node.add_to_graph(graph)
-        apply_promotion_pattern_(custom_node, allocate_node, graph)
+        allocate_node.add_to_graph(node.graph)
+        apply_promotion_pattern_(node, allocate_node)

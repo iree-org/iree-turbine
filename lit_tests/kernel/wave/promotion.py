@@ -24,8 +24,8 @@ def run(func: Callable[[], None]) -> Callable[[], None]:
 
 
 def get_read_nodes(graph: fx.Graph) -> list[fx.Node]:
-    nodes: list[fx.Node] = list(graph.nodes)
-    return [node for node in nodes if hasattr(node, "tkw_op") and node.tkw_op == Read]
+    custom_nodes: list[CustomOp] = [get_custom(node) for node in graph.nodes]
+    return [node for node in custom_nodes if isinstance(node, Read)]
 
 
 def print_trace(trace: CapturedTrace):
@@ -85,26 +85,20 @@ def test_read_write_equal_sizes():
         graph: fx.Graph = trace.get_root_graph()
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
-        promote_node(read_node, graph, SHARED_ADDRESS_SPACE)
+        promote_node(read_node, SHARED_ADDRESS_SPACE)
         print_trace(trace)
         # CHECK: %a
         # CHECK-NEXT: %c
-        # CHECK-NEXT: %read_0_0
+        # CHECK-NEXT: %read
         # CHECK-SAME: (%a, 4)
-        # CHECK-NEXT: %read_1_1
-        # CHECK-SAME: (%a, 4)
-        # CHECK-NEXT: %read_1_0
-        # CHECK-SAME: (%a, 4)
-        # CHECK-NEXT: %read_0_1
-        # CHECK-SAME: (%a, 4)
-        # CHECK-NEXT: %write_0_0
-        # CHECK-SAME: (%read, %c, 4)
-        # CHECK-NEXT: %write_1_1
-        # CHECK-SAME: (%read_1_1, %c, 4)
-        # CHECK-NEXT: %write_1_0
-        # CHECK-SAME: (%read_1_0, %c, 4)
-        # CHECK-NEXT: %write_0_1
-        # CHECK-SAME: (%read_0_1, %c, 4)
+        # CHECK-NEXT: %allocate
+        # CHECK-SAME: ((M, N), f16, SHARED_ADDRESS_SPACE)
+        # CHECK-NEXT: %write_1
+        # CHECK-SAME: (%read, %allocate, 4)
+        # CHECK-NEXT: %read_1
+        # CHECK-SAME: (%allocate, 4)
+        # CHECK-NEXT: %write
+        # CHECK-SAME: (%read_1, %c, 4)
 
         # CHECK: -----
 
@@ -146,7 +140,7 @@ def test_gemm():
         graph: fx.Graph = trace.get_subgraph("region_0")
         read_nodes = get_read_nodes(graph)
         for read_node in read_nodes:
-            promote_node(read_node, graph, SHARED_ADDRESS_SPACE)
+            promote_node(read_node, SHARED_ADDRESS_SPACE)
         hoist_allocs(trace)
         IndexingContext.current().finalize()
         print_trace(trace)
@@ -154,71 +148,29 @@ def test_gemm():
         # CHECK: %a
         # CHECK-NEXT: %b
         # CHECK-NEXT: %c
-        # CHECK-NEXT: %register_0_0_0
-        # CHECK-NEXT: %register_1_1_0
-        # CHECK-NEXT: %register_1_0_0
-        # CHECK-NEXT: %register_0_1_0
-        # CHECK-NEXT: %reduction
-        # CHECK-SAME: %register_0_0_0, %register_0_1_0, %register_1_0_0, %register_1_1_0
-        # CHECK-NEXT: %getresult_1_1_0
-        # CHECK-NEXT: %getresult_1_0_0
-        # CHECK-NEXT: %getresult_0_1_0
-        # CHECK-NEXT: %getresult_0_0_0
-        # CHECK-NEXT: %write_0_0_0
-        # CHECK-SAME: (%get_result_0_0_0, %c, 4)
-        # CHECK-NEXT: %write_1_1_0
-        # CHECK-SAME: (%get_result_1_1_0, %c, 4)
-        # CHECK-NEXT: %write_1_0_0
-        # CHECK-SAME: (%get_result_1_0_0, %c, 4)
-        # CHECK-NEXT: %write_0_1_0
-        # CHECK-SAME: (%get_result_0_1_0, %c, 4)
+        # CHECK-NEXT: %register
+        # CHECK-NEXT: %allocate
+        # CHECK-SAME: ((M, K), f16, SHARED_ADDRESS_SPACE)
+        # CHECK-NEXT: %allocate_1
+        # CHECK-SAME: ((N, K), f16, SHARED_ADDRESS_SPACE)
+        # CHECK-NEXT: reduction
 
         # Reduction subgraph:
-
-        # CHECK: %acc_0_0_0
-        # CHECK-NEXT: %acc_1_1_0
-        # CHECK-NEXT: %acc_1_0_0
-        # CHECK-NEXT: %acc_0_1_0
-
+        # CHECK: %acc
         # CHECK-NEXT: %a
-        # CHECK-NEXT: %read_0_0_0
-        # CHECK-SAME: (%a, 4)
-        # CHECK-NEXT: %read_0_0_1
-        # CHECK-SAME: (%a, 4)
-        # CHECK-NEXT: %read_1_0_0
-        # CHECK-SAME: (%a, 4)
-        # CHECK-NEXT: %read_1_0_1
-        # CHECK-SAME: (%a, 4)
-
+        # CHECK-NEXT: %read
+        # CHECK-NEXT: %write
+        # CHECK-SAME: (%read, %allocate, 4)
+        # CHECK-NEXT: %read_2
+        # CHECK-SAME: (%allocate, 4)
         # CHECK-NEXT: %b
-        # CHECK-NEXT: %read_0_0_0
-        # CHECK-SAME: (%b, 4)
-        # CHECK-NEXT: %read_0_0_1
-        # CHECK-SAME: (%b, 4)
-        # CHECK-NEXT: %read_0_1_0
-        # CHECK-SAME: (%b, 4)
-        # CHECK-NEXT: %read_0_1_1
-        # CHECK-SAME: (%b, 4)
-
-        # CHECK-NEXT: %mma_0_0_0
-        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc)
-        # CHECK-NEXT: %mma_0_0_1
-        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
-        # CHECK-NEXT: %mma_1_1_0
-        # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_1_1_0)
-        # CHECK-NEXT: %mma_1_1_1
-        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_1_1_0)
-        # CHECK-NEXT: %mma_1_0_0
-        # CHECK-SAME: (%read_1_0_0, %read_0_0_0, %acc_1_0_0)
-        # CHECK-NEXT: %mma_1_0_1
-        # CHECK-SAME: (%read_1_0_1, %read_0_0_1, %mma_1_0_0)
-        # CHECK-NEXT: %mma_0_1_0
-        # CHECK-SAME: (%read_0_0_0, %read_0_1_0, %acc_0_1_0)
-        # CHECK-NEXT: %mma_0_1_1
-        # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0)
-        # CHECK-NEXT: return [mma_0_0_1, mma_1_1_1, mma_1_0_1, mma_0_1_1]
-
-        # CHECK-NEXT: -----
+        # CHECK-NEXT: %read_1
+        # CHECK-NEXT: %write_1
+        # CHECK-SAME: (%read_1, %allocate_1, 4)
+        # CHECK-NEXT: %read_3
+        # CHECK-SAME: (%allocate, 4)
+        # CHECK-NEXT: %mma
+        # CHECK-SAME: (%read_2, %read_3, %acc)
 
 
 if __name__ == "__main__":
