@@ -25,4 +25,4 @@ This approach contrasts with traditional models like OpenCL and CUDA, which ofte
 
 ## Gemm example
 
-https://github.com/iree-org/iree-turbine/blob/05652596420412c15c4b629df5c8748e98f5b8f2/tests/kernel/wave_gemm_test.py#L12-L71
+[wave_gemm_test.py](/tests/kernel/wave/wave_gemm_test.py)
