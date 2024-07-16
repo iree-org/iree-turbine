@@ -30,7 +30,11 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 # Stubs to enable type checking of the custom ops:
 # This is currently hand-written and should in future be generated from the custom ops
-def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
+
+
+def allocate(
+    shape: tuple[IndexExpr], dtype: DataType, address_space: IndexSymbol
+) -> "Memory":
     ...
 
 
@@ -40,13 +44,17 @@ def read(
     ...
 
 
-def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
-    ...
-
-
 def reduction(
     axis: IndexExpr, args: Sequence["Register"]
 ) -> Callable[[Callable[[AccT], AccT]], AccT]:
+    ...
+
+
+def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
+    ...
+
+
+def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
     ...
 
 
@@ -189,14 +197,31 @@ class CustomOp(ABC):
         else:
             raise IndexError("Index out of range")
 
-    def copy(self, new_name: Optional[str] = None) -> Self:
+    def copy(
+        self, new_name: Optional[str] = None, new_graph: Optional[fx.Graph] = None
+    ) -> Self:
         """Returns a duplicate of this node."""
-        self.graph.inserting_after(self.fx_node)
-        new_node = self.graph.node_copy(self.fx_node)
+        graph = new_graph
+        if new_graph is None:
+            graph = self.graph
+            graph.inserting_after(self.fx_node)
+        new_node = graph.node_copy(self.fx_node)
         new_node.tkw_op = self
         if new_name:
             new_node.name = new_name
         return get_custom(new_node)
+
+    def replace_all_uses_with(self, new_node: CustomOp | fx.Node):
+        """Replace all uses of the current node with the new node."""
+        for user in self.users:
+            user.update_arg(user.node_args.index(self), new_node)
+
+    def erase(self):
+        """Erase the current node from the graph where it exists."""
+        assert (
+            not self.fx_node.users
+        ), f"Attempting to erase {self.fx_node} which has {len(self.fx.users)} users!"
+        self.graph.erase_node(self.fx_node)
 
     @classmethod
     def handle(cls, graph, *args, **kwargs) -> fx.Node:
@@ -330,6 +355,22 @@ class IterArg(Placeholder):
 
 
 # Ops modeling TKW operations in the kernel language
+
+
+@define_op("allocate")
+@dataclass
+class Allocate(CustomOp):
+    """
+    Represents an allocation in an address space (such as shared memory).
+    """
+
+    shape: tuple[IndexExpr]
+    dtype: DataType
+    address_space: AddressSpace
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return list(self.shape)
 
 
 @define_op("register")
