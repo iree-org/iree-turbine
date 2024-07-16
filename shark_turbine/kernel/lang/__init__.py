@@ -22,5 +22,9 @@ from .._support.dtype import (
     f16,
     f32,
     f64,
+    f8e5m2,
+    f8e5m2fnuz,
+    f8e4m3fn,
+    f8e4m3fnuz,
     index,
 )

@@ -233,3 +233,129 @@ def test_trace_gemm():
     # CHECK-NEXT: register
     # CHECK-NEXT: mma
     # CHECK-NEXT: output
+
+
+# Input sizes
+B = tkl.sym.M
+D = tkl.sym.N
+S = tkl.sym.K
+
+# Workgroup tile sizes
+BLOCK_B = tkl.sym.BLOCK_B
+BLOCK_S = tkl.sym.BLOCK_S
+
+
+@run
+def test_attention():
+    @tkw.wave_trace_only()
+    def attention(
+        query: tkl.Memory[B, N, D, ADDRESS_SPACE, tkl.f8e4m3fnuz],
+        key: tkl.Memory[B, S, D, ADDRESS_SPACE, tkl.f8e4m3fnuz],
+        value: tkl.Memory[B, S, D, ADDRESS_SPACE, tkl.f8e4m3fnuz],
+        output: tkl.Memory[B, S, D, ADDRESS_SPACE, tkl.f32],
+    ):
+        s_reg = tkl.Register[B, N, S, tkl.f32](0.0)
+        l_reg = tkl.Register[B, N, tkl.f32](0.0)
+        m_reg = tkl.Register[B, N, tkl.f32](-1e3)
+        o_reg = tkl.Register[B, N, D, tkl.f32](0.0)
+        q = tkw.read(query, elements_per_thread=4)
+
+        @tkw.reduction(S, init_args=[l_reg, m_reg, o_reg])
+        def repeat(
+            partial_sum: tkl.Register[B, N, tkl.f32],
+            partial_max: tkl.Register[B, N, tkl.f32],
+            acc: tkl.Register[B, N, D, tkl.f32],
+        ) -> tuple[
+            tkl.Register[B, N, tkl.f32],
+            tkl.Register[B, N, tkl.f32],
+            tkl.Register[B, N, D, tkl.f32],
+        ]:
+            k = tkw.read(key, elements_per_thread=4)
+            s = tkw.mma(q, k, s_reg)
+            m = tkw.max(s, dim=(S,))
+            m = tkw.max(m, partial_max)
+            p = tkw.exp2(s - m)
+            l = tkw.sum(p, dim=(S,))
+            l = tkw.exp2(partial_max - m) * partial_sum + l
+            v = tkw.read(value, elements_per_thread=4)
+            p = tkw.cast(p, tkl.f8e4m3fnuz)
+            acc = tkw.mma(p, v, acc)
+            return l, m, acc
+
+        final_sum, _, final_output = repeat
+        final_output = final_output / final_sum
+        tkw.write(final_output, output, elements_per_thread=4)
+
+    trace = attention()
+    print_trace(trace)
+    # Root graph:
+    # CHECK: %query
+    # CHECK-NEXT: %key
+    # CHECK-NEXT: %value
+    # CHECK-NEXT: %output
+    # CHECK-NEXT: %register
+    # CHECK-NEXT: %register_1
+    # CHECK-NEXT: %register_2
+    # CHECK-NEXT: %register_3
+    # CHECK-NEXT: %read
+    # CHECK-NEXT: %reduction
+    # CHECK-NEXT: %getitem
+    # CHECK-NEXT: %getitem_1
+    # CHECK-NEXT: %getitem_2
+    # CHECK-NEXT: %truediv
+    # CHECK-NEXT: %write
+    # CHECK-NEXT: return None
+
+    # Root graph in custom format:
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: register
+    # CHECK-NEXT: register
+    # CHECK-NEXT: register
+    # CHECK-NEXT: register
+    # CHECK-NEXT: read
+    # CHECK-NEXT: reduction
+    # CHECK-NEXT: unknown: getitem
+    # CHECK-NEXT: unknown: getitem_1
+    # CHECK-NEXT: unknown: getitem_2
+    # CHECK-NEXT: unknown: truediv
+    # CHECK-NEXT: write
+    # CHECK-NEXT: output
+
+    # Subgraph:
+    # CHECK: %partial_sum
+    # CHECK-NEXT: %partial_max
+    # CHECK-NEXT: %acc
+    # CHECK-NEXT: %key
+    # CHECK-NEXT: %read
+    # CHECK-NEXT: %read_1
+    # CHECK-NEXT: %register
+    # CHECK-NEXT: %mma
+    # CHECK-NEXT: %sub
+    # CHECK-NEXT: %sub_1
+    # CHECK-NEXT: %mul
+    # CHECK-NEXT: %add
+    # CHECK-NEXT: %value
+    # CHECK-NEXT: %read_2
+    # CHECK-NEXT: %mma_1
+    # CHECK-NEXT: return (add, None, mma_1)
+
+    # Subgraph in custom format:
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: read
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: mma
+    # CHECK-NEXT: unknown: sub
+    # CHECK-NEXT: unknown: sub_1
+    # CHECK-NEXT: unknown: mul
+    # CHECK-NEXT: unknown: add
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: read
+    # CHECK-NEXT: mma
+    # CHECK-NEXT: output

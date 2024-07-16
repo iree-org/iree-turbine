@@ -38,6 +38,26 @@ def allocate(
     ...
 
 
+def cast(register: "Register", type: DataType) -> "Register":
+    ...
+
+
+def div(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def exp2(register: "Register") -> "Register":
+    ...
+
+
+def max(register: "Register", dim: tuple[IndexExpr] | "Register") -> "Register":
+    ...
+
+
+def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
+    ...
+
+
 def read(
     memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
 ) -> "Register":
@@ -54,7 +74,7 @@ def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Re
     ...
 
 
-def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
+def sum(register: "Register", dim: tuple[IndexExpr]) -> "Register":
     ...
 
 
