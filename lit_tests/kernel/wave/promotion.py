@@ -23,7 +23,7 @@ def run(func: Callable[[], None]) -> Callable[[], None]:
     return func
 
 
-def get_read_nodes(graph: fx.Graph) -> list[fx.Node]:
+def get_read_nodes(graph: fx.Graph) -> list[CustomOp]:
     custom_nodes: list[CustomOp] = [get_custom(node) for node in graph.nodes]
     return [node for node in custom_nodes if isinstance(node, Read)]
 
@@ -154,6 +154,8 @@ def test_gemm():
         # CHECK-NEXT: %allocate_1
         # CHECK-SAME: ((N, K), f16, SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: reduction
+        # CHECK-NEXT: %write
+        # CHECK-SAME: (%reduction, %c, 4)
 
         # Reduction subgraph:
         # CHECK: %acc

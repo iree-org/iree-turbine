@@ -8,7 +8,7 @@ import shark_turbine.kernel.lang as tkl
 logger = get_logger("turbine.wave.promotion")
 
 
-def apply_promotion_pattern_(custom_node: Read | Write, allocate_node: Allocate):
+def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
     match custom_node:
         case Read(
             memory, elements_per_thread
@@ -21,9 +21,11 @@ def apply_promotion_pattern_(custom_node: Read | Write, allocate_node: Allocate)
                 Write(
                     custom_node.fx_node, allocate_node.fx_node, elements_per_thread
                 ).add_to_graph(custom_node.graph)
+        case _:
+            logger.error(f"Attempted to promoted unsupported operator {custom_node}")
 
 
-def promote_node(node: CustomOp, address_space: IndexSymbol):
+def promote_node(node: Read | Write, address_space: IndexSymbol):
     """Promotes the given operand in the provided graph
     to the specified address space.
 
@@ -38,4 +40,4 @@ def promote_node(node: CustomOp, address_space: IndexSymbol):
             node.type.symbolic_shape, node.type.dtype, address_space
         )
         allocate_node.add_to_graph(node.graph)
-        apply_promotion_pattern_(node, allocate_node)
+        apply_promotion_pattern(node, allocate_node)

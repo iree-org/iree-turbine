@@ -197,32 +197,30 @@ class CustomOp(ABC):
         else:
             raise IndexError("Index out of range")
 
-    def copy(self, new_name: Optional[str] = None) -> Self:
-        """Returns a duplicate of this node."""
-        self.graph.inserting_after(self.fx_node)
-        new_node = self.graph.node_copy(self.fx_node)
-        new_node.tkw_op = self
-        if new_name:
-            new_node.name = new_name
-        return get_custom(new_node)
-
-    def copy_to_new_graph(
-        self, new_graph: fx.Graph, new_name: Optional[str] = None
+    def copy(
+        self, new_name: Optional[str] = None, new_graph: Optional[fx.Graph] = None
     ) -> Self:
         """Returns a duplicate of this node."""
-        new_node = new_graph.node_copy(self.fx_node)
+        graph = new_graph
+        if new_graph is None:
+            graph = self.graph
+            graph.inserting_after(self.fx_node)
+        new_node = graph.node_copy(self.fx_node)
         new_node.tkw_op = self
         if new_name:
             new_node.name = new_name
         return get_custom(new_node)
 
-    def replace_all_uses_with(self, new_node: CustomOp):
+    def replace_all_uses_with(self, new_node: CustomOp | fx.Node):
         """Replace all uses of the current node with the new node."""
         for user in self.users:
             user.update_arg(user.node_args.index(self), new_node)
 
     def erase(self):
         """Erase the current node from the graph where it exists."""
+        assert (
+            not self.fx_node.users
+        ), f"Attempting to erase {self.fx_node} which has {len(self.fx.users)} users!"
         self.graph.erase_node(self.fx_node)
 
     @classmethod

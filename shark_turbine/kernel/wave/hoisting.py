@@ -7,7 +7,7 @@ from .address_spaces import *
 logger = get_logger("turbine.wave.hoisting")
 
 
-def get_allocs_(graph: fx.Graph) -> list[CustomOp]:
+def get_allocs(graph: fx.Graph) -> list[CustomOp]:
     return [
         custom_node
         for node in graph.nodes
@@ -24,8 +24,8 @@ def hoist_allocs(trace: CapturedTrace):
             case Reduction():
                 with root_graph.inserting_before(custom_node.fx_node):
                     subgraph = trace.get_subgraph(custom_node.subgraph_name)
-                    allocs = get_allocs_(subgraph)
+                    allocs = get_allocs(subgraph)
                     for alloc in allocs:
-                        new_alloc = alloc.copy_to_new_graph(root_graph)
+                        new_alloc = alloc.copy(new_graph=root_graph)
                         alloc.replace_all_uses_with(new_alloc)
                         alloc.erase()
