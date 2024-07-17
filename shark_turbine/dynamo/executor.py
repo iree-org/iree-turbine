@@ -8,6 +8,7 @@ import functools
 import os
 from typing import List, Optional, Sequence, Union
 from dataclasses import dataclass
+import torch.nn as nn
 from iree.runtime import (
     asdevicearray,
     create_hal_module,
@@ -31,7 +32,7 @@ from torch import (
 )
 
 from ..runtime.device import Device, DeviceState
-
+from ..dynamo.tensor import dtype_to_element_type
 
 @functools.lru_cache(maxsize=None)
 def get_vm_instance() -> VmInstance:
@@ -64,12 +65,14 @@ class SpecializedExecutable:
         "entry_function",
         "user_module",
         "vm_context",
+        "anticipated_return_value",
     ]
 
     def __init__(
         self,
         user_module: VmModule,
         device_state: DeviceState,
+        anticipated_return_value: list[bool],
         entry_name: str = "main",
     ):
         self.user_module = user_module
@@ -81,6 +84,7 @@ class SpecializedExecutable:
             ),
         )
         self.device_state = device_state
+        self.anticipated_return_value = anticipated_return_value
         self.entry_function = self.user_module.lookup_function(entry_name)
 
     def __call__(self, *inputs):
@@ -101,26 +105,43 @@ class SpecializedExecutable:
         # TODO: We are assuming the worst case here which is that we have unknown Torch
         # tensors that we send to the CPU and make continguous. Ideally, we would have
         # fast paths for our own backends and interop.
+        device = self.device_state.device
+        device_name = self.device_state.torch_device
         for input in inputs:
-            input_cpu = input.cpu().contiguous()
-            # Since this is already a fallback case, just use the numpy array interop.
-            # It isn't great, but meh... fallback case.
-            device_array = asdevicearray(self.device_state.device, input_cpu)
-            arg_list.push_ref(device_array._buffer_view)
+            # input_cpu = input.cpu().contiguous()
+            # # Since this is already a fallback case, just use the numpy array interop.
+            # # It isn't great, but meh... fallback case.
+            # device_array = asdevicearray(self.device_state.device, input_cpu)
+            # arg_list.push_ref(device_array._buffer_view)
+            if not input.is_contiguous():
+                input = input.cpu().contiguous()
 
+            if input.device.type.startswith("cpu"):
+                if device_name.startswith("cuda"):
+                    input = input.to("cuda")
+                    
+            if(isinstance(input, nn.Parameter)):        
+                buffer_view = device.allocator.import_buffer(device, input.data, dtype_to_element_type(input.dtype))
+            else:
+                buffer_view = device.allocator.import_buffer(device, input, dtype_to_element_type(input.dtype))
+            arg_list.push_ref(buffer_view)
+                
     def _returns_to_user(self, ret_list: VmVariantList):
         # TODO: This is also not good that we are moving back to the CPU like this.
         # We should be returning a custom Tensor implementation which represents
         # our device data and has synchronization hooks for accessing it.
         device = self.device_state.device
-        num_returns = len(ret_list)
+        # num_returns = len(ret_list)
+        num_returns = len(self.anticipated_return_value)
         user_returns = [None] * num_returns
-        for i in range(num_returns):
-            device_buffer_view = HalBufferView.__iree_vm_cast__(ret_list.get_as_ref(i))
-            device_array = DeviceArray(device, device_buffer_view)
-            host_array = device_array.to_host()
-            user_returns[i] = torch_from_numpy(host_array)  # type: ignore
+        ret_list_idx = 0 # self.anticipated_return_value could have None type elements, so here use ret_list_idx
 
+        for i in range(num_returns):
+            if self.anticipated_return_value[i]:
+                device_buffer_view = HalBufferView.__iree_vm_cast__(ret_list.get_as_ref(ret_list_idx))
+                ret_list_idx += 1
+                element_type = HalElementType(device_buffer_view.element_type)
+                user_returns[i] = device.allocator.export_buffer(device, device_buffer_view, element_type)
         return user_returns
 
 
