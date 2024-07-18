@@ -1,3 +1,4 @@
+import operator
 from typing import Any, Callable, ClassVar, Optional
 from dataclasses import dataclass
 import torch.fx as fx
@@ -81,6 +82,26 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
 @handle_op(mma)
 def handle_mma(emitter: WaveEmitter, node: fx.Node):
     raise NotImplementedError("MMA: Currently only stub implementation")
+
+
+@handle_op(operator.add)
+def handle_add(emitter: WaveEmitter, node: fx.Node):
+    raise NotImplementedError("add: Currently only stub implementation")
+
+
+@handle_op(operator.getitem)
+def handle_getitem(emitter: WaveEmitter, node: fx.Node):
+    raise NotImplementedError("getitem: Currently only stub implementation")
+
+
+@handle_op(operator.neg)
+def handle_neg(emitter: WaveEmitter, node: fx.Node):
+    raise NotImplementedError("neg: Currently only stub implementation")
+
+
+@handle_op(operator.sub)
+def handle_sub(emitter: WaveEmitter, node: fx.Node):
+    raise NotImplementedError("sub: Currently only stub implementation")
 
 
 ###############################################################################

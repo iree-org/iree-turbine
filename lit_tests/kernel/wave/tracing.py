@@ -84,6 +84,40 @@ def test_trace_empty_then_add_nodes():
 
 
 @run
+def test_trace_py_arithmetic():
+    @tkw.wave_trace_only()
+    def test(A: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+        a = tkw.read(A)
+        res = a + a - a
+        res = -res
+        tkw.write(res, A, elements_per_thread=4)
+
+    trace = test()
+    print_trace(trace)
+    # CHECK: %a
+    # CHECK-NEXT: %read
+    # CHECK-SAME: (%a, None)
+    # CHECK-NEXT: %add
+    # CHECK-SAME: (%read, %read)
+    # CHECK-NEXT: %sub
+    # CHECK-SAME: (%add, %read)
+    # CHECK-NEXT: %neg
+    # CHECK-SAME: (%sub,)
+    # CHECK-NEXT: %write
+    # CHECK-SAME: (%neg, %a, 4)
+    # CHECK-NEXT: return None
+
+    # Custom format:
+    # CHECK-NEXT: placeholder
+    # CHECK-NEXT: read(memory=a
+    # CHECK-NEXT: add(lhs=read, rhs=read)
+    # CHECK-NEXT: sub(lhs=add, rhs=read)
+    # CHECK-NEXT: neg(arg=sub)
+    # CHECK-NEXT: write(register_=neg, memory=a, elements_per_thread=4)
+    # CHECK-NEXT: output
+
+
+@run
 def test_trace_read():
     @tkw.wave_trace_only()
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
