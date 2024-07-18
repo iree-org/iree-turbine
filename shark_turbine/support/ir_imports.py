@@ -36,6 +36,7 @@ from iree.compiler.ir import (
     # Types.
     ComplexType,
     BF16Type,
+    Float8E4M3FNUZType,
     F16Type,
     F32Type,
     F64Type,

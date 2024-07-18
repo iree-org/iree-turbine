@@ -22,6 +22,7 @@ from .exceptions import (
 )
 
 from .ir_imports import (
+    Float8E4M3FNUZType,
     BF16Type,
     ComplexType,
     F16Type,
@@ -36,6 +37,7 @@ MLIR_TYPE_ASM_TO_TORCH_DTYPE = {v: k for k, v in TORCH_DTYPE_TO_MLIR_TYPE_ASM.it
 
 # When emitting constants, we have to create native IREE types.
 TORCH_DTYPE_TO_IREE_TYPE: dict[torch.dtype, Callable[[], IrType]] = {
+    torch.float8_e4m3fnuz: lambda: Float8E4M3FNUZType.get(),
     torch.float16: lambda: F16Type.get(),
     torch.bfloat16: lambda: BF16Type.get(),
     torch.float32: lambda: F32Type.get(),
