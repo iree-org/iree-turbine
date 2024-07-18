@@ -170,7 +170,7 @@ def test_gemm():
         # CHECK-NEXT: %write_1
         # CHECK-SAME: (%read_1, %allocate_1, 4)
         # CHECK-NEXT: %read_3
-        # CHECK-SAME: (%allocate, 4)
+        # CHECK-SAME: (%allocate_1, 4)
         # CHECK-NEXT: %mma
         # CHECK-SAME: (%read_2, %read_3, %acc)
 
