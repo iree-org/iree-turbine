@@ -57,6 +57,11 @@ jobs:
         run: |
           pytest -n 4 .
 
+      - name: Run LIT tests
+        if: ${{ !cancelled() }}
+        run: |
+          lit -n 4 lit_tests/
+
       - name: MyPy Type Checking
         if: ${{ !cancelled() }}
         run: |
