@@ -87,7 +87,7 @@ def test_read_write_equal_sizes():
         # CHECK-NEXT: %read_0_1
         # CHECK-SAME: (%a, 4)
         # CHECK-NEXT: %write_0_0
-        # CHECK-SAME: (%read, %c, 4)
+        # CHECK-SAME: (%read_0_0, %c, 4)
         # CHECK-NEXT: %write_1_1
         # CHECK-SAME: (%read_1_1, %c, 4)
         # CHECK-NEXT: %write_1_0
@@ -196,13 +196,13 @@ def test_gemm():
         # CHECK-NEXT: %getresult_0_1_0
         # CHECK-NEXT: %getresult_0_0_0
         # CHECK-NEXT: %write_0_0_0
-        # CHECK-SAME: (%get_result_0_0_0, %c, 4)
+        # CHECK-SAME: (%getresult_0_0_0, %c, 4)
         # CHECK-NEXT: %write_1_1_0
-        # CHECK-SAME: (%get_result_1_1_0, %c, 4)
+        # CHECK-SAME: (%getresult_1_1_0, %c, 4)
         # CHECK-NEXT: %write_1_0_0
-        # CHECK-SAME: (%get_result_1_0_0, %c, 4)
+        # CHECK-SAME: (%getresult_1_0_0, %c, 4)
         # CHECK-NEXT: %write_0_1_0
-        # CHECK-SAME: (%get_result_0_1_0, %c, 4)
+        # CHECK-SAME: (%getresult_0_1_0, %c, 4)
 
         # Reduction subgraph:
 
@@ -232,7 +232,7 @@ def test_gemm():
         # CHECK-SAME: (%b, 4)
 
         # CHECK-NEXT: %mma_0_0_0
-        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc)
+        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0)
         # CHECK-NEXT: %mma_0_0_1
         # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
         # CHECK-NEXT: %mma_1_1_0
@@ -283,9 +283,9 @@ def test_gemm_reduction_expansion_only():
         # CHECK-NEXT: %getresult_0_1_0
         # CHECK-NEXT: %getresult_0_0_0
         # CHECK-NEXT: %write_0_0_0
-        # CHECK-SAME: (%get_result_0_0_0, %c, 4)
+        # CHECK-SAME: (%getresult_0_0_0, %c, 4)
         # CHECK-NEXT: %write_0_1_0
-        # CHECK-SAME: (%get_result_0_1_0, %c, 4)
+        # CHECK-SAME: (%getresult_0_1_0, %c, 4)
 
         # Reduction subgraph:
 
@@ -325,17 +325,17 @@ def test_gemm_reduction_expansion_only():
         # CHECK-NEXT: %mma_0_0_1
         # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
         # CHECK-NEXT: %mma_0_0_2
-        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_1)
+        # CHECK-SAME: (%read_0_0_2, %read_0_0_2, %mma_0_0_1)
         # CHECK-NEXT: %mma_0_0_3
-        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_2)
+        # CHECK-SAME: (%read_0_0_3, %read_0_0_3, %mma_0_0_2)
         # CHECK-NEXT: %mma_0_1_0
-        # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_0_1_0)
+        # CHECK-SAME: (%read_0_0_0, %read_0_1_0, %acc_0_1_0)
         # CHECK-NEXT: %mma_0_1_1
-        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_0_1_0)
+        # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0)
         # CHECK-NEXT: %mma_0_1_2
-        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_0_1_1)
+        # CHECK-SAME: (%read_0_0_2, %read_0_1_2, %mma_0_1_1)
         # CHECK-NEXT: %mma_0_1_3
-        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_0_1_2)
+        # CHECK-SAME: (%read_0_0_3, %read_0_1_3, %mma_0_1_2)
 
         # CHECK-NEXT: return [mma_0_0_3, mma_0_1_3]
 

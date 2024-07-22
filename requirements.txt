@@ -1,6 +1,6 @@
 # Build/test requirements.
 Jinja2==3.1.3
-filecheck==0.0.24
+filecheck==1.0.0
 numpy==1.26.3
 parameterized==0.9.0
 pytest==8.0.0
