@@ -1,4 +1,0 @@
-1.253806e+00 kernel/wave/codegen.py
-1.216475e+00 kernel/wave/expansion.py
-1.187413e+00 kernel/wave/promotion.py
-1.203655e+00 kernel/wave/tracing.py
