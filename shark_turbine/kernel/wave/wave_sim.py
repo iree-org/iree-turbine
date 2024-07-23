@@ -75,6 +75,11 @@ def _process_func_annotations(func):
 
 
 def _resolve_symbols(func, symbols):
+    """Copy function and update __globals__ and __closure__ vars
+
+    Copy function while updating __globals__ and __closure__ vars according to
+    'symbols' map.
+    """
     old_closure = func.__closure__
     new_closure = None
 
@@ -156,11 +161,11 @@ def _reduction_proxy(axis, init_args):
     return decorator
 
 
-def _read_proxy(memory, elements_per_thread):
+def _read_proxy(memory, elements_per_thread=None):
     return memory.clone()
 
 
-def _write_proxy(src, dst, elements_per_thread):
+def _write_proxy(src, dst, elements_per_thread=None):
     dst[:] = src
 
 
