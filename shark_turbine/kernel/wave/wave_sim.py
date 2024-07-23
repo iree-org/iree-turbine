@@ -18,6 +18,24 @@ from .. import lang as tkl
 from .. import wave as tkw
 
 
+def wave_sim(constraints: Optional[list[Constraint]] = None):
+    def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
+        args_handler = _process_func_annotations(f)
+
+        def func_wrapper(*args):
+            global _api_subs
+            subs = copy.copy(_api_subs)
+            if args_handler:
+                args_handler(args, subs)
+
+            new_func = _resolve_symbols(f, subs)
+            return new_func(*args)
+
+        return func_wrapper
+
+    return decorator
+
+
 def _get_shaped_handler(arg_idx, shape, prev_handler):
     def handler(args, subs):
         if prev_handler:
@@ -107,24 +125,6 @@ def _resolve_symbols(func, symbols):
 
 
 _api_subs = {}
-
-
-def wave_sim(constraints: Optional[list[Constraint]] = None):
-    def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
-        args_handler = _process_func_annotations(f)
-
-        def func_wrapper(*args):
-            global _api_subs
-            subs = copy.copy(_api_subs)
-            if args_handler:
-                args_handler(args, subs)
-
-            new_func = _resolve_symbols(f, subs)
-            return new_func(*args)
-
-        return func_wrapper
-
-    return decorator
 
 
 class _RegisterProxy:
