@@ -60,6 +60,12 @@ def _visit_annotation(ann, arg_idx, prev_handler):
 
 
 def _process_func_annotations(func):
+    """Process symbols in func annotation, so iteration dimensions can be extracted.
+
+    Returns a function which extract shapes from kernel args and generates a
+    substitution map, which can be used to replace symbols inside the kernel
+    with actual values, came from arguments.
+    """
     handler = None
     ann = inspect.get_annotations(func)
     for i, arg in enumerate(inspect.signature(func).parameters):
