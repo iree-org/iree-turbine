@@ -293,13 +293,16 @@ def test_transpose_2():
     assert_allclose(c, a.T)
 
 
-def test_igemm_conv():
-    n, c, h, w = 2, 3, 4, 4  # Image.
-    nf, cf, hf, wf = 2, c, 2, 2  # Filters.
+@pytest.mark.parametrize("n", [1, 2, 4])
+@pytest.mark.parametrize("c", [1, 3])
+@pytest.mark.parametrize("nf", [1, 2, 8])
+@pytest.mark.parametrize("stride", [1, 2, 3])
+def test_igemm_conv(n, c, nf, stride):
+    h, w = 4, 4  # Image.
+    cf, hf, wf = c, 2, 2  # Filters.
     x = torch.randn(n, c, h, w, dtype=torch.float32)
     we = torch.randn(nf, cf, hf, wf, dtype=torch.float32)
 
-    stride = 2
     padding = 0  # TODO: only pad=0 is supported for now
     convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
     convRef.weight = torch.nn.Parameter(we)
@@ -315,8 +318,8 @@ def test_igemm_conv():
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
     NF, HF, WF = sym.NF, sym.HF, sym.WF
     KB = sym.KB
-    H_OUT = (H + 2 * padding - HF) / stride + 1
-    W_OUT = (W + 2 * padding - WF) / stride + 1
+    H_OUT = (H + 2 * padding - HF) // stride + 1
+    W_OUT = (W + 2 * padding - WF) // stride + 1
     SZ_OUT = H_OUT * W_OUT
     # SZ_OUT_N = SZ_OUT *
 
@@ -393,4 +396,4 @@ def test_igemm_conv():
     out = torch.zeros_like(out_ref)
     conv(x, we, out)
     print(out)
-    assert_allclose(out, out_ref, rtol=1e-05)
+    assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
