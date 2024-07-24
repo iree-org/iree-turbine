@@ -152,6 +152,8 @@ def test_broadcast_3():
     assert_allclose(c, b[0] + torch.zeros(128, 256, dtype=torch.float32))
 
 
+=======
+>>>>>>> b7ec3c9 (eltwise test)
 def test_gemm():
     # Input sizes
     M = tkl.sym.M
