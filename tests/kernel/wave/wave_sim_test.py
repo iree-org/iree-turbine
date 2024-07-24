@@ -300,7 +300,7 @@ def test_igemm_conv():
     x = torch.randn(n, c, h, w, dtype=torch.float32)
     we = torch.randn(nf, cf, hf, wf, dtype=torch.float32)
 
-    stride = 1
+    stride = 2
     padding = 0 # TODO: only pad=0 is supported for now
     convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
     convRef.weight = torch.nn.Parameter(we)
@@ -321,7 +321,7 @@ def test_igemm_conv():
     SZ_OUT = H_OUT * W_OUT
     # SZ_OUT_N = SZ_OUT *
 
-    x_mapping = tkw.IndexMapping(lambda i, j: (i // SZ_OUT, j // (HF * WF), (i % SZ_OUT) % W_OUT + (j % (HF * WF)) % WF, (i % SZ_OUT) // W_OUT + (j % (HF * WF)) // WF))
+    x_mapping = tkw.IndexMapping(lambda i, j: (i // SZ_OUT, j // (HF * WF), (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF, (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF))
     w_mapping = tkw.IndexMapping(lambda i, j: (i % NF, j // (HF * WF), j % WF, (j % (HF * WF)) // WF))
     out_mapping = tkw.IndexMapping(lambda i, j: (i // SZ_OUT,j, (i % SZ_OUT) % W_OUT, (i % SZ_OUT) // W_OUT))
 
