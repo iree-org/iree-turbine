@@ -294,13 +294,13 @@ def test_transpose_2():
 
 
 def test_igemm_conv():
-    n, c, h, w = 2, 3, 4, 4 # Image.
-    nf, cf, hf, wf = 2, c, 2, 2 # Filters.
+    n, c, h, w = 2, 3, 4, 4  # Image.
+    nf, cf, hf, wf = 2, c, 2, 2  # Filters.
     x = torch.randn(n, c, h, w, dtype=torch.float32)
     we = torch.randn(nf, cf, hf, wf, dtype=torch.float32)
 
     stride = 2
-    padding = 0 # TODO: only pad=0 is supported for now
+    padding = 0  # TODO: only pad=0 is supported for now
     convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
     convRef.weight = torch.nn.Parameter(we)
     out_ref = convRef(x).detach()
@@ -320,9 +320,20 @@ def test_igemm_conv():
     SZ_OUT = H_OUT * W_OUT
     # SZ_OUT_N = SZ_OUT *
 
-    x_mapping = tkw.IndexMapping(lambda i, j: (i // SZ_OUT, j // (HF * WF), (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF, (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF))
-    w_mapping = tkw.IndexMapping(lambda i, j: (i % NF, j // (HF * WF), j % WF, (j % (HF * WF)) // WF))
-    out_mapping = tkw.IndexMapping(lambda i, j: (i // SZ_OUT,j, (i % SZ_OUT) % W_OUT, (i % SZ_OUT) // W_OUT))
+    x_mapping = tkw.IndexMapping(
+        lambda i, j: (
+            i // SZ_OUT,
+            j // (HF * WF),
+            (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
+            (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+        )
+    )
+    w_mapping = tkw.IndexMapping(
+        lambda i, j: (i % NF, j // (HF * WF), j % WF, (j % (HF * WF)) // WF)
+    )
+    out_mapping = tkw.IndexMapping(
+        lambda i, j: (i // SZ_OUT, j, (i % SZ_OUT) % W_OUT, (i % SZ_OUT) // W_OUT)
+    )
 
     K = HF * WF * C
     M = SZ_OUT * N
@@ -352,19 +363,32 @@ def test_igemm_conv():
         we: tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, tkl.f16],
         out: tkl.Memory[N, NF, H_OUT, W_OUT, ADDRESS_SPACE, tkl.f32],
     ):
-        print('-=-=-=-=-=-=-')
+        print("-=-=-=-=-=-=-")
         c_reg = tkl.Register[M, NF, tkl.f32](0.0)
+
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, NF, tkl.f32]) -> tkl.Register[M, NF, tkl.f32]:
-            a_reg = tkw.read(x, mapping=x_mapping, shape=(M, K), elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(
+                x,
+                mapping=x_mapping,
+                shape=(M, K),
+                elements_per_thread=LOAD_ELEMS_PER_THREAD,
+            )
             print(a_reg)
-            b_reg = tkw.read(we, mapping=w_mapping, shape=(NF, K), elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(
+                we,
+                mapping=w_mapping,
+                shape=(NF, K),
+                elements_per_thread=LOAD_ELEMS_PER_THREAD,
+            )
             print(b_reg)
             acc = tkw.mma(a_reg, b_reg, acc)
             print(acc)
             return acc
 
-        tkw.write(repeat, out, mapping=out_mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(
+            repeat, out, mapping=out_mapping, elements_per_thread=STORE_ELEMS_PER_THREAD
+        )
 
     out = torch.zeros_like(out_ref)
     conv(x, we, out)
