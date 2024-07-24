@@ -284,7 +284,6 @@ def test_transpose_2():
             a_reg,
             c,
             mapping=mapping,
-            shape=(N, M),
             elements_per_thread=STORE_ELEMS_PER_THREAD,
         )
 
