@@ -293,12 +293,12 @@ def test_transpose_2():
     assert_allclose(c, a.T)
 
 
-@pytest.mark.parametrize("n", [1, 2, 4])
-@pytest.mark.parametrize("c", [1, 3])
+@pytest.mark.parametrize("n", [1, 2, 4, 20])
+@pytest.mark.parametrize("c", [1, 3, 10])
 @pytest.mark.parametrize("nf", [1, 2, 8])
 @pytest.mark.parametrize("stride", [1, 2, 3])
 def test_igemm_conv(n, c, nf, stride):
-    h, w = 4, 4  # Image.
+    h, w = 5, 5  # Image.
     cf, hf, wf = c, 2, 2  # Filters.
     x = torch.randn(n, c, h, w, dtype=torch.float32)
     we = torch.randn(nf, cf, hf, wf, dtype=torch.float32)
