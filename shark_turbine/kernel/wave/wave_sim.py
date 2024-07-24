@@ -198,9 +198,7 @@ def _read_proxy(
         res = torch.zeros(shape)
         for index in np.ndindex(*shape):
             mapped = mapping_func(*index)
-            # print(index, mapped)
-            if all(i >= 0 and i < b for i, b in zip(mapped, memory.shape)):
-                res[index] = memory[mapped]
+            res[index] = memory[mapped]
 
         return res
 

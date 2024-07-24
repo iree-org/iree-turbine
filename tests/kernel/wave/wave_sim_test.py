@@ -325,31 +325,27 @@ def test_igemm_conv():
     w_mapping = tkw.IndexMapping(lambda i, j: (i % NF, j // (HF * WF), j % WF, (j % (HF * WF)) // WF))
     out_mapping = tkw.IndexMapping(lambda i, j: (i // SZ_OUT,j, (i % SZ_OUT) % W_OUT, (i % SZ_OUT) // W_OUT))
 
-    constraints = []
+    K = HF * WF * C
+    M = SZ_OUT * N
 
-    # # Input sizes
-    # M = tkl.sym.M
-    # N = tkl.sym.N
-    # K = tkl.sym.K
     # # Workgroup tile sizes
-    # BLOCK_M = tkl.sym.BLOCK_M
-    # BLOCK_N = tkl.sym.BLOCK_N
-    # BLOCK_K = tkl.sym.BLOCK_K
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
     # # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
     LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
-    # # Expose user-constraints
-    # constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-    # constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    # constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
 
-    # constraints += [
-    #     tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    # ]
-
+    constraints += [
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+    ]
 
     @wave_sim(constraints)
     def conv(
@@ -358,8 +354,6 @@ def test_igemm_conv():
         out: tkl.Memory[N, NF, H_OUT, W_OUT, ADDRESS_SPACE, tkl.f32],
     ):
         print('-=-=-=-=-=-=-')
-        K = HF * WF * C
-        M = SZ_OUT * N
         c_reg = tkl.Register[M, NF, tkl.f32](0.0)
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, NF, tkl.f32]) -> tkl.Register[M, NF, tkl.f32]:
@@ -371,7 +365,6 @@ def test_igemm_conv():
             print(acc)
             return acc
 
-        print(repeat.shape)
         tkw.write(repeat, out, mapping=out_mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     out = torch.zeros_like(out_ref)
