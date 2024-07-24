@@ -17,7 +17,7 @@ from typing import (
 import torch.fx as fx
 
 if TYPE_CHECKING:
-    from ..lang.wave_types import Memory, Register
+    from ..lang.wave_types import Memory, Register, IndexMapping
 from .._support.indexing import IndexExpr, IndexSymbol
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph

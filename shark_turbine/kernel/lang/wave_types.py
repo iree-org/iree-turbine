@@ -1,4 +1,4 @@
-from typing import Optional, Type, TypeVar, ClassVar
+from typing import Optional, Type, TypeVar, ClassVar, Callable, Any
 
 from .kernel_buffer import AddressSpace, KernelBufferMeta, KernelBufferUsage
 from ..ops.wave_ops import register
@@ -6,6 +6,7 @@ from .._support.dtype import DataType
 from .._support.indexing import IndexExpr
 
 __all__ = [
+    "IndexMapping",
     "Memory",
     "Register",
 ]
@@ -109,3 +110,11 @@ class Register(metaclass=KernelBufferMeta):
             symbolic_shape=shape,
             dtype=dtype,
         )
+
+
+class IndexMapping:
+
+    mapping_func: ClassVar[Callable[..., Any]]
+
+    def __init__(self, func: Callable[..., Any]) -> None:
+        self.mapping_func = func

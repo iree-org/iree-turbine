@@ -184,14 +184,38 @@ def _reduction_proxy(axis: int, init_args: list[Any]):
 
 
 def _read_proxy(
-    memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
+    memory: "Memory",
+    elements_per_thread: Optional[IndexExpr] = None,
+    mapping: Callable[..., Any] = None,
+    shape: tuple[IndexExpr, ...] = None,
 ) -> "Register":
+    if mapping:
+        assert shape
+        mapping_func = mapping.mapping_func
+        res = torch.zeros(shape)
+        for index in np.ndindex(*shape):
+            res[index] = memory[mapping_func(*index)]
+
+        return res
+
     return memory.clone()
 
 
 def _write_proxy(
-    src: "Register", dst: "Memory", elements_per_thread: Optional[IndexExpr] = None
-) -> None:
+    src: "Register",
+    dst: "Memory",
+    elements_per_thread: Optional[IndexExpr] = None,
+    mapping: Callable[..., Any] = None,
+    shape: tuple[IndexExpr, ...] = None,
+):
+    if mapping:
+        assert shape
+        mapping_func = mapping.mapping_func
+        for index in np.ndindex(*shape):
+            dst[index] = src[mapping_func(*index)]
+
+        return
+
     dst[:] = src
 
 
