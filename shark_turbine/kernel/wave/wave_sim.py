@@ -4,12 +4,9 @@ import typing
 import functools
 import copy
 import torch
-from typing import Any, Callable, Optional
-from .constraints import (
-    Constraint,
-    WorkgroupConstraint,
-    get_grid_shape,
-)
+from typing import Any, Callable, Optional, TypeAlias
+from .constraints import Constraint
+
 from sympy import Symbol
 from sympy.core.expr import Expr
 from .._support.shaped_type import ShapedType
@@ -36,8 +33,14 @@ def wave_sim(constraints: Optional[list[Constraint]] = None):
     return decorator
 
 
-def _get_shaped_handler(arg_idx, shape, prev_handler):
-    def handler(args, subs):
+IndexExpr: TypeAlias = Expr
+HandlerFunc: TypeAlias = Callable[[tuple[...], dict[Any, Any]], None]
+
+
+def _get_shaped_handler(
+    arg_idx: int, shape: tuple[IndexExpr, ...], prev_handler: HandlerFunc
+) -> HandlerFunc:
+    def handler(args: tuple[...], subs: dict[Any, Any]) -> None:
         if prev_handler:
             prev_handler(args, subs)
 
@@ -49,17 +52,16 @@ def _get_shaped_handler(arg_idx, shape, prev_handler):
     return handler
 
 
-def _visit_annotation(ann, arg_idx, prev_handler):
-    def istypingtype(a, typ):
-        return typing.get_origin(ann) == typ or isinstance(ann, typ)
-
-    if istypingtype(ann, ShapedType):
+def _visit_annotation(
+    ann, arg_idx: int, prev_handler: HandlerFunc
+) -> None | HandlerFunc:
+    if isinstance(ann, ShapedType):
         return _get_shaped_handler(arg_idx, ann.symbolic_shape, prev_handler)
 
     return None
 
 
-def _process_func_annotations(func):
+def _process_func_annotations(func: Callable[..., Any]) -> HandlerFunc:
     """Process symbols in func annotation, so iteration dimensions can be extracted.
 
     Returns a function which extract shapes from kernel args and generates a
@@ -80,7 +82,7 @@ def _process_func_annotations(func):
     return handler
 
 
-def _resolve_symbols(func, symbols):
+def _resolve_symbols(func: Callable[..., Any], symbols: dict[Any, Any]):
     """Copy function and update __globals__ and __closure__ vars
 
     Copy function while updating __globals__ and __closure__ vars according to
@@ -98,6 +100,8 @@ def _resolve_symbols(func, symbols):
         try:
             return symbols.get(val, None)
         except:
+            # For non-hashable types `symbols.get` will raise an exception,
+            # we don't care about them anyways, so ignore.
             return None
 
     if old_closure is not None:
@@ -139,18 +143,18 @@ _api_subs = {}
 
 
 class _RegisterProxy:
-    def __getitem__(self, indices):
+    def __getitem__(self, indices: tuple[...]):
         shape = indices[:-1]
         dtype = indices[-1]
         return _ShapedRegister(shape, dtype)
 
 
 class _ShapedRegister:
-    def __init__(self, shape, dtype):
+    def __init__(self, shape: tuple[IndexExpr, ...], dtype: Any) -> None:
         self.shape = shape
         self.dtype = dtype
 
-    def __call__(self, init):
+    def __call__(self, init: Any) -> "Register":
         return torch.full(self.shape, init, dtype=self.dtype)
 
 
@@ -160,22 +164,26 @@ class _TklProxy:
     Register = _RegisterProxy()
 
 
-def _reduction_proxy(axis, init_args):
-    def decorator(func):
+def _reduction_proxy(axis: int, init_args: list[Any]):
+    def decorator(func: Callable[..., Any]) -> Any:
         return func(*init_args)
 
     return decorator
 
 
-def _read_proxy(memory, elements_per_thread=None):
+def _read_proxy(
+    memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
+) -> "Register":
     return memory.clone()
 
 
-def _write_proxy(src, dst, elements_per_thread=None):
+def _write_proxy(
+    src: "Register", dst: "Memory", elements_per_thread: Optional[IndexExpr] = None
+) -> None:
     dst[:] = src
 
 
-def _mma_proxy(a, b, acc):
+def _mma_proxy(a: "Register", b: "Register", acc: "Register") -> "Register":
     return torch.matmul(a, b.T) + acc
 
 
