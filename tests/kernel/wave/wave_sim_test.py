@@ -60,18 +60,6 @@ def test_gemm():
         # repeat represents the results of the loop
         tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
-    hyperparams = {
-        ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
-        LOAD_ELEMS_PER_THREAD: 4,
-        STORE_ELEMS_PER_THREAD: 1,
-        BLOCK_M: 32,
-        BLOCK_N: 32,
-        BLOCK_K: 32,
-        M: 64,
-        N: 128,
-        K: 256,
-    }
-
     a = torch.randn(64, 256, dtype=torch.float16)
     b = torch.randn(128, 256, dtype=torch.float16)
     c = torch.zeros(64, 128, dtype=torch.float32)
