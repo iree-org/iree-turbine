@@ -16,6 +16,18 @@ from .. import wave as tkw
 
 
 def wave_sim(constraints: Optional[list[Constraint]] = None):
+    """Kernel simulator decorator.
+
+    This decorator wraps kernel function into simulator harness.
+
+    When kernel is invoked, underlying function is copied and symbolic
+    expressions captured in '__globals__' and '__closure__' are replaced with
+    numerical values, extracted from input tensors shapes.
+
+    Also, all kernel APIs are replaced by 'proxy' API, which just execute ops
+    immediately on host intead of tracing them.
+    """
+
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
         args_handler = _process_func_annotations(f)
 
