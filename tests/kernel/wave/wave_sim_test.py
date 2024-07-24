@@ -1,6 +1,5 @@
 import pytest
 import torch
-import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
 from shark_turbine.kernel.wave.wave_sim import wave_sim
