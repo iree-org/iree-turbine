@@ -46,7 +46,7 @@ def test_trace_empty():
 
     # Custom format:
     # CHECK-NEXT: placeholder
-    # CHECK-SAME: MemoryType[M, N].of(f16)
+    # CHECK-SAME: _type=Memory[M, N].of(f16)
     # CHECK-NEXT: output
 
 
@@ -77,7 +77,7 @@ def test_trace_empty_then_add_nodes():
 
     # Custom format:
     # CHECK-NEXT: placeholder
-    # CHECK-SAME: MemoryType[M, N].of(f16)
+    # CHECK-SAME: _type=Memory[M, N].of(f16)
     # CHECK-NEXT: read(memory=a
     # CHECK-NEXT: write(register_=read, memory=a
     # CHECK-NEXT: output
@@ -167,8 +167,8 @@ def test_trace_mma():
 
     # Custom format:
     # CHECK-NEXT: placeholder
-    # CHECK-NEXT: read
-    # CHECK-NEXT: read
+    # CHECK-NEXT: read(memory=a
+    # CHECK-NEXT: read(memory=a
     # CHECK-NEXT: register
     # CHECK-NEXT: mma
     # CHECK-NEXT: output
