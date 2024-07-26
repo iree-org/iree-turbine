@@ -500,6 +500,18 @@ class MMA(CustomOp):
         unique_dims = list(dict.fromkeys(combined_dims))
         return unique_dims
 
+    @property
+    def lhs_type(self) -> Memory:
+        return get_custom(self.lhs).type
+
+    @property
+    def rhs_type(self) -> Memory:
+        return get_custom(self.rhs).type
+
+    @property
+    def acc_type(self) -> Memory:
+        return get_custom(self.acc).type
+
 
 @define_op("read")
 @dataclass

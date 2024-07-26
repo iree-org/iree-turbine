@@ -125,6 +125,14 @@ class CapturedTrace:
     def get_root_graph(self) -> fx.Graph:
         return self.get_subgraph(self.root_graph)
 
+    def walk(self, filter: Callable[[fx.Node], bool]) -> list[fx.Node]:
+        nodes: list[fx.Node] = []
+        for region in self.region_graph.subgraphs.values():
+            for node in region.nodes:
+                if filter(node):
+                    nodes.append(node)
+        return nodes
+
 
 ###############################################################################
 # Execution context.

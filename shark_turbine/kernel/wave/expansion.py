@@ -2,7 +2,12 @@ import itertools
 import torch.fx as fx
 from typing import Any, TypeAlias
 
-from .constraints import Constraint, HardwareConstraint, WorkgroupConstraint
+from .constraints import (
+    Constraint,
+    HardwareConstraint,
+    WorkgroupConstraint,
+    TilingConstraint,
+)
 from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext
 from ...support.logging import get_logger
@@ -82,6 +87,39 @@ def is_expandable(arg: Any) -> bool:
     return isinstance(arg, CustomOp)
 
 
+def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[fx.Node, int]:
+    """
+    Given a trace, determine the MMA dimensional mapping for all the
+    MMA operations in the graph. For example, if we have
+        acc = tkw.mma(a_reg, b_reg, acc)
+    where a_reg has shape UxV, b has shape SxV and acc has shape UxS,
+    we map U to the MMA M dimension (0), S to the MMA N dimension (1) and
+    V to the MMA K dimension (2).
+    """
+
+    def is_mma(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        if isinstance(custom, MMA):
+            return True
+
+    mma_nodes = trace.walk(is_mma)
+    mapping: dict[fx.Node, int] = {}
+    for node in mma_nodes:
+        custom: MMA = get_custom(node)
+        m, n = custom.acc_type.symbolic_shape[-2:]
+        mapping[m] = 0
+        mapping[n] = 1
+        k = [
+            dim
+            for dim in custom.lhs_type.symbolic_shape
+            if dim in custom.rhs_type.symbolic_shape
+            and not dim in custom.acc_type.symbolic_shape
+        ][0]
+        mapping[k] = 2
+
+    return mapping
+
+
 def expand_graph(
     trace: CapturedTrace,
     constraints_or_scaling: Sequence[Constraint] | dict[IndexSymbol, int],
@@ -93,7 +131,8 @@ def expand_graph(
     if isinstance(constraints_or_scaling, dict):
         dim_scaling = constraints_or_scaling
     else:
-        dim_scaling = get_dim_scaling(constraints_or_scaling)
+        mma_index = get_mma_dimensional_mapping(trace)
+        dim_scaling = get_dim_scaling(constraints_or_scaling, mma_index)
 
     # Start from the back and expand in the corresponding indexing dimensions of a node
     # Then proceed to the operands
@@ -236,7 +275,9 @@ def get_expanded_name(node: CustomOp, dims: dict[IndexSymbol, int]) -> str:
     return node_name
 
 
-def get_dim_scaling(constraints: Sequence[Constraint]) -> dict[IndexSymbol, int]:
+def get_dim_scaling(
+    constraints: Sequence[Constraint], mma_indices: dict[IndexExpr, int]
+) -> dict[IndexSymbol, int]:
     """Get the number of expansions for the dimensions based on the constraints."""
     dim_scaling: dict[IndexSymbol, int] = {}
     hardware_constraints: list[HardwareConstraint] = [
@@ -249,23 +290,42 @@ def get_dim_scaling(constraints: Sequence[Constraint]) -> dict[IndexSymbol, int]
 
     idxc = IndexingContext.current()
     for constraint in constraints:
-        if isinstance(constraint, WorkgroupConstraint):
+        if isinstance(constraint, WorkgroupConstraint) or isinstance(
+            constraint, TilingConstraint
+        ):
+            hw_cons = hardware_constraints[0]
             tile_size = idxc.get_static_value(constraint.tile_size)
-            wave_count = hardware_constraints[0].waves_per_block[
-                constraint.workgroup_dim
-            ]
-            mma_size = hardware_constraints[0].mma_matrix_shapes[
-                constraint.workgroup_dim
-            ]
-            if tile_size is None or wave_count is None or mma_size is None:
+            if not (
+                constraint.dim in mma_indices or constraint.dim in hw_cons.vector_shapes
+            ):
                 raise ValueError(
-                    "Tile size, wave count and mma size must be statically known"
+                    f"Attempting to determine vector shape for unmapped dimension {constraint.dim}"
                 )
-            if tile_size % wave_count != 0 or (tile_size / wave_count) % mma_size != 0:
+
+            if mma_indices:
+                vector_size = hardware_constraints[0].mma_matrix_shapes[
+                    mma_indices[constraint.dim]
+                ]
+            else:
+                vector_size = hardware_constraints[0].vector_shapes[constraint.dim]
+
+            wave_count = 1
+            if isinstance(constraint, WorkgroupConstraint):
+                wave_count = hardware_constraints[0].waves_per_block[
+                    constraint.workgroup_dim
+                ]
+            if tile_size is None or wave_count is None or vector_size is None:
                 raise ValueError(
-                    "Tile size must be divisible by wave count and mma size"
+                    "Tile size, wave count and vector size must be statically known"
                 )
-            dim_scaling[constraint.dim] = tile_size // wave_count // mma_size
+            if (
+                tile_size % wave_count != 0
+                or (tile_size / wave_count) % vector_size != 0
+            ):
+                raise ValueError(
+                    "Tile size must be divisible by wave count and vector size"
+                )
+            dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
     return dim_scaling
 
 

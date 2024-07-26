@@ -62,7 +62,7 @@ def test_read_write_equal_sizes():
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            mma_type=tkw.MMAType.F32_16x16x16_F16,
+            vector_shapes={M: 16, N: 16, K: 16},
         )
     ]
 
@@ -111,9 +111,13 @@ def read_write_different_dims(
 def test_read_write():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
     constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 16, N: 16, K: 16},
+        )
     ]
     with tk.gen.TestLaunchContext(
         {
@@ -166,7 +170,7 @@ def gemm(
 def test_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
     constraints += [
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]
@@ -258,7 +262,7 @@ def test_gemm_reduction_expansion_only():
     # gemm kernel to test the expansion of the reduction subgraph.
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
     constraints += [
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]

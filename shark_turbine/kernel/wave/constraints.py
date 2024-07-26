@@ -46,6 +46,7 @@ class HardwareConstraint(Constraint):
     threads_per_wave: int
     waves_per_block: Optional[tuple[int, int, int]] = None
     mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
+    vector_shapes: Optional[dict[IndexExpr, int]] = None
 
     @property
     def mma_matrix_shapes(self):
@@ -79,11 +80,13 @@ class WorkgroupConstraint(Constraint):
     def apply(self) -> IndexExpr:
         match self.workgroup_dim:
             case 0:
-                wg_dim = sym.WG0
+                wg_dim = tkl.sym.WG0
             case 1:
-                wg_dim = sym.WG1
+                wg_dim = tkl.sym.WG1
+            case 2:
+                wg_dim = tkl.sym.WG2
             case _:
-                raise ValueError("Invalid workgroup dimension. Expected 0 or 1.")
+                raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
         return wg_dim * self.tile_size
 
 
@@ -101,3 +104,31 @@ def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]
         constraint.dim // constraint.tile_size for constraint in wg_constraints
     ]
     return grid
+
+
+@dataclass
+class TilingConstraint(Constraint):
+    """
+    A constraint of the form `tkw.TilingConstraint(K, BLOCK_K)` specifies
+    that we want to tile the K dimension with a tile size of BLOCK_K. This
+    adds an index constraint to the K-th dimension of a tensor of the form
+    BLOCK_K * i, where i is the induction variable associated with the
+    loop around dimension K.
+    """
+
+    dim: IndexExpr
+    tile_size: IndexExpr
+    induction_var: Optional[IndexExpr] = None
+
+    def iterations(self) -> IndexExpr:
+        """
+        Returns an expression for the number of iterations in the loop.
+        """
+        return self.dim / self.tile_size
+
+    def apply(self) -> IndexExpr:
+        if self.induction_var is None:
+            raise ValueError(
+                "Index is being computed without setting induction variable"
+            )
+        return self.induction_var * self.tile_size
