@@ -186,6 +186,7 @@ def _reduction_proxy(axis: int, init_args: list[Any]):
 
     return decorator
 
+
 def _read_proxy(
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr] = None,
@@ -209,7 +210,7 @@ def _write_proxy(
     src: "Register",
     dst: "Memory",
     elements_per_thread: Optional[IndexExpr] = None,
-    mapping: Callable[..., Any] = None
+    mapping: Callable[..., Any] = None,
 ):
     if mapping:
         mapping_func = mapping.mapping_func
