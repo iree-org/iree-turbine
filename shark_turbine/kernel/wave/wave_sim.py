@@ -7,6 +7,7 @@ import torch
 from typing import Any, Callable, Optional, TypeAlias
 from .constraints import Constraint
 
+import numpy as np
 from sympy import Symbol
 from sympy.core.expr import Expr
 from .._support.shaped_type import ShapedType
