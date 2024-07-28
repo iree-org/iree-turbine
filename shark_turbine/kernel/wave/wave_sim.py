@@ -192,8 +192,8 @@ def _reduction_proxy(axis: int, init_args: list[Any]):
 def _read_proxy(
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr] = None,
-    mapping: IndexMapping = None,
-    shape: tuple[IndexExpr, ...] = None,
+    mapping: Optional[IndexMapping] = None,
+    shape: Optional[tuple[IndexExpr, ...]] = None,
 ) -> "Register":
     if mapping:
         assert shape
@@ -212,7 +212,7 @@ def _write_proxy(
     src: "Register",
     dst: "Memory",
     elements_per_thread: Optional[IndexExpr] = None,
-    mapping: IndexMapping = None,
+    mapping: Optional[IndexMapping] = None,
 ):
     if mapping:
         mapping_func = mapping.mapping_func

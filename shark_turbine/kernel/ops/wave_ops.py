@@ -41,7 +41,10 @@ def allocate(
 
 
 def read(
-    memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
+    memory: "Memory",
+    elements_per_thread: Optional[IndexExpr] = None,
+    mapping: Optional[IndexMapping] = None,
+    shape: Optional[tuple[IndexExpr, ...]] = None,
 ) -> "Register":
     ...
 
@@ -64,6 +67,7 @@ def write(
     register_: "Register",
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
+    mapping: Optional[IndexMapping] = None,
 ):
     ...
 
