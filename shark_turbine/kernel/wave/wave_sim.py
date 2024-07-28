@@ -14,6 +14,7 @@ from .._support.shaped_type import ShapedType
 
 from .. import lang as tkl
 from .. import wave as tkw
+from ..wave import IndexMapping
 
 
 def wave_sim(constraints: Optional[list[Constraint]] = None):
@@ -191,7 +192,7 @@ def _reduction_proxy(axis: int, init_args: list[Any]):
 def _read_proxy(
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr] = None,
-    mapping: Callable[..., Any] = None,
+    mapping: IndexMapping = None,
     shape: tuple[IndexExpr, ...] = None,
 ) -> "Register":
     if mapping:
@@ -211,7 +212,7 @@ def _write_proxy(
     src: "Register",
     dst: "Memory",
     elements_per_thread: Optional[IndexExpr] = None,
-    mapping: Callable[..., Any] = None,
+    mapping: IndexMapping = None,
 ):
     if mapping:
         mapping_func = mapping.mapping_func
