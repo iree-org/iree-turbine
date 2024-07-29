@@ -1,6 +1,7 @@
 from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass, field, fields
+import operator
 import sys
 from typing import (
     TYPE_CHECKING,
@@ -86,6 +87,57 @@ def define_op(op_name: str) -> Callable[[T], T]:
         setattr(current_module, op_name, new_function)
         cls._tracing_function = new_function
 
+        return cls
+
+    return decorator
+
+
+def define_py_op(py_op: Callable) -> Callable[[T], T]:
+    """
+    Register python internal operators as custom ops.
+    This overloads python operator specific functions such as __add__ of
+    fx.Proxy with a handler in order to control the tracing of the operator and
+    map it to a dynamically created sublclass of UnaryPyOp or BinaryPyOp.
+    """
+    op_name = py_op.__name__
+
+    def decorator(cls: T) -> T:
+        # define new subclass of cls to represent this op
+        @dataclass
+        class NewSubclass(cls):
+            pass
+
+        NewSubclass.tkw_op_name = op_name
+        NewSubclass.__name__ = f"{op_name.capitalize()}"
+        NewSubclass.__module__ = cls.__module__
+        current_module = sys.modules[cls.__module__]
+        setattr(current_module, NewSubclass.__name__, NewSubclass)
+
+        original_handler = None
+        if hasattr(fx.Proxy, f"__{op_name}__"):
+            original_handler = getattr(fx.Proxy, f"__{op_name}__")
+
+        def new_function(*args: Any, **kwargs: dict[str, Any]):
+            dispatcher = None
+            try:
+                dispatcher = OpDispatcher.current()
+            except IndexError:
+                handler = original_handler
+
+            if dispatcher:
+                try:
+                    handler = getattr(dispatcher, f"handle_{op_name}")
+                except AttributeError:
+                    handler = original_handler
+
+            return handler(*args, **kwargs)
+
+        if original_handler:
+            new_function.__name__ = op_name
+            NewSubclass._tracing_function = new_function
+            setattr(fx.Proxy, f"__{op_name}__", new_function)
+
+        # Return cls unchanged so we can reuse the decorator to register more ops
         return cls
 
     return decorator
@@ -253,6 +305,52 @@ class CustomOp(ABC):
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         return []
+
+
+@define_py_op(operator.getitem)
+@define_py_op(operator.add)
+@define_py_op(operator.sub)
+@dataclass
+class BinaryPyOp(CustomOp, ABC):
+    """
+    Represents a binary python operator.
+    """
+
+    lhs: Any
+    rhs: Any
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        combined_dims = []
+        if isinstance(self.lhs, fx.Node):
+            combined_dims += get_custom(self.lhs).indexing_dims
+        if isinstance(self.rhs, fx.Node):
+            combined_dims += get_custom(self.rhs).indexing_dims
+
+        unique_dims = list(dict.fromkeys(combined_dims))
+        return unique_dims
+
+    @property
+    def py_operator(self) -> str:
+        return self.tkw_op_name
+
+
+@define_py_op(operator.neg)
+@dataclass
+class UnaryPyOp(CustomOp, ABC):
+    """
+    Represents a unary python operator.
+    """
+
+    arg: fx.Node
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    @property
+    def py_operator(self) -> str:
+        return self.tkw_op_name
 
 
 @final

@@ -342,6 +342,66 @@ def test_gemm_reduction_expansion_only():
         # CHECK-NEXT: -----
 
 
+@tkw.wave_trace_only()
+def py_arithmetic_different_dims(
+    a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    c: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f32],
+):
+    a_reg = tkw.read(a, elements_per_thread=4)
+    a_reg = a_reg + a_reg - a_reg
+    a_reg = -a_reg
+    tkw.write(a_reg, c, elements_per_thread=4)
+
+
+@run
+def py_arithmetic_different_dims():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+    ]
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 32,
+        }
+    ):
+        graph = py_arithmetic_different_dims()
+        IndexingContext.current().finalize()
+        expand_graph(graph, constraints)
+        print_trace(graph)
+        # CHECK: %a
+        # CHECK-NEXT: %c
+        # CHECK-NEXT: %read_0_0_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK-NEXT: %read_1_0_0
+        # CHECK-SAME: (%a, 4)
+        # CHECK-NEXT: %add_0_0_0
+        # CHECK-SAME: (%read_0_0_0, %read_0_0_0)
+        # CHECK-NEXT: %add_1_0_0
+        # CHECK-SAME: (%read_1_0_0, %read_1_0_0)
+        # CHECK-NEXT: %sub_0_0_0
+        # CHECK-SAME: (%add_0_0_0, %read_0_0_0)
+        # CHECK-NEXT: %sub_1_0_0
+        # CHECK-SAME: (%add_1_0_0, %read_1_0_0)
+        # CHECK-NEXT: %neg_0_0_0
+        # CHECK-SAME: (%sub_0_0_0,)
+        # CHECK-NEXT: %neg_1_0_0
+        # CHECK-SAME: (%sub_1_0_0,)
+        # CHECK-NEXT: %write_0_0_0
+        # CHECK-SAME: (%neg_0_0_0, %c, 4)
+        # CHECK-NEXT: %write_1_0_1
+        # CHECK-SAME: (%neg_1_0_0, %c, 4)
+        # CHECK-NEXT: %write_1_0_0
+        # CHECK-SAME: (%neg_1_0_0, %c, 4)
+        # CHECK-NEXT: %write_0_0_1
+        # CHECK-SAME: (%neg_0_0_0, %c, 4)
+
+        # CHECK: -----
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     unittest.main()
