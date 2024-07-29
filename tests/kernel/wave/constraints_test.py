@@ -1,6 +1,7 @@
 import logging
 import pytest
 import unittest
+from sympy import ceiling
 from shark_turbine.kernel.lang import sym
 from shark_turbine.kernel.wave.constraints import (
     WorkgroupConstraint,
@@ -41,8 +42,8 @@ class ConstraintsTest(unittest.TestCase):
         constraints: list[TilingConstraint] = [TilingConstraint(M, BLOCK_M)]
         constraints.append(TilingConstraint(N, BLOCK_N, I))
 
-        assert constraints[0].iterations() == M / BLOCK_M
-        assert constraints[1].iterations() == N / BLOCK_N
+        assert constraints[0].iterations() == ceiling(M / BLOCK_M)
+        assert constraints[1].iterations() == ceiling(N / BLOCK_N)
         assert constraints[1].apply() == I * BLOCK_N
 
         with pytest.raises(

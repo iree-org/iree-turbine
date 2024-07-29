@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Sequence
+from typing import Optional
 import shark_turbine.kernel.lang as tkl
-from sympy import Expr, Symbol
+from sympy import ceiling
 
-from shark_turbine.kernel.ops.wave_ops import MMA
 from .._support.indexing import IndexExpr, IndexSymbol
 
 
@@ -124,7 +123,7 @@ class TilingConstraint(Constraint):
         """
         Returns an expression for the number of iterations in the loop.
         """
-        return self.dim / self.tile_size
+        return ceiling(self.dim / self.tile_size)
 
     def apply(self) -> IndexExpr:
         if self.induction_var is None:
