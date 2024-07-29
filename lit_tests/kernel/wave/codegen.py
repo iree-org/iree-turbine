@@ -40,7 +40,9 @@ def launch(func: Callable[[], None]) -> Callable[[], None]:
 @launch
 def test_read():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -59,7 +61,9 @@ def test_read():
 @launch
 def test_add():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -79,7 +83,9 @@ def test_add():
 @launch
 def test_neg():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -99,7 +105,9 @@ def test_neg():
 @launch
 def test_sub():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -119,7 +127,9 @@ def test_sub():
 @launch
 def test_get_item():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        ),
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]

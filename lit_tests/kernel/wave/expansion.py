@@ -363,7 +363,11 @@ def py_arithmetic_different_dims():
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
     constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 16, N: 16, K: 16},
+        )
     ]
     with tk.gen.TestLaunchContext(
         {
