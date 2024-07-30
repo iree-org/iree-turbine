@@ -31,3 +31,6 @@ wheelhouse
 *.gguf
 *.vmfb
 *.png
+
+# Test artifacts
+.lit_test_times.txt
