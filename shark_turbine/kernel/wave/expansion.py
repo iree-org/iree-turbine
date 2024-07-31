@@ -12,6 +12,7 @@ from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
+from .indexing import IndexSequence
 
 logger = get_logger("turbine.wave.expansion")
 # This represents a mapping of a node + indexing into the dimensions to the
@@ -87,7 +88,7 @@ def is_expandable(arg: Any) -> bool:
     return isinstance(arg, CustomOp)
 
 
-def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[fx.Node, int]:
+def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
     """
     Given a trace, determine the MMA dimensional mapping for all the
     MMA operations in the graph. For example, if we have
@@ -103,7 +104,7 @@ def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[fx.Node, int]:
             return True
 
     mma_nodes = trace.walk(is_mma)
-    mapping: dict[fx.Node, int] = {}
+    mapping: dict[IndexSymbol, int] = {}
     for node in mma_nodes:
         custom: MMA = get_custom(node)
         m, n = custom.acc_type.symbolic_shape[-2:]
@@ -120,6 +121,50 @@ def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[fx.Node, int]:
     return mapping
 
 
+def set_node_indices(
+    trace: CapturedTrace,
+    constraints: Sequence[Constraint],
+    mma_index: dict[IndexSymbol, int],
+):
+    """
+    Set the indices of the nodes based on the user constraints. In certain
+    operators (like read, write), there is only a single index associated
+    with the node (the index to read from, the index to write to). But for
+    other operators like mma, each operand reads from a different index.
+
+    Rather than maintain operand specific indices for operators, we maintain
+    dimension specific indices for each operator. So for an mma operator that
+    has a signature of (MxK, NxK) -> MxN, we maintain only 3 mappings for
+    dimensions M, N and K, but allow each mapping to be piecewise conditioned
+    on the operand.
+    """
+
+    def compute_index(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        custom.index = {}
+        for dim in custom.indexing_dims:
+            for constraint in constraints:
+                if (
+                    not isinstance(constraint, HardwareConstraint)
+                    and dim != constraint.dim
+                ):
+                    continue
+                if not custom.index:
+                    custom.index = {
+                        dim: IndexSequence(0, 1) for dim in custom.indexing_dims
+                    }
+                if isinstance(constraint, HardwareConstraint):
+                    if dim in mma_index and isinstance(custom, MMA):
+                        custom.index[dim] += constraint.apply(mma_index[dim])
+                elif dim == constraint.dim:
+                    custom.index[dim] += constraint.apply()
+        if custom.index:
+            setattr(custom.fx_node, "index", custom.index)
+        return False
+
+    trace.walk(compute_index)
+
+
 def expand_graph(
     trace: CapturedTrace,
     constraints_or_scaling: Sequence[Constraint] | dict[IndexSymbol, int],
@@ -132,6 +177,7 @@ def expand_graph(
         dim_scaling = constraints_or_scaling
     else:
         mma_index = get_mma_dimensional_mapping(trace)
+        set_node_indices(trace, constraints_or_scaling, mma_index)
         dim_scaling = get_dim_scaling(constraints_or_scaling, mma_index)
 
     # Start from the back and expand in the corresponding indexing dimensions of a node
@@ -142,6 +188,7 @@ def expand_graph(
     for node in (
         get_custom(fx_node) for fx_node in reversed(list(trace.get_root_graph().nodes))
     ):
+
         # Expansion begins at the leaf nodes
         if node.__class__ not in leaf_nodes:
             continue
@@ -276,7 +323,7 @@ def get_expanded_name(node: CustomOp, dims: dict[IndexSymbol, int]) -> str:
 
 
 def get_dim_scaling(
-    constraints: Sequence[Constraint], mma_indices: dict[IndexExpr, int]
+    constraints: Sequence[Constraint], mma_indices: dict[IndexSymbol, int]
 ) -> dict[IndexSymbol, int]:
     """Get the number of expansions for the dimensions based on the constraints."""
     dim_scaling: dict[IndexSymbol, int] = {}

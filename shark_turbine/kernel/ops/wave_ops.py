@@ -22,6 +22,7 @@ from .._support.indexing import IndexExpr, IndexSymbol
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
+import shark_turbine.kernel.lang as tkl
 
 T = TypeVar("T", bound=Type[Any])
 AccT = TypeVar("AccT")
@@ -171,13 +172,15 @@ class CustomOp(ABC):
     fx_node: Optional[fx.Node] = field(default=None, init=False)
     tkw_op_name: str = field(default="unknown", init=False)
     _tracing_function: Optional[Callable[..., Any]] = field(default=None, init=False)
-    index: Optional[IndexExpr] = field(default=None, init=False)
+    index: Optional[dict[IndexSymbol, IndexSequence]] = field(default=None, init=False)
 
     @classmethod
     def from_fx_node(cls: Type[CustomOpT], node: fx.Node) -> CustomOpT:
         instance = cls(*node.args)
         instance.fx_node = node
         instance.graph = node.graph
+        if hasattr(node, "index"):
+            instance.index = node.index
         return instance
 
     def __post_init__(self):
@@ -198,7 +201,14 @@ class CustomOp(ABC):
 
     def custom_string(self, value_map: dict[str, str]) -> str:
         # print all variables of the node apart from graph and fx_node
-        vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
+        ignore_list = ["fx_node", "graph"]
+        if self.index is None:
+            ignore_list += ["index"]
+        vars_list = [
+            f"{key}={value}"
+            for key, value in vars(self).items()
+            if key not in ignore_list
+        ]
         vars_str = ", ".join(vars_list)
         return f"{self.tkw_op_name}({vars_str})"
 
@@ -213,6 +223,7 @@ class CustomOp(ABC):
         )
         self.fx_node.tkw_op = self.__class__
         self.fx_node.tkw_op_name = self.tkw_op_name
+        self.fx_node.index = None
         return self.fx_node
 
     def _add_proxy_to_graph(self, region_graph: RegionGraph):
@@ -259,6 +270,7 @@ class CustomOp(ABC):
             graph.inserting_after(self.fx_node)
         new_node = graph.node_copy(self.fx_node)
         new_node.tkw_op = self
+        new_node.index = self.fx_node.index
         if new_name:
             new_node.name = new_name
         return get_custom(new_node)
@@ -511,6 +523,40 @@ class MMA(CustomOp):
     @property
     def acc_type(self) -> Memory:
         return get_custom(self.acc).type
+
+    def operand_index(
+        self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
+    ) -> list[IndexSequence]:
+        indices: list[IndexSequence] = []
+        for dim in shape:
+            indices.append(self.index[dim].subs(operand_map))
+        return indices
+
+    @property
+    def lhs_index(self) -> list[IndexSequence]:
+        operand_map = {tkl.sym.MMA_LHS: 1, tkl.sym.MMA_RHS: 0, tkl.sym.MMA_ACC: 0}
+        return self.operand_index(operand_map, self.lhs_type.symbolic_shape)
+
+    @property
+    def rhs_index(self) -> list[IndexSequence]:
+        operand_map = {tkl.sym.MMA_LHS: 0, tkl.sym.MMA_RHS: 1, tkl.sym.MMA_ACC: 0}
+        return self.operand_index(operand_map, self.rhs_type.symbolic_shape)
+
+    @property
+    def acc_index(self) -> list[IndexSequence]:
+        operand_map = {tkl.sym.MMA_LHS: 0, tkl.sym.MMA_RHS: 0, tkl.sym.MMA_ACC: 1}
+        if self.acc.type is None:
+            return None
+        return self.operand_index(operand_map, self.acc_type.symbolic_shape)
+
+    def custom_string(self, value_map: dict[str, str]) -> str:
+        if self.index is None:
+            return super().custom_string(value_map)
+        custom_str = f"{self.tkw_op_name}("
+        custom_str += f"lhs={self.lhs} (index = {self.lhs_index}), "
+        custom_str += f"rhs={self.rhs} (index = {self.rhs_index}), "
+        custom_str += f"acc={self.acc} (index = {self.acc_index}))"
+        return custom_str
 
 
 @define_op("read")

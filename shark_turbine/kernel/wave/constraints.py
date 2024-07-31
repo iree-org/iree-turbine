@@ -3,9 +3,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 import shark_turbine.kernel.lang as tkl
-from sympy import ceiling
+from sympy import ceiling, Piecewise, floor
 
 from .._support.indexing import IndexExpr, IndexSymbol
+from .indexing import IndexSequence
+from .distribution_symbols import *
 
 
 class MMAType(Enum):
@@ -25,8 +27,8 @@ class Constraint(ABC):
     """
 
     @abstractmethod
-    def apply(self) -> IndexExpr:
-        """Apply the constraint and get the resulting index expression."""
+    def apply(self) -> IndexSequence:
+        """Apply the constraint and get the resulting index sequence."""
         ...
 
 
@@ -52,8 +54,13 @@ class HardwareConstraint(Constraint):
     mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
     vector_shapes: Optional[dict[IndexSymbol, int]] = None
 
+    def __post_init__(self):
+        self.LHS = tkl.sym.MMA_LHS
+        self.RHS = tkl.sym.MMA_RHS
+        self.ACC = tkl.sym.MMA_ACC
+
     @property
-    def mma_matrix_shapes(self):
+    def mma_matrix_shapes(self) -> tuple[int]:
         # TODO: Eventually the shapes and indices should be provided by a tool
         match self.mma_type:
             case MMAType.F32_16x16x16_F16:
@@ -63,8 +70,47 @@ class HardwareConstraint(Constraint):
             case _:
                 return ()
 
-    def apply(self) -> IndexExpr:
-        raise NotImplementedError("Not yet implemented")
+    @property
+    def threads_per_block(self) -> tuple[int]:
+        return (
+            self.waves_per_block[0] * self.threads_per_wave,
+        ) + self.waves_per_block[1:]
+
+    @property
+    def linearized_thread_id(self) -> IndexExpr:
+        thread_ids = [THREAD_0, THREAD_1, THREAD_2]
+        threads_per_block = (
+            [1]
+            + [self.threads_per_block[0]]
+            + [self.threads_per_block[0] * self.threads_per_block[1]]
+        )
+        return sum([x * y for x, y in zip(thread_ids, threads_per_block)])
+
+    def apply(self, mma_index: int) -> IndexSequence:
+        lane = self.linearized_thread_id
+        match self.mma_type:
+            # (M x K, N x K) -> M x N
+            case MMAType.F32_16x16x16_F16:
+                offset = {
+                    0: Piecewise(
+                        (lane % 16, ~self.ACC), (4 * floor(lane / 16), self.ACC)
+                    ),  # M
+                    1: lane % 16,  # N
+                    2: 4 * floor(lane / 16),  # K
+                }
+                size = {
+                    0: Piecewise((0, ~self.ACC), (4, self.ACC)),  # M
+                    1: 0,  # N
+                    2: 4,  # K
+                }
+                stride = {
+                    0: Piecewise((1, ~self.ACC), (16, self.ACC)),  # M
+                    1: 1,  # N
+                    2: 1,  # K
+                }
+                return IndexSequence(
+                    offset[mma_index], size[mma_index], stride[mma_index]
+                )
 
 
 @dataclass
@@ -81,17 +127,17 @@ class WorkgroupConstraint(Constraint):
     tile_size: IndexExpr
     workgroup_dim: int
 
-    def apply(self) -> IndexExpr:
+    def apply(self) -> IndexSequence:
         match self.workgroup_dim:
             case 0:
-                wg_dim = tkl.sym.WG0
+                wg_dim = WORKGROUP_0
             case 1:
-                wg_dim = tkl.sym.WG1
+                wg_dim = WORKGROUP_1
             case 2:
-                wg_dim = tkl.sym.WG2
+                wg_dim = WORKGROUP_2
             case _:
                 raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
-        return wg_dim * self.tile_size
+        return IndexSequence(wg_dim * self.tile_size, 1)
 
 
 def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]:
@@ -130,9 +176,9 @@ class TilingConstraint(Constraint):
         """
         return ceiling(self.dim / self.tile_size)
 
-    def apply(self) -> IndexExpr:
+    def apply(self) -> IndexSequence:
         if self.induction_var is None:
             raise ValueError(
                 "Index is being computed without setting induction variable"
             )
-        return self.induction_var * self.tile_size
+        return IndexSequence(self.induction_var * self.tile_size, 1)

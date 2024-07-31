@@ -9,6 +9,7 @@ import shark_turbine.kernel.wave as tkw
 from shark_turbine.kernel.wave.expansion import expand_graph
 from shark_turbine.kernel._support.tracing import CapturedTrace
 from shark_turbine.kernel._support.indexing import IndexingContext
+from shark_turbine.kernel.ops.wave_ops import get_custom
 
 
 def run(func: Callable[[], None]) -> Callable[[], None]:
@@ -23,12 +24,14 @@ def run(func: Callable[[], None]) -> Callable[[], None]:
 def print_trace(trace: CapturedTrace):
     """
     Prints all subgraphs of a trace starting with the root graph.
-    The graphs are printed first in the torch printing format and then using
-    our custom node format.
+    The graphs are printed first in the torch printing format and
+    then using our custom node format.
     """
     # The root graph is at the back so we print the subgraphs in reverse order
     for subgraph in reversed(list(trace.region_graph.subgraphs.values())):
         print(subgraph)
+        for node in subgraph.nodes:
+            print(get_custom(node))
 
 
 # Input sizes
@@ -43,6 +46,9 @@ BLOCK_K = tkl.sym.BLOCK_K
 
 # Address space (for GPU, shared(1) or global(0))
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+# Induction variable for dimension K
+ARGK = tkl.sym.ARGK
 
 
 @tkw.wave_trace_only()
@@ -94,6 +100,28 @@ def test_read_write_equal_sizes():
         # CHECK-SAME: (%read_1_0, %c, 4)
         # CHECK-NEXT: %write_0_1
         # CHECK-SAME: (%read_0_1, %c, 4)
+        # CHECK-NEXT: return
+
+        # Custom format:
+        # CHECK-NEXT: placeholder(_name=a
+        # CHECK-NEXT: placeholder(_name=c
+        # CHECK-NEXT: read(memory=a
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: read(memory=a
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: read(memory=a
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: read(memory=a
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: write(register_=read_0_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: write(register_=read_1_1
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: write(register_=read_1_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: write(register_=read_0_1
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: output
 
         # CHECK: -----
 
@@ -111,7 +139,7 @@ def read_write_different_dims(
 def test_read_write():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
@@ -144,6 +172,24 @@ def test_read_write():
         # CHECK-SAME: (%read_1_0_0, %c, 4)
         # CHECK-NEXT: %write_0_0_1
         # CHECK-SAME: (%read_0_0_0, %c, 4)
+        # CHECK-NEXT: return None
+
+        # Custom format:
+        # CHECK-NEXT: placeholder(_name=a
+        # CHECK-NEXT: placeholder(_name=c
+        # CHECK-NEXT: read(memory=a
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: read(memory=a
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: write(register_=read_0_0_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K}
+        # CHECK-NEXT: write(register_=read_1_0_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K}
+        # CHECK-NEXT: write(register_=read_1_0_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K}
+        # CHECK-NEXT: write(register_=read_0_0_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K}
+        # CHECK-NEXT: output
 
         # CHECK: -----
 
@@ -170,7 +216,7 @@ def gemm(
 def test_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
     constraints += [
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]
@@ -207,6 +253,30 @@ def test_gemm():
         # CHECK-SAME: (%getresult_1_0_0, %c, 4)
         # CHECK-NEXT: %write_0_1_0
         # CHECK-SAME: (%getresult_0_1_0, %c, 4)
+        # CHECK-NEXT: return None
+
+        # Custom format:
+        # CHECK-NEXT: placeholder(_name=a
+        # CHECK-NEXT: placeholder(_name=b
+        # CHECK-NEXT: placeholder(_name=c
+        # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: reduction(axis=K, init_args=[register_0_0_0, register_0_1_0, register_1_0_0, register_1_1_0], subgraph_name=region_0, implicit_captures=[a, b], index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: get_result(value=reduction, res_idx=3)
+        # CHECK-NEXT: get_result(value=reduction, res_idx=2)
+        # CHECK-NEXT: get_result(value=reduction, res_idx=1)
+        # CHECK-NEXT: get_result(value=reduction, res_idx=0)
+        # CHECK-NEXT: write(register_=getresult_0_0_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: write(register_=getresult_1_1_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: write(register_=getresult_1_0_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: write(register_=getresult_0_1_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: output
 
         # Reduction subgraph:
 
@@ -253,6 +323,47 @@ def test_gemm():
         # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0)
         # CHECK-NEXT: return [mma_0_0_1, mma_1_1_1, mma_1_0_1, mma_0_1_1]
 
+        # Custom format:
+        # CHECK-NEXT: placeholder(_name=acc_0_0_0
+        # CHECK-NEXT: placeholder(_name=acc_1_1_0
+        # CHECK-NEXT: placeholder(_name=acc_1_0_0
+        # CHECK-NEXT: placeholder(_name=acc_0_1_0
+        # CHECK-NEXT: placeholder(_name=a
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: placeholder(_name=b
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: mma(lhs=read_0_0_0 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_0_0 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=acc_0_0_0 (index = [BLOCK_M*WG0 + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 16, BLOCK_N*WG1 + Mod(T0, 16)]))
+        # CHECK-NEXT: mma(lhs=read_0_0_1 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_0_1 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_0_0_0 (index = None))
+        # CHECK-NEXT: mma(lhs=read_1_0_0 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_1_0 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=acc_1_1_0 (index = [BLOCK_M*WG0 + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 16, BLOCK_N*WG1 + Mod(T0, 16)]))
+        # CHECK-NEXT: mma(lhs=read_1_0_1 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_1_1 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_1_1_0 (index = None))
+        # CHECK-NEXT: mma(lhs=read_1_0_0 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_0_0 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=acc_1_0_0 (index = [BLOCK_M*WG0 + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 16, BLOCK_N*WG1 + Mod(T0, 16)]))
+        # CHECK-NEXT: mma(lhs=read_1_0_1 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_0_1 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_1_0_0 (index = None))
+        # CHECK-NEXT: mma(lhs=read_0_0_0 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_1_0 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=acc_0_1_0 (index = [BLOCK_M*WG0 + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 16, BLOCK_N*WG1 + Mod(T0, 16)]))
+        # CHECK-NEXT: mma(lhs=read_0_0_1 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_1_1 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_0_1_0 (index = None))
+        # CHECK-NEXT: output(return_vals=([mma_0_0_1, mma_1_1_1, mma_1_0_1, mma_0_1_1],))
+
         # CHECK-NEXT: -----
 
 
@@ -262,7 +373,7 @@ def test_gemm_reduction_expansion_only():
     # gemm kernel to test the expansion of the reduction subgraph.
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
     constraints += [
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]
@@ -290,6 +401,23 @@ def test_gemm_reduction_expansion_only():
         # CHECK-SAME: (%getresult_0_0_0, %c, 4)
         # CHECK-NEXT: %write_0_1_0
         # CHECK-SAME: (%getresult_0_1_0, %c, 4)
+        # CHECK-NEXT: return None
+
+        # Custom format:
+        # CHECK-NEXT: placeholder(_name=a
+        # CHECK-NEXT: placeholder(_name=b
+        # CHECK-NEXT: placeholder(_name=c
+        # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: reduction(axis=K, init_args=[register_0_0_0, register_0_1_0]
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1}
+        # CHECK-NEXT: get_result(value=reduction, res_idx=1)
+        # CHECK-NEXT: get_result(value=reduction, res_idx=0)
+        # CHECK-NEXT: write(register_=getresult_0_0_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: write(register_=getresult_0_1_0
+        # CHECK-SAME: index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: output(return_vals=(None,))
 
         # Reduction subgraph:
 
@@ -342,6 +470,50 @@ def test_gemm_reduction_expansion_only():
         # CHECK-SAME: (%read_0_0_3, %read_0_1_3, %mma_0_1_2)
 
         # CHECK-NEXT: return [mma_0_0_3, mma_0_1_3]
+
+        # Custom format:
+
+        # CHECK-NEXT: placeholder(_name=acc_0_0_0
+        # CHECK-NEXT: placeholder(_name=acc_0_1_0
+        # CHECK-NEXT: placeholder(_name=a
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: placeholder(_name=b
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: read(memory=b, elements_per_thread=4, index={N: BLOCK_N*WG1, K: ARGK*BLOCK_K})
+        # CHECK-NEXT: mma(lhs=read_0_0_0 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_0_0 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=acc_0_0_0 (index = [BLOCK_M*WG0 + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 16, BLOCK_N*WG1 + Mod(T0, 16)]))
+        # CHECK-NEXT: mma(lhs=read_0_0_1 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_0_1 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_0_0_0 (index = None))
+        # CHECK-NEXT: mma(lhs=read_0_0_2 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_0_2 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_0_0_1 (index = None))
+        # CHECK-NEXT: mma(lhs=read_0_0_3 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_0_3 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_0_0_2 (index = None))
+        # CHECK-NEXT: mma(lhs=read_0_0_0 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_1_0 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=acc_0_1_0 (index = [BLOCK_M*WG0 + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 16, BLOCK_N*WG1 + Mod(T0, 16)]))
+        # CHECK-NEXT: mma(lhs=read_0_0_1 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_1_1 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_0_1_0 (index = None))
+        # CHECK-NEXT: mma(lhs=read_0_0_2 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_1_2 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_0_1_1 (index = None))
+        # CHECK-NEXT: mma(lhs=read_0_0_3 (index = [BLOCK_M*WG0 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: rhs=read_0_1_3 (index = [BLOCK_N*WG1 + Mod(T0, 16), ARGK*BLOCK_K + 16*T1 + 16*T2 + 4*floor(T0/16) : 4 : 1])
+        # CHECK-SAME: acc=mma_0_1_2 (index = None))
+        # CHECK-NEXT: output(return_vals=([mma_0_0_3, mma_0_1_3],))
 
         # CHECK-NEXT: -----
 
@@ -406,6 +578,23 @@ def py_arithmetic_different_dims():
         # CHECK-SAME: (%neg_1_0_0, %c, 4)
         # CHECK-NEXT: %write_0_0_1
         # CHECK-SAME: (%neg_0_0_0, %c, 4)
+        # CHECK-NEXT: return None
+
+        # Custom format:
+        # CHECK-NEXT: placeholder(_name=a
+        # CHECK-NEXT: placeholder(_name=c
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: add(lhs=read_0_0_0, rhs=read_0_0_0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: add(lhs=read_1_0_0, rhs=read_1_0_0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: sub(lhs=add_0_0_0, rhs=read_0_0_0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: sub(lhs=add_1_0_0, rhs=read_1_0_0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: neg(arg=sub_0_0_0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: neg(arg=sub_1_0_0, index={M: BLOCK_M*WG0, N: BLOCK_N*WG1})
+        # CHECK-NEXT: write(register_=neg_0_0_0, memory=c, elements_per_thread=4, index={M: BLOCK_M*WG0, K: BLOCK_K*WG2})
+        # CHECK-NEXT: write(register_=neg_1_0_0, memory=c, elements_per_thread=4, index={M: BLOCK_M*WG0, K: BLOCK_K*WG2})
+        # CHECK-NEXT: write(register_=neg_1_0_0, memory=c, elements_per_thread=4, index={M: BLOCK_M*WG0, K: BLOCK_K*WG2})
+        # CHECK-NEXT: write(register_=neg_0_0_0, memory=c, elements_per_thread=4, index={M: BLOCK_M*WG0, K: BLOCK_K*WG2})
 
         # CHECK: -----
 

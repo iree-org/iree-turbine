@@ -1,4 +1,5 @@
 from typing import Any, Callable, Optional
+import torch.fx as fx
 import inspect
 
 from ..compiler import builder, dispatch_codegen, kernel_codegen
@@ -6,6 +7,7 @@ from ..compiler.ir import Context, Operation
 from .codegen import WaveEmitter
 from .constraints import (
     Constraint,
+    TilingConstraint,
     WorkgroupConstraint,
     get_grid_shape,
 )
@@ -13,7 +15,9 @@ from .codegen import WaveEmitter
 from .expansion import expand_graph
 from ..lang import Grid
 from ..ops import wave_ops
-from .._support.indexing import IndexingContext
+from ..ops.wave_ops import Reduction, CustomOp, get_custom
+from .._support.indexing import IndexingContext, IndexExpr
+import shark_turbine.kernel.lang as tkl
 from .._support.tracing import (
     CapturedTrace,
     CompiledContext,
@@ -49,6 +53,7 @@ class LaunchableWave(Launchable):
         super().__init__(eager_function)
 
         self.constraints = constraints if constraints else []
+        self.induction_vars: dict[CustomOp, IndexExpr] = {}
         self._name = name
         self._f = eager_function
         self._sig = inspect.signature(eager_function)
@@ -61,6 +66,14 @@ class LaunchableWave(Launchable):
             constraint
             for constraint in self.constraints
             if isinstance(constraint, WorkgroupConstraint)
+        ]
+
+    @property
+    def tiling_constraints(self) -> list[TilingConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, TilingConstraint)
         ]
 
     def _trace(self) -> CapturedTrace:
@@ -83,6 +96,28 @@ class LaunchableWave(Launchable):
 
         return trace
 
+    def create_induction_vars(self, trace: CapturedTrace) -> None:
+        """
+        Creates induction variables for all the reductions in the graph
+        and associates tiling constraints all the reduction dimensions
+        with the appropriate induction variables.
+
+        """
+
+        def is_reduction(node: fx.Node):
+            custom = get_custom(node)
+            if isinstance(custom, Reduction):
+                return True
+            return False
+
+        reduction_nodes = trace.walk(is_reduction)
+        for node in reduction_nodes:
+            custom = get_custom(node)
+            self.induction_vars[custom] = tkl.IndexSymbol("ARG" + custom.axis.name)
+            for tiling_constraint in self.tiling_constraints:
+                if tiling_constraint.dim == custom.axis:
+                    tiling_constraint.induction_var = self.induction_vars[custom]
+
     def _trace_and_get_kernel_signature(
         self,
         args,
@@ -93,6 +128,8 @@ class LaunchableWave(Launchable):
         # Trace the function.
         graph = self._trace()
 
+        self.create_induction_vars(graph)
+
         idxc = IndexingContext.current()
         idxc.finalize()
 
@@ -100,8 +137,11 @@ class LaunchableWave(Launchable):
         expand_graph(graph, self.constraints)
 
         kernel_sig = kernel_codegen.KernelSignature()
-        # Fixed values for now, will be determined through constraints
-        self.grid_type.dims = [32, 32]  # Will be determined by constraints
+        self.grid_type.dims = [1, 1, 1]
+        for constraint in self.workgroup_constraints:
+            self.grid_type.dims[constraint.workgroup_dim] = (
+                constraint.dim // constraint.tile_size
+            ).subs(idxc.subs)
         grid = self.grid_type
 
         mb = builder.ModuleBuilder(context=context, module_op=module_op)
