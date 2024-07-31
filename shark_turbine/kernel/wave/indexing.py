@@ -13,26 +13,18 @@ class IndexSequence:
     size: IndexExpr | int
     stride: Optional[IndexExpr | int] = 1
 
-    def __add__(self, other: Any) -> Any:
-        if isinstance(other, IndexSequence):
-            return IndexSequence(
-                self.start + other.start,
-                self.size * other.size,
-                self.stride * other.stride,
-            )
-        else:
-            raise NotImplementedError("IndexSequence addition not implemented!")
+    def _subs(
+        self, value: int | IndexExpr, map: dict[IndexSymbol, int]
+    ) -> int | IndexExpr:
+        new_value = value
+        if isinstance(value, IndexExpr):
+            new_value = value.subs(map)
+        return new_value
 
     def subs(self, map: dict[IndexSymbol, int]):
-        start = self.start
-        if isinstance(self.start, IndexExpr):
-            start = self.start.subs(map)
-        size = self.size
-        if isinstance(self.size, IndexExpr):
-            size = self.size.subs(map)
-        stride = self.stride
-        if isinstance(self.stride, IndexExpr):
-            stride = self.stride.subs(map)
+        start = self._subs(self.start, map)
+        size = self._subs(self.size, map)
+        stride = self._subs(self.stride, map)
         return IndexSequence(start, size, stride)
 
     def __repr__(self):

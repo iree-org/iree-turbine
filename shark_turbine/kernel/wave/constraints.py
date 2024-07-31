@@ -79,11 +79,11 @@ class HardwareConstraint(Constraint):
     @property
     def linearized_thread_id(self) -> IndexExpr:
         thread_ids = [THREAD_0, THREAD_1, THREAD_2]
-        threads_per_block = (
-            [1]
-            + [self.threads_per_block[0]]
-            + [self.threads_per_block[0] * self.threads_per_block[1]]
-        )
+        threads_per_block = [
+            1,
+            self.threads_per_block[0],
+            self.threads_per_block[0] * self.threads_per_block[1],
+        ]
         return sum([x * y for x, y in zip(thread_ids, threads_per_block)])
 
     def apply(self, mma_index: int) -> IndexSequence:
@@ -91,23 +91,23 @@ class HardwareConstraint(Constraint):
         match self.mma_type:
             # (M x K, N x K) -> M x N
             case MMAType.F32_16x16x16_F16:
-                offset = {
-                    0: Piecewise(
+                offset = [
+                    Piecewise(
                         (lane % 16, ~self.ACC), (4 * floor(lane / 16), self.ACC)
                     ),  # M
-                    1: lane % 16,  # N
-                    2: 4 * floor(lane / 16),  # K
-                }
-                size = {
-                    0: Piecewise((0, ~self.ACC), (4, self.ACC)),  # M
-                    1: 0,  # N
-                    2: 4,  # K
-                }
-                stride = {
-                    0: Piecewise((1, ~self.ACC), (16, self.ACC)),  # M
-                    1: 1,  # N
-                    2: 1,  # K
-                }
+                    lane % 16,  # N
+                    4 * floor(lane / 16),  # K
+                ]
+                size = [
+                    Piecewise((1, ~self.ACC), (4, self.ACC)),  # M
+                    1,  # N
+                    4,  # K
+                ]
+                stride = [
+                    Piecewise((1, ~self.ACC), (16, self.ACC)),  # M
+                    1,  # N
+                    1,  # K
+                ]
                 return IndexSequence(
                     offset[mma_index], size[mma_index], stride[mma_index]
                 )

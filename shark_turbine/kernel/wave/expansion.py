@@ -141,25 +141,36 @@ def set_node_indices(
 
     def compute_index(node: fx.Node) -> bool:
         custom = get_custom(node)
-        custom.index = {}
+        custom.index = {dim: None for dim in custom.indexing_dims}
         for dim in custom.indexing_dims:
             for constraint in constraints:
-                if (
+                mma_check = (
+                    isinstance(constraint, HardwareConstraint)
+                    and dim in mma_index
+                    and isinstance(custom, MMA)
+                )
+
+                constraint_check = (
                     not isinstance(constraint, HardwareConstraint)
-                    and dim != constraint.dim
-                ):
+                    and dim == constraint.dim
+                )
+
+                if (not mma_check) and (not constraint_check):
                     continue
-                if not custom.index:
-                    custom.index = {
-                        dim: IndexSequence(0, 1) for dim in custom.indexing_dims
-                    }
+
+                if custom.index[dim] is None:
+                    custom.index[dim] = IndexSequence(0, 0)
+
                 if isinstance(constraint, HardwareConstraint):
-                    if dim in mma_index and isinstance(custom, MMA):
-                        custom.index[dim] += constraint.apply(mma_index[dim])
-                elif dim == constraint.dim:
-                    custom.index[dim] += constraint.apply()
-        if custom.index:
-            setattr(custom.fx_node, "index", custom.index)
+                    # Thread-level constraint specifies size and stride.
+                    index_seq: IndexSequence = constraint.apply(mma_index[dim])
+                    custom.index[dim].size = index_seq.size
+                    custom.index[dim].stride = index_seq.stride
+                else:
+                    index_seq: IndexSequence = constraint.apply()
+                custom.index[dim].start += index_seq.start
+
+        setattr(custom.fx_node, "index", custom.index)
         return False
 
     trace.walk(compute_index)
