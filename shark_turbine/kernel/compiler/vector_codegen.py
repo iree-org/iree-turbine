@@ -392,6 +392,7 @@ def _(emitter: ThreadEmitter, node: fx.Node):
         start_indices,
         AffineMap.get_identity(len(start_indices)),
         pad_value,
+        in_bounds=[True for _ in range(len(vector_shape))],
     )
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
@@ -414,11 +415,13 @@ def _(emitter: ThreadEmitter, node: fx.Node):
         )
     insert_vector = cast_vector(emitter, item, element_type=kb_ir_type.element_type)
     insert_type = VectorType(insert_vector.type)
+    insert_rank = insert_type.rank
 
     # Special case rank-0 broadcast.
     if insert_type.rank == 0:
         broadcast_type = VectorType.get(dest_rank * [1], kb_ir_type.element_type)
         insert_vector = vector_d.broadcast(broadcast_type, insert_vector)
+        insert_rank = 1
 
     permutation_map = AffineMap.get_identity(dest_rank)
     vector_d.transfer_write(
@@ -427,6 +430,7 @@ def _(emitter: ThreadEmitter, node: fx.Node):
         kb_dest,
         start_indices,
         AffineMapAttr.get(permutation_map),
+        in_bounds=[True for _ in range(insert_rank)],
     )
 
 
@@ -457,6 +461,7 @@ def _(emitter: ThreadEmitter, node: fx.Node):
         start_indices,
         AffineMap.get_minor_identity(len(ref_shape), len(vector_shape)),
         pad_value,
+        in_bounds=[True for _ in range(len(vector_shape))],
     )
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
@@ -493,6 +498,7 @@ def _(emitter: ThreadEmitter, node: fx.Node):
         kb_dest,
         start_indices,
         AffineMapAttr.get(permutation_map),
+        in_bounds=[True for _ in range(insert_rank)],
     )
 
 
