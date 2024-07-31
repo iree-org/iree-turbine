@@ -1,13 +1,57 @@
 import operator
-from typing import Any, Callable, ClassVar, Optional
+import sympy
+from typing import Any, Callable, ClassVar, Optional, List, Type
 from dataclasses import dataclass
 import torch.fx as fx
 
+from ..compiler.ir import (
+    InsertionPoint,
+    Location,
+    OpResult,
+    Value,
+    IndexType,
+    MemRefType,
+    VectorType,
+    IntegerAttr,
+    arith_d,
+    func_d,
+    gpu_d,
+    stream_d,
+    vector_d,
+)
+
+# TK infrastructure imports.
+from shark_turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import write, register, mma, read, reduction
-from ..compiler.base import CodegenError
-from ..compiler.ir import InsertionPoint, Location
+from ..compiler.base import CodegenError, NDEBUG
 from ..compiler.kernel_codegen import BoundKernelSignature
 from .._support.tracing import CapturedTrace
+from ..compiler.builder import ScalarBuilder, IRProxyValue
+from ..compiler.vector_codegen import (
+    cast_kernel_buffer,
+    cast_py_literal,
+    cast_py_value,
+    cast_vector,
+)
+
+# Indexing imports.
+from .._support.indexing import IndexingContext
+
+
+@dataclass
+class NodeAttrs:
+    # By default, integers are assumed signed. We propagate unsigned as graph
+    # node attrs.
+    unsigned: bool = False
+
+    @staticmethod
+    def load(py_value) -> "NodeAttrs":
+        if isinstance(py_value, fx.Node):
+            return NodeAttrs(unsigned=bool(py_value.meta.get("unsigned")))
+        return NodeAttrs()
+
+    def store(self, node: fx.Node):
+        node.meta["unsigned"] = self.unsigned
 
 
 @dataclass
@@ -18,15 +62,32 @@ class WaveEmitter:
     trace: CapturedTrace
     ip: InsertionPoint = None
     OP_HANDLERS: ClassVar[dict[str, Callable[["WaveEmitter", fx.Node], None]]] = {}
+    _node_values: ClassVar[dict[fx.Node, List[IRProxyValue]]] = {}
 
     def __post_init__(self):
         self.ip = InsertionPoint(self.root_sig.entry_block)
 
+    def emit_program_invariants(self):
+        self.workgroup_ids = [
+            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 0)),
+            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 1)),
+        ]
+        self.thread_ids = [
+            gpu_d.thread_id(gpu_d.Dimension.x),
+            gpu_d.thread_id(gpu_d.Dimension.y),
+            gpu_d.thread_id(gpu_d.Dimension.z),
+        ]
+
     def emit(self, graph: Optional[fx.Graph] = None):
         with self.ip, Location.unknown():
+            self.emit_program_invariants()
             self._emit_graph(
                 graph if graph is not None else self.trace.get_root_graph()
             )
+
+    def finish(self):
+        with self.ip, Location.unknown():
+            func_d.ReturnOp([])
 
     def _emit_graph(self, graph: fx.Graph):
         """Emits the given graph at the current insertion point."""
@@ -42,6 +103,120 @@ class WaveEmitter:
             raise CodegenError(f"No handler registered for op {target_op}")
 
         handler(self, node)
+
+    def lookup_node_values(self, node: fx.Node) -> List[Value]:
+        assert NDEBUG or isinstance(node, fx.Node)
+        values = self._node_values.get(node)
+        if values is None:
+            values = [self.root_sig.resolve_by_reference(("node", node))]
+            self._node_values[node] = values
+        return values
+
+    def bind_node_proxy(
+        self, node: fx.Node, proxy: IRProxyValue, *, attrs: Optional[NodeAttrs] = None
+    ):
+        """Binds a node's result to a Python/IR proxy object."""
+        assert NDEBUG or (isinstance(node, fx.Node) and isinstance(proxy, IRProxyValue))
+        assert (
+            node not in self._node_values
+        ), f"Cannot rebind node {node}: already bound"
+        if attrs is not None:
+            attrs.store(node)
+        self._node_values[node] = [proxy]
+
+    # Default offset_fn always return 0. Typically would be overriden by
+    # hardware constraints later on.
+    def offset_fn(self, i):
+        return 0
+
+
+def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr, stage: int) -> OpResult:
+    stack: list[OpResult] = []
+
+    # Induction var is accessed outside of the loop. Sets value to value of stage.
+    induction_var = sympy.symbols("ARG0")
+    induction_var_value = [arith_d.constant(IndexType.get(), stage)]
+
+    # TODO: factor this out
+    all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_var_value
+    dynamics = dict(
+        zip(
+            [THREAD_2, THREAD_1, THREAD_0, WORKGROUP_0, WORKGROUP_1, induction_var],
+            all_symbols,
+        )
+    )
+
+    idxc = IndexingContext.current()
+    # Substitute in frozen vars to simplify expression.
+    if not isinstance(expr, sympy.Expr):
+        expr = sympy.sympify(expr)
+    expr = expr.subs(idxc.subs)
+    # Why affine, for now simply create indexing expressions.
+    # This can easily be adapted to affine expressions later.
+    for term in sympy.postorder_traversal(expr):
+        match term:
+            case sympy.Symbol():
+                if term in idxc.subs.keys():
+                    cst = arith_d.constant(IndexType.get(), idxc.subs[term])
+                    stack.append(cst)
+                elif term in dynamics.keys():
+                    stack.append(dynamics[term])
+                else:
+                    raise CodegenError(f"Unknown symbol {term}")
+            case sympy.Integer():
+                stack.append(arith_d.constant(IndexType.get(), int(term)))
+            case sympy.Mul():
+                args = []
+                for _ in range(len(term.args)):
+                    args.append(stack.pop())
+                operation = None
+                # First, multiply all the non-rationals.
+                for arg in args:
+                    if callable(arg):
+                        continue
+                    if operation is None:
+                        operation = arg
+                        continue
+                    operation = arith_d.MulIOp(operation, arg)
+                # Then, multiply with the rationals.
+                for arg in args:
+                    if callable(arg):
+                        operation = arg(operation)
+                stack.append(operation)
+            case sympy.Add():
+                summand = stack.pop()
+                add = summand
+                for _ in range(1, len(term.args)):
+                    add = arith_d.AddIOp(add, stack.pop())
+                stack.append(add)
+            case sympy.Mod():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                mod = arith_d.RemSIOp(lhs, rhs)
+                stack.append(mod)
+            case sympy.floor():
+                # TODO: Since divsi rounds to zero, this seems to work.
+                # But check whether floordivsi is needed.
+                stack.append(stack.pop())
+            case sympy.Rational():
+                numerator = arith_d.constant(IndexType.get(), abs(term.p))
+                denominator = arith_d.constant(IndexType.get(), abs(term.q))
+                # Assumes that the negative term is always carried on the numerator
+                if abs(term.p) > term.p:
+                    zero = arith_d.constant(IndexType.get(), int(0))
+                    numerator = arith_d.SubIOp(zero, numerator)
+                mul = lambda x: x
+                if abs(term.p) != 1:
+                    mul = lambda x: arith_d.MulIOp(x, numerator)
+                operation = lambda x: arith_d.DivSIOp(mul(x), denominator)
+                stack.append(operation)
+            case sympy.UnevaluatedExpr():
+                continue
+            case _:
+                raise CodegenError(f"Can not handle {term} yet")
+    if len(stack) != 1:
+        raise CodegenError(f"Expected single result, got {len(stack)}")
+    return stack[0]
 
 
 def handle_op(op: Callable[..., Any]):
@@ -66,7 +241,32 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
 
 @handle_op(read)
 def handle_read(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("Read: Currently only stub implementation")
+    # This is similar to tkl.store with fixed start indices for now.
+    try:
+        memory, elements_per_thread = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    vector_shape = cast_py_literal(emitter, (elements_per_thread,))
+    # memory has no IR node yet.
+    kb_src, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
+
+    stage = 0
+    if "stage" in node.meta:
+        stage = node.meta["stage"]
+    if not hasattr(node, "index"):
+        raise ValidationError("codegen expected read to have index attr.")
+
+    start_indices = []
+    for dim_indexing in node.index:
+        start_indices.append(
+            gen_sympy_index(emitter, node.index[dim_indexing].start, stage)
+        )
+
+    element_type = kb_ir_type.element_type
+    vector_type = VectorType.get(vector_shape, element_type)
+    result = vector_d.load(vector_type, kb_src, start_indices)
+    emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
 @handle_op(write)
@@ -86,7 +286,33 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
 
 @handle_op(operator.add)
 def handle_add(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("add: Currently only stub implementation")
+    try:
+        lhs, rhs = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    lhs = cast_py_value(emitter, lhs)
+    rhs = cast_py_value(emitter, rhs)
+
+    def get_type(value: IRProxyValue):
+        return value.ir_value.type
+
+    # TODO: this is too hard coded
+    if (lhs_type := get_type(lhs)) != (rhs_type := get_type(rhs)):
+        if isinstance(lhs_type.element_type, F32Type):
+            lhs = arith_d.truncf(
+                VectorType.get(lhs_type.shape, F16Type.get()), lhs.ir_value
+            )
+            rhs = rhs.ir_value
+        elif isinstance(rhs_type.element_type, F32Type):
+            lhs = lhs.ir_value
+            rhs = arith_d.truncf(
+                VectorType.get(rhs_type.shape, F16Type.get()), rhs.ir_value
+            )
+    else:
+        lhs = lhs.ir_value
+        rhs = rhs.ir_value
+    result = arith_d.addf(lhs, rhs)
+    emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
 @handle_op(operator.getitem)

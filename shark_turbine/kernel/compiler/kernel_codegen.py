@@ -31,6 +31,7 @@ from ..lang.kernel_buffer import (
     KernelBufferUsage,
     is_kernel_buffer_meta_derived,
 )
+from ..lang.wave_types import Memory
 from ..lang.grid import Grid
 
 from .base import (
@@ -188,6 +189,49 @@ class KernelSignature:
                     ("grid", index), BindingType.INDEX_VALUE, name=f"grid{index}"
                 )
             )
+
+    def determine_input_output_buffers(self, graph: fx.Graph):
+        placeholder_nodes: list[fx.Node] = []
+        for node in graph.nodes:
+            if node.op != "placeholder":
+                continue
+            placeholder_nodes.append(node)
+
+        def only_read_dependencies(node):
+            return all(["read" in x.name for x in node.users.keys()])
+
+        def only_write_dependencies(node):
+            if len(node.users) == 0:
+                return False
+            return all(["write" in x.name for x in node.users.keys()])
+
+        for node in placeholder_nodes:
+            index = None
+            for i, binding in enumerate(self.bindings):
+                if binding.reference[1] == node:
+                    index = i
+                    break
+            if index == None:
+                continue
+            # TODO: remove this hack, this is just to make things pass
+            # I did not investigate yet why it does not correctly determine the
+            # buffer to only have read dependencies, even though that is the case
+            usage = KernelBufferUsage.INPUT
+            if only_read_dependencies(node):
+                usage = KernelBufferUsage.INPUT
+
+            if only_write_dependencies(node):
+                usage = KernelBufferUsage.OUTPUT
+
+            # Create new Memory type with the correct usage
+            memory_type = self.bindings[index].kernel_buffer_type
+            self.bindings[index].kernel_buffer_type = Memory[
+                *memory_type.symbolic_shape,
+                memory_type.address_space,
+                memory_type.dtype,
+                usage,
+            ]
+        return
 
     def __repr__(self):
         parts = []
