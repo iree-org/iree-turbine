@@ -40,12 +40,17 @@ class HardwareConstraint(Constraint):
     we want all mma operations in the microkernel to be
     mapped to a hardware mma instruction of shape (16x16x16).
     This translates to a hardware specific index constraint.
+
+    Not all computation graphs have mma operators in them. In
+    these situations, the user can specify the vector shape they
+    want to tile to by specifying the vector shapes dictionary
+    which maps a tensor dimension to its corresponding tile size.
     """
 
     threads_per_wave: int
     waves_per_block: Optional[tuple[int, int, int]] = None
     mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
-    vector_shapes: Optional[dict[IndexExpr, int]] = None
+    vector_shapes: Optional[dict[IndexSymbol, int]] = None
 
     @property
     def mma_matrix_shapes(self):
