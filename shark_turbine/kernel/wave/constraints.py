@@ -176,3 +176,41 @@ class TilingConstraint(Constraint):
                 "Index is being computed without setting induction variable"
             )
         return IndexSequence(self.induction_var * self.tile_size, 1)
+
+
+@dataclass
+class WaveConstraint(Constraint):
+    """
+    A constraint of the form `tkw.WaveConstraint(K, WAVE_K)` specifies
+    that we want distribute the K dimension among multiple waves which
+    each wave operating on a tile size of WAVE_K. The assumption is
+    that the K dimension has already been distributed among workgroups.
+    If the K dimension has been distributed among workgroups with a
+    tile size of BLOCK_K, then the number of waves along the K dimension
+    is given by BLOCK_K // WAVE_K.
+
+    This constraint adds an index constraint to the K-th dimension of a
+    a tensor of the form WAVE_K * wave_id. The index of the wave
+    is determined by the following mapping:
+    workgroup id 0 -> wave/thread id x
+    workgroup id 1 -> wave/thread id y
+    workgroup id 2 -> wave/thread id z
+    (If the tensor dimension has been distributed along workgroup dimension
+    {0, 1, 2}, then the corresponding thread id is {x, y, z}).
+
+    Because we represent the number of threads per block as
+    [wave_id_0 * threads_per_wave, wave_id_1, wave_id_2], special care is
+    required when computing wave_id_0. Specifically,
+    wave_id_0 = floor(thread_id_0 / threads_per_wave)
+    wave_id_1 = thread_id_1
+    wave_id_2 = thread_id_2
+    """
+
+    dim: IndexExpr
+    tile_size: IndexExpr
+    wave_id: Optional[IndexExpr] = None
+
+    def apply(self) -> IndexSequence:
+        if self.wave_id is None:
+            raise ValueError("Index is being computed without setting wave id")
+        return IndexSequence(self.tile_size * self.wave_id, 1)

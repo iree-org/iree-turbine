@@ -10,10 +10,13 @@ from .constraints import (
     TilingConstraint,
     WorkgroupConstraint,
     get_grid_shape,
+    WaveConstraint,
+    HardwareConstraint,
 )
 from .codegen import WaveEmitter
 from .expansion import expand_graph
 from ..lang import Grid
+from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom
 from .._support.indexing import IndexingContext, IndexExpr
@@ -76,6 +79,22 @@ class LaunchableWave(Launchable):
             if isinstance(constraint, TilingConstraint)
         ]
 
+    @property
+    def wave_constraints(self) -> list[WaveConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, WaveConstraint)
+        ]
+
+    @property
+    def hardware_constraints(self) -> list[HardwareConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, HardwareConstraint)
+        ]
+
     def _trace(self) -> CapturedTrace:
         region_graph = KernelRegionGraph()
         with CompiledContext(region_graph, grid_type=self.grid_type) as context:
@@ -118,6 +137,25 @@ class LaunchableWave(Launchable):
                 if tiling_constraint.dim == custom.axis:
                     tiling_constraint.induction_var = self.induction_vars[custom]
 
+    def initialize_wave_constraints(self, trace: CapturedTrace) -> None:
+        """
+        For each wave constraint, determines the appropriate wave id by looking
+        for workgroup constraints along the same dimension and using information
+        from the hardware constraints.
+
+        """
+
+        hardware_constraint = self.hardware_constraints[0]
+        thread_ids = [THREAD_0, THREAD_1, THREAD_2]
+        for wave_constraint in self.wave_constraints:
+            for workgroup_constraint in self.workgroup_constraints:
+                if wave_constraint.dim == workgroup_constraint.dim:
+                    wave_constraint.wave_id = thread_ids[
+                        workgroup_constraint.workgroup_dim
+                    ]
+                    if workgroup_constraint.workgroup_dim == 0:
+                        wave_constraint.wave_id /= hardware_constraint.threads_per_wave
+
     def _trace_and_get_kernel_signature(
         self,
         args,
@@ -129,6 +167,7 @@ class LaunchableWave(Launchable):
         graph = self._trace()
 
         self.create_induction_vars(graph)
+        self.initialize_wave_constraints(graph)
 
         idxc = IndexingContext.current()
         idxc.finalize()

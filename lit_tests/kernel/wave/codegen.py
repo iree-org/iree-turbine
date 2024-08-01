@@ -46,6 +46,8 @@ def test_read():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -67,6 +69,8 @@ def test_add():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -89,6 +93,8 @@ def test_neg():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -111,6 +117,8 @@ def test_sub():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -133,6 +141,8 @@ def test_get_item():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
