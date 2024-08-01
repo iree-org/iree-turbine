@@ -44,7 +44,7 @@ class ConstraintsTest(unittest.TestCase):
 
         assert constraints[0].iterations() == ceiling(M / BLOCK_M)
         assert constraints[1].iterations() == ceiling(N / BLOCK_N)
-        assert constraints[1].apply() == I * BLOCK_N
+        assert constraints[1].apply().start == I * BLOCK_N
 
         with pytest.raises(
             ValueError,
