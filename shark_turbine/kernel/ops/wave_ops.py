@@ -206,6 +206,7 @@ class CustomOp(ABC):
     def custom_string(self, value_map: dict[str, str]) -> str:
         # print all variables of the node apart from graph and fx_node
         ignore_list = ["fx_node", "graph"]
+
         if self.index is None:
             ignore_list += ["index"]
         vars_list = [
