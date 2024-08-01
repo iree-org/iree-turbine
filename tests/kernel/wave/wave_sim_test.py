@@ -170,7 +170,7 @@ def test_gemm():
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
@@ -347,7 +347,7 @@ def test_igemm_conv(n, c, nf, stride):
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 1)]
-    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
