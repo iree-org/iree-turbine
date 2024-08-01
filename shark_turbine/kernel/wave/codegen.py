@@ -55,6 +55,7 @@ class WaveEmitter:
         self.workgroup_ids = [
             stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 0)),
             stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 1)),
+            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 2)),
         ]
         self.thread_ids = [
             gpu_d.thread_id(gpu_d.Dimension.x),
@@ -109,7 +110,7 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     all_symbols = emitter.thread_ids + emitter.workgroup_ids
     dynamics = dict(
         zip(
-            [THREAD_2, THREAD_1, THREAD_0, WORKGROUP_0, WORKGROUP_1],
+            [THREAD_2, THREAD_1, THREAD_0, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2],
             all_symbols,
         )
     )
