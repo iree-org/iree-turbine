@@ -207,7 +207,7 @@ class CustomOp(ABC):
         vars_list = [
             f"{key}={value}"
             for key, value in vars(self).items()
-            if key not in ignore_list
+            if key not in ignore_list and value is not None
         ]
         vars_str = ", ".join(vars_list)
         return f"{self.tkw_op_name}({vars_str})"
