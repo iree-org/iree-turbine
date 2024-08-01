@@ -13,7 +13,7 @@ In a typical code generation stack, there are three elements:
 This level handles #2.
 """
 
-from typing import Any, Optional, Type
+from typing import Any, Callable, Optional, Type
 
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -33,6 +33,7 @@ from ..lang.kernel_buffer import (
 )
 from ..lang.wave_types import Memory
 from ..lang.grid import Grid
+from ..ops.wave_ops import get_custom, Placeholder, Read, Write
 
 from .base import (
     CodegenError,
@@ -53,6 +54,14 @@ from .ir import (
     Value,
     func_d,
 )
+
+
+def filter_fx_graph(graph: fx.Graph, filter: Callable[[fx.Node], bool]):
+    filtered_nodes: list[fx.Node] = []
+    for node in graph.nodes:
+        if filter(node):
+            filtered_nodes.append(node)
+    return filtered_nodes
 
 
 class BindingType(Enum):
@@ -150,12 +159,17 @@ class KernelSignature:
         ]
 
     def add_from_graph_placeholders(self, graph: fx.Graph):
-        placeholder_nodes: list[fx.Node] = []
-        for node in graph.nodes:
-            if node.op != "placeholder":
-                continue
-            placeholder_nodes.append(node)
 
+        # Extract all placeholder nodes.
+        def is_placeholder(node: fx.Node):
+            custom = get_custom(node)
+            if isinstance(custom, Placeholder):
+                return True
+            return False
+
+        placeholder_nodes = filter_fx_graph(graph, is_placeholder)
+
+        # Create bindings for placeholder nodes.
         for node in placeholder_nodes:
             t = node.type
             if is_kernel_buffer_meta_derived(t):
@@ -191,19 +205,31 @@ class KernelSignature:
             )
 
     def determine_input_output_buffers(self, graph: fx.Graph):
-        placeholder_nodes: list[fx.Node] = []
-        for node in graph.nodes:
-            if node.op != "placeholder":
-                continue
-            placeholder_nodes.append(node)
+        # Extract all placeholder nodes.
+        def is_placeholder(node: fx.Node):
+            custom = get_custom(node)
+            if isinstance(custom, Placeholder):
+                return True
+            return False
+
+        placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
         def only_read_dependencies(node):
-            return all(["read" in x.name for x in node.users.keys()])
+            return all([isinstance(get_custom(x), Read) for x in node.users.keys()])
 
         def only_write_dependencies(node):
             if len(node.users) == 0:
                 return False
-            return all(["write" in x.name for x in node.users.keys()])
+            return all([isinstance(get_custom(x), Write) for x in node.users.keys()])
+
+        def read_write_dependencies(node):
+            if len(node.users) == 0:
+                return False
+            has_read = any([isinstance(get_custom(x), Read) for x in node.users.keys()])
+            has_write = any(
+                [isinstance(get_custom(x), Write) for x in node.users.keys()]
+            )
+            return has_read and has_write
 
         for node in placeholder_nodes:
             index = None
@@ -213,15 +239,16 @@ class KernelSignature:
                     break
             if index == None:
                 continue
-            # TODO: remove this hack, this is just to make things pass
-            # I did not investigate yet why it does not correctly determine the
-            # buffer to only have read dependencies, even though that is the case
-            usage = KernelBufferUsage.INPUT
+
+            usage = KernelBufferUsage.NONE
             if only_read_dependencies(node):
                 usage = KernelBufferUsage.INPUT
 
             if only_write_dependencies(node):
                 usage = KernelBufferUsage.OUTPUT
+
+            if read_write_dependencies(node):
+                usage = KernelBufferUsage.TEMPORARY
 
             # Create new Memory type with the correct usage
             memory_type = self.bindings[index].kernel_buffer_type

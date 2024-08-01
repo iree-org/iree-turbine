@@ -39,22 +39,6 @@ from .._support.indexing import IndexingContext
 
 
 @dataclass
-class NodeAttrs:
-    # By default, integers are assumed signed. We propagate unsigned as graph
-    # node attrs.
-    unsigned: bool = False
-
-    @staticmethod
-    def load(py_value) -> "NodeAttrs":
-        if isinstance(py_value, fx.Node):
-            return NodeAttrs(unsigned=bool(py_value.meta.get("unsigned")))
-        return NodeAttrs()
-
-    def store(self, node: fx.Node):
-        node.meta["unsigned"] = self.unsigned
-
-
-@dataclass
 class WaveEmitter:
     """Emits a warp function as a `func` with a signature derived from the gm."""
 
@@ -112,36 +96,20 @@ class WaveEmitter:
             self._node_values[node] = values
         return values
 
-    def bind_node_proxy(
-        self, node: fx.Node, proxy: IRProxyValue, *, attrs: Optional[NodeAttrs] = None
-    ):
+    def bind_node_proxy(self, node: fx.Node, proxy: IRProxyValue):
         """Binds a node's result to a Python/IR proxy object."""
         assert NDEBUG or (isinstance(node, fx.Node) and isinstance(proxy, IRProxyValue))
-        assert (
-            node not in self._node_values
-        ), f"Cannot rebind node {node}: already bound"
-        if attrs is not None:
-            attrs.store(node)
         self._node_values[node] = [proxy]
 
-    # Default offset_fn always return 0. Typically would be overriden by
-    # hardware constraints later on.
-    def offset_fn(self, i):
-        return 0
 
-
-def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr, stage: int) -> OpResult:
+def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     stack: list[OpResult] = []
 
-    # Induction var is accessed outside of the loop. Sets value to value of stage.
-    induction_var = sympy.symbols("ARG0")
-    induction_var_value = [arith_d.constant(IndexType.get(), stage)]
-
     # TODO: factor this out
-    all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_var_value
+    all_symbols = emitter.thread_ids + emitter.workgroup_ids
     dynamics = dict(
         zip(
-            [THREAD_2, THREAD_1, THREAD_0, WORKGROUP_0, WORKGROUP_1, induction_var],
+            [THREAD_2, THREAD_1, THREAD_0, WORKGROUP_0, WORKGROUP_1],
             all_symbols,
         )
     )
@@ -251,17 +219,12 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     # memory has no IR node yet.
     kb_src, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
 
-    stage = 0
-    if "stage" in node.meta:
-        stage = node.meta["stage"]
     if not hasattr(node, "index"):
         raise ValidationError("codegen expected read to have index attr.")
 
     start_indices = []
     for dim_indexing in node.index:
-        start_indices.append(
-            gen_sympy_index(emitter, node.index[dim_indexing].start, stage)
-        )
+        start_indices.append(gen_sympy_index(emitter, node.index[dim_indexing].start))
 
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
@@ -293,24 +256,11 @@ def handle_add(emitter: WaveEmitter, node: fx.Node):
     lhs = cast_py_value(emitter, lhs)
     rhs = cast_py_value(emitter, rhs)
 
-    def get_type(value: IRProxyValue):
-        return value.ir_value.type
+    if lhs.ir_value.type != rhs.ir_value.type:
+        raise ValidationError("Expected lhs and rhs to have same type.")
 
-    # TODO: this is too hard coded
-    if (lhs_type := get_type(lhs)) != (rhs_type := get_type(rhs)):
-        if isinstance(lhs_type.element_type, F32Type):
-            lhs = arith_d.truncf(
-                VectorType.get(lhs_type.shape, F16Type.get()), lhs.ir_value
-            )
-            rhs = rhs.ir_value
-        elif isinstance(rhs_type.element_type, F32Type):
-            lhs = lhs.ir_value
-            rhs = arith_d.truncf(
-                VectorType.get(rhs_type.shape, F16Type.get()), rhs.ir_value
-            )
-    else:
-        lhs = lhs.ir_value
-        rhs = rhs.ir_value
+    lhs = lhs.ir_value
+    rhs = rhs.ir_value
     result = arith_d.addf(lhs, rhs)
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
