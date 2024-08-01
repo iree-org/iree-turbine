@@ -2,12 +2,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
-import shark_turbine.kernel.lang as tkl
 from sympy import ceiling, Piecewise, floor
 
 from .._support.indexing import IndexExpr, IndexSymbol
 from .indexing import IndexSequence
-from .distribution_symbols import *
+from ..lang.global_symbols import *
 
 
 class MMAType(Enum):
@@ -54,11 +53,6 @@ class HardwareConstraint(Constraint):
     mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
     vector_shapes: Optional[dict[IndexSymbol, int]] = None
 
-    def __post_init__(self):
-        self.LHS = tkl.sym.MMA_LHS
-        self.RHS = tkl.sym.MMA_RHS
-        self.ACC = tkl.sym.MMA_ACC
-
     @property
     def mma_matrix_shapes(self) -> tuple[int]:
         # TODO: Eventually the shapes and indices should be provided by a tool
@@ -93,18 +87,18 @@ class HardwareConstraint(Constraint):
             case MMAType.F32_16x16x16_F16:
                 offset = [
                     Piecewise(
-                        (lane % 16, ~self.ACC), (4 * floor(lane / 16), self.ACC)
+                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
                     ),  # M
                     lane % 16,  # N
                     4 * floor(lane / 16),  # K
                 ]
                 size = [
-                    Piecewise((1, ~self.ACC), (4, self.ACC)),  # M
+                    Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
                     1,  # N
                     4,  # K
                 ]
                 stride = [
-                    Piecewise((1, ~self.ACC), (16, self.ACC)),  # M
+                    Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
                     1,  # N
                     1,  # K
                 ]

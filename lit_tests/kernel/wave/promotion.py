@@ -8,7 +8,7 @@ import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
 from shark_turbine.kernel.wave.promotion import promote_node
 from shark_turbine.kernel.wave.hoisting import hoist_allocs
-from shark_turbine.kernel.wave.address_spaces import *
+from shark_turbine.kernel.lang.global_symbols import *
 from shark_turbine.kernel._support.tracing import CapturedTrace
 from shark_turbine.kernel._support.indexing import IndexingContext
 from shark_turbine.kernel.ops.wave_ops import *
@@ -92,7 +92,7 @@ def test_read_write_equal_sizes():
         # CHECK-NEXT: %read
         # CHECK-SAME: (%a, 4)
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, N), f16, SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, N), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %write_1
         # CHECK-SAME: (%read, %allocate, 4)
         # CHECK-NEXT: %read_1
@@ -150,9 +150,9 @@ def test_gemm():
         # CHECK-NEXT: %c
         # CHECK-NEXT: %register
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, K), f16, SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, K), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %allocate_1
-        # CHECK-SAME: ((N, K), f16, SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((N, K), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: reduction
         # CHECK-NEXT: %write
         # CHECK-SAME: (%reduction, %c, 4)

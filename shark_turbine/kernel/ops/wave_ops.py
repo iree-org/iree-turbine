@@ -22,7 +22,7 @@ from .._support.indexing import IndexExpr, IndexSymbol
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
-import shark_turbine.kernel.lang as tkl
+from ..lang.global_symbols import MMA_ACC, MMA_LHS, MMA_RHS
 
 T = TypeVar("T", bound=Type[Any])
 AccT = TypeVar("AccT")
@@ -534,17 +534,17 @@ class MMA(CustomOp):
 
     @property
     def lhs_index(self) -> list[IndexSequence]:
-        operand_map = {tkl.sym.MMA_LHS: 1, tkl.sym.MMA_RHS: 0, tkl.sym.MMA_ACC: 0}
+        operand_map = {MMA_LHS: 1, MMA_RHS: 0, MMA_ACC: 0}
         return self.operand_index(operand_map, self.lhs_type.symbolic_shape)
 
     @property
     def rhs_index(self) -> list[IndexSequence]:
-        operand_map = {tkl.sym.MMA_LHS: 0, tkl.sym.MMA_RHS: 1, tkl.sym.MMA_ACC: 0}
+        operand_map = {MMA_LHS: 0, MMA_RHS: 1, MMA_ACC: 0}
         return self.operand_index(operand_map, self.rhs_type.symbolic_shape)
 
     @property
     def acc_index(self) -> list[IndexSequence]:
-        operand_map = {tkl.sym.MMA_LHS: 0, tkl.sym.MMA_RHS: 0, tkl.sym.MMA_ACC: 1}
+        operand_map = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}
         if self.acc.type is None:
             return None
         return self.operand_index(operand_map, self.acc_type.symbolic_shape)
