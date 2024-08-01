@@ -114,7 +114,7 @@ class Register(metaclass=KernelBufferMeta):
 
 class IndexMapping:
     """
-    Represents am mapping between 2 sets of indices.
+    Represents a mapping between 2 sets of indices.
     """
 
     mapping_func: ClassVar[Callable[tuple[IndexExpr, ...], tuple[IndexExpr, ...]]]
