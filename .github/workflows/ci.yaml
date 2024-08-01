@@ -60,7 +60,7 @@ jobs:
       - name: Run LIT tests
         if: ${{ !cancelled() }}
         run: |
-          lit lit_tests/
+          lit lit_tests/ -v
 
       - name: MyPy Type Checking
         if: ${{ !cancelled() }}
