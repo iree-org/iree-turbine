@@ -2,7 +2,7 @@ from ...support.logging import get_logger
 from shark_turbine.kernel._support.tracing import CapturedTrace
 import torch.fx as fx
 from ..ops.wave_ops import *
-from .address_spaces import *
+from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.hoisting")
 
