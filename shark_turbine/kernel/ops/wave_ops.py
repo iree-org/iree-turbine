@@ -42,9 +42,9 @@ def allocate(
 
 def read(
     memory: "Memory",
-    elements_per_thread: Optional[IndexExpr] = None,
+    elements_per_thread: Optional[IndexExpr | int] = None,
     mapping: Optional[IndexMapping] = None,
-    shape: Optional[tuple[IndexExpr, ...]] = None,
+    shape: Optional[tuple[IndexExpr]] = None,
 ) -> "Register":
     ...
 
@@ -568,6 +568,8 @@ class MMA(CustomOp):
 class Read(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any] = None
+    mapping: Optional[IndexMapping] = None
+    shape: Optional[tuple(IndexExpr)] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -630,6 +632,7 @@ class Write(CustomOp):
     register_: fx.Proxy
     memory: fx.Proxy
     elements_per_thread: Optional[Any]
+    mapping: Optional[IndexMapping] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
