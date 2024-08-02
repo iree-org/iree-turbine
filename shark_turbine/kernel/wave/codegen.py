@@ -121,7 +121,7 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     all_symbols = emitter.thread_ids + emitter.workgroup_ids
     dynamics = dict(
         zip(
-            [THREAD_2, THREAD_1, THREAD_0, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2],
+            [THREAD_0, THREAD_1, THREAD_2, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2],
             all_symbols,
         )
     )
