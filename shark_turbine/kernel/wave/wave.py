@@ -82,7 +82,7 @@ class LaunchableWave(Launchable):
             # Get all explictly defined custom ops
             custom_ops: dict[str, wave_ops.CustomOp] = {
                 cls.tkw_op_name: cls
-                for name, cls in inspect.getmembers(wave_ops, inspect.isclass)
+                for _, cls in inspect.getmembers(wave_ops, inspect.isclass)
                 if issubclass(cls, wave_ops.CustomOp) and hasattr(cls, "tkw_op_name")
             }
 
@@ -106,14 +106,12 @@ class LaunchableWave(Launchable):
 
         def is_reduction(node: fx.Node):
             custom = get_custom(node)
-            if isinstance(custom, Reduction):
-                return True
-            return False
+            return isinstance(custom, Reduction)
 
         reduction_nodes = trace.walk(is_reduction)
         for node in reduction_nodes:
             custom = get_custom(node)
-            self.induction_vars[custom] = tkl.IndexSymbol("ARG" + custom.axis.name)
+            self.induction_vars[custom] = tkl.IndexSymbol("$ARG" + custom.axis.name)
             for tiling_constraint in self.tiling_constraints:
                 if tiling_constraint.dim == custom.axis:
                     tiling_constraint.induction_var = self.induction_vars[custom]
