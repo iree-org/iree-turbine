@@ -89,7 +89,7 @@ def test_read():
 
 
 @run
-def test_add():
+def test_add_float():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
@@ -116,6 +116,28 @@ def test_add():
         # CHECK: %[[IDX_Y:.+]] = arith.muli %[[WG_1]], %[[C16_1]]
         # CHECK: %[[SLICE:.+]] = vector.load %[[DATA]][%[[IDX_X]], %[[IDX_Y]]] : memref<16x16xf16>, vector<4xf16>
         # CHECK: arith.addf %[[SLICE]], %[[SLICE]] : vector<4xf16>
+
+
+@run
+def test_add_integer():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+
+    @tkw.wave(constraints)
+    def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32]):
+        a_reg = tkw.read(a, elements_per_thread=4)
+        res = a_reg + a_reg
+
+    with codegen_test_context():
+        a = torch.ones(16, 16, dtype=torch.int32)
+        print(test(a).module_op)
+        # CHECK: vector.load
+        # CHECK: arith.addi {{.*}} : vector<4xi32>
 
 
 @launch
