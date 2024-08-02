@@ -8,9 +8,11 @@ from ..compiler.ir import (
     InsertionPoint,
     Location,
     OpResult,
+    IrType,
     Value,
     IndexType,
     MemRefType,
+    ShapedType,
     VectorType,
     IntegerAttr,
     arith_d,
@@ -19,14 +21,15 @@ from ..compiler.ir import (
     stream_d,
     vector_d,
 )
+from shark_turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_type
 
 # TK infrastructure imports.
 from shark_turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import write, register, mma, read, reduction
-from ..compiler.base import CodegenError, NDEBUG
+from ..compiler.base import CodegenError, ValidationError, NDEBUG
 from ..compiler.kernel_codegen import BoundKernelSignature
 from .._support.tracing import CapturedTrace
-from ..compiler.builder import ScalarBuilder, IRProxyValue
+from ..compiler.builder import IRProxyValue
 from ..compiler.vector_codegen import (
     cast_kernel_buffer,
     cast_py_literal,
@@ -101,6 +104,14 @@ class WaveEmitter:
         """Binds a node's result to a Python/IR proxy object."""
         assert NDEBUG or (isinstance(node, fx.Node) and isinstance(proxy, IRProxyValue))
         self._node_values[node] = [proxy]
+
+
+def get_type_or_element_type(operand_type: IrType):
+    assert isinstance(operand_type, IrType)
+    if isinstance(operand_type, ShapedType):
+        return operand_type.element_type
+    else:
+        return operand_type
 
 
 def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
@@ -259,10 +270,18 @@ def handle_add(emitter: WaveEmitter, node: fx.Node):
 
     if lhs.ir_value.type != rhs.ir_value.type:
         raise ValidationError("Expected lhs and rhs to have same type.")
+    element_type = get_type_or_element_type(lhs.ir_value.type)
 
     lhs = lhs.ir_value
     rhs = rhs.ir_value
-    result = arith_d.addf(lhs, rhs)
+
+    if _is_float_type(element_type):
+        result = arith_d.addf(lhs, rhs)
+    elif _is_integer_like_type(element_type):
+        result = arith_d.addi(lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 

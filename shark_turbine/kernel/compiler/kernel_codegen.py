@@ -56,6 +56,13 @@ from .ir import (
 )
 
 
+# Filter function to check for placeholder nodes.
+def is_placeholder(node: fx.Node):
+    custom = get_custom(node)
+    return isinstance(custom, Placeholder)
+
+
+# Util fn to filter nodes in a graph based on specfied filter fn.
 def filter_fx_graph(graph: fx.Graph, filter: Callable[[fx.Node], bool]):
     filtered_nodes: list[fx.Node] = []
     for node in graph.nodes:
@@ -159,14 +166,7 @@ class KernelSignature:
         ]
 
     def add_from_graph_placeholders(self, graph: fx.Graph):
-
         # Extract all placeholder nodes.
-        def is_placeholder(node: fx.Node):
-            custom = get_custom(node)
-            if isinstance(custom, Placeholder):
-                return True
-            return False
-
         placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
         # Create bindings for placeholder nodes.
@@ -206,12 +206,6 @@ class KernelSignature:
 
     def determine_input_output_buffers(self, graph: fx.Graph):
         # Extract all placeholder nodes.
-        def is_placeholder(node: fx.Node):
-            custom = get_custom(node)
-            if isinstance(custom, Placeholder):
-                return True
-            return False
-
         placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
         def only_read_dependencies(node):
@@ -222,15 +216,6 @@ class KernelSignature:
                 return False
             return all([isinstance(get_custom(x), Write) for x in node.users.keys()])
 
-        def read_write_dependencies(node):
-            if len(node.users) == 0:
-                return False
-            has_read = any([isinstance(get_custom(x), Read) for x in node.users.keys()])
-            has_write = any(
-                [isinstance(get_custom(x), Write) for x in node.users.keys()]
-            )
-            return has_read and has_write
-
         for node in placeholder_nodes:
             index = None
             for i, binding in enumerate(self.bindings):
@@ -240,15 +225,13 @@ class KernelSignature:
             if index == None:
                 continue
 
-            usage = KernelBufferUsage.NONE
+            # TODO: Match KernelBufferUsage to what bufferType that is expected on IREE.
+            usage = KernelBufferUsage.INPUT
             if only_read_dependencies(node):
                 usage = KernelBufferUsage.INPUT
 
             if only_write_dependencies(node):
                 usage = KernelBufferUsage.OUTPUT
-
-            if read_write_dependencies(node):
-                usage = KernelBufferUsage.TEMPORARY
 
             # Create new Memory type with the correct usage
             memory_type = self.bindings[index].kernel_buffer_type
