@@ -834,7 +834,7 @@ def cast_kernel_buffer(
             f"Expected a KernelBuffer (aka. `memref`) but got `{ir_type}`"
         )
 
-    if not issubclass(py_type, KernelBuffer):
+    if not (issubclass(py_type, KernelBuffer) or issubclass(py_type, tkl.Memory)):
         raise CodegenError(
             f"Expected an lvalue of type KernelBuffer but got '{py_type}' for node {node}"
         )

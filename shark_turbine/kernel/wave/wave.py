@@ -136,13 +136,18 @@ class LaunchableWave(Launchable):
         # Expansion
         expand_graph(graph, self.constraints)
 
-        kernel_sig = kernel_codegen.KernelSignature()
         self.grid_type.dims = [1, 1, 1]
         for constraint in self.workgroup_constraints:
             self.grid_type.dims[constraint.workgroup_dim] = (
                 constraint.dim // constraint.tile_size
             ).subs(idxc.subs)
         grid = self.grid_type
+
+        root_graph = graph.get_root_graph()
+        kernel_sig = kernel_codegen.KernelSignature()
+        kernel_sig.add_from_graph_placeholders(root_graph)
+        kernel_sig.add_grid(self.grid_type)
+        kernel_sig.determine_input_output_buffers(root_graph)
 
         mb = builder.ModuleBuilder(context=context, module_op=module_op)
         entrypoint_name = self._name
@@ -151,12 +156,14 @@ class LaunchableWave(Launchable):
 
         emitter = WaveEmitter(dispatch_entrypoint, graph)
         emitter.emit(graph.get_root_graph())
+        emitter.finish()
 
-        return graph
+        return mb, graph
 
     def test_execute(self, args, kwargs):
         # For now only tracing
-        self._trace_and_get_kernel_signature(args, kwargs)
+        mb, graph = self._trace_and_get_kernel_signature(args, kwargs)
+        return mb
 
     def aot_execute(self, args, kwargs):
         raise NotImplementedError("AOT execution for wave not implemented yet.")

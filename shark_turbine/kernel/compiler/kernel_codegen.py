@@ -13,7 +13,7 @@ In a typical code generation stack, there are three elements:
 This level handles #2.
 """
 
-from typing import Any, Optional, Type
+from typing import Any, Callable, Optional, Type
 
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -31,7 +31,9 @@ from ..lang.kernel_buffer import (
     KernelBufferUsage,
     is_kernel_buffer_meta_derived,
 )
+from ..lang.wave_types import Memory
 from ..lang.grid import Grid
+from ..ops.wave_ops import get_custom, Placeholder, Read, Write
 
 from .base import (
     CodegenError,
@@ -52,6 +54,21 @@ from .ir import (
     Value,
     func_d,
 )
+
+
+# Filter function to check for placeholder nodes.
+def is_placeholder(node: fx.Node):
+    custom = get_custom(node)
+    return isinstance(custom, Placeholder)
+
+
+# Util fn to filter nodes in a graph based on specfied filter fn.
+def filter_fx_graph(graph: fx.Graph, filter: Callable[[fx.Node], bool]):
+    filtered_nodes: list[fx.Node] = []
+    for node in graph.nodes:
+        if filter(node):
+            filtered_nodes.append(node)
+    return filtered_nodes
 
 
 class BindingType(Enum):
@@ -149,12 +166,10 @@ class KernelSignature:
         ]
 
     def add_from_graph_placeholders(self, graph: fx.Graph):
-        placeholder_nodes: list[fx.Node] = []
-        for node in graph.nodes:
-            if node.op != "placeholder":
-                continue
-            placeholder_nodes.append(node)
+        # Extract all placeholder nodes.
+        placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
+        # Create bindings for placeholder nodes.
         for node in placeholder_nodes:
             t = node.type
             if is_kernel_buffer_meta_derived(t):
@@ -188,6 +203,45 @@ class KernelSignature:
                     ("grid", index), BindingType.INDEX_VALUE, name=f"grid{index}"
                 )
             )
+
+    def determine_input_output_buffers(self, graph: fx.Graph):
+        # Extract all placeholder nodes.
+        placeholder_nodes = filter_fx_graph(graph, is_placeholder)
+
+        def only_read_dependencies(node):
+            return all([isinstance(get_custom(x), Read) for x in node.users.keys()])
+
+        def only_write_dependencies(node):
+            if len(node.users) == 0:
+                return False
+            return all([isinstance(get_custom(x), Write) for x in node.users.keys()])
+
+        for node in placeholder_nodes:
+            index = None
+            for i, binding in enumerate(self.bindings):
+                if binding.reference[1] == node:
+                    index = i
+                    break
+            if index == None:
+                continue
+
+            # TODO: Match KernelBufferUsage to what bufferType that is expected on IREE.
+            usage = KernelBufferUsage.INPUT
+            if only_read_dependencies(node):
+                usage = KernelBufferUsage.INPUT
+
+            if only_write_dependencies(node):
+                usage = KernelBufferUsage.OUTPUT
+
+            # Create new Memory type with the correct usage
+            memory_type = self.bindings[index].kernel_buffer_type
+            self.bindings[index].kernel_buffer_type = Memory[
+                *memory_type.symbolic_shape,
+                memory_type.address_space,
+                memory_type.dtype,
+                usage,
+            ]
+        return
 
     def __repr__(self):
         parts = []
