@@ -30,3 +30,6 @@ wheelhouse
 *.safetensors
 *.gguf
 *.vmfb
+
+# Test artifacts
+.lit_test_times.txt
