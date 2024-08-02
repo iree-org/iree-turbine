@@ -100,8 +100,7 @@ def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
 
     def is_mma(node: fx.Node) -> bool:
         custom = get_custom(node)
-        if isinstance(custom, MMA):
-            return True
+        return isinstance(custom, MMA)
 
     mma_nodes = trace.walk(is_mma)
     mapping: dict[IndexSymbol, int] = {}
