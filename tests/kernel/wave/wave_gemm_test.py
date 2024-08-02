@@ -28,6 +28,8 @@ class Test(unittest.TestCase):
         constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
         constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
         constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+        constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+        constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
         constraints += [
             tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))

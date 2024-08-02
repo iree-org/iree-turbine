@@ -7,6 +7,7 @@ from shark_turbine.kernel.wave.constraints import (
     WorkgroupConstraint,
     get_grid_shape,
     TilingConstraint,
+    WaveConstraint,
 )
 
 M = sym.M
@@ -51,6 +52,18 @@ class ConstraintsTest(unittest.TestCase):
             match="Index is being computed without setting induction variable",
         ):
             constraints[0].apply()
+
+    def testWaveConstraint(self):
+        constraints: list[WaveConstraint] = [WaveConstraint(M, BLOCK_M, I)]
+        constraints.append(WaveConstraint(N, BLOCK_N))
+
+        assert constraints[0].apply().start == I * BLOCK_M
+
+        with pytest.raises(
+            ValueError,
+            match="Index is being computed without setting wave id",
+        ):
+            constraints[1].apply()
 
 
 if __name__ == "__main__":
