@@ -55,6 +55,8 @@ from .ir import (
     func_d,
 )
 
+from .utils import strides_from_symbolic_shape
+
 
 # Filter function to check for placeholder nodes.
 def is_placeholder(node: fx.Node):
@@ -113,10 +115,15 @@ class BindingDesc:
             if symbolic_shape is not None:
                 shape_asm = "x".join(sym_to_dim_asm(s) for s in kb_t.symbolic_shape)
                 spec_asm = f"{shape_asm}x{element_type_asm}"
+                strides = []
             else:
                 # Unranked. Not well supported, but for completeness.
                 spec_asm = element_type_asm
-            memref_asm = f"memref<{spec_asm}>"
+            strides = strides_from_symbolic_shape(idx_context, kb_t.symbolic_shape)
+            if strides is None:
+                memref_asm = f"memref<{spec_asm}>"
+            else:
+                memref_asm = f"memref<{spec_asm}, strided<{strides}, offset: ?>>"
             return IrType.parse(memref_asm)
         elif binding_type == BindingType.INDEX_VALUE:
             return IndexType.get()
