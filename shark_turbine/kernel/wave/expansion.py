@@ -9,11 +9,10 @@ from .constraints import (
     TilingConstraint,
 )
 from ..ops.wave_ops import *
-from .._support.indexing import IndexingContext
+from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
 from .._support.indexing import index_symbol
-from .indexing import IndexSequence
 
 logger = get_logger("turbine.wave.expansion")
 # This represents a mapping of a node + indexing into the dimensions to the
