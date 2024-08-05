@@ -7,12 +7,14 @@ import torch
 from typing import Any, Callable, Optional, TypeAlias
 from .constraints import Constraint
 
+import numpy as np
 from sympy import Symbol
 from sympy.core.expr import Expr
 from .._support.shaped_type import ShapedType
 
 from .. import lang as tkl
 from .. import wave as tkw
+from ..wave import IndexMapping
 
 
 def wave_sim(constraints: Optional[list[Constraint]] = None):
@@ -33,12 +35,16 @@ def wave_sim(constraints: Optional[list[Constraint]] = None):
 
         def func_wrapper(*args):
             global _api_subs
+            global _symbolic_shapes
             subs = copy.copy(_api_subs)
             if args_handler:
                 args_handler(args, subs)
 
             new_func = _resolve_symbols(f, subs)
-            return new_func(*args)
+            try:
+                return new_func(*args)
+            finally:
+                _symbolic_shapes = {}
 
         return func_wrapper
 
@@ -49,6 +55,10 @@ IndexExpr: TypeAlias = Expr
 HandlerFunc: TypeAlias = Callable[[tuple[...], dict[Any, Any]], None]
 
 
+def _to_indices(src: tuple[IndexExpr, ...]) -> tuple[int, ...]:
+    return tuple(int(i) for i in src)
+
+
 def _get_shaped_handler(
     arg_idx: int, shape: tuple[IndexExpr, ...], prev_handler: HandlerFunc
 ) -> HandlerFunc:
@@ -57,6 +67,7 @@ def _get_shaped_handler(
             prev_handler(args, subs)
 
         arg = args[arg_idx]
+        _symbolic_shapes[id(arg)] = shape
         for i, sym in enumerate(shape):
             if isinstance(sym, Symbol):
                 subs[sym] = arg.shape[i]
@@ -66,14 +77,14 @@ def _get_shaped_handler(
 
 def _visit_annotation(
     ann, arg_idx: int, prev_handler: HandlerFunc
-) -> None | HandlerFunc:
+) -> Optional[HandlerFunc]:
     if isinstance(ann, ShapedType):
         return _get_shaped_handler(arg_idx, ann.symbolic_shape, prev_handler)
 
     return None
 
 
-def _process_func_annotations(func: Callable[..., Any]) -> HandlerFunc:
+def _process_func_annotations(func: Callable[..., Any]) -> Optional[HandlerFunc]:
     """Process symbols in func annotation, so iteration dimensions can be extracted.
 
     Returns a function which extract shapes from kernel args and generates a
@@ -103,11 +114,27 @@ def _resolve_symbols(func: Callable[..., Any], symbols: dict[Any, Any]):
     old_closure = func.__closure__
     new_closure = None
 
+    sym_subs = [(key, val) for key, val in symbols.items() if isinstance(key, Symbol)]
+
     def resolve_impl(val):
         if isinstance(val, Symbol):
             return symbols.get(val, None)
         elif isinstance(val, Expr):
-            return val.subs(symbols)
+            return val.subs(sym_subs)
+        elif isinstance(val, tkw.IndexMapping):
+            ret = val.substitute(sym_subs)
+
+            inp_shape = _to_indices(
+                sym.subs(sym_subs) for sym in ret.input_mapping.keys()
+            )
+            out_shape = _to_indices(
+                sym.subs(sym_subs) for sym in ret.output_mapping.keys()
+            )
+            iter_shape = _to_indices(sym.subs(sym_subs) for sym in ret.iteration_shape)
+            setattr(ret, "inp_shape", inp_shape)
+            setattr(ret, "out_shape", out_shape)
+            setattr(ret, "iter_shape", iter_shape)
+            return ret
 
         try:
             return symbols.get(val, None)
@@ -151,7 +178,17 @@ def _resolve_symbols(func: Callable[..., Any], symbols: dict[Any, Any]):
     return g
 
 
+_symbolic_shapes = {}
 _api_subs = {}
+
+
+def _get_symbolic_shape(a: Any) -> tuple[IndexExpr, ...]:
+    assert id(a) in _symbolic_shapes, "Symbolic shape is not available"
+    return _symbolic_shapes[id(a)]
+
+
+def _set_symbolic_shape(a: Any, shape: tuple[IndexExpr, ...]) -> None:
+    _symbolic_shapes[id(a)] = shape
 
 
 class _RegisterProxy:
@@ -184,19 +221,71 @@ def _reduction_proxy(axis: int, init_args: list[Any]):
 
 
 def _read_proxy(
-    memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
+    memory: "Memory",
+    elements_per_thread: Optional[IndexExpr] = None,
+    mapping: Optional[IndexMapping] = None,
 ) -> "Register":
-    return memory.clone()
+    if mapping:
+        input_sym_shape = _get_symbolic_shape(memory)
+        inp_mapping = mapping.map_input_indices(input_sym_shape)
+        res_mapping = mapping.map_output_indices()
+        iters = mapping.iters
+
+        def mapping_func(ind_mapping, indices):
+            subs = [(ind, val) for ind, val in zip(iters, indices)]
+            return _to_indices(ind.subs(subs) for ind in ind_mapping)
+
+        iter_shape = mapping.iter_shape
+        res_shape = mapping.out_shape
+
+        res = torch.zeros(res_shape)
+        _set_symbolic_shape(res, mapping.output_shape)
+        for index in np.ndindex(*iter_shape):
+            inp_mapped = mapping_func(inp_mapping, index)
+            res_mapped = mapping_func(res_mapping, index)
+            res[res_mapped] = memory[inp_mapped]
+
+    else:
+        res = memory.clone()
+        _set_symbolic_shape(res, _get_symbolic_shape(memory))
+
+    return res
 
 
 def _write_proxy(
-    src: "Register", dst: "Memory", elements_per_thread: Optional[IndexExpr] = None
+    src: "Register",
+    dst: "Memory",
+    elements_per_thread: Optional[IndexExpr] = None,
+    mapping: Optional[IndexMapping] = None,
 ) -> None:
+    if mapping:
+        input_sym_shape = _get_symbolic_shape(src)
+        inp_mapping = mapping.map_input_indices(input_sym_shape)
+        res_mapping = mapping.map_output_indices()
+        iters = mapping.iters
+
+        def mapping_func(ind_mapping, indices):
+            subs = [(ind, val) for ind, val in zip(iters, indices)]
+            return _to_indices(ind.subs(subs) for ind in ind_mapping)
+
+        iter_shape = mapping.iter_shape
+
+        for index in np.ndindex(*iter_shape):
+            inp_mapped = mapping_func(inp_mapping, index)
+            res_mapped = mapping_func(res_mapping, index)
+            dst[res_mapped] = src[inp_mapped]
+
+        return
+
     dst[:] = src
 
 
 def _mma_proxy(a: "Register", b: "Register", acc: "Register") -> "Register":
-    return torch.matmul(a, b.T) + acc
+    a_shape = _get_symbolic_shape(a)
+    b_shape = _get_symbolic_shape(b)
+    res = torch.matmul(a, b.T) + acc
+    _set_symbolic_shape(res, (a_shape[0], b_shape[0]))
+    return res
 
 
 class _TkwProxy:

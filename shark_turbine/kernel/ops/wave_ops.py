@@ -17,7 +17,7 @@ from typing import (
 import torch.fx as fx
 
 if TYPE_CHECKING:
-    from ..lang.wave_types import Memory, Register
+    from ..lang.wave_types import Memory, Register, IndexMapping
 from .._support.indexing import IndexExpr, IndexSymbol
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
@@ -41,7 +41,9 @@ def allocate(
 
 
 def read(
-    memory: "Memory", elements_per_thread: Optional[IndexExpr] = None
+    memory: "Memory",
+    elements_per_thread: Optional[IndexExpr | int] = None,
+    mapping: Optional[IndexMapping] = None,
 ) -> "Register":
     ...
 
@@ -64,6 +66,7 @@ def write(
     register_: "Register",
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
+    mapping: Optional[IndexMapping] = None,
 ):
     ...
 
@@ -202,6 +205,7 @@ class CustomOp(ABC):
     def custom_string(self, value_map: dict[str, str]) -> str:
         # print all variables of the node apart from graph and fx_node
         ignore_list = ["fx_node", "graph"]
+
         if self.index is None:
             ignore_list += ["index"]
         vars_list = [
@@ -564,6 +568,7 @@ class MMA(CustomOp):
 class Read(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any] = None
+    mapping: Optional[IndexMapping] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -626,6 +631,7 @@ class Write(CustomOp):
     register_: fx.Proxy
     memory: fx.Proxy
     elements_per_thread: Optional[Any]
+    mapping: Optional[IndexMapping] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

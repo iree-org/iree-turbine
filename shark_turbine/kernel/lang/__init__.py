@@ -2,7 +2,7 @@ from .prims import *
 from .types import *
 from .kernel_buffer import *
 from .wave_types import *
-from .wave_types import Memory, Register
+from .wave_types import Memory, Register, IndexMapping
 from .grid import *
 
 # Include publics from the _support library.

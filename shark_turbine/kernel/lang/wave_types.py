@@ -1,11 +1,27 @@
-from typing import Optional, Type, TypeVar, ClassVar
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Iterable,
+    Optional,
+    Self,
+    Type,
+    TypeAlias,
+    TypeVar,
+)
 
 from .kernel_buffer import AddressSpace, KernelBufferMeta, KernelBufferUsage
 from ..ops.wave_ops import register
 from .._support.dtype import DataType
-from .._support.indexing import IndexExpr
+from .._support.indexing import IndexExpr, IndexSymbol, index_symbol
+
+from sympy import Symbol
+from sympy.core.expr import Expr
+
+from itertools import chain
 
 __all__ = [
+    "IndexMapping",
     "Memory",
     "Register",
 ]
@@ -109,3 +125,87 @@ class Register(metaclass=KernelBufferMeta):
             symbolic_shape=shape,
             dtype=dtype,
         )
+
+
+SymbolsMap: TypeAlias = dict[IndexSymbol, IndexExpr]
+
+
+def _subs_expr(expr: Any, subs: Iterable[tuple[IndexExpr, IndexExpr]]) -> Any:
+    if isinstance(expr, (Symbol, Expr)):
+        return expr.subs(subs)
+
+    return expr
+
+
+class IndexMapping:
+    """
+    Represents a mapping between 2 sets of indices.
+    """
+
+    iters: dict[IndexSymbol, int]
+    input_mapping: SymbolsMap
+    output_mapping: SymbolsMap
+    iteration_shape: tuple[IndexExpr, ...]
+
+    def __init__(
+        self, num_iterators: int, inputs: SymbolsMap, outputs: SymbolsMap
+    ) -> None:
+        iters = {self.iterator(i): i for i in range(num_iterators)}
+        iter_shape = [None] * num_iterators
+        for sym, expr in chain(inputs.items(), outputs.items()):
+            i = iters.get(expr, None)
+            if i is None:
+                continue
+
+            current = iter_shape[i]
+            assert (
+                current is None or current == sym
+            ), f"Iterator conflict: {current} and {sym}"
+            iter_shape[i] = sym
+
+        assert all(
+            i is not None for i in iter_shape
+        ), "Cannot determine iteration domain"
+        self.iters = iters
+        self.iteration_shape = iter_shape
+        self.input_mapping = inputs
+        self.output_mapping = outputs
+
+    @property
+    def num_iterators(self) -> int:
+        return len(self.iters)
+
+    def substitute(self, subs: Iterable[tuple[IndexExpr, IndexExpr]]) -> Self:
+        new_inputs = {
+            key: _subs_expr(val, subs) for key, val in self.input_mapping.items()
+        }
+        new_outputs = {
+            key: _subs_expr(val, subs) for key, val in self.output_mapping.items()
+        }
+        return IndexMapping(self.num_iterators, new_inputs, new_outputs)
+
+    @property
+    def output_shape(self) -> tuple[IndexExpr]:
+        return tuple(self.output_mapping.keys())
+
+    @staticmethod
+    def iterator(index: int) -> IndexSymbol:
+        return index_symbol(f"$index{index}")
+
+    def _map_indices(
+        self, mapping: SymbolsMap, symbols: Optional[tuple[IndexSymbol, ...]]
+    ) -> tuple[IndexExpr, ...]:
+        if symbols is None:
+            return tuple(mapping.values())
+
+        return tuple(mapping[sym] for sym in symbols)
+
+    def map_input_indices(
+        self, symbols: Optional[tuple[IndexSymbol, ...]] = None
+    ) -> tuple[IndexExpr, ...]:
+        return self._map_indices(self.input_mapping, symbols)
+
+    def map_output_indices(
+        self, symbols: Optional[tuple[IndexSymbol, ...]] = None
+    ) -> tuple[IndexExpr, ...]:
+        return self._map_indices(self.output_mapping, symbols)

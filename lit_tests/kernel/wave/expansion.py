@@ -88,21 +88,21 @@ def test_read_write_equal_sizes():
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read_0_0
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_1_1
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_1_0
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_0_1
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %write_0_0
-        # CHECK-SAME: (%read_0_0, %c, 4)
+        # CHECK-SAME: (%read_0_0, %c, 4, None)
         # CHECK-NEXT: %write_1_1
-        # CHECK-SAME: (%read_1_1, %c, 4)
+        # CHECK-SAME: (%read_1_1, %c, 4, None)
         # CHECK-NEXT: %write_1_0
-        # CHECK-SAME: (%read_1_0, %c, 4)
+        # CHECK-SAME: (%read_1_0, %c, 4, None)
         # CHECK-NEXT: %write_0_1
-        # CHECK-SAME: (%read_0_1, %c, 4)
+        # CHECK-SAME: (%read_0_1, %c, 4, None)
         # CHECK-NEXT: return
 
         # Custom format:
@@ -166,17 +166,17 @@ def test_read_write():
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read_0_0_0
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_1_0_0
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %write_0_0_0
-        # CHECK-SAME: (%read_0_0_0, %c, 4)
+        # CHECK-SAME: (%read_0_0_0, %c, 4, None)
         # CHECK-NEXT: %write_1_0_1
-        # CHECK-SAME: (%read_1_0_0, %c, 4)
+        # CHECK-SAME: (%read_1_0_0, %c, 4, None)
         # CHECK-NEXT: %write_1_0_0
-        # CHECK-SAME: (%read_1_0_0, %c, 4)
+        # CHECK-SAME: (%read_1_0_0, %c, 4, None)
         # CHECK-NEXT: %write_0_0_1
-        # CHECK-SAME: (%read_0_0_0, %c, 4)
+        # CHECK-SAME: (%read_0_0_0, %c, 4, None)
         # CHECK-NEXT: return None
 
         # Custom format:
@@ -253,13 +253,13 @@ def test_gemm():
         # CHECK-NEXT: %getresult_0_1_0
         # CHECK-NEXT: %getresult_0_0_0
         # CHECK-NEXT: %write_0_0_0
-        # CHECK-SAME: (%getresult_0_0_0, %c, 4)
+        # CHECK-SAME: (%getresult_0_0_0, %c, 4, None)
         # CHECK-NEXT: %write_1_1_0
-        # CHECK-SAME: (%getresult_1_1_0, %c, 4)
+        # CHECK-SAME: (%getresult_1_1_0, %c, 4, None)
         # CHECK-NEXT: %write_1_0_0
-        # CHECK-SAME: (%getresult_1_0_0, %c, 4)
+        # CHECK-SAME: (%getresult_1_0_0, %c, 4, None)
         # CHECK-NEXT: %write_0_1_0
-        # CHECK-SAME: (%getresult_0_1_0, %c, 4)
+        # CHECK-SAME: (%getresult_0_1_0, %c, 4, None)
         # CHECK-NEXT: return None
 
         # Custom format:
@@ -295,23 +295,23 @@ def test_gemm():
 
         # CHECK-NEXT: %a
         # CHECK-NEXT: %read_0_0_0
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_0_0_1
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_1_0_0
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_1_0_1
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
 
         # CHECK-NEXT: %b
         # CHECK-NEXT: %read_0_0_0
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_0_1
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_1_0
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_1_1
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
 
         # CHECK-NEXT: %mma_0_0_0
         # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0)
@@ -408,9 +408,9 @@ def test_gemm_reduction_expansion_only():
         # CHECK-NEXT: %getresult_0_1_0
         # CHECK-NEXT: %getresult_0_0_0
         # CHECK-NEXT: %write_0_0_0
-        # CHECK-SAME: (%getresult_0_0_0, %c, 4)
+        # CHECK-SAME: (%getresult_0_0_0, %c, 4, None)
         # CHECK-NEXT: %write_0_1_0
-        # CHECK-SAME: (%getresult_0_1_0, %c, 4)
+        # CHECK-SAME: (%getresult_0_1_0, %c, 4, None)
         # CHECK-NEXT: return None
 
         # Custom format:
@@ -436,31 +436,31 @@ def test_gemm_reduction_expansion_only():
 
         # CHECK-NEXT: %a
         # CHECK-NEXT: %read_0_0_0
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_0_0_1
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_0_0_2
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_0_0_3
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
 
         # CHECK-NEXT: %b
         # CHECK-NEXT: %read_0_0_0
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_0_1
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_0_2
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_0_3
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_1_0
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_1_1
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_1_2
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
         # CHECK-NEXT: %read_0_1_3
-        # CHECK-SAME: (%b, 4)
+        # CHECK-SAME: (%b, 4, None)
 
         # CHECK-NEXT: %mma_0_0_0
         # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0)
@@ -567,9 +567,9 @@ def py_arithmetic_different_dims():
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read_0_0_0
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %read_1_0_0
-        # CHECK-SAME: (%a, 4)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %add_0_0_0
         # CHECK-SAME: (%read_0_0_0, %read_0_0_0)
         # CHECK-NEXT: %add_1_0_0
@@ -583,13 +583,13 @@ def py_arithmetic_different_dims():
         # CHECK-NEXT: %neg_1_0_0
         # CHECK-SAME: (%sub_1_0_0,)
         # CHECK-NEXT: %write_0_0_0
-        # CHECK-SAME: (%neg_0_0_0, %c, 4)
+        # CHECK-SAME: (%neg_0_0_0, %c, 4, None)
         # CHECK-NEXT: %write_1_0_1
-        # CHECK-SAME: (%neg_1_0_0, %c, 4)
+        # CHECK-SAME: (%neg_1_0_0, %c, 4, None)
         # CHECK-NEXT: %write_1_0_0
-        # CHECK-SAME: (%neg_1_0_0, %c, 4)
+        # CHECK-SAME: (%neg_1_0_0, %c, 4, None)
         # CHECK-NEXT: %write_0_0_1
-        # CHECK-SAME: (%neg_0_0_0, %c, 4)
+        # CHECK-SAME: (%neg_0_0_0, %c, 4, None)
         # CHECK-NEXT: return None
 
         # Custom format:

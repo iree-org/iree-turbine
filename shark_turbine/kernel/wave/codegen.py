@@ -223,9 +223,11 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
     try:
-        memory, elements_per_thread = node.args
+        memory, elements_per_thread, mapping = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
+
+    assert mapping is None, "mapping is not supported yet"
 
     vector_shape = cast_py_literal(emitter, (elements_per_thread,))
     # memory has no IR node yet.
