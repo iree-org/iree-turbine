@@ -96,7 +96,7 @@ def test_trace_py_arithmetic():
     print_trace(trace)
     # CHECK: %a
     # CHECK-NEXT: %read
-    # CHECK-SAME: (%a, None, None, None)
+    # CHECK-SAME: (%a, None, None)
     # CHECK-NEXT: %add
     # CHECK-SAME: (%read, %read)
     # CHECK-NEXT: %sub

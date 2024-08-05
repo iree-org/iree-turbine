@@ -90,13 +90,13 @@ def test_read_write_equal_sizes():
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read
-        # CHECK-SAME: (%a, 4, None, None)
+        # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, N), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %write_1
         # CHECK-SAME: (%read, %allocate, 4, None)
         # CHECK-NEXT: %read_1
-        # CHECK-SAME: (%allocate, 4, None, None)
+        # CHECK-SAME: (%allocate, 4, None)
         # CHECK-NEXT: %write
         # CHECK-SAME: (%read_1, %c, 4, None)
 
@@ -164,13 +164,13 @@ def test_gemm():
         # CHECK-NEXT: %write
         # CHECK-SAME: (%read, %allocate, 4, None)
         # CHECK-NEXT: %read_2
-        # CHECK-SAME: (%allocate, 4, None, None)
+        # CHECK-SAME: (%allocate, 4, None)
         # CHECK-NEXT: %b
         # CHECK-NEXT: %read_1
         # CHECK-NEXT: %write_1
         # CHECK-SAME: (%read_1, %allocate_1, 4, None)
         # CHECK-NEXT: %read_3
-        # CHECK-SAME: (%allocate_1, 4, None, None)
+        # CHECK-SAME: (%allocate_1, 4, None)
         # CHECK-NEXT: %mma
         # CHECK-SAME: (%read_2, %read_3, %acc)
 
