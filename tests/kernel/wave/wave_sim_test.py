@@ -235,7 +235,9 @@ def test_transpose_1():
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
-    mapping = tkw.IndexMapping(num_dims=2, inputs={N: i, M: j}, outputs={N: i, M: j})
+    mapping = tkw.IndexMapping(
+        num_iterators=2, inputs={N: i, M: j}, outputs={N: i, M: j}
+    )
 
     @wave_sim(constraints)
     def transpose(
@@ -274,7 +276,9 @@ def test_transpose_2():
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
-    mapping = tkw.IndexMapping(num_dims=2, inputs={N: i, M: j}, outputs={N: i, M: j})
+    mapping = tkw.IndexMapping(
+        num_iterators=2, inputs={N: i, M: j}, outputs={N: i, M: j}
+    )
 
     @wave_sim(constraints)
     def transpose(
@@ -325,7 +329,7 @@ def test_igemm_conv(n, c, nf, stride):
     j = tkw.IndexMapping.iterator(1)
 
     x_mapping = tkw.IndexMapping(
-        num_dims=2,
+        num_iterators=2,
         inputs={
             N: i // SZ_OUT,
             C: j // (HF * WF),
@@ -335,12 +339,12 @@ def test_igemm_conv(n, c, nf, stride):
         outputs={M: i, K: j},
     )
     w_mapping = tkw.IndexMapping(
-        num_dims=2,
+        num_iterators=2,
         inputs={NF: i % NF, C: j // (HF * WF), HF: j % WF, WF: (j % (HF * WF)) // WF},
         outputs={NF: i, K: j},
     )
     out_mapping = tkw.IndexMapping(
-        num_dims=2,
+        num_iterators=2,
         inputs={M: i, NF: j},
         outputs={
             N: i // SZ_OUT,

@@ -147,9 +147,11 @@ class IndexMapping:
     output_mapping: SymbolsMap
     iteration_shape: tuple[IndexExpr, ...]
 
-    def __init__(self, num_dims: int, inputs: SymbolsMap, outputs: SymbolsMap) -> None:
-        iters = {self.iterator(i): i for i in range(num_dims)}
-        iter_shape = [None] * num_dims
+    def __init__(
+        self, num_iterators: int, inputs: SymbolsMap, outputs: SymbolsMap
+    ) -> None:
+        iters = {self.iterator(i): i for i in range(num_iterators)}
+        iter_shape = [None] * num_iterators
         for sym, expr in chain(inputs.items(), outputs.items()):
             i = iters.get(expr, None)
             if i is None:
@@ -170,7 +172,7 @@ class IndexMapping:
         self.output_mapping = outputs
 
     @property
-    def num_dims(self) -> int:
+    def num_iterators(self) -> int:
         return len(self.iters)
 
     def substitute(self, subs: Iterable[tuple[IndexExpr, IndexExpr]]) -> Self:
@@ -180,7 +182,7 @@ class IndexMapping:
         new_outputs = {
             key: _subs_expr(val, subs) for key, val in self.output_mapping.items()
         }
-        return IndexMapping(self.num_dims, new_inputs, new_outputs)
+        return IndexMapping(self.num_iterators, new_inputs, new_outputs)
 
     @property
     def output_shape(self) -> tuple[IndexExpr]:
