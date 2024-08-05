@@ -130,8 +130,10 @@ def _resolve_symbols(func: Callable[..., Any], symbols: dict[Any, Any]):
             out_shape = _to_indices(
                 sym.subs(sym_subs) for sym in ret.output_mapping.keys()
             )
+            iter_shape = _to_indices(sym.subs(sym_subs) for sym in ret.iteration_shape)
             setattr(ret, "inp_shape", inp_shape)
             setattr(ret, "out_shape", out_shape)
+            setattr(ret, "iter_shape", iter_shape)
             return ret
 
         try:
@@ -180,6 +182,15 @@ _symbolic_shapes = {}
 _api_subs = {}
 
 
+def _get_symbolic_shape(a: Any) -> tuple[IndexExpr, ...]:
+    assert id(a) in _symbolic_shapes, "Symbolic shape is not available"
+    return _symbolic_shapes[id(a)]
+
+
+def _set_symbolic_shape(a: Any, shape: tuple[IndexExpr, ...]) -> None:
+    _symbolic_shapes[id(a)] = shape
+
+
 class _RegisterProxy:
     def __getitem__(self, indices: tuple[...]):
         shape = indices[:-1]
@@ -214,9 +225,8 @@ def _read_proxy(
     elements_per_thread: Optional[IndexExpr] = None,
     mapping: Optional[IndexMapping] = None,
 ) -> "Register":
-    assert id(memory) in _symbolic_shapes, "Symbolic shape is not available"
     if mapping:
-        input_sym_shape = _symbolic_shapes[id(memory)]
+        input_sym_shape = _get_symbolic_shape(memory)
         inp_mapping = mapping.map_input_indices(input_sym_shape)
         res_mapping = mapping.map_output_indices()
         iters = mapping.iters
@@ -225,11 +235,11 @@ def _read_proxy(
             subs = [(ind, val) for ind, val in zip(iters, indices)]
             return _to_indices(ind.subs(subs) for ind in ind_mapping)
 
-        iter_shape = _to_indices(mapping.inp_shape)
-        res_shape = _to_indices(mapping.out_shape)
+        iter_shape = mapping.iter_shape
+        res_shape = mapping.out_shape
 
         res = torch.zeros(res_shape)
-        _symbolic_shapes[id(res)] = mapping.output_shape
+        _set_symbolic_shape(res, mapping.output_shape)
         for index in np.ndindex(*iter_shape):
             inp_mapped = mapping_func(inp_mapping, index)
             res_mapped = mapping_func(res_mapping, index)
@@ -237,7 +247,7 @@ def _read_proxy(
 
     else:
         res = memory.clone()
-        _symbolic_shapes[id(res)] = _symbolic_shapes[id(memory)]
+        _set_symbolic_shape(res, _get_symbolic_shape(memory))
 
     return res
 
@@ -247,10 +257,9 @@ def _write_proxy(
     dst: "Memory",
     elements_per_thread: Optional[IndexExpr] = None,
     mapping: Optional[IndexMapping] = None,
-):
+) -> None:
     if mapping:
-        assert id(src) in _symbolic_shapes, "Symbolic shape is not available"
-        input_sym_shape = _symbolic_shapes[id(src)]
+        input_sym_shape = _get_symbolic_shape(src)
         inp_mapping = mapping.map_input_indices(input_sym_shape)
         res_mapping = mapping.map_output_indices()
         iters = mapping.iters
@@ -259,8 +268,7 @@ def _write_proxy(
             subs = [(ind, val) for ind, val in zip(iters, indices)]
             return _to_indices(ind.subs(subs) for ind in ind_mapping)
 
-        iter_shape = _to_indices(mapping.inp_shape)
-        res_shape = _to_indices(mapping.out_shape)
+        iter_shape = mapping.iter_shape
 
         for index in np.ndindex(*iter_shape):
             inp_mapped = mapping_func(inp_mapping, index)
@@ -273,7 +281,11 @@ def _write_proxy(
 
 
 def _mma_proxy(a: "Register", b: "Register", acc: "Register") -> "Register":
-    return torch.matmul(a, b.T) + acc
+    a_shape = _get_symbolic_shape(a)
+    b_shape = _get_symbolic_shape(b)
+    res = torch.matmul(a, b.T) + acc
+    _set_symbolic_shape(res, (a_shape[0], b_shape[0]))
+    return res
 
 
 class _TkwProxy:

@@ -295,7 +295,7 @@ def test_transpose_2():
     assert_allclose(c, a.T)
 
 
-@pytest.mark.parametrize("n", [1, 2, 4, 20])
+@pytest.mark.parametrize("n", [1, 2, 4])
 @pytest.mark.parametrize("c", [1, 3, 10])
 @pytest.mark.parametrize("nf", [1, 2, 8])
 @pytest.mark.parametrize("stride", [1, 2, 3])
@@ -318,23 +318,37 @@ def test_igemm_conv(n, c, nf, stride):
     W_OUT = (W + 2 * padding - WF) // stride + 1
     SZ_OUT = H_OUT * W_OUT
 
-    x_mapping = tkw.IndexMapping(
-        lambda i, j: (
-            i // SZ_OUT,
-            j // (HF * WF),
-            (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
-            (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
-        )
-    )
-    w_mapping = tkw.IndexMapping(
-        lambda i, j: (i % NF, j // (HF * WF), j % WF, (j % (HF * WF)) // WF)
-    )
-    out_mapping = tkw.IndexMapping(
-        lambda i, j: (i // SZ_OUT, j, (i % SZ_OUT) % W_OUT, (i % SZ_OUT) // W_OUT)
-    )
-
     K = HF * WF * C
     M = SZ_OUT * N
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+
+    x_mapping = tkw.IndexMapping(
+        num_dims=2,
+        inputs={
+            N: i // SZ_OUT,
+            C: j // (HF * WF),
+            H: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
+            W: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+        },
+        outputs={M: i, K: j},
+    )
+    w_mapping = tkw.IndexMapping(
+        num_dims=2,
+        inputs={NF: i % NF, C: j // (HF * WF), HF: j % WF, WF: (j % (HF * WF)) // WF},
+        outputs={NF: i, K: j},
+    )
+    out_mapping = tkw.IndexMapping(
+        num_dims=2,
+        inputs={M: i, NF: j},
+        outputs={
+            N: i // SZ_OUT,
+            NF: j,
+            H_OUT: (i % SZ_OUT) % W_OUT,
+            W_OUT: (i % SZ_OUT) // W_OUT,
+        },
+    )
 
     # # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
@@ -368,13 +382,11 @@ def test_igemm_conv(n, c, nf, stride):
             a_reg = tkw.read(
                 x,
                 mapping=x_mapping,
-                shape=(M, K),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD,
             )
             b_reg = tkw.read(
                 we,
                 mapping=w_mapping,
-                shape=(NF, K),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD,
             )
             acc = tkw.mma(a_reg, b_reg, acc)

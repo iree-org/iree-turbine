@@ -184,7 +184,7 @@ class IndexMapping:
 
     @property
     def output_shape(self) -> tuple[IndexExpr]:
-        return self.output_mapping.keys()
+        return tuple(self.output_mapping.keys())
 
     @staticmethod
     def iterator(index: int) -> IndexSymbol:
