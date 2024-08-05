@@ -233,16 +233,16 @@ def test_transpose_1():
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]
 
-    mapping = tkw.IndexMapping(lambda i, j: (j, i))
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    mapping = tkw.IndexMapping(num_dims=2, inputs={N: i, M: j}, outputs={N: i, M: j})
 
     @wave_sim(constraints)
     def transpose(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
         c: tkl.Memory[N, M, ADDRESS_SPACE, tkl.f32],
     ):
-        a_reg = tkw.read(
-            a, mapping=mapping, shape=(N, M), elements_per_thread=LOAD_ELEMS_PER_THREAD
-        )
+        a_reg = tkw.read(a, mapping=mapping, elements_per_thread=LOAD_ELEMS_PER_THREAD)
         tkw.write(a_reg, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     a = torch.randn(128, 256, dtype=torch.float32)
@@ -272,7 +272,9 @@ def test_transpose_2():
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]
 
-    mapping = tkw.IndexMapping(lambda i, j: (j, i))
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    mapping = tkw.IndexMapping(num_dims=2, inputs={N: i, M: j}, outputs={N: i, M: j})
 
     @wave_sim(constraints)
     def transpose(

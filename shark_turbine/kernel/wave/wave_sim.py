@@ -35,12 +35,16 @@ def wave_sim(constraints: Optional[list[Constraint]] = None):
 
         def func_wrapper(*args):
             global _api_subs
+            global _symbolic_shapes
             subs = copy.copy(_api_subs)
             if args_handler:
                 args_handler(args, subs)
 
             new_func = _resolve_symbols(f, subs)
-            return new_func(*args)
+            try:
+                return new_func(*args)
+            finally:
+                _symbolic_shapes = {}
 
         return func_wrapper
 
@@ -51,6 +55,10 @@ IndexExpr: TypeAlias = Expr
 HandlerFunc: TypeAlias = Callable[[tuple[...], dict[Any, Any]], None]
 
 
+def _to_indices(src: tuple[IndexExpr, ...]) -> tuple[int, ...]:
+    return tuple(int(i) for i in src)
+
+
 def _get_shaped_handler(
     arg_idx: int, shape: tuple[IndexExpr, ...], prev_handler: HandlerFunc
 ) -> HandlerFunc:
@@ -59,6 +67,7 @@ def _get_shaped_handler(
             prev_handler(args, subs)
 
         arg = args[arg_idx]
+        _symbolic_shapes[id(arg)] = shape
         for i, sym in enumerate(shape):
             if isinstance(sym, Symbol):
                 subs[sym] = arg.shape[i]
@@ -68,14 +77,14 @@ def _get_shaped_handler(
 
 def _visit_annotation(
     ann, arg_idx: int, prev_handler: HandlerFunc
-) -> None | HandlerFunc:
+) -> Optional[HandlerFunc]:
     if isinstance(ann, ShapedType):
         return _get_shaped_handler(arg_idx, ann.symbolic_shape, prev_handler)
 
     return None
 
 
-def _process_func_annotations(func: Callable[..., Any]) -> HandlerFunc:
+def _process_func_annotations(func: Callable[..., Any]) -> Optional[HandlerFunc]:
     """Process symbols in func annotation, so iteration dimensions can be extracted.
 
     Returns a function which extract shapes from kernel args and generates a
@@ -113,7 +122,17 @@ def _resolve_symbols(func: Callable[..., Any], symbols: dict[Any, Any]):
         elif isinstance(val, Expr):
             return val.subs(sym_subs)
         elif isinstance(val, tkw.IndexMapping):
-            return tkw.IndexMapping(_resolve_symbols(val.mapping_func, symbols))
+            ret = val.substitute(sym_subs)
+
+            inp_shape = _to_indices(
+                sym.subs(sym_subs) for sym in ret.input_mapping.keys()
+            )
+            out_shape = _to_indices(
+                sym.subs(sym_subs) for sym in ret.output_mapping.keys()
+            )
+            setattr(ret, "inp_shape", inp_shape)
+            setattr(ret, "out_shape", out_shape)
+            return ret
 
         try:
             return symbols.get(val, None)
@@ -157,6 +176,7 @@ def _resolve_symbols(func: Callable[..., Any], symbols: dict[Any, Any]):
     return g
 
 
+_symbolic_shapes = {}
 _api_subs = {}
 
 
@@ -193,19 +213,33 @@ def _read_proxy(
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr] = None,
     mapping: Optional[IndexMapping] = None,
-    shape: Optional[tuple[IndexExpr, ...]] = None,
 ) -> "Register":
+    assert id(memory) in _symbolic_shapes, "Symbolic shape is not available"
     if mapping:
-        assert shape
-        mapping_func = mapping.mapping_func
-        res = torch.zeros(shape)
-        for index in np.ndindex(*shape):
-            mapped = mapping_func(*index)
-            res[index] = memory[mapped]
+        input_sym_shape = _symbolic_shapes[id(memory)]
+        inp_mapping = mapping.map_input_indices(input_sym_shape)
+        res_mapping = mapping.map_output_indices()
+        iters = mapping.iters
 
-        return res
+        def mapping_func(ind_mapping, indices):
+            subs = [(ind, val) for ind, val in zip(iters, indices)]
+            return _to_indices(ind.subs(subs) for ind in ind_mapping)
 
-    return memory.clone()
+        iter_shape = _to_indices(mapping.inp_shape)
+        res_shape = _to_indices(mapping.out_shape)
+
+        res = torch.zeros(res_shape)
+        _symbolic_shapes[id(res)] = mapping.output_shape
+        for index in np.ndindex(*iter_shape):
+            inp_mapped = mapping_func(inp_mapping, index)
+            res_mapped = mapping_func(res_mapping, index)
+            res[res_mapped] = memory[inp_mapped]
+
+    else:
+        res = memory.clone()
+        _symbolic_shapes[id(res)] = _symbolic_shapes[id(memory)]
+
+    return res
 
 
 def _write_proxy(
@@ -215,10 +249,23 @@ def _write_proxy(
     mapping: Optional[IndexMapping] = None,
 ):
     if mapping:
-        mapping_func = mapping.mapping_func
-        for index in np.ndindex(*src.shape):
-            mapped = mapping_func(*index)
-            dst[mapped] = src[index]
+        assert id(src) in _symbolic_shapes, "Symbolic shape is not available"
+        input_sym_shape = _symbolic_shapes[id(src)]
+        inp_mapping = mapping.map_input_indices(input_sym_shape)
+        res_mapping = mapping.map_output_indices()
+        iters = mapping.iters
+
+        def mapping_func(ind_mapping, indices):
+            subs = [(ind, val) for ind, val in zip(iters, indices)]
+            return _to_indices(ind.subs(subs) for ind in ind_mapping)
+
+        iter_shape = _to_indices(mapping.inp_shape)
+        res_shape = _to_indices(mapping.out_shape)
+
+        for index in np.ndindex(*iter_shape):
+            inp_mapped = mapping_func(inp_mapping, index)
+            res_mapped = mapping_func(res_mapping, index)
+            dst[res_mapped] = src[inp_mapped]
 
         return
 
