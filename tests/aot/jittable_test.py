@@ -75,12 +75,12 @@ class JittableTests(unittest.TestCase):
     def testDynamicDims(self):
         class DynamicDimsModule(CompiledModule):
             def dynamic_dim(self, a=AbstractTensor(None, 2), b=AbstractTensor(None, 1)):
+                dim0 = torch.export.Dim("dim0")
+                dynamic_shapes = {"arg0_1": {0: dim0}, "arg1_1": {0: dim0}}
                 return self.compute(
                     a,
                     b,
-                    constraints=[
-                        a.dynamic_dim(0) == b.dynamic_dim(0),
-                    ],
+                    dynamic_shapes=dynamic_shapes,
                 )
 
             @jittable
@@ -113,9 +113,9 @@ class JittableTests(unittest.TestCase):
             def dynamic_dim(self, x=AbstractIndex):
                 a = IREE.tensor_empty(x, 4)
                 b = IREE.tensor_empty(x, 4)
-                return self.compute(
-                    a, b, constraints=[a.dynamic_dim(0) == b.dynamic_dim(0)]
-                )
+                dim0 = torch.export.Dim("dim0")
+                dynamic_shapes = {"arg0_1": {0: dim0}, "arg1_1": {0: dim0}}
+                return self.compute(a, b, dynamic_shapes=dynamic_shapes)
 
             @jittable
             def compute(a, b):

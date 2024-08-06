@@ -538,7 +538,7 @@ def compute_method(super_fn, *args, **kwargs):
         func_src_op,
         aten_graph=True,
         decomposition_table={},
-        constraints={},
+        dynamic_shapes={},
         assume_static_by_default=True,
     )
     gm, guards = exported_f(*flat_pytorch_args)
