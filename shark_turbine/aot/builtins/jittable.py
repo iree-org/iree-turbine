@@ -141,7 +141,7 @@ class jittable(CallableIntrinsic):
         *,
         decompose_ops: Optional[List[Any]] = None,
         decomposition_table: Optional[Dict[Any, Callable[..., Any]]] = None,
-        dynamic_shapes: Optional[Dict[str, Any]] = {},
+        dynamic_shapes: Dict[str, Any] = {},
         function_name: Optional[str] = None,
         passes: Sequence[str] = DEFAULT_PASSES,
     ):
@@ -166,7 +166,7 @@ class jittable(CallableIntrinsic):
         self,
         proc_trace: IrTrace,
         *py_args,
-        dynamic_shapes: Optional[Dict[str, Any]] = {},
+        dynamic_shapes: Dict[str, Any] = {},
         **py_kwargs,
     ):
         type_converter = proc_trace.module_builder.native_type_converter
