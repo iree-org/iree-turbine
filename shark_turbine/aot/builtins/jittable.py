@@ -166,16 +166,12 @@ class jittable(CallableIntrinsic):
         self,
         proc_trace: IrTrace,
         *py_args,
-        dynamic_shapes: Optional[Dict[str, Any]] = None,
+        dynamic_shapes: Optional[Dict[str, Any]] = {},
         **py_kwargs,
     ):
         type_converter = proc_trace.module_builder.native_type_converter
-        # Accumulate all dynamic shapes
-        if dynamic_shapes is None:
-            dynamic_shapes = {}
-        else:
-            # Concat dictionaries using unpacking
-            dynamic_shapes = {**self.dynamic_shapes, **dynamic_shapes}
+        # Accumulate all dynamic shapes by combining dictionaries using unpacking
+        dynamic_shapes = {**self.dynamic_shapes, **dynamic_shapes}
 
         export_kwargs = {}
         export_kwargs["dynamic_shapes"] = dynamic_shapes
