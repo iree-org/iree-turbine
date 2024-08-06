@@ -166,7 +166,7 @@ class jittable(CallableIntrinsic):
         self,
         proc_trace: IrTrace,
         *py_args,
-        dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any], List[Any]]] = None,
+        dynamic_shapes: Optional[Dict[str, Any]] = None,
         **py_kwargs,
     ):
         type_converter = proc_trace.module_builder.native_type_converter
