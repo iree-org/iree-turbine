@@ -158,7 +158,6 @@ class ImportSmokeTests(unittest.TestCase):
         )
         g, guards = f(inp=inp_example)
         g = import_compiler(g, [inp_example])
-        assert 1 == 2
 
     @unittest.expectedFailure
     def testDynamicShapeStrided(self):
