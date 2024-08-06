@@ -273,8 +273,8 @@ class ParameterArchiveBuilder:
         # land and that seems to get it on the happy path.
         # See: https://github.com/iree-org/iree-turbine/issues/29
         if len(tensor.shape) == 0:
-            flat_array = tensor.detach().cpu().numpy().copy()
-            host_array = flat_array
+            flat_array_np = tensor.detach().cpu().numpy().copy()
+            host_array = flat_array_np
         else:
             flat_array = tensor.detach().flatten().contiguous().cpu().view(torch.uint8)
             host_array = flat_array.numpy()
