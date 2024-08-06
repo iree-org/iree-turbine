@@ -93,7 +93,7 @@ class DynamicBMM(torch.nn.Module):
 class DynamicBuiltinOps(torch.nn.Module):
     def forward(self, inp):
         x = inp.size()[1] - inp.size()[2]
-        x = x * inp.size()[1] - 34
+        x = x * inp.size()[1] - 34.2
         g = x / 32
         return {"result": g}
 
@@ -146,6 +146,8 @@ class ImportSmokeTests(unittest.TestCase):
         g, guards = f(inp=inp_example, bias=bias_example)
         g = import_compiler(g, [inp_example, bias_example])
 
+    # As of torch 2.4, symbolic float support for export is not fully flushed out yet.
+    @unittest.expectedFailure
     def testStaticExportBuiltinOps(self):
         model = DynamicBuiltinOps()
         inp_example = torch.rand(1, 2, 12)
