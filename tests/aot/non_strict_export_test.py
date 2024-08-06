@@ -29,6 +29,7 @@ class NonStrictExportTest(unittest.TestCase):
 class UnsupportedFunc(torch.nn.Module):
     def __init__(self):
         super().__init__()
+
     def forward(self, x):
         logger.warning(f"This will fail without disabling strict export mode")
         x = x + 1

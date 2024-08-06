@@ -141,7 +141,7 @@ class jittable(CallableIntrinsic):
         *,
         decompose_ops: Optional[List[Any]] = None,
         decomposition_table: Optional[Dict[Any, Callable[..., Any]]] = None,
-        dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any], List[Any]]] = {},
+        dynamic_shapes: Optional[Dict[str, Any]] = {},
         function_name: Optional[str] = None,
         passes: Sequence[str] = DEFAULT_PASSES,
     ):

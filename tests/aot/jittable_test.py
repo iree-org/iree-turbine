@@ -115,9 +115,7 @@ class JittableTests(unittest.TestCase):
                 b = IREE.tensor_empty(x, 4)
                 dim0 = torch.export.Dim("dim0")
                 dynamic_shapes = {"arg0_1": {0: dim0}, "arg1_1": {0: dim0}}
-                return self.compute(
-                    a, b, dynamic_shapes=dynamic_shapes
-                )
+                return self.compute(a, b, dynamic_shapes=dynamic_shapes)
 
             @jittable
             def compute(a, b):
