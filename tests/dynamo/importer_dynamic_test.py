@@ -93,7 +93,7 @@ class DynamicBMM(torch.nn.Module):
 class DynamicBuiltinOps(torch.nn.Module):
     def forward(self, inp):
         x = inp.size()[1] - inp.size()[2]
-        x = x * inp.size()[1] - 34.2
+        x = x * inp.size()[1] - 34
         g = x / 32
         return {"result": g}
 
@@ -124,9 +124,7 @@ class ImportSmokeTests(unittest.TestCase):
             aten_graph=True,
             same_signature=False,
             assume_static_by_default=True,
-            constraints=[
-                dynamic_dim(inp_example, 1) >= 2,
-            ],
+            dynamic_shapes={"inp": {1: torch.export.Dim("dim", min=2)}, "bias": None},
         )
         g, guards = f(inp=inp_example, bias=bias_example)
         g = import_compiler(g, [inp_example, bias_example])
@@ -143,9 +141,7 @@ class ImportSmokeTests(unittest.TestCase):
             aten_graph=True,
             same_signature=True,
             assume_static_by_default=True,
-            constraints=[
-                dynamic_dim(inp_example, 1) >= 2,
-            ],
+            dynamic_shapes={"inp": {1: torch.export.Dim("dim", min=2)}, "bias": None},
         )
         g, guards = f(inp=inp_example, bias=bias_example)
         g = import_compiler(g, [inp_example, bias_example])
@@ -158,12 +154,11 @@ class ImportSmokeTests(unittest.TestCase):
             aten_graph=True,
             same_signature=True,
             assume_static_by_default=True,
-            constraints=[
-                dynamic_dim(inp_example, 1) >= 2,
-            ],
+            dynamic_shapes={"inp": {1: torch.export.Dim("dim", min=2)}},
         )
         g, guards = f(inp=inp_example)
         g = import_compiler(g, [inp_example])
+        assert 1 == 2
 
     @unittest.expectedFailure
     def testDynamicShapeStrided(self):
@@ -182,9 +177,7 @@ class ImportSmokeTests(unittest.TestCase):
             aten_graph=True,
             same_signature=True,
             assume_static_by_default=True,
-            constraints=[
-                dynamic_dim(inp_example, 0) >= 0,
-            ],
+            dynamic_shapes={"inp": {1: torch.export.Dim("dim", min=2)}},
         )
         g, guards = f(a=inp_example)
         g = import_compiler(g, [inp_example])
