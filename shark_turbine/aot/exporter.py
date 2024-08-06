@@ -252,6 +252,12 @@ def export(
             )
         )
 
+    if not strict_export:
+        warnings.warn(
+            "When strict_export == False, Python interpreter is used and code will execute exactly as it would in eager mode. "
+            "Therefore, graph optimizations and safety are not garaunteed to be at the same level as TorchDynamo."
+        )
+
     TransformedModule: Any
     current_decomps = decompositions.current_aot_decompositions()
     if isinstance(mdl, torch.export.ExportedProgram):
