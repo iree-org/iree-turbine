@@ -42,7 +42,8 @@ jobs:
       - name: "Install SHARK"
         run: |
           cd $GITHUB_WORKSPACE/SHARK
-          sed -i 's/iree-turbine#/iree-turbine.git@${{github.sha}}#/g' requirements.txt
-          ./setup_venv.sh
+          python${{ matrix.version }} -m venv shark.venv
           source shark.venv/bin/activate
+          pip install -r requirements.txt --no-cache-dir
+          pip install -e .
           python apps/shark_studio/tests/api_test.py
