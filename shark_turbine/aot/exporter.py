@@ -102,7 +102,7 @@ class ExportOutput:
         self,
         save_to: SaveableTarget,
         *,
-        target_backends: Union[str, Sequence[str]] = ("llvm-cpu",),
+        target_backends: Union[str, Sequence[str], None] = ("llvm-cpu",),
     ) -> Optional[memoryview]:
         """Compiles the exported program to an executable binary.
 
@@ -113,6 +113,9 @@ class ExportOutput:
               Output: Raw compiler API Output object to save to.
             target_backends: A comma-delimitted string of IREE target backends or
               a sequence of strings.
+              If `None` does not specify any target backend.
+              Then the user must set other appropriate compiler flags e.g.
+              `export_output.session.set_flags("--iree-hal-target-device=llvm-cpu")`
         Returns:
           None unless if `save_to=None`, in which case, we return the backing compiler API
           Ouptut object. It can be queried for its backing memory via its `map_memory()`
@@ -129,11 +132,6 @@ class ExportOutput:
             output = save_to
             assert isinstance(output, Output)
 
-        target_backends = (
-            target_backends
-            if isinstance(target_backends, str)
-            else ",".join(target_backends)
-        )
         inv = self.session.invocation()
         if self._importer_uses_session:
             inv.import_module(self.mlir_module)
@@ -148,7 +146,13 @@ class ExportOutput:
         inv.enable_console_diagnostics()
 
         # TODO: Don't use flags to set the target backends: set module attributes.
-        self.session.set_flags(f"--iree-hal-target-backends={target_backends}")
+        if target_backends is not None:
+            target_backends = (
+                target_backends
+                if isinstance(target_backends, str)
+                else ",".join(target_backends)
+            )
+            self.session.set_flags(f"--iree-hal-target-backends={target_backends}")
         if not inv.execute():
             raise RuntimeError("Compilation failed: See diagnostics")
 
