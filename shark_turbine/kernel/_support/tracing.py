@@ -30,6 +30,7 @@ from ..lang.grid import Grid
 from ..lang.types import (
     Index,
 )
+from ..lang.wave_types import IndexMapping
 from ..ops.wave_ops import CustomOp, Placeholder, Reduction, Unknown
 
 from .regions import RegionGraph, SubgraphTracer
@@ -110,6 +111,8 @@ class KernelTracer(SubgraphTracer):
             return a
         # Let DataType persist as arguments.
         if isinstance(a, DataType):
+            return a
+        if isinstance(a, IndexMapping):
             return a
         return super().create_arg(a)
 
