@@ -93,7 +93,7 @@ class transfer_to_logical_device(CustomOp):
         t = kb.arg_bindings[1]
         dynamic_dims: list[Value] = []
         _append_dynamic_dims(kb, dynamic_dims, t)
-        target = Attribute.parse(f'#hal.device.promise<@"__device.{moniker}">')
+        target = Attribute.parse(f'#hal.device.promise<@"__device_{moniker}">')
         result = flow_d.TensorTransferOp(t, dynamic_dims, target).result
         kb.yield_results(result)
 
