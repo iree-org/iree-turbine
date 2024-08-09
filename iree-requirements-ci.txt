@@ -1,0 +1,7 @@
+# Meant for CI jobs. We want to pin to a specific nightly version.
+# A normal user is supposed to install from iree-requirements.txt where we are
+# more forgiving on the exact version.
+
+--find-links https://iree.dev/pip-release-links.html
+iree-compiler==20240808.979
+iree-runtime==20240808.979
