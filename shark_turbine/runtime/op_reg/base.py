@@ -204,6 +204,19 @@ class CustomOp(ABC):
         """
         ...
 
+    def eager_execute(self, *args):
+        """When executing eagerly, allows the CustomOp to provide a direct Python
+        implementation. For AOT/Graph modes, this will not be called.
+
+        If the method returns NotImplemented, then a standalone kernel will be
+        compiled and executed.
+
+        This is commonly used for ops that have no significance to a single op
+        execution in the PyTorch runtime (e.g. metadata ops), but could theoretically
+        be used to perform any Python analog desired.
+        """
+        return NotImplemented
+
     @abstractmethod
     def generate(self, ksel: "KernelSelection", kb: "KernelBuilder"):
         """Generates a kernel based on the `KernelSelection`.
@@ -902,6 +915,10 @@ def _create_impl_trampoline(op: CustomOp):
     )
 
     def handler(*args):
+        eager_override = op.eager_execute(*args)
+        if eager_override is not NotImplemented:
+            return eager_override
+
         ksel = EagerKernelSelection(op, args)
         op.select(ksel)
         if logger.isEnabledFor(logging.DEBUG):
