@@ -3,6 +3,7 @@ from abc import ABC
 from dataclasses import dataclass, field, fields
 import operator
 import sys
+import copy
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -274,7 +275,7 @@ class CustomOp(ABC):
             graph.inserting_after(self.fx_node)
         new_node = graph.node_copy(self.fx_node)
         new_node.tkw_op = self
-        new_node.index = self.fx_node.index
+        new_node.index = copy.deepcopy(self.fx_node.index)
         if new_name:
             new_node.name = new_name
         return get_custom(new_node)
