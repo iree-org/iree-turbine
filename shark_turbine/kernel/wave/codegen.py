@@ -5,16 +5,18 @@ from dataclasses import dataclass
 import torch.fx as fx
 
 from ..compiler.ir import (
-    InsertionPoint,
-    Location,
-    OpResult,
-    IrType,
-    Value,
+    DenseElementsAttr,
     IndexType,
-    MemRefType,
-    ShapedType,
-    VectorType,
+    InsertionPoint,
     IntegerAttr,
+    IntegerType,
+    IrType,
+    Location,
+    MemRefType,
+    OpResult,
+    ShapedType,
+    Value,
+    VectorType,
     arith_d,
     func_d,
     gpu_d,
@@ -30,6 +32,7 @@ from ..compiler.base import CodegenError, ValidationError, NDEBUG
 from ..compiler.kernel_codegen import BoundKernelSignature
 from .._support.tracing import CapturedTrace
 from ..compiler.builder import IRProxyValue
+from ..compiler.utils import strides_from_symbolic_shape
 from ..compiler.vector_codegen import (
     cast_kernel_buffer,
     cast_py_literal,
@@ -38,7 +41,8 @@ from ..compiler.vector_codegen import (
 )
 
 # Indexing imports.
-from .._support.indexing import IndexingContext
+from .._support.indexing import IndexingContext, IndexExpr
+from .indexing import IndexSequence
 
 
 @dataclass
@@ -219,6 +223,23 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
     raise NotImplementedError("Register: Currently only stub implementation")
 
 
+def _get_start_indices(
+    emitter: WaveEmitter, src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+) -> list[OpResult]:
+    start_indices = []
+    for dim_indexing in src_indices:
+        i = src_indices[dim_indexing]
+        if isinstance(i, IndexSequence):
+            i = i.start
+        start_indices.append(gen_sympy_index(emitter, i))
+
+    return start_indices
+
+
+def _compute_offset(indices: list[int], strides: list[int]) -> int:
+    return int(sum(i * s for i, s in zip(indices, strides)))
+
+
 @handle_op(read)
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
@@ -227,8 +248,6 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    assert mapping is None, "mapping is not supported yet"
-
     vector_shape = cast_py_literal(emitter, (elements_per_thread,))
     # memory has no IR node yet.
     kb_src, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
@@ -236,13 +255,56 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     if not hasattr(node, "index"):
         raise ValidationError("codegen expected read to have index attr.")
 
-    start_indices = []
-    for dim_indexing in node.index:
-        start_indices.append(gen_sympy_index(emitter, node.index[dim_indexing].start))
+    index = node.index
 
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
-    result = vector_d.load(vector_type, kb_src, start_indices)
+    if mapping is None:
+        start_indices = _get_start_indices(emitter, index)
+        result = vector_d.load(vector_type, kb_src, start_indices)
+    else:
+        assert (
+            mapping.is_output_identity()
+        ), "non-dentity output mapping is not supported yet"
+        mem_index = memory.index
+        input_mapping = mapping.map_input_indices(mem_index.keys())
+
+        iters = mapping.iters
+        subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
+
+        input_index = {
+            key: m.subs(subs) for key, m in zip(mem_index.keys(), input_mapping)
+        }
+
+        strides = strides_from_symbolic_shape(IndexingContext.current(), mem_index)
+        offsets = []
+        subs = [(sym, 0) for sym in iters.keys()]
+        for i in range(elements_per_thread):
+            # Update most-minor dim, i.e. in case of identity mapping it will
+            # be quivalent to just vector.load
+            subs[-1] = (subs[-1][0], i)
+            indices = [int(i.subs(subs)) for i in input_mapping]
+            offsets.append(
+                IntegerAttr.get(IndexType.get(), _compute_offset(indices, strides))
+            )
+
+        start_indices = _get_start_indices(emitter, input_index)
+        offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+
+        offsets_vec = arith_d.ConstantOp(
+            offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
+        )
+        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+        zero = arith_d.ConstantOp(vector_type.element_type, 0)
+        passthru = vector_d.splat(vector_type, zero)
+
+        result = vector_d.gather(
+            vector_type, kb_src, start_indices, offsets_vec, mask, passthru
+        )
+
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
