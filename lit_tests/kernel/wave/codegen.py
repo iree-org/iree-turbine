@@ -97,6 +97,7 @@ def test_read():
         # CHECK: %[[IDX_Y:.+]] = arith.addi %[[WG1_OFF]], %[[T1_OFF]]
         # CHECK: vector.load %[[DATA]][%[[IDX_X]], %[[IDX_Y]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
+
 @run
 def test_read_mapped():
     constraints: list[tkw.Constraint] = [
