@@ -137,6 +137,17 @@ def _subs_expr(expr: Any, subs: Iterable[tuple[IndexExpr, IndexExpr]]) -> Any:
     return expr
 
 
+def _is_identity_mapping(iters: Iterable[IndexSymbol], mapping: SymbolsMap) -> bool:
+    if len(iters) != len(mapping):
+        return False
+
+    for it, val in zip(iters, mapping.values()):
+        if it != val:
+            return False
+
+    return True
+
+
 class IndexMapping:
     """
     Represents a mapping between 2 sets of indices.
@@ -209,3 +220,6 @@ class IndexMapping:
         self, symbols: Optional[tuple[IndexSymbol, ...]] = None
     ) -> tuple[IndexExpr, ...]:
         return self._map_indices(self.output_mapping, symbols)
+
+    def is_output_identity(self) -> bool:
+        return _is_identity_mapping(self.iters.keys(), self.output_mapping)

@@ -99,6 +99,53 @@ def test_read():
 
 
 @run
+def test_read_mapped():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    mapping = tkw.IndexMapping(
+        num_iterators=2, inputs={N: i, M: j}, outputs={N: i, M: j}
+    )
+
+    @tkw.wave(constraints)
+    def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+        tkw.read(a, mapping=mapping, elements_per_thread=16)
+
+    with codegen_test_context():
+        a = torch.randn(16, 16, dtype=torch.float16)
+        print(test(a).module_op)
+        # CHECK: func.func @test(%[[ARG0:.+]]: !stream.binding)
+        # CHECK: %[[WG_0:.+]] = stream.dispatch.workgroup.id[0]
+        # CHECK: %[[WG_1:.+]] = stream.dispatch.workgroup.id[1]
+        # CHECK: %[[T0:.+]] = gpu.thread_id  x
+        # CHECK: %[[T1:.+]] = gpu.thread_id  y
+        # CHECK: %[[DATA:.+]] = stream.binding.subspan %[[ARG0]]
+        # CHECK: %[[C16:.+]] = arith.constant 16 : index
+        # CHECK: %[[WG0_OFF:.+]] = arith.muli %[[WG_0]], %[[C16]]
+        # CHECK: %[[C4:.+]] = arith.constant 4 : index
+        # CHECK: %[[T0_OFF:.+]] = arith.divsi %[[T0]], %[[C4]]
+        # CHECK: %[[IDX_X:.+]] = arith.addi %[[T0_OFF]], %[[WG0_OFF]]
+        # CHECK: %[[C16_0:.+]] = arith.constant 16 : index
+        # CHECK: %[[T1_OFF:.+]] = arith.muli %[[T1]], %[[C16_0]] : index
+        # CHECK: %[[C16_1:.+]] = arith.constant 16 : index
+        # CHECK: %[[WG1_OFF:.+]] = arith.muli %[[WG_1]], %[[C16_1]]
+        # CHECK: %[[IDX_Y:.+]] = arith.addi %[[WG1_OFF]], %[[T1_OFF]]
+        # CHECK: %[[OFF:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240]> : vector<16xindex>
+        # CHECK: %[[MASK:.+]] = vector.constant_mask [16] : vector<16xi1>
+        # CHECK: %[[PASSTHRU:.+]] = vector.splat %{{.*}} : vector<16xf16>
+        # CHECK: %[[RES:.+]] = vector.gather %[[DATA]][%[[IDX_X]], %[[IDX_Y]]] [%[[OFF]]], %[[MASK]], %[[PASSTHRU]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16> into vector<16xf16>
+
+
+@run
 def test_read_write():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
