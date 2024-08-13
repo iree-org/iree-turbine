@@ -248,7 +248,31 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
 
 @handle_op(write)
 def handle_write(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("Write: Currently only stub implementation")
+    try:
+        register, memory, elements_per_thread, mapping = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    assert mapping is None, "mapping is not supported yet"
+
+    # memory has no IR node yet.
+    kb_dest, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
+    insert_vector = cast_vector(emitter, register, element_type=kb_ir_type.element_type)
+    insert_type = VectorType(insert_vector.type)
+
+    # TODO: Support elements_per_thread size mismatch and broadcasting
+    assert tuple(insert_type.shape) == (
+        elements_per_thread,
+    ), f"Shape doesn't match: {tuple(insert_type.shape)} and {(elements_per_thread,)}"
+
+    if not hasattr(node, "index"):
+        raise ValidationError("codegen expected read to have index attr.")
+
+    start_indices = []
+    for dim_indexing in node.index:
+        start_indices.append(gen_sympy_index(emitter, node.index[dim_indexing].start))
+
+    vector_d.store(insert_vector, kb_dest, start_indices)
 
 
 ###############################################################################
