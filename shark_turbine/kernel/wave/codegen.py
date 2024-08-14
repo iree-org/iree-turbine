@@ -323,8 +323,6 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    assert mapping is None, "mapping is not supported yet"
-
     # memory has no IR node yet.
     kb_dest, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
     insert_vector = cast_vector(emitter, register, element_type=kb_ir_type.element_type)
@@ -338,11 +336,53 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     if not hasattr(node, "index"):
         raise ValidationError("codegen expected read to have index attr.")
 
-    start_indices = []
-    for dim_indexing in node.index:
-        start_indices.append(gen_sympy_index(emitter, node.index[dim_indexing].start))
+    index = node.index
+    if mapping is None:
+        start_indices = _get_start_indices(emitter, index)
+        vector_d.store(insert_vector, kb_dest, start_indices)
+    else:
+        print(dir(register))
+        print(get_custom(register).symbolic_shape)
+        print(mapping.is_input_identity(), register.index, mapping.input_shape)
+        assert (
+            mapping.is_input_identity() and register.index == mapping.input_shape
+        ), "non-identity input mapping is not supported yet"
+        mem_index = memory.index
+        output_mapping = mapping.map_input_indices(mem_index.keys())
 
-    vector_d.store(insert_vector, kb_dest, start_indices)
+        iters = mapping.iters
+        subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
+
+        output_index = {
+            key: m.subs(subs) for key, m in zip(mem_index.keys(), output_mapping)
+        }
+
+        strides = strides_from_symbolic_shape(IndexingContext.current(), mem_index)
+        offsets = []
+        subs = [(sym, 0) for sym in iters.keys()]
+        for i in range(elements_per_thread):
+            # Update most-minor dim, i.e. in case of identity mapping it will
+            # be quivalent to just vector.load
+            subs[-1] = (subs[-1][0], i)
+            indices = [int(i.subs(subs)) for i in output_mapping]
+            offsets.append(
+                IntegerAttr.get(IndexType.get(), _compute_offset(indices, strides))
+            )
+
+        start_indices = _get_start_indices(emitter, output_index)
+        offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+
+        offsets_vec = arith_d.ConstantOp(
+            offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
+        )
+        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+
+        result = vector_d.scatter(
+            kb_dest, start_indices, offsets_vec, mask, insert_vector
+        )
 
 
 ###############################################################################

@@ -196,6 +196,10 @@ class IndexMapping:
         return IndexMapping(self.num_iterators, new_inputs, new_outputs)
 
     @property
+    def input_shape(self) -> tuple[IndexExpr]:
+        return tuple(self.input_mapping.keys())
+
+    @property
     def output_shape(self) -> tuple[IndexExpr]:
         return tuple(self.output_mapping.keys())
 
@@ -220,6 +224,9 @@ class IndexMapping:
         self, symbols: Optional[tuple[IndexSymbol, ...]] = None
     ) -> tuple[IndexExpr, ...]:
         return self._map_indices(self.output_mapping, symbols)
+
+    def is_input_identity(self) -> bool:
+        return _is_identity_mapping(self.iters.keys(), self.input_mapping)
 
     def is_output_identity(self) -> bool:
         return _is_identity_mapping(self.iters.keys(), self.output_mapping)
