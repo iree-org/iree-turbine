@@ -15,9 +15,9 @@ __all__ = [
     "BoundedRelation",
     "EqualRelation",
     "IndexingContext",
-    "IndexingSequence",
     "IndexRelation",
     "IndexExpr",
+    "IndexSequence",
     "IndexSymbol",
     "SymIndex",
 ]

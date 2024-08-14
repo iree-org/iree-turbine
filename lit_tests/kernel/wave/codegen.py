@@ -130,19 +130,19 @@ def test_read_mapped():
         # CHECK: %[[T1:.+]] = gpu.thread_id  y
         # CHECK: %[[DATA:.+]] = stream.binding.subspan %[[ARG0]]
         # CHECK: %[[C16:.+]] = arith.constant 16 : index
-        # CHECK: %[[WG0_OFF:.+]] = arith.muli %[[WG_0]], %[[C16]]
-        # CHECK: %[[C4:.+]] = arith.constant 4 : index
-        # CHECK: %[[T0_OFF:.+]] = arith.divsi %[[T0]], %[[C4]]
-        # CHECK: %[[IDX_X:.+]] = arith.addi %[[T0_OFF]], %[[WG0_OFF]]
-        # CHECK: %[[C16_0:.+]] = arith.constant 16 : index
-        # CHECK: %[[T1_OFF:.+]] = arith.muli %[[T1]], %[[C16_0]] : index
+        # CHECK: %[[T1_OFF:.+]] = arith.muli %[[T1]], %[[C16]] : index
         # CHECK: %[[C16_1:.+]] = arith.constant 16 : index
         # CHECK: %[[WG1_OFF:.+]] = arith.muli %[[WG_1]], %[[C16_1]]
         # CHECK: %[[IDX_Y:.+]] = arith.addi %[[WG1_OFF]], %[[T1_OFF]]
-        # CHECK: %[[OFF:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240]> : vector<16xindex>
+        # CHECK: %[[C16_0:.+]] = arith.constant 16 : index
+        # CHECK: %[[WG0_OFF:.+]] = arith.muli %[[WG_0]], %[[C16_0]]
+        # CHECK: %[[C4:.+]] = arith.constant 4 : index
+        # CHECK: %[[T0_OFF:.+]] = arith.divsi %[[T0]], %[[C4]]
+        # CHECK: %[[IDX_X:.+]] = arith.addi %[[T0_OFF]], %[[WG0_OFF]]
+        # CHECK: %[[OFF:.+]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> : vector<16xindex>
         # CHECK: %[[MASK:.+]] = vector.constant_mask [16] : vector<16xi1>
         # CHECK: %[[PASSTHRU:.+]] = vector.splat %{{.*}} : vector<16xf16>
-        # CHECK: %[[RES:.+]] = vector.gather %[[DATA]][%[[IDX_X]], %[[IDX_Y]]] [%[[OFF]]], %[[MASK]], %[[PASSTHRU]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16> into vector<16xf16>
+        # CHECK: %[[RES:.+]] = vector.gather %[[DATA]][%[[IDX_Y]], %[[IDX_X]]] [%[[OFF]]], %[[MASK]], %[[PASSTHRU]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16> into vector<16xf16>
 
 
 @run
