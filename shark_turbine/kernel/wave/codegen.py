@@ -41,8 +41,7 @@ from ..compiler.vector_codegen import (
 )
 
 # Indexing imports.
-from .._support.indexing import IndexingContext, IndexExpr
-from .indexing import IndexSequence
+from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
 
 
 @dataclass
@@ -266,17 +265,14 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         assert (
             mapping.is_output_identity()
         ), "non-dentity output mapping is not supported yet"
-        mem_index = memory.index
-        input_mapping = mapping.map_input_indices(mem_index.keys())
+        input_mapping = mapping.map_input_indices(index.keys())
 
         iters = mapping.iters
         subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
 
-        input_index = {
-            key: m.subs(subs) for key, m in zip(mem_index.keys(), input_mapping)
-        }
+        input_index = {key: m.subs(subs) for key, m in zip(index.keys(), input_mapping)}
 
-        strides = strides_from_symbolic_shape(IndexingContext.current(), mem_index)
+        strides = strides_from_symbolic_shape(IndexingContext.current(), index)
         offsets = []
         subs = [(sym, 0) for sym in iters.keys()]
         for i in range(elements_per_thread):

@@ -4,8 +4,7 @@ from enum import Enum
 from typing import Optional
 from sympy import ceiling, Piecewise, floor
 
-from .._support.indexing import IndexExpr, IndexSymbol
-from .indexing import IndexSequence
+from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 
 

@@ -3,6 +3,7 @@ from abc import ABC
 from dataclasses import dataclass, field, fields
 import operator
 import sys
+import copy
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -17,8 +18,8 @@ from typing import (
 import torch.fx as fx
 
 if TYPE_CHECKING:
-    from ..lang.wave_types import Memory, Register, IndexMapping
-from .._support.indexing import IndexExpr, IndexSymbol
+    from ..lang.wave_types import Memory, Register
+from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
@@ -175,7 +176,6 @@ class CustomOp(ABC):
     fx_node: Optional[fx.Node] = field(default=None, init=False)
     tkw_op_name: str = field(default="unknown", init=False)
     _tracing_function: Optional[Callable[..., Any]] = field(default=None, init=False)
-    index: Optional[dict[IndexSymbol, IndexSequence]] = field(default=None, init=False)
 
     @classmethod
     def from_fx_node(cls: Type[CustomOpT], node: fx.Node) -> CustomOpT:
@@ -205,14 +205,13 @@ class CustomOp(ABC):
     def custom_string(self, value_map: dict[str, str]) -> str:
         # print all variables of the node apart from graph and fx_node
         ignore_list = ["fx_node", "graph"]
-
-        if self.index is None:
-            ignore_list += ["index"]
         vars_list = [
             f"{key}={value}"
             for key, value in vars(self).items()
             if key not in ignore_list and value is not None
         ]
+        if hasattr(self.fx_node, "index") and self.fx_node.index:
+            vars_list.append(f"index={self.fx_node.index}")
         vars_str = ", ".join(vars_list)
         return f"{self.tkw_op_name}({vars_str})"
 
@@ -274,7 +273,7 @@ class CustomOp(ABC):
             graph.inserting_after(self.fx_node)
         new_node = graph.node_copy(self.fx_node)
         new_node.tkw_op = self
-        new_node.index = self.fx_node.index
+        new_node.index = copy.deepcopy(self.fx_node.index)
         if new_name:
             new_node.name = new_name
         return get_custom(new_node)
@@ -321,6 +320,30 @@ class CustomOp(ABC):
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         return []
+
+    @property
+    def index(self) -> Optional[dict[IndexSymbol, IndexSequence]]:
+        if hasattr(self.fx_node, "index"):
+            return self.fx_node.index
+        return None
+
+    @index.setter
+    def index(self, value: Any):
+        """
+        Updates the index of the node based on a per-dimension index sequence.
+        """
+        if value is None:
+            return
+        if isinstance(value, dict):
+            for dim, key in value.items():
+                assert isinstance(
+                    key, IndexSequence
+                ), f"Expected IndexSequence, got {key}"
+                if not hasattr(self.fx_node, "index"):
+                    self.fx_node.index = {}
+                self.fx_node.index[dim] = key
+        else:
+            raise ValueError("Index must be a dict")
 
 
 @define_py_op(operator.getitem)
