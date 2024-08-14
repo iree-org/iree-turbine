@@ -27,7 +27,7 @@ from shark_turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_
 
 # TK infrastructure imports.
 from shark_turbine.kernel.lang.global_symbols import *
-from ..ops.wave_ops import write, register, mma, read, reduction
+from ..ops.wave_ops import write, register, mma, read, reduction, get_custom
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
 from ..compiler.kernel_codegen import BoundKernelSignature
 from .._support.tracing import CapturedTrace
@@ -264,15 +264,27 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     else:
         assert (
             mapping.is_output_identity()
-        ), "non-dentity output mapping is not supported yet"
-        input_mapping = mapping.map_input_indices(index.keys())
+        ), "non-identity output mapping is not supported yet"
+
+        # We need original symbolic shape to determine dimensions access order.
+        mem_shape = get_custom(memory).type.symbolic_shape
+
+        # Apply input order to input indices, e.g. if original input_mapping was
+        # {M: iter(0), N: iter(1)} and source mem has shape (N, M), result will
+        # be (iter(1), iter(0))
+        input_mapping = mapping.map_input_indices(mem_shape)
 
         iters = mapping.iters
+
+        # As we only support identity output mapping for now, we can directly
+        # substitute iterators with corresponding expanded index.
         subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
 
-        input_index = {key: m.subs(subs) for key, m in zip(index.keys(), input_mapping)}
+        # Contruct input index, substituting iterators in input mapping with
+        # expended index.
+        input_index = {key: m.subs(subs) for key, m in zip(mem_shape, input_mapping)}
 
-        strides = strides_from_symbolic_shape(IndexingContext.current(), index)
+        strides = strides_from_symbolic_shape(IndexingContext.current(), mem_shape)
         offsets = []
         subs = [(sym, 0) for sym in iters.keys()]
         for i in range(elements_per_thread):
