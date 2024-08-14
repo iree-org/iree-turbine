@@ -6,7 +6,7 @@ import unittest
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
-from shark_turbine.kernel.wave.promotion import promote_node
+from shark_turbine.kernel.wave.promotion import promote_node, promote_placeholders
 from shark_turbine.kernel.wave.hoisting import hoist_allocs
 from shark_turbine.kernel.lang.global_symbols import *
 from shark_turbine.kernel._support.tracing import CapturedTrace
@@ -51,6 +51,8 @@ BLOCK_K = tkl.sym.BLOCK_K
 
 # Address space (for GPU, shared(1) or global(0))
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
+ADDRESS_SPACE_1 = tkl.sym.ADDRESS_SPACE_1
 
 
 @tkw.wave_trace_only()
@@ -86,6 +88,55 @@ def test_read_write_equal_sizes():
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
         promote_node(read_node, SHARED_ADDRESS_SPACE)
+        print_trace(trace)
+        # CHECK: %a
+        # CHECK-NEXT: %c
+        # CHECK-NEXT: %read
+        # CHECK-SAME: (%a, 4, None)
+        # CHECK-NEXT: %allocate
+        # CHECK-SAME: ((M, N), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-NEXT: %write_1
+        # CHECK-SAME: (%read, %allocate, 4, None)
+        # CHECK-NEXT: %read_1
+        # CHECK-SAME: (%allocate, 4, None)
+        # CHECK-NEXT: %write
+        # CHECK-SAME: (%read_1, %c, 4, None)
+
+        # CHECK: -----
+
+
+@tkw.wave_trace_only()
+def read_write_same_size_different_address_spaces(
+    a: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f16],
+    c: tkl.Memory[M, N, ADDRESS_SPACE_1, tkl.f32],
+):
+    a_reg = tkw.read(a, elements_per_thread=4)
+    tkw.write(a_reg, c, elements_per_thread=4)
+
+
+@run
+def test_read_write_equal_sizes_different_address_spaces():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+        )
+    ]
+
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            ADDRESS_SPACE_0: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_1: GLOBAL_ADDRESS_SPACE,
+        }
+    ):
+        trace: CapturedTrace = read_write_same_size_different_address_spaces()
+        IndexingContext.current().finalize()
+        promote_placeholders(trace)
         print_trace(trace)
         # CHECK: %a
         # CHECK-NEXT: %c
