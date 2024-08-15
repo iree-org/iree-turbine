@@ -4,10 +4,12 @@ try:
 except:
     disabled_graphviz = True
 from torch import fx
+import warnings
 
 
 def visualize_graph(graph: fx.Graph, file_name: str):
     if disabled_graphviz:
+        warnings.warn("pygraphviz not installed, skipping visualization.")
         return
     G = pgv.AGraph(directed=True)
     for node in graph.nodes:
