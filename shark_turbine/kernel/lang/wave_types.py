@@ -148,6 +148,15 @@ def _is_identity_mapping(iters: Iterable[IndexSymbol], mapping: SymbolsMap) -> b
     return True
 
 
+def _map_indices(
+    mapping: SymbolsMap, symbols: Optional[tuple[IndexSymbol, ...]]
+) -> tuple[IndexExpr, ...]:
+    if symbols is None:
+        return tuple(mapping.values())
+
+    return tuple(mapping[sym] for sym in symbols)
+
+
 class IndexMapping:
     """
     Represents a mapping between 2 sets of indices.
@@ -207,23 +216,15 @@ class IndexMapping:
     def iterator(index: int) -> IndexSymbol:
         return index_symbol(f"$index{index}")
 
-    def _map_indices(
-        self, mapping: SymbolsMap, symbols: Optional[tuple[IndexSymbol, ...]]
-    ) -> tuple[IndexExpr, ...]:
-        if symbols is None:
-            return tuple(mapping.values())
-
-        return tuple(mapping[sym] for sym in symbols)
-
     def map_input_indices(
         self, symbols: Optional[tuple[IndexSymbol, ...]] = None
     ) -> tuple[IndexExpr, ...]:
-        return self._map_indices(self.input_mapping, symbols)
+        return _map_indices(self.input_mapping, symbols)
 
     def map_output_indices(
         self, symbols: Optional[tuple[IndexSymbol, ...]] = None
     ) -> tuple[IndexExpr, ...]:
-        return self._map_indices(self.output_mapping, symbols)
+        return _map_indices(self.output_mapping, symbols)
 
     def is_input_identity(self) -> bool:
         return _is_identity_mapping(self.iters.keys(), self.input_mapping)

@@ -250,12 +250,12 @@ def _contruct_gather_scatter_indices(
     index: tuple[IndexExpr],
     mapping: IndexMapping,
     elements_per_thread: int,
-    is_input: bool,
+    is_read: bool,
 ) -> tuple[OpResult, OpResult, OpResult]:
-    # Apply symbolc_shape order to  indices, e.g. if original mapping is
+    # Apply symbolc_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
     # be (iter(1), iter(0))
-    if is_input:
+    if is_read:
         assert (
             mapping.is_output_identity()
         ), "non-identity output mapping is not supported yet"
