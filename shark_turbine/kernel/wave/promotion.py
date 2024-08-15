@@ -1,4 +1,6 @@
+from .._support.tracing import CapturedTrace
 from ...support.logging import get_logger
+from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 
@@ -38,3 +40,15 @@ def promote_node(node: Read | Write, address_space: IndexSymbol):
         )
         allocate_node.add_to_graph(node.graph)
         apply_promotion_pattern(node, allocate_node)
+
+
+def promote_placeholders(graph: CapturedTrace):
+    for node in graph.get_root_graph().nodes:
+        custom = get_custom(node)
+        if isinstance(custom, Read) or isinstance(custom, Write):
+            if not custom.type:
+                continue
+            idxc = IndexingContext.current()
+            address_space = custom.type.address_space.subs(idxc.subs)
+            if address_space == SHARED_ADDRESS_SPACE:
+                promote_node(custom, address_space)

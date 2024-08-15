@@ -15,6 +15,8 @@ from .constraints import (
 )
 from .codegen import WaveEmitter
 from .expansion import expand_graph
+from .promotion import promote_placeholders
+from .hoisting import hoist_allocs
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
@@ -169,6 +171,10 @@ class LaunchableWave(Launchable):
 
         idxc = IndexingContext.current()
         idxc.finalize()
+
+        # Promote the placeholders to the appropriate address space.
+        promote_placeholders(graph)
+        hoist_allocs(graph)
 
         # Expansion
         expand_graph(graph, self.constraints)
