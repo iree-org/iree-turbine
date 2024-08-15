@@ -326,12 +326,12 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         result = vector_d.load(vector_type, kb_src, start_indices)
     else:
         start_indices, offsets_vec, mask = _contruct_gather_scatter_indices(
-            emitter,
-            _get_symbolc_shape(memory),
-            index,
-            mapping,
-            elements_per_thread,
-            True,
+            emitter=emitter,
+            symbolc_shape=_get_symbolc_shape(memory),
+            index=index,
+            mapping=mapping,
+            elements_per_thread=elements_per_thread,
+            is_read=True,
         )
 
         zero = arith_d.ConstantOp(vector_type.element_type, 0)
@@ -374,12 +374,12 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         ), "non-identity input mapping is not supported yet"
 
         start_indices, offsets_vec, mask = _contruct_gather_scatter_indices(
-            emitter,
-            _get_symbolc_shape(memory),
-            index,
-            mapping,
-            elements_per_thread,
-            False,
+            emitter=emitter,
+            symbolc_shape=_get_symbolc_shape(memory),
+            index=index,
+            mapping=mapping,
+            elements_per_thread=elements_per_thread,
+            is_read=False,
         )
 
         result = vector_d.scatter(
