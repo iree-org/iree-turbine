@@ -30,3 +30,4 @@ wheelhouse
 *.safetensors
 *.gguf
 *.vmfb
+*.png

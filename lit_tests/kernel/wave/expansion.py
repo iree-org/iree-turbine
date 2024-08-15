@@ -11,6 +11,7 @@ from shark_turbine.kernel._support.tracing import CapturedTrace
 from shark_turbine.kernel._support.indexing import IndexingContext
 from shark_turbine.kernel.ops.wave_ops import get_custom
 from shark_turbine.kernel.lang.global_symbols import *
+from shark_turbine.kernel.wave.visualization import visualize_graph
 
 
 def run(func: Callable[[], None]) -> Callable[[], None]:
@@ -237,6 +238,7 @@ def test_gemm():
         graph = gemm()
         IndexingContext.current().finalize()
         expand_graph(graph, constraints)
+        visualize_graph(graph.get_subgraph("region_0"), "gemm.png")
         print_trace(graph)
         # Root graph:
         # CHECK: %a
