@@ -382,9 +382,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             is_read=False,
         )
 
-        result = vector_d.scatter(
-            kb_dest, start_indices, offsets_vec, mask, insert_vector
-        )
+        vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
 
 
 ###############################################################################
