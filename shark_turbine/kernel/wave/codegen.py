@@ -239,6 +239,10 @@ def _compute_offset(indices: list[int], strides: list[int]) -> int:
     return int(sum(i * s for i, s in zip(indices, strides)))
 
 
+def _get_symbolc_shape(node: fx.Node) -> tuple[IndexExpr]:
+    return get_custom(node).type.symbolic_shape
+
+
 @handle_op(read)
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
@@ -267,7 +271,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         ), "non-identity output mapping is not supported yet"
 
         # We need original symbolic shape to determine dimensions access order.
-        mem_shape = get_custom(memory).type.symbolic_shape
+        mem_shape = _get_symbolc_shape(memory)
 
         # Apply input order to input indices, e.g. if original input_mapping was
         # {M: iter(0), N: iter(1)} and source mem has shape (N, M), result will
@@ -341,23 +345,20 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         start_indices = _get_start_indices(emitter, index)
         vector_d.store(insert_vector, kb_dest, start_indices)
     else:
-        print(dir(register))
-        print(get_custom(register).symbolic_shape)
-        print(mapping.is_input_identity(), register.index, mapping.input_shape)
+        reg_shape = _get_symbolc_shape(register)
         assert (
-            mapping.is_input_identity() and register.index == mapping.input_shape
+            mapping.is_input_identity() and reg_shape == mapping.input_shape
         ), "non-identity input mapping is not supported yet"
-        mem_index = memory.index
-        output_mapping = mapping.map_input_indices(mem_index.keys())
+
+        mem_shape = _get_symbolc_shape(memory)
+        output_mapping = mapping.map_output_indices(mem_shape)
 
         iters = mapping.iters
         subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
 
-        output_index = {
-            key: m.subs(subs) for key, m in zip(mem_index.keys(), output_mapping)
-        }
+        output_index = {key: m.subs(subs) for key, m in zip(mem_shape, output_mapping)}
 
-        strides = strides_from_symbolic_shape(IndexingContext.current(), mem_index)
+        strides = strides_from_symbolic_shape(IndexingContext.current(), mem_shape)
         offsets = []
         subs = [(sym, 0) for sym in iters.keys()]
         for i in range(elements_per_thread):
