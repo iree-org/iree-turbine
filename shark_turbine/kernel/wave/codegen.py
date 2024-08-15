@@ -244,7 +244,7 @@ def _get_symbolc_shape(node: fx.Node) -> tuple[IndexExpr]:
     return get_custom(node).type.symbolic_shape
 
 
-def _contruct_gather_scatter_indices(
+def _construct_gather_scatter_indices(
     emitter: WaveEmitter,
     symbolc_shape: tuple[IndexExpr],
     index: tuple[IndexExpr],
@@ -325,7 +325,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         start_indices = _get_start_indices(emitter, index)
         result = vector_d.load(vector_type, kb_src, start_indices)
     else:
-        start_indices, offsets_vec, mask = _contruct_gather_scatter_indices(
+        start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
             emitter=emitter,
             symbolc_shape=_get_symbolc_shape(memory),
             index=index,
@@ -373,7 +373,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             _get_symbolc_shape(register) == mapping.input_shape
         ), "non-identity input mapping is not supported yet"
 
-        start_indices, offsets_vec, mask = _contruct_gather_scatter_indices(
+        start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
             emitter=emitter,
             symbolc_shape=_get_symbolc_shape(memory),
             index=index,
