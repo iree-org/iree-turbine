@@ -1,6 +1,8 @@
 import logging
 from typing import Callable
 import unittest
+import os
+import pytest
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
@@ -54,6 +56,14 @@ def gemm(
     tkw.write(repeat, c, elements_per_thread=4)
 
 
+graphviz_disabled = False
+try:
+    import pygraphviz
+except:
+    graphviz_disabled = True
+
+
+@pytest.mark.xfail(condition=graphviz_disabled, reason="pygraphviz not installed")
 @run
 def test_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -75,6 +85,7 @@ def test_gemm():
         IndexingContext.current().finalize()
         expand_graph(graph, constraints)
         visualize_graph(graph.get_subgraph("region_0"), "gemm.png")
+        assert os.path.exists("gemm.png")
 
 
 if __name__ == "__main__":

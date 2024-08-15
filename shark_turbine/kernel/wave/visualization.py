@@ -1,16 +1,15 @@
-disabled_graphviz = False
+graphviz_disabled = False
 try:
     import pygraphviz as pgv
 except:
-    disabled_graphviz = True
+    graphviz_disabled = True
 from torch import fx
 import warnings
 
 
 def visualize_graph(graph: fx.Graph, file_name: str):
-    if disabled_graphviz:
-        warnings.warn("pygraphviz not installed, skipping visualization.")
-        return
+    if graphviz_disabled:
+        raise ImportError("pygraphviz not installed, cannot visualize graph")
     G = pgv.AGraph(directed=True)
     for node in graph.nodes:
         G.add_node(node.name)
