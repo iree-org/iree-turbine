@@ -5,6 +5,7 @@ import unittest
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
+from shark_turbine.kernel.lang.global_symbols import *
 
 
 class Test(unittest.TestCase):
@@ -65,7 +66,7 @@ class Test(unittest.TestCase):
             tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
         hyperparams = {
-            ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             LOAD_ELEMS_PER_THREAD: 4,
             STORE_ELEMS_PER_THREAD: 1,
             BLOCK_M: 32,
