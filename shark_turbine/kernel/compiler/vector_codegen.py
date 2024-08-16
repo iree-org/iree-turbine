@@ -790,7 +790,11 @@ def cast_py_value(emitter: ThreadEmitter, value) -> IRProxyValue:
         try:
             node_values = emitter.lookup_node_values(value)
             assert len(node_values) == 1, f"Expected exactly one value for node {value}"
-            return node_values[0]
+            return (
+                node_values[0]
+                if isinstance(node_values[0], IRProxyValue)
+                else IRProxyValue(node_values[0])
+            )
         except KeyError:
             raise CodegenError(f"Producer node `{value}` has no IR Value")
     elif isinstance(value, IndexExpr):
@@ -828,6 +832,11 @@ def cast_kernel_buffer(
     value, node = cast_py_lvalue(emitter, kb)
     ir_type = value.type
     py_type = node.type
+    if py_type is None:
+        try:
+            py_type = ops.wave_ops.get_custom(node).type
+        except:
+            raise CodegenError(f"Could not find type for node {node}")
 
     if not MemRefType.isinstance(ir_type):
         raise CodegenError(

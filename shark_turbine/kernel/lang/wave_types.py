@@ -11,7 +11,6 @@ from typing import (
 )
 
 from .kernel_buffer import AddressSpace, KernelBufferMeta, KernelBufferUsage
-from ..ops.wave_ops import register
 from .._support.dtype import DataType
 from .._support.indexing import IndexExpr, IndexSymbol, index_symbol
 
@@ -101,6 +100,8 @@ class Register(metaclass=KernelBufferMeta):
     value: float
 
     def __new__(cls, value: float) -> "Register":
+        from ..ops.wave_ops import register
+
         return register(cls.symbolic_shape, cls.dtype, value)
 
     def __class_getitem__(

@@ -3,15 +3,16 @@ from ...support.logging import get_logger
 from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
+from .constraints import Constraint, get_workgroup_distributed_shape
 
 logger = get_logger("turbine.wave.promotion")
 
 
 def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
     match custom_node:
-        case Read(
-            memory, elements_per_thread
-        ) if memory.type.address_space != allocate_node.address_space:
+        case Read(memory, elements_per_thread) if get_custom(
+            memory
+        ).type.address_space != allocate_node.address_space:
             promoted_read = Read(
                 allocate_node.fx_node, elements_per_thread
             ).add_to_graph(custom_node.graph)
@@ -20,11 +21,11 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
                 Write(
                     custom_node.fx_node, allocate_node.fx_node, elements_per_thread
                 ).add_to_graph(custom_node.graph)
-        case _:
-            logger.error(f"Attempted to promoted unsupported operator {custom_node}")
 
 
-def promote_node(node: Read | Write, address_space: IndexSymbol):
+def promote_node(
+    node: Read | Write, address_space: IndexSymbol, constraints: list[Constraint]
+):
     """Promotes the given operand in the provided graph
     to the specified address space.
 
@@ -35,20 +36,29 @@ def promote_node(node: Read | Write, address_space: IndexSymbol):
 
     assert isinstance(node, Read) or isinstance(node, Write)
     with node.graph.inserting_before(node.fx_node.next):
+        workgroup_distributed_shape = get_workgroup_distributed_shape(
+            node.type.symbolic_shape, constraints
+        )
         allocate_node = Allocate(
-            node.type.symbolic_shape, node.type.dtype, address_space
+            node.type.symbolic_shape,
+            workgroup_distributed_shape,
+            node.type.dtype,
+            address_space,
         )
         allocate_node.add_to_graph(node.graph)
         apply_promotion_pattern(node, allocate_node)
 
 
-def promote_placeholders(graph: CapturedTrace):
-    for node in graph.get_root_graph().nodes:
+def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
+    read_or_write_nodes = graph.walk(
+        lambda node: isinstance(get_custom(node), Read)
+        or isinstance(get_custom(node), Write)
+    )
+    for node in read_or_write_nodes:
         custom = get_custom(node)
-        if isinstance(custom, Read) or isinstance(custom, Write):
-            if not custom.type:
-                continue
-            idxc = IndexingContext.current()
-            address_space = custom.type.address_space.subs(idxc.subs)
-            if address_space == SHARED_ADDRESS_SPACE:
-                promote_node(custom, address_space)
+        if not custom.type:
+            continue
+        idxc = IndexingContext.current()
+        address_space = custom.type.address_space.subs(idxc.subs)
+        if address_space == SHARED_ADDRESS_SPACE:
+            promote_node(custom, address_space, constraints)
