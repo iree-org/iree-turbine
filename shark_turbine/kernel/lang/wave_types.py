@@ -231,3 +231,6 @@ class IndexMapping:
 
     def is_output_identity(self) -> bool:
         return _is_identity_mapping(self.iters.keys(), self.output_mapping)
+
+    def is_identity(self) -> bool:
+        return self.is_input_identity() and self.is_output_identity()

@@ -240,8 +240,25 @@ def _compute_offset(indices: list[int], strides: list[int]) -> int:
     return int(sum(i * s for i, s in zip(indices, strides)))
 
 
-def _get_symbolc_shape(node: fx.Node) -> tuple[IndexExpr]:
+def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
     return get_custom(node).type.symbolic_shape
+
+
+def _is_identity_mapping(
+    mapping: IndexMapping,
+    input_shape: Optional[tuple[IndexExpr]] = None,
+    output_shape: Optional[tuple[IndexExpr]] = None,
+) -> bool:
+    if not mapping.is_identity():
+        return False
+
+    if input_shape is not None and mapping.input_shape != input_shape:
+        return False
+
+    if output_shape is not None and mapping.output_shape != output_shape:
+        return False
+
+    return True
 
 
 def _construct_gather_scatter_indices(
@@ -321,13 +338,14 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
 
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
-    if mapping is None:
+    input_shape = _get_symbolic_shape(memory)
+    if mapping is None or _is_identity_mapping(mapping, input_shape=input_shape):
         start_indices = _get_start_indices(emitter, index)
         result = vector_d.load(vector_type, kb_src, start_indices)
     else:
         start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
             emitter=emitter,
-            symbolc_shape=_get_symbolc_shape(memory),
+            symbolc_shape=input_shape,
             index=index,
             mapping=mapping,
             elements_per_thread=elements_per_thread,
@@ -365,17 +383,21 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
-    if mapping is None:
+    input_shape = _get_symbolic_shape(register)
+    output_shape = _get_symbolic_shape(memory)
+    if mapping is None or _is_identity_mapping(
+        mapping, input_shape=input_shape, output_shape=output_shape
+    ):
         start_indices = _get_start_indices(emitter, index)
         vector_d.store(insert_vector, kb_dest, start_indices)
     else:
         assert (
-            _get_symbolc_shape(register) == mapping.input_shape
+            input_shape == mapping.input_shape
         ), "non-identity input mapping is not supported yet"
 
         start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
             emitter=emitter,
-            symbolc_shape=_get_symbolc_shape(memory),
+            symbolc_shape=output_shape,
             index=index,
             mapping=mapping,
             elements_per_thread=elements_per_thread,
