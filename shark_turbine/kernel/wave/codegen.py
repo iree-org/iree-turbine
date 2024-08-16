@@ -298,7 +298,7 @@ def _construct_gather_scatter_indices(
     subs = [(sym, 0) for sym in iters.keys()]
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
-        # be quivalent to just vector.load
+        # be equivalent to just vector.load
         subs[-1] = (subs[-1][0], i)
         indices = [int(i.subs(subs)) for i in index_mapping]
         offsets.append(
