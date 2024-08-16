@@ -234,3 +234,6 @@ class IndexMapping:
 
     def is_identity(self) -> bool:
         return self.is_input_identity() and self.is_output_identity()
+
+    def __repr__(self) -> str:
+        return f"IndexMapping(iters={self.iters}, input_mapping={self.input_mapping}), output_mapping={self.output_mapping}"
