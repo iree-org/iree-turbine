@@ -28,6 +28,7 @@ from shark_turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_
 # TK infrastructure imports.
 from shark_turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import write, register, mma, read, reduction, get_custom
+from ..lang.wave_types import IndexMapping
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
 from ..compiler.kernel_codegen import BoundKernelSignature
 from .._support.tracing import CapturedTrace
@@ -239,6 +240,85 @@ def _compute_offset(indices: list[int], strides: list[int]) -> int:
     return int(sum(i * s for i, s in zip(indices, strides)))
 
 
+def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
+    return get_custom(node).type.symbolic_shape
+
+
+def _is_identity_mapping(
+    mapping: IndexMapping,
+    input_shape: Optional[tuple[IndexExpr]] = None,
+    output_shape: Optional[tuple[IndexExpr]] = None,
+) -> bool:
+    if not mapping.is_identity():
+        return False
+
+    if input_shape is not None and mapping.input_shape != input_shape:
+        return False
+
+    if output_shape is not None and mapping.output_shape != output_shape:
+        return False
+
+    return True
+
+
+def _construct_gather_scatter_indices(
+    emitter: WaveEmitter,
+    symbolc_shape: tuple[IndexExpr],
+    index: tuple[IndexExpr],
+    mapping: IndexMapping,
+    elements_per_thread: int,
+    is_read: bool,
+) -> tuple[OpResult, OpResult, OpResult]:
+    # Apply symbolc_shape order to indices, e.g. if original mapping is
+    # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
+    # be (iter(1), iter(0))
+    if is_read:
+        assert (
+            mapping.is_output_identity()
+        ), "non-identity output mapping is not supported yet"
+        index_mapping = mapping.map_input_indices(symbolc_shape)
+    else:
+        assert (
+            mapping.is_input_identity()
+        ), "non-identity input mapping is not supported yet"
+        index_mapping = mapping.map_output_indices(symbolc_shape)
+
+    iters = mapping.iters
+
+    # As we only support identity input/output mapping for now, we can directly
+    # substitute iterators with corresponding expanded index.
+    subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
+
+    # Contruct input/output index, substituting iterators in input mapping with
+    # expanded index.
+    result_index = {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
+
+    strides = strides_from_symbolic_shape(IndexingContext.current(), symbolc_shape)
+    offsets = []
+    subs = [(sym, 0) for sym in iters.keys()]
+    for i in range(elements_per_thread):
+        # Update most-minor dim, i.e. in case of identity mapping it will
+        # be equivalent to just vector.load
+        subs[-1] = (subs[-1][0], i)
+        indices = [int(i.subs(subs)) for i in index_mapping]
+        offsets.append(
+            IntegerAttr.get(IndexType.get(), _compute_offset(indices, strides))
+        )
+
+    start_indices = _get_start_indices(emitter, result_index)
+    offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
+
+    offsets_vec = arith_d.ConstantOp(
+        offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
+    )
+
+    mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
+
+    mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+
+    return start_indices, offsets_vec, mask
+
+
 @handle_op(read)
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
@@ -258,54 +338,20 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
 
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
-    if mapping is None:
+    input_shape = _get_symbolic_shape(memory)
+    if mapping is None or _is_identity_mapping(mapping, input_shape=input_shape):
         start_indices = _get_start_indices(emitter, index)
         result = vector_d.load(vector_type, kb_src, start_indices)
     else:
-        assert (
-            mapping.is_output_identity()
-        ), "non-identity output mapping is not supported yet"
-
-        # We need original symbolic shape to determine dimensions access order.
-        mem_shape = get_custom(memory).type.symbolic_shape
-
-        # Apply input order to input indices, e.g. if original input_mapping was
-        # {M: iter(0), N: iter(1)} and source mem has shape (N, M), result will
-        # be (iter(1), iter(0))
-        input_mapping = mapping.map_input_indices(mem_shape)
-
-        iters = mapping.iters
-
-        # As we only support identity output mapping for now, we can directly
-        # substitute iterators with corresponding expanded index.
-        subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
-
-        # Contruct input index, substituting iterators in input mapping with
-        # expended index.
-        input_index = {key: m.subs(subs) for key, m in zip(mem_shape, input_mapping)}
-
-        strides = strides_from_symbolic_shape(IndexingContext.current(), mem_shape)
-        offsets = []
-        subs = [(sym, 0) for sym in iters.keys()]
-        for i in range(elements_per_thread):
-            # Update most-minor dim, i.e. in case of identity mapping it will
-            # be quivalent to just vector.load
-            subs[-1] = (subs[-1][0], i)
-            indices = [int(i.subs(subs)) for i in input_mapping]
-            offsets.append(
-                IntegerAttr.get(IndexType.get(), _compute_offset(indices, strides))
-            )
-
-        start_indices = _get_start_indices(emitter, input_index)
-        offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
-        mask_vec_type = VectorType.get(
-            [elements_per_thread], IntegerType.get_signless(1)
+        start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
+            emitter=emitter,
+            symbolc_shape=input_shape,
+            index=index,
+            mapping=mapping,
+            elements_per_thread=elements_per_thread,
+            is_read=True,
         )
 
-        offsets_vec = arith_d.ConstantOp(
-            offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
-        )
-        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
         zero = arith_d.ConstantOp(vector_type.element_type, 0)
         passthru = vector_d.splat(vector_type, zero)
 
@@ -323,8 +369,6 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    assert mapping is None, "mapping is not supported yet"
-
     # memory has no IR node yet.
     kb_dest, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
     insert_vector = cast_vector(emitter, register, element_type=kb_ir_type.element_type)
@@ -338,11 +382,29 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     if not hasattr(node, "index"):
         raise ValidationError("codegen expected read to have index attr.")
 
-    start_indices = []
-    for dim_indexing in node.index:
-        start_indices.append(gen_sympy_index(emitter, node.index[dim_indexing].start))
+    index = node.index
+    input_shape = _get_symbolic_shape(register)
+    output_shape = _get_symbolic_shape(memory)
+    if mapping is None or _is_identity_mapping(
+        mapping, input_shape=input_shape, output_shape=output_shape
+    ):
+        start_indices = _get_start_indices(emitter, index)
+        vector_d.store(insert_vector, kb_dest, start_indices)
+    else:
+        assert (
+            input_shape == mapping.input_shape
+        ), "non-identity input mapping is not supported yet"
 
-    vector_d.store(insert_vector, kb_dest, start_indices)
+        start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
+            emitter=emitter,
+            symbolc_shape=output_shape,
+            index=index,
+            mapping=mapping,
+            elements_per_thread=elements_per_thread,
+            is_read=False,
+        )
+
+        vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
 
 
 ###############################################################################

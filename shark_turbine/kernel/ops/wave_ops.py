@@ -660,6 +660,8 @@ class Write(CustomOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        if self.mapping is not None:
+            return list(self.mapping.input_shape)
         # TODO: This could contain ints.
         return list(self.memory.type.symbolic_shape)
 
