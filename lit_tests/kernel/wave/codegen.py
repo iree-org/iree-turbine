@@ -289,12 +289,13 @@ def test_mma():
             STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
-        }
+        },
+        canonicalize=True,
     ):
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(mma(a, b, c, canonicalize=True).module_op)
+        print(mma(a, b, c).module_op)
 
         # CHECK: func.func @mma(%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %[[ARG2:.+]]: !stream.binding) {
         # CHECK-DAG: %[[C16:.+]] = arith.constant 16 : index

@@ -485,22 +485,26 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     try:
         lhs, rhs, acc = node.args
         acc = cast_vector(emitter, acc)
-        values = [lhs, rhs]
-        for i in range(len(values)):
-            values[i] = cast_vector(emitter, values[i])
+        values = [cast_vector(emitter, val) for val in [lhs, rhs]]
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
     vector_type = VectorType(acc.type)
-    result = None
-    for constraint in emitter.constraints:
-        if isinstance(constraint, HardwareConstraint):
-            m, n, k = constraint.mma_matrix_shapes
-            result = emit_mfma(m, n, k, vector_type, acc, values)
-            break
 
-    if result:
-        emitter.bind_node_proxy(node, IRProxyValue(result))
+    hardware_constraints = [
+        constraint
+        for constraint in emitter.constraints
+        if isinstance(constraint, HardwareConstraint)
+    ]
+    if not hardware_constraints:
+        raise CodegenError("No hardware constraints found.")
+
+    result = None
+    for constraint in hardware_constraints:
+        m, n, k = constraint.mma_matrix_shapes
+        result = emit_mfma(m, n, k, vector_type, acc, values)
+
+    emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
 @handle_op(operator.add)

@@ -222,7 +222,7 @@ def get_workgroup_distributed_shape(
     Given a shape and workgroup constraints, returns the shape
     of the tensor after it has been distributed along workgroup dimensions.
     """
-    distributed_shape = [s for s in shape]
+    distributed_shape = list(shape)
     for i, dim in enumerate(shape):
         for constraint in constraints:
             if isinstance(constraint, WorkgroupConstraint):

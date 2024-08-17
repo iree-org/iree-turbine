@@ -206,7 +206,7 @@ class LaunchableWave(Launchable):
         emitter.emit(graph.get_root_graph())
         emitter.finish()
 
-        if "canonicalize" in kwargs and kwargs["canonicalize"]:
+        if kwargs.get("canonicalize", False):
             canonicalize_module(mb.module_op)
 
         return mb, graph
