@@ -14,6 +14,7 @@ from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
 from .._support.indexing import index_symbol
+from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.expansion")
 # This represents a mapping of a node + indexing into the dimensions to the
@@ -261,6 +262,9 @@ def _expand_node(
         # been expanded. Simply return the corresponding node.
         reduction = get_custom(node.value)
         return context[(reduction, get_indexed_dims(dim_query, reduction))]
+    elif isinstance(node, Allocate):
+        # Allocate nodes are not expanded.
+        return node
 
     # Filter out the dimensions that are not indexed by the node
     restricted_dims = filter_and_zero_unselected_dims(dim_query, node.indexing_dims)
@@ -364,6 +368,9 @@ def get_expanded_name(node: CustomOp, dims: dict[IndexSymbol, int]) -> str:
 
     separated = node.fx_node.name.split("_")
     node_name = separated[0]
+    if isinstance(node, Read) or isinstance(node, Write):
+        if get_custom(node.memory).type.address_space == SHARED_ADDRESS_SPACE:
+            node_name = node_name + "_shared"
     # Special case for get_result op
     if node_name == "get":
         node_name = node_name + separated[1]
@@ -445,7 +452,7 @@ def _handle_reduction_dim(
         if isinstance(node, IterArg):
             iter_args.append(node)
 
-    new_outputs = [iter_arg.fx_node for iter_arg in iter_args]
+    new_outputs = list(reduction.outputs(trace.get_subgraph(reduction.subgraph_name)))
     # Users of the loop carried nodes will be duplicated
     for idx, carried_node in enumerate(iter_args):
         # The initial nodes are expanded in the first dimension, so we start from 1

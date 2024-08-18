@@ -3,6 +3,7 @@ import sympy
 from typing import Any, Callable, ClassVar, Optional, List, Type
 from dataclasses import dataclass
 import torch.fx as fx
+import torch.utils._pytree as pytree
 
 from ..compiler.ir import (
     Attribute,
@@ -25,14 +26,25 @@ from ..compiler.ir import (
     gpu_d,
     memref_d,
     stream_d,
+    scf_d,
     vector_d,
 )
 from shark_turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_type
 
 # TK infrastructure imports.
 from shark_turbine.kernel.lang.global_symbols import *
-from ..ops.wave_ops import write, register, mma, read, reduction, get_custom, allocate
-from ..lang.wave_types import IndexMapping
+from ..ops.wave_ops import (
+    write,
+    register,
+    mma,
+    read,
+    reduction,
+    get_custom,
+    get_result,
+    allocate,
+    CustomOp,
+)
+from ..lang.wave_types import IndexMapping, IndexSymbol
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
 from ..compiler.kernel_codegen import BoundKernelSignature
 from .._support.tracing import CapturedTrace
@@ -44,7 +56,7 @@ from ..compiler.vector_codegen import (
     cast_py_value,
     cast_vector,
 )
-from .constraints import Constraint, HardwareConstraint, MMAType
+from .constraints import Constraint, HardwareConstraint, MMAType, TilingConstraint
 
 # Indexing imports.
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
@@ -75,6 +87,7 @@ class WaveEmitter:
             gpu_d.thread_id(gpu_d.Dimension.y),
             gpu_d.thread_id(gpu_d.Dimension.z),
         ]
+        self.induction_vars: dict[IndexSymbol, Value] = {}
 
     def emit(self, graph: Optional[fx.Graph] = None):
         with self.ip, Location.unknown():
@@ -92,6 +105,8 @@ class WaveEmitter:
         for node in graph.nodes:
             if node.op == "call_function" or node.op == "call_method":
                 self._emit_function_call_node(node)
+            if node.op == "output":
+                return node.args
 
     def _emit_function_call_node(self, node: fx.Node):
         target_op = node.tkw_op_name
@@ -116,6 +131,13 @@ class WaveEmitter:
         assert NDEBUG or (isinstance(node, fx.Node) and isinstance(proxy, IRProxyValue))
         self._node_values[node] = [proxy]
 
+    def bind_node_proxies(self, node: fx.Node, proxies: List[IRProxyValue]):
+        assert NDEBUG or (
+            isinstance(node, fx.Node)
+            and all(isinstance(p, IRProxyValue) for p in proxies)
+        )
+        self._node_values[node] = proxies
+
 
 def get_type_or_element_type(operand_type: IrType):
     assert isinstance(operand_type, IrType)
@@ -128,11 +150,22 @@ def get_type_or_element_type(operand_type: IrType):
 def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     stack: list[OpResult] = []
 
+    induction_var_syms = []
+    induction_vars = []
+    for constraint in emitter.constraints:
+        if isinstance(constraint, TilingConstraint):
+            assert (
+                constraint.dim in emitter.induction_vars
+            ), f"Could not find induction var for {constraint.dim} dimension"
+            induction_var_syms.append(constraint.induction_var)
+            induction_vars.append(emitter.induction_vars[constraint.dim])
+
     # TODO: factor this out
-    all_symbols = emitter.thread_ids + emitter.workgroup_ids
+    all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars
     dynamics = dict(
         zip(
-            [THREAD_0, THREAD_1, THREAD_2, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2],
+            [THREAD_0, THREAD_1, THREAD_2, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2]
+            + induction_var_syms,
             all_symbols,
         )
     )
@@ -367,7 +400,7 @@ def _construct_gather_scatter_indices(
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
     try:
-        memory, elements_per_thread, mapping = node.args
+        memory, elements_per_thread, mapping, _ = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
@@ -555,4 +588,74 @@ def handle_sub(emitter: WaveEmitter, node: fx.Node):
 
 @handle_op(reduction)
 def handle_reduction(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("Reduction: Currently only stub implementation")
+    try:
+        axis, init_args, subgraph, implicit_capture = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    # Flatten init_args and get IR values for each of them.
+    flat_init_args, _ = pytree.tree_flatten((init_args))
+    flat_init_args = [cast_py_value(emitter, arg) for arg in flat_init_args]
+
+    # Without scheduling, we assume that we always start at 0.
+    start = arith_d.constant(IndexType.get(), int(0))
+
+    idxc = IndexingContext.current()
+    # For now, we assume that dimensions that have tiling constraints on them,
+    # do not have any other constraints.
+    dim = axis.subs(idxc.subs)
+    end = arith_d.constant(IndexType.get(), int(dim))
+
+    step = None
+    for constraint in emitter.constraints:
+        if isinstance(constraint, TilingConstraint) and constraint.dim == axis:
+            tile_size = constraint.tile_size.subs(idxc.subs)
+            step = arith_d.constant(IndexType.get(), int(tile_size))
+
+    if not step:
+        raise CodegenError(
+            "Could not determine step size for reduction due to missing tiling constraint."
+        )
+
+    forOp = scf_d.ForOp(
+        start,
+        end,
+        step,
+        [a.ir_value for a in flat_init_args],
+    )
+    emitter.induction_vars[axis] = forOp.induction_variable
+    with InsertionPoint(forOp.body):
+        # Add mapping for iter args.
+        subgraph: fx.Graph = emitter.trace.get_subgraph(subgraph)
+        iter_args: list[fx.Node] = get_custom(node).iter_args(subgraph)
+        for i, v in enumerate(forOp.inner_iter_args):
+            emitter.bind_node_proxy(iter_args[i], IRProxyValue(v))
+        captured_vars: list[fx.Node] = get_custom(node).captured_vars(subgraph)
+        for root_v, subgraph_v in zip(implicit_capture, captured_vars):
+            emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)
+        # Emit the subgraph.
+        return_values = emitter._emit_graph(subgraph)
+        # Flattern return values.
+        flat_ret_values, _ = pytree.tree_flatten((return_values))
+        flat_ret_values = [
+            cast_py_value(emitter, value).ir_value for value in flat_ret_values
+        ]
+        scf_d.YieldOp(flat_ret_values)
+
+    emitter.bind_node_proxies(node, [IRProxyValue(v) for v in forOp.results_])
+
+
+###############################################################################
+# Miscellanous ops
+###############################################################################
+
+
+@handle_op(get_result)
+def handle_get_result(emitter: WaveEmitter, node: fx.Node):
+    try:
+        value, res_idx = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    for_op = emitter.lookup_node_values(value)[0].owner
+    emitter.bind_node_proxy(node, IRProxyValue(for_op.results[res_idx]))
