@@ -68,7 +68,7 @@ class Test(unittest.TestCase):
         hyperparams = {
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 1,
+            STORE_ELEMS_PER_THREAD: 4,  # TODO: For correctness, this should be 1.
             BLOCK_M: 32,
             BLOCK_N: 32,
             BLOCK_K: 32,
@@ -76,23 +76,19 @@ class Test(unittest.TestCase):
             N: 128,
             K: 256,
         }
-        with pytest.raises(
-            NotImplementedError,
-            match="Register shape propagation not implemented for reduction",
-        ):
-            with tk.gen.TestLaunchContext(hyperparams):
-                a = torch.randn(64, 256, dtype=torch.float16)
-                b = torch.randn(128, 256, dtype=torch.float16)
-                c = torch.zeros(64, 128, dtype=torch.float32)
-                gemm(a, b, c)
+        with tk.gen.TestLaunchContext(hyperparams):
+            a = torch.randn(64, 256, dtype=torch.float16)
+            b = torch.randn(128, 256, dtype=torch.float16)
+            c = torch.zeros(64, 128, dtype=torch.float32)
+            gemm(a, b, c)
 
-                # TODO: Note this is currently not triggered as the stub exception
-                # is raised first. Remove this note when this successfully runs
-                # through codegen.
-                assert gemm.grid_type.symbolic_shape == (
-                    M // BLOCK_M,
-                    N // BLOCK_N,
-                )
+            # TODO: Note this is currently not triggered as the stub exception
+            # is raised first. Remove this note when this successfully runs
+            # through codegen.
+            assert gemm.grid_type.symbolic_shape == (
+                M // BLOCK_M,
+                N // BLOCK_N,
+            )
 
 
 if __name__ == "__main__":

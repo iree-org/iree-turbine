@@ -18,9 +18,11 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
             ).add_to_graph(custom_node.graph)
             custom_node.replace_all_uses_with(promoted_read)
             with custom_node.graph.inserting_before(promoted_read):
-                Write(
+                promoted_write = Write(
                     custom_node.fx_node, allocate_node.fx_node, elements_per_thread
                 ).add_to_graph(custom_node.graph)
+                custom_read = get_custom(promoted_read)
+                custom_read.write_dependency = promoted_write
 
 
 def promote_node(
