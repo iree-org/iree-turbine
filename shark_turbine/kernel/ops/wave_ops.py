@@ -272,6 +272,7 @@ class CustomOp(ABC):
             graph.inserting_after(self.fx_node)
         new_node = graph.node_copy(self.fx_node)
         new_node.tkw_op = self
+        new_node.tkw_op_name = self.tkw_op_name
         new_node.index = copy.deepcopy(self.fx_node.index)
         if new_name:
             new_node.name = new_name
@@ -441,6 +442,7 @@ class Output(CustomOp):
             kwargs={},
         )
         self.fx_node.tkw_op = self.__class__
+        self.fx_node.tkw_op_name = self.tkw_op_name
         return self.fx_node
 
 
@@ -465,6 +467,7 @@ class Placeholder(CustomOp):
         self.graph = region_graph
         self.fx_node = region_graph.create_node("placeholder", target=self._name)
         self.fx_node.tkw_op = self.__class__
+        self.fx_node.tkw_op_name = self.tkw_op_name
         return self.fx_node
 
     def custom_string(self, value_map: dict[str, str]) -> str:
@@ -604,6 +607,7 @@ class Read(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
+    _write_dependency: Optional[fx.Node] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -615,6 +619,14 @@ class Read(CustomOp):
     @property
     def type(self) -> "Memory":
         return get_custom(self.memory).type
+
+    @property
+    def write_dependency(self) -> fx.Node:
+        return self._write_dependency
+
+    @write_dependency.setter
+    def write_dependency(self, value: fx.Node):
+        self.update_arg(len(self.fx_node.args) - 1, value)
 
 
 @define_op("reduction")
@@ -648,6 +660,7 @@ class Reduction(CustomOp):
 
             node._add_proxy_to_graph(graph)
             node.fx_node.node.tkw_op = cls
+            node.fx_node.node.tkw_op_name = cls.tkw_op_name
             return node.fx_node
 
         return wrapper
@@ -660,6 +673,41 @@ class Reduction(CustomOp):
                 if indexing_dim not in expand_dims:
                     expand_dims.append(indexing_dim)
         return expand_dims
+
+    def iter_args(self, graph: fx.Graph) -> list[fx.Node]:
+        """
+        The first N placeholders in the subgraph are the iter args, where
+        the total number of placeholders in the subgraph is N + M, where M
+        is the number of implicit captures.
+        """
+        iter_args = []
+        for nested_node in graph.nodes:
+            custom = get_custom(nested_node)
+            if isinstance(custom, Placeholder):
+                iter_args.append(nested_node)
+        return iter_args[: -len(self.implicit_captures)]
+
+    def captured_vars(self, graph: fx.Graph) -> list[fx.Node]:
+        """
+        The last M placeholders in the subgraph are the captured vars, where
+        the total number of placeholders in the subgraph is N + M, where N
+        is the number of iter args.
+        """
+        captured_vars = []
+        for nested_node in graph.nodes:
+            custom = get_custom(nested_node)
+            if isinstance(custom, Placeholder):
+                captured_vars.append(nested_node)
+        return captured_vars[-len(self.implicit_captures) :]
+
+    @property
+    def type(self) -> list[Memory | Register]:
+        return [get_custom(x).type for x in self.init_args]
+
+    def outputs(self, graph: fx.Graph) -> list[fx.Node]:
+        for node in graph.nodes:
+            if isinstance(get_custom(node), Output):
+                return node.args[0]
 
 
 @define_op("write")
@@ -690,7 +738,7 @@ class GetResult(CustomOp):
 
     @property
     def type(self) -> "Memory":
-        return self.value.type
+        return get_custom(self.value).type[self.res_idx]
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
