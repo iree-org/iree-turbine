@@ -58,6 +58,7 @@ def _to_tuple(src: Any) -> tuple[Any]:
 
     return src
 
+
 class LaunchableWave(Launchable):
     def __init__(
         self,
@@ -221,7 +222,13 @@ class LaunchableWave(Launchable):
 
     def test_execute(self, args, kwargs):
         # For now only tracing
-        mb, graph, exe, kernel_sig, entrypoint_name = self._trace_and_get_kernel_signature(args, kwargs)
+        (
+            mb,
+            graph,
+            exe,
+            kernel_sig,
+            entrypoint_name,
+        ) = self._trace_and_get_kernel_signature(args, kwargs)
 
         if kwargs.get("run", False):
             # TODO: cache compiled code
@@ -234,7 +241,10 @@ class LaunchableWave(Launchable):
                 if b.kernel_buffer_type.usage == kernel_codegen.KernelBufferUsage.INPUT:
                     kernel_inputs.append(arg)
 
-                if b.kernel_buffer_type.usage == kernel_codegen.KernelBufferUsage.OUTPUT:
+                if (
+                    b.kernel_buffer_type.usage
+                    == kernel_codegen.KernelBufferUsage.OUTPUT
+                ):
                     kernel_outputs.append(arg)
 
             # TODO: Unhardcode

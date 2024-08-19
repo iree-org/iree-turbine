@@ -10,6 +10,7 @@ _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e teast are disabled")
 
+
 @require_e2e
 def test_copy():
     M = tkl.sym.M
@@ -41,17 +42,17 @@ def test_copy():
     a = torch.randn(16, 16, dtype=torch.float16)
     b = torch.zeros(16, 16, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
-            {
-                M: 16,
-                N: 16,
-                K: 16,
-                BLOCK_M: 16,
-                BLOCK_N: 16,
-                BLOCK_K: 16,
-                ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
-            },
-            canonicalize=True,
-            run=True
-        ):
+        {
+            M: 16,
+            N: 16,
+            K: 16,
+            BLOCK_M: 16,
+            BLOCK_N: 16,
+            BLOCK_K: 16,
+            ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
+        },
+        canonicalize=True,
+        run=True,
+    ):
         test(a, b)
         assert_allclose(a, b)
