@@ -2,7 +2,7 @@ from typing import Any, Callable, Optional
 import torch.fx as fx
 import inspect
 
-from ..compiler import builder, dispatch_codegen, kernel_codegen
+from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
 from ..compiler.ir import Context, Operation
 from .codegen import WaveEmitter
 from .constraints import (
@@ -31,6 +31,8 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
+from iree.compiler import compile_str
+import iree.runtime as rt
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -209,11 +211,43 @@ class LaunchableWave(Launchable):
         if kwargs.get("canonicalize", False):
             canonicalize_module(mb.module_op)
 
-        return mb, graph
+        return mb, graph, exe, kernel_sig, entrypoint_name
 
     def test_execute(self, args, kwargs):
         # For now only tracing
-        mb, graph = self._trace_and_get_kernel_signature(args, kwargs)
+        print("test_execute")
+        mb, graph, exe, kernel_sig, entrypoint_name = self._trace_and_get_kernel_signature(args, kwargs)
+        host_codegen.isolated_test_call(mb, exe, kernel_sig, entrypoint_name)
+        asm = mb.module_op.get_asm()
+        print(asm)
+        target = "rocm"
+        flags = [
+            "--mlir-print-op-on-diagnostic=false",
+            "--iree-llvmcpu-target-cpu-features=host",
+            "--iree-llvmcpu-target-triple=x86_64-linux-gnu",
+            f"--iree-hal-target-backends={target}",
+            "--iree-rocm-target-chip=gfx942",
+            # "--mlir-print-ir-after-all",
+        ]
+        res = compile_str(asm, target_backends=[target], extra_args=flags)
+
+        # TODO: cache
+        device=None
+        config = rt.Config(device)
+        mod = rt.VmModule.from_flatbuffer(config.vm_instance, res)
+
+        vm_modules = [
+            mod,
+            rt.create_hal_module(config.vm_instance, config.device),
+        ]
+        ctx = rt.SystemContext(
+            vm_modules=vm_modules,
+            config=config,
+        )
+
+        CompModule = ctx.modules.compiled_resnet18_model
+        device_arr = [rt.asdevicearray(config.device, inp) for inp in args]
+        output = CompModule["test"](*device_arr)
         return mb
 
     def aot_execute(self, args, kwargs):
