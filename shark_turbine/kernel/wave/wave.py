@@ -248,6 +248,9 @@ class LaunchableWave(Launchable):
         CompModule = ctx.modules.compiled_resnet18_model
         device_arr = [rt.asdevicearray(config.device, inp) for inp in args]
         output = CompModule["test"](*device_arr)
+        for orig, arr in zip(args, device_arr):
+            orig[:] = arr.to_host()
+
         return mb
 
     def aot_execute(self, args, kwargs):
