@@ -222,46 +222,53 @@ class LaunchableWave(Launchable):
     def test_execute(self, args, kwargs):
         # For now only tracing
         mb, graph, exe, kernel_sig, entrypoint_name = self._trace_and_get_kernel_signature(args, kwargs)
-        host_codegen.isolated_test_call(mb, exe, kernel_sig, entrypoint_name)
-        asm = mb.module_op.get_asm()
 
-        kernel_inputs = []
-        kernel_outputs = []
-        for arg, b in zip(args, kernel_sig.kernel_buffer_bindings):
-            if b.kernel_buffer_type.usage == kernel_codegen.KernelBufferUsage.INPUT:
-                kernel_inputs.append(arg)
+        if kwargs.get("run", False):
+            # TODO: cache compiled code
+            host_codegen.isolated_test_call(mb, exe, kernel_sig, entrypoint_name)
+            asm = mb.module_op.get_asm()
 
-            if b.kernel_buffer_type.usage == kernel_codegen.KernelBufferUsage.OUTPUT:
-                kernel_outputs.append(arg)
+            kernel_inputs = []
+            kernel_outputs = []
+            for arg, b in zip(args, kernel_sig.kernel_buffer_bindings):
+                if b.kernel_buffer_type.usage == kernel_codegen.KernelBufferUsage.INPUT:
+                    kernel_inputs.append(arg)
 
-        flags = [
-            "--iree-hal-target-backends=rocm",
-            "--iree-rocm-target-chip=gfx942",
-            "--iree-vm-bytecode-module-strip-source-map=true",
-            "--iree-opt-strip-assertions=true",
-            "--iree-vm-target-truncate-unsupported-floats",
-            # "--mlir-print-ir-after-all",
-        ]
-        res = compile_str(asm, target_backends=["rocm"], extra_args=flags)
+                if b.kernel_buffer_type.usage == kernel_codegen.KernelBufferUsage.OUTPUT:
+                    kernel_outputs.append(arg)
 
-        # TODO: cache
-        config = rt.Config("hip")
-        mod = rt.VmModule.copy_buffer(config.vm_instance, res)
+            # TODO: Unhardcode
+            target = "gfx942"
+            flags = [
+                "--iree-hal-target-backends=rocm",
+                f"--iree-rocm-target-chip={target}",
+                "--iree-vm-bytecode-module-strip-source-map=true",
+                "--iree-opt-strip-assertions=true",
+                "--iree-vm-target-truncate-unsupported-floats",
+            ]
+            if kwargs.get("print_ir_after_all", False):
+                flags.append("--mlir-print-ir-after-all")
 
-        vm_modules = [
-            mod,
-            rt.create_hal_module(config.vm_instance, config.device),
-        ]
-        ctx = rt.SystemContext(
-            vm_modules=vm_modules,
-            config=config,
-        )
+            res = compile_str(asm, target_backends=["rocm"], extra_args=flags)
 
-        CompModule = ctx.modules.module
-        device_arr = [rt.asdevicearray(config.device, inp) for inp in kernel_inputs]
-        output = _to_tuple(CompModule["isolated_benchmark"](*device_arr))
-        for orig, arr in zip(kernel_outputs, output):
-            orig[:] = arr.to_host()
+            config = rt.Config("hip")
+            mod = rt.VmModule.copy_buffer(config.vm_instance, res)
+
+            vm_modules = [
+                mod,
+                rt.create_hal_module(config.vm_instance, config.device),
+            ]
+            ctx = rt.SystemContext(
+                vm_modules=vm_modules,
+                config=config,
+            )
+
+            CompModule = ctx.modules.module
+            device_arr = [rt.asdevicearray(config.device, inp) for inp in kernel_inputs]
+            output = _to_tuple(CompModule["isolated_benchmark"](*device_arr))
+            for orig, arr in zip(kernel_outputs, output):
+                # Convert to torch tensor without actually importing torch.
+                orig[:] = type(orig)(arr.to_host())
 
         return mb
 

@@ -3,8 +3,10 @@ import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
 import torch
 from numpy.testing import assert_allclose
+import pytest
+import os
 
-def test_read_write():
+def test_copy():
     M = tkl.sym.M
     N = tkl.sym.N
     K = tkl.sym.K
@@ -42,11 +44,9 @@ def test_read_write():
                 BLOCK_N: 16,
                 BLOCK_K: 16,
                 ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
-            }
+            },
+            canonicalize=True,
+            run=True
         ):
         test(a, b)
         assert_allclose(a, b)
-
-if __name__ == "__main__":
-    print("run")
-    test_read_write()
