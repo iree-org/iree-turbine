@@ -6,6 +6,11 @@ from numpy.testing import assert_allclose
 import pytest
 import os
 
+_run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
+
+require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e teast are disabled")
+
+@require_e2e
 def test_copy():
     M = tkl.sym.M
     N = tkl.sym.N
