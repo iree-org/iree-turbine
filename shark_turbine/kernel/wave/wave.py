@@ -238,13 +238,11 @@ class LaunchableWave(Launchable):
             kernel_inputs = []
             kernel_outputs = []
             for arg, b in zip(args, kernel_sig.kernel_buffer_bindings):
-                if b.kernel_buffer_type.usage == kernel_codegen.KernelBufferUsage.INPUT:
+                usage = b.kernel_buffer_type.usage
+                if usage == kernel_codegen.KernelBufferUsage.INPUT:
                     kernel_inputs.append(arg)
 
-                if (
-                    b.kernel_buffer_type.usage
-                    == kernel_codegen.KernelBufferUsage.OUTPUT
-                ):
+                if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                     kernel_outputs.append(arg)
 
             # TODO: Unhardcode
