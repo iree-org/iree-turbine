@@ -74,7 +74,7 @@ def get_indexed_dims(
     """
     if isinstance(nodeOrDims, CustomOp):
         nodeOrDims = nodeOrDims.indexing_dims
-    return tuple((key, all_dims[key]) for key in nodeOrDims)
+    return tuple((key, all_dims[key]) for key in nodeOrDims if key in all_dims)
 
 
 def get_last(node_list: fx.graph._node_list) -> fx.Node:  # type: ignore
@@ -173,8 +173,11 @@ def set_node_index(
                     index_seq.start += constraint.apply().start
 
         if index_seq is not None:
-            index_seq.start += dim_scaling[dim] * dim_tile_size[dim]
+            if dim in dim_scaling and dim in dim_tile_size:
+                index_seq.start += dim_scaling[dim] * dim_tile_size[dim]
             custom.index = {dim: index_seq}
+        else:
+            custom.index = {dim: IndexSequence(0, 1, 1)}
 
     setattr(custom.fx_node, "index", custom.index)
 
@@ -464,6 +467,7 @@ def _handle_reduction_dim(
                 # placeholder which will not trigger further expansion.
                 index = user.node_args.index(carried_node)
                 dummy = Placeholder("dummy").add_to_graph(user.graph)
+                dummy.type = None
 
                 saved_arg = user.node_args[index]
                 user.update_arg(index, dummy)

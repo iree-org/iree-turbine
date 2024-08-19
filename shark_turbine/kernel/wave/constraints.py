@@ -213,3 +213,19 @@ class WaveConstraint(Constraint):
         if self.wave_id is None:
             raise ValueError("Index is being computed without setting wave id")
         return IndexSequence(self.tile_size * self.wave_id, 1)
+
+
+def get_workgroup_distributed_shape(
+    shape: list[IndexExpr], constraints: list[WorkgroupConstraint]
+) -> tuple[IndexExpr]:
+    """
+    Given a shape and workgroup constraints, returns the shape
+    of the tensor after it has been distributed along workgroup dimensions.
+    """
+    distributed_shape = list(shape)
+    for i, dim in enumerate(shape):
+        for constraint in constraints:
+            if isinstance(constraint, WorkgroupConstraint):
+                if dim == constraint.dim:
+                    distributed_shape[i] = constraint.tile_size
+    return tuple(distributed_shape)

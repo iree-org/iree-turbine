@@ -17,8 +17,7 @@ from typing import (
 )
 import torch.fx as fx
 
-if TYPE_CHECKING:
-    from ..lang.wave_types import Memory, Register
+from ..lang.wave_types import Memory, Register, IndexMapping
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
@@ -339,7 +338,7 @@ class CustomOp(ABC):
                 assert isinstance(
                     key, IndexSequence
                 ), f"Expected IndexSequence, got {key}"
-                if not hasattr(self.fx_node, "index"):
+                if not hasattr(self.fx_node, "index") or self.fx_node.index is None:
                     self.fx_node.index = {}
                 self.fx_node.index[dim] = key
         else:
@@ -502,12 +501,17 @@ class Allocate(CustomOp):
     """
 
     shape: tuple[IndexExpr]
+    distributed_shape: tuple[IndexExpr]
     dtype: DataType
     address_space: AddressSpace
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         return list(self.shape)
+
+    @property
+    def type(self) -> "Memory":
+        return Memory[*self.shape, self.address_space, self.dtype]
 
 
 @define_op("register")
@@ -520,6 +524,10 @@ class NewRegister(CustomOp):
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         return list(self.shape)
+
+    @property
+    def type(self) -> "Register":
+        return Register[*self.shape, self.dtype]
 
 
 @define_op("mma")
@@ -551,6 +559,10 @@ class MMA(CustomOp):
     def acc_type(self) -> Memory:
         return get_custom(self.acc).type
 
+    @property
+    def type(self) -> Memory:
+        return self.acc_type
+
     def operand_index(
         self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
     ) -> list[IndexSequence]:
@@ -572,7 +584,7 @@ class MMA(CustomOp):
     @property
     def acc_index(self) -> list[IndexSequence]:
         operand_map = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}
-        if self.acc.type is None:
+        if self.acc_type is None:
             return None
         return self.operand_index(operand_map, self.acc_type.symbolic_shape)
 
@@ -598,11 +610,11 @@ class Read(CustomOp):
         if self.mapping is not None:
             return list(self.mapping.output_shape)
         # TODO: This could contain ints.
-        return list(self.memory.type.symbolic_shape)
+        return list(self.type.symbolic_shape)
 
     @property
     def type(self) -> "Memory":
-        return self.memory.type
+        return get_custom(self.memory).type
 
 
 @define_op("reduction")
@@ -663,11 +675,11 @@ class Write(CustomOp):
         if self.mapping is not None:
             return list(self.mapping.input_shape)
         # TODO: This could contain ints.
-        return list(self.memory.type.symbolic_shape)
+        return list(self.type.symbolic_shape)
 
     @property
     def type(self) -> "Memory":
-        return self.memory.type
+        return get_custom(self.memory).type
 
 
 @define_op("get_result")

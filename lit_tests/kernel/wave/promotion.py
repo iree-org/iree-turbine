@@ -87,14 +87,14 @@ def test_read_write_equal_sizes():
         graph: fx.Graph = trace.get_root_graph()
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
-        promote_node(read_node, SHARED_ADDRESS_SPACE)
+        promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
         print_trace(trace)
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read
         # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, N), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %write_1
         # CHECK-SAME: (%read, %allocate, 4, None)
         # CHECK-NEXT: %read_1
@@ -136,14 +136,14 @@ def test_read_write_equal_sizes_different_address_spaces():
     ):
         trace: CapturedTrace = read_write_same_size_different_address_spaces()
         IndexingContext.current().finalize()
-        promote_placeholders(trace)
+        promote_placeholders(trace, constraints)
         print_trace(trace)
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read
         # CHECK-SAME: (%a, 4, None)
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, N), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %write_1
         # CHECK-SAME: (%read, %allocate, 4, None)
         # CHECK-NEXT: %read_1
@@ -191,7 +191,7 @@ def test_gemm():
         graph: fx.Graph = trace.get_subgraph("region_0")
         read_nodes = get_read_nodes(graph)
         for read_node in read_nodes:
-            promote_node(read_node, SHARED_ADDRESS_SPACE)
+            promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
         hoist_allocs(trace)
         IndexingContext.current().finalize()
         print_trace(trace)
@@ -201,9 +201,9 @@ def test_gemm():
         # CHECK-NEXT: %c
         # CHECK-NEXT: %register
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, K), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %allocate_1
-        # CHECK-SAME: ((N, K), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: reduction
         # CHECK-NEXT: %write
         # CHECK-SAME: (%reduction, %c, 4, None)

@@ -420,8 +420,9 @@ class Launchable(ABC):
 class LaunchContext(ABC):
     __tk_context_idname__ = "ExecutionContext"
 
-    def __init__(self, constant_bindings: Dict[IndexSymbol, int] = {}):
+    def __init__(self, constant_bindings: Dict[IndexSymbol, int] = {}, **kwargs):
         self.constant_bindings = constant_bindings
+        self.kwargs = kwargs
 
     @staticmethod
     def current() -> "LaunchContext":
@@ -464,6 +465,8 @@ class DebugLaunchContext(LaunchContext):
 
 class TestLaunchContext(LaunchContext):
     def launch(self, launchable: Launchable, args, kwargs):
+        if self.kwargs:
+            kwargs.update(self.kwargs)
         return launchable.test_execute(args, kwargs)
 
 

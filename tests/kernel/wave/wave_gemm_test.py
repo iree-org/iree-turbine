@@ -77,7 +77,8 @@ class Test(unittest.TestCase):
             K: 256,
         }
         with pytest.raises(
-            NotImplementedError, match="Currently only stub implementation"
+            NotImplementedError,
+            match="Register shape propagation not implemented for reduction",
         ):
             with tk.gen.TestLaunchContext(hyperparams):
                 a = torch.randn(64, 256, dtype=torch.float16)

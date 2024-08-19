@@ -5,7 +5,9 @@ from dataclasses import dataclass
 import torch.fx as fx
 
 from ..compiler.ir import (
+    Attribute,
     DenseElementsAttr,
+    FloatAttr,
     IndexType,
     InsertionPoint,
     IntegerAttr,
@@ -17,9 +19,11 @@ from ..compiler.ir import (
     ShapedType,
     Value,
     VectorType,
+    amdgpu_d,
     arith_d,
     func_d,
     gpu_d,
+    memref_d,
     stream_d,
     vector_d,
 )
@@ -27,7 +31,7 @@ from shark_turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_
 
 # TK infrastructure imports.
 from shark_turbine.kernel.lang.global_symbols import *
-from ..ops.wave_ops import write, register, mma, read, reduction, get_custom
+from ..ops.wave_ops import write, register, mma, read, reduction, get_custom, allocate
 from ..lang.wave_types import IndexMapping
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
 from ..compiler.kernel_codegen import BoundKernelSignature
@@ -40,6 +44,7 @@ from ..compiler.vector_codegen import (
     cast_py_value,
     cast_vector,
 )
+from .constraints import Constraint, HardwareConstraint, MMAType
 
 # Indexing imports.
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
@@ -51,6 +56,7 @@ class WaveEmitter:
 
     root_sig: BoundKernelSignature
     trace: CapturedTrace
+    constraints: list[Constraint]
     ip: InsertionPoint = None
     OP_HANDLERS: ClassVar[dict[str, Callable[["WaveEmitter", fx.Node], None]]] = {}
     _node_values: ClassVar[dict[fx.Node, List[IRProxyValue]]] = {}
@@ -102,6 +108,7 @@ class WaveEmitter:
         if values is None:
             values = [self.root_sig.resolve_by_reference(("node", node))]
             self._node_values[node] = values
+        values = [v.ir_value if isinstance(v, IRProxyValue) else v for v in values]
         return values
 
     def bind_node_proxy(self, node: fx.Node, proxy: IRProxyValue):
@@ -203,6 +210,14 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     return stack[0]
 
 
+def get_constant_attr(value: Any, element_type: IrType) -> Attribute:
+    if _is_integer_like_type(element_type):
+        return IntegerAttr.get(element_type, int(value))
+    if _is_float_type(element_type):
+        return FloatAttr.get(element_type, float(value))
+    raise CodegenError(f"Cannot create a constant attribute for type `{element_type}`")
+
+
 def handle_op(op: Callable[..., Any]):
     def decorator(
         f: Callable[[WaveEmitter, fx.Node], None]
@@ -220,7 +235,36 @@ def handle_op(op: Callable[..., Any]):
 
 @handle_op(register)
 def handle_register(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("Register: Currently only stub implementation")
+    try:
+        shape, dtype, value = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    if hasattr(node, "thread_shape"):
+        shape = [node.thread_shape]
+    vector_shape = cast_py_literal(emitter, shape)
+    element_type = IrType.parse(dtype.ir_type_asm())
+    vector_type = VectorType.get(vector_shape, element_type)
+    register = arith_d.ConstantOp(
+        vector_type,
+        DenseElementsAttr.get_splat(
+            vector_type, get_constant_attr(value, element_type)
+        ),
+    ).result
+    emitter.bind_node_proxy(node, IRProxyValue(register))
+
+
+@handle_op(allocate)
+def handle_allocate(emitter: WaveEmitter, node: fx.Node):
+    try:
+        shape, distributed_shape, dtype, address_space = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    memref_shape = cast_py_literal(emitter, distributed_shape)
+    element_type = IrType.parse(dtype.ir_type_asm())
+    address_space = Attribute.parse("#gpu.address_space<workgroup>")
+    memref_type = MemRefType.get(memref_shape, element_type, None, address_space)
+    alloc = memref_d.alloc(memref_type, [], [])
+    emitter.bind_node_proxy(node, IRProxyValue(alloc))
 
 
 def _get_start_indices(
@@ -352,7 +396,8 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             is_read=True,
         )
 
-        zero = arith_d.ConstantOp(vector_type.element_type, 0)
+        zero = int(0) if _is_integer_like_type(element_type) else float(0)
+        zero = arith_d.ConstantOp(vector_type.element_type, zero)
         passthru = vector_d.splat(vector_type, zero)
 
         result = vector_d.gather(
@@ -373,11 +418,13 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     kb_dest, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
     insert_vector = cast_vector(emitter, register, element_type=kb_ir_type.element_type)
     insert_type = VectorType(insert_vector.type)
+    vector_shape = cast_py_literal(emitter, (elements_per_thread,))
 
     # TODO: Support elements_per_thread size mismatch and broadcasting
-    assert tuple(insert_type.shape) == (
-        elements_per_thread,
-    ), f"Shape doesn't match: {tuple(insert_type.shape)} and {(elements_per_thread,)}"
+
+    assert (
+        tuple(insert_type.shape) == vector_shape
+    ), f"Shape doesn't match: {tuple(insert_type.shape)} and {(vector_shape)}"
 
     if not hasattr(node, "index"):
         raise ValidationError("codegen expected read to have index attr.")
@@ -412,9 +459,52 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
+def emit_mfma(
+    m: int, n: int, k: int, vector_type: VectorType, acc: Value, values: list[Value]
+):
+    m = get_constant_attr(m, IntegerType.get_signless(32))
+    n = get_constant_attr(n, IntegerType.get_signless(32))
+    k = get_constant_attr(k, IntegerType.get_signless(32))
+    blocks = get_constant_attr(1, IntegerType.get_signless(32))
+
+    result = amdgpu_d.mfma(
+        dest_d=vector_type,
+        m=m,
+        n=n,
+        k=k,
+        blocks=blocks,
+        source_a=values[0],
+        source_b=values[1],
+        dest_c=acc,
+    )
+    return result
+
+
 @handle_op(mma)
 def handle_mma(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("MMA: Currently only stub implementation")
+    try:
+        lhs, rhs, acc = node.args
+        acc = cast_vector(emitter, acc)
+        values = [cast_vector(emitter, val) for val in [lhs, rhs]]
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    vector_type = VectorType(acc.type)
+
+    hardware_constraints = [
+        constraint
+        for constraint in emitter.constraints
+        if isinstance(constraint, HardwareConstraint)
+    ]
+    if not hardware_constraints:
+        raise CodegenError("No hardware constraints found.")
+
+    result = None
+    for constraint in hardware_constraints:
+        m, n, k = constraint.mma_matrix_shapes
+        result = emit_mfma(m, n, k, vector_type, acc, values)
+
+    emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
 @handle_op(operator.add)

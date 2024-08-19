@@ -17,10 +17,12 @@ from .codegen import WaveEmitter
 from .expansion import expand_graph
 from .promotion import promote_placeholders
 from .hoisting import hoist_allocs
+from .utils import canonicalize_module
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom
+from .register_analysis import determine_register_shape
 from .._support.indexing import IndexingContext, IndexExpr
 import shark_turbine.kernel.lang as tkl
 from .._support.tracing import (
@@ -173,11 +175,14 @@ class LaunchableWave(Launchable):
         idxc.finalize()
 
         # Promote the placeholders to the appropriate address space.
-        promote_placeholders(graph)
+        promote_placeholders(graph, self.constraints)
         hoist_allocs(graph)
 
         # Expansion
         expand_graph(graph, self.constraints)
+
+        # Register analysis to determine register shapes.
+        determine_register_shape(graph)
 
         self.grid_type.dims = [1, 1, 1]
         for constraint in self.workgroup_constraints:
@@ -197,9 +202,12 @@ class LaunchableWave(Launchable):
         exe = dispatch_codegen.StreamExecutable(mb, name=entrypoint_name)
         dispatch_entrypoint = exe.define_entrypoint(entrypoint_name, kernel_sig, grid)
 
-        emitter = WaveEmitter(dispatch_entrypoint, graph)
+        emitter = WaveEmitter(dispatch_entrypoint, graph, self.constraints)
         emitter.emit(graph.get_root_graph())
         emitter.finish()
+
+        if kwargs.get("canonicalize", False):
+            canonicalize_module(mb.module_op)
 
         return mb, graph
 
