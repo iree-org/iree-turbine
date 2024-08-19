@@ -52,6 +52,12 @@ def wave_trace_only(constraints: Optional[list[Constraint]] = None):
     return decorator
 
 
+def _to_tuple(src: Any) -> tuple[Any]:
+    if not isinstance(src, tuple):
+        return (src,)
+
+    return src
+
 class LaunchableWave(Launchable):
     def __init__(
         self,
@@ -215,26 +221,32 @@ class LaunchableWave(Launchable):
 
     def test_execute(self, args, kwargs):
         # For now only tracing
-        print("test_execute")
         mb, graph, exe, kernel_sig, entrypoint_name = self._trace_and_get_kernel_signature(args, kwargs)
         host_codegen.isolated_test_call(mb, exe, kernel_sig, entrypoint_name)
         asm = mb.module_op.get_asm()
-        print(asm)
-        target = "rocm"
+
+        kernel_inputs = []
+        kernel_outputs = []
+        for arg, b in zip(args, kernel_sig.kernel_buffer_bindings):
+            if b.kernel_buffer_type.usage == kernel_codegen.KernelBufferUsage.INPUT:
+                kernel_inputs.append(arg)
+
+            if b.kernel_buffer_type.usage == kernel_codegen.KernelBufferUsage.OUTPUT:
+                kernel_outputs.append(arg)
+
         flags = [
-            "--mlir-print-op-on-diagnostic=false",
-            "--iree-llvmcpu-target-cpu-features=host",
-            "--iree-llvmcpu-target-triple=x86_64-linux-gnu",
-            f"--iree-hal-target-backends={target}",
+            "--iree-hal-target-backends=rocm",
             "--iree-rocm-target-chip=gfx942",
+            "--iree-vm-bytecode-module-strip-source-map=true",
+            "--iree-opt-strip-assertions=true",
+            "--iree-vm-target-truncate-unsupported-floats",
             # "--mlir-print-ir-after-all",
         ]
-        res = compile_str(asm, target_backends=[target], extra_args=flags)
+        res = compile_str(asm, target_backends=["rocm"], extra_args=flags)
 
         # TODO: cache
-        device=None
-        config = rt.Config(device)
-        mod = rt.VmModule.from_flatbuffer(config.vm_instance, res)
+        config = rt.Config("hip")
+        mod = rt.VmModule.copy_buffer(config.vm_instance, res)
 
         vm_modules = [
             mod,
@@ -245,10 +257,10 @@ class LaunchableWave(Launchable):
             config=config,
         )
 
-        CompModule = ctx.modules.compiled_resnet18_model
-        device_arr = [rt.asdevicearray(config.device, inp) for inp in args]
-        output = CompModule["test"](*device_arr)
-        for orig, arr in zip(args, device_arr):
+        CompModule = ctx.modules.module
+        device_arr = [rt.asdevicearray(config.device, inp) for inp in kernel_inputs]
+        output = _to_tuple(CompModule["isolated_benchmark"](*device_arr))
+        for orig, arr in zip(kernel_outputs, output):
             orig[:] = arr.to_host()
 
         return mb
