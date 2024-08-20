@@ -1,7 +1,6 @@
 # RUN: python %s | FileCheck %s
 
 import logging
-from typing import Callable
 import unittest
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
@@ -12,31 +11,12 @@ from shark_turbine.kernel.lang.global_symbols import *
 from shark_turbine.kernel._support.tracing import CapturedTrace
 from shark_turbine.kernel._support.indexing import IndexingContext
 from shark_turbine.kernel.ops.wave_ops import *
-
-
-def run(func: Callable[[], None]) -> Callable[[], None]:
-    """Run a function as part of the test suite."""
-    if __name__ == "__main__":
-        func()
-        # Print a separator between tests
-        print("-----")
-    return func
+from shark_turbine.kernel.wave.utils import run_test, print_trace
 
 
 def get_read_nodes(graph: fx.Graph) -> list[CustomOp]:
     custom_nodes: list[CustomOp] = [get_custom(node) for node in graph.nodes]
     return [node for node in custom_nodes if isinstance(node, Read)]
-
-
-def print_trace(trace: CapturedTrace):
-    """
-    Prints all subgraphs of a trace starting with the root graph.
-    The graphs are printed first in the torch printing format and then using
-    our custom node format.
-    """
-    # The root graph is at the back so we print the subgraphs in reverse order
-    for subgraph in reversed(list(trace.region_graph.subgraphs.values())):
-        print(subgraph)
 
 
 # Input sizes
@@ -64,7 +44,7 @@ def read_write_same_size(
     tkw.write(a_reg, c, elements_per_thread=4)
 
 
-@run
+@run_test
 def test_read_write_equal_sizes():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -88,7 +68,7 @@ def test_read_write_equal_sizes():
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
         promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
-        print_trace(trace)
+        print_trace(trace, False)
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read
@@ -114,7 +94,7 @@ def read_write_same_size_different_address_spaces(
     tkw.write(a_reg, c, elements_per_thread=4)
 
 
-@run
+@run_test
 def test_read_write_equal_sizes_different_address_spaces():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -137,7 +117,7 @@ def test_read_write_equal_sizes_different_address_spaces():
         trace: CapturedTrace = read_write_same_size_different_address_spaces()
         IndexingContext.current().finalize()
         promote_placeholders(trace, constraints)
-        print_trace(trace)
+        print_trace(trace, False)
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read
@@ -172,7 +152,7 @@ def gemm(
     tkw.write(repeat, c, elements_per_thread=4)
 
 
-@run
+@run_test
 def test_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -194,7 +174,7 @@ def test_gemm():
             promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
         hoist_allocs(trace)
         IndexingContext.current().finalize()
-        print_trace(trace)
+        print_trace(trace, False)
         # Root graph:
         # CHECK: %a
         # CHECK-NEXT: %b

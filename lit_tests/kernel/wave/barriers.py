@@ -14,15 +14,7 @@ from shark_turbine.kernel.lang.global_symbols import *
 from shark_turbine.kernel._support.tracing import CapturedTrace
 from shark_turbine.kernel._support.indexing import IndexingContext
 from shark_turbine.kernel.ops.wave_ops import *
-
-
-def run(func: Callable[[], None]) -> Callable[[], None]:
-    """Run a function as part of the test suite."""
-    if __name__ == "__main__":
-        func()
-        # Print a separator between tests
-        print("-----")
-    return func
+from shark_turbine.kernel.wave.utils import run_test, print_trace
 
 
 def get_read_nodes(graph: fx.Graph) -> list[CustomOp]:
@@ -39,17 +31,6 @@ def tweak_index(graph: fx.Graph):
         write_dependency = promoted_read_node.write_dependency
         for key, value in write_dependency.index.items():
             write_dependency.index[key].start = value.start + 1
-
-
-def print_trace(trace: CapturedTrace):
-    """
-    Prints all subgraphs of a trace starting with the root graph.
-    The graphs are printed first in the torch printing format and then using
-    our custom node format.
-    """
-    # The root graph is at the back so we print the subgraphs in reverse order
-    for subgraph in reversed(list(trace.region_graph.subgraphs.values())):
-        print(subgraph)
 
 
 # Input sizes
@@ -80,7 +61,7 @@ def read_write_same_size(
     tkw.write(a_reg, c, elements_per_thread=4)
 
 
-@run
+@run_test
 def test_read_write_equal_sizes():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -105,7 +86,7 @@ def test_read_write_equal_sizes():
         expand_graph(trace, constraints)
         tweak_index(graph)
         add_shared_memory_barriers(trace)
-        print_trace(trace)
+        print_trace(trace, False)
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read_0_0
@@ -166,7 +147,7 @@ def gemm(
     tkw.write(repeat, c, elements_per_thread=4)
 
 
-@run
+@run_test
 def test_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -191,7 +172,7 @@ def test_gemm():
         expand_graph(trace, constraints)
         tweak_index(graph)
         add_shared_memory_barriers(trace)
-        print_trace(trace)
+        print_trace(trace, False)
         # Root graph:
         # CHECK: %a
         # CHECK-NEXT: %b

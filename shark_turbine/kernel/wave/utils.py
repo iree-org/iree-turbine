@@ -6,6 +6,9 @@ from ..compiler.ir import (
     transform_d,
     UnitAttr,
 )
+from typing import Callable
+from .._support.tracing import CapturedTrace
+from ..ops.wave_ops import get_custom
 
 from iree.compiler.dialects.transform import (
     interpreter as transform_interpreter,
@@ -33,3 +36,25 @@ def canonicalize_module(module: Operation):
             transform_module.body.operations[0],
             transform_module,
         )
+
+
+def run_test(func: Callable[[], None]) -> Callable[[], None]:
+    """Run a function as part of the test suite."""
+    func()
+    # Print a separator between tests
+    print("-----")
+    return func
+
+
+def print_trace(trace: CapturedTrace, custom_print: bool = True):
+    """
+    Prints all subgraphs of a trace starting with the root graph.
+    The graphs are printed first in the torch printing format and
+    then using our custom node format.
+    """
+    # The root graph is at the back so we print the subgraphs in reverse order
+    for subgraph in reversed(list(trace.region_graph.subgraphs.values())):
+        print(subgraph)
+        if custom_print:
+            for node in subgraph.nodes:
+                print(get_custom(node))

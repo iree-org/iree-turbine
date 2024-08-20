@@ -5,6 +5,7 @@ from shark_turbine.kernel._support.tracing import CapturedTrace
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
 from shark_turbine.kernel.ops.wave_ops import get_custom, Read, Write
+from shark_turbine.kernel.wave.utils import run_test, print_trace
 
 M = tkl.sym.M
 N = tkl.sym.N
@@ -12,28 +13,7 @@ K = tkl.sym.K
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
 
-def run(func: Callable[[], None]) -> Callable[[], None]:
-    """Run a function as part of the test suite."""
-    if __name__ == "__main__":
-        func()
-
-    return func
-
-
-def print_trace(trace: CapturedTrace):
-    """
-    Prints all subgraphs of a trace starting with the root graph.
-    The graphs are printed first in the torch printing format and then using
-    our custom node format.
-    """
-    # The root graph is at the back so we print the subgraphs in reverse order
-    for subgraph in reversed(list(trace.region_graph.subgraphs.values())):
-        print(subgraph)
-        for node in subgraph.nodes:
-            print(get_custom(node))
-
-
-@run
+@run_test
 def test_trace_empty():
     @tkw.wave_trace_only()
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -50,7 +30,7 @@ def test_trace_empty():
     # CHECK-NEXT: output
 
 
-@run
+@run_test
 def test_trace_empty_then_add_nodes():
     """
     This tests the modification of a graph after the trace has been created.
@@ -83,7 +63,7 @@ def test_trace_empty_then_add_nodes():
     # CHECK-NEXT: output
 
 
-@run
+@run_test
 def test_trace_py_arithmetic():
     @tkw.wave_trace_only()
     def test(A: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -117,7 +97,7 @@ def test_trace_py_arithmetic():
     # CHECK-NEXT: output
 
 
-@run
+@run_test
 def test_trace_read():
     @tkw.wave_trace_only()
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -135,7 +115,7 @@ def test_trace_read():
     # CHECK-NEXT: output
 
 
-@run
+@run_test
 def test_trace_register():
     @tkw.wave_trace_only()
     def test(
@@ -156,7 +136,7 @@ def test_trace_register():
     # CHECK-NEXT: output
 
 
-@run
+@run_test
 def test_trace_write():
     @tkw.wave_trace_only()
     def test(
@@ -179,7 +159,7 @@ def test_trace_write():
     # CHECK-NEXT: output
 
 
-@run
+@run_test
 def test_trace_mma():
     @tkw.wave_trace_only()
     def test(
@@ -208,7 +188,7 @@ def test_trace_mma():
     # CHECK-NEXT: output
 
 
-@run
+@run_test
 def test_trace_gemm():
     @tkw.wave_trace_only()
     def gemm(
