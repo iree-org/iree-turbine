@@ -6,6 +6,7 @@ import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
 from shark_turbine.kernel.lang.global_symbols import *
+from shark_turbine.kernel.wave.utils import run_test
 import torch
 
 M = tkl.sym.M
@@ -41,15 +42,6 @@ def launch(func: Callable[[], None]) -> Callable[[], None]:
     return func
 
 
-def run(func: Callable[[], None]) -> Callable[[], None]:
-    """Run a function as part of the test suite."""
-    if __name__ == "__main__":
-        func()
-        # Print a separator between tests
-        print("-----")
-    return func
-
-
 def codegen_test_context():
     return tk.gen.TestLaunchContext(
         {
@@ -64,7 +56,7 @@ def codegen_test_context():
     )
 
 
-@run
+@run_test
 def test_read():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -102,7 +94,7 @@ def test_read():
         # CHECK: vector.load %[[DATA]][%[[IDX_X]], %[[IDX_Y]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
-@run
+@run_test
 def test_read_mapped():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -149,7 +141,7 @@ def test_read_mapped():
         # CHECK: %[[RES:.+]] = vector.gather %[[DATA]][%[[IDX_X]], %[[IDX_Y]]] [%[[OFF]]], %[[MASK]], %[[PASSTHRU]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16> into vector<16xf16>
 
 
-@run
+@run_test
 def test_read_write():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -196,7 +188,7 @@ def test_read_write():
         # CHECK: vector.store %[[RES]], %[[OUT]][%[[IDX_X]], %[[IDX_Y]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
-@run
+@run_test
 def test_read_write_mapping():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -251,7 +243,7 @@ def test_read_write_mapping():
         # CHECK: vector.scatter %[[OUT]][%[[IDX_Y]], %[[IDX_X]]] [%[[OFF]]], %[[MASK]], %[[RES]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16>
 
 
-@run
+@run_test
 def test_mma():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -346,7 +338,7 @@ def test_mma():
         # CHECK: vector.store %[[R24]], %[[R25]][%[[R28]], %[[R31]]] : memref<64x128xf32, strided<[128, 1], offset: ?>>, vector<4xf32>
 
 
-@run
+@run_test
 def test_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -471,7 +463,7 @@ def test_gemm():
         # CHECK-SAME:      vector<4xf32>
 
 
-@run
+@run_test
 def test_add_float():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -495,7 +487,7 @@ def test_add_float():
         # CHECK: arith.addf %[[SLICE]], %[[SLICE]] : vector<16xf16>
 
 
-@run
+@run_test
 def test_add_integer():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
