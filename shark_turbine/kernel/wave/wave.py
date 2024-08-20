@@ -52,13 +52,6 @@ def wave_trace_only(constraints: Optional[list[Constraint]] = None):
     return decorator
 
 
-def _to_tuple(src: Any) -> tuple[Any]:
-    if not isinstance(src, tuple):
-        return (src,)
-
-    return src
-
-
 def _invoke(vm_context, device, entry_function, inputs, outputs):
     arg_list = rt.VmVariantList(len(inputs))
     ret_list = rt.VmVariantList(len(outputs))
@@ -307,12 +300,6 @@ class LaunchableWave(Launchable):
 
             func = mod.lookup_function("isolated_benchmark")
             _invoke(vm_context, device, func, kernel_inputs, kernel_outputs)
-
-            # device_arr = [rt.asdevicearray(device, inp) for inp in kernel_inputs]
-            # output = _to_tuple(CompModule["isolated_benchmark"](*device_arr))
-            # for orig, arr in zip(kernel_outputs, output):
-            #     # Convert to torch tensor without actually importing torch.
-            #     orig[:] = type(orig)(arr.to_host())
 
         return mb
 
