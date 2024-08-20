@@ -143,6 +143,11 @@ class KernelSignature:
         return [b for b in self.bindings if b.reference[0] == "grid"]
 
     @property
+    def kernel_buffer_bindings(self) -> list[BindingDesc]:
+        """Gets all kernel buffer bindings."""
+        return [b for b in self.bindings if b.binding_type == BindingType.KERNEL_BUFFER]
+
+    @property
     def kernel_buffer_input_bindings(self) -> list[BindingDesc]:
         """Gets all kernel buffer bindings with input usage."""
         return [
