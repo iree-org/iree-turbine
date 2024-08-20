@@ -260,7 +260,7 @@ class LaunchableWave(Launchable):
                     kernel_outputs.append(arg)
 
             # TODO: Have some default config.
-            config = kwargs.get("config", None)
+            config = kwargs.get("run_config", None)
             if not config:
                 raise ValueError("no config provided")
 

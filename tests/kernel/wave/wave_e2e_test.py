@@ -51,7 +51,7 @@ def test_copy():
         },
         canonicalize=True,
         run=True,
-        config=config,
+        run_config=config,
     ):
         test(a, b)
         assert_allclose(a, b)
