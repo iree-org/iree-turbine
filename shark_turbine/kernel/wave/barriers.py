@@ -18,9 +18,7 @@ def add_shared_memory_barriers(trace: CapturedTrace):
             if isinstance(custom, Read) and custom.write_dependency:
                 if custom.index != custom.write_dependency.index:
                     if any(
-                        barrier.is_barrier_between(
-                            custom.write_dependency, custom.fx_node
-                        )
+                        barrier.is_barrier_between(custom.write_dependency, node)
                         for barrier in barriers
                     ):
                         continue
