@@ -15,10 +15,8 @@ require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
 def test_copy():
     M = tkl.sym.M
     N = tkl.sym.N
-    K = tkl.sym.K
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K = tkl.sym.BLOCK_K
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -39,20 +37,21 @@ def test_copy():
         res = tkw.read(a, elements_per_thread=16)
         tkw.write(res, b, elements_per_thread=16)
 
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+
     a = torch.randn(16, 16, dtype=torch.float16)
     b = torch.zeros(16, 16, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: 16,
             N: 16,
-            K: 16,
             BLOCK_M: 16,
             BLOCK_N: 16,
-            BLOCK_K: 16,
             ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
         },
         canonicalize=True,
         run=True,
+        config=config,
     ):
         test(a, b)
         assert_allclose(a, b)

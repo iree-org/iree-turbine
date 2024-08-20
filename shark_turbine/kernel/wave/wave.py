@@ -221,7 +221,6 @@ class LaunchableWave(Launchable):
         return mb, graph, exe, kernel_sig, entrypoint_name
 
     def test_execute(self, args, kwargs):
-        # For now only tracing
         (
             mb,
             graph,
@@ -245,21 +244,31 @@ class LaunchableWave(Launchable):
                 if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                     kernel_outputs.append(arg)
 
-            # TODO: Unhardcode
-            target = "gfx942"
+            # TODO: Have some default config.
+            config = kwargs.get("config", None)
+            if not config:
+                raise ValueError("no config provided")
+
+            backend = config["backend"]
+            device = config["device"]
             flags = [
-                "--iree-hal-target-backends=rocm",
-                f"--iree-rocm-target-chip={target}",
+                f"--iree-hal-target-backends={backend}",
                 "--iree-vm-bytecode-module-strip-source-map=true",
                 "--iree-opt-strip-assertions=true",
                 "--iree-vm-target-truncate-unsupported-floats",
             ]
-            if kwargs.get("print_ir_after_all", False):
+
+            # TODO: More targets/backends support.
+            if backend == "rocm":
+                target = config["target"]
+                flags.append(f"--iree-rocm-target-chip={target}")
+
+            if config.get("print_ir_after_all", False):
                 flags.append("--mlir-print-ir-after-all")
 
-            res = compile_str(asm, target_backends=["rocm"], extra_args=flags)
+            res = compile_str(asm, target_backends=[backend], extra_args=flags)
 
-            config = rt.Config("hip")
+            config = rt.Config(device)
             mod = rt.VmModule.copy_buffer(config.vm_instance, res)
 
             vm_modules = [
