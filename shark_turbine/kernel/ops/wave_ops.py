@@ -40,6 +40,10 @@ def allocate(
     ...
 
 
+def shared_memory_barrier():
+    ...
+
+
 def read(
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
@@ -515,6 +519,28 @@ class Allocate(CustomOp):
     @property
     def type(self) -> "Memory":
         return Memory[*self.shape, self.address_space, self.dtype]
+
+
+@define_op("barrier")
+@dataclass
+class SharedMemoryBarrier(CustomOp):
+    """
+    Represents a shared memory barrier in the graph.
+    """
+
+    def is_barrier_between(self, src: fx.Node, dst: fx.Node) -> bool:
+        """
+        Checks if there is a barrier between the source and destination nodes.
+        """
+        prev_node, next_node = self.fx_node.prev, self.fx_node.next
+        found_src, found_dst = prev_node == src, next_node == dst
+        while prev_node.prev.op != "root" and not found_src:
+            prev_node, found_src = prev_node.prev, prev_node == src
+        if not found_src:
+            return False
+        while next_node and not found_dst:
+            next_node, found_dst = next_node.next, next_node == dst
+        return found_dst
 
 
 @define_op("register")

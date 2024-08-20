@@ -42,6 +42,7 @@ from ..ops.wave_ops import (
     get_custom,
     get_result,
     allocate,
+    shared_memory_barrier,
     CustomOp,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
@@ -640,6 +641,16 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
         scf_d.YieldOp(flat_ret_values)
 
     emitter.bind_node_proxies(node, [IRProxyValue(v) for v in forOp.results_])
+
+
+###############################################################################
+# Synchronization ops
+###############################################################################
+
+
+@handle_op(shared_memory_barrier)
+def handle_shared_memory_barrier(emitter: WaveEmitter, node: fx.Node):
+    amdgpu_d.lds_barrier()
 
 
 ###############################################################################
