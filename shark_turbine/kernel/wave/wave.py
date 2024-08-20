@@ -59,6 +59,28 @@ def _to_tuple(src: Any) -> tuple[Any]:
     return src
 
 
+def _invoke(vm_context, device, entry_function, inputs, outputs):
+    arg_list = rt.VmVariantList(len(inputs))
+    ret_list = rt.VmVariantList(len(outputs))
+
+    for input in inputs:
+        input_cpu = input.cpu().contiguous()
+        device_array = rt.asdevicearray(device, input_cpu)
+        arg_list.push_ref(device_array._buffer_view)
+
+    self.vm_context.invoke(entry_function, arg_list, ret_list)
+
+    for i, ret in enumerate(outputs):
+        device_buffer_view = rt.HalBufferView.__iree_vm_cast__(ret_list.get_as_ref(i))
+        device_array = rt.DeviceArray(device, device_buffer_view)
+
+        # TODO: Make to_host accept out array/buffer, so we can avoid extra data copy.
+        host_array = device_array.to_host()
+
+        # Convert to torch tensor without actually importing torch.
+        ret[:] = type(ret)(host_array)
+
+
 class LaunchableWave(Launchable):
     def __init__(
         self,
@@ -268,20 +290,23 @@ class LaunchableWave(Launchable):
 
             res = compile_str(asm, target_backends=[backend], extra_args=flags)
 
-            config = rt.Config(device)
-            mod = rt.VmModule.copy_buffer(config.vm_instance, res)
+            rt_config = rt.Config(device)
+            device = rt_config.device
+            vm_context = rt_config.vm_context
+            vm_instance = rt_config.vm_instance
+            mod = rt.VmModule.copy_buffer(vm_instance, res)
 
             vm_modules = [
                 mod,
-                rt.create_hal_module(config.vm_instance, config.device),
+                rt.create_hal_module(vm_instance, device),
             ]
             ctx = rt.SystemContext(
                 vm_modules=vm_modules,
-                config=config,
+                config=rt_config,
             )
 
             CompModule = ctx.modules.module
-            device_arr = [rt.asdevicearray(config.device, inp) for inp in kernel_inputs]
+            device_arr = [rt.asdevicearray(device, inp) for inp in kernel_inputs]
             output = _to_tuple(CompModule["isolated_benchmark"](*device_arr))
             for orig, arr in zip(kernel_outputs, output):
                 # Convert to torch tensor without actually importing torch.
