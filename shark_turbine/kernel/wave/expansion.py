@@ -385,7 +385,6 @@ def get_dim_scaling(
     """Get the number of expansions for the dimensions based on the constraints."""
     dim_scaling: dict[IndexSymbol, int] = {}
     dim_tile_size: dict[IndexSymbol, int] = {}
-    tile_size_mapping: dict[IndexSymbol, int] = {}
     hardware_constraints: list[HardwareConstraint] = [
         constraint
         for constraint in constraints
