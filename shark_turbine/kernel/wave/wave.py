@@ -305,12 +305,14 @@ class LaunchableWave(Launchable):
             )
             vm_context = ctx.vm_context
 
-            CompModule = ctx.modules.module
-            device_arr = [rt.asdevicearray(device, inp) for inp in kernel_inputs]
-            output = _to_tuple(CompModule["isolated_benchmark"](*device_arr))
-            for orig, arr in zip(kernel_outputs, output):
-                # Convert to torch tensor without actually importing torch.
-                orig[:] = type(orig)(arr.to_host())
+            func = ctx.modules.module.lookup_function("isolated_benchmark")
+            _invoke(vm_context, device, func, inputs, outputs)
+
+            # device_arr = [rt.asdevicearray(device, inp) for inp in kernel_inputs]
+            # output = _to_tuple(CompModule["isolated_benchmark"](*device_arr))
+            # for orig, arr in zip(kernel_outputs, output):
+            #     # Convert to torch tensor without actually importing torch.
+            #     orig[:] = type(orig)(arr.to_host())
 
         return mb
 
