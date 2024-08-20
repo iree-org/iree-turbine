@@ -292,7 +292,6 @@ class LaunchableWave(Launchable):
 
             rt_config = rt.Config(device)
             device = rt_config.device
-            vm_context = rt_config.vm_context
             vm_instance = rt_config.vm_instance
             mod = rt.VmModule.copy_buffer(vm_instance, res)
 
@@ -304,6 +303,7 @@ class LaunchableWave(Launchable):
                 vm_modules=vm_modules,
                 config=rt_config,
             )
+            vm_context = ctx.vm_context
 
             CompModule = ctx.modules.module
             device_arr = [rt.asdevicearray(device, inp) for inp in kernel_inputs]
