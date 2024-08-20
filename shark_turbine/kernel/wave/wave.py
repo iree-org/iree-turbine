@@ -68,7 +68,7 @@ def _invoke(vm_context, device, entry_function, inputs, outputs):
         device_array = rt.asdevicearray(device, input_cpu)
         arg_list.push_ref(device_array._buffer_view)
 
-    self.vm_context.invoke(entry_function, arg_list, ret_list)
+    vm_context.invoke(entry_function, arg_list, ret_list)
 
     for i, ret in enumerate(outputs):
         device_buffer_view = rt.HalBufferView.__iree_vm_cast__(ret_list.get_as_ref(i))
@@ -305,8 +305,8 @@ class LaunchableWave(Launchable):
             )
             vm_context = ctx.vm_context
 
-            func = ctx.modules.module.lookup_function("isolated_benchmark")
-            _invoke(vm_context, device, func, inputs, outputs)
+            func = mod.lookup_function("isolated_benchmark")
+            _invoke(vm_context, device, func, kernel_inputs, kernel_outputs)
 
             # device_arr = [rt.asdevicearray(device, inp) for inp in kernel_inputs]
             # output = _to_tuple(CompModule["isolated_benchmark"](*device_arr))
