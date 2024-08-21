@@ -33,6 +33,7 @@ from .._support.tracing import (
 )
 from iree.compiler import compile_str
 import iree.runtime as rt
+from iree.runtime.benchmark import benchmark_module
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -281,7 +282,22 @@ class LaunchableWave(Launchable):
             if config.get("print_ir_after_all", False):
                 flags.append("--mlir-print-ir-after-all")
 
+            run_bench = config.get("benchmark", False)
+            if run_bench:
+                bench_batch_size = config.get("benchmark_batch_size", None)
+                bench_repetitions = config.get("benchmark_repetitions", None)
+
+                if bench_batch_size is not None:
+                    flags.append(
+                        f"--iree-hal-benchmark-dispatch-repeat-count={bench_batch_size}"
+                    )
+
             res = compile_str(asm, target_backends=[backend], extra_args=flags)
+
+            dump_vmfb_file = config.get("dump_vmfb_file", None)
+            if dump_vmfb_file is not None:
+                with open(dump_vmfb_file, "wb") as file:
+                    file.write(res)
 
             rt_config = rt.Config(device)
             device = rt_config.device
@@ -298,8 +314,26 @@ class LaunchableWave(Launchable):
             )
             vm_context = ctx.vm_context
 
-            func = mod.lookup_function("isolated_benchmark")
-            _invoke(vm_context, device, func, kernel_inputs, kernel_outputs)
+            func_name = "isolated_benchmark"
+            if run_bench:
+                benchmark_flags = {}
+                if bench_batch_size is not None:
+                    benchmark_flags["batch_size"] = int(bench_batch_size)
+
+                if bench_repetitions is not None:
+                    benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
+
+                benchmark_results = benchmark_module(
+                    vm_module,
+                    entry_function=func_name,
+                    device=device,
+                    inputs=[arg0, arg1],
+                    **benchmark_flags,
+                )
+                print(benchmark_results)
+            else:
+                func = mod.lookup_function(func_name)
+                _invoke(vm_context, device, func, kernel_inputs, kernel_outputs)
 
         return mb
 
