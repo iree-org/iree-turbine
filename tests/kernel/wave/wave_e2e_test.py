@@ -24,7 +24,7 @@ def test_copy():
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            # vector_shapes={M: 1, N: ELEMS_PER_THREAD}, # TODO: Symbol desn't work here, but should
+            # vector_shapes={M: 1, N: ELEMS_PER_THREAD}, # TODO: Symbol doesn't work here, but should
             vector_shapes={M: 1, N: 4},
         )
     ]
@@ -43,7 +43,7 @@ def test_copy():
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
-    shape = (16, 16)
+    shape = (256, 128)
     a = torch.randn(shape, dtype=torch.float16)
     b = torch.zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
