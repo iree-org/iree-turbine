@@ -323,11 +323,15 @@ class LaunchableWave(Launchable):
                 if bench_repetitions is not None:
                     benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
 
+                inputs = [
+                    rt.asdevicearray(device, inp.cpu().contiguous())
+                    for inp in kernel_inputs
+                ]
                 benchmark_results = benchmark_module(
-                    vm_module,
+                    mod,
                     entry_function=func_name,
                     device=device,
-                    inputs=[arg0, arg1],
+                    inputs=inputs,
                     **benchmark_flags,
                 )
                 print(benchmark_results)
