@@ -285,7 +285,7 @@ class CustomOp(ABC):
     def replace_all_uses_with(self, new_node: CustomOp | fx.Node):
         """Replace all uses of the current node with the new node."""
         for user in self.users:
-            user.update_arg(user.node_args.index(self), new_node)
+            user.update_arg(user.node_arg_index(self), new_node)
 
     def erase(self):
         """Erase the current node from the graph where it exists."""
@@ -309,12 +309,18 @@ class CustomOp(ABC):
         return self.fx_node.name
 
     @property
-    def node_args(self) -> list[Any]:
+    def node_args(self) -> dict[int, Any]:
         """Returns the args to this custom op using subclasses of CustomOp if possible."""
-        return [
-            get_custom(arg) if isinstance(arg, fx.Node) else arg
-            for arg in self.fx_node.args
-        ]
+        custom_args = {}
+        for i, arg in enumerate(self.fx_node.args):
+            if isinstance(arg, fx.Node):
+                custom_args[i] = get_custom(arg)
+            if isinstance(arg, list) and all(isinstance(x, fx.Node) for x in arg):
+                custom_args[i] = [get_custom(x) for x in arg]
+        return custom_args
+
+    def node_arg_index(self, arg: CustomOp) -> Optional[CustomOp | list[CustomOp]]:
+        return next(key for key, value in self.node_args.items() if value == arg)
 
     @property
     def users(self) -> list[Any]:
@@ -633,7 +639,7 @@ class Read(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
-    _write_dependency: Optional[fx.Node] = None
+    _write_dependency: Optional[list[fx.Node]] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

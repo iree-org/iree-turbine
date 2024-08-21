@@ -5,6 +5,7 @@ from typing import Optional
 from sympy import ceiling, Piecewise, floor
 
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
+from .._support.dtype import DataType
 from ..lang.global_symbols import *
 
 
@@ -51,6 +52,10 @@ class HardwareConstraint(Constraint):
     waves_per_block: Optional[tuple[int, int, int]] = None
     mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
     vector_shapes: Optional[dict[IndexSymbol, int]] = None
+    max_bits_per_load: int = 128
+
+    def max_elems_per_load(self, element_type: DataType) -> int:
+        return self.max_bits_per_load // element_type.bitwidth()
 
     @property
     def mma_matrix_shapes(self) -> tuple[int]:
