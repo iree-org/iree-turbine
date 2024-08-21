@@ -41,14 +41,7 @@ def test_copy():
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = {
-        "backend": "rocm",
-        "device": "hip",
-        "target": "gfx942",
-        "benchmark": True,
-        "benchmark_batch_size": 100,
-        "benchmark_repetitions": 3,
-    }
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
     shape = (256, 128)
     a = torch.randn(shape, dtype=torch.float16)
