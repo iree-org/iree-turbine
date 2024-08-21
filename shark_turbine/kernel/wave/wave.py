@@ -33,7 +33,12 @@ from .._support.tracing import (
 )
 from iree.compiler import compile_str
 import iree.runtime as rt
-from iree.runtime.benchmark import benchmark_module
+import iree.runtime.benchmark as bench
+
+# TODO: Monkey-patching f16 support, need to fix in iree.
+import numpy
+
+bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -324,14 +329,16 @@ class LaunchableWave(Launchable):
                     benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
 
                 inputs = [inp.numpy() for inp in kernel_inputs]
-                benchmark_results = benchmark_module(
+                benchmark_results = bench.benchmark_module(
                     mod,
                     entry_function=func_name,
                     device=device,
                     inputs=inputs,
                     **benchmark_flags,
                 )
-                print(benchmark_results)
+                print("Benchmark results:")
+                for result in benchmark_results:
+                    print(result)
             else:
                 func = mod.lookup_function(func_name)
                 _invoke(vm_context, device, func, kernel_inputs, kernel_outputs)
