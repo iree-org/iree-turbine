@@ -30,7 +30,7 @@ def test_copy():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, 64)]
+    constraints += [tkw.WaveConstraint(M, 1)]
     constraints += [tkw.WaveConstraint(N, 1)]
 
     @tkw.wave(constraints)
