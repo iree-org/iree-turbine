@@ -25,7 +25,6 @@ from ..ops.wave_ops import Reduction, CustomOp, get_custom
 from .register_analysis import determine_register_shape
 from .._support.indexing import IndexingContext, IndexExpr
 import shark_turbine.kernel.lang as tkl
-from ...support.logging import get_logger
 from .._support.tracing import (
     CapturedTrace,
     CompiledContext,
@@ -42,9 +41,6 @@ import numpy
 bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
 __all__ = ["wave", "wave_trace_only"]
-
-
-logger = get_logger("turbine.wave")
 
 
 def wave(constraints: Optional[list[Constraint]] = None):
@@ -92,11 +88,11 @@ def _write_file(name, mode, data):
 def _print_bench_result(result, filename):
     import json
 
-    res = str(json.dumps(result, sort_keys=True, indent=4))
+    res = json.dumps(result, sort_keys=True, indent=4)
     if filename is not None:
         _write_file(filename, "w", res)
     else:
-        logger.info(res)
+        print(res)
 
 
 class LaunchableWave(Launchable):
