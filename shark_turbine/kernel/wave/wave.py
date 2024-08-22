@@ -25,6 +25,7 @@ from ..ops.wave_ops import Reduction, CustomOp, get_custom
 from .register_analysis import determine_register_shape
 from .._support.indexing import IndexingContext, IndexExpr
 import shark_turbine.kernel.lang as tkl
+from ...support.logging import get_logger
 from .._support.tracing import (
     CapturedTrace,
     CompiledContext,
@@ -41,6 +42,9 @@ import numpy
 bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
 __all__ = ["wave", "wave_trace_only"]
+
+
+logger = get_logger("turbine.wave")
 
 
 def wave(constraints: Optional[list[Constraint]] = None):
@@ -78,6 +82,21 @@ def _invoke(vm_context, device, entry_function, inputs, outputs):
 
         # Convert to torch tensor without actually importing torch.
         ret[:] = type(ret)(host_array)
+
+
+def _write_file(name, mode, data):
+    with open(name, mode) as file:
+        file.write(data)
+
+
+def _print_bench_result(result, filename):
+    import json
+
+    res = str(json.dumps(result, sort_keys=True, indent=4))
+    if filename is not None:
+        _write_file(filename, "w", res)
+    else:
+        logger.info(res)
 
 
 class LaunchableWave(Launchable):
@@ -250,7 +269,9 @@ class LaunchableWave(Launchable):
             entrypoint_name,
         ) = self._trace_and_get_kernel_signature(args, kwargs)
 
-        if kwargs.get("run", False):
+        run = kwargs.get("run", False)
+        run_bench = kwargs.get("run_bench", False)
+        if run or run_bench:
             # TODO: cache compiled code
             host_codegen.isolated_test_call(mb, exe, kernel_sig, entrypoint_name)
             asm = mb.module_op.get_asm()
@@ -287,22 +308,27 @@ class LaunchableWave(Launchable):
             if config.get("print_ir_after_all", False):
                 flags.append("--mlir-print-ir-after-all")
 
-            run_bench = config.get("benchmark", False)
             if run_bench:
                 bench_batch_size = config.get("benchmark_batch_size", None)
                 bench_repetitions = config.get("benchmark_repetitions", None)
+                bench_file = config.get("benchmark_results_file", None)
+
+                benchmark_flags = {}
 
                 if bench_batch_size is not None:
                     flags.append(
                         f"--iree-hal-benchmark-dispatch-repeat-count={bench_batch_size}"
                     )
+                    benchmark_flags["batch_size"] = int(bench_batch_size)
+
+                if bench_repetitions is not None:
+                    benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
 
             res = compile_str(asm, target_backends=[backend], extra_args=flags)
 
             dump_vmfb_file = config.get("dump_vmfb_file", None)
             if dump_vmfb_file is not None:
-                with open(dump_vmfb_file, "wb") as file:
-                    file.write(res)
+                _write_file(dump_vmfb_file, "wb", res)
 
             rt_config = rt.Config(device)
             device = rt_config.device
@@ -317,17 +343,13 @@ class LaunchableWave(Launchable):
                 vm_modules=vm_modules,
                 config=rt_config,
             )
-            vm_context = ctx.vm_context
 
             func_name = "isolated_benchmark"
+            if run:
+                func = mod.lookup_function(func_name)
+                _invoke(ctx.vm_context, device, func, kernel_inputs, kernel_outputs)
+
             if run_bench:
-                benchmark_flags = {}
-                if bench_batch_size is not None:
-                    benchmark_flags["batch_size"] = int(bench_batch_size)
-
-                if bench_repetitions is not None:
-                    benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
-
                 inputs = [inp.numpy() for inp in kernel_inputs]
                 benchmark_results = bench.benchmark_module(
                     mod,
@@ -336,12 +358,7 @@ class LaunchableWave(Launchable):
                     inputs=inputs,
                     **benchmark_flags,
                 )
-                print("Benchmark results:")
-                for result in benchmark_results:
-                    print(result)
-            else:
-                func = mod.lookup_function(func_name)
-                _invoke(vm_context, device, func, kernel_inputs, kernel_outputs)
+                _print_bench_result(benchmark_results, bench_file)
 
         return mb
 
