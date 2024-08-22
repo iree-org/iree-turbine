@@ -81,6 +81,8 @@ class HardwareConstraint(Constraint):
 
     # Inline substitution for vector_size given index map. In the future we can add support for other members.
     def _subs(self, index_map: dict[IndexSymbol, int]):
+        if not isinstance(self.vector_shapes, dict):
+            return
         for vector_dim, vector_size in self.vector_shapes.items():
             if isinstance(vector_size, IndexExpr):
                 self.vector_shapes[vector_dim] = vector_size.subs(index_map)
