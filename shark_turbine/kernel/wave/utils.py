@@ -30,6 +30,7 @@ def canonicalize_module(module: Operation):
                 apply_patterns = transform_d.ApplyPatternsOp(target)
                 with InsertionPoint(apply_patterns.regions[0].blocks[0]):
                     transform_d.apply_patterns_canonicalization()
+                transform_d.apply_cse(target)
                 transform_d.YieldOp([target])
         transform_interpreter.apply_named_sequence(
             module,

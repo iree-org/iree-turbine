@@ -415,8 +415,12 @@ def get_dim_scaling(
                 vector_size = hardware_constraints[0].vector_shapes[constraint.dim]
 
             wave_count = 1
+            num_threads = 1
             if isinstance(constraint, WorkgroupConstraint):
                 wave_count = hardware_constraints[0].waves_per_block[
+                    constraint.workgroup_dim
+                ]
+                num_threads = hardware_constraints[0].threads_per_block[
                     constraint.workgroup_dim
                 ]
             if tile_size is None or wave_count is None or vector_size is None:
@@ -430,7 +434,9 @@ def get_dim_scaling(
                 raise ValueError(
                     "Tile size must be divisible by wave count and vector size"
                 )
-            dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
+            dim_scaling[constraint.dim] = (
+                tile_size // wave_count // num_threads // vector_size
+            )
             dim_tile_size[constraint.dim] = vector_size
     return (dim_scaling, dim_tile_size)
 

@@ -219,6 +219,9 @@ class LaunchableWave(Launchable):
         idxc = IndexingContext.current()
         idxc.finalize()
 
+        # Initialize Vector shapes
+        self.hardware_constraints[0]._subs(idxc.subs)
+
         # Promote the placeholders to the appropriate address space.
         promote_placeholders(graph, self.constraints)
         hoist_allocs(graph)
@@ -229,6 +232,7 @@ class LaunchableWave(Launchable):
         # Register analysis to determine register shapes.
         determine_register_shape(graph)
 
+        # Determine grid size.
         self.grid_type.dims = [1, 1, 1]
         for constraint in self.workgroup_constraints:
             self.grid_type.dims[constraint.workgroup_dim] = (
@@ -245,7 +249,11 @@ class LaunchableWave(Launchable):
         mb = builder.ModuleBuilder(context=context, module_op=module_op)
         entrypoint_name = self._name
         exe = dispatch_codegen.StreamExecutable(mb, name=entrypoint_name)
-        dispatch_entrypoint = exe.define_entrypoint(entrypoint_name, kernel_sig, grid)
+        workgroup_size = self.hardware_constraints[0].threads_per_block
+        subgroup_size = self.hardware_constraints[0].threads_per_wave
+        dispatch_entrypoint = exe.define_entrypoint(
+            entrypoint_name, kernel_sig, grid, workgroup_size, subgroup_size
+        )
 
         emitter = WaveEmitter(dispatch_entrypoint, graph, self.constraints)
         emitter.emit(graph.get_root_graph())
