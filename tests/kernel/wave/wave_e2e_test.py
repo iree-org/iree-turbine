@@ -24,7 +24,7 @@ def test_copy():
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: ELEMS_PER_THREAD},
+            vector_shapes={M: 1, N: 128},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
