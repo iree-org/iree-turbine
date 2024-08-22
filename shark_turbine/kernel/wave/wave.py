@@ -33,6 +33,12 @@ from .._support.tracing import (
 )
 from iree.compiler import compile_str
 import iree.runtime as rt
+import iree.runtime.benchmark as bench
+
+# TODO: Monkey-patching f16 support, need to fix in iree.
+import numpy
+
+bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -72,6 +78,21 @@ def _invoke(vm_context, device, entry_function, inputs, outputs):
 
         # Convert to torch tensor without actually importing torch.
         ret[:] = type(ret)(host_array)
+
+
+def _write_file(name, mode, data):
+    with open(name, mode) as file:
+        file.write(data)
+
+
+def _print_bench_result(result, filename):
+    import json
+
+    res = json.dumps(result, sort_keys=True, indent=4)
+    if filename is not None:
+        _write_file(filename, "w", res)
+    else:
+        print(res)
 
 
 class LaunchableWave(Launchable):
@@ -244,7 +265,9 @@ class LaunchableWave(Launchable):
             entrypoint_name,
         ) = self._trace_and_get_kernel_signature(args, kwargs)
 
-        if kwargs.get("run", False):
+        run = kwargs.get("run", False)
+        run_bench = kwargs.get("run_bench", False)
+        if run or run_bench:
             # TODO: cache compiled code
             host_codegen.isolated_test_call(mb, exe, kernel_sig, entrypoint_name)
             asm = mb.module_op.get_asm()
@@ -281,7 +304,27 @@ class LaunchableWave(Launchable):
             if config.get("print_ir_after_all", False):
                 flags.append("--mlir-print-ir-after-all")
 
+            if run_bench:
+                bench_batch_size = config.get("benchmark_batch_size", None)
+                bench_repetitions = config.get("benchmark_repetitions", None)
+                bench_file = config.get("benchmark_results_file", None)
+
+                benchmark_flags = {}
+
+                if bench_batch_size is not None:
+                    flags.append(
+                        f"--iree-hal-benchmark-dispatch-repeat-count={bench_batch_size}"
+                    )
+                    benchmark_flags["batch_size"] = int(bench_batch_size)
+
+                if bench_repetitions is not None:
+                    benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
+
             res = compile_str(asm, target_backends=[backend], extra_args=flags)
+
+            dump_vmfb_file = config.get("dump_vmfb_file", None)
+            if dump_vmfb_file is not None:
+                _write_file(dump_vmfb_file, "wb", res)
 
             rt_config = rt.Config(device)
             device = rt_config.device
@@ -296,10 +339,22 @@ class LaunchableWave(Launchable):
                 vm_modules=vm_modules,
                 config=rt_config,
             )
-            vm_context = ctx.vm_context
 
-            func = mod.lookup_function("isolated_benchmark")
-            _invoke(vm_context, device, func, kernel_inputs, kernel_outputs)
+            func_name = "isolated_benchmark"
+            if run:
+                func = mod.lookup_function(func_name)
+                _invoke(ctx.vm_context, device, func, kernel_inputs, kernel_outputs)
+
+            if run_bench:
+                inputs = [inp.numpy() for inp in kernel_inputs]
+                benchmark_results = bench.benchmark_module(
+                    mod,
+                    entry_function=func_name,
+                    device=device,
+                    inputs=inputs,
+                    **benchmark_flags,
+                )
+                _print_bench_result(benchmark_results, bench_file)
 
         return mb
 
