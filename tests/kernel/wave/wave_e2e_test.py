@@ -68,6 +68,7 @@ def test_copy(shape):
 @require_e2e
 @pytest.mark.parametrize("shape", _test_shapes)
 def test_transpose_read(shape):
+    shape = shape[::-1]
     M = tkl.sym.M
     N = tkl.sym.N
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -106,7 +107,7 @@ def test_transpose_read(shape):
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
     a = torch.randn(shape, dtype=torch.float16)
-    b = torch.zeros((shape[1], shape[0]), dtype=torch.float16)
+    b = torch.zeros(shape[::-1], dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -162,7 +163,7 @@ def test_transpose_write(shape):
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
     a = torch.randn(shape, dtype=torch.float16)
-    b = torch.zeros((shape[1], shape[0]), dtype=torch.float16)
+    b = torch.zeros(shape[::-1], dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
