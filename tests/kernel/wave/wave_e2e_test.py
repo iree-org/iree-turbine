@@ -4,6 +4,7 @@ import shark_turbine.kernel.wave as tkw
 import torch
 from numpy.testing import assert_allclose
 import pytest
+import sympy
 import os
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
@@ -11,20 +12,30 @@ _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
 
 
+_test_shapes = [(1, 128), (256, 64), (256, 128), (256, 256), (256, 1024)]
+
+
 @require_e2e
-def test_copy():
+@pytest.mark.parametrize("shape", _test_shapes)
+def test_copy(shape):
     M = tkl.sym.M
     N = tkl.sym.N
-    BLOCK_M = tkl.sym.BLOCK_M
-    BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Each workgroup works on single row of input data, and rows are further
+    # split into blocks of size up to 256. We have single wave per WG,
+    # and with default wave size of 64, each thread is operating on up to 4
+    # elements.
+    wave_size = 64
+    BLOCK_M = 1
+    BLOCK_N = sympy.Min(N, 256)
+    ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
+            threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N},
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -42,16 +53,12 @@ def test_copy():
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
-    shape = (256, 128)
     a = torch.randn(shape, dtype=torch.float16)
     b = torch.zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
             N: shape[1],
-            BLOCK_M: 1,
-            BLOCK_N: 128,
-            ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
@@ -63,19 +70,23 @@ def test_copy():
 
 
 @require_e2e
-def test_transpose_read():
+@pytest.mark.parametrize("shape", _test_shapes)
+def test_transpose_read(shape):
+    shape = shape[::-1]
     M = tkl.sym.M
     N = tkl.sym.N
-    BLOCK_M = tkl.sym.BLOCK_M
-    BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_N = 1
+    BLOCK_M = sympy.Min(M, 256)
+    ELEMS_PER_THREAD = BLOCK_M / wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
+            threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={N: 1, M: BLOCK_M},
+            vector_shapes={N: BLOCK_N, M: BLOCK_M},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -99,16 +110,12 @@ def test_transpose_read():
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
-    shape = (256, 128)
     a = torch.randn(shape, dtype=torch.float16)
-    b = torch.zeros((shape[1], shape[0]), dtype=torch.float16)
+    b = torch.zeros(shape[::-1], dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
             N: shape[1],
-            BLOCK_M: 128,
-            BLOCK_N: 1,
-            ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
@@ -120,19 +127,22 @@ def test_transpose_read():
 
 
 @require_e2e
-def test_transpose_write():
+@pytest.mark.parametrize("shape", _test_shapes)
+def test_transpose_write(shape):
     M = tkl.sym.M
     N = tkl.sym.N
-    BLOCK_M = tkl.sym.BLOCK_M
-    BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_M = 1
+    BLOCK_N = sympy.Min(N, 256)
+    ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
+            threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N},
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -156,16 +166,12 @@ def test_transpose_write():
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
-    shape = (256, 128)
     a = torch.randn(shape, dtype=torch.float16)
-    b = torch.zeros((shape[1], shape[0]), dtype=torch.float16)
+    b = torch.zeros(shape[::-1], dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
             N: shape[1],
-            BLOCK_M: 1,
-            BLOCK_N: 128,
-            ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
