@@ -75,24 +75,24 @@ def test_transpose_read():
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N},
+            vector_shapes={N: 1, M: BLOCK_M},
         )
     ]
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     mapping = tkw.IndexMapping(
-        num_iterators=2, inputs={M: i, N: j}, outputs={M: i, N: j}
+        num_iterators=2, inputs={N: i, M: j}, outputs={N: i, M: j}
     )
 
     @tkw.wave(constraints)
     def test(
-        a: tkl.Memory[N, M, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, M, ADDRESS_SPACE, tkl.f16],
     ):
         res = tkw.read(a, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
@@ -104,10 +104,10 @@ def test_transpose_read():
     b = torch.zeros((shape[1], shape[0]), dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
-            M: shape[1],
-            N: shape[0],
-            BLOCK_M: 1,
-            BLOCK_N: 128,
+            M: shape[0],
+            N: shape[1],
+            BLOCK_M: 128,
+            BLOCK_N: 1,
             ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
