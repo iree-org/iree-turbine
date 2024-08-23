@@ -4,6 +4,7 @@ import shark_turbine.kernel.wave as tkw
 import torch
 from numpy.testing import assert_allclose
 import pytest
+import sympy
 import os
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
@@ -21,9 +22,9 @@ def test_copy(shape):
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     wave_size = 64
-    BLOCK_M = 1
-    BLOCK_N = (min(N, 256),)
-    ELEMS_PER_THREAD = (BLOCK_N / wave_size,)
+    BLOCK_M = sympy.sympify(1)
+    BLOCK_N = sympy.Min(N, 256)
+    ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
