@@ -33,7 +33,7 @@ class Test(unittest.TestCase):
         constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
         constraints += [
-            tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+            tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
         ]
 
         # Wave-level micro-kernel.
@@ -46,7 +46,7 @@ class Test(unittest.TestCase):
         def gemm(
             a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
             b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-            c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+            c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         ):
             c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
@@ -68,27 +68,19 @@ class Test(unittest.TestCase):
         hyperparams = {
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 4,  # TODO: For correctness, this should be 1.
-            BLOCK_M: 32,
-            BLOCK_N: 32,
+            STORE_ELEMS_PER_THREAD: 4,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
             BLOCK_K: 32,
-            M: 64,
-            N: 128,
-            K: 256,
+            M: 2048,
+            N: 10240,
+            K: 1280,
         }
-        with tk.gen.TestLaunchContext(hyperparams):
-            a = torch.randn(64, 256, dtype=torch.float16)
-            b = torch.randn(128, 256, dtype=torch.float16)
-            c = torch.zeros(64, 128, dtype=torch.float32)
+        with tk.gen.TestLaunchContext(hyperparams, canonicalize=True):
+            a = torch.randn(2048, 1280, dtype=torch.float16)
+            b = torch.randn(10240, 1280, dtype=torch.float16)
+            c = torch.zeros(2048, 10240, dtype=torch.float32)
             gemm(a, b, c)
-
-            # TODO: Note this is currently not triggered as the stub exception
-            # is raised first. Remove this note when this successfully runs
-            # through codegen.
-            assert gemm.grid_type.symbolic_shape == (
-                M // BLOCK_M,
-                N // BLOCK_N,
-            )
 
 
 if __name__ == "__main__":

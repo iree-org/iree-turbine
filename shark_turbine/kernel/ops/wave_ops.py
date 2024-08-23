@@ -536,7 +536,7 @@ class Allocate(CustomOp):
         return Memory[*self.shape, self.address_space, self.dtype]
 
 
-@define_op("barrier")
+@define_op("shared_memory_barrier")
 @dataclass
 class SharedMemoryBarrier(CustomOp):
     """

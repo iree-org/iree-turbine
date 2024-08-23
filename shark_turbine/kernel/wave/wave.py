@@ -274,6 +274,9 @@ class LaunchableWave(Launchable):
         if kwargs.get("canonicalize", False):
             canonicalize_module(mb.module_op)
 
+        with open("mma.mlir", "w") as f:
+            f.write(mb.module_op.get_asm())
+
         return mb, graph, exe, kernel_sig, entrypoint_name
 
     def test_execute(self, args, kwargs):
