@@ -426,7 +426,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             symbolc_shape=input_shape,
             index=index,
             mapping=mapping,
-            elements_per_thread=elements_per_thread,
+            elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=True,
         )
 
@@ -481,7 +481,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             symbolc_shape=output_shape,
             index=index,
             mapping=mapping,
-            elements_per_thread=elements_per_thread,
+            elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=False,
         )
 
