@@ -228,17 +228,19 @@ class WaveConstraint(Constraint):
         return IndexSequence(self.tile_size * self.wave_id, 1)
 
 
-def get_workgroup_distributed_shape(
+def get_constrained_shape(
     shape: list[IndexExpr], constraints: list[WorkgroupConstraint]
 ) -> tuple[IndexExpr]:
     """
-    Given a shape and workgroup constraints, returns the shape
-    of the tensor after it has been distributed along workgroup dimensions.
+    Given a shape, workgroup and tiling constraints, returns the shape
+    of the distributed and tiled tensor.
     """
-    distributed_shape = list(shape)
+    constrained_shape = list(shape)
     for i, dim in enumerate(shape):
         for constraint in constraints:
-            if isinstance(constraint, WorkgroupConstraint):
+            if isinstance(constraint, WorkgroupConstraint) or isinstance(
+                constraint, TilingConstraint
+            ):
                 if dim == constraint.dim:
-                    distributed_shape[i] = constraint.tile_size
-    return tuple(distributed_shape)
+                    constrained_shape[i] = constraint.tile_size
+    return tuple(constrained_shape)
