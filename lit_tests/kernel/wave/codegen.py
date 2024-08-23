@@ -289,7 +289,7 @@ def test_mma():
         c = torch.zeros(64, 128, dtype=torch.float32)
         print(mma(a, b, c).module_op)
 
-        # CHECK: func.func @mma(%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %[[ARG2:.+]]: !stream.binding) {
+        # CHECK: func.func @mma(%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %[[ARG2:.+]]: !stream.binding)
         # CHECK-DAG: %[[C16:.+]] = arith.constant 16 : index
         # CHECK-DAG: %[[C4:.+]] = arith.constant 4 : index
         # CHECK-DAG: %[[C32:.+]] = arith.constant 32 : index
@@ -305,37 +305,19 @@ def test_mma():
         # CHECK: %[[R3:.+]] = arith.addi %[[R2]], %[[R1]] : index
         # CHECK: %[[R4:.+]] = vector.load %0[%[[R3]], %[[C0]]] : memref<64x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
         # CHECK: %[[ALLOC:.+]] = memref.alloc() : memref<32x16xf16, #gpu.address_space<workgroup>>
-        # CHECK: %[[R5:.+]] = arith.muli %[[WG0]], %[[C32]] : index
-        # CHECK: %[[R6:.+]] = arith.divsi %[[TX]], %[[C4]] : index
-        # CHECK: %[[R7:.+]] = arith.addi %[[R6]], %[[R5]] : index
-        # CHECK: vector.store %4, %[[ALLOC]][%[[R7]], %[[C0]]] : memref<32x16xf16, #gpu.address_space<workgroup>>, vector<4xf16>
-        # CHECK: %[[R8:.+]] = arith.muli %[[WG0]], %[[C32]] : index
-        # CHECK: %[[R9:.+]] = arith.divsi %[[TX]], %[[C4]] : index
-        # CHECK: %[[R10:.+]] = arith.addi %[[R9]], %[[R8]] : index
-        # CHECK: %[[R11:.+]] = vector.load %[[ALLOC]][%[[R10]], %[[C0]]] : memref<32x16xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK: vector.store %4, %[[ALLOC]][%[[R3]], %[[C0]]] : memref<32x16xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK: %[[R11:.+]] = vector.load %[[ALLOC]][%[[R3]], %[[C0]]] : memref<32x16xf16, #gpu.address_space<workgroup>>, vector<4xf16>
         # CHECK: %[[R12:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<128x16xf16, strided<[16, 1], offset: ?>>
         # CHECK: %[[R13:.+]] = arith.muli %[[TY]], %[[C16]] : index
         # CHECK: %[[R14:.+]] = arith.muli %[[WG1]], %[[C32]] : index
         # CHECK: %[[R15:.+]] = arith.addi %[[R14]], %[[R13]] : index
         # CHECK: %[[R16:.+]] = vector.load %[[R12]][%[[R15]], %[[C0]]] : memref<128x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
         # CHECK: %[[ALLOC_0:.+]] = memref.alloc() : memref<32x16xf16, #gpu.address_space<workgroup>>
-        # CHECK: %[[R17:.+]] = arith.muli %[[TY]], %[[C16]] : index
-        # CHECK: %[[R18:.+]] = arith.muli %[[WG1]], %[[C32]] : index
-        # CHECK: %[[R19:.+]] = arith.addi %[[R18]], %[[R17]] : index
-        # CHECK: vector.store %16, %[[ALLOC_0]][%[[R19]], %[[C0]]] : memref<32x16xf16, #gpu.address_space<workgroup>>, vector<4xf16>
-        # CHECK: %[[R20:.+]] = arith.muli %[[TY]], %[[C16]] : index
-        # CHECK: %[[R21:.+]] = arith.muli %[[WG1]], %[[C32]] : index
-        # CHECK: %[[R22:.+]] = arith.addi %[[R21]], %[[R20]] : index
-        # CHECK: %[[R23:.+]] = vector.load %[[ALLOC_0]][%[[R22]], %[[C0]]] : memref<32x16xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK: vector.store %[[R16]], %[[ALLOC_0]][%[[R15]], %[[C0]]] : memref<32x16xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK: %[[R23:.+]] = vector.load %[[ALLOC_0]][%[[R15]], %[[C0]]] : memref<32x16xf16, #gpu.address_space<workgroup>>, vector<4xf16>
         # CHECK: %[[R24:.+]] = amdgpu.mfma %[[R11]] * %[[R23]] + %[[ACC]] {blocks = 1 : i32, k = 16 : i32, m = 16 : i32, n = 16 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<4xf32>
         # CHECK: %[[R25:.+]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<64x128xf32, strided<[128, 1], offset: ?>>
-        # CHECK: %[[R26:.+]] = arith.muli %[[WG0]], %[[C32]] : index
-        # CHECK: %[[R27:.+]] = arith.divsi %[[TX]], %[[C4]] : index
-        # CHECK: %[[R28:.+]] = arith.addi %[[R27]], %[[R26]] : index
-        # CHECK: %[[R29:.+]] = arith.muli %[[TY]], %[[C16]] : index
-        # CHECK: %[[R30:.+]] = arith.muli %[[WG1]], %[[C32]] : index
-        # CHECK: %[[R31:.+]] = arith.addi %[[R30]], %[[R29]] : index
-        # CHECK: vector.store %[[R24]], %[[R25]][%[[R28]], %[[R31]]] : memref<64x128xf32, strided<[128, 1], offset: ?>>, vector<4xf32>
+        # CHECK: vector.store %[[R24]], %[[R25]][%[[R3]], %[[R15]]] : memref<64x128xf32, strided<[128, 1], offset: ?>>, vector<4xf32>
 
 
 @run_test
@@ -392,7 +374,7 @@ def test_gemm():
         print(gemm(a, b, c).module_op)
 
         # CHECK:       func.func @gemm(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
-        # CHECK-SAME:    %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) {
+        # CHECK-SAME:    %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK-DAG:     %[[C4:.+]] = arith.constant 4 : index
         # CHECK-DAG:     %[[C32:.+]] = arith.constant 32 : index
         # CHECK-DAG:     %[[C16:.+]] = arith.constant 16 : index
@@ -417,35 +399,18 @@ def test_gemm():
         # CHECK:           %[[D13:.+]] = arith.muli %[[ARG3]], %[[C16]] : index
         # CHECK:           %[[D14:.+]] = vector.load %[[D8]][%[[D12]], %[[D13]]] : memref<64x64xf16, strided<[64, 1],
         # CHECK-SAME:        offset: ?>>, vector<4xf16>
-        # CHECK:           %[[D15:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] : index
-        # CHECK:           %[[D16:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C4]] : index
-        # CHECK:           %[[D17:.+]] = arith.addi %[[D16]], %[[D15]] : index
-        # CHECK:           %[[D18:.+]] = arith.muli %[[ARG3]], %[[C16]] : index
-        # CHECK:           vector.store %[[D14]], %[[ALLOC]][%[[D17]], %[[D18]]] : memref<32x64xf16,
+        # CHECK:           vector.store %[[D14]], %[[ALLOC]][%[[D12]], %[[D13]]] : memref<32x64xf16,
         # CHECK-SAME:        #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:           %[[D19:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] : index
-        # CHECK:           %[[D20:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C4]] : index
-        # CHECK:           %[[D21:.+]] = arith.addi %[[D20]], %[[D19]] : index
-        # CHECK:           %[[D22:.+]] = arith.muli %[[ARG3]], %[[C16]] : index
-        # CHECK:           %[[D23:.+]] = vector.load %[[ALLOC]][%[[D21]], %[[D22]]] : memref<32x64xf16,
+        # CHECK:           %[[D23:.+]] = vector.load %[[ALLOC]][%[[D12]], %[[D13]]] : memref<32x64xf16,
         # CHECK-SAME:        #[[GPU]].address_space<workgroup>>, vector<4xf16>
         # CHECK:           %[[D24:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
         # CHECK:           %[[D25:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
         # CHECK:           %[[D26:.+]] = arith.addi %[[D25]], %[[D24]] : index
-        # CHECK:           %[[D27:.+]] = arith.muli %[[ARG3]], %[[C16]] : index
-        # CHECK:           %[[D28:.+]] = vector.load %[[D9]][%[[D26]], %[[D27]]] : memref<128x64xf16, strided<[64, 1],
+        # CHECK:           %[[D28:.+]] = vector.load %[[D9]][%[[D26]], %[[D13]]] : memref<128x64xf16, strided<[64, 1],
         # CHECK-SAME:        offset: ?>>, vector<4xf16>
-        # CHECK:           %[[D29:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
-        # CHECK:           %[[D30:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
-        # CHECK:           %[[D31:.+]] = arith.addi %[[D30]], %[[D29]] : index
-        # CHECK:           %[[D32:.+]] = arith.muli %[[ARG3]], %[[C16]] : index
-        # CHECK:           vector.store %[[D28]], %[[ALLOC_0]][%[[D31]], %[[D32]]] : memref<32x64xf16,
+        # CHECK:           vector.store %[[D28]], %[[ALLOC_0]][%[[D26]], %[[D13]]] : memref<32x64xf16,
         # CHECK-SAME:        #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:           %[[D33:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
-        # CHECK:           %[[D34:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
-        # CHECK:           %[[D35:.+]] = arith.addi %[[D34]], %[[D33]] : index
-        # CHECK:           %[[D36:.+]] = arith.muli %[[ARG3]], %[[C16]] : index
-        # CHECK:           %[[D37:.+]] = vector.load %[[ALLOC_0]][%[[D35]], %[[D36]]] : memref<32x64xf16,
+        # CHECK:           %[[D37:.+]] = vector.load %[[ALLOC_0]][%[[D26]], %[[D13]]] : memref<32x64xf16,
         # CHECK-SAME:        #[[GPU]].address_space<workgroup>>, vector<4xf16>
         # CHECK:           %[[D38:.+]] = amdgpu.mfma %[[D23]] * %[[D37]] + %[[ARG4]] {blocks = 1 : i32, k = 16 : i32, m = 16
         # CHECK-SAME:        : i32, n = 16 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<4xf32>

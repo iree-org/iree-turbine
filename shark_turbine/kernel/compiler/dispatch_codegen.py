@@ -21,6 +21,7 @@ from .builder import (
 )
 
 from .ir import (
+    Attribute,
     Block,
     FunctionType,
     IndexType,
@@ -96,6 +97,8 @@ class StreamExecutable:
         name: str,
         sig: KernelSignature,
         grid: Grid,
+        workgroup_size: list[int] = None,
+        subgroup_size: int = None,
     ) -> "DispatchEntrypoint":
         """Defines a dispatch function with a signature like:
 
@@ -163,6 +166,12 @@ class StreamExecutable:
                 def_func_op = func_d.FuncOp(name, def_ftype)
                 def_func_block = def_func_op.add_entry_block()
                 def_func_args = list(def_func_block.arguments)
+                if workgroup_size is not None and subgroup_size is not None:
+                    def_func_op.attributes["translation_info"] = Attribute.parse(
+                        f"#iree_codegen.translation_info<None "
+                        f"workgroup_size=[{','.join(str(x) for x in workgroup_size)}]"
+                        f"subgroup_size={subgroup_size}>"
+                    )
 
             # Define the export.
             with InsertionPoint.at_block_begin(self._exe_block):

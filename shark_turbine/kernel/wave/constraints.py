@@ -79,6 +79,14 @@ class HardwareConstraint(Constraint):
         ]
         return sum([x * y for x, y in zip(thread_ids, threads_per_block)])
 
+    # Inline substitution for vector_size given index map. In the future we can add support for other members.
+    def subs_vector_shapes(self, index_map: dict[IndexSymbol, int]):
+        if self.vector_shapes is None:
+            return
+        for vector_dim, vector_size in self.vector_shapes.items():
+            if isinstance(vector_size, IndexExpr):
+                self.vector_shapes[vector_dim] = vector_size.subs(index_map)
+
     def apply(self, mma_index: int) -> IndexSequence:
         lane = self.linearized_thread_id
         match self.mma_type:

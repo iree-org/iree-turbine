@@ -24,12 +24,11 @@ def test_copy():
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            # vector_shapes={M: 1, N: ELEMS_PER_THREAD}, # TODO: Symbol doesn't work here, but should
-            vector_shapes={M: 1, N: 4},
+            vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
@@ -50,9 +49,9 @@ def test_copy():
         {
             M: shape[0],
             N: shape[1],
-            BLOCK_M: 16,
-            BLOCK_N: 16,
-            ELEMS_PER_THREAD: 4,
+            BLOCK_M: 1,
+            BLOCK_N: 128,
+            ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
