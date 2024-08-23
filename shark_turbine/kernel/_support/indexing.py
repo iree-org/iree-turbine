@@ -235,10 +235,10 @@ class IndexingContext:
         except TypeError:
             return None
 
-    def simplify_expr(self, expr: IndexExpr) -> IndexExpr:
-        return expr.subs(self.frozen_subs).simplify()
+    def simplify_expr(self, expr: IndexExpr | int) -> IndexExpr:
+        return sympy.sympify(expr).subs(self.frozen_subs).simplify()
 
-    def get_static_value(self, expr: IndexExpr) -> Optional[int]:
+    def get_static_value(self, expr: IndexExpr | int) -> Optional[int]:
         expr = self.simplify_expr(expr)
         try:
             return int(expr)
