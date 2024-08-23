@@ -71,63 +71,66 @@ def remove_global_indexing(
     return new_index
 
 
-def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
-    """
-    This function attempts to minimize the number of global loads in a graph.
-    If we have to load a tensor of shape [.., N] and we have T
-    threads and each thread can load a maximum of L elements, then as long
-    as N % L == 0, we can load the entire tensor with ceil(prod([.., N]) / (T * L)) global loads.
-    If this is not the case, we have some threads loading L elements and some loading N % L elements
-    and we need to emit a conditional to load different number of elements based on the thread id.
-    From a performance perspective, this is not ideal and so we do not apply this optimization
-    when we encounter such a scenario.
-
-    """
-
-    global_read_nodes = trace.walk(is_valid_global_read)
-    if not global_read_nodes:
-        return
-
-    hardware_constraint = next(
-        c for c in constraints if isinstance(c, HardwareConstraint)
-    )
-    constraint_tile_size = {
-        c.dim: c.tile_size
-        for c in constraints
-        if isinstance(c, TilingConstraint) or isinstance(c, WorkgroupConstraint)
-    }
-    total_number_of_threads = hardware_constraint.threads_per_wave * prod(
-        hardware_constraint.waves_per_block
-    )
-    element_type = get_custom(global_read_nodes[0]).type.dtype
-    load_elems_per_thread = hardware_constraint.max_elems_per_load(element_type)
-    max_elements_per_load = total_number_of_threads * load_elems_per_thread
+def materialize_shape(
+    constraint_tile_size: dict[IndexSymbol, int], symbolic_shape: list[IndexSymbol]
+) -> list[int]:
+    materialized_shape = []
     idxc = IndexingContext.current()
-    new_loads = {}
+    for dim in symbolic_shape:
+        if dim in constraint_tile_size:
+            materialized_shape.append(constraint_tile_size[dim].subs(idxc.subs))
+        else:
+            materialized_shape.append(dim.subs(idxc.subs))
+    return materialized_shape
+
+
+def identify_optimizable_loads(
+    global_read_nodes: list[fx.Node],
+    constraint_tile_size: dict[IndexSymbol, int],
+    max_elements_per_load: int,
+) -> list[Read]:
+    """
+    Identify sub-optimal global loads that can be removed. A given memory has
+    sub-optimal global loads if
+        num_global_loads > (M * N) / (T * L)
+    where the memory has shape [M, N], there are T threads and each thread can load L elements.
+    """
+    optimizable_loads: dict[fx.Node, tuple[int, Read]] = {}
     for read_node in global_read_nodes:
         custom = get_custom(read_node)
-        if custom.memory in new_loads:
+        if custom.memory in optimizable_loads:
             continue
-        materialized_shape = []
-        for dim in custom.type.symbolic_shape:
-            if dim in constraint_tile_size:
-                materialized_shape.append(constraint_tile_size[dim].subs(idxc.subs))
-            else:
-                materialized_shape.append(dim.subs(idxc.subs))
+        materialized_shape = materialize_shape(
+            constraint_tile_size, custom.type.symbolic_shape
+        )
+        # Ensure that the innermost dimension of the shape is a multiple of the elements being loaded.
         if materialized_shape[-1] % max_elements_per_load == 0:
             continue
+
         total_number_of_elements = prod(materialized_shape)
         expected_number_of_loads = total_number_of_elements // max_elements_per_load
         actual_number_of_loads = len(
             [x for x in global_read_nodes if get_custom(x).memory == custom.memory]
         )
-        if expected_number_of_loads == actual_number_of_loads:
+        if expected_number_of_loads >= actual_number_of_loads:
             continue
-        new_loads[custom.memory] = (expected_number_of_loads, custom)
+        optimizable_loads[custom.memory] = (expected_number_of_loads, custom)
+    return optimizable_loads
 
-    # Construct new global read nodes and write shared nodes.
-    new_writes = defaultdict(list)
-    for memory, (expected_number_of_loads, custom) in new_loads.items():
+
+def add_optimized_nodes(
+    optimizable_loads: dict[fx.Node, tuple[int, Read]],
+    constraint_tile_size: dict[IndexSymbol, int],
+    hardware_constraint: HardwareConstraint,
+    tilingConstraints: list[TilingConstraint],
+    max_elements_per_load: int,
+    load_elems_per_thread: int,
+) -> list[fx.Node]:
+    """
+    Add optimized global read nodes and shared write nodes to the graph.
+    """
+    optimized_writes = defaultdict(list)
+    for memory, (expected_number_of_loads, custom) in optimizable_loads.items():
         access_pattern: dict[IndexSymbol, IndexSequence] = custom.index
         for i in range(expected_number_of_loads):
             with custom.graph.inserting_before(custom.fx_node):
@@ -135,6 +138,9 @@ def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
                 global_offset = (
                     hardware_constraint.linearized_thread_id * load_elems_per_thread
                     + i * max_elements_per_load
+                )
+                materialized_shape = materialize_shape(
+                    constraint_tile_size, custom.type.symbolic_shape
                 )
                 read.index = construct_min_global_access_pattern(
                     access_pattern,
@@ -151,14 +157,19 @@ def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
                             read, custom_user.memory, load_elems_per_thread
                         ).add_to_graph(custom.graph)
                         write.index = remove_global_indexing(
-                            read.index,
-                            [c for c in constraints if isinstance(c, TilingConstraint)],
+                            read.index, tilingConstraints
                         )
-                        new_writes[custom_user.memory].append(write)
+                        optimized_writes[custom_user.memory].append(write)
                         break
+    return optimized_writes
 
-    # Update all write dependencies.
-    for memory, writes in new_writes.items():
+
+def update_write_dependencies(optimized_writes: list[fx.Node], trace: CapturedTrace):
+    """
+    Update all read shared nodes that have write dependencies on the unoptimized writes to
+    the new optimized writes.
+    """
+    for memory, writes in optimized_writes.items():
 
         def is_replaceable_write(node: fx.Node) -> bool:
             custom = get_custom(node)
@@ -169,11 +180,58 @@ def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
                 and not custom.fx_node in writes
             )
 
-        shared_memory_writes = trace.walk(is_replaceable_write)
-        for replaceable_write in shared_memory_writes:
+        for replaceable_write in trace.walk(is_replaceable_write):
             for user in replaceable_write.users:
                 idx = user.args.index([replaceable_write])
                 get_custom(user).update_arg(idx, writes)
                 break
 
     remove_unused_operators(trace)
+
+
+def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
+    """
+    This function attempts to minimize the number of global loads in a graph.
+    If we have to load a tensor of shape [.., N] and we have T
+    threads and each thread can load a maximum of L elements, then as long
+    as N % L == 0, we can load the entire tensor with ceil(prod([.., N]) / (T * L)) global loads.
+    This function applies this transformation as long as the condition above holds.
+
+    """
+
+    global_read_nodes = trace.walk(is_valid_global_read)
+    if not global_read_nodes:
+        return
+
+    hardware_constraint = next(
+        c for c in constraints if isinstance(c, HardwareConstraint)
+    )
+    constraint_tile_size = {
+        c.dim: c.tile_size
+        for c in constraints
+        if isinstance(c, TilingConstraint) or isinstance(c, WorkgroupConstraint)
+    }
+
+    total_number_of_threads = hardware_constraint.threads_per_wave * prod(
+        hardware_constraint.waves_per_block
+    )
+    element_type = get_custom(global_read_nodes[0]).type.dtype
+    load_elems_per_thread = hardware_constraint.max_elems_per_load(element_type)
+    max_elements_per_load = total_number_of_threads * load_elems_per_thread
+
+    optimizable_loads = identify_optimizable_loads(
+        global_read_nodes, constraint_tile_size, max_elements_per_load
+    )
+
+    # Construct new global read nodes and write shared nodes.
+    optimized_writes = add_optimized_nodes(
+        optimizable_loads,
+        constraint_tile_size,
+        hardware_constraint,
+        [c for c in constraints if isinstance(c, TilingConstraint)],
+        max_elements_per_load,
+        load_elems_per_thread,
+    )
+
+    # Update all write dependencies.
+    update_write_dependencies(optimized_writes, trace)

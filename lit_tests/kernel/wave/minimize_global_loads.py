@@ -78,13 +78,16 @@ def test_gemm():
         }
     ):
         trace: CapturedTrace = gemm()
+        visualize = False
         IndexingContext.current().finalize()
         promote_placeholders(trace, constraints)
         hoist_allocs(trace)
         expand_graph(trace, constraints)
-        visualize_graph(trace.get_subgraph("region_0"), "before.png")
+        if visualize:
+            visualize_graph(trace.get_subgraph("region_0"), "before.png")
         minimize_global_loads(trace, constraints)
-        visualize_graph(trace.get_subgraph("region_0"), "after.png")
+        if visualize:
+            visualize_graph(trace.get_subgraph("region_0"), "after.png")
         add_shared_memory_barriers(trace)
         print_trace(trace)
         # Root graph:
