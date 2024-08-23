@@ -75,7 +75,7 @@ def test_transpose_read(shape):
 
     wave_size = 64
     BLOCK_N = 1
-    BLOCK_M = sympy.Min(N, 256)
+    BLOCK_M = sympy.Min(M, 256)
     ELEMS_PER_THREAD = BLOCK_M / wave_size
 
     constraints: list[tkw.Constraint] = [
