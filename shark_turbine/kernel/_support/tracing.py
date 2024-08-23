@@ -121,6 +121,10 @@ class CapturedTrace:
     def __init__(self, region_graph: RegionGraph, root_graph: str):
         self.region_graph = region_graph
         self.root_graph = root_graph
+        self.region_graph.subgraphs[root_graph].subgraphs = {}
+        for name, subgraph in self.region_graph.subgraphs.items():
+            if name != root_graph:
+                self.region_graph.subgraphs[root_graph].subgraphs[name] = subgraph
 
     def get_subgraph(self, name: str) -> fx.Graph:
         return self.region_graph.subgraphs[name]

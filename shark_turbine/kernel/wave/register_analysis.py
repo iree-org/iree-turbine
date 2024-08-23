@@ -9,13 +9,20 @@ def set_register_shape(trace: CapturedTrace, custom: CustomOp) -> None:
     for custom_user in custom.users:
         if isinstance(custom_user, MMA):
             arg_index = custom_user.fx_node.args.index(custom.fx_node)
+            get_thread_shape = lambda index: max(x.size for x in index.values())
             match arg_index:
                 case 0:
-                    custom.fx_node.thread_shape = custom_user.lhs_index[0].size
+                    custom.fx_node.thread_shape = get_thread_shape(
+                        custom_user.lhs_index
+                    )
                 case 1:
-                    custom.fx_node.thread_shape = custom_user.rhs_index[0].size
+                    custom.fx_node.thread_shape = get_thread_shape(
+                        custom_user.rhs_index
+                    )
                 case 2:
-                    custom.fx_node.thread_shape = custom_user.acc_index[0].size
+                    custom.fx_node.thread_shape = get_thread_shape(
+                        custom_user.acc_index
+                    )
             break
 
         elif isinstance(custom_user, Reduction):
