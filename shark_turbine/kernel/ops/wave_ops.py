@@ -40,6 +40,15 @@ def allocate(
     ...
 
 
+def extract_slice(
+    register: "Register",
+    offsets: tuple[IndexExpr],
+    sizes: tuple[IndexExpr],
+    strides: tuple[IndexExpr],
+) -> "Register":
+    ...
+
+
 def shared_memory_barrier():
     ...
 
@@ -627,24 +636,24 @@ class MMA(CustomOp):
 
     def operand_index(
         self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
-    ) -> list[IndexSequence]:
-        indices: list[IndexSequence] = []
+    ) -> dict[IndexSymbol, IndexSequence]:
+        indices: dict[IndexSymbol, IndexSequence] = {}
         for dim in shape:
-            indices.append(self.index[dim].subs(operand_map))
+            indices[dim] = self.index[dim].subs(operand_map)
         return indices
 
     @property
-    def lhs_index(self) -> list[IndexSequence]:
+    def lhs_index(self) -> dict[IndexSymbol, IndexSequence]:
         operand_map = {MMA_LHS: 1, MMA_RHS: 0, MMA_ACC: 0}
         return self.operand_index(operand_map, self.lhs_type.symbolic_shape)
 
     @property
-    def rhs_index(self) -> list[IndexSequence]:
+    def rhs_index(self) -> dict[IndexSymbol, IndexSequence]:
         operand_map = {MMA_LHS: 0, MMA_RHS: 1, MMA_ACC: 0}
         return self.operand_index(operand_map, self.rhs_type.symbolic_shape)
 
     @property
-    def acc_index(self) -> list[IndexSequence]:
+    def acc_index(self) -> dict[IndexSymbol, IndexSequence]:
         operand_map = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}
         if self.acc_type is None:
             return None
@@ -766,7 +775,20 @@ class Reduction(CustomOp):
     def outputs(self, graph: fx.Graph) -> list[fx.Node]:
         for node in graph.nodes:
             if isinstance(get_custom(node), Output):
-                return node.args[0]
+                return get_custom(node).return_vals[0]
+
+    @property
+    def index(self) -> list[dict[IndexSymbol, IndexSequence]]:
+        if not hasattr(self.graph, "subgraphs"):
+            return None
+        for node in self.graph.subgraphs[self.subgraph_name].nodes:
+            if isinstance(output := get_custom(node), Output):
+                return_vals = output.return_vals[0]
+                return (
+                    [val.index for val in return_vals]
+                    if isinstance(return_vals, list)
+                    else None
+                )
 
 
 @define_op("write")
@@ -788,6 +810,15 @@ class Write(CustomOp):
     def type(self) -> "Memory":
         return get_custom(self.memory).type
 
+    @property
+    def index(self) -> dict[IndexSymbol, IndexSequence]:
+        register_index = get_custom(self.register_).index
+        return register_index if register_index is not None else super().index
+
+    @index.setter
+    def index(self, value: dict[IndexSymbol, IndexSequence]):
+        CustomOp.index.fset(self, value)
+
 
 @define_op("get_result")
 @dataclass
@@ -807,3 +838,28 @@ class GetResult(CustomOp):
                 if indexing_dim not in expand_dims:
                     expand_dims.append(indexing_dim)
         return expand_dims
+
+    @property
+    def index(self) -> dict[IndexSymbol, IndexSequence]:
+        custom = get_custom(self.value)
+        if custom.index is None:
+            return None
+        assert isinstance(custom.index, list) and self.res_idx < len(custom.index)
+        return custom.index[self.res_idx]
+
+    @index.setter
+    def index(self, value: dict[IndexSymbol, IndexSequence]):
+        CustomOp.index.fset(self, value)
+
+
+@define_op("extract_slice")
+@dataclass
+class ExtractSlice(CustomOp):
+    register_: fx.Proxy
+    offset: tuple[IndexExpr]
+    size: tuple[IndexExpr]
+    stride: tuple[IndexExpr]
+
+    @property
+    def type(self) -> "Register":
+        return get_custom(self.register_).type

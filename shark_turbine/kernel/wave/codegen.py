@@ -45,6 +45,7 @@ from ..ops.wave_ops import (
     get_result,
     allocate,
     shared_memory_barrier,
+    extract_slice,
     CustomOp,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
@@ -734,6 +735,31 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
 @handle_op(shared_memory_barrier)
 def handle_shared_memory_barrier(emitter: WaveEmitter, node: fx.Node):
     amdgpu_d.lds_barrier()
+
+
+###############################################################################
+# Slicing ops
+###############################################################################
+
+
+@handle_op(extract_slice)
+def handle_extract_slice(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, offsets, sizes, strides = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    extract_vector = cast_vector(emitter, register)
+    result_type = VectorType.get(sizes, extract_vector.type.element_type)
+    element = vector_d.extract_strided_slice(
+        result_type,
+        extract_vector,
+        offsets,
+        sizes,
+        strides,
+    )
+
+    emitter.bind_node_proxy(node, IRProxyValue(element))
 
 
 ###############################################################################
