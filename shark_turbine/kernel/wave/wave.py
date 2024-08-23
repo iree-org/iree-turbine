@@ -220,7 +220,7 @@ class LaunchableWave(Launchable):
         idxc.finalize()
 
         # Initialize Vector shapes
-        self.hardware_constraints[0]._subs(idxc.subs)
+        self.hardware_constraints[0].subs_vector_shapes(idxc.subs)
 
         # Promote the placeholders to the appropriate address space.
         promote_placeholders(graph, self.constraints)
