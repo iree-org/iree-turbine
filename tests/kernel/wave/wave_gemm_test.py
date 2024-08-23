@@ -6,6 +6,7 @@ import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
 from shark_turbine.kernel.lang.global_symbols import *
+from torch.testing import assert_allclose
 
 
 class Test(unittest.TestCase):
@@ -76,11 +77,16 @@ class Test(unittest.TestCase):
             N: 10240,
             K: 1280,
         }
-        with tk.gen.TestLaunchContext(hyperparams, canonicalize=True):
+        config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+        with tk.gen.TestLaunchContext(
+            hyperparams, canonicalize=True, run=True, run_config=config
+        ):
             a = torch.randn(2048, 1280, dtype=torch.float16)
             b = torch.randn(10240, 1280, dtype=torch.float16)
             c = torch.zeros(2048, 10240, dtype=torch.float32)
-            gemm(a, b, c)
+            computed = gemm(a, b, c)
+            expected = torch.matmul(a, b.T)
+            assert_allclose(computed, expected)
 
 
 if __name__ == "__main__":
