@@ -23,7 +23,7 @@ def test_copy(shape):
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     # Each workgroup works on single row of input data, and rows are further
-    # split into blocks of size up to 256. we always have single wave per WG,
+    # split into blocks of size up to 256. We have single wave per WG,
     # and with default wave size of 64, each thread is operating on up to 4
     # elements.
     wave_size = 64
