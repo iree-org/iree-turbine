@@ -13,7 +13,7 @@ from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
-from .utils import get_mma_dimensional_mapping
+from .utils import get_mma_dimensional_mapping, remove_global_indexing
 from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.expansion")
@@ -273,6 +273,17 @@ def _expand_node(
                 context,
             )
             new_node.update_arg(i, new_arg)
+
+    if isinstance(new_node, MMA):
+        constraints = node_index_setter.args[0]
+        tiling_constraints = [c for c in constraints if isinstance(c, TilingConstraint)]
+        new_node.lhs.index = remove_global_indexing(
+            new_node.lhs_index, tiling_constraints
+        )
+        new_node.rhs.index = remove_global_indexing(
+            new_node.rhs_index, tiling_constraints
+        )
+        new_node.acc.index = new_node.acc_index
 
     context[(node, get_indexed_dims(restricted_dims, node))] = new_node
     return new_node

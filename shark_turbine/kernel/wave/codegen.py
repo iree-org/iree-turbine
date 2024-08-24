@@ -414,6 +414,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
+    print(node, node.index)
 
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
@@ -465,6 +466,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
+    print(node, node.index)
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
     if mapping is None or _is_identity_mapping(
