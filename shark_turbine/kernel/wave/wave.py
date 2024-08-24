@@ -17,7 +17,7 @@ from .codegen import WaveEmitter
 from .expansion import expand_graph
 from .promotion import promote_placeholders
 from .hoisting import hoist_allocs
-from .utils import canonicalize_module
+from .utils import canonicalize_module, compile_and_invoke
 from .minimize_global_loads import minimize_global_loads
 from .barriers import add_shared_memory_barriers
 from ..lang import Grid, IndexMapping
@@ -34,14 +34,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
-from iree.compiler import compile_str
-import iree.runtime as rt
-import iree.runtime.benchmark as bench
-
-# TODO: Monkey-patching f16 support, need to fix in iree.
-import numpy
-
-bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
+import sympy
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -59,43 +52,6 @@ def wave_trace_only(constraints: Optional[list[Constraint]] = None):
         return wave._trace  # type: ignore
 
     return decorator
-
-
-def _invoke(vm_context, device, entry_function, inputs, outputs):
-    arg_list = rt.VmVariantList(len(inputs))
-    ret_list = rt.VmVariantList(len(outputs))
-
-    for input in inputs:
-        input_cpu = input.cpu().contiguous()
-        device_array = rt.asdevicearray(device, input_cpu)
-        arg_list.push_ref(device_array._buffer_view)
-
-    vm_context.invoke(entry_function, arg_list, ret_list)
-
-    for i, ret in enumerate(outputs):
-        device_buffer_view = rt.HalBufferView.__iree_vm_cast__(ret_list.get_as_ref(i))
-        device_array = rt.DeviceArray(device, device_buffer_view)
-
-        # TODO: Make to_host accept out array/buffer, so we can avoid extra data copy.
-        host_array = device_array.to_host()
-
-        # Convert to torch tensor without actually importing torch.
-        ret[:] = type(ret)(host_array)
-
-
-def _write_file(name, mode, data):
-    with open(name, mode) as file:
-        file.write(data)
-
-
-def _print_bench_result(result, filename):
-    import json
-
-    res = json.dumps(result, sort_keys=True, indent=4)
-    if filename is not None:
-        _write_file(filename, "w", res)
-    else:
-        print(res)
 
 
 class LaunchableWave(Launchable):
@@ -204,7 +160,10 @@ class LaunchableWave(Launchable):
                         workgroup_constraint.workgroup_dim
                     ]
                     if workgroup_constraint.workgroup_dim == 0:
-                        wave_constraint.wave_id /= hardware_constraint.threads_per_wave
+                        wave_constraint.wave_id = sympy.floor(
+                            wave_constraint.wave_id
+                            / hardware_constraint.threads_per_wave
+                        )
 
     def _trace_and_get_kernel_signature(
         self,
@@ -310,74 +269,15 @@ class LaunchableWave(Launchable):
             if not config:
                 raise ValueError("no config provided")
 
-            backend = config["backend"]
-            device = config["device"]
-            flags = [
-                f"--iree-hal-target-backends={backend}",
-                "--iree-vm-bytecode-module-strip-source-map=true",
-                "--iree-opt-strip-assertions=true",
-                "--iree-vm-target-truncate-unsupported-floats",
-            ]
-
-            # TODO: More targets/backends support.
-            if backend == "rocm":
-                target = config["target"]
-                flags.append(f"--iree-rocm-target-chip={target}")
-
-            if config.get("print_ir_after_all", False):
-                flags.append("--mlir-print-ir-after-all")
-
-            if run_bench:
-                bench_batch_size = config.get("benchmark_batch_size", None)
-                bench_repetitions = config.get("benchmark_repetitions", None)
-                bench_file = config.get("benchmark_results_file", None)
-
-                benchmark_flags = {}
-
-                if bench_batch_size is not None:
-                    flags.append(
-                        f"--iree-hal-benchmark-dispatch-repeat-count={bench_batch_size}"
-                    )
-                    benchmark_flags["batch_size"] = int(bench_batch_size)
-
-                if bench_repetitions is not None:
-                    benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
-
-            res = compile_str(asm, target_backends=[backend], extra_args=flags)
-
-            dump_vmfb_file = config.get("dump_vmfb_file", None)
-            if dump_vmfb_file is not None:
-                _write_file(dump_vmfb_file, "wb", res)
-
-            rt_config = rt.Config(device)
-            device = rt_config.device
-            vm_instance = rt_config.vm_instance
-            mod = rt.VmModule.copy_buffer(vm_instance, res)
-
-            vm_modules = [
-                mod,
-                rt.create_hal_module(vm_instance, device),
-            ]
-            ctx = rt.SystemContext(
-                vm_modules=vm_modules,
-                config=rt_config,
+            compile_and_invoke(
+                asm,
+                "isolated_benchmark",
+                config,
+                kernel_inputs,
+                kernel_outputs,
+                run,
+                run_bench,
             )
-
-            func_name = "isolated_benchmark"
-            if run:
-                func = mod.lookup_function(func_name)
-                _invoke(ctx.vm_context, device, func, kernel_inputs, kernel_outputs)
-
-            if run_bench:
-                inputs = [inp.numpy() for inp in kernel_inputs]
-                benchmark_results = bench.benchmark_module(
-                    mod,
-                    entry_function=func_name,
-                    device=device,
-                    inputs=inputs,
-                    **benchmark_flags,
-                )
-                _print_bench_result(benchmark_results, bench_file)
 
         return mb
 

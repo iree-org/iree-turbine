@@ -6,7 +6,7 @@ import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
 from shark_turbine.kernel.lang.global_symbols import *
-from torch.testing import assert_allclose
+from shark_turbine.kernel.wave.test_utils import generate_iree_ref
 
 
 class Test(unittest.TestCase):
@@ -84,9 +84,10 @@ class Test(unittest.TestCase):
             a = torch.randn(2048, 1280, dtype=torch.float16)
             b = torch.randn(10240, 1280, dtype=torch.float16)
             c = torch.zeros(2048, 10240, dtype=torch.float32)
-            computed = gemm(a, b, c)
-            expected = torch.matmul(a, b.T)
-            assert_allclose(computed, expected)
+            gemm(a, b, c)
+            iree_ref = torch.zeros(2048, 10240, dtype=torch.float32)
+            generate_iree_ref("mmt", [a, b], [iree_ref], config)
+            assert torch.equal(c, iree_ref)
 
 
 if __name__ == "__main__":
