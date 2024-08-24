@@ -93,7 +93,7 @@ class HardwareConstraint(Constraint):
                 self.vector_shapes[vector_dim] = vector_size.subs(index_map)
 
     def apply(self, mma_index: int) -> IndexSequence:
-        lane = self.linearized_thread_id
+        lane = self.linearized_thread_id % self.threads_per_wave
         match self.mma_type:
             # (M x K, N x K) -> M x N
             case MMAType.F32_16x16x16_F16:
