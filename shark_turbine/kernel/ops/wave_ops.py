@@ -363,6 +363,8 @@ class CustomOp(ABC):
 @define_py_op(operator.getitem)
 @define_py_op(operator.add)
 @define_py_op(operator.sub)
+@define_py_op(operator.mul)
+@define_py_op(operator.truediv)
 @dataclass
 class BinaryPyOp(CustomOp, ABC):
     """

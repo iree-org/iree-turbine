@@ -477,7 +477,7 @@ def test_add_integer():
 
 
 @run_test
-def test_neg():
+def test_unary_lowerings():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
@@ -492,16 +492,18 @@ def test_neg():
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
         a_reg = tkw.read(a, elements_per_thread=4)
         res = -a_reg
+        res = tkw.exp2(res)
         tkw.write(res, a, elements_per_thread=4)
 
     a = torch.randn(16, 16, dtype=torch.float16)
     with codegen_test_context():
-        test(a)
+        print(test(a).module_op)
+        # CHECK: %[[NEG:.+]] = arith.negf
+        # CHECK: math.exp2 %[[NEG]]
 
 
-@launch
-@pytest.mark.skip(reason="sub: Currently only stub implementation")
-def test_sub():
+@run_test
+def test_binary_lowerings():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
@@ -513,14 +515,24 @@ def test_sub():
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
-    def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
         a_reg = tkw.read(a, elements_per_thread=4)
-        res = a_reg - a_reg
+        b_reg = tkw.read(b, elements_per_thread=4)
+        res = a_reg - b_reg
+        res = res * a_reg
+        res = res / b_reg
         tkw.write(res, a, elements_per_thread=4)
 
     a = torch.randn(16, 16, dtype=torch.float16)
+    b = torch.randn(16, 16, dtype=torch.float16)
     with codegen_test_context():
-        test(a)
+        print(test(a, b).module_op)
+        # CHECK: %[[SUB:.+]] = arith.subf
+        # CHECK: %[[MUL:.+]] = arith.mulf %[[SUB]]
+        # CHECK: %[[DIV:.+]] = arith.divf %[[MUL]]
 
 
 @launch
