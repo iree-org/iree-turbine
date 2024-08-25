@@ -173,7 +173,7 @@ def get_custom(node: fx.Node) -> "CustomOp":
     return Unknown.from_fx_node(node)
 
 
-def has_same_custom_type(lhs_type: Memory, rhs_type: Memory):
+def has_same_custom_type(lhs_type: Memory, rhs_type: Memory) -> bool:
     same_shape = lhs_type.symbolic_shape == rhs_type.symbolic_shape
     same_dtype = lhs_type.dtype == rhs_type.dtype
     return same_shape and same_dtype
