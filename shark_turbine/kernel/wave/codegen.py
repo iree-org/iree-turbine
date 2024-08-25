@@ -628,7 +628,7 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
 def handle_unary_op(op):
     def decorator(unary_fn: Callable[[Value, Value], OpResult]):
         @handle_op(op)
-        def handle_generic_binary(emitter: WaveEmitter, node: fx.Node):
+        def handle_generic_unary(emitter: WaveEmitter, node: fx.Node):
             try:
                 (src,) = node.args
             except ValueError as e:

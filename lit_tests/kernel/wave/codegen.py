@@ -476,8 +476,7 @@ def test_add_integer():
         # CHECK: arith.addi %[[SLICE]], %[[SLICE]] : vector<16xi32>
 
 
-@launch
-@pytest.mark.skip(reason="neg: Currently only stub implementation")
+@run_test
 def test_neg():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -491,13 +490,12 @@ def test_neg():
 
     @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
-        res = -a
+        a_reg = tkw.read(a, elements_per_thread=4)
+        res = -a_reg
         tkw.write(res, a, elements_per_thread=4)
 
     a = torch.randn(16, 16, dtype=torch.float16)
-    with pytest.raises(
-        NotImplementedError, match="neg: Currently only stub implementation"
-    ):
+    with codegen_test_context():
         test(a)
 
 
@@ -516,13 +514,12 @@ def test_sub():
 
     @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
-        res = a - a
+        a_reg = tkw.read(a, elements_per_thread=4)
+        res = a_reg - a_reg
         tkw.write(res, a, elements_per_thread=4)
 
     a = torch.randn(16, 16, dtype=torch.float16)
-    with pytest.raises(
-        NotImplementedError, match="sub: Currently only stub implementation"
-    ):
+    with codegen_test_context():
         test(a)
 
 
