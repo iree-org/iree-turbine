@@ -24,6 +24,7 @@ from ..compiler.ir import (
     arith_d,
     func_d,
     gpu_d,
+    math_d,
     memref_d,
     stream_d,
     scf_d,
@@ -39,6 +40,7 @@ from ..ops.wave_ops import (
     mma,
     read,
     reduction,
+    exp2,
     get_custom,
     get_result,
     allocate,
@@ -489,7 +491,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
 
 
 ###############################################################################
-# Math Ops
+# Contraction/MMA Ops
 ###############################################################################
 
 
@@ -538,45 +540,126 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
-@handle_op(operator.add)
-def handle_add(emitter: WaveEmitter, node: fx.Node):
-    try:
-        lhs, rhs = node.args
-    except ValueError as e:
-        raise ValidationError("Malformed arguments") from e
-    lhs = cast_py_value(emitter, lhs)
-    rhs = cast_py_value(emitter, rhs)
+###############################################################################
+# Binary math Ops
+###############################################################################
 
-    if lhs.ir_value.type != rhs.ir_value.type:
-        raise ValidationError("Expected lhs and rhs to have same type.")
-    element_type = get_type_or_element_type(lhs.ir_value.type)
 
-    lhs = lhs.ir_value
-    rhs = rhs.ir_value
+def handle_binary_op(op):
+    def decorator(binary_fn: Callable[[Value, Value], OpResult]):
+        @handle_op(op)
+        def handle_generic_binary(emitter: WaveEmitter, node: fx.Node):
+            try:
+                lhs, rhs = node.args
+            except ValueError as e:
+                raise ValidationError("Malformed arguments") from e
+            lhs = cast_py_value(emitter, lhs)
+            rhs = cast_py_value(emitter, rhs)
 
+            if lhs.ir_value.type != rhs.ir_value.type:
+                raise ValidationError("Expected lhs and rhs to have same type.")
+
+            lhs = lhs.ir_value
+            rhs = rhs.ir_value
+            result = binary_fn(lhs, rhs)
+
+            emitter.bind_node_proxy(node, IRProxyValue(result))
+
+    return decorator
+
+
+@handle_binary_op(operator.add)
+def handle_add(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.addf(lhs, rhs)
     elif _is_integer_like_type(element_type):
         result = arith_d.addi(lhs, rhs)
     else:
         raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
-
-    emitter.bind_node_proxy(node, IRProxyValue(result))
-
-
-@handle_op(operator.getitem)
-def handle_getitem(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("getitem: Currently only stub implementation")
+    return result
 
 
-@handle_op(operator.neg)
-def handle_neg(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("neg: Currently only stub implementation")
+@handle_binary_op(operator.sub)
+def handle_sub(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.subf(lhs, rhs)
+    elif _is_integer_like_type(element_type):
+        result = arith_d.subi(lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+    return result
 
 
-@handle_op(operator.sub)
-def handle_sub(emitter: WaveEmitter, node: fx.Node):
-    raise NotImplementedError("sub: Currently only stub implementation")
+@handle_binary_op(operator.mul)
+def handle_mul(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.mulf(lhs, rhs)
+    elif _is_integer_like_type(element_type):
+        result = arith_d.muli(lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+    return result
+
+
+@handle_binary_op(operator.truediv)
+def handle_div(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.divf(lhs, rhs)
+    elif _is_integer_like_type(element_type) and (
+        element_type.is_signed() or element_type.is_signless()
+    ):
+        result = arith_d.divsi(lhs, rhs)
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+        result = arith_d.divui(lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+    return result
+
+
+###############################################################################
+# Unary math Ops
+###############################################################################
+
+
+def handle_unary_op(op):
+    def decorator(unary_fn: Callable[[Value, Value], OpResult]):
+        @handle_op(op)
+        def handle_generic_binary(emitter: WaveEmitter, node: fx.Node):
+            try:
+                (src,) = node.args
+            except ValueError as e:
+                raise ValidationError("Malformed arguments") from e
+            src = cast_py_value(emitter, src)
+
+            src = src.ir_value
+            result = unary_fn(src)
+            emitter.bind_node_proxy(node, IRProxyValue(result))
+
+    return decorator
+
+
+@handle_unary_op(operator.neg)
+def handle_neg(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        result = arith_d.negf(source)
+    else:
+        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+    return result
+
+
+@handle_unary_op(exp2)
+def handle_exp2(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        result = math_d.exp2(source)
+    else:
+        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+    return result
 
 
 ###############################################################################
@@ -667,3 +750,8 @@ def handle_get_result(emitter: WaveEmitter, node: fx.Node):
 
     for_op = emitter.lookup_node_values(value)[0].owner
     emitter.bind_node_proxy(node, IRProxyValue(for_op.results[res_idx]))
+
+
+@handle_op(operator.getitem)
+def handle_getitem(emitter: WaveEmitter, node: fx.Node):
+    raise NotImplementedError("getitem: Currently only stub implementation")

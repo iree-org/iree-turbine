@@ -75,6 +75,10 @@ def write(
     ...
 
 
+def exp2(src: "Register") -> "Register":
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -167,6 +171,12 @@ def get_custom(node: fx.Node) -> "CustomOp":
     if node.op == "output":
         return Output.from_fx_node(node)
     return Unknown.from_fx_node(node)
+
+
+def has_same_custom_type(lhs_type: Memory, rhs_type: Memory):
+    same_shape = lhs_type.symbolic_shape == rhs_type.symbolic_shape
+    same_dtype = lhs_type.dtype == rhs_type.dtype
+    return same_shape and same_dtype
 
 
 @dataclass
@@ -377,7 +387,17 @@ class BinaryPyOp(CustomOp, ABC):
     def py_operator(self) -> str:
         return self.tkw_op_name
 
+    @property
+    def type(self) -> Memory:
+        lhs_type = get_custom(self.lhs).type
+        rhs_type = get_custom(self.rhs).type
+        has_same_type = has_same_custom_type(lhs_type, rhs_type)
+        if not has_same_type:
+            raise ValueError("Expected lhs and rhs to have same type post-expansion")
+        return lhs_type
 
+
+@define_op("exp2")
 @define_py_op(operator.neg)
 @dataclass
 class UnaryPyOp(CustomOp, ABC):
@@ -394,6 +414,11 @@ class UnaryPyOp(CustomOp, ABC):
     @property
     def py_operator(self) -> str:
         return self.tkw_op_name
+
+    @property
+    def type(self) -> Memory:
+        src_type = get_custom(self.arg).type
+        return src_type
 
 
 @final
