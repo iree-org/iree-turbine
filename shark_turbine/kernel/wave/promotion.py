@@ -3,7 +3,7 @@ from ...support.logging import get_logger
 from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
-from .constraints import Constraint, get_workgroup_distributed_shape
+from .constraints import Constraint, get_constrained_shape
 
 logger = get_logger("turbine.wave.promotion")
 
@@ -39,12 +39,10 @@ def promote_node(
 
     assert isinstance(node, Read) or isinstance(node, Write)
     with node.graph.inserting_before(node.fx_node.next):
-        workgroup_distributed_shape = get_workgroup_distributed_shape(
-            node.type.symbolic_shape, constraints
-        )
+        constrained_shape = get_constrained_shape(node.type.symbolic_shape, constraints)
         allocate_node = Allocate(
             node.type.symbolic_shape,
-            workgroup_distributed_shape,
+            constrained_shape,
             node.type.dtype,
             address_space,
         )

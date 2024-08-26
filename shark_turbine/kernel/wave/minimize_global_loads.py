@@ -8,7 +8,7 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import Read, Write, Output, get_custom
 from ..lang.global_symbols import *
-from .utils import delinearize_index, DCE
+from .utils import delinearize_index, DCE, remove_global_indexing
 from math import prod
 import torch.fx as fx
 from collections import defaultdict
@@ -52,22 +52,6 @@ def construct_min_global_access_pattern(
     for i, key in enumerate(index.keys()):
         new_index[key].start += nd_index[i]
         new_index[key].size = load_elems_per_thread
-    return new_index
-
-
-def remove_global_indexing(
-    index: dict[IndexSymbol, IndexSequence], tilingConstraints: list[TilingConstraint]
-) -> dict[IndexSymbol, IndexSequence]:
-    """
-    This function takes the index sequence for a global read and removes all
-    workgroup and induction level indexing. This is necessary for writes to shared memory
-    that operate on promoted memory.
-    """
-    workgroup_ids = [WORKGROUP_0, WORKGROUP_1, WORKGROUP_2]
-    new_index = {key: index[key].subs({w: 0 for w in workgroup_ids}) for key in index}
-    for key in new_index:
-        for constraint in tilingConstraints:
-            new_index[key] = new_index[key].subs({constraint.induction_var: 0})
     return new_index
 
 

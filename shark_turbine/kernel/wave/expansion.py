@@ -306,6 +306,8 @@ def _expand_node(
     new_node.fx_node.name = get_expanded_name(node, restricted_dims)
     node_index_setter(new_node, restricted_dims)
 
+    constraints = node_index_setter.args[0]
+
     # Proceed with expansion of the arguments
     for i, arg in node.node_args.items():
         if is_expandable(arg):
@@ -318,6 +320,8 @@ def _expand_node(
                 context,
             )
             new_node.update_arg(i, new_arg)
+
+    new_node.post_expansion(constraints)
 
     context[(node, get_indexed_dims(restricted_dims, node))] = new_node
     return new_node

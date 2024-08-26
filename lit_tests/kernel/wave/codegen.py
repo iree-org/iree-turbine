@@ -339,67 +339,65 @@ def test_mma():
         # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
         # CHECK-DAG:        %[[THREAD_ID_X:.+]] = gpu.thread_id  x
         # CHECK-DAG:        %[[THREAD_ID_Y:.+]] = gpu.thread_id  y
-        # CHECK-DAG:        %[[THREAD_ID_Z:.+]] = gpu.thread_id  z
         # CHECK:            %[[D0:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<64x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>
         # CHECK:            %[[D1:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
         # CHECK:            %[[D2:.+]] = arith.muli %[[D1]], %[[C16]] : index
         # CHECK:            %[[D3:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] : index
         # CHECK:            %[[D4:.+]] = arith.addi %[[D3]], %[[D2]] : index
-        # CHECK:            %[[D5:.+]] = vector.load %[[D0]][%[[D4]], %[[C0]]] : memref<64x16xf16, strided<[16, 1], offset:
-        # CHECK-SAME:         ?>>, vector<4xf16>
+        # CHECK:            %[[D5:.+]] = vector.load %[[D0]][%[[D4]], %[[C0]]] : memref<64x16xf16, strided<[16, 1], offset: ?>>,
+        # CHECK-SAME:         vector<4xf16>
         # CHECK:            %[[ALLOC:.+]] = memref.alloc() : memref<32x16xf16, #[[GPU:.+]].address_space<workgroup>>
         # CHECK:            vector.store %[[D5]], %[[ALLOC]][%[[D4]], %[[C0]]] : memref<32x16xf16,
         # CHECK-SAME:         #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:            %[[D6:.+]] = vector.load %[[ALLOC]][%[[D4]], %[[C0]]] : memref<32x16xf16,
+        # CHECK:            amdgpu.lds_barrier
+        # CHECK:            %[[D6:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C16]] : index
+        # CHECK:            %[[D7:.+]] = arith.addi %[[D6]], %[[D2]] : index
+        # CHECK:            %[[D8:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C64]] : index
+        # CHECK:            %[[D9:.+]] = arith.divsi %[[D8]], %[[C16]] : index
+        # CHECK:            %[[D10:.+]] = arith.muli %[[D9]], %[[C4]] : index
+        # CHECK:            %[[D11:.+]] = vector.load %[[ALLOC]][%[[D7]], %[[D10]]] : memref<32x16xf16,
         # CHECK-SAME:         #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:            %[[D7:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<128x16xf16,
+        # CHECK:            %[[D12:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<128x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>
-        # CHECK:            %[[D8:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
-        # CHECK:            %[[D9:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
-        # CHECK:            %[[D10:.+]] = arith.addi %[[D9]], %[[D8]] : index
-        # CHECK:            %[[D11:.+]] = vector.load %[[D7]][%[[D10]], %[[C0]]] : memref<128x16xf16, strided<[16, 1], offset:
+        # CHECK:            %[[D13:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
+        # CHECK:            %[[D14:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
+        # CHECK:            %[[D15:.+]] = arith.addi %[[D14]], %[[D13]] : index
+        # CHECK:            %[[D16:.+]] = vector.load %[[D12]][%[[D15]], %[[C0]]] : memref<128x16xf16, strided<[16, 1], offset:
         # CHECK-SAME:         ?>>, vector<4xf16>
         # CHECK:            %[[ALLOC_0:.+]] = memref.alloc() : memref<32x16xf16, #[[GPU]].address_space<workgroup>>
-        # CHECK:            vector.store %[[D11]], %[[ALLOC_0]][%[[D10]], %[[C0]]] : memref<32x16xf16,
+        # CHECK:            vector.store %[[D16]], %[[ALLOC_0]][%[[D15]], %[[C0]]] : memref<32x16xf16,
         # CHECK-SAME:         #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:            %[[D12:.+]] = vector.load %[[ALLOC_0]][%[[D10]], %[[C0]]] : memref<32x16xf16,
+        # CHECK:            amdgpu.lds_barrier
+        # CHECK:            %[[D17:.+]] = arith.addi %[[D6]], %[[D13]] : index
+        # CHECK:            %[[D18:.+]] = vector.load %[[ALLOC_0]][%[[D17]], %[[D10]]] : memref<32x16xf16,
         # CHECK-SAME:         #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:            %[[D13:.+]] = amdgpu.mfma %[[D6]] * %[[D12]] + %[[CST]] {blocks = 1 : i32, k = 16 : i32, m = 16 :
+        # CHECK:            %[[D19:.+]] = amdgpu.mfma %[[D11]] * %[[D18]] + %[[CST]] {blocks = 1 : i32, k = 16 : i32, m = 16 :
         # CHECK-SAME:         i32, n = 16 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<4xf32>
-        # CHECK:            %[[D14:.+]] = vector.extract_strided_slice %[[D13]] {offsets = [0], sizes = [1], strides = [1]} :
+        # CHECK:            %[[D20:.+]] = vector.extract_strided_slice %[[D19]] {offsets = [0], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D15:.+]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<64x128xf32,
+        # CHECK:            %[[D21:.+]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<64x128xf32,
         # CHECK-SAME:         strided<[128, 1], offset: ?>>
-        # CHECK:            %[[D16:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C16]] : index
-        # CHECK:            %[[D17:.+]] = arith.muli %[[D16]], %[[C4]] : index
-        # CHECK:            %[[D18:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] : index
-        # CHECK:            %[[D19:.+]] = arith.muli %[[THREAD_ID_Z]], %[[C64]] : index
-        # CHECK:            %[[D20:.+]] = arith.addi %[[D19]], %[[D3]] : index
-        # CHECK:            %[[D21:.+]] = arith.addi %[[D20]], %[[D18]] : index
-        # CHECK:            %[[D22:.+]] = arith.addi %[[D21]], %[[D2]] : index
-        # CHECK:            %[[D23:.+]] = arith.addi %[[D22]], %[[D17]] : index
-        # CHECK:            %[[D24:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C16]] : index
-        # CHECK:            %[[D25:.+]] = arith.addi %[[D24]], %[[D9]] : index
-        # CHECK:            %[[D26:.+]] = arith.addi %[[D25]], %[[D8]] : index
-        # CHECK:            vector.store %[[D14]], %[[D15]][%[[D23]], %[[D26]]] : memref<64x128xf32, strided<[128, 1], offset:
+        # CHECK:            %[[D22:.+]] = arith.addi %[[D4]], %[[D10]] : index
+        # CHECK:            %[[D23:.+]] = arith.addi %[[D6]], %[[D14]] : index
+        # CHECK:            %[[D24:.+]] = arith.addi %[[D23]], %[[D13]] : index
+        # CHECK:            vector.store %[[D20]], %[[D21]][%[[D22]], %[[D24]]] : memref<64x128xf32, strided<[128, 1], offset:
         # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D27:.+]] = vector.extract_strided_slice %[[D13]] {offsets = [1], sizes = [1], strides = [1]} :
+        # CHECK:            %[[D25:.+]] = vector.extract_strided_slice %[[D19]] {offsets = [1], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D28:.+]] = arith.addi %[[D23]], %[[C1]] : index
-        # CHECK:            vector.store %[[D27]], %[[D15]][%[[D28]], %[[D26]]] : memref<64x128xf32, strided<[128, 1], offset:
+        # CHECK:            %[[D26:.+]] = arith.addi %[[D22]], %[[C1]] : index
+        # CHECK:            vector.store %[[D25]], %[[D21]][%[[D26]], %[[D24]]] : memref<64x128xf32, strided<[128, 1], offset:
         # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D29:.+]] = vector.extract_strided_slice %[[D13]] {offsets = [2], sizes = [1], strides = [1]} :
+        # CHECK:            %[[D27:.+]] = vector.extract_strided_slice %[[D19]] {offsets = [2], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D30:.+]] = arith.addi %[[D23]], %[[C2]] : index
-        # CHECK:            vector.store %[[D29]], %[[D15]][%[[D30]], %[[D26]]] : memref<64x128xf32, strided<[128, 1], offset:
+        # CHECK:            %[[D28:.+]] = arith.addi %[[D22]], %[[C2]] : index
+        # CHECK:            vector.store %[[D27]], %[[D21]][%[[D28]], %[[D24]]] : memref<64x128xf32, strided<[128, 1], offset:
         # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D31:.+]] = vector.extract_strided_slice %[[D13]] {offsets = [3], sizes = [1], strides = [1]} :
+        # CHECK:            %[[D29:.+]] = vector.extract_strided_slice %[[D19]] {offsets = [3], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D32:.+]] = arith.addi %[[D23]], %[[C3]] : index
-        # CHECK:            vector.store %[[D31]], %[[D15]][%[[D32]], %[[D26]]] : memref<64x128xf32, strided<[128, 1], offset:
+        # CHECK:            %[[D30:.+]] = arith.addi %[[D22]], %[[C3]] : index
+        # CHECK:            vector.store %[[D29]], %[[D21]][%[[D30]], %[[D24]]] : memref<64x128xf32, strided<[128, 1], offset:
         # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            return
 
 
 @run_test
@@ -459,86 +457,90 @@ def test_gemm():
         # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK-DAG:        %[[C3:.+]] = arith.constant 3 : index
         # CHECK-DAG:        %[[C2:.+]] = arith.constant 2 : index
-        # CHECK-DAG:        %[[C4:.+]] = arith.constant 4 : index
         # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
-        # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
-        # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
         # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
+        # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
+        # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
+        # CHECK-DAG:        %[[C4:.+]] = arith.constant 4 : index
         # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
         # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<4xf32>
         # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
         # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
         # CHECK-DAG:        %[[THREAD_ID_X:.+]] = gpu.thread_id  x
         # CHECK-DAG:        %[[THREAD_ID_Y:.+]] = gpu.thread_id  y
-        # CHECK-DAG:        %[[THREAD_ID_Z:.+]] = gpu.thread_id  z
-        # CHECK:            %[[ALLOC:.+]] = memref.alloc() : memref<32x64xf16, #[[GPU:.+]].address_space<workgroup>>
-        # CHECK:            %[[ALLOC_0:.+]] = memref.alloc() : memref<32x64xf16, #[[GPU]].address_space<workgroup>>
-        # CHECK:            %[[D0:.+]] = scf.for %[[ARG3:[a-zA-Z0-9_]+]] = %[[C0]] to %[[C64]] step %[[C16]]
+        # CHECK:            %[[ALLOC:.+]] = memref.alloc() : memref<32x16xf16, #[[GPU:.+]].address_space<workgroup>>
+        # CHECK:            %[[ALLOC_0:.+]] = memref.alloc() : memref<32x16xf16, #[[GPU]].address_space<workgroup>>
+        # CHECK:            %[[D0:.+]] = scf.for %[[ARG3:[a-zA-Z0-9_]+]] = %[[C0]] to %[[C4]] step %[[C1]]
         # CHECK-SAME:         iter_args(%[[ARG4:[a-zA-Z0-9_]+]] = %[[CST]]) -> (vector<4xf32>) {
-        # CHECK:              %[[D25:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<64x64xf16,
+        # CHECK:              %[[D22:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<64x64xf16,
         # CHECK-SAME:           strided<[64, 1], offset: ?>>
-        # CHECK:              %[[D26:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<128x64xf16,
+        # CHECK:              %[[D23:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<128x64xf16,
         # CHECK-SAME:           strided<[64, 1], offset: ?>>
-        # CHECK:              %[[D27:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
-        # CHECK:              %[[D28:.+]] = arith.muli %[[D27]], %[[C16]] : index
-        # CHECK:              %[[D29:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] : index
-        # CHECK:              %[[D30:.+]] = arith.addi %[[D29]], %[[D28]] : index
-        # CHECK:              %[[D31:.+]] = arith.muli %[[ARG3]], %[[C16]] : index
-        # CHECK:              %[[D32:.+]] = vector.load %[[D25]][%[[D30]], %[[D31]]] : memref<64x64xf16, strided<[64, 1],
+        # CHECK:              %[[D24:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
+        # CHECK:              %[[D25:.+]] = arith.muli %[[D24]], %[[C16]] : index
+        # CHECK:              %[[D26:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] : index
+        # CHECK:              %[[D27:.+]] = arith.addi %[[D26]], %[[D25]] : index
+        # CHECK:              %[[D28:.+]] = arith.muli %[[ARG3]], %[[C16]] : index
+        # CHECK:              %[[D29:.+]] = vector.load %[[D22]][%[[D27]], %[[D28]]] : memref<64x64xf16, strided<[64, 1],
         # CHECK-SAME:           offset: ?>>, vector<4xf16>
-        # CHECK:              vector.store %[[D32]], %[[ALLOC]][%[[D30]], %[[D31]]] : memref<32x64xf16,
+        # CHECK:              vector.store %[[D29]], %[[ALLOC]][%[[D27]], %[[D28]]] : memref<32x16xf16,
         # CHECK-SAME:           #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:              %[[D33:.+]] = vector.load %[[ALLOC]][%[[D30]], %[[D31]]] : memref<32x64xf16,
+        # CHECK:              amdgpu.lds_barrier
+        # CHECK:              %[[D30:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C16]] : index
+        # CHECK:              %[[D31:.+]] = arith.addi %[[D30]], %[[D25]] : index
+        # CHECK:              %[[D32:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C64]] : index
+        # CHECK:              %[[D33:.+]] = arith.divsi %[[D32]], %[[C16]] : index
+        # CHECK:              %[[D34:.+]] = arith.muli %[[D33]], %[[C4]] : index
+        # CHECK:              %[[D35:.+]] = vector.load %[[ALLOC]][%[[D31]], %[[D34]]] : memref<32x16xf16,
         # CHECK-SAME:           #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:              %[[D34:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
-        # CHECK:              %[[D35:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
-        # CHECK:              %[[D36:.+]] = arith.addi %[[D35]], %[[D34]] : index
-        # CHECK:              %[[D37:.+]] = vector.load %[[D26]][%[[D36]], %[[D31]]] : memref<128x64xf16, strided<[64, 1],
+        # CHECK:              %[[D36:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
+        # CHECK:              %[[D37:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
+        # CHECK:              %[[D38:.+]] = arith.addi %[[D37]], %[[D36]] : index
+        # CHECK:              %[[D39:.+]] = vector.load %[[D23]][%[[D38]], %[[D28]]] : memref<128x64xf16, strided<[64, 1],
         # CHECK-SAME:           offset: ?>>, vector<4xf16>
-        # CHECK:              vector.store %[[D37]], %[[ALLOC_0]][%[[D36]], %[[D31]]] : memref<32x64xf16,
+        # CHECK:              vector.store %[[D39]], %[[ALLOC_0]][%[[D38]], %[[D28]]] : memref<32x16xf16,
         # CHECK-SAME:           #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:              %[[D38:.+]] = vector.load %[[ALLOC_0]][%[[D36]], %[[D31]]] : memref<32x64xf16,
+        # CHECK:              amdgpu.lds_barrier
+        # CHECK:              %[[D40:.+]] = arith.addi %[[D30]], %[[D36]] : index
+        # CHECK:              %[[D41:.+]] = vector.load %[[ALLOC_0]][%[[D40]], %[[D34]]] : memref<32x16xf16,
         # CHECK-SAME:           #[[GPU]].address_space<workgroup>>, vector<4xf16>
-        # CHECK:              %[[D39:.+]] = amdgpu.mfma %[[D33]] * %[[D38]] + %[[ARG4]] {blocks = 1 : i32, k = 16 : i32, m = 16
+        # CHECK:              %[[D42:.+]] = amdgpu.mfma %[[D35]] * %[[D41]] + %[[ARG4]] {blocks = 1 : i32, k = 16 : i32, m = 16
         # CHECK-SAME:           : i32, n = 16 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<4xf32>
-        # CHECK:              scf.yield %[[D39]] : vector<4xf32>
+        # CHECK:              scf.yield %[[D42]] : vector<4xf32>
         # CHECK:            }
         # CHECK:            %[[D1:.+]] = vector.extract_strided_slice %[[D0]] {offsets = [0], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
         # CHECK:            %[[D2:.+]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<64x128xf32,
         # CHECK-SAME:         strided<[128, 1], offset: ?>>
-        # CHECK:            %[[D3:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C16]] : index
-        # CHECK:            %[[D4:.+]] = arith.muli %[[D3]], %[[C4]] : index
-        # CHECK:            %[[D5:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
-        # CHECK:            %[[D6:.+]] = arith.muli %[[D5]], %[[C16]] : index
-        # CHECK:            %[[D7:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] : index
+        # CHECK:            %[[D3:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C64]] : index
+        # CHECK:            %[[D4:.+]] = arith.divsi %[[D3]], %[[C16]] : index
+        # CHECK:            %[[D5:.+]] = arith.muli %[[D4]], %[[C4]] : index
+        # CHECK:            %[[D6:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
+        # CHECK:            %[[D7:.+]] = arith.muli %[[D6]], %[[C16]] : index
         # CHECK:            %[[D8:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] : index
-        # CHECK:            %[[D9:.+]] = arith.muli %[[THREAD_ID_Z]], %[[C64]] : index
-        # CHECK:            %[[D10:.+]] = arith.addi %[[D9]], %[[D8]] : index
-        # CHECK:            %[[D11:.+]] = arith.addi %[[D10]], %[[D7]] : index
-        # CHECK:            %[[D12:.+]] = arith.addi %[[D11]], %[[D6]] : index
-        # CHECK:            %[[D13:.+]] = arith.addi %[[D12]], %[[D4]] : index
-        # CHECK:            %[[D14:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
-        # CHECK:            %[[D15:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
-        # CHECK:            %[[D16:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C16]] : index
-        # CHECK:            %[[D17:.+]] = arith.addi %[[D16]], %[[D15]] : index
-        # CHECK:            %[[D18:.+]] = arith.addi %[[D17]], %[[D14]] : index
-        # CHECK:            vector.store %[[D1]], %[[D2]][%[[D13]], %[[D18]]] : memref<64x128xf32, strided<[128, 1], offset:
+        # CHECK:            %[[D9:.+]] = arith.addi %[[D8]], %[[D7]] : index
+        # CHECK:            %[[D10:.+]] = arith.addi %[[D9]], %[[D5]] : index
+        # CHECK:            %[[D11:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
+        # CHECK:            %[[D12:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
+        # CHECK:            %[[D13:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C16]] : index
+        # CHECK:            %[[D14:.+]] = arith.addi %[[D13]], %[[D12]] : index
+        # CHECK:            %[[D15:.+]] = arith.addi %[[D14]], %[[D11]] : index
+        # CHECK:            vector.store %[[D1]], %[[D2]][%[[D10]], %[[D15]]] : memref<64x128xf32, strided<[128, 1], offset:
         # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D19:.+]] = vector.extract_strided_slice %[[D0]] {offsets = [1], sizes = [1], strides = [1]} :
+        # CHECK:            %[[D16:.+]] = vector.extract_strided_slice %[[D0]] {offsets = [1], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D20:.+]] = arith.addi %[[D13]], %[[C1]] : index
-        # CHECK:            vector.store %[[D19]], %[[D2]][%[[D20]], %[[D18]]] : memref<64x128xf32, strided<[128, 1], offset:
+        # CHECK:            %[[D17:.+]] = arith.addi %[[D10]], %[[C1]] : index
+        # CHECK:            vector.store %[[D16]], %[[D2]][%[[D17]], %[[D15]]] : memref<64x128xf32, strided<[128, 1], offset:
         # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D21:.+]] = vector.extract_strided_slice %[[D0]] {offsets = [2], sizes = [1], strides = [1]} :
+        # CHECK:            %[[D18:.+]] = vector.extract_strided_slice %[[D0]] {offsets = [2], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D22:.+]] = arith.addi %[[D13]], %[[C2]] : index
-        # CHECK:            vector.store %[[D21]], %[[D2]][%[[D22]], %[[D18]]] : memref<64x128xf32, strided<[128, 1], offset:
+        # CHECK:            %[[D19:.+]] = arith.addi %[[D10]], %[[C2]] : index
+        # CHECK:            vector.store %[[D18]], %[[D2]][%[[D19]], %[[D15]]] : memref<64x128xf32, strided<[128, 1], offset:
         # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D23:.+]] = vector.extract_strided_slice %[[D0]] {offsets = [3], sizes = [1], strides = [1]} :
+        # CHECK:            %[[D20:.+]] = vector.extract_strided_slice %[[D0]] {offsets = [3], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D24:.+]] = arith.addi %[[D13]], %[[C3]] : index
-        # CHECK:            vector.store %[[D23]], %[[D2]][%[[D24]], %[[D18]]] : memref<64x128xf32, strided<[128, 1], offset:
+        # CHECK:            %[[D21:.+]] = arith.addi %[[D10]], %[[C3]] : index
+        # CHECK:            vector.store %[[D20]], %[[D2]][%[[D21]], %[[D15]]] : memref<64x128xf32, strided<[128, 1], offset:
         # CHECK-SAME:         ?>>, vector<1xf32>
         # CHECK:            return
 
