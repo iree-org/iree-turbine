@@ -58,9 +58,7 @@ jobs:
           pytest -n 4 .
 
       - name: Run e2e tests on MI300
-        if: |
-          ${{ !cancelled() }}) &&
-          contains(matrix.os, 'mi300')
+        if:  "contains(matrix.os, 'mi300') && !cancelled()"
         run: |
           export WAVE_RUN_E2E_TESTS=1
           pytest -n 4 ./tests/kernel/wave/
