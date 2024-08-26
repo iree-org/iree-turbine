@@ -250,7 +250,7 @@ def _expand_node(
     node_index_setter: Callable[[CustomOp, dict[IndexSymbol, int]], None],
     context: ExpandedNodeMap,
 ) -> CustomOp:
-    """Expand a single node in specific dimensions and recursively proceed to its inputs."""
+    """Expand a single node or list of nodes in specific dimensions and recursively proceed to its inputs."""
     if isinstance(node, list):
         expanded_nodes = []
         for elem in node:
@@ -486,7 +486,7 @@ def _handle_reduction_dim(
                 # mma_0_0_0 in dims 0_0_2 as well, effectively duplicating the new node.
                 # To avoid this we temporarily replace the use of it with a dummy
                 # placeholder which will not trigger further expansion.
-                index = user.node_arg_index(carried_node)
+                index = user.get_node_arg_index(carried_node)
                 dummy = Placeholder("dummy").add_to_graph(user.graph)
                 dummy.type = None
 

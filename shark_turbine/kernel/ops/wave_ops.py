@@ -285,7 +285,7 @@ class CustomOp(ABC):
     def replace_all_uses_with(self, new_node: CustomOp | fx.Node):
         """Replace all uses of the current node with the new node."""
         for user in self.users:
-            user.update_arg(user.node_arg_index(self), new_node)
+            user.update_arg(user.get_node_arg_index(self), new_node)
 
     def erase(self):
         """Erase the current node from the graph where it exists."""
@@ -319,7 +319,7 @@ class CustomOp(ABC):
                 custom_args[i] = [get_custom(x) for x in arg]
         return custom_args
 
-    def node_arg_index(self, arg: CustomOp) -> Optional[CustomOp | list[CustomOp]]:
+    def get_node_arg_index(self, arg: CustomOp) -> Optional[CustomOp | list[CustomOp]]:
         return next(key for key, value in self.node_args.items() if value == arg)
 
     @property

@@ -8,7 +8,7 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import Read, Write, Output, get_custom
 from ..lang.global_symbols import *
-from .utils import delinearize_index, remove_unused_operators
+from .utils import delinearize_index, DCE
 from math import prod
 import torch.fx as fx
 from collections import defaultdict
@@ -96,10 +96,12 @@ def identify_optimizable_loads(
     where the memory has shape [M, N], there are T threads and each thread can load L elements.
     """
     optimizable_loads: dict[fx.Node, tuple[int, Read]] = {}
+    processed_memories = set()
     for read_node in global_read_nodes:
         custom = get_custom(read_node)
-        if custom.memory in optimizable_loads:
+        if custom.memory in processed_memories:
             continue
+        processed_memories.add(custom.memory)
         materialized_shape = materialize_shape(
             constraint_tile_size, custom.type.symbolic_shape
         )
@@ -186,7 +188,7 @@ def update_write_dependencies(optimized_writes: list[fx.Node], trace: CapturedTr
                 get_custom(user).update_arg(idx, writes)
                 break
 
-    remove_unused_operators(trace)
+    DCE(trace)
 
 
 def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
