@@ -55,7 +55,6 @@ jobs:
       - name: Run unit tests
         if: ${{ !cancelled() }}
         run: |
-          sudo chmod 777 /tmp
           pytest -n 4 .
 
       - name: Run e2e tests on MI300
