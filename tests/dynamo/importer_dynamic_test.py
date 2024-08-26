@@ -68,7 +68,7 @@ def import_compiler(gm: GraphModule, example_inputs, decompose_ops=None):
         imp.import_graph_module(gm)
         print(module, file=sys.stderr)
         with context:
-            with open("/tmp/module.mlir", "w") as file:
+            with open("tmp/module.mlir", "w") as file:
                 file.write(str(module))
             pm = PassManager.parse("builtin.module(torch-to-iree)")
             pm.run(module.operation)
