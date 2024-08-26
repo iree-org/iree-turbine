@@ -63,7 +63,7 @@ jobs:
           contains(matrix.os, 'mi300')
         run: |
           export WAVE_RUN_E2E_TESTS=1
-          pytest -n 4 ./tests/kernel/wave/
+          sudo pytest -n 4 ./tests/kernel/wave/
 
       - name: Run LIT tests
         if: ${{ !cancelled() }}
