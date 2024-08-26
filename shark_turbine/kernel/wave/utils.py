@@ -8,12 +8,17 @@ from ..compiler.ir import (
 )
 from typing import Callable
 from .._support.tracing import CapturedTrace
-from ..ops.wave_ops import get_custom
+from .._support.indexing import IndexExpr, IndexingContext
+from ..lang.global_symbols import *
+from ..ops.wave_ops import get_custom, Output, Write
+import torch.fx as fx
 
 from iree.compiler.dialects.transform import (
     interpreter as transform_interpreter,
     any_op_t,
 )
+
+import sympy
 
 
 def canonicalize_module(module: Operation):
@@ -59,3 +64,47 @@ def print_trace(trace: CapturedTrace, custom_print: bool = True):
         if custom_print:
             for node in subgraph.nodes:
                 print(get_custom(node))
+
+
+def DCE(trace: CapturedTrace):
+    """
+    Removes all operators that are not used in the graph,
+    excluding output and global write nodes.
+    Repeats this process till no more operators can be removed.
+    """
+
+    def is_removable_operator(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        idxc = IndexingContext.current()
+        is_global_write = (
+            isinstance(custom, Write)
+            and custom.type.address_space.subs(idxc.subs) == GLOBAL_ADDRESS_SPACE
+        )
+        return (
+            not custom.users and not isinstance(custom, Output) and not is_global_write
+        )
+
+    while removable_nodes := trace.walk(is_removable_operator):
+        for node in removable_nodes:
+            get_custom(node).graph.erase_node(node)
+
+
+def delinearize_index(index: IndexExpr, shape: list[int]) -> list[IndexExpr]:
+    """
+    Delinearizes a 1D index into a multi-dimensional index
+    based on the shapes provided. The returned array contains
+    the multi-dimensional index.
+
+    Assume the index is x and the shape is [5, 4, 3]. In this case,
+    this function returns [x % 3, (x // 3) % 4, (x // 12) % 5].
+
+    """
+    nd_index = []
+    product = 1
+    for i, size in enumerate(reversed(shape)):
+        if i == 0:
+            nd_index.append(index % size)
+        else:
+            nd_index.append(sympy.floor(index / product) % size)
+        product *= size
+    return nd_index[::-1]

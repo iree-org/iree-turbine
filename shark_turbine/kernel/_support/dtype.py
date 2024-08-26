@@ -44,6 +44,13 @@ class DataType:
     def is_index_asm(self):
         return self._name in _INDEX_TYPES
 
+    def bitwidth(self):
+        if self._name == "bool":
+            return 1
+        if self._name == "index":
+            return 64
+        return int(self._name[1:])
+
 
 bool = DataType("bool", "i1")
 i4 = DataType("i4")

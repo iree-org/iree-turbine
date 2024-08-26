@@ -85,6 +85,8 @@ def get_last(node_list: fx.graph._node_list) -> fx.Node:  # type: ignore
 
 def is_expandable(arg: Any) -> bool:
     """Check if an argument is expandable."""
+    if isinstance(arg, list):
+        return all(is_expandable(a) for a in arg)
     # Placeholder nodes are only expanded if they are a reduction init arg
     if isinstance(arg, Placeholder) and not isinstance(arg, IterArg):
         return False
@@ -241,14 +243,23 @@ def expand_graph(
 
 
 def _expand_node(
-    node: CustomOp,
+    node: CustomOp | list[CustomOp],
     trace: CapturedTrace,
     dim_query: dict[IndexSymbol, int],
     dim_scaling: dict[IndexSymbol, int],
     node_index_setter: Callable[[CustomOp, dict[IndexSymbol, int]], None],
     context: ExpandedNodeMap,
 ) -> CustomOp:
-    """Expand a single node in specific dimensions and recursively proceed to its inputs."""
+    """Expand a single node or list of nodes in specific dimensions and recursively proceed to its inputs."""
+    if isinstance(node, list):
+        expanded_nodes = []
+        for elem in node:
+            expanded_nodes.append(
+                _expand_node(
+                    elem, trace, dim_query, dim_scaling, node_index_setter, context
+                ).fx_node
+            )
+        return expanded_nodes
     # If we expanded a node in the same dimensions before, we can reuse it
     if (node, get_indexed_dims(dim_query, node)) in context:
         logger.debug(f"Already expanded node: {node} in {dim_query}")
@@ -269,7 +280,6 @@ def _expand_node(
     # Filter out the dimensions that are not indexed by the node
     restricted_dims = filter_and_zero_unselected_dims(dim_query, node.indexing_dims)
     logger.debug(f"Expanding node: {node} in {restricted_dims}")
-
     # Clone the node for the new expansion. The original node is reused for the
     # case of all dimensions being zero.
     if expansion_needed(restricted_dims, node.indexing_dims):
@@ -283,10 +293,15 @@ def _expand_node(
     node_index_setter(new_node, restricted_dims)
 
     # Proceed with expansion of the arguments
-    for i, arg in enumerate(node.node_args):
+    for i, arg in node.node_args.items():
         if is_expandable(arg):
             new_arg = _expand_node(
-                arg, trace, restricted_dims, dim_scaling, node_index_setter, context
+                arg,
+                trace,
+                restricted_dims,
+                dim_scaling,
+                node_index_setter,
+                context,
             )
             new_node.update_arg(i, new_arg)
 
@@ -323,7 +338,7 @@ def _expand_reduction(
     new_output_args = []
     new_init_args = []
     for dim_vals in get_dim_combinations(dim_scaling, expand_dims):
-        for arg_idx, arg in enumerate(output.node_args):
+        for arg_idx, arg in output.node_args.items():
             dims = {dim: val for dim, val in zip(dim_scaling.keys(), dim_vals)}
             # Add GetResult nodes for the corresponding dimensions
             reduction.graph.inserting_after(reduction.fx_node)
@@ -471,7 +486,7 @@ def _handle_reduction_dim(
                 # mma_0_0_0 in dims 0_0_2 as well, effectively duplicating the new node.
                 # To avoid this we temporarily replace the use of it with a dummy
                 # placeholder which will not trigger further expansion.
-                index = user.node_args.index(carried_node)
+                index = user.get_node_arg_index(carried_node)
                 dummy = Placeholder("dummy").add_to_graph(user.graph)
                 dummy.type = None
 
