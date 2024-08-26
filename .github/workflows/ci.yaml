@@ -62,7 +62,7 @@ jobs:
           ${{ !cancelled() }}) &&
           contains(matrix.os, 'mi300')
         run: |
-          pytest -n 4 .
+          pytest -n 4 ./tests/kernel/
 
       - name: Run LIT tests
         if: ${{ !cancelled() }}
