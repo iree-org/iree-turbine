@@ -368,6 +368,9 @@ def _construct_gather_scatter_indices(
         ), "non-identity input mapping is not supported yet"
         index_mapping = mapping.map_output_indices(symbolc_shape)
 
+    idxc = IndexingContext.current()
+    index_mapping = tuple(i.subs(idxc.subs) for i in index_mapping)
+
     iters = mapping.iters
 
     # As we only support identity input/output mapping for now, we can directly
@@ -378,7 +381,7 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
 
-    strides = strides_from_symbolic_shape(IndexingContext.current(), symbolc_shape)
+    strides = strides_from_symbolic_shape(idxc, symbolc_shape)
     offsets = []
     subs = [(sym, 0) for sym in iters.keys()]
     for i in range(elements_per_thread):
