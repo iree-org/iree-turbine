@@ -6,6 +6,7 @@ from numpy.testing import assert_allclose
 import pytest
 import sympy
 import os
+import torch
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 
