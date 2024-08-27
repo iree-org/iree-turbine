@@ -180,3 +180,58 @@ def test_transpose_write(shape):
     ):
         test(a, b)
         assert_allclose(a.T, b)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", _test_shapes)
+def test_reduce(shape):
+    M = tkl.sym.M
+    N = tkl.sym.N
+    wave_size = 64
+    BLOCK_M = 1
+    BLOCK_N = N
+    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+        res = lhs * rhs
+        res = tkw.sum(res)
+        tkw.write(res, c, elements_per_thread=1)
+
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+
+    a = torch.randn(shape, dtype=torch.float16)
+    b = torch.randn(shape, dtype=torch.float16)
+    c = torch.zeros((shape[0],), dtype=torch.float16)
+    ref = torch.sum((a * b), dim=-1)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run=True,
+        run_config=config,
+    ):
+        test(a, b, c)
+        assert_allclose(ref, c, atol=0.1)

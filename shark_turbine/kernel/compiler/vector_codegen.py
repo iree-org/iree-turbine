@@ -779,7 +779,9 @@ def cast_py_literal(emitter: ThreadEmitter, value) -> Any:
         return value
 
 
-def cast_py_value(emitter: ThreadEmitter, value) -> IRProxyValue:
+def cast_py_value(
+    emitter: ThreadEmitter, value: Value, element_type: Optional[IrType] = None
+) -> IRProxyValue:
     """
     Converts the given value to an IR Value.
     If the value is a fx.Node, the result of the fx.Node should corresspond to
@@ -806,7 +808,8 @@ def cast_py_value(emitter: ThreadEmitter, value) -> IRProxyValue:
                 f"Dynamically resolved symbolic values not yet implemented. Got: "
                 f"{simplified}"
             ) from e
-    return ScalarBuilder.constant(value, IndexType.get())
+    element_type = IndexType.get() if element_type is None else element_type
+    return ScalarBuilder.constant(value, element_type)
 
 
 def cast_py_lvalue(emitter: ThreadEmitter, py_value: fx.Node) -> tuple[Value, fx.Node]:

@@ -13,6 +13,7 @@ from ..lang.global_symbols import *
 from ..ops.wave_ops import get_custom, Output, Write, MMA
 from .constraints import HardwareConstraint
 import torch.fx as fx
+import shark_turbine.kernel.lang as tkl
 
 from iree.compiler.dialects.transform import (
     interpreter as transform_interpreter,
@@ -77,10 +78,12 @@ def DCE(trace: CapturedTrace):
     def is_removable_operator(node: fx.Node) -> bool:
         custom = get_custom(node)
         idxc = IndexingContext.current()
-        is_global_write = (
-            isinstance(custom, Write)
-            and custom.type.address_space.subs(idxc.subs) == GLOBAL_ADDRESS_SPACE
+        is_global_write = isinstance(custom, Write) and (
+            custom.type.address_space.subs(idxc.subs) == GLOBAL_ADDRESS_SPACE
+            or custom.type.address_space.subs(idxc.subs)
+            == tkl.AddressSpace.GLOBAL_MEMORY.value
         )
+
         return (
             not custom.users and not isinstance(custom, Output) and not is_global_write
         )
