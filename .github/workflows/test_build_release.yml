@@ -21,7 +21,7 @@ jobs:
     strategy:
       matrix:
         version: [3.11]
-        os: [ubuntu-latest]
+        os: [azure-linux]
     runs-on: ${{matrix.os}}
     steps:
       - name: "Setting up Python"
