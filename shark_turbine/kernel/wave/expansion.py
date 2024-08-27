@@ -13,7 +13,7 @@ from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
-from .._support.indexing import index_symbol
+from .utils import get_mma_dimensional_mapping
 from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.expansion")
@@ -93,38 +93,6 @@ def is_expandable(arg: Any) -> bool:
     return isinstance(arg, CustomOp)
 
 
-def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
-    """
-    Given a trace, determine the MMA dimensional mapping for all the
-    MMA operations in the graph. For example, if we have
-        acc = tkw.mma(a_reg, b_reg, acc)
-    where a_reg has shape UxV, b has shape SxV and acc has shape UxS,
-    we map U to the MMA M dimension (0), S to the MMA N dimension (1) and
-    V to the MMA K dimension (2).
-    """
-
-    def is_mma(node: fx.Node) -> bool:
-        custom = get_custom(node)
-        return isinstance(custom, MMA)
-
-    mma_nodes = trace.walk(is_mma)
-    mapping: dict[IndexSymbol, int] = {}
-    for node in mma_nodes:
-        custom: MMA = get_custom(node)
-        m, n = custom.acc_type.symbolic_shape[-2:]
-        mapping[m] = 0
-        mapping[n] = 1
-        k = [
-            dim
-            for dim in custom.lhs_type.symbolic_shape
-            if dim in custom.rhs_type.symbolic_shape
-            and not dim in custom.acc_type.symbolic_shape
-        ][0]
-        mapping[k] = 2
-
-    return mapping
-
-
 def set_node_index(
     constraints: Sequence[Constraint],
     mma_index: dict[IndexSymbol, int],
@@ -151,6 +119,7 @@ def set_node_index(
     # Apply hardware constraint first since it dictates the stride and size.
     sorted_constraints = hardware_constraint + other_constraints
 
+    index = {}
     for dim in custom.indexing_dims:
         index_seq = None
         for constraint in sorted_constraints:
@@ -178,11 +147,11 @@ def set_node_index(
         if index_seq is not None:
             if dim in dim_scaling and dim in dim_tile_size:
                 index_seq.start += dim_scaling[dim] * dim_tile_size[dim]
-            custom.index = {dim: index_seq}
+            index.update({dim: index_seq})
         else:
-            custom.index = {dim: IndexSequence(0, 1, 1)}
+            index.update({dim: IndexSequence(0, 1, 1)})
 
-    setattr(custom.fx_node, "index", custom.index)
+    setattr(custom.fx_node, "index", index)
 
 
 def expand_graph(

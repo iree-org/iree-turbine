@@ -24,6 +24,7 @@ from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom
+from .index_sequence_analysis import partition_strided_operators
 from .register_analysis import determine_register_shape
 from .._support.indexing import IndexingContext, IndexExpr
 import shark_turbine.kernel.lang as tkl
@@ -236,6 +237,9 @@ class LaunchableWave(Launchable):
 
         # Optimizations.
         minimize_global_loads(graph, self.constraints)
+
+        # Partition strided operators.
+        partition_strided_operators(graph, self.constraints)
 
         # Add shared memory barriers.
         add_shared_memory_barriers(graph)

@@ -8,9 +8,10 @@ from ..compiler.ir import (
 )
 from typing import Callable
 from .._support.tracing import CapturedTrace
-from .._support.indexing import IndexExpr, IndexingContext
+from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol
 from ..lang.global_symbols import *
-from ..ops.wave_ops import get_custom, Output, Write
+from ..ops.wave_ops import get_custom, Output, Write, MMA
+from .constraints import HardwareConstraint
 import torch.fx as fx
 
 from iree.compiler.dialects.transform import (
@@ -108,3 +109,56 @@ def delinearize_index(index: IndexExpr, shape: list[int]) -> list[IndexExpr]:
             nd_index.append(sympy.floor(index / product) % size)
         product *= size
     return nd_index[::-1]
+
+
+def simplify_index(index: IndexExpr) -> IndexExpr:
+    """
+    Simplifies the index by applying the following bindings:
+        - MMA acc_index bindings so the index of the MMA node is the acc_index.
+    """
+    mapping = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}
+    return index.subs(mapping)
+
+
+def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
+    """
+    Given a trace, determine the MMA dimensional mapping for all the
+    MMA operations in the graph. For example, if we have
+        acc = tkw.mma(a_reg, b_reg, acc)
+    where a_reg has shape UxV, b has shape SxV and acc has shape UxS,
+    we map U to the MMA M dimension (0), S to the MMA N dimension (1) and
+    V to the MMA K dimension (2).
+    """
+
+    def is_mma(node):
+        return isinstance(get_custom(node), MMA)
+
+    mapping: dict[IndexSymbol, int] = {}
+    for node in trace.walk(is_mma):
+        custom: MMA = get_custom(node)
+        m, n = custom.acc_type.symbolic_shape[-2:]
+        lhs_shape = custom.lhs_type.symbolic_shape
+        rhs_shape = custom.rhs_type.symbolic_shape
+        acc_shape = custom.acc_type.symbolic_shape
+        k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
+        mapping[m] = 0
+        mapping[n] = 1
+        mapping[k] = 2
+
+    return mapping
+
+
+def get_hardware_vector_size(
+    dim: IndexSymbol,
+    hardware_constraint: HardwareConstraint,
+    mma_indices: dict[IndexSymbol, int],
+) -> dict[IndexSymbol, int]:
+    """
+    Given a hardware constraint, return the vector sizes for the given dimension.
+    This could be a hardware specific vector size or a user specified vector size.
+    """
+    if mma_indices:
+        vector_size = hardware_constraint.mma_matrix_shapes[mma_indices[dim]]
+    else:
+        vector_size = hardware_constraint.vector_shapes[dim]
+    return vector_size
