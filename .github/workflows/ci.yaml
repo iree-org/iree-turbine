@@ -6,6 +6,8 @@ on:
   push:
     branches:
       - main
+  schedule:
+    - cron: '30 5 * * *'
 
 concurrency:
   # A PR number if a pull request and otherwise the commit hash. This cancels
