@@ -40,13 +40,13 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         return False
 
     strided_operators = trace.walk(has_strided_access)
+    hw_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)][0]
     for operator in strided_operators:
         custom = get_custom(operator)
         simplified_index = {
             dim: simplify_index(custom.index[dim]) for dim in custom.index
         }
         max_stride = int(max(simplified_index[dim].stride for dim in simplified_index))
-        hw_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)][0]
         shape = get_vector_shape(trace, hw_constraint, custom.type.symbolic_shape)
         idxc = IndexingContext.current()
         elements_per_thread = custom.elements_per_thread

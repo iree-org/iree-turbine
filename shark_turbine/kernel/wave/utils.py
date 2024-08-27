@@ -130,23 +130,19 @@ def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
     V to the MMA K dimension (2).
     """
 
-    def is_mma(node: fx.Node) -> bool:
-        custom = get_custom(node)
-        return isinstance(custom, MMA)
+    def is_mma(node):
+        return isinstance(get_custom(node), MMA)
 
-    mma_nodes = trace.walk(is_mma)
     mapping: dict[IndexSymbol, int] = {}
-    for node in mma_nodes:
+    for node in trace.walk(is_mma):
         custom: MMA = get_custom(node)
         m, n = custom.acc_type.symbolic_shape[-2:]
+        lhs_shape = custom.lhs_type.symbolic_shape
+        rhs_shape = custom.rhs_type.symbolic_shape
+        acc_shape = custom.acc_type.symbolic_shape
+        k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
         mapping[m] = 0
         mapping[n] = 1
-        k = [
-            dim
-            for dim in custom.lhs_type.symbolic_shape
-            if dim in custom.rhs_type.symbolic_shape
-            and not dim in custom.acc_type.symbolic_shape
-        ][0]
         mapping[k] = 2
 
     return mapping
