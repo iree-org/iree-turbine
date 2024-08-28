@@ -883,7 +883,7 @@ class ReduceOp(CustomOp, ABC):
     """
     Represents a Reduce computation.
 
-    arg: Soure tensor/value to reduce
+    arg: Source tensor/value to reduce
     init: init/accumulator for reducte
     dim: which symbolic dim to reduce.
     """

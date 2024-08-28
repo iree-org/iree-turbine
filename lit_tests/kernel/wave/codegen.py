@@ -607,7 +607,7 @@ def test_reduce():
         lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
         res = lhs * rhs
-        res = tkw.sum(res)
+        res = tkw.sum(res, dim=N)
         tkw.write(res, c, elements_per_thread=1)
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}

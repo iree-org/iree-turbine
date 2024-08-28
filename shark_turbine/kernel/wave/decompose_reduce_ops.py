@@ -79,7 +79,6 @@ def decompose_reduce_ops(
         with custom.graph.inserting_before(custom.fx_node):
             reduction_src, reduction_acc, reduction_dim = node.args
             binary_fn = TKW_COMBINER[custom.tkw_op_name]
-            # TODO: Get BLOCK_N instead of using N.
             if reduction_dim is None:
                 reduction_dim = custom.type.symbolic_shape[-1]
 
