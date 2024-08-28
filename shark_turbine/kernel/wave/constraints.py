@@ -57,6 +57,17 @@ class HardwareConstraint(Constraint):
     def max_elems_per_load(self, element_type: DataType) -> int:
         return self.max_bits_per_load // element_type.bitwidth()
 
+    def get_thread_id_from_workgroup_dim(self, workgroup_dim: int) -> IndexSymbol:
+        match workgroup_dim:
+            case 0:
+                return THREAD_0
+            case 1:
+                return THREAD_1
+            case 2:
+                return THREAD_2
+            case _:
+                raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
+
     @property
     def mma_matrix_shapes(self) -> tuple[int]:
         # TODO: Eventually the shapes and indices should be provided by a tool
@@ -92,7 +103,27 @@ class HardwareConstraint(Constraint):
             if isinstance(vector_size, IndexExpr):
                 self.vector_shapes[vector_dim] = vector_size.subs(index_map)
 
-    def apply(self, mma_index: int) -> IndexSequence:
+    def compute_access_pattern_using_vector_shapes(
+        self,
+        dim: IndexSymbol,
+        workgroup_dim: int,
+        elements_per_thread: int | IndexSymbol,
+    ) -> IndexSequence:
+        if dim not in self.vector_shapes:
+            raise ValueError(f"No vector shape specified for dimension {dim}")
+        thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
+        return IndexSequence(thread_id * elements_per_thread, elements_per_thread, 1)
+
+    def apply(
+        self,
+        mma_index: int,
+        dim: IndexSymbol,
+        elements_per_thread: int | IndexSymbol,
+    ) -> IndexSequence:
+        if self.vector_shapes is not None:
+            return self.compute_access_pattern_using_vector_shapes(
+                dim, mma_index, elements_per_thread
+            )
         lane = self.linearized_thread_id
         match self.mma_type:
             # (M x K, N x K) -> M x N
