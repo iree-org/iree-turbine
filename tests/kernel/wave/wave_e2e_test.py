@@ -324,6 +324,7 @@ def test_im2col():
     BLOCK_K = hf * wf * c
     BLOCK_M = 64
     ELEMS_PER_THREAD = 4
+
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
 
