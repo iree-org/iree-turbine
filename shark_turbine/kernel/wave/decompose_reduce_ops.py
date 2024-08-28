@@ -6,14 +6,22 @@ from ..wave.constraints import (
 )
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
-from ..ops.wave_ops import get_custom, Add, ReduceOp, ShuffleOp, CustomOp, ExtractSlice
+from ..ops.wave_ops import (
+    get_custom,
+    Add,
+    Maximum,
+    ReduceOp,
+    ShuffleOp,
+    CustomOp,
+    ExtractSlice,
+)
 
 from .utils import DCE
 import torch.fx as fx
 import math
 from typing import Callable
 
-TKW_COMBINER = {"sum": Add}
+TKW_COMBINER = {"sum": Add, "max": Maximum}
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph):

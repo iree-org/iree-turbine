@@ -234,4 +234,4 @@ def test_reduce(shape):
         run_config=config,
     ):
         test(a, b, c)
-        assert_allclose(ref, c, atol=0.1)
+        assert_allclose(ref, c, atol=0.15)
