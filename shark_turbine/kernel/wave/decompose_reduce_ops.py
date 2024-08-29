@@ -80,7 +80,9 @@ def decompose_reduce_ops(
             reduction_src, reduction_acc, reduction_dim = node.args
             binary_fn = TKW_COMBINER[custom.tkw_op_name]
             if reduction_dim is None:
-                reduction_dim = custom.type.symbolic_shape[-1]
+                raise ValueError(
+                    "No reduction dim specified, please specify a reduction dim."
+                )
 
             # Local Reduce
             if reduction_dim is not custom.type.symbolic_shape[-1]:
