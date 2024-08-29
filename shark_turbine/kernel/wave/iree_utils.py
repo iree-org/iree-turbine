@@ -6,14 +6,14 @@ from ...support.conversions import TORCH_DTYPE_TO_MLIR_TYPE_ASM
 def get_mmt_asm(lhs_type: str, rhs_type: str, acc_type: str) -> str:
     acc_dtype = acc_type.split("x")[-1]
     matmul_function = f"""
-    func.func @mmt(%lhs: tensor<{lhs_type}>, %rhs: tensor<{rhs_type}>) -> tensor<{acc_type}> {{\n
-      %c0 = arith.constant 0.0 : {acc_dtype}\n
-      %init = tensor.empty() : tensor<{acc_type}>\n
-      %inital_result = linalg.fill ins(%c0 : {acc_dtype}) outs(%init : tensor<{acc_type}>) -> tensor<{acc_type}>\n
-      %result = linalg.matmul_transpose_b ins(%lhs, %rhs: tensor<{lhs_type}>, tensor<{rhs_type}>)\n
-                 outs(%inital_result: tensor<{acc_type}>) -> tensor<{acc_type}>\n
-      return %result : tensor<{acc_type}>\n
-    }}\n"""
+    func.func @mmt(%lhs: tensor<{lhs_type}>, %rhs: tensor<{rhs_type}>) -> tensor<{acc_type}> {{
+      %c0 = arith.constant 0.0 : {acc_dtype}
+      %init = tensor.empty() : tensor<{acc_type}>
+      %inital_result = linalg.fill ins(%c0 : {acc_dtype}) outs(%init : tensor<{acc_type}>) -> tensor<{acc_type}>
+      %result = linalg.matmul_transpose_b ins(%lhs, %rhs: tensor<{lhs_type}>, tensor<{rhs_type}>)
+                 outs(%inital_result: tensor<{acc_type}>) -> tensor<{acc_type}>
+      return %result : tensor<{acc_type}>
+    }}"""
     return matmul_function
 
 
