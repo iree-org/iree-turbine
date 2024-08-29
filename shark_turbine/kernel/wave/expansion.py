@@ -169,10 +169,10 @@ def set_node_index(
                     (
                         workgroup_constraints[dim].workgroup_dim,
                         (
-                            0
+                            1
                             if not is_contiguous_dim(
                                 dim,
-                                custom.type.symbolic_shape,
+                                custom.indexing_dims,
                                 constraint.vector_shapes,
                             )
                             else elements_per_thread
