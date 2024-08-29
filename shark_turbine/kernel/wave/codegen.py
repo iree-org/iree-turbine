@@ -44,6 +44,7 @@ from ..ops.wave_ops import (
     read,
     reduction,
     exp2,
+    maximum,
     get_custom,
     get_result,
     allocate,
@@ -681,6 +682,24 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
         result = arith_d.divui(lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for div: {element_type}")
+    return result
+
+
+@handle_binary_op(maximum)
+def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.maximumf(lhs, rhs)
+    elif _is_integer_like_type(element_type) and (
+        element_type.is_signed() or element_type.is_signless()
+    ):
+        result = arith_d.maxsi(lhs, rhs)
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+        result = arith_d.maxui(lhs, rhs)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for maximum: {element_type}"
+        )
     return result
 
 

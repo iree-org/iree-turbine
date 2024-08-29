@@ -1,6 +1,7 @@
 from .._support.tracing import CapturedTrace
 from ...support.logging import get_logger
-from ..ops.wave_ops import *
+from ..ops.wave_ops import get_custom, NewRegister, CustomOp, MMA, Reduction
+import torch.fx as fx
 
 logger = get_logger("turbine.wave.register_analysis")
 

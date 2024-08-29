@@ -92,7 +92,19 @@ def exp2(src: "Register") -> "Register":
     ...
 
 
+def maximum(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
 def sum(
+    src: "Register",
+    acc: Optional["Register"] = None,
+    dim: Optional[IndexExpr | int] = None,
+) -> "Register":
+    ...
+
+
+def max(
     src: "Register",
     acc: Optional["Register"] = None,
     dim: Optional[IndexExpr | int] = None,
@@ -175,6 +187,53 @@ def define_py_op(py_op: Callable) -> Callable[[T], T]:
             setattr(fx.Proxy, f"__{op_name}__", new_function)
 
         # Return cls unchanged so we can reuse the decorator to register more ops
+        return cls
+
+    return decorator
+
+
+def define_interface_op(op_name: str) -> Callable[[T], T]:
+    """
+    Generate new subclass for op handling, deriving from the base interface class.
+    Generated subclass can be used for emitting the op from compiler/python side,
+    by calling the generated subclass name.
+
+    The generated subclass name would be pascal case of the TKW op name. For example:
+    "tkw.op_name" -> "OpName"
+    "tkw.exp2" -> "Exp2"
+    """
+
+    def decorator(cls: T) -> T:
+        # define new subclass of cls to represent this op
+        @dataclass
+        class NewSubclass(cls):
+            pass
+
+        NewSubclass.tkw_op_name = op_name
+        pascal_op_name = op_name.replace("_", " ").title().replace(" ", "")
+        NewSubclass.__name__ = f"{pascal_op_name}"
+        NewSubclass.__module__ = cls.__module__
+        current_module = sys.modules[NewSubclass.__module__]
+        setattr(current_module, NewSubclass.__name__, NewSubclass)
+        if cls.__name__ == NewSubclass.__name__:
+            raise ValueError(
+                f'Subclass cannot have same name as base interface class{cls.__name__}. Did you mean to use"define_op" instead.'
+            )
+
+        def new_function(*args: Any, **kwargs: dict[str, Any]):
+            dispatcher = OpDispatcher.current()
+            try:
+                handler = getattr(dispatcher, f"handle_{op_name}")
+            except AttributeError:
+                raise AttributeError(
+                    f"The current OpDispatcher ({dispatcher}) does not register a handler for {op_name}"
+                )
+
+            return handler(*args, **kwargs)
+
+        new_function.__name__ = op_name
+        setattr(current_module, op_name, new_function)
+        NewSubclass._tracing_function = new_function
         return cls
 
     return decorator
@@ -403,6 +462,7 @@ class CustomOp(ABC):
 @define_py_op(operator.sub)
 @define_py_op(operator.mul)
 @define_py_op(operator.truediv)
+@define_interface_op("maximum")
 @dataclass
 class BinaryPyOp(CustomOp, ABC):
     """
@@ -437,7 +497,7 @@ class BinaryPyOp(CustomOp, ABC):
         return lhs_type
 
 
-@define_op("exp2")
+@define_interface_op("exp2")
 @define_py_op(operator.neg)
 @dataclass
 class UnaryPyOp(CustomOp, ABC):
@@ -907,7 +967,8 @@ class ExtractSlice(CustomOp):
         return get_custom(self.register_).type
 
 
-@define_op("sum")
+@define_interface_op("max")
+@define_interface_op("sum")
 @dataclass
 class ReduceOp(CustomOp, ABC):
     """
