@@ -9,6 +9,7 @@ from shark_turbine.kernel.wave.expansion import expand_graph
 from shark_turbine.kernel._support.indexing import IndexingContext
 from shark_turbine.kernel.lang.global_symbols import *
 from shark_turbine.kernel.wave.utils import run_test, print_trace
+import sympy
 
 # Input sizes
 M = tkl.sym.M
@@ -40,13 +41,13 @@ def read_write_same_size(
 def test_read_write_equal_sizes():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, THREAD_1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M, sympy.floor(THREAD_0 / 64))]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N, THREAD_1)]
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 16, N: 16, K: 16},
+            vector_shapes={M: 16, N: 16},
         )
     ]
 
@@ -84,21 +85,21 @@ def test_read_write_equal_sizes():
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64), N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + 16}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + 16}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64), N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
         # CHECK-NEXT: write(register_=read_0_0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64), N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: write(register_=read_1_1
-        # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + 16}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
         # CHECK-NEXT: write(register_=read_1_0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: write(register_=read_0_1
-        # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + 16}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64), N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
         # CHECK-NEXT: output
 
         # CHECK: -----
@@ -117,9 +118,10 @@ def read_write_different_dims(
 def test_read_write():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4, THREAD_0 / 64)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, THREAD_1)]
+    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M, THREAD_0 / 64)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N, THREAD_1)]
+    constraints += [tkw.WaveConstraint(K, BLOCK_K, THREAD_2)]
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
@@ -158,17 +160,17 @@ def test_read_write():
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0*BLOCK_M/256 + $WG0*BLOCK_M, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0*BLOCK_M/256 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: write(register_=read_0_0_0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/256 + $WG0*BLOCK_M, K: ARGK*BLOCK_K}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K : 4 : 1}
         # CHECK-NEXT: write(register_=read_1_0_0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/256 + $WG0*BLOCK_M + 16, K: ARGK*BLOCK_K + 16}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
         # CHECK-NEXT: write(register_=read_1_0_0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/256 + $WG0*BLOCK_M + 16, K: ARGK*BLOCK_K}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K : 4 : 1}
         # CHECK-NEXT: write(register_=read_0_0_0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/256 + $WG0*BLOCK_M, K: ARGK*BLOCK_K + 16}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
         # CHECK-NEXT: output
 
         # CHECK: -----
@@ -568,18 +570,18 @@ def py_arithmetic_different_dims():
         # Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
-        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N})
-        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N})
-        # CHECK-NEXT: add(lhs=read_0_0_0, rhs=read_0_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N})
-        # CHECK-NEXT: add(lhs=read_1_0_0, rhs=read_1_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N})
-        # CHECK-NEXT: sub(lhs=add_0_0_0, rhs=read_0_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N})
-        # CHECK-NEXT: sub(lhs=add_1_0_0, rhs=read_1_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N})
-        # CHECK-NEXT: neg(arg=sub_0_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N})
-        # CHECK-NEXT: neg(arg=sub_1_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N})
-        # CHECK-NEXT: write(register_=neg_0_0_0, memory=c, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, K: $WG2*BLOCK_K})
-        # CHECK-NEXT: write(register_=neg_1_0_0, memory=c, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, K: $WG2*BLOCK_K + 16})
-        # CHECK-NEXT: write(register_=neg_1_0_0, memory=c, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, K: $WG2*BLOCK_K})
-        # CHECK-NEXT: write(register_=neg_0_0_0, memory=c, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, K: $WG2*BLOCK_K + 16})
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: add(lhs=read_0_0_0, rhs=read_0_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N}
+        # CHECK-NEXT: add(lhs=read_1_0_0, rhs=read_1_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N}
+        # CHECK-NEXT: sub(lhs=add_0_0_0, rhs=read_0_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N}
+        # CHECK-NEXT: sub(lhs=add_1_0_0, rhs=read_1_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N
+        # CHECK-NEXT: neg(arg=sub_0_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N}
+        # CHECK-NEXT: neg(arg=sub_1_0_0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, N: $T1*BLOCK_N/4 + $WG1*BLOCK_N}
+        # CHECK-NEXT: write(register_=neg_0_0_0, memory=c, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_1_0_0, memory=c, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_1_0_0, memory=c, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 16, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_0_0_0, memory=c, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
 
         # CHECK: -----
 

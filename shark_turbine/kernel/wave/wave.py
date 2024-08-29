@@ -39,6 +39,8 @@ from iree.compiler import compile_str
 import iree.runtime as rt
 import iree.runtime.benchmark as bench
 
+import sympy
+
 # TODO: Monkey-patching f16 support, need to fix in iree.
 import numpy
 
@@ -197,15 +199,22 @@ class LaunchableWave(Launchable):
         """
 
         hardware_constraint = self.hardware_constraints[0]
-        thread_ids = [THREAD_0, THREAD_1, THREAD_2]
         for wave_constraint in self.wave_constraints:
             for workgroup_constraint in self.workgroup_constraints:
+                # The wave_id is the same as the thread_id, with the exception
+                # of wave_id[0] = thread_id[0] / threads_per_wave. This is
+                # a convention that we adopt.
                 if wave_constraint.dim == workgroup_constraint.dim:
-                    wave_constraint.wave_id = thread_ids[
-                        workgroup_constraint.workgroup_dim
-                    ]
+                    wave_constraint.wave_id = (
+                        hardware_constraint.get_thread_id_from_workgroup_dim(
+                            workgroup_constraint.workgroup_dim
+                        )
+                    )
                     if workgroup_constraint.workgroup_dim == 0:
-                        wave_constraint.wave_id /= hardware_constraint.threads_per_wave
+                        wave_constraint.wave_id = sympy.floor(
+                            wave_constraint.wave_id
+                            / hardware_constraint.threads_per_wave
+                        )
 
     def _trace_and_get_kernel_signature(
         self,

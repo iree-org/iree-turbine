@@ -93,6 +93,21 @@ def is_expandable(arg: Any) -> bool:
     return isinstance(arg, CustomOp)
 
 
+def is_contiguous_dim(
+    dim: IndexSymbol, symbolic_shape: list[IndexSymbol], vector_shapes: list[int]
+) -> bool:
+    """
+    Checks if the given dimension is stored contiguously in memory. This happens if
+    the dimension is the last one in the symbolic shape or all dimensions after it
+    are unit dimensions.
+    """
+    is_innermost_dim = dim == symbolic_shape[-1]
+    dim_index = symbolic_shape.index(dim)
+    static_shape = [vector_shapes[dim] for dim in symbolic_shape]
+    all_unit_dims = all(dim == 1 for dim in static_shape[dim_index + 1 :])
+    return is_innermost_dim or all_unit_dims
+
+
 def set_node_index(
     constraints: Sequence[Constraint],
     mma_index: dict[IndexSymbol, int],
@@ -113,6 +128,9 @@ def set_node_index(
     on the operand.
     """
     hardware_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)]
+    workgroup_constraints = {
+        c.dim: c for c in constraints if isinstance(c, WorkgroupConstraint)
+    }
     other_constraints = [
         c for c in constraints if not isinstance(c, HardwareConstraint)
     ]
@@ -129,15 +147,42 @@ def set_node_index(
                 and isinstance(custom, MMA)
             )
 
+            vector_check = (
+                isinstance(constraint, HardwareConstraint)
+                and constraint.vector_shapes is not None
+                and hasattr(custom, "elements_per_thread")
+            )
+
             constraint_check = (
                 not isinstance(constraint, HardwareConstraint) and dim == constraint.dim
             )
 
-            if (not mma_check) and (not constraint_check):
+            if (not (mma_check or vector_check)) and (not constraint_check):
                 continue
 
             if isinstance(constraint, HardwareConstraint):
-                index_seq = constraint.apply(mma_index[dim])
+
+                # The semantics of elements_per_thread are that it represents the number of
+                # elements that are loaded contiguously from memory.
+                elements_per_thread = getattr(custom, "elements_per_thread", None)
+                constraint_index, elements_per_thread = (
+                    (
+                        workgroup_constraints[dim].workgroup_dim,
+                        (
+                            0
+                            if not is_contiguous_dim(
+                                dim,
+                                custom.type.symbolic_shape,
+                                constraint.vector_shapes,
+                            )
+                            else elements_per_thread
+                        ),
+                    )
+                    if constraint.vector_shapes is not None
+                    else (mma_index[dim], elements_per_thread)
+                )
+                index_seq = constraint.apply(constraint_index, dim, elements_per_thread)
+
             else:
                 if index_seq is None:
                     index_seq = constraint.apply()
