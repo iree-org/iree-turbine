@@ -291,7 +291,10 @@ def test_reduce_max(shape):
         run_config=config,
     ):
         test(a, b, c)
-        assert torch.equal(c, ref.values)
+        # Assert equal does cast to boolean on torch.Tensor
+        # which causes issues, hence we cast to numpy before
+        # checking.
+        assert_equal(c, ref.values.numpy())
 
 
 @require_e2e
