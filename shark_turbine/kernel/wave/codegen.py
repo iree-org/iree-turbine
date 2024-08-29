@@ -698,7 +698,7 @@ def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
         result = arith_d.maxui(lhs, rhs)
     else:
         raise ValidationError(
-            f"Found unhanlded operand type for maximum: {element_type}"
+            f"Found unhandled operand type for maximum: {element_type}"
         )
     return result
 
