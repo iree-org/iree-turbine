@@ -565,7 +565,7 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
     if not isinstance(offset, int) or not isinstance(width, int):
         raise NotImplementedError(
-            "Non-const wdith or offset is not yet implemented for shuffleOp."
+            "Non-const width or offset is not yet implemented for shuffleOp."
         )
     src = cast_py_value(emitter, src).ir_value
     offset = cast_py_value(emitter, offset, IntegerType.get_signless(32)).ir_value
@@ -583,6 +583,8 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
     element_original_type = element.type
 
     # Pad to 32 bit if needed.
+    # TODO Handle and pack non-unit vector type. i.e enable shuffling of vector<4xF8>
+    #      in one shuffle instruction.
     if not _is_float_type(element.type):
         raise NotImplementedError("Currently only support shuffle for floats.")
     if element.type.width > 32:
@@ -650,7 +652,7 @@ def handle_sub(lhs: Value, rhs: Value) -> OpResult:
     elif _is_integer_like_type(element_type):
         result = arith_d.subi(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+        raise ValidationError(f"Found unhanlded operand type for sub: {element_type}")
     return result
 
 
@@ -662,7 +664,7 @@ def handle_mul(lhs: Value, rhs: Value) -> OpResult:
     elif _is_integer_like_type(element_type):
         result = arith_d.muli(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+        raise ValidationError(f"Found unhanlded operand type for mul: {element_type}")
     return result
 
 
@@ -678,7 +680,7 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
     elif _is_integer_like_type(element_type) and element_type.is_unsigned():
         result = arith_d.divui(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+        raise ValidationError(f"Found unhanlded operand type for div: {element_type}")
     return result
 
 
@@ -710,7 +712,9 @@ def handle_neg(source: Value) -> OpResult:
     if _is_float_type(element_type):
         result = arith_d.negf(source)
     else:
-        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+        raise ValidationError(
+            f"Found unhanlded operand type for negate: {element_type}"
+        )
     return result
 
 
@@ -720,7 +724,7 @@ def handle_exp2(source: Value) -> OpResult:
     if _is_float_type(element_type):
         result = math_d.exp2(source)
     else:
-        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+        raise ValidationError(f"Found unhanlded operand type for exp2: {element_type}")
     return result
 
 

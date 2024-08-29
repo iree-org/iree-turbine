@@ -105,7 +105,7 @@ def decompose_reduce_ops(
             final_reduction = global_reduction
             if reduction_acc is not None:
                 final_reduction = get_graph_node(
-                    binary_fn(reduction_acc, global_reduction), graph
+                    binary_fn(reduction_acc, global_reduction), custom.graph
                 )
 
             # Replace all uses with global reduction
