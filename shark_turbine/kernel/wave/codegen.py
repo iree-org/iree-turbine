@@ -640,7 +640,7 @@ def handle_add(lhs: Value, rhs: Value) -> OpResult:
     elif _is_integer_like_type(element_type):
         result = arith_d.addi(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhanlded operand type for add: {element_type}")
+        raise ValidationError(f"Found unhandled operand type for add: {element_type}")
     return result
 
 
@@ -652,7 +652,7 @@ def handle_sub(lhs: Value, rhs: Value) -> OpResult:
     elif _is_integer_like_type(element_type):
         result = arith_d.subi(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhanlded operand type for sub: {element_type}")
+        raise ValidationError(f"Found unhandled operand type for sub: {element_type}")
     return result
 
 
@@ -664,7 +664,7 @@ def handle_mul(lhs: Value, rhs: Value) -> OpResult:
     elif _is_integer_like_type(element_type):
         result = arith_d.muli(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhanlded operand type for mul: {element_type}")
+        raise ValidationError(f"Found unhandled operand type for mul: {element_type}")
     return result
 
 
@@ -680,7 +680,7 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
     elif _is_integer_like_type(element_type) and element_type.is_unsigned():
         result = arith_d.divui(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhanlded operand type for div: {element_type}")
+        raise ValidationError(f"Found unhandled operand type for div: {element_type}")
     return result
 
 
@@ -713,7 +713,7 @@ def handle_neg(source: Value) -> OpResult:
         result = arith_d.negf(source)
     else:
         raise ValidationError(
-            f"Found unhanlded operand type for negate: {element_type}"
+            f"Found unhandled operand type for negate: {element_type}"
         )
     return result
 
@@ -724,7 +724,7 @@ def handle_exp2(source: Value) -> OpResult:
     if _is_float_type(element_type):
         result = math_d.exp2(source)
     else:
-        raise ValidationError(f"Found unhanlded operand type for exp2: {element_type}")
+        raise ValidationError(f"Found unhandled operand type for exp2: {element_type}")
     return result
 
 
