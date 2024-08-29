@@ -201,7 +201,7 @@ def test_read_write():
         # CHECK-DAG:        %[[THREAD_ID_Y:.+]] = gpu.thread_id  y
         # CHECK:            %[[D0:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>
-        # CHECK:            %[[D1:.+]] = arith.muli %workgroup_id_0, %[[C16]] : index
+        # CHECK:            %[[D1:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C16]] : index
         # CHECK:            %[[D2:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
         # CHECK:            %[[D3:.+]] = arith.muli %[[D2]], %[[C16]] : index
         # CHECK:            %[[D4:.+]] = arith.addi %[[D3]], %[[D1]] : index
