@@ -116,13 +116,13 @@ class HardwareConstraint(Constraint):
 
     def apply(
         self,
-        mma_index: int,
+        constraint_index: int,
         dim: IndexSymbol,
         elements_per_thread: int | IndexSymbol,
     ) -> IndexSequence:
         if self.vector_shapes is not None:
             return self.compute_access_pattern_using_vector_shapes(
-                dim, mma_index, elements_per_thread
+                dim, constraint_index, elements_per_thread
             )
         lane = self.linearized_thread_id
         match self.mma_type:
@@ -146,7 +146,9 @@ class HardwareConstraint(Constraint):
                     1,  # K
                 ]
                 return IndexSequence(
-                    offset[mma_index], size[mma_index], stride[mma_index]
+                    offset[constraint_index],
+                    size[constraint_index],
+                    stride[constraint_index],
                 )
 
 
