@@ -1,5 +1,6 @@
 import operator
 import sympy
+import math
 from typing import Any, Callable, ClassVar, Optional, List, Type
 from dataclasses import dataclass
 import torch.fx as fx
@@ -9,6 +10,7 @@ from ..compiler.ir import (
     Attribute,
     DenseElementsAttr,
     FloatAttr,
+    F32Type,
     IndexType,
     InsertionPoint,
     IntegerAttr,
@@ -38,6 +40,7 @@ from ..ops.wave_ops import (
     write,
     register,
     mma,
+    shuffle,
     read,
     reduction,
     exp2,
@@ -539,6 +542,64 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     m, n, k = hardware_constraints[0].mma_matrix_shapes
     result = emit_mfma(m, n, k, vector_type, acc, values)
     emitter.bind_node_proxy(node, IRProxyValue(result))
+
+
+@handle_op(shuffle)
+def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
+    """
+    Generate gpu shuffle instruction to enable communication
+    between threads in a warp. Currently we only support
+    float unit vector that is <= 32 bits.
+
+    Translation to shuffle is done in 3 steps:
+    1. Scalarize (vector<1xf16> -> f16)
+    2. Pad to 32-bit if needed(f16 -> f32)
+    3. Shuffle (gpu.shuffle xor src, offset, width -> f32)
+    4. Reconstruct to original vector type (truncf f32 -> f16, broadcast -> vector<1xf16>)
+
+    TODO: Handle non-unit vector types such as vector<4xF8> (useful for resolving layouts).
+    """
+    try:
+        src, offset, width = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    if not isinstance(offset, int) or not isinstance(width, int):
+        raise NotImplementedError(
+            "Non-const wdith or offset is not yet implemented for shuffleOp."
+        )
+    src = cast_py_value(emitter, src).ir_value
+    offset = cast_py_value(emitter, offset, IntegerType.get_signless(32)).ir_value
+    width = cast_py_value(emitter, width, IntegerType.get_signless(32)).ir_value
+
+    if not VectorType.isinstance(src.type):
+        raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
+
+    if math.prod(src.type.shape) != 1:
+        raise NotImplementedError("Currently only support unit vector for shuffleOp.")
+
+    # Scalarize (vector<FLOAT_TYPE> -> FLOAT_TYPE).
+    static_pos = [0 for i in range(src.type.rank)]
+    element = vector_d.extract(src, static_position=static_pos, dynamic_position=[])
+    element_original_type = element.type
+
+    # Pad to 32 bit if needed.
+    if not _is_float_type(element.type):
+        raise NotImplementedError("Currently only support shuffle for floats.")
+    if element.type.width > 32:
+        raise ValueError("Cannot shuffle more than 32 bit.")
+    elif element.type.width < 32:
+        element = arith_d.extf(F32Type.get(), element)
+
+    # Shuffle data between other threads in a warp.
+    result = gpu_d.shuffle(element, offset, width, gpu_d.ShuffleMode.XOR)
+
+    # Reconstruct shuffled value to original shape and dtype.
+    shuffled_val = result[0]
+    if element_original_type != shuffled_val.type:
+        shuffled_val = arith_d.truncf(element_original_type, shuffled_val)
+    vec_result = vector_d.broadcast(src.type, shuffled_val)
+
+    emitter.bind_node_proxy(node, IRProxyValue(vec_result))
 
 
 ###############################################################################

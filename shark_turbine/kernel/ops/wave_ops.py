@@ -88,6 +88,18 @@ def exp2(src: "Register") -> "Register":
     ...
 
 
+def sum(
+    src: "Register",
+    acc: Optional["Register"] = None,
+    dim: Optional[IndexExpr | int] = None,
+) -> "Register":
+    ...
+
+
+def shuffle(src: "Register", offset: int, width: int) -> "Register":
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -863,3 +875,54 @@ class ExtractSlice(CustomOp):
     @property
     def type(self) -> "Register":
         return get_custom(self.register_).type
+
+
+@define_op("sum")
+@dataclass
+class ReduceOp(CustomOp, ABC):
+    """
+    Represents a Reduce computation.
+
+    arg: Source tensor/value to reduce
+    init: init/accumulator for reducte
+    dim: which symbolic dim to reduce.
+    """
+
+    arg: fx.Node
+    init: fx.Node = None
+    dim: Optional[Any] = None
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    @property
+    def type(self) -> Memory:
+        src_type = get_custom(self.arg).type
+        return src_type
+
+
+# TODO: Add support for more shuffle types.
+@define_op("shuffle")
+@dataclass
+class ShuffleOp(CustomOp):
+    """
+    Represents a shuffle.xor op.
+
+    arg: value/vector to shuffle.
+    offset: xor offset.
+    width: xor width.
+    """
+
+    arg: fx.Node
+    offset: int
+    width: int
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    @property
+    def type(self) -> Memory:
+        src_type = get_custom(self.arg).type
+        return src_type

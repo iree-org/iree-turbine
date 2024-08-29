@@ -19,6 +19,7 @@ from .promotion import promote_placeholders
 from .hoisting import hoist_allocs
 from .utils import canonicalize_module
 from .minimize_global_loads import minimize_global_loads
+from .decompose_reduce_ops import decompose_reduce_ops
 from .barriers import add_shared_memory_barriers
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
@@ -243,6 +244,9 @@ class LaunchableWave(Launchable):
 
         # Add shared memory barriers.
         add_shared_memory_barriers(graph)
+
+        # Decompose reduce Ops.
+        decompose_reduce_ops(graph, self.constraints, idxc.subs)
 
         # Determine grid shape.
         self.grid_type.dims = [1, 1, 1]
