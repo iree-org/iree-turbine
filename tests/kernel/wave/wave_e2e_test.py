@@ -2,7 +2,7 @@ import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
 import torch
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_equal
 import pytest
 import sympy
 import os
@@ -220,6 +220,7 @@ def test_reduce_sum(shape):
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
+    torch.manual_seed(1)
     a = torch.randn(shape, dtype=torch.float16)
     b = torch.randn(shape, dtype=torch.float16)
     c = torch.zeros((shape[0],), dtype=torch.float16)
@@ -290,7 +291,7 @@ def test_reduce_max(shape):
         run_config=config,
     ):
         test(a, b, c)
-        assert_allclose(ref.values, c)
+        assert torch.equal(c, ref.values)
 
 
 @require_e2e
