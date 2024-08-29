@@ -8,10 +8,10 @@ from ..compiler.ir import (
 )
 from typing import Callable
 from .._support.tracing import CapturedTrace
-from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol
+from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 from ..ops.wave_ops import get_custom, Output, Write, MMA
-from .constraints import HardwareConstraint
+from .constraints import HardwareConstraint, TilingConstraint
 import torch.fx as fx
 import shark_turbine.kernel.lang as tkl
 
@@ -165,3 +165,19 @@ def get_hardware_vector_size(
     else:
         vector_size = hardware_constraint.vector_shapes[dim]
     return vector_size
+
+
+def remove_global_indexing(
+    index: dict[IndexSymbol, IndexSequence], tilingConstraints: list[TilingConstraint]
+) -> dict[IndexSymbol, IndexSequence]:
+    """
+    This function takes the index sequence for a global read and removes all
+    workgroup and induction level indexing. This is necessary for writes to shared memory
+    that operate on promoted memory.
+    """
+    workgroup_ids = [WORKGROUP_0, WORKGROUP_1, WORKGROUP_2]
+    new_index = {key: index[key].subs({w: 0 for w in workgroup_ids}) for key in index}
+    for key in new_index:
+        for constraint in tilingConstraints:
+            new_index[key] = new_index[key].subs({constraint.induction_var: 0})
+    return new_index

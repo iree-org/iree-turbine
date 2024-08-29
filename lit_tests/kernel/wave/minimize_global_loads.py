@@ -99,9 +99,9 @@ def test_gemm():
         # CHECK-NEXT: %register_1_0_0
         # CHECK-NEXT: %register_0_1_0
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, K), (BLOCK_M, K), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %allocate_1
-        # CHECK-SAME: ((N, K), (BLOCK_N, K), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: reduction
         # CHECK-SAME (K, [%register_0_0_0, %register_1_1_0, %register_1_0_0, %register_0_1_0]
         # CHECK-NEXT: %getresult_1_1_0
@@ -164,7 +164,7 @@ def test_gemm():
         # CHECK-SAME: (%a, 8, None, None)
         # CHECK-NEXT: %write_3
         # CHECK-SAME: (%read_5, %allocate, 8, None)
-        # CHECK-NEXT: %barrier
+        # CHECK-NEXT: %shared_memory_barrier
         # CHECK-NEXT: %read_shared_0_0_0
         # CHECK-NEXT: %read_shared_0_0_1
         # CHECK-NEXT: %read_shared_0_0_2
@@ -182,7 +182,7 @@ def test_gemm():
         # CHECK-SAME: (%b, 8, None, None)
         # CHECK-NEXT: %write_5
         # CHECK-SAME: (%read_7, %allocate_1, 8, None)
-        # CHECK-NEXT: %barrier_1
+        # CHECK-NEXT: %shared_memory_barrier_1
         # CHECK-NEXT: %read_shared_0_0_0
         # CHECK-NEXT: %read_shared_0_0_1
         # CHECK-NEXT: %read_shared_0_0_2
@@ -222,15 +222,15 @@ def test_gemm():
         # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 8 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: write(register_=read_5, memory=allocate, elements_per_thread=8,
         # CHECK-SAME: index={M: Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 8 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
-        # CHECK-NEXT: barrier()
-        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: $WG0*BLOCK_M, K: ARGK*BLOCK_K})
-        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: $WG0*BLOCK_M, K: ARGK*BLOCK_K + 16})
-        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: $WG0*BLOCK_M, K: ARGK*BLOCK_K + 32})
-        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: $WG0*BLOCK_M, K: ARGK*BLOCK_K + 48})
-        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: $WG0*BLOCK_M + 16, K: ARGK*BLOCK_K})
-        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: $WG0*BLOCK_M + 16, K: ARGK*BLOCK_K + 16})
-        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: $WG0*BLOCK_M + 16, K: ARGK*BLOCK_K + 32})
-        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: $WG0*BLOCK_M + 16, K: ARGK*BLOCK_K + 48})
+        # CHECK-NEXT: shared_memory_barrier()
+        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16) + 16, K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16) + 16, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16) + 16, K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16) + 16, K: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
         # CHECK-NEXT: placeholder(_name=b, _type=Memory[N, K].of(f16))
         # CHECK-NEXT: read(memory=b, elements_per_thread=8,
         # CHECK-SAME: index={N: $WG1*BLOCK_N + BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64) : 8 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
@@ -241,14 +241,14 @@ def test_gemm():
         # CHECK-NEXT: write(register_=read_7, memory=allocate_1, elements_per_thread=8,
         # CHECK-SMAE: index={N: BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 8 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: barrier()
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: $WG1*BLOCK_N + BLOCK_N/2, K: ARGK*BLOCK_K})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: $WG1*BLOCK_N + BLOCK_N/2, K: ARGK*BLOCK_K + 16})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: $WG1*BLOCK_N + BLOCK_N/2, K: ARGK*BLOCK_K + 32})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: $WG1*BLOCK_N + BLOCK_N/2, K: ARGK*BLOCK_K + 48})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: $WG1*BLOCK_N + BLOCK_N/2 + 16, K: ARGK*BLOCK_K})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: $WG1*BLOCK_N + BLOCK_N/2 + 16, K: ARGK*BLOCK_K + 16})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: $WG1*BLOCK_N + BLOCK_N/2 + 16, K: ARGK*BLOCK_K + 32})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: $WG1*BLOCK_N + BLOCK_N/2 + 16, K: ARGK*BLOCK_K + 48})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16) + 16, K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16) + 16, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16) + 16, K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16) + 16, K: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
 
 
 if __name__ == "__main__":

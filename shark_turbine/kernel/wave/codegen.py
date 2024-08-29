@@ -744,16 +744,20 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
     start = arith_d.constant(IndexType.get(), int(0))
 
     idxc = IndexingContext.current()
-    # For now, we assume that dimensions that have tiling constraints on them,
-    # do not have any other constraints.
-    dim = axis.subs(idxc.subs)
-    end = arith_d.constant(IndexType.get(), int(dim))
-
-    step = None
+    tile_size = None
     for constraint in emitter.constraints:
         if isinstance(constraint, TilingConstraint) and constraint.dim == axis:
             tile_size = constraint.tile_size.subs(idxc.subs)
-            step = arith_d.constant(IndexType.get(), int(tile_size))
+    assert tile_size is not None, "Could not find tiling constraint for reduction axis."
+
+    # For now, we assume that dimensions that have tiling constraints on them,
+    # do not have any other constraints.
+    dim = axis.subs(idxc.subs)
+    end = arith_d.constant(IndexType.get(), int(dim // tile_size))
+
+    # Since we divide the end by the tile size, we need to make sure that the
+    # step is 1.
+    step = arith_d.constant(IndexType.get(), int(1))
 
     if not step:
         raise CodegenError(

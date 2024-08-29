@@ -18,11 +18,15 @@ from typing import (
 import torch.fx as fx
 
 from ..lang.wave_types import Memory, Register, IndexMapping
+from ..lang.global_symbols import *
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
 from ..lang.global_symbols import MMA_ACC, MMA_LHS, MMA_RHS
+
+if TYPE_CHECKING:
+    from ..wave.constraints import Constraint
 
 T = TypeVar("T", bound=Type[Any])
 AccT = TypeVar("AccT")
@@ -386,6 +390,13 @@ class CustomOp(ABC):
         else:
             raise ValueError("Index must be a dict")
 
+    def post_expansion(self, constraints: list["Constraint"]) -> None:
+        """
+        Hook for post-expansion operations. This is called after the arguments
+        of the node are expanded.
+        """
+        pass
+
 
 @define_py_op(operator.getitem)
 @define_py_op(operator.add)
@@ -575,7 +586,7 @@ class Allocate(CustomOp):
         return Memory[*self.shape, self.address_space, self.dtype]
 
 
-@define_op("barrier")
+@define_op("shared_memory_barrier")
 @dataclass
 class SharedMemoryBarrier(CustomOp):
     """
@@ -679,6 +690,25 @@ class MMA(CustomOp):
         custom_str += f"rhs={self.rhs} (index = {self.rhs_index}), "
         custom_str += f"acc={self.acc} (index = {self.acc_index}))"
         return custom_str
+
+    def post_expansion(self, constraints: list["Constraint"]) -> None:
+        """
+        Once the arguments have been expanded, we set their indices,
+        ensuring that the LHS and RHS indices are consistent with their
+        corresponding address spaces.
+        """
+        from ..wave.constraints import TilingConstraint
+        from ..wave.utils import remove_global_indexing
+
+        tiling_constraints = [c for c in constraints if isinstance(c, TilingConstraint)]
+        self.lhs.index = self.lhs_index
+        self.rhs.index = self.rhs_index
+        self.acc.index = self.acc_index
+
+        if self.lhs_type.address_space == SHARED_ADDRESS_SPACE:
+            self.lhs.index = remove_global_indexing(self.lhs_index, tiling_constraints)
+        if self.rhs_type.address_space == SHARED_ADDRESS_SPACE:
+            self.rhs.index = remove_global_indexing(self.rhs_index, tiling_constraints)
 
 
 @define_op("read")
