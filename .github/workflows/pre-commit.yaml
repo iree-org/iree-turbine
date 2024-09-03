@@ -8,7 +8,7 @@ on:
 
 jobs:
   pre-commit:
-    runs-on: ubuntu-latest
+    runs-on: azure-linux-scale
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
