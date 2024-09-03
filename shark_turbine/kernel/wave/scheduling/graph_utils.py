@@ -1,6 +1,23 @@
 import torch.fx as fx
 from random import shuffle, seed, Random
 from collections import defaultdict
+from ..._support.indexing import index_symbol, IndexExpr
+from dataclasses import dataclass
+import sympy
+import math
+
+
+@dataclass
+class EdgeWeight:
+    iteration_difference: int = 0
+    delay: int = 0
+
+
+@dataclass
+class Edge:
+    _from: fx.Node = None
+    _to: fx.Node = None
+    weight: EdgeWeight = None
 
 
 def find_strongly_connected_components(
@@ -136,3 +153,40 @@ def find_cycles_in_graph(
             circuits += circuit(s, B)
             remove_node(graph, s)
     return circuits
+
+
+def all_pairs_longest_paths(
+    graph: fx.Graph,
+    edges: list[Edge],
+) -> dict[tuple[int, int], IndexExpr]:
+    """
+    For each node in the graph, compute the longest path to all other nodes.
+    Uses the Floyd-Warshall algorithm and assumes that the cycles don't
+    have positive weights.
+    """
+    T = index_symbol("$INITIATION_INTERVAL")
+    D: dict[tuple[int, int, int]] = {}
+    for v in graph.nodes:
+        for w in graph.nodes:
+            D[(v, w)] = -math.inf
+    for edge in edges:
+        D[(edge._from, edge._to)] = (
+            edge.weight.delay - edge.weight.iteration_difference * T
+        )
+    for u in graph.nodes:
+        for v in graph.nodes:
+            for w in graph.nodes:
+                D[(v, w)] = sympy.Max(D[(v, w)], D[(v, u)] + D[(u, w)])
+    return D
+
+
+def evaluate_all_pairs_longest_paths(
+    D: dict[tuple[int, int], IndexExpr], initiation_interval: int
+) -> dict[tuple[int, int], int]:
+    """
+    Substitute the initiation interval into the longest paths.
+    """
+    T = index_symbol("$INITIATION_INTERVAL")
+    for key in D:
+        D[key] = D[key].subs(T, initiation_interval)
+    return D
