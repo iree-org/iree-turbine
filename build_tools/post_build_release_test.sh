@@ -17,8 +17,8 @@ source "${WHEELHOUSE_DIR}"/test.venv/bin/activate
 
 # Install wheels
 # --no-index is required so that we don't pick up different versions from pypi
-pip install --no-index -f "${WHEELHOUSE_DIR}" iree-turbine[testing]
-pip install --no-index -f "${WHEELHOUSE_DIR}" torchvision
+pip install -f "${WHEELHOUSE_DIR}" iree-turbine[testing]
+pip install -f "${WHEELHOUSE_DIR}" torchvision
 
 # Run tests
 pytest -n 4 "${REPO_ROOT}"
