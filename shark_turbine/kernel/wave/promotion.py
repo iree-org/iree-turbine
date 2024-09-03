@@ -58,9 +58,9 @@ def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
     )
     for node in read_or_write_nodes:
         custom = get_custom(node)
-        if not custom.type:
+        if not custom.memory_type:
             continue
         idxc = IndexingContext.current()
-        address_space = safe_subs(custom.type.address_space, idxc.subs)
+        address_space = safe_subs(custom.memory_type.address_space, idxc.subs)
         if address_space == SHARED_ADDRESS_SPACE:
             promote_node(custom, address_space, constraints)
