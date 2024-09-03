@@ -784,14 +784,12 @@ class Read(CustomOp):
         if self.mapping is not None:
             return list(self.mapping.output_shape)
         # TODO: This could contain ints.
-        return list(self.type.symbolic_shape)
+        return list(get_custom(self.memory).type.symbolic_shape)
 
     @property
     def type(self) -> "Register":
         dtype = get_custom(self.memory).type.dtype
-        print(dtype)
         return Register[*self.indexing_dims, dtype]
-        # return get_custom(self.memory).type
 
     @property
     def write_dependency(self) -> fx.Node:

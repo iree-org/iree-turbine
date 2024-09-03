@@ -6,7 +6,7 @@ from ..compiler.ir import (
     transform_d,
     UnitAttr,
 )
-from typing import Callable
+from typing import Callable, Any, List, Tuple
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
@@ -305,3 +305,14 @@ def compile_and_invoke(
             **benchmark_flags,
         )
         _print_bench_result(benchmark_results, bench_file)
+
+
+def safe_subs(input: Any, subs: List[Tuple[IndexExpr, IndexExpr]]) -> Any:
+    """
+    Substitute input using provided `subs` list if input is sympy object.
+    Otherwise return input unchanged.
+    """
+    if isinstance(input, sympy.Basic):
+        return input.subs(subs)
+
+    return input

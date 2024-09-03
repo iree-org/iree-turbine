@@ -4,7 +4,7 @@ from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 from .constraints import Constraint, get_constrained_shape
-import sympy
+from .utils import safe_subs
 
 logger = get_logger("turbine.wave.promotion")
 
@@ -61,8 +61,6 @@ def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
         if not custom.type:
             continue
         idxc = IndexingContext.current()
-        address_space = custom.type.address_space
-        if isinstance(address_space, sympy.Basic):
-            address_space = address_space.subs(idxc.subs)
+        address_space = safe_subs(custom.type.address_space, idxc.subs)
         if address_space == SHARED_ADDRESS_SPACE:
             promote_node(custom, address_space, constraints)
