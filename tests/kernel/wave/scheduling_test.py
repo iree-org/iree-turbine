@@ -10,11 +10,10 @@ import numpy as np
 from shark_turbine.kernel.wave.visualization import visualize_graph
 from shark_turbine.kernel.wave.scheduling.graph_utils import (
     find_strongly_connected_components,
-    find_cycles_in_graph,
+    find_cycles_in_scc,
     all_pairs_longest_paths,
     evaluate_all_pairs_longest_paths,
 )
-import pytest
 
 
 class SchedulingTest(unittest.TestCase):
@@ -142,7 +141,7 @@ class SchedulingTest(unittest.TestCase):
         for leader, scc_nodes in expected_scc.items():
             assert leader in scc
             assert scc[leader] == scc_nodes
-        cycles = find_cycles_in_graph(graph, scc)
+        cycles = find_cycles_in_scc(scc)
         assert len(cycles) == 6
         expected_cycles = [
             [nodes["a"], nodes["b"], nodes["c"], nodes["a"]],
@@ -170,15 +169,23 @@ class SchedulingTest(unittest.TestCase):
         assert D3[(nodes["d"], nodes["b"])] == 1 - T
         assert D3[(nodes["d"], nodes["c"])] == 2 - T
 
-    @pytest.mark.skip(reason="not implemented yet")
     def testModuloScheduling(self):
         visualize = False
-        graph, weighted_edges, _ = self.create_weighted_graph()
+        graph, weighted_edges, nodes = self.create_weighted_graph()
         if visualize:
             visualize_graph(graph, "scheduling_test_graph.png")
         resources = np.array([1, 1])
         scheduler = ModuloScheduler(graph, weighted_edges, resources)
-        scheduler.schedule()
+        schedule = scheduler.schedule()
+        assert schedule[nodes["a"]] == 0
+        assert schedule[nodes["b"]] == 4
+        assert schedule[nodes["c"]] == 5
+        assert schedule[nodes["d"]] == 6
+        assert scheduler.initiation_interval == 4
+        assert np.all(
+            scheduler.resource_reservations
+            == np.array([[1, 1], [1, 0], [1, 0], [0, 1]])
+        )
 
 
 if __name__ == "__main__":

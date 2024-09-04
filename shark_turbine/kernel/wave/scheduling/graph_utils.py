@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import sympy
 import math
 
+T = index_symbol("$INITIATION_INTERVAL")
+
 
 @dataclass
 class EdgeWeight:
@@ -94,7 +96,9 @@ def unblock(
             B[candidate].clear()
 
 
-def circuit(node: fx.Node, B: dict[fx.Node, set[fx.Node]]) -> list[list[fx.Node]]:
+def circuit(
+    node: fx.Node, B: dict[fx.Node, set[fx.Node]], explored: set[fx.Node]
+) -> list[list[fx.Node]]:
     path = [node]
     stack = [(node, list(node.users.keys()))]
     blocked = set([node])
@@ -104,6 +108,8 @@ def circuit(node: fx.Node, B: dict[fx.Node, set[fx.Node]]) -> list[list[fx.Node]
         current, neighbors = stack[-1]
         if neighbors:
             candidate = neighbors.pop(0)
+            if candidate in explored:
+                continue
             if candidate == node:
                 circuits.append(path + [candidate])
                 found_cycles.update(path)
@@ -124,19 +130,7 @@ def circuit(node: fx.Node, B: dict[fx.Node, set[fx.Node]]) -> list[list[fx.Node]
     return circuits
 
 
-def remove_node(graph: fx.Node, node: fx.Node) -> None:
-    """
-    Remove a node from the graph and update its users.
-    """
-    users = list(node.users.keys())
-    for user in users:
-        user.update_arg(user.args.index(node), None)
-    graph.erase_node(node)
-
-
-def find_cycles_in_graph(
-    graph: fx.Graph, scc: dict[fx.Node, list[fx.Node]]
-) -> list[list[fx.Node]]:
+def find_cycles_in_scc(scc: dict[fx.Node, list[fx.Node]]) -> list[list[fx.Node]]:
     """
     Find all simple cycles/circuits in the graph using Johnson's algorithm.
     References:
@@ -146,26 +140,26 @@ def find_cycles_in_graph(
     B: dict[fx.Node, set[fx.Node]] = defaultdict(set)
     for _, nodes in scc.items():
         sorted_nodes = sorted(nodes, key=lambda x: x.f)
+        explored = set()
         while sorted_nodes:
             s = sorted_nodes.pop(0)
             for node in sorted_nodes:
                 B[node] = set()
-            circuits += circuit(s, B)
-            remove_node(graph, s)
+            circuits += circuit(s, B, explored)
+            explored.add(s)
     return circuits
 
 
 def all_pairs_longest_paths(
     graph: fx.Graph,
     edges: list[Edge],
-) -> dict[tuple[int, int], IndexExpr]:
+) -> dict[tuple[fx.Node, fx.Node], IndexExpr]:
     """
     For each node in the graph, compute the longest path to all other nodes.
     Uses the Floyd-Warshall algorithm and assumes that the cycles don't
     have positive weights.
     """
-    T = index_symbol("$INITIATION_INTERVAL")
-    D: dict[tuple[int, int, int]] = {}
+    D: dict[tuple[fx.Node, fx.Node], int] = {}
     for v in graph.nodes:
         for w in graph.nodes:
             D[(v, w)] = -math.inf
@@ -181,12 +175,42 @@ def all_pairs_longest_paths(
 
 
 def evaluate_all_pairs_longest_paths(
-    D: dict[tuple[int, int], IndexExpr], initiation_interval: int
-) -> dict[tuple[int, int], int]:
+    D: dict[tuple[fx.Node, fx.Node], IndexExpr], initiation_interval: int
+) -> dict[tuple[fx.Node, fx.Node], int]:
     """
-    Substitute the initiation interval into the longest paths.
+    Substitute the initiation interval into the longest paths. Remove
+    any negative infinity values.
     """
-    T = index_symbol("$INITIATION_INTERVAL")
-    for key in D:
-        D[key] = D[key].subs(T, initiation_interval)
-    return D
+    D_static = dict(D)
+    for key in D_static:
+        D_static[key] = D_static[key].subs(T, initiation_interval)
+    # Remove the negative infinity values and edges to self.
+    for k in list(D_static.keys()):
+        if math.isinf(D_static[k]) or k[0] == k[1]:
+            del D_static[k]
+    return D_static
+
+
+def topological_sort(scc: dict[fx.Node, list[fx.Node]]) -> dict[fx.Node, list[fx.Node]]:
+    """
+    Perform a topological sort on the strongly connected components.
+    """
+    sorted_keys = sorted(scc.keys(), key=lambda x: x.f)
+    return {k: scc[k] for k in sorted_keys}
+
+
+def topological_sort_nodes(
+    scc: list[fx.Node], edges: list[Edge], exclude: list[fx.Node] = None
+) -> list[fx.Node]:
+    """
+    Perform a topological sort on the nodes in the strongly connected component that have an edge in edges, excluding
+    certain nodes.
+    """
+    scc_nodes = set(scc) - set(exclude)
+    filtered_nodes = set()
+    for edge in edges:
+        if edge._from in scc_nodes and edge._to in scc_nodes:
+            filtered_nodes.add(edge._to)
+            filtered_nodes.add(edge._from)
+    sorted_nodes = sorted(filtered_nodes, key=lambda x: x.f)
+    return sorted_nodes
