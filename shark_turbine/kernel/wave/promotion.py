@@ -24,7 +24,7 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
                 ).add_to_graph(custom_node.graph)
                 custom_read = get_custom(promoted_read)
                 custom_read.write_dependency = [promoted_write]
-            custom_node.type.address_space = GLOBAL_ADDRESS_SPACE
+            custom_node.memory_type.address_space = GLOBAL_ADDRESS_SPACE
 
 
 def promote_node(
@@ -42,7 +42,7 @@ def promote_node(
     with node.graph.inserting_before(node.fx_node.next):
         constrained_shape = get_constrained_shape(node.type.symbolic_shape, constraints)
         allocate_node = Allocate(
-            node.type.symbolic_shape,
+            node.memory_type.symbolic_shape,
             constrained_shape,
             node.type.dtype,
             address_space,

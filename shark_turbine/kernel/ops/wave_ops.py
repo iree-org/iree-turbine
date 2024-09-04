@@ -791,12 +791,7 @@ class Read(CustomOp):
     @property
     def type(self) -> "Register":
         dtype = self.memory_type.dtype
-        res = Register[*self.indexing_dims, dtype]
-        # res = self.memory_type
-        # print(self)
-        # import sys
-        # import traceback; traceback.print_stack(file=sys.stdout)
-        return res
+        return Register[*self.indexing_dims, dtype]
 
     @property
     def memory_type(self) -> "Memory":
