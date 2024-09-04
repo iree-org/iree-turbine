@@ -18,8 +18,8 @@ _test_shapes = [(1, 128), (256, 64), (256, 128), (256, 256), (256, 1024)]
 
 
 @require_e2e
-@parametrize_from_file
 @pytest.mark.parametrize("shape", _test_shapes)
+@parametrize_from_file
 def test_copy(shape):
     M = tkl.sym.M
     N = tkl.sym.N
