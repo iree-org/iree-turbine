@@ -1,5 +1,5 @@
 import torch.fx as fx
-from random import shuffle, seed
+from random import shuffle, seed, Random
 from collections import defaultdict
 
 
@@ -9,10 +9,14 @@ def find_strongly_connected_components(
     """
     Find the strongly connected components in the graph.
     Returns a list of strongly connected components.
+    Uses Kosaraju's algorithm.
+    References:
+    [1] Cormen, T. H., Leiserson, C. E., Rivest, R. L., & Stein, C.
+        Introduction to algorithms.
     """
-    seed(random_seed)
+    rng = Random(random_seed)
     initial_times = list(range(len(graph.nodes)))
-    shuffle(initial_times)
+    rng.shuffle(initial_times)
     for f, node in zip(initial_times, graph.nodes):
         node.f = f
     # Run DFS loop on reversed graph.
@@ -44,7 +48,7 @@ def run_dfs(
     s: fx.Node,
     reverse: bool,
     visited_nodes: set[fx.Node],
-) -> None:
+) -> tuple[int, fx.Node]:
     """
     Run the Depth First Search algorithm on the graph.
     """
@@ -118,6 +122,8 @@ def find_cycles_in_graph(
 ) -> list[list[fx.Node]]:
     """
     Find all simple cycles/circuits in the graph using Johnson's algorithm.
+    References:
+    [1] Johnson, Donald B. "Finding all the elementary circuits of a directed graph."
     """
     circuits: list[list[fx.Node]] = []
     B: dict[fx.Node, set[fx.Node]] = defaultdict(set)
