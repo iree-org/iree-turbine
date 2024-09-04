@@ -7,6 +7,7 @@ import pytest
 import sympy
 import os
 import torch
+from parametrize_from_file import pff
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 
@@ -17,6 +18,7 @@ _test_shapes = [(1, 128), (256, 64), (256, 128), (256, 256), (256, 1024)]
 
 
 @require_e2e
+@pff
 @pytest.mark.parametrize("shape", _test_shapes)
 def test_copy(shape):
     M = tkl.sym.M
@@ -129,6 +131,7 @@ def test_transpose_read(shape):
 
 @require_e2e
 @pytest.mark.parametrize("shape", _test_shapes)
+
 def test_transpose_write(shape):
     M = tkl.sym.M
     N = tkl.sym.N
