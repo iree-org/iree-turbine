@@ -8,28 +8,25 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import Read, Write, Output, get_custom
 from ..lang.global_symbols import *
-from .utils import delinearize_index, DCE, remove_global_indexing, safe_subs
+from .utils import delinearize_index, DCE, remove_global_indexing, subs_idxc
 from math import prod
 import torch.fx as fx
 from collections import defaultdict
 
 
 def has_write_shared_user(node: Read) -> bool:
-    idxc = IndexingContext.current()
     return any(
         isinstance(user, Write)
-        and safe_subs(user.memory_type.address_space, idxc.subs) == SHARED_ADDRESS_SPACE
+        and subs_idxc(user.memory_type.address_space) == SHARED_ADDRESS_SPACE
         for user in node.users
     )
 
 
 def is_valid_global_read(node: fx.Node) -> bool:
-    idxc = IndexingContext.current()
     custom = get_custom(node)
     return (
         isinstance(custom, Read)
-        and safe_subs(custom.memory_type.address_space, idxc.subs)
-        == GLOBAL_ADDRESS_SPACE
+        and subs_idxc(custom.memory_type.address_space) == GLOBAL_ADDRESS_SPACE
         and has_write_shared_user(custom)
     )
 

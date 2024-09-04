@@ -316,3 +316,12 @@ def safe_subs(input: Any, subs: List[Tuple[IndexExpr, IndexExpr]]) -> Any:
         return input.subs(subs)
 
     return input
+
+
+def subs_idxc(input: Any) -> Any:
+    """
+    Substitute input using IndexingContext if input is sympy object.
+    Otherwise return input unchanged.
+    """
+    idxc = IndexingContext.current()
+    return safe_subs(input, idxc.subs)

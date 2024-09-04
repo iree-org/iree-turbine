@@ -4,7 +4,7 @@ from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 from .constraints import Constraint, get_constrained_shape
-from .utils import safe_subs
+from .utils import subs_idxc
 
 logger = get_logger("turbine.wave.promotion")
 
@@ -60,7 +60,6 @@ def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
         custom = get_custom(node)
         if not custom.memory_type:
             continue
-        idxc = IndexingContext.current()
-        address_space = safe_subs(custom.memory_type.address_space, idxc.subs)
+        address_space = subs_idxc(custom.memory_type.address_space)
         if address_space == SHARED_ADDRESS_SPACE:
             promote_node(custom, address_space, constraints)
