@@ -765,9 +765,11 @@ class MMA(CustomOp):
         self.rhs.index = self.rhs_index
         self.acc.index = self.acc_index
 
-        if self.lhs_type.address_space == SHARED_ADDRESS_SPACE:
+        # TODO: this is really wrong place for it, it relies on specific kernel structure,
+        # generated, if mma input is not come from load, things will breaks.
+        if get_custom(self.lhs).memory_type.address_space == SHARED_ADDRESS_SPACE:
             self.lhs.index = remove_global_indexing(self.lhs_index, tiling_constraints)
-        if self.rhs_type.address_space == SHARED_ADDRESS_SPACE:
+        if get_custom(self.rhs).memory_type.address_space == SHARED_ADDRESS_SPACE:
             self.rhs.index = remove_global_indexing(self.rhs_index, tiling_constraints)
 
 
@@ -789,7 +791,12 @@ class Read(CustomOp):
     @property
     def type(self) -> "Register":
         dtype = self.memory_type.dtype
-        return Register[*self.indexing_dims, dtype]
+        res = Register[*self.indexing_dims, dtype]
+        # res = self.memory_type
+        # print(self)
+        # import sys
+        # import traceback; traceback.print_stack(file=sys.stdout)
+        return res
 
     @property
     def memory_type(self) -> "Memory":
