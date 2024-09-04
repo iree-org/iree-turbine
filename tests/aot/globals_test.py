@@ -425,6 +425,68 @@ class GlobalsTest(unittest.TestCase):
             export_global(AbstractF32, external=True, uninitialized=True)
 
 
+class SimpleCache(torch.nn.Module):
+    def __init__(self, max_size, dtype=torch.float32):
+        super().__init__()
+        self.register_buffer("cache", torch.zeros(max_size, dtype=dtype))
+
+    def forward(self, input_pos, values):
+        # input_pos: [S], values: [S]
+        assert input_pos.shape[0] == values.shape[0]
+
+        # Writing the values to the buffer at the specified positions
+        cache = torch.ops.aten.index_put_(self.cache, [input_pos], values)
+
+        return cache
+
+
+class ReadWriteReadCache(torch.nn.Module):
+    def __init__(self, max_size, dtype=torch.float32):
+        super().__init__()
+        self.register_buffer("cache", torch.zeros(max_size, dtype=dtype))
+
+    def forward(self, input_pos, values):
+        # input_pos: [S], values: [S]
+        assert input_pos.shape[0] == values.shape[0]
+        cache_value_0 = self.cache[2].clone()
+        # Writing the values to the buffer at the specified positions
+        cache = torch.ops.aten.index_put_(self.cache, [input_pos], values)
+        cache_value_1 = cache[2].clone()
+        return cache, cache_value_0, cache_value_1
+
+
+class BufferTest(unittest.TestCase):
+    def testMutableBuffer(self):
+        max_size = 10
+        simple_cache = SimpleCache(max_size)
+
+        input_pos = torch.tensor([2, 5, 7])
+        values = torch.tensor([1.0, 2.0, 3.0])
+        simple_cache(input_pos, values)
+        exported_fx_graph = torch.export.export(simple_cache, args=(input_pos, values))
+        exported_programm = export(exported_fx_graph)
+        module_str = str(exported_programm.mlir_module)
+        self.assertIn(
+            "util.global private mutable @__auto.constant_10_torch.float32",
+            module_str,
+        )
+
+    def testReadWriteReadMutableBuffer(self):
+        max_size = 10
+        simple_cache = ReadWriteReadCache(max_size)
+
+        input_pos = torch.tensor([2, 5, 7])
+        values = torch.tensor([1.0, 2.0, 3.0])
+        simple_cache(input_pos, values)
+        exported_fx_graph = torch.export.export(simple_cache, args=(input_pos, values))
+        exported_programm = export(exported_fx_graph)
+        module_str = str(exported_programm.mlir_module)
+        self.assertIn(
+            "util.global private mutable @__auto.constant_10_torch.float32",
+            module_str,
+        )
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     unittest.main()
