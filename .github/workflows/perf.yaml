@@ -75,3 +75,35 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           mypy
+
+### The test parameters (M, N) for wave_e2e_test.py ###
+test_copy:
+- shape: [1, 128]
+- shape: [256, 64]
+- shape: [256, 128]
+- shape: [256, 256]
+- shape: [256, 1024]
+test_transpose_read:
+- shape: [1, 128]
+- shape: [256, 64]
+- shape: [256, 128]
+- shape: [256, 256]
+- shape: [256, 1024]
+test_transpose_write:
+- shape: [1, 128]
+- shape: [256, 64]
+- shape: [256, 128]
+- shape: [256, 256]
+- shape: [256, 1024]
+test_reduce_sum:
+- shape: [1, 128]
+- shape: [256, 64]
+- shape: [256, 128]
+- shape: [256, 256]
+- shape: [256, 1024]
+test_reduce_max:
+- shape: [1, 128]
+- shape: [256, 64]
+- shape: [256, 128]
+- shape: [256, 256]
+- shape: [256, 1024]

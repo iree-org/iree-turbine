@@ -7,7 +7,7 @@ import pytest
 import sympy
 import os
 import torch
-import parametrize_from_file
+import parametrize_from_file as pff
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 
@@ -18,8 +18,7 @@ _test_shapes = [(1, 128), (256, 64), (256, 128), (256, 256), (256, 1024)]
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", _test_shapes)
-@parametrize_from_file
+@pff.parametrize(path='../../../.github/workflows/perf.yaml')
 def test_copy(shape):
     M = tkl.sym.M
     N = tkl.sym.N
@@ -73,7 +72,7 @@ def test_copy(shape):
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", _test_shapes)
+@pff.parametrize(path='../../../.github/workflows/perf.yaml')
 def test_transpose_read(shape):
     shape = shape[::-1]
     M = tkl.sym.M
@@ -130,8 +129,7 @@ def test_transpose_read(shape):
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", _test_shapes)
-
+@pff.parametrize(path='../../../.github/workflows/perf.yaml')
 def test_transpose_write(shape):
     M = tkl.sym.M
     N = tkl.sym.N
@@ -187,7 +185,7 @@ def test_transpose_write(shape):
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", _test_shapes)
+@pff.parametrize(path='../../../.github/workflows/perf.yaml')
 def test_reduce_sum(shape):
     M = tkl.sym.M
     N = tkl.sym.N
@@ -243,7 +241,7 @@ def test_reduce_sum(shape):
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", _test_shapes)
+@pff.parametrize(path='../../../.github/workflows/perf.yaml')
 def test_reduce_max(shape):
     M = tkl.sym.M
     N = tkl.sym.N
