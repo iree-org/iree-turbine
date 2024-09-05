@@ -241,7 +241,9 @@ class _Hooks(FxImporterHooks):
         ).result
         util_d.GlobalStoreOp(converted_value, materialized_global.symbol_name)
 
-    def resolve_literal(self, gni: GraphNodeImporter, literal: Any) -> Optional[Value]:
+    def resolve_literal(
+        self, gni: GraphNodeImporter, literal: Any, info: Optional[InputInfo] = None
+    ) -> Optional[Value]:
         # We support resolution of tracked reference types. Currently this
         # only includes Tensors. All others we let the importer do what it
         # is going to do.

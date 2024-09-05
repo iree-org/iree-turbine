@@ -26,6 +26,7 @@ from iree.compiler.extras.fx_importer import (
     GraphNodeImporter,
     FxImporter,
     FxImporterHooks,
+    InputInfo,
 )
 
 from ...support.ir_imports import (
@@ -77,7 +78,9 @@ class _Hooks(FxImporterHooks):
         # symbols we have done this to here.
         self.cloned_global_symbols: set[str] = set()
 
-    def resolve_literal(self, gni: GraphNodeImporter, literal: Any) -> Optional[Value]:
+    def resolve_literal(
+        self, gni: GraphNodeImporter, literal: Any, info: Optional[InputInfo] = None
+    ) -> Optional[Value]:
         module_builder = self.module_builder
         cloned_global_symbols = self.cloned_global_symbols
 
