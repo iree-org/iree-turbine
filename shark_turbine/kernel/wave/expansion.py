@@ -124,6 +124,11 @@ def compute_stride(
             break
         assert dim in vector_shapes, f"Dimension {dim} not found in vector shapes"
         stride *= vector_shapes[dim]
+
+    try:
+        stride = int(stride)
+    except Exception as e:
+        logger.error(e)
     return stride
 
 

@@ -312,7 +312,7 @@ def safe_subs(input: Any, subs: List[Tuple[IndexExpr, IndexExpr]]) -> Any:
     Substitute input using provided `subs` list if input is sympy object.
     Otherwise return input unchanged.
     """
-    if isinstance(input, sympy.Basic) or isinstance(input, IndexSequence):
+    if isinstance(input, (sympy.Basic, IndexSequence)):
         return input.subs(subs)
 
     return input
