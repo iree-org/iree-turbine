@@ -167,6 +167,7 @@ class FxProgramsBuilder(FxPrograms):
         args=None,
         kwargs=None,
         dynamic_shapes=None,
+        strict=True,
         name: Optional[str] = None,
     ):
         if f is None:
@@ -174,6 +175,7 @@ class FxProgramsBuilder(FxPrograms):
                 fx_builder.export_program,
                 args=args,
                 kwargs=kwargs,
+                strict=strict,
                 dynamic_shapes=dynamic_shapes,
                 name=name,
             )
@@ -224,7 +226,7 @@ class FxProgramsBuilder(FxPrograms):
                 )
             extra_kwargs["dynamic_shapes"] = dynamic_shapes
         program = torch.export.export(
-            lambda_module, args=args, kwargs=kwargs, **extra_kwargs
+            lambda_module, args=args, kwargs=kwargs, strict=strict, **extra_kwargs
         )
         current_decomps = current_aot_decompositions()
         if current_decomps:
