@@ -304,13 +304,13 @@ def test_gemm():
         # CHECK-NEXT: placeholder(_name=acc_0_1_0
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: read(memory=a, elements_per_thread=8,
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64) : 8 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: write(register_=read_4, memory=allocate, elements_per_thread=8,
-        # CHECK-SAME: index={M: Mod(16*$T1 + 32*$T2 + floor($T0/8), 64) : 8 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={M: Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: read(memory=a, elements_per_thread=8,
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 8 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64), K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: write(register_=read_5, memory=allocate, elements_per_thread=8,
-        # CHECK-SAME: index={M: Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 8 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={M: Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64), K: 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
         # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
         # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
@@ -321,13 +321,13 @@ def test_gemm():
         # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, _write_dependency=[write_2, write_3], index={M: Mod($T0, 16) + 16, K: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
         # CHECK-NEXT: placeholder(_name=b, _type=Memory[N, K].of(f16))
         # CHECK-NEXT: read(memory=b, elements_per_thread=8,
-        # CHECK-SAME: index={N: $WG1*BLOCK_N + BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64) : 8 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={N: $WG1*BLOCK_N + BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: write(register_=read_6, memory=allocate_1, elements_per_thread=8,
-        # CHECK-SAME: index={N: BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64) : 8 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={N: BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: read(memory=b, elements_per_thread=8,
-        # CHECK-SAME: index={N: $WG1*BLOCK_N + BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 8 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={N: $WG1*BLOCK_N + BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64), K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: write(register_=read_7, memory=allocate_1, elements_per_thread=8,
-        # CHECK-SMAE: index={N: BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 8 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SMAE: index={N: BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64), K: 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
         # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
         # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, _write_dependency=[write_4, write_5], index={N: BLOCK_N/2 + Mod($T0, 16), K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})

@@ -49,7 +49,7 @@ def construct_min_global_access_pattern(
     nd_index = delinearize_index(thread_id, shape)
     for i, key in enumerate(index.keys()):
         new_index[key].start += nd_index[i]
-        new_index[key].size = load_elems_per_thread
+        new_index[key].size = load_elems_per_thread if i == len(index.keys()) - 1 else 1
     return new_index
 
 
