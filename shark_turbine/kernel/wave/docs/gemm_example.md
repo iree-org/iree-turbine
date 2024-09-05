@@ -1,7 +1,9 @@
 # Matrix Multiplication
 
 Let's assume we want to compute the following matrix multiplication.
-$$ C = A \times B^{T} $$
+ ```math
+ C = A \times B^{T}
+ ```
 where $A$ is a $M \times K$ matrix of type `fp16`, $B$ is a $N \times K$ matrix of type `fp16` and $C$ is a $M \times N$ matrix of type `fp32`. This is a mixed-precision transposed-B matrix multiplication operation that is common in machine learning applications.
 
 In `tkw`, the kernels are written using a wave/warp programming model. This means that when we author the kernel we write it from the perspective of the work that a single wave would do. This also means that we need to know what operations a single wave can do.
@@ -125,7 +127,7 @@ This reads as "distribute dimension `M` with a tile size of `BLOCK_M` along work
 
 Once we have a workgroup constraint in place, we add further wave constraints on the same dimension.
 
-```
+```python
 constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
 ```
 The above constraint states that "distribute dimension `M` with a tile size of `BLOCK_M/2` among waves". With the above and this constraint, each wave would see a tile with shape `[BLOCK_M/2, N]`.
