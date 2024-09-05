@@ -4,6 +4,7 @@ from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 from .constraints import Constraint, get_constrained_shape
+from .utils import subs_idxc
 
 logger = get_logger("turbine.wave.promotion")
 
@@ -23,7 +24,7 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
                 ).add_to_graph(custom_node.graph)
                 custom_read = get_custom(promoted_read)
                 custom_read.write_dependency = [promoted_write]
-            custom_node.type.address_space = GLOBAL_ADDRESS_SPACE
+            custom_node.memory_type.address_space = GLOBAL_ADDRESS_SPACE
 
 
 def promote_node(
@@ -41,7 +42,7 @@ def promote_node(
     with node.graph.inserting_before(node.fx_node.next):
         constrained_shape = get_constrained_shape(node.type.symbolic_shape, constraints)
         allocate_node = Allocate(
-            node.type.symbolic_shape,
+            node.memory_type.symbolic_shape,
             constrained_shape,
             node.type.dtype,
             address_space,
@@ -57,9 +58,8 @@ def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
     )
     for node in read_or_write_nodes:
         custom = get_custom(node)
-        if not custom.type:
+        if not custom.memory_type:
             continue
-        idxc = IndexingContext.current()
-        address_space = custom.type.address_space.subs(idxc.subs)
+        address_space = subs_idxc(custom.memory_type.address_space)
         if address_space == SHARED_ADDRESS_SPACE:
             promote_node(custom, address_space, constraints)

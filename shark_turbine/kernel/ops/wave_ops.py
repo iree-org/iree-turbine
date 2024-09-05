@@ -765,9 +765,11 @@ class MMA(CustomOp):
         self.rhs.index = self.rhs_index
         self.acc.index = self.acc_index
 
-        if self.lhs_type.address_space == SHARED_ADDRESS_SPACE:
+        # TODO: this is really wrong place for it, it relies on specific kernel structure,
+        # generated, if mma input is not come from load, things will breaks.
+        if get_custom(self.lhs).memory_type.address_space == SHARED_ADDRESS_SPACE:
             self.lhs.index = remove_global_indexing(self.lhs_index, tiling_constraints)
-        if self.rhs_type.address_space == SHARED_ADDRESS_SPACE:
+        if get_custom(self.rhs).memory_type.address_space == SHARED_ADDRESS_SPACE:
             self.rhs.index = remove_global_indexing(self.rhs_index, tiling_constraints)
 
 
@@ -784,10 +786,15 @@ class Read(CustomOp):
         if self.mapping is not None:
             return list(self.mapping.output_shape)
         # TODO: This could contain ints.
-        return list(self.type.symbolic_shape)
+        return list(self.memory_type.symbolic_shape)
 
     @property
-    def type(self) -> "Memory":
+    def type(self) -> "Register":
+        dtype = self.memory_type.dtype
+        return Register[*self.indexing_dims, dtype]
+
+    @property
+    def memory_type(self) -> "Memory":
         return get_custom(self.memory).type
 
     @property
@@ -910,6 +917,10 @@ class Write(CustomOp):
 
     @property
     def type(self) -> "Memory":
+        return get_custom(self.memory).type
+
+    @property
+    def memory_type(self) -> "Memory":
         return get_custom(self.memory).type
 
     @property

@@ -412,6 +412,13 @@ def get_expanded_name(node: CustomOp, dims: dict[IndexSymbol, int]) -> str:
     return node_name
 
 
+def _contains(elem, container):
+    if container is None:
+        return False
+
+    return elem in container
+
+
 def get_dim_scaling(
     constraints: Sequence[Constraint], mma_indices: dict[IndexSymbol, int]
 ) -> tuple[dict[IndexSymbol, int]]:
@@ -434,7 +441,8 @@ def get_dim_scaling(
             hw_cons = hardware_constraints[0]
             tile_size = idxc.get_static_value(constraint.tile_size)
             if not (
-                constraint.dim in mma_indices or constraint.dim in hw_cons.vector_shapes
+                _contains(constraint.dim, mma_indices)
+                or _contains(constraint.dim, hw_cons.vector_shapes)
             ):
                 raise ValueError(
                     f"Attempting to determine vector shape for unmapped dimension {constraint.dim}"
