@@ -167,7 +167,7 @@ class FxProgramsBuilder(FxPrograms):
         args=None,
         kwargs=None,
         dynamic_shapes=None,
-        strict=True,
+        strict: bool = True,
         name: Optional[str] = None,
     ):
         if f is None:
