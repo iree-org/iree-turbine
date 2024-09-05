@@ -11,6 +11,8 @@ from shark_turbine.kernel.wave.visualization import visualize_graph
 from shark_turbine.kernel.wave.scheduling.graph_utils import (
     find_strongly_connected_components,
     find_cycles_in_graph,
+    all_pairs_longest_paths,
+    evaluate_all_pairs_longest_paths,
 )
 import pytest
 
@@ -115,7 +117,8 @@ class SchedulingTest(unittest.TestCase):
         edges.append(Edge(c, d, EdgeWeight(0, 1)))
         edges.append(Edge(d, b, EdgeWeight(1, 1)))
         edges.append(Edge(b, d, EdgeWeight(0, 2)))
-        return graph, edges
+        nodes = {"a": a, "b": b, "c": c, "d": d}
+        return graph, edges, nodes
 
     def testGraphUtils(self):
         graph, nodes = self.create_graph_with_loops()
@@ -152,10 +155,25 @@ class SchedulingTest(unittest.TestCase):
         for cycle in expected_cycles:
             assert cycle in cycles
 
+    def testAPLP(self):
+        graph, weighted_edges, nodes = self.create_weighted_graph()
+        D = all_pairs_longest_paths(graph, weighted_edges)
+        T = 4
+        D3 = evaluate_all_pairs_longest_paths(D, T)
+        assert D3[(nodes["a"], nodes["b"])] == 2
+        assert D3[(nodes["a"], nodes["c"])] == 3
+        assert D3[(nodes["a"], nodes["d"])] == 4
+        assert D3[(nodes["b"], nodes["c"])] == 1
+        assert D3[(nodes["b"], nodes["d"])] == 2
+        assert D3[(nodes["c"], nodes["b"])] == 2 - T
+        assert D3[(nodes["c"], nodes["d"])] == 1
+        assert D3[(nodes["d"], nodes["b"])] == 1 - T
+        assert D3[(nodes["d"], nodes["c"])] == 2 - T
+
     @pytest.mark.skip(reason="not implemented yet")
     def testModuloScheduling(self):
         visualize = False
-        graph, weighted_edges = self.create_weighted_graph()
+        graph, weighted_edges, _ = self.create_weighted_graph()
         if visualize:
             visualize_graph(graph, "scheduling_test_graph.png")
         resources = np.array([1, 1])

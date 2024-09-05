@@ -1,26 +1,12 @@
 import torch.fx as fx
-from dataclasses import dataclass
 from enum import Enum
 from ...ops.wave_ops import CustomOp, MMA
 from ....support.logging import get_logger
-from .graph_utils import find_strongly_connected_components
+from .graph_utils import find_strongly_connected_components, Edge, EdgeWeight
 from typing import Callable
 import numpy as np
 
 logger = get_logger("turbine.wave.modulo_scheduling")
-
-
-@dataclass
-class EdgeWeight:
-    iteration_difference: int = 0
-    delay: int = 0
-
-
-@dataclass
-class Edge:
-    _from: fx.Node = None
-    _to: fx.Node = None
-    weight: EdgeWeight = None
 
 
 class ModuloScheduler:
