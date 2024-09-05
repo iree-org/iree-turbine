@@ -108,21 +108,25 @@ class HardwareConstraint(Constraint):
         dim: IndexSymbol,
         workgroup_dim: int,
         elements_per_thread: int | IndexSymbol,
+        stride: int,
     ) -> IndexSequence:
         if dim not in self.vector_shapes:
             raise ValueError(f"No vector shape specified for dimension {dim}")
         thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
-        return IndexSequence(thread_id * elements_per_thread, elements_per_thread, 1)
+        return IndexSequence(
+            thread_id * elements_per_thread, elements_per_thread, stride
+        )
 
     def apply(
         self,
         constraint_index: int,
         dim: IndexSymbol,
         elements_per_thread: int | IndexSymbol,
+        stride: int,
     ) -> IndexSequence:
         if self.vector_shapes is not None:
             return self.compute_access_pattern_using_vector_shapes(
-                dim, constraint_index, elements_per_thread
+                dim, constraint_index, elements_per_thread, stride
             )
         lane = self.linearized_thread_id % self.threads_per_wave
         match self.mma_type:

@@ -3,7 +3,11 @@ from .constraints import Constraint, HardwareConstraint
 from .._support.tracing import CapturedTrace, IndexingContext
 from .._support.indexing import IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
-from .utils import simplify_index, get_mma_dimensional_mapping, get_hardware_vector_size
+from .utils import (
+    simplify_index,
+    get_mma_dimensional_mapping,
+    get_hardware_vector_size,
+)
 import torch.fx as fx
 import numpy as np
 
@@ -31,11 +35,16 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
 
     def has_strided_access(node: fx.Node) -> bool:
         """
-        Checks for writes on 2d tensors with strided access on a single dimension.
+        Checks for writes on 2d tensors with strided access on a single dimension that
+        read more than a single element.
         """
         custom = get_custom(node)
         if isinstance(custom, Write) and len(custom.type.symbolic_shape) == 2:
             strides = [simplify_index(custom.index[dim]).stride for dim in custom.index]
+            elements_per_thread = [
+                simplify_index(custom.index[dim]).size for dim in custom.index
+            ]
+            strides = [x for x, y in zip(strides, elements_per_thread) if y > 1]
             num_strided_accesses = sum(1 for stride in strides if stride > 1)
             if num_strided_accesses > 1:
                 raise NotImplementedError(

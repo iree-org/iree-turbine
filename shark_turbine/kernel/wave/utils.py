@@ -129,7 +129,7 @@ def simplify_index(index: IndexExpr) -> IndexExpr:
         - MMA acc_index bindings so the index of the MMA node is the acc_index.
     """
     mapping = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}
-    return index.subs(mapping)
+    return subs_idxc(index.subs(mapping))
 
 
 def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
@@ -312,7 +312,7 @@ def safe_subs(input: Any, subs: List[Tuple[IndexExpr, IndexExpr]]) -> Any:
     Substitute input using provided `subs` list if input is sympy object.
     Otherwise return input unchanged.
     """
-    if isinstance(input, sympy.Basic):
+    if isinstance(input, sympy.Basic) or isinstance(input, IndexSequence):
         return input.subs(subs)
 
     return input
