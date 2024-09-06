@@ -66,7 +66,7 @@ def read(
 
 
 def reduction(
-    axis: IndexExpr, args: Sequence["Register"]
+    axis: IndexExpr, init_args: Sequence["Register"]
 ) -> Callable[[Callable[[AccT], AccT]], AccT]:
     ...
 
