@@ -26,6 +26,7 @@ from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom
 from .index_sequence_analysis import partition_strided_operators
+from .shared_memory_indexing import apply_shared_memory_indexing_corrections
 from .register_analysis import determine_register_shape
 from .._support.indexing import IndexingContext, IndexExpr
 import shark_turbine.kernel.lang as tkl
@@ -196,6 +197,7 @@ class LaunchableWave(Launchable):
 
         # Expansion
         expand_graph(graph, self.constraints)
+        apply_shared_memory_indexing_corrections(graph, self.constraints)
 
         # Register analysis to determine register shapes.
         determine_register_shape(graph)
