@@ -108,6 +108,30 @@ def is_contiguous_dim(
     return is_innermost_dim or all_unit_dims
 
 
+def compute_stride(
+    symbolic_shape: tuple[IndexSymbol, ...],
+    vector_shapes: dict[IndexSymbol, int],
+    target_dim: IndexSymbol,
+) -> int:
+    """
+    Compute the stride for a given dimension based on the vector shapes.
+    The stride is the product of the vector shapes of all dimensions that are
+    not the given dimension.
+    """
+    stride = 1
+    for dim in reversed(symbolic_shape):
+        if dim == target_dim:
+            break
+        assert dim in vector_shapes, f"Dimension {dim} not found in vector shapes"
+        stride *= vector_shapes[dim]
+
+    try:
+        stride = int(stride)
+    except Exception as e:
+        logger.error(e)
+    return stride
+
+
 def set_node_index(
     constraints: Sequence[Constraint],
     mma_index: dict[IndexSymbol, int],
@@ -165,7 +189,7 @@ def set_node_index(
                 # The semantics of elements_per_thread are that it represents the number of
                 # elements that are loaded contiguously from memory.
                 elements_per_thread = getattr(custom, "elements_per_thread", None)
-                constraint_index, elements_per_thread = (
+                constraint_index, elements_per_thread, stride = (
                     (
                         workgroup_constraints[dim].workgroup_dim,
                         (
@@ -177,11 +201,16 @@ def set_node_index(
                             )
                             else elements_per_thread
                         ),
+                        compute_stride(
+                            custom.indexing_dims, constraint.vector_shapes, dim
+                        ),
                     )
                     if constraint.vector_shapes is not None
-                    else (mma_index[dim], elements_per_thread)
+                    else (mma_index[dim], elements_per_thread, None)
                 )
-                index_seq = constraint.apply(constraint_index, dim, elements_per_thread)
+                index_seq = constraint.apply(
+                    constraint_index, dim, elements_per_thread, stride
+                )
 
             else:
                 if index_seq is None:
