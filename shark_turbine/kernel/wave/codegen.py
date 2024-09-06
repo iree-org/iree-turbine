@@ -213,7 +213,7 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 # Then, multiply with the rationals.
                 for arg in args:
                     if callable(arg):
-                        operation = arg(operation)
+                        operation = arg(operation, True)
                 stack.append(operation)
             case sympy.Add():
                 # summand = stack.pop()
@@ -225,7 +225,7 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 for _ in range(len(term.args)):
                     args.append(stack.pop())
                 operation = None
-                # First, multiply all the non-rationals.
+                # First, add all the non-rationals.
                 for arg in args:
                     if callable(arg):
                         continue
@@ -236,7 +236,7 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 # Then, multiply with the rationals.
                 for arg in args:
                     if callable(arg):
-                        operation = arg(operation)
+                        operation = arg(operation, False)
                 stack.append(operation)
             case sympy.Mod():
                 rhs = stack.pop()
@@ -257,7 +257,12 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 mul = lambda x: x
                 if abs(term.p) != 1:
                     mul = lambda x: arith_d.MulIOp(x, numerator)
-                operation = lambda x: arith_d.DivSIOp(mul(x), denominator)
+                add = lambda x: arith_d.AddIOp(
+                    arith_d.MulIOp(x, denominator), numerator
+                )
+                operation = lambda x, b: arith_d.DivSIOp(
+                    mul(x) if b else add(x), denominator
+                )
                 stack.append(operation)
             case sympy.UnevaluatedExpr():
                 continue
@@ -392,7 +397,9 @@ def _construct_gather_scatter_indices(
 
     # As we only support identity input/output mapping for now, we can directly
     # substitute iterators with corresponding expanded index.
-    subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())] + list(idxc.subs.items())
+    subs = [
+        (sym, expr.start) for sym, expr in zip(iters.keys(), index.values())
+    ] + list(idxc.subs.items())
 
     # Contruct input/output index, substituting iterators in input mapping with
     # expanded index.
