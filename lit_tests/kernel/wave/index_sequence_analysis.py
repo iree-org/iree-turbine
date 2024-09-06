@@ -85,8 +85,8 @@ def test_gemm():
         promote_placeholders(trace, constraints)
         hoist_allocs(trace)
         expand_graph(trace, constraints)
-        apply_shared_memory_indexing_corrections(trace, constraints)
         minimize_global_loads(trace, constraints)
+        apply_shared_memory_indexing_corrections(trace, constraints)
         partition_strided_operators(trace, constraints)
         print_trace(trace)
         # Root graph:

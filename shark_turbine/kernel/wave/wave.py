@@ -197,13 +197,15 @@ class LaunchableWave(Launchable):
 
         # Expansion
         expand_graph(graph, self.constraints)
-        apply_shared_memory_indexing_corrections(graph, self.constraints)
 
         # Register analysis to determine register shapes.
         determine_register_shape(graph)
 
         # Optimizations.
         minimize_global_loads(graph, self.constraints)
+
+        # Apply shared memory indexing corrections.
+        apply_shared_memory_indexing_corrections(graph, self.constraints)
 
         # Partition strided operators.
         partition_strided_operators(graph, self.constraints)

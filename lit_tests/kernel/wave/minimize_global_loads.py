@@ -86,10 +86,10 @@ def test_gemm():
         promote_placeholders(trace, constraints)
         hoist_allocs(trace)
         expand_graph(trace, constraints)
-        apply_shared_memory_indexing_corrections(trace, constraints)
         if visualize:
             visualize_graph(trace.get_subgraph("region_0"), "before.png")
         minimize_global_loads(trace, constraints)
+        apply_shared_memory_indexing_corrections(trace, constraints)
         if visualize:
             visualize_graph(trace.get_subgraph("region_0"), "after.png")
         add_shared_memory_barriers(trace)
