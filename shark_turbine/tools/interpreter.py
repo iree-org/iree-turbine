@@ -2,6 +2,8 @@ import argparse
 import torch
 from ..support.logging import get_logger
 import re
+from typing import Callable
+from collections import namedtuple
 
 logger = get_logger("turbine.wave.interpreter")
 
@@ -11,6 +13,7 @@ from ..kernel.compiler.ir import (
     builtin_d,
     Context,
     IndexType,
+    Value,
     VectorType,
     Module,
     Operation,
@@ -40,7 +43,7 @@ class Interpreter:
     def __init__(self, workgroup_ids: list[int], thread_ids: list[int]) -> None:
         self.workgroup_ids = workgroup_ids
         self.thread_ids = thread_ids
-        self.symbol_table = {}
+        self.symbol_table: dict[Value, torch.Tensor] = {}
         # Reference to parent scf.for operation when walking the body
         # of the scf.for.
         self.for_op = None
@@ -68,7 +71,7 @@ class Interpreter:
         ):
 
             logger.debug(f"Processing operation: {op}")
-            value = None
+            value: torch.Tensor = torch.Tensor([])
             match type(op):
                 case arith_d.ConstantOp:
                     vtype = type(op.value.type)
@@ -123,6 +126,7 @@ class Interpreter:
                     load_indices = []
                     for index in op.indices:
                         load_indices.append(self.symbol_table[index])
+                    logger.debug("Load indices:", load_indices)
                     memref = self.symbol_table[op.base]
                     result_type = op.result.type
                     result_shape = result_type.shape
@@ -131,13 +135,11 @@ class Interpreter:
                         *result_shape, dtype=self.get_dtype(result_dtype)
                     )
                     # Row-major load
-                    load_indices = [int(x) for x in load_indices]
-                    logger.debug("Load indices:", load_indices)
                     offset = [0 for _ in range(len(load_indices))]
                     offset[-1] += 1
                     for i in range(*result_shape):
                         value[i] = memref[
-                            *[x + y for x, y in zip(load_indices, offset)]
+                            *[int(x) + y for x, y in zip(load_indices, offset)]
                         ]
                 case vector_d.ExtractStridedSliceOp:
                     vector = self.symbol_table[op.vector]
@@ -151,12 +153,11 @@ class Interpreter:
                     result_type = vector.type
                     result_shape = vector.shape
                     # Row-major store
-                    store_indices = [int(x) for x in store_indices]
                     offset = [0 for _ in range(len(store_indices))]
                     offset[-1] += 1
                     for i in range(*result_shape):
                         memref[
-                            *[x + y for x, y in zip(store_indices, offset)]
+                            *[int(x) + y for x, y in zip(store_indices, offset)]
                         ] = vector[i]
                 case stream_d.DispatchWorkgroupIDOp:
                     index = int(op.attributes["dimension"])
@@ -172,12 +173,12 @@ class Interpreter:
                 case gpu_d.ThreadIdOp:
                     dim = re.findall(r"^#gpu<dim (.*)>", str(op.dimension))[0]
                     if dim == "x":
-                        value = self.thread_ids[0]
+                        tid = self.thread_ids[0]
                     if dim == "y":
-                        value = self.thread_ids[1]
+                        tid = self.thread_ids[1]
                     if dim == "z":
-                        value = self.thread_ids[2]
-                    value = torch.Tensor([value])
+                        tid = self.thread_ids[2]
+                    value = torch.Tensor([tid])
                 case memref_d.AllocOp:
                     mtype = op.memref.type
                     shape = mtype.shape
@@ -191,13 +192,14 @@ class Interpreter:
                     for init_arg, iter_arg in zip(op.initArgs, op.inner_iter_args):
                         self.symbol_table[iter_arg] = self.symbol_table[init_arg]
                     for i in range(lb, ub, step):
-                        self.symbol_table[op.induction_variable] = i
+                        self.symbol_table[op.induction_variable] = torch.Tensor([i])
                         for k in range(len(op.body.operations)):
                             self.callback(op.body.operations[k])
                     for result, iter_arg in zip(op.results, op.inner_iter_args):
                         self.symbol_table[result] = self.symbol_table[iter_arg]
                     return
                 case scf_d.YieldOp:
+                    assert self.for_op is not None, "YieldOp outside of ForOp"
                     for result, iter_arg in zip(
                         op.operands, self.for_op.inner_iter_args
                     ):
@@ -215,7 +217,7 @@ class Interpreter:
         if type(op) != vector_d.StoreOp:
             self.symbol_table[op.result] = value
 
-    def walk_operations(self, operation: Operation, callback: callable) -> None:
+    def walk_operations(self, operation: Operation, callback: Callable) -> None:
         for region in operation.regions:
             for block in region.blocks:
                 for op in block.operations:
@@ -241,8 +243,9 @@ if __name__ == "__main__":
     parser.add_argument("--input", type=str, help="Input file")
     parser.add_argument("--workgroup_ids", nargs="+", type=int, help="Workgroup ids")
     parser.add_argument("--thread_ids", nargs="+", type=int, help="Thread ids")
+
     args = parser.parse_args()
     with open(args.file, "r") as f:
         asm = f.read()
-    interpreter = Interpreter(parser.workgroup_ids, parser.thread_ids)
+    interpreter = Interpreter(parser.workgroup_ids, parser.thread_ids)  # type: ignore
     interpreter.interpret(asm)
