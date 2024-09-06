@@ -216,11 +216,28 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                         operation = arg(operation)
                 stack.append(operation)
             case sympy.Add():
-                summand = stack.pop()
-                add = summand
-                for _ in range(1, len(term.args)):
-                    add = arith_d.AddIOp(add, stack.pop())
-                stack.append(add)
+                # summand = stack.pop()
+                # add = summand
+                # for _ in range(1, len(term.args)):
+                #     add = arith_d.AddIOp(add, stack.pop())
+                # stack.append(add)
+                args = []
+                for _ in range(len(term.args)):
+                    args.append(stack.pop())
+                operation = None
+                # First, multiply all the non-rationals.
+                for arg in args:
+                    if callable(arg):
+                        continue
+                    if operation is None:
+                        operation = arg
+                        continue
+                    operation = arith_d.AddIOp(operation, arg)
+                # Then, multiply with the rationals.
+                for arg in args:
+                    if callable(arg):
+                        operation = arg(operation)
+                stack.append(operation)
             case sympy.Mod():
                 rhs = stack.pop()
                 lhs = stack.pop()
@@ -375,7 +392,7 @@ def _construct_gather_scatter_indices(
 
     # As we only support identity input/output mapping for now, we can directly
     # substitute iterators with corresponding expanded index.
-    subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
+    subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())] + list(idxc.subs.items())
 
     # Contruct input/output index, substituting iterators in input mapping with
     # expanded index.
