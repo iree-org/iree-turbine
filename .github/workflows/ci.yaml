@@ -23,7 +23,7 @@ jobs:
     strategy:
       matrix:
         version: [3.11]
-        os: [ubuntu-latest,nodai-amdgpu-mi300-x86-64]
+        os: [ubuntu-latest]
     runs-on: ${{matrix.os}}
     env:
       PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
