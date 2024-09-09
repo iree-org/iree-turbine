@@ -65,6 +65,7 @@ from ..compiler.vector_codegen import (
     cast_vector,
 )
 from .constraints import Constraint, HardwareConstraint, MMAType, TilingConstraint
+from .utils import subs_idxc
 
 # Indexing imports.
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
@@ -331,20 +332,26 @@ def handle_allocate(emitter: WaveEmitter, node: fx.Node):
 
 
 def _get_start_indices(
-    emitter: WaveEmitter, src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
-) -> list[OpResult]:
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+) -> list[IndexExpr]:
     start_indices = []
     for dim_indexing in src_indices:
         i = src_indices[dim_indexing]
         if isinstance(i, IndexSequence):
             i = i.start
-        start_indices.append(gen_sympy_index(emitter, i))
+        start_indices.append(i)
 
     return start_indices
 
 
-def _compute_offset(indices: list[int], strides: list[int]) -> int:
-    return int(sum(i * s for i, s in zip(indices, strides)))
+def _build_start_indices(
+    emitter: WaveEmitter, src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+) -> list[OpResult]:
+    return [gen_sympy_index(emitter, i) for i in _get_start_indices(src_indices)]
+
+
+def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> IndexExpr:
+    return sum(i * s for i, s in zip(indices, strides))
 
 
 def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
@@ -407,22 +414,48 @@ def _construct_gather_scatter_indices(
 
     strides = strides_from_symbolic_shape(idxc, symbolc_shape)
     offsets = []
-    subs = [(sym, 0) for sym in iters.keys()]
+    # subs = [(sym, 0) for sym in iters.keys()]
+    # for i in range(elements_per_thread):
+    #     # Update most-minor dim, i.e. in case of identity mapping it will
+    #     # be equivalent to just vector.load
+    #     subs[-1] = (subs[-1][0], i)
+    #     indices = [int(i.subs(subs)) for i in index_mapping]
+    #     offset = _compute_offset(indices, strides)
+    #     print(offset)
+    #     offsets.append(IntegerAttr.get(IndexType.get(), int(offset)))
+
+    start_indices = _get_start_indices(result_index)
+    dynamic_offsets = []
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
         # be equivalent to just vector.load
-        subs[-1] = (subs[-1][0], i)
-        indices = [int(i.subs(subs)) for i in index_mapping]
-        offsets.append(
-            IntegerAttr.get(IndexType.get(), _compute_offset(indices, strides))
+        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices)]
+        subs[-1] = (subs[-1][0], start_indices[-1] + i)
+        indices = [i.subs(subs) for i in index_mapping]
+        offset = _compute_offset(indices, strides) - _compute_offset(
+            start_indices, strides
         )
+        offset = subs_idxc(offset)
 
-    start_indices = _get_start_indices(emitter, result_index)
+        try:
+            offset = int(offset)
+        except:
+            dyn_offset = gen_sympy_index(emitter, offset)
+            dynamic_offsets.append((i, dyn_offset))
+            offset = 0
+
+        offsets.append(IntegerAttr.get(IndexType.get(), offset))
+
+    start_indices = _build_start_indices(emitter, result_index)
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
 
     offsets_vec = arith_d.ConstantOp(
         offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
     )
+
+    for i, off in dynamic_offsets:
+        pos = arith_d.ConstantOp(IndexType.get(), i)
+        offsets_vec = vector_d.insertelement(off, offsets_vec, position=pos)
 
     mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
 
@@ -452,7 +485,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
     if mapping is None or _is_identity_mapping(mapping, input_shape=input_shape):
-        start_indices = _get_start_indices(emitter, index)
+        start_indices = _build_start_indices(emitter, index)
         result = vector_d.load(vector_type, kb_src, start_indices)
     else:
         start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
@@ -503,7 +536,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     if mapping is None or _is_identity_mapping(
         mapping, input_shape=input_shape, output_shape=output_shape
     ):
-        start_indices = _get_start_indices(emitter, index)
+        start_indices = _build_start_indices(emitter, index)
         vector_d.store(insert_vector, kb_dest, start_indices)
     else:
         assert (
