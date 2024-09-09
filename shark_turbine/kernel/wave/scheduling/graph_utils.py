@@ -1,7 +1,8 @@
 import torch.fx as fx
-from random import shuffle, seed, Random
+from random import Random
 from collections import defaultdict
 from ..._support.indexing import index_symbol, IndexExpr
+from .resources import *
 from dataclasses import dataclass
 import sympy
 import math
@@ -214,3 +215,69 @@ def topological_sort_nodes(
             filtered_nodes.add(edge._from)
     sorted_nodes = sorted(filtered_nodes, key=lambda x: x.f)
     return sorted_nodes
+
+
+def get_scheduling_weight(node: fx.Node) -> EdgeWeight:
+    """
+    Get the scheduling weight of a node.
+    """
+    custom_node = get_custom(node)
+    match custom_node:
+        case Read():
+            if custom_node.memory_type.address_space == GLOBAL_ADDRESS_SPACE:
+                weight = EdgeWeight(0, delay_table[Operation.READ_GLOBAL])
+            else:
+                weight = EdgeWeight(0, delay_table[Operation.READ_SHARED])
+        case Write():
+            if custom_node.memory_type.address_space == GLOBAL_ADDRESS_SPACE:
+                weight = EdgeWeight(0, delay_table[Operation.WRITE_GLOBAL])
+            else:
+                weight = EdgeWeight(0, delay_table[Operation.WRITE_SHARED])
+        case MMA():
+            weight = EdgeWeight(0, delay_table[Operation.MMA])
+        case IterArg():
+            weight = EdgeWeight(1, 0)
+        case _:
+            raise ValueError(f"Unsupported node type: {custom_node}")
+    weight.delay = subs_idxc(weight.delay)
+    weight.iteration_difference = subs_idxc(weight.iteration_difference)
+    return weight
+
+
+def erase_placeholder_nodes(graph: fx.Graph, ignore_nodes: set[fx.Node]) -> None:
+    """
+    This function erases nodes in the ignore list from the graph. We replace uses
+    of the node with None.
+    """
+    for node in ignore_nodes:
+        for user in list(node.users):
+            idx = user.args.index(node)
+            user.update_arg(idx, None)
+        graph.erase_node(node)
+
+
+def create_scheduling_edges(
+    graph: fx.Graph,
+    ignore_nodes: set[fx.Node],
+    iter_args: list[fx.Node],
+    output: fx.Node,
+) -> list[Edge]:
+    """
+    Create scheduling edges from the graph including back edges
+    from the outputs to the iter args. Also remove output
+    and placeholder nodes.
+    """
+    # Create edges from outputs to iter args.
+    for return_val, iter_arg in zip(get_custom(output).return_vals[0], iter_args):
+        iter_arg.args = (return_val,)
+    graph.erase_node(output)
+    edges = []
+    for node in graph.nodes:
+        if node in ignore_nodes:
+            continue
+        weight = get_scheduling_weight(node)
+        for user in node.users:
+            edge = Edge(node, user, weight)
+            edges.append(edge)
+    erase_placeholder_nodes(graph, ignore_nodes)
+    return edges
