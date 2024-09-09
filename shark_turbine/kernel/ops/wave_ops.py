@@ -23,7 +23,6 @@ from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
-from ..lang.global_symbols import MMA_ACC, MMA_LHS, MMA_RHS
 
 if TYPE_CHECKING:
     from ..wave.constraints import Constraint
@@ -439,12 +438,11 @@ class CustomOp(ABC):
         if value is None:
             return
         if isinstance(value, dict):
+            assert all(
+                isinstance(v, IndexSequence) for v in value.values()
+            ), f"Index must be a dict with values of type IndexSequence"
+            self.fx_node.index = {}
             for dim, key in value.items():
-                assert isinstance(
-                    key, IndexSequence
-                ), f"Expected IndexSequence, got {key}"
-                if not hasattr(self.fx_node, "index") or self.fx_node.index is None:
-                    self.fx_node.index = {}
                 self.fx_node.index[dim] = key
         else:
             raise ValueError("Index must be a dict")
@@ -757,20 +755,9 @@ class MMA(CustomOp):
         ensuring that the LHS and RHS indices are consistent with their
         corresponding address spaces.
         """
-        from ..wave.constraints import TilingConstraint
-        from ..wave.utils import remove_global_indexing
-
-        tiling_constraints = [c for c in constraints if isinstance(c, TilingConstraint)]
         self.lhs.index = self.lhs_index
         self.rhs.index = self.rhs_index
         self.acc.index = self.acc_index
-
-        # TODO: this is really wrong place for it, it relies on specific kernel structure,
-        # generated, if mma input is not come from load, things will breaks.
-        if get_custom(self.lhs).memory_type.address_space == SHARED_ADDRESS_SPACE:
-            self.lhs.index = remove_global_indexing(self.lhs_index, tiling_constraints)
-        if get_custom(self.rhs).memory_type.address_space == SHARED_ADDRESS_SPACE:
-            self.rhs.index = remove_global_indexing(self.rhs_index, tiling_constraints)
 
 
 @define_op("read")
@@ -924,13 +911,9 @@ class Write(CustomOp):
         return get_custom(self.memory).type
 
     @property
-    def index(self) -> dict[IndexSymbol, IndexSequence]:
-        register_index = get_custom(self.register_).index
-        return register_index if register_index is not None else super().index
-
-    @index.setter
-    def index(self, value: dict[IndexSymbol, IndexSequence]):
-        CustomOp.index.fset(self, value)
+    def register_index(self) -> dict[IndexSymbol, IndexSequence]:
+        custom = get_custom(self.register_)
+        return custom.index
 
 
 @define_op("get_result")

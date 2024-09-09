@@ -17,6 +17,9 @@ from shark_turbine.kernel.ops.wave_ops import *
 from shark_turbine.kernel.wave.utils import run_test, print_trace
 from shark_turbine.kernel.wave.minimize_global_loads import minimize_global_loads
 from shark_turbine.kernel.wave.visualization import visualize_graph
+from shark_turbine.kernel.wave.shared_memory_indexing import (
+    apply_shared_memory_indexing_corrections,
+)
 
 
 # Input sizes
@@ -86,6 +89,7 @@ def test_gemm():
         if visualize:
             visualize_graph(trace.get_subgraph("region_0"), "before.png")
         minimize_global_loads(trace, constraints)
+        apply_shared_memory_indexing_corrections(trace, constraints)
         if visualize:
             visualize_graph(trace.get_subgraph("region_0"), "after.png")
         add_shared_memory_barriers(trace)

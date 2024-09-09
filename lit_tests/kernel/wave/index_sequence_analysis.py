@@ -14,6 +14,9 @@ from shark_turbine.kernel._support.indexing import IndexingContext
 from shark_turbine.kernel.ops.wave_ops import *
 from shark_turbine.kernel.wave.utils import run_test, print_trace
 from shark_turbine.kernel.wave.minimize_global_loads import minimize_global_loads
+from shark_turbine.kernel.wave.shared_memory_indexing import (
+    apply_shared_memory_indexing_corrections,
+)
 from shark_turbine.kernel.wave.index_sequence_analysis import (
     partition_strided_operators,
 )
@@ -83,6 +86,7 @@ def test_gemm():
         hoist_allocs(trace)
         expand_graph(trace, constraints)
         minimize_global_loads(trace, constraints)
+        apply_shared_memory_indexing_corrections(trace, constraints)
         partition_strided_operators(trace, constraints)
         print_trace(trace)
         # Root graph:
