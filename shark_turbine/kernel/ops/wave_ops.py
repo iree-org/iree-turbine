@@ -23,6 +23,7 @@ from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
+import numpy as np
 
 if TYPE_CHECKING:
     from ..wave.constraints import Constraint
@@ -360,17 +361,21 @@ class CustomOp(ABC):
             raise IndexError("Index out of range")
 
     def copy(
-        self, new_name: Optional[str] = None, new_graph: Optional[fx.Graph] = None
+        self,
+        new_name: Optional[str] = None,
+        new_graph: Optional[fx.Graph] = None,
+        arg_transform: Optional[Callable[[Any], Any]] = lambda x: x,
     ) -> Self:
         """Returns a duplicate of this node."""
         graph = new_graph
         if new_graph is None:
             graph = self.graph
             graph.inserting_after(self.fx_node)
-        new_node = graph.node_copy(self.fx_node)
+        new_node = graph.node_copy(self.fx_node, arg_transform=arg_transform)
         new_node.tkw_op = self
         new_node.tkw_op_name = self.tkw_op_name
-        new_node.index = copy.deepcopy(self.fx_node.index)
+        if hasattr(self.fx_node, "index"):
+            new_node.index = copy.deepcopy(self.fx_node.index)
         if new_name:
             new_node.name = new_name
         return get_custom(new_node)
@@ -446,6 +451,28 @@ class CustomOp(ABC):
                 self.fx_node.index[dim] = key
         else:
             raise ValueError("Index must be a dict")
+
+    @property
+    def rrt(self):
+        if hasattr(self.fx_node, "rrt"):
+            return self.fx_node.rrt
+
+    @rrt.setter
+    def rrt(self, value):
+        if not isinstance(value, np.ndarray):
+            raise ValueError("RRT must be a numpy array")
+        self.fx_node.rrt = value
+
+    @property
+    def scheduling_parameters(self):
+        if hasattr(self.fx_node, "scheduling_parameters"):
+            return self.fx_node.scheduling_parameters
+
+    @scheduling_parameters.setter
+    def scheduling_parameters(self, value: Any):
+        if not isinstance(value, dict):
+            raise ValueError("Scheduling parameters must be a dict")
+        self.fx_node.scheduling_parameters = value
 
     def post_expansion(self, constraints: list["Constraint"]) -> None:
         """

@@ -15,7 +15,17 @@ THREAD_0 = index_symbol("$T0")
 THREAD_1 = index_symbol("$T1")
 THREAD_2 = index_symbol("$T2")
 
-# MMA symbols
+# MMA symbols.
 MMA_LHS = index_symbol("$MMA_LHS")
 MMA_RHS = index_symbol("$MMA_RHS")
 MMA_ACC = index_symbol("$MMA_ACC")
+
+# Scheduling symbols.
+READ_SHARED_DELAY = index_symbol("$READ_SHARED_DELAY")
+WRITE_SHARED_DELAY = index_symbol("$WRITE_SHARED_DELAY")
+READ_GLOBAL_DELAY = index_symbol("$READ_GLOBAL_DELAY")
+WRITE_GLOBAL_DELAY = index_symbol("$WRITE_GLOBAL_DELAY")
+MMA_DELAY = index_symbol("$MMA_DELAY")
+SHARED_MEMORY_UNITS = index_symbol("$SHARED_MEMORY_UNITS")
+GLOBAL_MEMORY_UNITS = index_symbol("$GLOBAL_MEMORY_UNITS")
+MMA_UNITS = index_symbol("$MMA_UNITS")
