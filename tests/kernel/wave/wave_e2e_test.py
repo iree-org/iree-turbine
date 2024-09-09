@@ -465,6 +465,8 @@ def test_igemm_conv():
     constraints: list[tkw.Constraint] = []
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(NF, BLOCK_N)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [
