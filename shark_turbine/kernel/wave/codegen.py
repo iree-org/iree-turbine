@@ -425,12 +425,13 @@ def _construct_gather_scatter_indices(
     #     offsets.append(IntegerAttr.get(IndexType.get(), int(offset)))
 
     start_indices = _get_start_indices(result_index)
+    start_indices_orig = _get_start_indices(index)
     dynamic_offsets = []
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
         # be equivalent to just vector.load
-        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices)]
-        subs[-1] = (subs[-1][0], start_indices[-1] + i)
+        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
+        subs[-1] = (subs[-1][0], start_indices_orig[-1] + i)
         indices = [i.subs(subs) for i in index_mapping]
         offset = _compute_offset(indices, strides) - _compute_offset(
             start_indices, strides
