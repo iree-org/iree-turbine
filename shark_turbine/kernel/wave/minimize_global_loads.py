@@ -6,13 +6,12 @@ from ..wave.constraints import (
 )
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
-from ..ops.wave_ops import Read, Write, Output, get_custom
+from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
-from .utils import delinearize_index, DCE, remove_global_indexing, subs_idxc
+from .utils import delinearize_index, DCE, subs_idxc
 from math import prod
 import torch.fx as fx
 from collections import defaultdict
-from copy import deepcopy
 
 
 def has_write_shared_user(node: Read) -> bool:
@@ -107,7 +106,6 @@ def add_optimized_nodes(
     optimizable_loads: dict[fx.Node, tuple[int, Read]],
     constraint_tile_size: dict[IndexSymbol, int],
     hardware_constraint: HardwareConstraint,
-    tilingConstraints: list[TilingConstraint],
     max_elements_per_load: int,
     load_elems_per_thread: int,
 ) -> list[fx.Node]:
@@ -141,7 +139,7 @@ def add_optimized_nodes(
                         write = Write(
                             read, custom_user.memory, load_elems_per_thread
                         ).add_to_graph(custom.graph)
-                        write.index = deepcopy(read.index)
+                        write.index = read.index
                         optimized_writes[custom_user.memory].append(write)
                         break
     return optimized_writes
@@ -211,7 +209,6 @@ def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
         optimizable_loads,
         constraint_tile_size,
         hardware_constraint,
-        [c for c in constraints if isinstance(c, TilingConstraint)],
         max_elements_per_load,
         load_elems_per_thread,
     )

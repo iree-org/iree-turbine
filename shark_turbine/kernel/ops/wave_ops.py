@@ -438,12 +438,11 @@ class CustomOp(ABC):
         if value is None:
             return
         if isinstance(value, dict):
+            assert all(
+                isinstance(v, IndexSequence) for v in value.values()
+            ), f"Index must be a dict with values of type IndexSequence"
+            self.fx_node.index = {}
             for dim, key in value.items():
-                assert isinstance(
-                    key, IndexSequence
-                ), f"Expected IndexSequence, got {key}"
-                if not hasattr(self.fx_node, "index") or self.fx_node.index is None:
-                    self.fx_node.index = {}
                 self.fx_node.index[dim] = key
         else:
             raise ValueError("Index must be a dict")
@@ -912,13 +911,9 @@ class Write(CustomOp):
         return get_custom(self.memory).type
 
     @property
-    def index(self) -> dict[IndexSymbol, IndexSequence]:
-        register_index = get_custom(self.register_).index
-        return register_index if register_index is not None else super().index
-
-    @index.setter
-    def index(self, value: dict[IndexSymbol, IndexSequence]):
-        CustomOp.index.fset(self, value)
+    def register_index(self) -> dict[IndexSymbol, IndexSequence]:
+        custom = get_custom(self.register_)
+        return custom.index
 
 
 @define_op("get_result")
