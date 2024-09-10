@@ -244,7 +244,7 @@ def get_custom(node: fx.Node) -> "CustomOp":
         print("Careful! You passed a custom op where an fx.Node was required.")
         return node
     if not isinstance(node, fx.Node):
-        raise ValueError(f"Expected an fx.Node but, got {type(node)}")
+        raise ValueError(f"Expected an fx.Node but got {type(node)}")
 
     # If the node was created as a CustomOp it has a corresponding field
     if hasattr(node, "tkw_op"):
