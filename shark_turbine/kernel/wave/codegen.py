@@ -257,7 +257,7 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                     arith_d.MulIOp(x, denominator), numerator
                 )
                 operation = lambda x, is_mul: arith_d.DivSIOp(
-                    mul(x) if b else add(x), denominator
+                    mul(x) if is_mul else add(x), denominator
                 )
                 stack.append(operation)
             case sympy.UnevaluatedExpr():
