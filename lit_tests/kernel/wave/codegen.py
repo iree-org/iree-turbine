@@ -21,27 +21,6 @@ ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
 
-def launch(func: Callable[[], None]) -> Callable[[], None]:
-    """
-    Run a function as part of the test suite in a test launch context.
-    Provides default values for the hyperparameters.
-    """
-    if __name__ == "__main__":
-        with tk.gen.TestLaunchContext(
-            {
-                M: 16,
-                N: 16,
-                K: 16,
-                BLOCK_M: 16,
-                BLOCK_N: 16,
-                BLOCK_K: 16,
-                ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
-            }
-        ):
-            func()
-    return func
-
-
 def codegen_test_context(canonicalize: bool = False):
     return tk.gen.TestLaunchContext(
         {
@@ -804,7 +783,8 @@ def test_binary_lowerings():
         # CHECK: %[[DIV:.+]] = arith.divf %[[MUL]]
 
 
-@launch
+# TODO: Something is broken in codegen and we are getting int in place of fx.Node
+# @launch
 @pytest.mark.skip(reason="getitem: Currently only stub implementation")
 def test_get_item():
     constraints: list[tkw.Constraint] = [
