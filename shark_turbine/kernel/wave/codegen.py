@@ -413,18 +413,30 @@ def _construct_gather_scatter_indices(
     start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
     dynamic_offsets = []
+
+    start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
         # be equivalent to just vector.load
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
         subs[-1] = (subs[-1][0], start_indices_orig[-1] + i)
         indices = [i.subs(subs) for i in index_mapping]
-        offset = _compute_offset(indices, strides) - _compute_offset(
-            start_indices, strides
-        )
+
+        # First, we build indices as if resulting gather/scatter `start_indices`
+        # are 0 as mapping expression may depend on absolute value of index
+        # (e.g. `index % 32`). Then we adjust for the non-0 `start_indices` by
+        # subtracting computed previously linear `start_indices_offset`. For
+        # simple cases like transpose, the resulting expression should fold into
+        # simple constant while more complex expressions may requires actual
+        # arith ops on dynamic values.
+        offset = _compute_offset(indices, strides) - start_indices_offset
         offset = subs_idxc(offset)
 
         try:
+            # If resulted offset sympy expr is convertible to int constant it
+            # will be directly encoded into `arith.constant`.
+            # For non-constant expressions, we will generate a real sequence of
+            # arith ops and then `vector.insertelement` them into offsets vec.
             offset = int(offset)
         except:
             dyn_offset = gen_sympy_index(emitter, offset)
