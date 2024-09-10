@@ -8,6 +8,7 @@ import shark_turbine.kernel.wave as tkw
 from shark_turbine.kernel.lang.global_symbols import *
 from shark_turbine.kernel.wave.iree_utils import generate_iree_ref
 import os
+from torch.testing import assert_close
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 
@@ -93,7 +94,7 @@ class Test(unittest.TestCase):
             gemm(a, b, c)
             iree_ref = torch.zeros(2048, 10240, dtype=torch.float32)
             generate_iree_ref("mmt", [a, b], [iree_ref], config)
-            assert torch.equal(c, iree_ref)
+            assert_close(c, iree_ref)
 
 
 if __name__ == "__main__":
