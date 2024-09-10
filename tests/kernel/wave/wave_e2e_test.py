@@ -1,6 +1,7 @@
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
+from shark_turbine.kernel.lang.global_symbols import *
 import torch
 from numpy.testing import assert_allclose, assert_equal
 import pytest
@@ -481,7 +482,7 @@ def test_igemm_conv():
     def conv(
         x: tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16],
         we: tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, tkl.f16],
-        out: tkl.Memory[N, NF, H_OUT, W_OUT, ADDRESS_SPACE, tkl.f32],
+        out: tkl.Memory[N, NF, H_OUT, W_OUT, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[M, NF, tkl.f32](0.0)
 
@@ -522,7 +523,7 @@ def test_igemm_conv():
             BLOCK_M: 64,
             BLOCK_N: 64,
             ELEMS_PER_THREAD: 4,
-            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         },
         canonicalize=True,
         run=True,
