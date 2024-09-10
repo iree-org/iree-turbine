@@ -159,6 +159,31 @@ def get_type_or_element_type(operand_type: IrType):
 def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     stack: list[OpResult] = []
 
+    def _process_mul_add_ops(term, is_mul):
+        args = []
+        callables = []
+        for _ in range(len(term.args)):
+            val = stack.pop()
+            if callable(val):
+                callables.append(val)
+            else:
+                args.append(val)
+        operation = None
+        for arg in args:
+            if operation is None:
+                operation = arg
+                continue
+
+            if is_mul:
+                operation = arith_d.MulIOp(operation, arg)
+            else:
+                operation = arith_d.AddIOp(operation, arg)
+
+        for arg in callables:
+            operation = arg(operation, is_mul)
+
+        stack.append(operation)
+
     induction_var_syms = []
     induction_vars = []
     for constraint in emitter.constraints:
@@ -199,39 +224,9 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
             case sympy.Integer():
                 stack.append(arith_d.constant(IndexType.get(), int(term)))
             case sympy.Mul():
-                args = []
-                for _ in range(len(term.args)):
-                    args.append(stack.pop())
-                operation = None
-                # First, multiply all the non-rationals.
-                for arg in args:
-                    if callable(arg):
-                        continue
-                    if operation is None:
-                        operation = arg
-                        continue
-                    operation = arith_d.MulIOp(operation, arg)
-                # Then, multiply with the rationals.
-                for arg in args:
-                    if callable(arg):
-                        operation = arg(operation, True)
-                stack.append(operation)
+                _process_mul_add_ops(term, is_mul=True)
             case sympy.Add():
-                args = []
-                for _ in range(len(term.args)):
-                    args.append(stack.pop())
-                operation = None
-                for arg in args:
-                    if callable(arg):
-                        continue
-                    if operation is None:
-                        operation = arg
-                        continue
-                    operation = arith_d.AddIOp(operation, arg)
-                for arg in args:
-                    if callable(arg):
-                        operation = arg(operation, False)
-                stack.append(operation)
+                _process_mul_add_ops(term, is_mul=False)
             case sympy.Mod():
                 rhs = stack.pop()
                 lhs = stack.pop()
