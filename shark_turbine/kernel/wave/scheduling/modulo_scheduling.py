@@ -41,7 +41,7 @@ class ModuloScheduler:
         for edge in self.edges:
             if edge._from == from_node and edge._to == to_node:
                 return edge
-        return Edge(None, None, EdgeWeight(0, 0))
+        return None
 
     def get_edges_from_scheduled_node(
         self, edges: list[tuple[fx.Node, fx.Node]], to_node: fx.Node
@@ -204,6 +204,7 @@ class ModuloScheduler:
             self.schedule[node] = s
             RT[:] = np.array(RT_prime)
             return True
+        return False
 
     def compute_resource_ii(self) -> int:
         """
@@ -226,6 +227,8 @@ class ModuloScheduler:
             delay, iteration_delay = 0, 0
             for from_node, to_node in zip(cycle[:-1], cycle[1:]):
                 edge = self.get_edge(from_node, to_node)
+                if edge is None:
+                    continue
                 delay += edge.weight.delay
                 iteration_delay += edge.weight.iteration_difference
             rec_ii = max(rec_ii, delay / iteration_delay)
