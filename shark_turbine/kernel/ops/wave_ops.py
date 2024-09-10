@@ -911,6 +911,10 @@ class Write(CustomOp):
         return get_custom(self.memory).type
 
     @property
+    def register_type(self) -> "Register":
+        return get_custom(self.register_).type
+
+    @property
     def register_index(self) -> dict[IndexSymbol, IndexSequence]:
         custom = get_custom(self.register_)
         return custom.index
