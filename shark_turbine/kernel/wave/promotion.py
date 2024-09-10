@@ -42,7 +42,7 @@ def promote_node(
     with node.graph.inserting_before(node.fx_node.next):
         constrained_shape = get_constrained_shape(node.type.symbolic_shape, constraints)
         allocate_node = Allocate(
-            node.memory_type.symbolic_shape,
+            node.type.symbolic_shape,
             constrained_shape,
             node.type.dtype,
             address_space,
