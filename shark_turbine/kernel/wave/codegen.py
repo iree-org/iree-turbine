@@ -553,7 +553,10 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             is_read=False,
         )
 
-        vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
+        if elements_per_thread == 1:
+            vector_d.store(insert_vector, kb_dest, start_indices)
+        else:
+            vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
 
 
 ###############################################################################

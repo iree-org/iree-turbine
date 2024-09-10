@@ -7,6 +7,7 @@ from .utils import (
     simplify_index,
     get_mma_dimensional_mapping,
     get_hardware_vector_size,
+    subs_idxc,
 )
 import torch.fx as fx
 import numpy as np
@@ -64,14 +65,12 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         simplified_index = {
             dim: simplify_index(custom.register_index[dim]) for dim in custom.index
         }
+
         max_stride = int(max(simplified_index[dim].stride for dim in simplified_index))
         shape = get_vector_shape(
             trace, hw_constraint, custom.register_type.symbolic_shape
         )
-        idxc = IndexingContext.current()
-        elements_per_thread = custom.elements_per_thread
-        if isinstance(elements_per_thread, IndexSymbol):
-            elements_per_thread = elements_per_thread.subs(idxc.subs)
+        elements_per_thread = subs_idxc(custom.elements_per_thread)
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):
                 extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
