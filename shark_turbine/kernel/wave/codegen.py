@@ -217,16 +217,10 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                         operation = arg(operation, True)
                 stack.append(operation)
             case sympy.Add():
-                # summand = stack.pop()
-                # add = summand
-                # for _ in range(1, len(term.args)):
-                #     add = arith_d.AddIOp(add, stack.pop())
-                # stack.append(add)
                 args = []
                 for _ in range(len(term.args)):
                     args.append(stack.pop())
                 operation = None
-                # First, add all the non-rationals.
                 for arg in args:
                     if callable(arg):
                         continue
@@ -234,7 +228,6 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                         operation = arg
                         continue
                     operation = arith_d.AddIOp(operation, arg)
-                # Then, multiply with the rationals.
                 for arg in args:
                     if callable(arg):
                         operation = arg(operation, False)
@@ -249,6 +242,8 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 # But check whether floordivsi is needed.
                 stack.append(stack.pop())
             case sympy.Rational():
+                # `x * (a/b)` transformed into `(x * a) / b`
+                # `x + (a/b)` transformed into `(x*b + a) / b`
                 numerator = arith_d.constant(IndexType.get(), abs(term.p))
                 denominator = arith_d.constant(IndexType.get(), abs(term.q))
                 # Assumes that the negative term is always carried on the numerator
@@ -261,7 +256,7 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 add = lambda x: arith_d.AddIOp(
                     arith_d.MulIOp(x, denominator), numerator
                 )
-                operation = lambda x, b: arith_d.DivSIOp(
+                operation = lambda x, is_mul: arith_d.DivSIOp(
                     mul(x) if b else add(x), denominator
                 )
                 stack.append(operation)
@@ -414,15 +409,6 @@ def _construct_gather_scatter_indices(
 
     strides = strides_from_symbolic_shape(idxc, symbolc_shape)
     offsets = []
-    # subs = [(sym, 0) for sym in iters.keys()]
-    # for i in range(elements_per_thread):
-    #     # Update most-minor dim, i.e. in case of identity mapping it will
-    #     # be equivalent to just vector.load
-    #     subs[-1] = (subs[-1][0], i)
-    #     indices = [int(i.subs(subs)) for i in index_mapping]
-    #     offset = _compute_offset(indices, strides)
-    #     print(offset)
-    #     offsets.append(IntegerAttr.get(IndexType.get(), int(offset)))
 
     start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
