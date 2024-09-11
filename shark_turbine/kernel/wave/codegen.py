@@ -427,13 +427,13 @@ def _construct_gather_scatter_indices(
         offset = _compute_offset(indices, strides) - start_indices_offset
         offset = subs_idxc(offset)
 
-        try:
+        if offset.is_number:
             # If resulted offset sympy expr is convertible to int constant it
             # will be directly encoded into `arith.constant`.
             # For non-constant expressions, we will generate a real sequence of
             # arith ops and then `vector.insertelement` them into offsets vec.
             offset = int(offset)
-        except:
+        else:
             dyn_offset = gen_sympy_index(emitter, offset)
             dynamic_offsets.append((i, dyn_offset))
             offset = 0
