@@ -667,4 +667,9 @@ def test_igemm_conv():
         run_config=config,
     ):
         conv(x, we, out)
+        print("res")
+        print(x)
+        print(we)
+        print(out)
+        print(out_ref)
         assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
