@@ -244,7 +244,7 @@ def get_custom(node: fx.Node) -> "CustomOp":
         print("Careful! You passed a custom op where an fx.Node was required.")
         return node
     if not isinstance(node, fx.Node):
-        raise ValueError("Expected an fx.Node")
+        raise ValueError(f"Expected an fx.Node but got {type(node)}")
 
     # If the node was created as a CustomOp it has a corresponding field
     if hasattr(node, "tkw_op"):
@@ -909,6 +909,10 @@ class Write(CustomOp):
     @property
     def memory_type(self) -> "Memory":
         return get_custom(self.memory).type
+
+    @property
+    def register_type(self) -> "Register":
+        return get_custom(self.register_).type
 
     @property
     def register_index(self) -> dict[IndexSymbol, IndexSequence]:

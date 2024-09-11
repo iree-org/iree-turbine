@@ -7,6 +7,7 @@ from .utils import (
     simplify_index,
     get_mma_dimensional_mapping,
     get_hardware_vector_size,
+    subs_idxc,
 )
 import torch.fx as fx
 import numpy as np
@@ -39,7 +40,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         read more than a single element.
         """
         custom = get_custom(node)
-        if isinstance(custom, Write) and len(custom.type.symbolic_shape) == 2:
+        if isinstance(custom, Write) and len(custom.register_type.symbolic_shape) == 2:
             strides = [
                 simplify_index(custom.register_index[dim]).stride
                 for dim in custom.register_index
@@ -64,12 +65,12 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         simplified_index = {
             dim: simplify_index(custom.register_index[dim]) for dim in custom.index
         }
+
         max_stride = int(max(simplified_index[dim].stride for dim in simplified_index))
-        shape = get_vector_shape(trace, hw_constraint, custom.type.symbolic_shape)
-        idxc = IndexingContext.current()
-        elements_per_thread = custom.elements_per_thread
-        if isinstance(elements_per_thread, IndexSymbol):
-            elements_per_thread = elements_per_thread.subs(idxc.subs)
+        shape = get_vector_shape(
+            trace, hw_constraint, custom.register_type.symbolic_shape
+        )
+        elements_per_thread = subs_idxc(custom.elements_per_thread)
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):
                 extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
@@ -77,10 +78,13 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                 )
                 offset = np.unravel_index(i * max_stride, shape)
                 write = Write(
-                    extract, custom.memory, elements_per_thread=1
+                    extract,
+                    custom.memory,
+                    mapping=custom.mapping,
+                    elements_per_thread=1,
                 ).add_to_graph(custom.graph)
                 write.index = {
                     dim: IndexSequence(simplified_index[dim].start + offset[j], 1, 1)
-                    for j, dim in enumerate(custom.type.symbolic_shape)
+                    for j, dim in enumerate(custom.register_type.symbolic_shape)
                 }
         custom.graph.erase_node(operator)
