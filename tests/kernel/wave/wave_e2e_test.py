@@ -400,6 +400,7 @@ def test_im2col():
         assert_allclose(b, expected)
 
 
+@require_e2e
 def test_im2col_mma():
     # igemm without final col2im
     n, c, h, w = 1, 4, 9, 9  # Image.
