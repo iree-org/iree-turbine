@@ -22,7 +22,6 @@ import torch
 
 from torch.export import (
     Constraint,
-    dynamic_dim,
 )
 
 from ....support.ir_imports import (
