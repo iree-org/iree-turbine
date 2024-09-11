@@ -13,7 +13,7 @@ from torch.fx import (
 from torch.fx.experimental import proxy_tensor
 from torch._subclasses.fake_tensor import unset_fake_temporarily
 from torch.utils import _pytree as pytree
-
+from torch._subclasses.fake_tensor import unset_fake_temporarily
 
 # Use the functorch `functionalize()` helper. That cannot be used directly
 # because it does not correctly handle fake tensor tracing. But we use
