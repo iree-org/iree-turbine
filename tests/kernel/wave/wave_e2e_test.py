@@ -410,10 +410,6 @@ def test_im2col_mma():
     x = torch.randn(n, c, h, w, dtype=torch.float16)
     we = torch.randn(nf, cf, hf, wf, dtype=torch.float16)
 
-    convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
-    convRef.weight = torch.nn.Parameter(we)
-    out_ref = convRef(x).detach()
-
     sym = tkl.sym
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
     NF, HF, WF = sym.NF, sym.HF, sym.WF
@@ -448,7 +444,7 @@ def test_im2col_mma():
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
     BLOCK_K = K
-    # # Address space (for GPU, shared(1) or global(0))
+    # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
     ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
