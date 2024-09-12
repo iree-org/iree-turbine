@@ -490,8 +490,6 @@ def test_im2col_mma():
                 mapping=w_mapping,
                 elements_per_thread=ELEMS_PER_THREAD,
             )
-            # print(a_reg)
-            # print(b_reg)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
@@ -529,11 +527,6 @@ def test_im2col_mma():
         run_config=config,
     ):
         gpu_func(x, we, out)
-        print("res")
-        print(x)
-        print(we)
-        print(out)
-        print(out_ref)
         assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
 
 
@@ -546,10 +539,6 @@ def test_igemm_conv():
 
     x = torch.randn(n, c, h, w, dtype=torch.float16)
     we = torch.randn(nf, cf, hf, wf, dtype=torch.float16)
-
-    convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
-    convRef.weight = torch.nn.Parameter(we)
-    out_ref = convRef(x).detach()
 
     sym = tkl.sym
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
@@ -594,7 +583,6 @@ def test_igemm_conv():
     # # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
-    # BLOCK_K = tkl.sym.BLOCK_K
     BLOCK_K = K
     # # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -613,11 +601,9 @@ def test_igemm_conv():
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            # vector_shapes={NF: 1, M: BLOCK_M, K: ELEMS_PER_THREAD},
         )
     ]
 
-    @tkw.wave(constraints)
     def conv(
         x: tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16],
         we: tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, tkl.f16],
@@ -637,8 +623,6 @@ def test_igemm_conv():
                 mapping=w_mapping,
                 elements_per_thread=ELEMS_PER_THREAD,
             )
-            # print(a_reg)
-            # print(b_reg)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
@@ -646,7 +630,16 @@ def test_igemm_conv():
             repeat, out, mapping=out_mapping, elements_per_thread=ELEMS_PER_THREAD
         )
 
-    out = torch.zeros_like(out_ref, dtype=torch.float32)
+    sim_func = wave_sim(constraints)(conv)
+    gpu_func = tkw.wave(constraints)(conv)
+
+    h_out = (h + 2 * padding - hf) // stride + 1
+    w_out = (w + 2 * padding - wf) // stride + 1
+    res_shape = (n, nf, h_out, w_out)
+    out_ref = torch.zeros(res_shape, dtype=torch.float32)
+    sim_func(x, we, out_ref)
+
+    out = torch.zeros_like(out_ref)
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
@@ -668,10 +661,5 @@ def test_igemm_conv():
         run=True,
         run_config=config,
     ):
-        conv(x, we, out)
-        print("res")
-        print(x)
-        print(we)
-        print(out)
-        print(out_ref)
+        gpu_func(x, we, out)
         assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
