@@ -537,8 +537,8 @@ def test_im2col_mma():
 
 
 def test_igemm_conv():
-    n, c, h, w = 1, 4, 9, 9  # Image.
-    nf, cf, hf, wf = 64, c, 2, 2  # Filters.
+    n, c, h, w = 1, 4, 5, 5  # Image.
+    nf, cf, hf, wf = 16, c, 2, 2  # Filters.
     padding = 0  # TODO: only pad=0 is supported for now
     stride = 1
 
@@ -657,8 +657,8 @@ def test_igemm_conv():
             NF: nf,
             WF: wf,
             HF: hf,
-            BLOCK_M: 64,
-            BLOCK_N: 64,
+            BLOCK_M: 16,
+            BLOCK_N: 16,
             ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
         },
