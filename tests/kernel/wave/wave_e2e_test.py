@@ -609,6 +609,7 @@ def test_igemm_conv():
         )
     ]
 
+    @tkw.wave(constraints)
     def conv(
         x: tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16],
         we: tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, tkl.f16],
@@ -635,9 +636,6 @@ def test_igemm_conv():
             repeat, out, mapping=out_mapping, elements_per_thread=ELEMS_PER_THREAD
         )
 
-    sim_func = wave_sim(constraints)(conv)
-    gpu_func = tkw.wave(constraints)(conv)
-
     out = torch.zeros_like(out_ref)
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
@@ -660,5 +658,5 @@ def test_igemm_conv():
         run=True,
         run_config=config,
     ):
-        gpu_func(x, we, out)
+        conv(x, we, out)
         assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
