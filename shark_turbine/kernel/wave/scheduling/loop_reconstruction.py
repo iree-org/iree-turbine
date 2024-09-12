@@ -6,7 +6,7 @@ from .modulo_scheduling import ModuloScheduler
 from ..utils import graph_copy, erase_graph
 import torch.fx as fx
 import math
-from collections import defaultdict
+from collections import defaultdict, deque
 import random
 
 
@@ -76,7 +76,7 @@ def interleave_instructions(instructions: list[tuple[int, int, fx.Node]]):
     rng.shuffle(instructions)
 
 
-def interleave_instructions_by_stage(
+def add_nodes_by_schedule(
     reduction_graph: fx.Graph,
     partitioned_graph: list[dict[int, fx.Node]],
     partitioned_argument_map: list[dict[fx.Node, fx.Node]],
@@ -116,15 +116,16 @@ def interleave_instructions_by_stage(
             # Update the argument map for the current stage.
             partitioned_argument_map[stage][node] = new_node
             # Set the index for the new node by substituting the induction variable
-            # for the current stage.
+            # for the current iteration.
             new_node.index = node.index
             for dim in new_node.index:
                 new_node.index[dim] = new_node.index[dim].subs(
                     {induction_variable: current_induction_variables[iteration]}
                 )
             # Update the rotating registers for the current node (if applicable).
-            if node in rotating_registers:
-                rotating_registers[iteration] = new_node
+            if node.fx_node in rotating_registers:
+                rotating_registers[node.fx_node].append(new_node.fx_node)
+                rotating_registers[node.fx_node].popleft()
 
 
 def create_fill_stage_schedule(scheduler: ModuloScheduler) -> list[list[int]]:
@@ -142,10 +143,9 @@ def create_fill_stage_schedule(scheduler: ModuloScheduler) -> list[list[int]]:
     return schedule
 
 
-def construct_pipeline_stage(
+def construct_prologue(
     reduction: Reduction,
     partitioned_graph: list[dict[int, fx.Node]],
-    partitioned_argument_map: list[dict[fx.Node, fx.Node]],
     scheduler: ModuloScheduler,
     rotating_registers: dict[fx.Node, list[fx.Node]],
     induction_variable: IndexSymbol,
@@ -153,15 +153,18 @@ def construct_pipeline_stage(
     stages: list[int],
 ):
     """
-    Construct the prologue/epilogue of the pipelined loop.
+    Construct the prologue of the pipelined loop.
     For this, we need to copy nodes from the reduction_graph and insert them
     before the reduction operator in the root graph in the appropriate order.
     We also need to initialize the rotating registers and update the indices
     of the nodes to use the appropriate values of the induction variable.
     """
+    partitioned_argument_map: list[dict[fx.Node, fx.Node]] = [
+        {} for _ in range(scheduler.num_stages)
+    ]
     with reduction.graph.inserting_before(reduction.fx_node):
         for i in range(scheduler.num_stages - 1):
-            interleave_instructions_by_stage(
+            add_nodes_by_schedule(
                 reduction.graph,
                 partitioned_graph,
                 partitioned_argument_map,
@@ -171,6 +174,45 @@ def construct_pipeline_stage(
                 new_induction_variables,
                 rotating_registers,
             )
+
+
+def construct_kernel(
+    reduction: Reduction,
+    partitioned_graph: list[dict[int, fx.Node]],
+    scheduler: ModuloScheduler,
+    rotating_registers: dict[fx.Node, list[fx.Node]],
+    induction_variable: IndexSymbol,
+    new_induction_variables: list[int],
+):
+    """
+    Construct the kernel of the pipelined loop.
+    First, we construct a new reduction op with an empty graph.
+    """
+    flattened_rotating_registers = []
+    for registers in rotating_registers.values():
+        flattened_rotating_registers.extend(registers)
+    with reduction.graph.inserting_before(reduction.fx_node):
+        new_reduction = Reduction(
+            reduction.axis,
+            init_args=reduction.init_args + flattened_rotating_registers,
+            subgraph_name="pipelined_reduction",
+            implicit_captures=reduction.implicit_captures,
+        ).add_to_graph(reduction.graph)
+        pipelined_reduction = fx.Graph()
+        reduction.graph.subgraphs["pipelined_reduction"] = pipelined_reduction
+        partitioned_argument_map: list[dict[fx.Node, fx.Node]] = [
+            {} for _ in range(scheduler.num_stages)
+        ]
+        add_nodes_by_schedule(
+            pipelined_reduction,
+            partitioned_graph,
+            partitioned_argument_map,
+            list(reversed(range(scheduler.num_stages))),
+            scheduler.initiation_interval,
+            induction_variable,
+            new_induction_variables,
+            rotating_registers,
+        )
 
 
 def get_induction_variable(
@@ -201,22 +243,40 @@ def construct_pipelined_loop(
     """
     induction_variable = get_induction_variable(reduction, constraints)
     num_rotating_registers = liveness_analysis(graph, constraints, scheduler)
-    rotating_registers: dict[fx.Node, list[fx.Node]] = {
-        k: [None for _ in range(v)] for k, v in num_rotating_registers.items()
+    rotating_registers: dict[fx.Node, deque[fx.Node]] = {
+        k: deque([None for _ in range(v)]) for k, v in num_rotating_registers.items()
     }
     partitioned_graph = partition_graph_by_stage(graph, scheduler)
-    partitioned_argument_map: list[dict[fx.Node, fx.Node]] = [
-        {} for _ in range(scheduler.num_stages)
-    ]
     # Construct prologue.
-    construct_pipeline_stage(
+    construct_prologue(
         reduction,
         partitioned_graph,
-        partitioned_argument_map,
         scheduler,
         rotating_registers,
         induction_variable,
         list(range(scheduler.num_stages)),
         create_fill_stage_schedule(scheduler),
     )
+    # Construct kernel.
+    construct_kernel(
+        reduction,
+        partitioned_graph,
+        scheduler,
+        rotating_registers,
+        induction_variable,
+        [induction_variable + i for i in range(scheduler.num_stages)],
+    )
+
+    # Construct epilogue.
+    # with reduction.graph.inserting_after(reduction.fx_node):
+    #    construct_pipeline_stage(
+    #        reduction,
+    #        partitioned_graph,
+    #        partitioned_argument_map,
+    #        scheduler,
+    #        rotating_registers,
+    #        induction_variable,
+    #        list(range(scheduler.num_stages)), # Change to last few iterations
+    #        create_drain_stage_schedule(scheduler),
+    #    )
     breakpoint()
