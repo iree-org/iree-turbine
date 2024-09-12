@@ -12,6 +12,7 @@ from .graph_utils import (
 )
 from typing import Callable
 import numpy as np
+import math
 
 logger = get_logger("turbine.wave.modulo_scheduling")
 
@@ -257,3 +258,11 @@ class ModuloScheduler:
         Returns the resource reservations of the schedule.
         """
         return self.RT
+
+    @property
+    def num_stages(self) -> int:
+        """
+        Returns the number of stages in the kernel of the pipelined loop.
+        """
+        max_cycle = max([t for t in self.schedule.values()])
+        return math.ceil(max_cycle / self.initiation_interval)

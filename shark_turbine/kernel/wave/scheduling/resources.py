@@ -34,12 +34,12 @@ delay_table = {
 # This table contains the resource usage for each operation.
 # Operations can use more than one resource for more than one cycle.
 resource_reservation_table = {
-    Operation.READ_SHARED: np.array([0, 1, 0]),
-    Operation.WRITE_SHARED: np.array([0, 1, 0]),
-    Operation.READ_GLOBAL: np.array([1, 0, 0]),
-    Operation.WRITE_GLOBAL: np.array([1, 0, 0]),
-    Operation.MMA: np.array([0, 0, 1]),
-    Operation.NOOP: np.array([0, 0, 0]),
+    Operation.READ_SHARED: np.array([[0, 1, 0]]),
+    Operation.WRITE_SHARED: np.array([[0, 1, 0]]),
+    Operation.READ_GLOBAL: np.array([[1, 0, 0]]),
+    Operation.WRITE_GLOBAL: np.array([[1, 0, 0]]),
+    Operation.MMA: np.array([[0, 0, 1]]),
+    Operation.NOOP: np.array([[0, 0, 0]]),
 }
 
 

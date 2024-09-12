@@ -544,6 +544,52 @@ def test_gemm():
         # CHECK-SAME:         ?>>, vector<1xf32>
         # CHECK:            return
 
+    @tkw.wave(constraints)
+    def gemm_pipelined(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 64,
+            N: 128,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 16,
+            LOAD_ELEMS_PER_THREAD: 4,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+            READ_SHARED_DELAY: 4,
+            WRITE_SHARED_DELAY: 1,
+            READ_GLOBAL_DELAY: 5,
+            WRITE_GLOBAL_DELAY: 5,
+            MMA_DELAY: 2,
+            SHARED_MEMORY_UNITS: 2,
+            GLOBAL_MEMORY_UNITS: 2,
+            MMA_UNITS: 2,
+        },
+        canonicalize=True,
+        schedule=True,
+    ):
+        a = torch.randn(64, 32, dtype=torch.float16)
+        b = torch.randn(128, 32, dtype=torch.float16)
+        c = torch.zeros(64, 128, dtype=torch.float32)
+        print(gemm(a, b, c).module_op)
+
 
 @run_test
 def test_add_float():

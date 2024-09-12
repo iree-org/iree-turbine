@@ -5,7 +5,8 @@ from .modulo_scheduling import ModuloScheduler
 from .graph_utils import create_scheduling_edges, Edge
 from .resources import get_available_resources, annotate_resource_usage
 from ..visualization import visualize_edges, visualize_graph, visualize_schedule
-from ..utils import subs_idxc, graph_copy, erase_graph
+from .loop_reconstruction import construct_pipelined_loop
+from ..utils import graph_copy, erase_graph
 import torch.fx as fx
 
 
@@ -51,6 +52,7 @@ def schedule_reduction(
             continue
         custom = get_custom(inverse_node_map[node])
         custom.scheduling_parameters = {
+            "absolute_cycle": cycle,
             "cycle": cycle % scheduler.initiation_interval,
             "stage": cycle // scheduler.initiation_interval,
             "initiation_interval": scheduler.initiation_interval,
@@ -60,6 +62,7 @@ def schedule_reduction(
             node.args = ()
 
     erase_graph(graph)
+    construct_pipelined_loop(reduction, reduction_graph, constraints, scheduler)
 
 
 def schedule_graph(trace: CapturedTrace, constraints: list[Constraint]):

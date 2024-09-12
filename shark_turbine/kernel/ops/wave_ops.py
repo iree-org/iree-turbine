@@ -116,6 +116,10 @@ def shuffle(src: "Register", offset: int, width: int) -> "Register":
     ...
 
 
+def rotating_register(src: list["Register"]) -> "Register":
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -1038,3 +1042,23 @@ class ShuffleOp(CustomOp):
     def type(self) -> Memory:
         src_type = get_custom(self.arg).type
         return src_type
+
+
+@define_op("concatenate")
+@dataclass
+class Concatenate(CustomOp):
+    """
+    Concatenates two registers that have the same shape
+    along the specified axis.
+    """
+
+    registers: list[fx.Proxy]
+    axis: IndexSymbol
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return self.registers[0].indexing_dims
+
+    @property
+    def type(self) -> "Register":
+        return self.registers[0].type
