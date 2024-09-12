@@ -445,12 +445,12 @@ def test_im2col_mma():
         outputs={NF: i, K: j},
     )
 
-    # # Workgroup tile sizes
+    # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
     # BLOCK_K = tkl.sym.BLOCK_K
     BLOCK_K = K
-    # # Address space (for GPU, shared(1) or global(0))
+    # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
     ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
@@ -580,11 +580,11 @@ def test_igemm_conv():
         },
     )
 
-    # # Workgroup tile sizes
+    # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
     BLOCK_K = K
-    # # Address space (for GPU, shared(1) or global(0))
+    # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
     ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
