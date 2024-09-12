@@ -537,8 +537,13 @@ def test_igemm_conv():
     padding = 0  # TODO: only pad=0 is supported for now
     stride = 1
 
+    torch.manual_seed(1)
     x = torch.randn(n, c, h, w, dtype=torch.float16)
     we = torch.randn(nf, cf, hf, wf, dtype=torch.float16)
+
+    convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
+    convRef.weight = torch.nn.Parameter(we)
+    out_ref = convRef(x).detach()
 
     sym = tkl.sym
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
@@ -632,12 +637,6 @@ def test_igemm_conv():
 
     sim_func = wave_sim(constraints)(conv)
     gpu_func = tkw.wave(constraints)(conv)
-
-    h_out = (h + 2 * padding - hf) // stride + 1
-    w_out = (w + 2 * padding - wf) // stride + 1
-    res_shape = (n, nf, h_out, w_out)
-    out_ref = torch.zeros(res_shape, dtype=torch.float32)
-    sim_func(x, we, out_ref)
 
     out = torch.zeros_like(out_ref)
 
