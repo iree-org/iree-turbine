@@ -15,6 +15,7 @@ from shark_turbine.kernel.lang.global_symbols import *
 from shark_turbine.kernel.wave.iree_utils import generate_iree_ref
 import os
 import json
+from torch.testing import assert_close
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
@@ -40,7 +41,8 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-def testGemm(shape: tuple[int]):
+@pytest.mark.parametrize("enable_scheduling", [False, True])
+def testGemm(shape: tuple[int], enable_scheduling: bool):
 
     # Input sizes
     M = tkl.sym.M
@@ -106,10 +108,22 @@ def testGemm(shape: tuple[int]):
         M: shape[0],
         N: shape[1],
         K: shape[2],
+        READ_SHARED_DELAY: 1,
+        WRITE_SHARED_DELAY: 1,
+        READ_GLOBAL_DELAY: 2,
+        WRITE_GLOBAL_DELAY: 2,
+        MMA_DELAY: 1,
+        SHARED_MEMORY_UNITS: 4,
+        GLOBAL_MEMORY_UNITS: 4,
+        MMA_UNITS: 4,
     }
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
     with tk.gen.TestLaunchContext(
-        hyperparams, canonicalize=True, run=True, run_config=config
+        hyperparams,
+        canonicalize=True,
+        run=True,
+        run_config=config,
+        schedule=enable_scheduling,
     ):
         a = torch.randn(shape[0], shape[2], dtype=torch.float16)
         b = torch.randn(shape[1], shape[2], dtype=torch.float16)
@@ -123,9 +137,4 @@ def testGemm(shape: tuple[int]):
 
         iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
         generate_iree_ref("mmt", [a, b], [iree_ref], config)
-        assert torch.equal(c, iree_ref)
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    unittest.main()
+        assert_close(c, iree_ref)

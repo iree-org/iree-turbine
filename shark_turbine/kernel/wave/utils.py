@@ -103,6 +103,21 @@ def print_trace(trace: CapturedTrace, custom_print: bool = True):
                 print(get_custom(node))
 
 
+def print_subgraph(trace: CapturedTrace, subgraph_name: str, custom_print: bool = True):
+    """
+    Prints a specific subgraphs of a trace.
+    The graphs are printed first in the torch printing format and
+    then using our custom node format.
+    """
+    # The root graph is at the back so we print the subgraphs in reverse order
+    for name, subgraph in trace.region_graph.subgraphs.items():
+        if name == subgraph_name:
+            print(subgraph)
+            if custom_print:
+                for node in subgraph.nodes:
+                    print(get_custom(node))
+
+
 def DCE(trace: CapturedTrace):
     """
     Removes all operators that are not used in the graph,
@@ -560,3 +575,41 @@ def find_index_bounds(
         return None
 
     return bounds
+
+def get_induction_variable(
+    reduction: Reduction, constraints: list[Constraint]
+) -> IndexSymbol:
+    induction_var = None
+    for constraint in constraints:
+        if (
+            isinstance(constraint, TilingConstraint)
+            and reduction.axis == constraint.dim
+        ):
+            induction_var = constraint.induction_var
+            break
+    else:
+        raise ValueError(f"Could not find induction variable for reduction {reduction}")
+    return induction_var
+
+
+def get_tiling_constraint(
+    reduction: Reduction, constraints: list[Constraint]
+) -> TilingConstraint:
+    for constraint in constraints:
+        if (
+            isinstance(constraint, TilingConstraint)
+            and reduction.axis == constraint.dim
+        ):
+            return constraint
+    else:
+        raise ValueError(f"Could not find tiling constraint for reduction {reduction}")
+
+
+def replace_uses_in(users: dict[fx.Node, list[CustomOp]], old: CustomOp, new: fx.Node):
+    """
+    Replace all uses of `old` with `new` in the list of users.
+    """
+    for user in users[old]:
+        for i, arg in enumerate(user.fx_node.args):
+            if arg == old.fx_node:
+                user.update_arg(i, new)
