@@ -184,6 +184,17 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
 
         stack.append(operation)
 
+    def _get_mul(numerator):
+        return lambda x: arith_d.MulIOp(x, numerator)
+
+    def _get_add(numerator, denominator):
+        return lambda x: arith_d.AddIOp(arith_d.MulIOp(x, denominator), numerator)
+
+    def _get_div(mul, add, denominator):
+        return lambda x, is_mul: arith_d.DivSIOp(
+            mul(x) if is_mul else add(x), denominator
+        )
+
     induction_var_syms = []
     induction_vars = []
     for constraint in emitter.constraints:
@@ -247,13 +258,9 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                     numerator = arith_d.SubIOp(zero, numerator)
                 mul = lambda x: x
                 if abs(term.p) != 1:
-                    mul = lambda x: arith_d.MulIOp(x, numerator)
-                add = lambda x: arith_d.AddIOp(
-                    arith_d.MulIOp(x, denominator), numerator
-                )
-                operation = lambda x, is_mul: arith_d.DivSIOp(
-                    mul(x) if is_mul else add(x), denominator
-                )
+                    mul = _get_mul(numerator)
+                add = _get_add(numerator, denominator)
+                operation = _get_div(mul, add, denominator)
                 stack.append(operation)
             case sympy.UnevaluatedExpr():
                 continue
