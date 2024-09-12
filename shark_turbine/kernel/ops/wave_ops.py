@@ -453,6 +453,8 @@ class CustomOp(ABC):
             self.fx_node.index = {}
             for dim, key in value.items():
                 self.fx_node.index[dim] = key
+        elif isinstance(value, list):
+            self.fx_node.index = list(value)
         else:
             raise ValueError("Index must be a dict")
 
@@ -870,30 +872,23 @@ class Reduction(CustomOp):
         return expand_dims
 
     def iter_args(self, graph: fx.Graph) -> list[fx.Node]:
-        """
-        The first N placeholders in the subgraph are the iter args, where
-        the total number of placeholders in the subgraph is N + M, where M
-        is the number of implicit captures.
-        """
         iter_args = []
         for nested_node in graph.nodes:
             custom = get_custom(nested_node)
-            if isinstance(custom, Placeholder):
+            if isinstance(custom, IterArg):
                 iter_args.append(nested_node)
-        return iter_args[: -len(self.implicit_captures)]
+        return iter_args
 
     def captured_vars(self, graph: fx.Graph) -> list[fx.Node]:
         """
-        The last M placeholders in the subgraph are the captured vars, where
-        the total number of placeholders in the subgraph is N + M, where N
-        is the number of iter args.
+        Nodes that are placeholders and are not iter args are captured vars.
         """
         captured_vars = []
         for nested_node in graph.nodes:
             custom = get_custom(nested_node)
-            if isinstance(custom, Placeholder):
+            if isinstance(custom, Placeholder) and not isinstance(custom, IterArg):
                 captured_vars.append(nested_node)
-        return captured_vars[-len(self.implicit_captures) :]
+        return captured_vars
 
     @property
     def type(self) -> list[Memory | Register]:
@@ -916,6 +911,10 @@ class Reduction(CustomOp):
                     if isinstance(return_vals, list)
                     else None
                 )
+
+    @index.setter
+    def index(self, value: Any):
+        CustomOp.index.fset(self, value)
 
 
 @define_op("write")

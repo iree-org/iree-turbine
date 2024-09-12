@@ -1,12 +1,12 @@
 from ..constraints import Constraint, TilingConstraint
 from ..._support.indexing import IndexSymbol
 from ..._support.tracing import CapturedTrace
-from ...ops.wave_ops import Reduction, IterArg, get_custom
+from ...ops.wave_ops import Reduction, IterArg, Output, get_custom
 from .modulo_scheduling import ModuloScheduler
 from ..utils import graph_copy, erase_graph
 import torch.fx as fx
 import math
-from collections import defaultdict, deque
+from collections import defaultdict, deque, ChainMap
 import random
 
 
@@ -104,8 +104,8 @@ def add_nodes_by_schedule(
         interleave_instructions(interleaved_instructions)
 
         for iteration, stage, node in interleaved_instructions:
-            node = get_custom(node)
-            new_node = node.copy(
+            custom_node = get_custom(node)
+            new_node = custom_node.copy(
                 new_graph=reduction_graph,
                 arg_transform=lambda x: (
                     partitioned_argument_map[stage][x]
@@ -114,7 +114,7 @@ def add_nodes_by_schedule(
                 ),
             )
             # Update the argument map for the current stage.
-            partitioned_argument_map[stage][node] = new_node
+            partitioned_argument_map[stage][node] = new_node.fx_node
             # Set the index for the new node by substituting the induction variable
             # for the current iteration.
             new_node.index = node.index
@@ -123,9 +123,9 @@ def add_nodes_by_schedule(
                     {induction_variable: current_induction_variables[iteration]}
                 )
             # Update the rotating registers for the current node (if applicable).
-            if node.fx_node in rotating_registers:
-                rotating_registers[node.fx_node].append(new_node.fx_node)
-                rotating_registers[node.fx_node].popleft()
+            if node in rotating_registers:
+                rotating_registers[node].append(new_node.fx_node)
+                rotating_registers[node].popleft()
 
 
 def create_fill_stage_schedule(scheduler: ModuloScheduler) -> list[list[int]]:
@@ -177,6 +177,7 @@ def construct_prologue(
 
 
 def construct_kernel(
+    reduction_subgraph: fx.Graph,
     reduction: Reduction,
     partitioned_graph: list[dict[int, fx.Node]],
     scheduler: ModuloScheduler,
@@ -188,9 +189,11 @@ def construct_kernel(
     Construct the kernel of the pipelined loop.
     First, we construct a new reduction op with an empty graph.
     """
-    flattened_rotating_registers = []
-    for registers in rotating_registers.values():
-        flattened_rotating_registers.extend(registers)
+
+    flattened_rotating_registers = [
+        register for registers in rotating_registers.values() for register in registers
+    ]
+
     with reduction.graph.inserting_before(reduction.fx_node):
         new_reduction = Reduction(
             reduction.axis,
@@ -198,11 +201,35 @@ def construct_kernel(
             subgraph_name="pipelined_reduction",
             implicit_captures=reduction.implicit_captures,
         ).add_to_graph(reduction.graph)
+        custom = get_custom(new_reduction)
+        new_reduction.index = reduction.index
         pipelined_reduction = fx.Graph()
         reduction.graph.subgraphs["pipelined_reduction"] = pipelined_reduction
+
+        # Create iter_args from the init_args of the new reduction.
+        init_arg_to_iter_arg: dict[fx.Node, fx.Node] = {}
+        for node in custom.init_args:
+            new_iter_arg = IterArg(node.name).add_to_graph(pipelined_reduction)
+            init_arg_to_iter_arg[node] = new_iter_arg
+
+        # Update argument maps with the new iter_args based on stage.
+        # No updates to the last stage. For each rotating register,
+        # we evaluate which stage it belongs to an update the argument
+        # map for the next stage and n - 1 stages after it, where
+        # n is the total number of rotating registers.
+
         partitioned_argument_map: list[dict[fx.Node, fx.Node]] = [
             {} for _ in range(scheduler.num_stages)
         ]
+
+        for node, registers in rotating_registers.items():
+            for i, register in enumerate(registers):
+                custom = get_custom(node)
+                stage = custom.scheduling_parameters["stage"]
+                partitioned_argument_map[stage + len(registers) - i][
+                    node
+                ] = init_arg_to_iter_arg[register]
+
         add_nodes_by_schedule(
             pipelined_reduction,
             partitioned_graph,
@@ -213,6 +240,19 @@ def construct_kernel(
             new_induction_variables,
             rotating_registers,
         )
+
+        # Create output node (last node in the graph).
+        original_output = get_custom(reduction_subgraph._root.prev)
+        return_vals = []
+        for register in original_output.return_vals[0]:
+            custom = get_custom(register)
+            stage = custom.scheduling_parameters["stage"]
+            return_vals.append(partitioned_argument_map[stage][register])
+        for registers in rotating_registers.values():
+            return_vals.extend(registers)
+
+        output = Output(return_vals).add_to_graph(pipelined_reduction)
+        breakpoint()
 
 
 def get_induction_variable(
@@ -259,6 +299,7 @@ def construct_pipelined_loop(
     )
     # Construct kernel.
     construct_kernel(
+        graph,
         reduction,
         partitioned_graph,
         scheduler,
