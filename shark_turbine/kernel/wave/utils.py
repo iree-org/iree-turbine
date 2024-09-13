@@ -249,8 +249,8 @@ def compile_and_invoke(
 
     # TODO: More targets/backends support.
     if backend == "rocm":
-        target = config["gfx942"]
-        flags.append(f"--iree-hip-target={target}")
+        target = config["target"]
+        flags.append(f"--iree-rocm-target-chip={target}")
 
     if config.get("print_ir_after_all", False):
         flags.append("--mlir-print-ir-after-all")
