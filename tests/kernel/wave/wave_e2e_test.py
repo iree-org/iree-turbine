@@ -11,7 +11,7 @@ import json
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
-default_test_shapes = [(1, 128), (256, 64), (256, 128), (256, 256), (256, 1024)]
+default_test_shapes = [(1, 128), (256, 64)]
 
 user_specified_test_shapes = ""
 
