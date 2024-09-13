@@ -31,7 +31,7 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-def testGemm(shape):
+def testGemm(shape: tuple[int]):
 
     # Input sizes
     M = tkl.sym.M
