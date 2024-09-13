@@ -196,6 +196,10 @@ class WorkgroupConstraint(Constraint):
         return IndexSequence(wg_dim * self.tile_size, 1)
 
 
+def get_grid_dim_size(dim: IndexExpr, tile_size: IndexExpr) -> IndexExpr:
+    return ceiling(dim / tile_size)
+
+
 def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]:
     sorted_constraints = sorted(wg_constraints, key=lambda x: x.workgroup_dim)
     # Currently not more than one constraint in each dimension supported.
