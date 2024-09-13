@@ -248,7 +248,7 @@ def compile_and_invoke(
     ]
 
     # TODO: More targets/backends support.
-    if backend == "rocm":
+    if backend == "hip":
         target = config["target"]
         flags.append(f"--iree-hip-target={target}")
 
