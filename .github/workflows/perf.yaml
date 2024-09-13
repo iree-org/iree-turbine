@@ -1,10 +1,13 @@
-name: CI
+name: PERF
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
     - main
+  schedule:
+  - cron: '30 5 * * *'
 
 concurrency:
   # A PR number if a pull request and otherwise the commit hash. This cancels
@@ -50,23 +53,20 @@ jobs:
         pip install --no-compile -r pytorch-cpu-requirements.txt
         pip install --no-cache-dir -r iree-requirements-ci.txt
         pip install -r requirements.txt -e .
-
     - name: Run unit tests
       if: ${{ !cancelled() }}
       run: |
         pytest -n 4 .
-
     - name: Run e2e tests on MI300
       if: "contains(matrix.os, 'mi300') && !cancelled()"
       run: |
         export WAVE_RUN_E2E_TESTS=1
-        pytest -n 4 ./tests/kernel/wave/
-
+        export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
+        pytest -n 1 ./tests/kernel/wave/
     - name: Run LIT tests
       if: ${{ !cancelled() }}
       run: |
         lit lit_tests/ -v
-
     - name: MyPy Type Checking
       if: ${{ !cancelled() }}
       run: |
