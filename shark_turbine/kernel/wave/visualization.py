@@ -7,9 +7,10 @@ pandas_disabled = False
 try:
     import pandas as pd
 except:
-    matplotlib_disabled = True
+    pandas_disabled = True
 from torch import fx
 from .scheduling.graph_utils import Edge
+from ..ops.wave_ops import Output, get_custom
 import math
 
 
@@ -95,3 +96,82 @@ def visualize_schedule(
     ).to_html()
     with open(f"{file_name}", "w") as f:
         f.write(output)
+
+
+def visualize_mapped_graphs(
+    second: fx.Graph,
+    mappings: list[dict[fx.Node, fx.Node]],
+    file_name: str,
+):
+    """
+    Given the pipelined graph and a list of mappings of nodes from the original
+    graph to the pipelined graph (per stage), visualize the pipelined graph (with their original labels)
+
+    """
+
+    if graphviz_disabled:
+        raise ImportError("pygraphviz not installed, cannot visualize graph")
+    second_numbering = number_nodes(second)
+    inverse_mapping: list[dict[fx.Node, fx.Node]] = []
+    for stage, mapping in enumerate(mappings):
+        inverse_mapping.append({v: k for k, v in mapping.items()})
+
+    # Draw nodes and edges in the pipelined graph.
+    G = pgv.AGraph(directed=True)
+    G0 = G.add_subgraph(name="pipelined")
+    for node in second.nodes:
+        if hasattr(node, "scheduling_parameters"):
+            stage = node.scheduling_parameters["stage"]
+            name = inverse_mapping[stage][node].name
+        else:
+            name = node.name
+        G0.add_node(
+            second_numbering[id(node)],
+            label=name,
+            color="lightblue",
+            style="filled",
+        )
+        for user in node.users.keys():
+            if user not in second.nodes:
+                continue
+            if isinstance(get_custom(user), Output):
+                continue
+            G0.add_edge(
+                second_numbering[id(node)],
+                second_numbering[id(user)],
+                color="black",
+            )
+
+    # Draw nodes and edges in the original graph.
+    colors = ["red", "green", "orange", "purple", "orange", "cyan", "magenta"]
+    max_stage = len(mappings)
+    for stage, mapping in enumerate(mappings):
+        for node, mapped_node in mapping.items():
+            for user in node.users.keys():
+                if user not in mapping:
+                    continue
+                mapped_user = mapping[user]
+                G.add_edge(
+                    second_numbering[id(mapped_node)],
+                    second_numbering[id(mapped_user)],
+                    label=f"{stage}",
+                    color=colors[stage % max_stage],
+                )
+
+    # Draw edges between rotating registers for the same variable.
+    for stage, mapping in enumerate(mappings):
+        for node, mapped_node in mapping.items():
+            for second_stage, second_mapping in enumerate(mappings):
+                if stage == second_stage:
+                    continue
+                for second_node, second_mapped_node in second_mapping.items():
+                    if node == second_node and stage < second_stage:
+                        G.add_edge(
+                            second_numbering[id(mapped_node)],
+                            second_numbering[id(second_mapped_node)],
+                            label=f"{stage} -> {second_stage}",
+                            color="magenta",
+                        )
+
+    G.layout(prog="dot")
+    G.draw(file_name)

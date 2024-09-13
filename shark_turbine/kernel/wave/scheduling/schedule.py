@@ -31,7 +31,7 @@ def schedule_reduction(
     ignore_nodes, iter_args, output = annotate_resource_usage(graph)
     edges = create_scheduling_edges(graph, ignore_nodes, iter_args, output)
 
-    visualize = False
+    visualize = True
     if visualize:
         visualize_scheduling_graph(edges)
         visualize_graph(graph, "scheduling_fx_graph.png")
@@ -62,7 +62,9 @@ def schedule_reduction(
             node.args = ()
 
     erase_graph(graph)
-    construct_pipelined_loop(reduction, reduction_graph, constraints, scheduler)
+    construct_pipelined_loop(
+        reduction, reduction_graph, constraints, scheduler, node_map
+    )
 
 
 def schedule_graph(trace: CapturedTrace, constraints: list[Constraint]):
