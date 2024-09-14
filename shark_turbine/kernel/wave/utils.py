@@ -241,7 +241,7 @@ def compile_and_invoke(
     backend = config["backend"]
     device = config["device"]
     flags = [
-        f"--iree-hip-target={backend}",
+        f"--iree-hal-target-backends={backend}",
         "--iree-vm-bytecode-module-strip-source-map=true",
         "--iree-opt-strip-assertions=true",
         "--iree-vm-target-truncate-unsupported-floats",
