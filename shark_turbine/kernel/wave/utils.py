@@ -241,7 +241,7 @@ def compile_and_invoke(
     backend = config["backend"]
     device = config["device"]
     flags = [
-        f"--iree-hal-target-backends={backend}",
+        f"--iree-hip-target={backend}",
         "--iree-vm-bytecode-module-strip-source-map=true",
         "--iree-opt-strip-assertions=true",
         "--iree-vm-target-truncate-unsupported-floats",
@@ -250,7 +250,7 @@ def compile_and_invoke(
     # TODO: More targets/backends support.
     if backend == "rocm":
         target = config["target"]
-        flags.append(f"--iree-rocm-target-chip={target}")
+        flags.append(f"--iree-hip-target={target}")
 
     if config.get("print_ir_after_all", False):
         flags.append("--mlir-print-ir-after-all")
