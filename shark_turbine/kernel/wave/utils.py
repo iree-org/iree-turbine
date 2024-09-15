@@ -383,11 +383,11 @@ def get_tiling_constraint(
         raise ValueError(f"Could not find tiling constraint for reduction {reduction}")
 
 
-def replace_uses_in(users: list[CustomOp], old: fx.Node, new: fx.Node):
+def replace_uses_in(users: dict[fx.Node, list[CustomOp]], old: CustomOp, new: fx.Node):
     """
     Replace all uses of `old` with `new` in the list of users.
     """
-    for user in users:
+    for user in users[old]:
         for i, arg in enumerate(user.fx_node.args):
-            if arg == old:
-                user.fx_node.args[i] = new
+            if arg == old.fx_node:
+                user.update_arg(i, new)

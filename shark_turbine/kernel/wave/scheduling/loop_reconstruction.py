@@ -206,6 +206,9 @@ def push_rotating_registers(
                 )
             else:
                 arg_context[(mapped_stage, node)] = register
+                logger.debug(
+                    f"Mapped orig: {node_map[node]} / mapped: {register} to stage {mapped_stage}."
+                )
             count += 1
         if new_registers:
             new_rotating_registers[node] = new_registers
@@ -313,6 +316,7 @@ def construct_epilogue(
     new_induction_variables: list[int],
     stages: list[int],
     num_rotating_registers: dict[fx.Node, int],
+    node_map: dict[fx.Node, fx.Node],
 ):
     """
     Construct the epilogue of the pipelined loop.
@@ -351,7 +355,7 @@ def construct_epilogue(
         # argument map with them.
         rotating_registers_get_results = []
         offset = len(existing_get_results)
-        for i in range(len(rotating_registers)):
+        for i in range(len(flatten_dict_values(rotating_registers))):
             rotating_registers_get_results.append(
                 GetResult(pipelined_reduction.fx_node, i + offset).add_to_graph(
                     pipelined_reduction.graph
@@ -362,7 +366,7 @@ def construct_epilogue(
         )
 
         # Push the rotating registers onto the argument map.
-        push_rotating_registers(arg_context, rotating_registers, None, None, False)
+        push_rotating_registers(arg_context, rotating_registers, None, node_map, False)
 
         for i in range(scheduler.num_stages - 1):
             add_nodes_by_schedule(
@@ -382,6 +386,14 @@ def construct_epilogue(
         assert len(new_results) == len(existing_get_results)
         for i, get_result in enumerate(existing_get_results):
             replace_uses_in(existing_users, get_result, new_results[i])
+
+        visualize = True
+        if visualize:
+            visualize_mapped_graphs(
+                pipelined_reduction.graph, arg_context.argument_map, "epilogue.png"
+            )
+
+        breakpoint()
 
 
 def construct_pipelined_loop(
@@ -439,6 +451,7 @@ def construct_pipelined_loop(
         [max_induction_variable - i for i in range(scheduler.num_stages)],
         create_drain_stage_schedule(scheduler.num_stages),
         num_rotating_registers,
+        node_map,
     )
 
     # Remove the unpipelined reduction.

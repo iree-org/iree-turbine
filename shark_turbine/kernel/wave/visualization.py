@@ -125,7 +125,10 @@ def visualize_mapped_graphs(
     for node in second.nodes:
         if hasattr(node, "scheduling_parameters"):
             stage = node.scheduling_parameters["stage"]
-            name = inverse_mapping[stage][node].name
+            if node in inverse_mapping[stage]:
+                name = inverse_mapping[stage][node].name
+            else:
+                name = node.name
         else:
             name = node.name
         G0.add_node(
