@@ -10,7 +10,7 @@ from typing import Callable, Any, List, Tuple
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
-from ..ops.wave_ops import get_custom, Output, Write, Reduction, MMA
+from ..ops.wave_ops import get_custom, Output, Write, Reduction, MMA, CustomOp
 from .constraints import HardwareConstraint, TilingConstraint, Constraint
 import torch.fx as fx
 import shark_turbine.kernel.lang as tkl
@@ -381,3 +381,13 @@ def get_tiling_constraint(
             return constraint
     else:
         raise ValueError(f"Could not find tiling constraint for reduction {reduction}")
+
+
+def replace_uses_in(users: list[CustomOp], old: fx.Node, new: fx.Node):
+    """
+    Replace all uses of `old` with `new` in the list of users.
+    """
+    for user in users:
+        for i, arg in enumerate(user.fx_node.args):
+            if arg == old:
+                user.fx_node.args[i] = new

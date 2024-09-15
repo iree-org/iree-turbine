@@ -8,6 +8,7 @@ from ..utils import (
     erase_graph,
     get_induction_variable,
     get_tiling_constraint,
+    replace_uses_in,
 )
 from ..utils import subs_idxc
 import torch.fx as fx
@@ -60,7 +61,9 @@ def add_nodes_by_schedule(
         interleave_instructions(interleaved_instructions)
 
         for iteration, stage, node in interleaved_instructions:
+            logger.debug(f"Node: {node}, Stage: {stage}, Iteration: {iteration}")
             custom_node = get_custom(node)
+            logger.debug(f"Node args: {node.args}")
             for arg in node.args:
                 if (stage, arg) in arg_context:
                     logger.debug(
@@ -117,6 +120,10 @@ def construct_prologue(
     We also need to initialize the rotating registers and update the indices
     of the nodes to use the appropriate values of the induction variable.
     """
+    logger.debug("=====================================")
+    logger.debug("Constructing prologue.")
+    logger.debug("=====================================")
+
     arg_context = ArgumentContext(
         reduction.outputs(reduction_subgraph),
         reduction.iter_args(reduction_subgraph),
@@ -223,6 +230,9 @@ def construct_kernel(
     The iter args/results of the pipelined reduction are always:
     [results0, result1, ..., resultN, rotating_reg0, rotating_reg1, ..., rotating_regN]
     """
+    logger.debug("=====================================")
+    logger.debug("Constructing kernel.")
+    logger.debug("=====================================")
 
     with reduction.graph.inserting_before(reduction.fx_node):
         pipelined_reduction = Reduction(
@@ -312,16 +322,21 @@ def construct_epilogue(
     We emit GetResult nodes for the rotating registers and map them to
     the different epilogue stages.
     """
+    logger.debug("=====================================")
+    logger.debug("Constructing epilogue.")
+    logger.debug("=====================================")
+
     arg_context = ArgumentContext(
         reduction.outputs(reduction_subgraph),
         reduction.iter_args(reduction_subgraph),
         scheduler.num_stages,
     )
 
-    existing_get_results: list[GetResult] = [
-        x for x in pipelined_reduction.users if isinstance(x, GetResult)
-    ]
-    existing_get_results = sorted(existing_get_results, key=lambda x: x.res_idx)
+    existing_get_results: list[GetResult] = sorted(
+        [x for x in pipelined_reduction.users if isinstance(x, GetResult)],
+        key=lambda x: x.res_idx,
+    )
+    existing_users = {x: x.users for x in existing_get_results}
 
     # Map the results from the kernel to the init args (for all stages).
     for iter_arg, get_result in zip(
@@ -362,10 +377,11 @@ def construct_epilogue(
                 drain=True,
             )
 
-        # Replace the existing get results with the new results.
+        # Replace the existing uses with the new results.
         new_results = arg_context.get_mapped_results()
+        assert len(new_results) == len(existing_get_results)
         for i, get_result in enumerate(existing_get_results):
-            get_result.replace_all_uses_with(new_results[i])
+            replace_uses_in(existing_users, get_result, new_results[i])
 
 
 def construct_pipelined_loop(
