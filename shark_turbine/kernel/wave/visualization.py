@@ -27,6 +27,9 @@ def visualize_graph(graph: fx.Graph, file_name: str):
         G.add_node(node_numbering[id(node)], label=node.name)
     for node in graph.nodes:
         for user in node.users.keys():
+            # Handle scenario where nodes are shared across graphs.
+            if user not in graph.nodes:
+                continue
             G.add_edge(node_numbering[id(node)], node_numbering[id(user)])
     G.layout(prog="dot")
     G.draw(file_name)

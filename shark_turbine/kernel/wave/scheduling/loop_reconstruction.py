@@ -3,95 +3,31 @@ from ..._support.indexing import IndexSymbol
 from ..._support.tracing import CapturedTrace
 from ...ops.wave_ops import Reduction, IterArg, Output, Write, GetResult, get_custom
 from .modulo_scheduling import ModuloScheduler
-from ..utils import graph_copy, erase_graph
+from ..utils import (
+    graph_copy,
+    erase_graph,
+    get_induction_variable,
+    get_tiling_constraint,
+)
 from ..utils import subs_idxc
 import torch.fx as fx
 import math
-from collections import defaultdict, deque, ChainMap
-from ..visualization import visualize_mapped_graphs
+from collections import deque
+from ..visualization import visualize_mapped_graphs, visualize_graph
 from ....support.logging import get_logger
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
 import random
 from typing import Optional
-from .loop_reconstruction_utils import ArgumentContext
+from .loop_reconstruction_utils import (
+    ArgumentContext,
+    create_fill_stage_schedule,
+    create_drain_stage_schedule,
+    liveness_analysis,
+    partition_graph_by_stage,
+    interleave_instructions,
+)
 
 logger = get_logger("turbine.wave.scheduling.loop_reconstruction")
-
-
-def liveness_analysis(
-    graph: fx.Graph, constraints: list[Constraint], scheduler: ModuloScheduler
-) -> dict[fx.Node, int]:
-    """
-    Perform liveness analysis on the graph to determine the live ranges of
-    variables and use that to deduce how many rotating registers we need.
-    """
-    lifetime: dict[fx.Node, int] = {}
-    for node in graph.nodes:
-        custom = get_custom(node)
-        if custom.scheduling_parameters is None:
-            continue
-        if node not in lifetime:
-            lifetime[node] = 0
-        for user in custom.users:
-            if user.scheduling_parameters is None:
-                continue
-            logger.debug(
-                f"Node: {node}, User: {user.fx_node}, lifetime: {user.scheduling_parameters['stage'] - custom.scheduling_parameters['stage']}"
-            )
-            lifetime[node] = max(
-                user.scheduling_parameters["stage"]
-                - custom.scheduling_parameters["stage"],
-                lifetime[node],
-            )
-
-    # Determine how many copies we need for each node. If the lifetime of a node
-    # is l clocks and the initiation interval is T, then only ceil(l/T) values
-    # of the node can be live at the same time. We need to create copies of only
-    # those nodes that are live at more than one stage.
-    num_rotating_registers: dict[fx.Node, int] = {}
-    for node, l in lifetime.items():
-        if node in num_rotating_registers:
-            continue
-        custom = get_custom(node)
-        if (
-            isinstance(custom, Write)
-            and custom.memory_type.address_space == SHARED_ADDRESS_SPACE
-        ):
-            continue
-        if l > 0:
-            num_rotating_registers[node] = l
-
-    return num_rotating_registers
-
-
-def partition_graph_by_stage(
-    graph: fx.Graph, scheduler: ModuloScheduler
-) -> list[dict[int, list[fx.Node]]]:
-    """
-    Partition the graph into stages based on the scheduling parameters.
-    """
-    partitioned_graph: list[dict[int, list[fx.Node]]] = [
-        defaultdict(list) for _ in range(scheduler.num_stages)
-    ]
-    for stage in range(scheduler.num_stages):
-        for node in graph.nodes:
-            custom = get_custom(node)
-            if custom.scheduling_parameters is None:
-                continue
-            if custom.scheduling_parameters["stage"] == stage:
-                cycle = custom.scheduling_parameters["cycle"]
-                partitioned_graph[stage][cycle].append(node)
-    return partitioned_graph
-
-
-def interleave_instructions(instructions: list[tuple[int, int, fx.Node]]):
-    """
-    Interleave the instructions that are scheduled in the same cycle.
-    Currently, we just randomly shuffle them, but we could also sort
-    them based on some criteria.
-    """
-    rng = random.Random(0)
-    rng.shuffle(instructions)
 
 
 def add_nodes_by_schedule(
@@ -103,6 +39,7 @@ def add_nodes_by_schedule(
     induction_variable: IndexSymbol,
     current_induction_variables: list[int],
     rotating_registers: dict[fx.Node, list[fx.Node]],
+    drain: bool = False,
 ):
     """
     Interleave the instructions in the partitioned graph by stage
@@ -127,17 +64,17 @@ def add_nodes_by_schedule(
             for arg in node.args:
                 if (stage, arg) in arg_context:
                     logger.debug(
-                        f"Found arg: {arg} in partitioned argument map. Using {arg_context.query_arg(stage, arg)}."
+                        f"Found arg: {arg} in partitioned argument map. Using {arg_context[(stage, arg)]}."
                     )
                     continue
             new_node = custom_node.copy(
                 new_graph=reduction_graph,
                 arg_transform=lambda x: (
-                    arg_context.query_arg(stage, x) if (stage, x) in arg_context else x
+                    arg_context[(stage, x)] if (stage, x) in arg_context else x
                 ),
             )
-            # Update the argument map for the current stage.
-            arg_context.map_arg(stage, node, new_node.fx_node)
+            # Update the argument context.
+            arg_context[(stage, node)] = new_node.fx_node
             logger.debug(
                 f"Copying Node: {node}, Stage: {stage}, Iteration: {iteration} -> {new_node.fx_node}"
             )
@@ -155,39 +92,12 @@ def add_nodes_by_schedule(
                 rotating_registers[node].append(new_node.fx_node)
                 rotating_registers[node].popleft()
 
-            # Update the argument map for the next stage.
-
-
-def create_fill_stage_schedule(n: int) -> list[list[int]]:
-    """
-    Create the schedule of which stages need to be interleaved for the prologue (fill).
-    This looks like:
-    [0 None None None]
-    [1    0 None None]
-    [2    1    0 None]
-    """
-    schedule = []
-    for i in range(n - 1):
-        row = list(range(i, -1, -1))
-        row.extend([None] * (n - i - 1))
-        schedule.append(row)
-    return schedule
-
-
-def create_drain_stage_schedule(n: int) -> list[list[int]]:
-    """
-    Create the schedule of which stages need to be interleaved for the epilogue (drain).
-    This looks like:
-    [None    3    2 1]
-    [None None    3 2]
-    [None None None 3]
-    """
-    schedule = []
-    for i in range(n - 1):
-        row = [None] * (i + 1)
-        row.extend(range(n - 1, i, -1))
-        schedule.append(row)
-    return schedule
+            # For the drain stage, update the init args whenever a result
+            # is computed.
+            if drain and node in arg_context.results:
+                arg_context[
+                    (stage, arg_context.result_to_iter_arg[node])
+                ] = new_node.fx_node
 
 
 def construct_prologue(
@@ -207,7 +117,11 @@ def construct_prologue(
     We also need to initialize the rotating registers and update the indices
     of the nodes to use the appropriate values of the induction variable.
     """
-    arg_context = ArgumentContext(reduction_subgraph, scheduler.num_stages)
+    arg_context = ArgumentContext(
+        reduction.outputs(reduction_subgraph),
+        reduction.iter_args(reduction_subgraph),
+        scheduler.num_stages,
+    )
     with reduction.graph.inserting_before(reduction.fx_node):
         for i in range(scheduler.num_stages - 1):
             add_nodes_by_schedule(
@@ -245,6 +159,7 @@ def unflatten_dict_values(
     for node, shape in rotating_registers_shapes.items():
         rotating_registers[node] = deque(values[count : count + shape])
         count += shape
+    assert count == sum(rotating_registers_shapes.values())
     return rotating_registers
 
 
@@ -261,9 +176,11 @@ def push_rotating_registers(
     specified graph if requested.
 
     For each rotating register,
-    we evaluate which stage it belongs to an update the argument
-    map for the next stage and n - 1 stages after it, where
+    we evaluate which stage it belongs to and update the argument
+    context for the next stage and n - 1 stages after it, where
     n is the total number of rotating registers.
+    If var a has [a, b, c] as rotating registers, then a is
+    used in stage 2, b in stage 1 and c in stage 0.
     """
     new_rotating_registers: dict[fx.Node, deque[fx.Node]] = {}
     count = 0
@@ -275,13 +192,13 @@ def push_rotating_registers(
             mapped_stage = stage + len(registers) - i
             if create_new_nodes:
                 iter_arg = IterArg(f"rotating_reg_{count}").add_to_graph(graph)
-                arg_context.map_arg(mapped_stage, node, iter_arg)
+                arg_context[(mapped_stage, node)] = iter_arg
                 new_registers.append(iter_arg)
                 logger.debug(
                     f"Mapped orig: {node_map[node]} / mapped: {iter_arg} to stage {mapped_stage}."
                 )
             else:
-                arg_context.map_arg(mapped_stage, node, register)
+                arg_context[(mapped_stage, node)] = register
             count += 1
         if new_registers:
             new_rotating_registers[node] = new_registers
@@ -307,15 +224,10 @@ def construct_kernel(
     [results0, result1, ..., resultN, rotating_reg0, rotating_reg1, ..., rotating_regN]
     """
 
-    flattened_rotating_registers = flatten_dict_values(rotating_registers)
-
-    reduction_init_args = reduction.init_args
-    reduction_iter_args = reduction.iter_args(reduction_subgraph)
-
     with reduction.graph.inserting_before(reduction.fx_node):
         pipelined_reduction = Reduction(
             reduction.axis,
-            init_args=reduction_init_args + flattened_rotating_registers,
+            init_args=reduction.init_args + flatten_dict_values(rotating_registers),
             subgraph_name="pipelined_reduction",
             implicit_captures=reduction.implicit_captures,
         ).add_to_graph(reduction.graph)
@@ -325,13 +237,16 @@ def construct_kernel(
         reduction.graph.subgraphs["pipelined_reduction"] = pipelined_reduction_graph
 
         # Update the argument map for the new reduction.
-        arg_context = ArgumentContext(reduction_subgraph, scheduler.num_stages)
+        arg_context = ArgumentContext(
+            reduction.outputs(reduction_subgraph),
+            reduction.iter_args(reduction_subgraph),
+            scheduler.num_stages,
+        )
 
         # For the original iter args, we just map the old ones to the new ones.
         # Do this for all stages, since the original iter args are "dummy" nodes
         # during scheduling.
-        for node in reduction_iter_args:
-            custom = get_custom(node)
+        for node in arg_context.iter_args:
             iter_arg = IterArg(node.name).add_to_graph(pipelined_reduction_graph)
             arg_context.map_arg_all_stages(node, iter_arg)
 
@@ -356,12 +271,10 @@ def construct_kernel(
         )
 
         # Create output node (last node in the graph).
-        original_output = get_custom(reduction_subgraph._root.prev)
-        return_vals = []
-        for register in original_output.return_vals[0]:
-            custom = get_custom(register)
-            stage = custom.scheduling_parameters["stage"]
-            return_vals.append(arg_context.query_arg(stage, register))
+        return_vals = [
+            arg_context[(register.scheduling_parameters["stage"], register)]
+            for register in arg_context.results
+        ]
         for registers in new_rotating_registers.values():
             return_vals.extend(registers)
 
@@ -381,6 +294,7 @@ def construct_kernel(
 
 def construct_epilogue(
     reduction_subgraph: fx.Graph,
+    reduction: Reduction,
     pipelined_reduction: Reduction,
     partitioned_graph: list[dict[int, fx.Node]],
     scheduler: ModuloScheduler,
@@ -398,12 +312,22 @@ def construct_epilogue(
     We emit GetResult nodes for the rotating registers and map them to
     the different epilogue stages.
     """
-    arg_context = ArgumentContext(reduction_subgraph, scheduler.num_stages)
+    arg_context = ArgumentContext(
+        reduction.outputs(reduction_subgraph),
+        reduction.iter_args(reduction_subgraph),
+        scheduler.num_stages,
+    )
 
     existing_get_results: list[GetResult] = [
         x for x in pipelined_reduction.users if isinstance(x, GetResult)
     ]
     existing_get_results = sorted(existing_get_results, key=lambda x: x.res_idx)
+
+    # Map the results from the kernel to the init args (for all stages).
+    for iter_arg, get_result in zip(
+        reduction.iter_args(reduction_subgraph), existing_get_results
+    ):
+        arg_context.map_arg_all_stages(iter_arg, get_result.fx_node)
 
     with pipelined_reduction.graph.inserting_before(
         existing_get_results[0].fx_node.next
@@ -411,9 +335,10 @@ def construct_epilogue(
         # Add get result nodes for the rotating registers and update the
         # argument map with them.
         rotating_registers_get_results = []
-        for i in range(len(existing_get_results), len(rotating_registers)):
+        offset = len(existing_get_results)
+        for i in range(len(rotating_registers)):
             rotating_registers_get_results.append(
-                GetResult(pipelined_reduction.fx_node, i).add_to_graph(
+                GetResult(pipelined_reduction.fx_node, i + offset).add_to_graph(
                     pipelined_reduction.graph
                 )
             )
@@ -434,28 +359,13 @@ def construct_epilogue(
                 induction_variable,
                 new_induction_variables,
                 rotating_registers,
+                drain=True,
             )
 
         # Replace the existing get results with the new results.
-        new_results = arg_context.query_mapped_results()
+        new_results = arg_context.get_mapped_results()
         for i, get_result in enumerate(existing_get_results):
             get_result.replace_all_uses_with(new_results[i])
-
-
-def get_induction_variable(
-    reduction: Reduction, constraints: list[Constraint]
-) -> IndexSymbol:
-    induction_var = None
-    for constraint in constraints:
-        if (
-            isinstance(constraint, TilingConstraint)
-            and reduction.axis == constraint.dim
-        ):
-            induction_var = constraint.induction_var
-            break
-    else:
-        raise ValueError(f"Could not find induction variable for reduction {reduction}")
-    return induction_var
 
 
 def construct_pipelined_loop(
@@ -475,11 +385,7 @@ def construct_pipelined_loop(
         k: deque([None for _ in range(v)]) for k, v in num_rotating_registers.items()
     }
     partitioned_graph = partition_graph_by_stage(graph, scheduler)
-    tiling_constraint = [
-        c
-        for c in constraints
-        if isinstance(c, TilingConstraint) and c.dim == reduction.axis
-    ][0]
+    tiling_constraint = get_tiling_constraint(reduction, constraints)
     max_induction_variable = subs_idxc(tiling_constraint.dim) // subs_idxc(
         tiling_constraint.tile_size
     )
@@ -508,6 +414,7 @@ def construct_pipelined_loop(
     # Construct epilogue.
     construct_epilogue(
         graph,
+        reduction,
         get_custom(pipelined_reduction),
         partitioned_graph,
         scheduler,
@@ -517,6 +424,12 @@ def construct_pipelined_loop(
         create_drain_stage_schedule(scheduler.num_stages),
         num_rotating_registers,
     )
-    breakpoint()
+
     # Remove the unpipelined reduction.
     reduction.graph.erase_node(reduction.fx_node)
+
+    visualize = True
+    if visualize:
+        visualize_graph(pipelined_reduction.graph, "pipelined.png")
+
+    breakpoint()

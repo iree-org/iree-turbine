@@ -10,8 +10,8 @@ from typing import Callable, Any, List, Tuple
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
-from ..ops.wave_ops import get_custom, Output, Write, MMA
-from .constraints import HardwareConstraint, TilingConstraint
+from ..ops.wave_ops import get_custom, Output, Write, Reduction, MMA
+from .constraints import HardwareConstraint, TilingConstraint, Constraint
 import torch.fx as fx
 import shark_turbine.kernel.lang as tkl
 
@@ -352,3 +352,32 @@ def erase_graph(graph: fx.Graph):
         for user in node.users:
             graph.erase_node(user)
         graph.erase_node(node)
+
+
+def get_induction_variable(
+    reduction: Reduction, constraints: list[Constraint]
+) -> IndexSymbol:
+    induction_var = None
+    for constraint in constraints:
+        if (
+            isinstance(constraint, TilingConstraint)
+            and reduction.axis == constraint.dim
+        ):
+            induction_var = constraint.induction_var
+            break
+    else:
+        raise ValueError(f"Could not find induction variable for reduction {reduction}")
+    return induction_var
+
+
+def get_tiling_constraint(
+    reduction: Reduction, constraints: list[Constraint]
+) -> TilingConstraint:
+    for constraint in constraints:
+        if (
+            isinstance(constraint, TilingConstraint)
+            and reduction.axis == constraint.dim
+        ):
+            return constraint
+    else:
+        raise ValueError(f"Could not find tiling constraint for reduction {reduction}")
