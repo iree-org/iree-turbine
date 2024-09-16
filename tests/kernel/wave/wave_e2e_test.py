@@ -43,7 +43,7 @@ def test_copy(shape):
     # elements.
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Min(N, 256)
+    BLOCK_N = sympy.Max(sympy.Min(N, 256), 64)
     ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
