@@ -410,7 +410,6 @@ def _build_mask(
     last_dim = tuple(index.keys())[-1]
     new_index = {k: _get_start_index(v) for k, v in index.items()}
     for i in range(elements_per_thread):
-        new_index[last_dim] = new_index[last_dim] + 1
 
         cond = None
         for dim, bound in bounds:
@@ -423,6 +422,8 @@ def _build_mask(
 
         pos = arith_d.ConstantOp(IndexType.get(), i)
         mask = vector_d.insertelement(cond, mask, position=pos)
+
+        new_index[last_dim] = new_index[last_dim] + 1
 
     return mask
 
