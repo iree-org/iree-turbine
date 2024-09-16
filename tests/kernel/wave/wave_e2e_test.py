@@ -212,8 +212,8 @@ def test_reduce_sum(shape):
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Max(N, 64)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    BLOCK_N = sympy.Min(sympy.ceiling(N / wave_size) * wave_size, 128)
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -268,8 +268,8 @@ def test_reduce_max(shape):
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Max(N, 64)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    BLOCK_N = sympy.Min(sympy.ceiling(N / wave_size) * wave_size, 128)
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
