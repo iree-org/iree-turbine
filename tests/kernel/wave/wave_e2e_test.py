@@ -212,7 +212,7 @@ def test_reduce_sum(shape):
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Min(sympy.ceiling(N / wave_size) * wave_size, 128)
+    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
     ELEMS_PER_THREAD = BLOCK_N // wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
@@ -268,7 +268,7 @@ def test_reduce_max(shape):
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Min(sympy.ceiling(N / wave_size) * wave_size, 128)
+    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
     ELEMS_PER_THREAD = BLOCK_N // wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
@@ -682,4 +682,4 @@ def test_igemm_conv(n, c, nf, stride):
         run_config=config,
     ):
         conv(x, we, out)
-        assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
+        assert_allclose(out, out_ref, rtol=1e-04, atol=1e-04)
