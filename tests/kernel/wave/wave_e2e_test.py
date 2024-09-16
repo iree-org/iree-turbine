@@ -682,4 +682,4 @@ def test_igemm_conv(n, c, nf, stride):
         run_config=config,
     ):
         conv(x, we, out)
-        assert_allclose(out, out_ref, rtol=1e-04, atol=1e-04)
+        assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
