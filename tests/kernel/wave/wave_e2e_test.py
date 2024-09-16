@@ -204,7 +204,7 @@ def test_reduce_sum(shape):
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = N
+    BLOCK_N = sympy.Max(N, 64)
     ELEMS_PER_THREAD = BLOCK_N / wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
@@ -260,7 +260,7 @@ def test_reduce_max(shape):
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = N
+    BLOCK_N = sympy.Max(N, 64)
     ELEMS_PER_THREAD = BLOCK_N / wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
