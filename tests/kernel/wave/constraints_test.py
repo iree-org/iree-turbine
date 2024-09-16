@@ -43,8 +43,8 @@ class ConstraintsTest(unittest.TestCase):
         constraints: list[TilingConstraint] = [TilingConstraint(M, BLOCK_M)]
         constraints.append(TilingConstraint(N, BLOCK_N, I))
 
-        assert constraints[0].iterations() == ceiling(M / BLOCK_M)
-        assert constraints[1].iterations() == ceiling(N / BLOCK_N)
+        assert constraints[0].iterations == ceiling(M / BLOCK_M)
+        assert constraints[1].iterations == ceiling(N / BLOCK_N)
         assert constraints[1].apply().start == I * BLOCK_N
 
         with pytest.raises(

@@ -1,7 +1,7 @@
 import operator
 import sympy
 import math
-from typing import Any, Callable, ClassVar, Optional, List, Type
+from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
 from dataclasses import dataclass
 import torch.fx as fx
 import torch.utils._pytree as pytree
@@ -64,7 +64,13 @@ from ..compiler.vector_codegen import (
     cast_py_value,
     cast_vector,
 )
-from .constraints import Constraint, HardwareConstraint, MMAType, TilingConstraint
+from .constraints import (
+    Constraint,
+    HardwareConstraint,
+    MMAType,
+    WorkgroupConstraint,
+    TilingConstraint,
+)
 from .utils import subs_idxc
 
 # Indexing imports.
@@ -328,14 +334,19 @@ def handle_allocate(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxy(node, IRProxyValue(alloc))
 
 
+def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
+    if isinstance(i, IndexSequence):
+        i = i.start
+
+    return i
+
+
 def _get_start_indices(
     src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
 ) -> list[IndexExpr]:
     start_indices = []
     for dim_indexing in src_indices:
-        i = src_indices[dim_indexing]
-        if isinstance(i, IndexSequence):
-            i = i.start
+        i = _get_start_index(src_indices[dim_indexing])
         start_indices.append(i)
 
     return start_indices
@@ -370,6 +381,50 @@ def _is_identity_mapping(
         return False
 
     return True
+
+
+def _build_mask(
+    emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
+) -> Optional[OpResult]:
+    bounds = []
+    for constraint in emitter.constraints:
+        if not isinstance(constraint, (WorkgroupConstraint, TilingConstraint)):
+            continue
+
+        dim = constraint.dim
+        if dim not in index:
+            continue
+
+        work_size = constraint.iterations * constraint.tile_size
+        if subs_idxc(work_size) == subs_idxc(dim):
+            continue
+
+        bounds.append((dim, gen_sympy_index(emitter, dim)))
+
+    if len(bounds) == 0:
+        return None
+
+    mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
+    mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+
+    last_dim = tuple(index.keys())[-1]
+    new_index = {k: _get_start_index(v) for k, v in index.items()}
+    for i in range(elements_per_thread):
+        new_index[last_dim] = new_index[last_dim] + 1
+
+        cond = None
+        for dim, bound in bounds:
+            idx = gen_sympy_index(emitter, new_index[dim])
+            lt = arith_d.cmpi(arith_d.CmpIPredicate.slt, idx, bound)
+            if cond is None:
+                cond = lt
+            else:
+                cond = arith_d.AndI(cond, lt)
+
+        pos = arith_d.ConstantOp(IndexType.get(), i)
+        mask = vector_d.insertelement(cond, mask, position=pos)
+
+    return mask
 
 
 def _construct_gather_scatter_indices(
@@ -458,9 +513,12 @@ def _construct_gather_scatter_indices(
         pos = arith_d.ConstantOp(IndexType.get(), i)
         offsets_vec = vector_d.insertelement(off, offsets_vec, position=pos)
 
-    mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
-
-    mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+    mask = _build_mask(emitter, index, elements_per_thread)
+    if mask is None:
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
 
     return start_indices, offsets_vec, mask
 
@@ -487,7 +545,19 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     input_shape = _get_symbolic_shape(memory)
     if mapping is None or _is_identity_mapping(mapping, input_shape=input_shape):
         start_indices = _build_start_indices(emitter, index)
-        result = vector_d.load(vector_type, kb_src, start_indices)
+        mask = _build_mask(
+            emitter, index, cast_py_literal(emitter, elements_per_thread)
+        )
+        if mask is None:
+            result = vector_d.load(vector_type, kb_src, start_indices)
+        else:
+            zero = get_constant_attr(0, element_type)
+            zero = arith_d.ConstantOp(vector_type.element_type, zero)
+            passthru = vector_d.splat(vector_type, zero)
+
+            result = vector_d.maskedload(
+                vector_type, kb_src, start_indices, mask, passthru
+            )
     else:
         start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
             emitter=emitter,
@@ -498,7 +568,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             is_read=True,
         )
 
-        zero = int(0) if _is_integer_like_type(element_type) else float(0)
+        zero = get_constant_attr(0, element_type)
         zero = arith_d.ConstantOp(vector_type.element_type, zero)
         passthru = vector_d.splat(vector_type, zero)
 
@@ -538,7 +608,13 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         mapping, input_shape=input_shape, output_shape=output_shape
     ):
         start_indices = _build_start_indices(emitter, index)
-        vector_d.store(insert_vector, kb_dest, start_indices)
+        mask = _build_mask(
+            emitter, index, cast_py_literal(emitter, elements_per_thread)
+        )
+        if mask is None:
+            vector_d.store(insert_vector, kb_dest, start_indices)
+        else:
+            vector_d.maskedstore(kb_dest, start_indices, mask, insert_vector)
     else:
         assert (
             input_shape == mapping.input_shape
@@ -554,7 +630,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         )
 
         if elements_per_thread == 1:
-            vector_d.store(insert_vector, kb_dest, start_indices)
+            vector_d.maskedstore(kb_dest, start_indices, mask, insert_vector)
         else:
             vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
 

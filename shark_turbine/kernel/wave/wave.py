@@ -11,7 +11,6 @@ from .constraints import (
     TilingConstraint,
     WaveConstraint,
     WorkgroupConstraint,
-    get_grid_dim_size,
     get_grid_shape,
 )
 from .codegen import WaveEmitter
@@ -226,7 +225,7 @@ class LaunchableWave(Launchable):
         self.grid_type.dims = [1, 1, 1]
         for constraint in self.workgroup_constraints:
             self.grid_type.dims[constraint.workgroup_dim] = safe_subs(
-                get_grid_dim_size(constraint.dim, constraint.tile_size), idxc.subs
+                constraint.iterations, idxc.subs
             )
         grid = self.grid_type
 
