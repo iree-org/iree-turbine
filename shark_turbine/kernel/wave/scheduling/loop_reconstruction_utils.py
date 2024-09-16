@@ -175,6 +175,8 @@ def partition_graph_by_stage(
             custom = get_custom(node)
             if custom.scheduling_parameters is None:
                 continue
+            if isinstance(custom, IterArg):
+                continue
             if custom.scheduling_parameters["stage"] == stage:
                 cycle = custom.scheduling_parameters["cycle"]
                 partitioned_graph[stage][cycle].append(node)

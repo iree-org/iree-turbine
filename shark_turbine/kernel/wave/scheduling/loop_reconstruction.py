@@ -90,17 +90,23 @@ def add_nodes_by_schedule(
                 )
             # Add scheduling parameters for debugging.
             new_node.scheduling_parameters = node.scheduling_parameters
-            # Update the rotating registers for the current node (if applicable).
+            # Update the rotating registers and argument context for the current node (if applicable).
             if node in rotating_registers:
                 rotating_registers[node].append(new_node.fx_node)
                 rotating_registers[node].popleft()
+                # If draining, then override the rotating registers and update the argument context.
+                if drain:
+                    for next_stage in range(stage + 1, len(stages)):
+                        arg_context[(next_stage, node)] = new_node.fx_node
 
-            # For the drain stage, update the init args whenever a result
-            # is computed.
-            if drain and node in arg_context.results:
-                arg_context[
-                    (stage, arg_context.result_to_iter_arg[node])
-                ] = new_node.fx_node
+            # Update the init args in the argument context whenever a result is computed.
+            if node in arg_context.results:
+                logger.debug(
+                    f"Updating result: {node} -> {arg_context.result_to_iter_arg[node]} to {new_node.fx_node}."
+                )
+                arg_context.map_arg_all_stages(
+                    arg_context.result_to_iter_arg[node], new_node.fx_node
+                )
 
 
 def construct_prologue(
@@ -342,11 +348,12 @@ def construct_epilogue(
     )
     existing_users = {x: x.users for x in existing_get_results}
 
-    # Map the results from the kernel to the init args (for all stages).
+    # Map the results from the kernel to the init args (for stages).
+    min_stage = min([x for row in stages for x in row if x is not None])
     for iter_arg, get_result in zip(
         reduction.iter_args(reduction_subgraph), existing_get_results
     ):
-        arg_context.map_arg_all_stages(iter_arg, get_result.fx_node)
+        arg_context[(min_stage, iter_arg)] = get_result.fx_node
 
     with pipelined_reduction.graph.inserting_before(
         existing_get_results[0].fx_node.next
@@ -387,13 +394,11 @@ def construct_epilogue(
         for i, get_result in enumerate(existing_get_results):
             replace_uses_in(existing_users, get_result, new_results[i])
 
-        visualize = True
+        visualize = False
         if visualize:
             visualize_mapped_graphs(
                 pipelined_reduction.graph, arg_context.argument_map, "epilogue.png"
             )
-
-        breakpoint()
 
 
 def construct_pipelined_loop(
@@ -457,8 +462,6 @@ def construct_pipelined_loop(
     # Remove the unpipelined reduction.
     reduction.graph.erase_node(reduction.fx_node)
 
-    visualize = True
+    visualize = False
     if visualize:
         visualize_graph(pipelined_reduction.graph, "pipelined.png")
-
-    breakpoint()
