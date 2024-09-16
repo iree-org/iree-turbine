@@ -13,7 +13,7 @@ import json
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
-default_test_shapes = [(1, 128), (256, 64), (256, 128), (256, 256), (256, 1024)]
+default_test_shapes = [(1, 27), (1, 128), (256, 64), (256, 128), (256, 256), (256, 1024)]
 
 user_specified_test_shapes = ""
 
@@ -94,7 +94,7 @@ def test_transpose_read(shape):
 
     wave_size = 64
     BLOCK_N = 1
-    BLOCK_M = sympy.Min(M, 256)
+    BLOCK_M = sympy.Max(sympy.Min(M, 256), 64)
     ELEMS_PER_THREAD = BLOCK_M / wave_size
 
     constraints: list[tkw.Constraint] = [
@@ -150,7 +150,7 @@ def test_transpose_write(shape):
 
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Min(N, 256)
+    BLOCK_N = sympy.Max(sympy.Min(N, 256), 64)
     ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
