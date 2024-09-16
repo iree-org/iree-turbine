@@ -418,7 +418,7 @@ def _build_mask(
             if cond is None:
                 cond = lt
             else:
-                cond = arith_d.AndI(cond, lt)
+                cond = arith_d.andi(cond, lt)
 
         pos = arith_d.ConstantOp(IndexType.get(), i)
         mask = vector_d.insertelement(cond, mask, position=pos)
@@ -907,16 +907,15 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
     # Without scheduling, we assume that we always start at 0.
     start = arith_d.constant(IndexType.get(), int(0))
 
-    idxc = IndexingContext.current()
     tile_size = None
     for constraint in emitter.constraints:
         if isinstance(constraint, TilingConstraint) and constraint.dim == axis:
-            tile_size = constraint.tile_size.subs(idxc.subs)
+            tile_size = subs_idxc(constraint.tile_size)
     assert tile_size is not None, "Could not find tiling constraint for reduction axis."
 
     # For now, we assume that dimensions that have tiling constraints on them,
     # do not have any other constraints.
-    dim = axis.subs(idxc.subs)
+    dim = subs_idxc(axis)
     end = arith_d.constant(IndexType.get(), int(dim // tile_size))
 
     # Since we divide the end by the tile size, we need to make sure that the

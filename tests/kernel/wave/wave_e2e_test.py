@@ -603,7 +603,7 @@ def test_igemm_conv(n, c, nf, stride):
     # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K = K
+    BLOCK_K = 16
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
