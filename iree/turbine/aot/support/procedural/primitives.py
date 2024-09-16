@@ -20,10 +20,13 @@ from typing import (
 
 import torch
 
-from torch.export import (
-    Constraint,
-    dynamic_dim,
-)
+try:
+    from torch.export import (
+        Constraint,
+        dynamic_dim,
+    )
+except ImportError:
+    pass
 
 from ....support.ir_imports import (
     F32Type,
@@ -154,67 +157,25 @@ class IrTensor(Intrinsic):
     def __init__(self, ir_type: IrType, dtype: torch.dtype):
         assert isinstance(dtype, torch.dtype)
         ranked_ir_type = RankedTensorType(ir_type)
+        self._shape = ranked_ir_type.shape
         self.ir_type = ranked_ir_type
         self.dtype = dtype
         # We always cache the meta tensor once asked for since it is used
-        # to anchor constraints. The constraints list is the same size as
-        # the rank and has a non-None dynamic_dim constraint for each
-        # dynamic dimension in the type.
+        # for anchoring certain constraints.
         self._meta_tensor: Optional[torch.Tensor] = None
-        self._meta_tensor_constraints: Optional[List[Constraint]] = None
-
-        # Figure dynamic dims.
-        # _dynamic_dims is either Empty if static, or Value/None if dynamic.
-        self._shape = ranked_ir_type.shape
-        self._dynamic_dims: List[Union[EmptyType, Value, None]] = [
-            None if d == ShapedTypeDynamicSizeSentinel else Empty for d in self._shape
-        ]
 
         # If we computed a dim, then stash it here for later use.
         self._cached_dim_values: List[Optional[Value]] = [None] * len(
             self._dynamic_dims
         )
 
-    def dynamic_dim(self, i: int) -> Constraint:
-        """Access the dynamic_dim constraint for the i'th dimension."""
-        mt, constraints = self._get_meta_tensor_constraints()
-        c = constraints[i]
-        if c is None:
-            raise TypeError(
-                f"Requested dynamic_dim constraint for dimension {i} of {self.ir_type} which is not dynamic"
-            )
-        return c
-
     @property
     def rank(self) -> int:
         return len(self._shape)
 
-    @property
-    def dynamic_dim_count(self) -> int:
-        return len(self._dynamic_dims) - self._dynamic_dims.count(Empty)
-
-    def set_dim_value(self, index: int, value: Optional[Value]):
-        """Sets the value of a dynamic dim.
-
-        Raises ValueError if the dimension is not dynamic.
-        """
-        if self._dynamic_dims is Empty:
-            raise ValueError(f"Dimension {index} of {self} is not dynamic")
-        self._dynamic_dims[index] = value
-
     def set_dynamic_dim_values(self, values: Sequence[Value]):
         """Sets all dynamic dim values."""
-        dd = self._dynamic_dims
-        input_index = 0
-        for pos in range(len(dd)):
-            if dd[pos] is Empty:
-                # Static
-                continue
-            assert input_index < len(values), "Mismatched static/dynamic dims"
-            assert isinstance(values[input_index], Value)
-            dd[pos] = values[input_index]
-            input_index += 1
-        assert input_index == len(values), "Mismatched static/dynamic dims"
+        assert len(values) == 0, "Dynamic dims not currently supported"
 
     def get_dim_value(
         self,
@@ -233,81 +194,33 @@ class IrTensor(Intrinsic):
         cached_dim = self._cached_dim_values[index]
         if cached_dim:
             return cached_dim
-        dynamic_dim = self._dynamic_dims[index]
-        if dynamic_dim is Empty or dynamic_dim is None:
-            if resolved_ir_value is None:
-                resolved_ir_value = self.ir_value
-            # Construct a static dimension.
-            # TODO: Add MLIR API support for creating an insertion point after
-            # an operation and use that to set the InsertionPoint to the
-            # earliest point.
-            # See: https://github.com/nod-ai/SHARK-Turbine/issues/133
-            dim_value = build_tensor_dim_value(
-                resolved_ir_value, index, constant_cache=constant_cache
-            )
-            self._cached_dim_values[index] = dim_value
-            return dim_value
-        else:
-            # Dynamic dim is known.
-            return dynamic_dim
-
-    def get_only_dynamic_dim_values(
-        self,
-        *,
-        constant_cache: Optional[Dict[int, Value]] = None,
-        resolved_ir_value: Optional[Value] = None,
-    ) -> List[Value]:
-        """Returns a list of *only* the dynamic dim Values."""
-        values: List[Value] = []
-        for i, sentinel in enumerate(self._dynamic_dims):
-            if sentinel is not Empty:
-                # Cache IR value so we don't materialize for each
-                # dynamic dim.
-                if resolved_ir_value is None:
-                    resolved_ir_value = self.ir_value
-                values.append(
-                    self.get_dim_value(
-                        i,
-                        constant_cache=constant_cache,
-                        resolved_ir_value=resolved_ir_value,
-                    )
-                )
-        return values
+        if resolved_ir_value is None:
+            resolved_ir_value = self.ir_value
+        # Construct a static dimension.
+        # TODO: Add MLIR API support for creating an insertion point after
+        # an operation and use that to set the InsertionPoint to the
+        # earliest point.
+        # See: https://github.com/nod-ai/SHARK-Turbine/issues/133
+        dim_value = build_tensor_dim_value(
+            resolved_ir_value, index, constant_cache=constant_cache
+        )
+        self._cached_dim_values[index] = dim_value
+        return dim_value
 
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
         return NotImplemented
 
-    def _get_meta_tensor_constraints(self) -> tuple[torch.Tensor, list[Constraint]]:
-        if self._meta_tensor is not None and self._meta_tensor_constraints is not None:
-            return self._meta_tensor, self._meta_tensor_constraints
-
-        ir_tensor_type = self.ir_type
-        shape = ir_tensor_type.shape
-        # TODO: We shouldn't need to create a real tensor here, as Dynamo will
-        # immediately convert it to fake. However, it will also set up the shape
-        # environment and asserts that any fake tensor inputs are from its
-        # internal FakeMode. There should be a way but needs more investigation.
-        # TODO: This tensor needs a device that matches the model being exported.
-        # We just create these on the CPU because that is common.
-        # Note that in Dynamo's modeling of dynamic shapes, 0/1 are specialized and
-        # cannot be dynamic, and we must use a >= 2 dimension value to represent
-        # a dynamic quantity. We therefore adjust the shape in this way and
-        # add a dynamic_dim constraint.
-        # See: https://github.com/nod-ai/SHARK-Turbine/issues/134
-        extents = [2 if d < 0 else d for d in shape]
-        mt = self._meta_tensor = torch.empty(extents, dtype=self.dtype)
-        # Generate constraints that are aligned with any dynamic dimensions or None
-        # if static.
-        self._meta_tensor_constraints = constraints = [
-            dynamic_dim(mt, i) if d < 0 else None for i, d in enumerate(shape)
-        ]
-        return mt, constraints
-
-    def _to_meta_tensor(self) -> Tuple[torch.Tensor, List[Constraint]]:
+    def _to_meta_tensor(self) -> torch.Tensor:
         """Converts to a fake Tensor that dynamo can handle."""
-        mt, constraints = self._get_meta_tensor_constraints()
-        return mt, [c for c in constraints if c is not None]
+        if self._meta_tensor is None:
+            ir_tensor_type = self.ir_type
+            shape = ir_tensor_type.shape
+            assert not any(
+                d < 0 for d in shape
+            ), "Unsupported dynamic dims in meta tensor"
+            self._meta_tensor = torch.empty(shape, dtype=self.dtype)
+        return self._meta_tensor
 
 
 class IrImmediateTensor(IrTensor):
