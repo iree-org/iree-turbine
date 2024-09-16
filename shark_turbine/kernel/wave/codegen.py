@@ -907,16 +907,17 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
     # Without scheduling, we assume that we always start at 0.
     start = arith_d.constant(IndexType.get(), int(0))
 
-    tile_size = None
+    iterations = None
     for constraint in emitter.constraints:
         if isinstance(constraint, TilingConstraint) and constraint.dim == axis:
-            tile_size = subs_idxc(constraint.tile_size)
-    assert tile_size is not None, "Could not find tiling constraint for reduction axis."
+            iterations = subs_idxc(constraint.iterations)
+    assert (
+        iterations is not None
+    ), "Could not find tiling constraint for reduction axis."
 
     # For now, we assume that dimensions that have tiling constraints on them,
     # do not have any other constraints.
-    dim = subs_idxc(axis)
-    end = arith_d.constant(IndexType.get(), int(dim // tile_size))
+    end = arith_d.constant(IndexType.get(), int(iterations))
 
     # Since we divide the end by the tile size, we need to make sure that the
     # step is 1.
