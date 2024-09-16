@@ -20,14 +20,6 @@ from typing import (
 
 import torch
 
-try:
-    from torch.export import (
-        Constraint,
-        dynamic_dim,
-    )
-except ImportError:
-    pass
-
 from ....support.ir_imports import (
     F32Type,
     IrType,
@@ -165,9 +157,7 @@ class IrTensor(Intrinsic):
         self._meta_tensor: Optional[torch.Tensor] = None
 
         # If we computed a dim, then stash it here for later use.
-        self._cached_dim_values: List[Optional[Value]] = [None] * len(
-            self._dynamic_dims
-        )
+        self._cached_dim_values: List[Optional[Value]] = [None] * len(self._shape)
 
     @property
     def rank(self) -> int:
