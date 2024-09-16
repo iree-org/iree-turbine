@@ -543,11 +543,14 @@ def test_im2col_mma():
 
 
 @require_e2e
-def test_igemm_conv():
-    n, c, h, w = 1, 4, 5, 5  # Image.
-    nf, cf, hf, wf = 16, c, 2, 2  # Filters.
+@pytest.mark.parametrize("n", [1, 2, 4])
+@pytest.mark.parametrize("c", [1, 3, 4, 10])
+@pytest.mark.parametrize("nf", [1, 2, 16])
+@pytest.mark.parametrize("stride", [1, 2, 3])
+def test_igemm_conv(n, c, nf, stride):
+    h, w = 5, 5  # Image.
+    cf, hf, wf = c, 2, 2  # Filters.
     padding = 0  # TODO: only pad=0 is supported for now
-    stride = 1
 
     torch.manual_seed(1)
     x = torch.randn(n, c, h, w, dtype=torch.float16)
