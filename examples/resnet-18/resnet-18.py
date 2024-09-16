@@ -22,11 +22,8 @@ def forward(pixel_values_tensor: torch.Tensor):
 class RN18(CompiledModule):
     params = export_parameters(model)
 
-    def forward(self, x=AbstractTensor(None, 3, 224, 224, dtype=torch.float32)):
-        # set a constraint for the dynamic number of batches
-        # interestingly enough, it doesn't seem to limit BATCH_SIZE
-        const = [x.dynamic_dim(0) < 16]
-        return jittable(forward)(x, constraints=const)
+    def forward(self, x=AbstractTensor(10, 3, 224, 224, dtype=torch.float32)):
+        return jittable(forward)(x)
 
 
 # build an mlir module with 1-shot exporter
