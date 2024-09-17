@@ -65,6 +65,7 @@ from ..compiler.vector_codegen import (
     cast_vector,
 )
 from .constraints import Constraint, HardwareConstraint, MMAType, TilingConstraint
+from .utils import subs_idxc
 
 # Indexing imports.
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
@@ -158,6 +159,42 @@ def get_type_or_element_type(operand_type: IrType):
 def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     stack: list[OpResult] = []
 
+    def _process_mul_add_ops(term, is_mul):
+        args = []
+        callables = []
+        for _ in range(len(term.args)):
+            val = stack.pop()
+            if callable(val):
+                callables.append(val)
+            else:
+                args.append(val)
+        operation = None
+        for arg in args:
+            if operation is None:
+                operation = arg
+                continue
+
+            if is_mul:
+                operation = arith_d.MulIOp(operation, arg)
+            else:
+                operation = arith_d.AddIOp(operation, arg)
+
+        for arg in callables:
+            operation = arg(operation, is_mul)
+
+        stack.append(operation)
+
+    def _get_mul(numerator):
+        return lambda x: arith_d.MulIOp(x, numerator)
+
+    def _get_add(numerator, denominator):
+        return lambda x: arith_d.AddIOp(arith_d.MulIOp(x, denominator), numerator)
+
+    def _get_div(mul, add, denominator):
+        return lambda x, is_mul: arith_d.DivSIOp(
+            mul(x) if is_mul else add(x), denominator
+        )
+
     induction_var_syms = []
     induction_vars = []
     for constraint in emitter.constraints:
@@ -198,29 +235,9 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
             case sympy.Integer():
                 stack.append(arith_d.constant(IndexType.get(), int(term)))
             case sympy.Mul():
-                args = []
-                for _ in range(len(term.args)):
-                    args.append(stack.pop())
-                operation = None
-                # First, multiply all the non-rationals.
-                for arg in args:
-                    if callable(arg):
-                        continue
-                    if operation is None:
-                        operation = arg
-                        continue
-                    operation = arith_d.MulIOp(operation, arg)
-                # Then, multiply with the rationals.
-                for arg in args:
-                    if callable(arg):
-                        operation = arg(operation)
-                stack.append(operation)
+                _process_mul_add_ops(term, is_mul=True)
             case sympy.Add():
-                summand = stack.pop()
-                add = summand
-                for _ in range(1, len(term.args)):
-                    add = arith_d.AddIOp(add, stack.pop())
-                stack.append(add)
+                _process_mul_add_ops(term, is_mul=False)
             case sympy.Mod():
                 rhs = stack.pop()
                 lhs = stack.pop()
@@ -231,6 +248,8 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 # But check whether floordivsi is needed.
                 stack.append(stack.pop())
             case sympy.Rational():
+                # `x * (a/b)` transformed into `(x * a) / b`
+                # `x + (a/b)` transformed into `(x*b + a) / b`
                 numerator = arith_d.constant(IndexType.get(), abs(term.p))
                 denominator = arith_d.constant(IndexType.get(), abs(term.q))
                 # Assumes that the negative term is always carried on the numerator
@@ -239,8 +258,9 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                     numerator = arith_d.SubIOp(zero, numerator)
                 mul = lambda x: x
                 if abs(term.p) != 1:
-                    mul = lambda x: arith_d.MulIOp(x, numerator)
-                operation = lambda x: arith_d.DivSIOp(mul(x), denominator)
+                    mul = _get_mul(numerator)
+                add = _get_add(numerator, denominator)
+                operation = _get_div(mul, add, denominator)
                 stack.append(operation)
             case sympy.UnevaluatedExpr():
                 continue
@@ -309,20 +329,26 @@ def handle_allocate(emitter: WaveEmitter, node: fx.Node):
 
 
 def _get_start_indices(
-    emitter: WaveEmitter, src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
-) -> list[OpResult]:
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+) -> list[IndexExpr]:
     start_indices = []
     for dim_indexing in src_indices:
         i = src_indices[dim_indexing]
         if isinstance(i, IndexSequence):
             i = i.start
-        start_indices.append(gen_sympy_index(emitter, i))
+        start_indices.append(i)
 
     return start_indices
 
 
-def _compute_offset(indices: list[int], strides: list[int]) -> int:
-    return int(sum(i * s for i, s in zip(indices, strides)))
+def _build_start_indices(
+    emitter: WaveEmitter, src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+) -> list[OpResult]:
+    return [gen_sympy_index(emitter, i) for i in _get_start_indices(src_indices)]
+
+
+def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> IndexExpr:
+    return sum(i * s for i, s in zip(indices, strides))
 
 
 def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
@@ -375,7 +401,9 @@ def _construct_gather_scatter_indices(
 
     # As we only support identity input/output mapping for now, we can directly
     # substitute iterators with corresponding expanded index.
-    subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
+    subs = [
+        (sym, expr.start) for sym, expr in zip(iters.keys(), index.values())
+    ] + list(idxc.subs.items())
 
     # Contruct input/output index, substituting iterators in input mapping with
     # expanded index.
@@ -383,22 +411,52 @@ def _construct_gather_scatter_indices(
 
     strides = strides_from_symbolic_shape(idxc, symbolc_shape)
     offsets = []
-    subs = [(sym, 0) for sym in iters.keys()]
+
+    start_indices = _get_start_indices(result_index)
+    start_indices_orig = _get_start_indices(index)
+    dynamic_offsets = []
+
+    start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
         # be equivalent to just vector.load
-        subs[-1] = (subs[-1][0], i)
-        indices = [int(i.subs(subs)) for i in index_mapping]
-        offsets.append(
-            IntegerAttr.get(IndexType.get(), _compute_offset(indices, strides))
-        )
+        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
+        subs[-1] = (subs[-1][0], start_indices_orig[-1] + i)
+        indices = [i.subs(subs) for i in index_mapping]
 
-    start_indices = _get_start_indices(emitter, result_index)
+        # First, we build indices as if resulting gather/scatter `start_indices`
+        # are 0 as mapping expression may depend on absolute value of index
+        # (e.g. `index % 32`). Then we adjust for the non-0 `start_indices` by
+        # subtracting computed previously linear `start_indices_offset`. For
+        # simple cases like transpose, the resulting expression should fold into
+        # simple constant while more complex expressions may requires actual
+        # arith ops on dynamic values.
+        offset = _compute_offset(indices, strides) - start_indices_offset
+        offset = subs_idxc(offset)
+
+        if offset.is_number:
+            # If resulted offset sympy expr is convertible to int constant it
+            # will be directly encoded into `arith.constant`.
+            # For non-constant expressions, we will generate a real sequence of
+            # arith ops and then `vector.insertelement` them into offsets vec.
+            offset = int(offset)
+        else:
+            dyn_offset = gen_sympy_index(emitter, offset)
+            dynamic_offsets.append((i, dyn_offset))
+            offset = 0
+
+        offsets.append(IntegerAttr.get(IndexType.get(), offset))
+
+    start_indices = _build_start_indices(emitter, result_index)
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
 
     offsets_vec = arith_d.ConstantOp(
         offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
     )
+
+    for i, off in dynamic_offsets:
+        pos = arith_d.ConstantOp(IndexType.get(), i)
+        offsets_vec = vector_d.insertelement(off, offsets_vec, position=pos)
 
     mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
 
@@ -428,7 +486,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
     if mapping is None or _is_identity_mapping(mapping, input_shape=input_shape):
-        start_indices = _get_start_indices(emitter, index)
+        start_indices = _build_start_indices(emitter, index)
         result = vector_d.load(vector_type, kb_src, start_indices)
     else:
         start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
@@ -479,7 +537,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     if mapping is None or _is_identity_mapping(
         mapping, input_shape=input_shape, output_shape=output_shape
     ):
-        start_indices = _get_start_indices(emitter, index)
+        start_indices = _build_start_indices(emitter, index)
         vector_d.store(insert_vector, kb_dest, start_indices)
     else:
         assert (
@@ -495,7 +553,10 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             is_read=False,
         )
 
-        vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
+        if elements_per_thread == 1:
+            vector_d.store(insert_vector, kb_dest, start_indices)
+        else:
+            vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
 
 
 ###############################################################################
