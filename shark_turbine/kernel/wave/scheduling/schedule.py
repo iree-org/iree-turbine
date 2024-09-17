@@ -63,7 +63,7 @@ def schedule_reduction(
 
     erase_graph(graph)
     construct_pipelined_loop(
-        reduction, reduction_graph, constraints, scheduler, node_map
+        trace, reduction, reduction_graph, constraints, scheduler, node_map
     )
 
 

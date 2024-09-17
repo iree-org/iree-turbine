@@ -239,6 +239,8 @@ def push_rotating_registers(
             mapped_iteration = arg_context.get_kernel_iteration(mapped_stage)
             if create_new_nodes:
                 iter_arg = IterArg(f"rotating_reg_{count}").add_to_graph(graph)
+                iter_arg.type = get_custom(node).type
+                iter_arg.index = get_custom(node).index
                 arg_context[(mapped_iteration, mapped_stage, node)] = iter_arg
                 new_registers.append(iter_arg)
                 logger.debug(
@@ -302,6 +304,8 @@ def construct_kernel(
         # during scheduling.
         for node in arg_context.iter_args:
             iter_arg = IterArg(node.name).add_to_graph(pipelined_reduction_graph)
+            iter_arg.type = get_custom(node).type
+            iter_arg.index = get_custom(node).index
             arg_context.map_arg_all(node, iter_arg)
 
         # Push the rotating registers into the argument context.
@@ -437,6 +441,7 @@ def construct_epilogue(
 
 
 def construct_pipelined_loop(
+    trace: CapturedTrace,
     reduction: Reduction,
     graph: fx.Graph,
     constraints: list[Constraint],
@@ -481,6 +486,9 @@ def construct_pipelined_loop(
         node_map,
         visualize,
     )
+    trace.add_subgraph(
+        get_custom(pipelined_reduction).subgraph_name, pipelined_reduction_graph
+    )
     # Construct epilogue.
     construct_epilogue(
         graph,
@@ -502,5 +510,3 @@ def construct_pipelined_loop(
 
     if visualize:
         visualize_graph(pipelined_reduction.graph, "pipelined.png")
-
-    breakpoint()

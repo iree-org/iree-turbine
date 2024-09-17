@@ -137,7 +137,6 @@ class WaveEmitter:
     def bind_node_proxy(self, node: fx.Node, proxy: IRProxyValue):
         """Binds a node's result to a Python/IR proxy object."""
         assert NDEBUG or (isinstance(node, fx.Node) and isinstance(proxy, IRProxyValue))
-        print(f"Binding {node} to {proxy}")
         self._node_values[node] = [proxy]
 
     def bind_node_proxies(self, node: fx.Node, proxies: List[IRProxyValue]):
