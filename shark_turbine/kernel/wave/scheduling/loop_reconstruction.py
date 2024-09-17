@@ -501,7 +501,10 @@ def construct_pipelined_loop(
         scheduler,
         rotating_registers,
         induction_variable,
-        [max_induction_variable - i for i in range(scheduler.num_stages)],
+        [
+            max_induction_variable - (scheduler.num_stages - 1) + i
+            for i in range(scheduler.num_stages)
+        ],
         create_drain_stage_schedule(scheduler.num_stages),
         num_rotating_registers,
         node_map,
