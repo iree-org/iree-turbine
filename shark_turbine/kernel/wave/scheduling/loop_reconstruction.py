@@ -111,7 +111,7 @@ def add_nodes_by_schedule(
                         arg_context[(iteration, next_stage, node)] = new_node.fx_node
 
             # Update the init args in the argument context whenever a result is computed.
-            if node in arg_context.results:
+            if node in arg_context.results and fill_or_drain:
                 logger.debug(
                     f"Updating result: {node} -> {arg_context.result_to_iter_arg[node]} to {new_node.fx_node}."
                 )
@@ -162,6 +162,13 @@ def construct_prologue(
         reduction.iter_args(reduction_subgraph),
         scheduler.num_stages,
     )
+
+    # Map iter args to init args in the prologue.
+    for iter_arg, init_arg in zip(
+        reduction.iter_args(reduction_subgraph), reduction.init_args
+    ):
+        arg_context.map_arg_all(iter_arg, init_arg)
+
     push_placeholders(reduction.implicit_captures, reduction_subgraph, arg_context)
     with reduction.graph.inserting_before(reduction.fx_node):
         for i in range(scheduler.num_stages - 1):
@@ -447,12 +454,12 @@ def construct_pipelined_loop(
     constraints: list[Constraint],
     scheduler: ModuloScheduler,
     node_map: dict[fx.Node, fx.Node],
+    visualize: bool = False,
 ):
     """
     Given a graph annotated with scheduling parameters, construct a pipelined loop
     with a prologue, kernel and epilogue.
     """
-    visualize = True
     induction_variable = get_induction_variable(reduction, constraints)
     num_rotating_registers = liveness_analysis(graph, constraints, scheduler)
     rotating_registers: dict[fx.Node, deque[fx.Node]] = {

@@ -16,8 +16,9 @@ require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
 
 
 @require_e2e
+@pytest.mark.parametrize("enable_scheduling", [False, True])
 class Test(unittest.TestCase):
-    def testGemm(self):
+    def testGemm(self, enable_scheduling: bool):
 
         # Input sizes
         M = tkl.sym.M
@@ -83,10 +84,22 @@ class Test(unittest.TestCase):
             M: 2048,
             N: 10240,
             K: 1280,
+            READ_SHARED_DELAY: 1,
+            WRITE_SHARED_DELAY: 1,
+            READ_GLOBAL_DELAY: 2,
+            WRITE_GLOBAL_DELAY: 2,
+            MMA_DELAY: 1,
+            SHARED_MEMORY_UNITS: 4,
+            GLOBAL_MEMORY_UNITS: 4,
+            MMA_UNITS: 4,
         }
         config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
         with tk.gen.TestLaunchContext(
-            hyperparams, canonicalize=True, run=True, run_config=config
+            hyperparams,
+            canonicalize=True,
+            run=True,
+            run_config=config,
+            schedule=enable_scheduling,
         ):
             a = torch.randn(2048, 1280, dtype=torch.float16)
             b = torch.randn(10240, 1280, dtype=torch.float16)
