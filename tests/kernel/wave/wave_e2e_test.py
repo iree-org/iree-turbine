@@ -1,6 +1,8 @@
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
+from shark_turbine.kernel.wave.wave_sim import wave_sim
+from shark_turbine.kernel.lang.global_symbols import *
 import torch
 from numpy.testing import assert_allclose, assert_equal
 import pytest
