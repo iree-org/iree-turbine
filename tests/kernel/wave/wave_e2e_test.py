@@ -691,7 +691,7 @@ def test_igemm_conv(n, c, nf, stride):
             BLOCK_M: 16,
             BLOCK_N: 16,
             ELEMS_PER_THREAD: 4,
-            ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         },
         canonicalize=True,
         run=True,
