@@ -10,7 +10,8 @@ except:
     pandas_disabled = True
 from torch import fx
 from .scheduling.graph_utils import Edge
-from ..ops.wave_ops import Output, get_custom
+from ..ops.wave_ops import Output, Placeholder, IterArg, get_custom
+from collections import ChainMap
 import math
 
 
@@ -75,7 +76,7 @@ def visualize_schedule(
         for key, value in schedule.items():
             table[value + stage * initiation_interval][stage] += f"{key}<br>"
 
-    df = pd.DataFrame(table, columns=[f"Stage {i}" for i in range(cols)])
+    df = pd.DataFrame(table, columns=[f"Iteration {i}" for i in range(cols)])
     s = df.style.set_properties(**{"text-align": "center"})
     s = s.set_table_styles(
         [
@@ -103,7 +104,8 @@ def visualize_schedule(
 
 def visualize_mapped_graphs(
     second: fx.Graph,
-    mappings: list[dict[fx.Node, fx.Node]],
+    rotating_registers: dict[fx.Node, list[fx.Node]],
+    mappings: list[list[dict[fx.Node, fx.Node]]],
     file_name: str,
 ):
     """
@@ -115,18 +117,24 @@ def visualize_mapped_graphs(
     if graphviz_disabled:
         raise ImportError("pygraphviz not installed, cannot visualize graph")
     second_numbering = number_nodes(second)
-    inverse_mapping: list[dict[fx.Node, fx.Node]] = []
-    for stage, mapping in enumerate(mappings):
-        inverse_mapping.append({v: k for k, v in mapping.items()})
+
+    flat_inverse_map: dict[fx.Node, fx.Node] = {}
+    flat_map: dict[fx.Node, fx.Node] = {}
+    for iteration_mapping in mappings:
+        for mapping in iteration_mapping:
+            flat_inverse_map.update({v: k for k, v in mapping.items()})
+            flat_map.update(mapping)
+    flat_inverse_map = ChainMap(flat_inverse_map)
+    flat_map = ChainMap(flat_map)
 
     # Draw nodes and edges in the pipelined graph.
     G = pgv.AGraph(directed=True)
     G0 = G.add_subgraph(name="pipelined")
+    stage: dict[fx.Node, int] = {}
     for node in second.nodes:
         if hasattr(node, "scheduling_parameters"):
-            stage = node.scheduling_parameters["stage"]
-            if node in inverse_mapping[stage]:
-                name = inverse_mapping[stage][node].name
+            if node in flat_inverse_map:
+                name = flat_inverse_map[node].name
             else:
                 name = node.name
         else:
@@ -151,33 +159,32 @@ def visualize_mapped_graphs(
     # Draw nodes and edges in the original graph.
     colors = ["red", "green", "orange", "purple", "orange", "cyan", "magenta"]
     max_stage = len(mappings)
-    for stage, mapping in enumerate(mappings):
-        for node, mapped_node in mapping.items():
-            for user in node.users.keys():
-                if user not in mapping:
-                    continue
-                mapped_user = mapping[user]
-                G.add_edge(
-                    second_numbering[id(mapped_node)],
-                    second_numbering[id(mapped_user)],
-                    label=f"{stage}",
-                    color=colors[stage % max_stage],
-                )
+    for node, mapped_node in flat_map.items():
+        for user in node.users.keys():
+            if user not in flat_map:
+                continue
+            mapped_user = flat_map[user]
+            if mapped_user not in second.nodes or mapped_node not in second.nodes:
+                continue
+            stage = ""
+            if hasattr(user, "scheduling_parameters"):
+                stage = user.scheduling_parameters["stage"]
+            G.add_edge(
+                second_numbering[id(mapped_node)],
+                second_numbering[id(mapped_user)],
+                label=f"{stage}",
+                color=colors[stage % max_stage],
+            )
 
     # Draw edges between rotating registers for the same variable.
-    for stage, mapping in enumerate(mappings):
-        for node, mapped_node in mapping.items():
-            for second_stage, second_mapping in enumerate(mappings):
-                if stage == second_stage:
-                    continue
-                for second_node, second_mapped_node in second_mapping.items():
-                    if node == second_node and stage < second_stage:
-                        G.add_edge(
-                            second_numbering[id(mapped_node)],
-                            second_numbering[id(second_mapped_node)],
-                            label=f"{stage} -> {second_stage}",
-                            color="magenta",
-                        )
+    for node in rotating_registers:
+        all_registers = [k for k, v in flat_inverse_map.items() if v == node]
+        for second, first in zip(all_registers[:-1], all_registers[1:]):
+            G.add_edge(
+                second_numbering[id(first)],
+                second_numbering[id(second)],
+                color="blue",
+            )
 
     G.layout(prog="dot")
     G.draw(file_name)

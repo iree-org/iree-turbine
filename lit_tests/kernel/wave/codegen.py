@@ -544,6 +544,23 @@ def test_gemm():
         # CHECK-SAME:         ?>>, vector<1xf32>
         # CHECK:            return
 
+
+@run_test
+def test_gemm_pipelined():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+        )
+    ]
+
     @tkw.wave(constraints)
     def gemm_pipelined(
         a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
@@ -588,7 +605,7 @@ def test_gemm():
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(gemm(a, b, c).module_op)
+        print(gemm_pipelined(a, b, c).module_op)
 
 
 @run_test

@@ -694,7 +694,7 @@ class SharedMemoryBarrier(CustomOp):
             prev_node, found_src = prev_node.prev, prev_node == src
         if not found_src:
             return False
-        while next_node and not found_dst:
+        while next_node.next.op != "root" and not found_dst:
             next_node, found_dst = next_node.next, next_node == dst
         return found_dst
 

@@ -137,6 +137,7 @@ class WaveEmitter:
     def bind_node_proxy(self, node: fx.Node, proxy: IRProxyValue):
         """Binds a node's result to a Python/IR proxy object."""
         assert NDEBUG or (isinstance(node, fx.Node) and isinstance(proxy, IRProxyValue))
+        print(f"Binding {node} to {proxy}")
         self._node_values[node] = [proxy]
 
     def bind_node_proxies(self, node: fx.Node, proxies: List[IRProxyValue]):
@@ -160,13 +161,14 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
 
     induction_var_syms = []
     induction_vars = []
-    for constraint in emitter.constraints:
-        if isinstance(constraint, TilingConstraint):
-            assert (
-                constraint.dim in emitter.induction_vars
-            ), f"Could not find induction var for {constraint.dim} dimension"
-            induction_var_syms.append(constraint.induction_var)
-            induction_vars.append(emitter.induction_vars[constraint.dim])
+    if emitter.induction_vars:
+        for constraint in emitter.constraints:
+            if isinstance(constraint, TilingConstraint):
+                assert (
+                    constraint.dim in emitter.induction_vars
+                ), f"Could not find induction var for {constraint.dim} dimension"
+                induction_var_syms.append(constraint.induction_var)
+                induction_vars.append(emitter.induction_vars[constraint.dim])
 
     # TODO: factor this out
     all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars

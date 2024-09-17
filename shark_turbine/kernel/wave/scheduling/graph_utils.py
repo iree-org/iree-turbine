@@ -207,12 +207,13 @@ def topological_sort_nodes(
     Perform a topological sort on the nodes in the strongly connected component that have an edge in edges, excluding
     certain nodes.
     """
-    scc_nodes = set(scc) - set(exclude)
+    scc_nodes = set(scc)
     filtered_nodes = set()
     for edge in edges:
         if edge._from in scc_nodes and edge._to in scc_nodes:
             filtered_nodes.add(edge._to)
             filtered_nodes.add(edge._from)
+    filtered_nodes -= set(exclude) if exclude is not None else set()
     sorted_nodes = sorted(filtered_nodes, key=lambda x: x.f)
     return sorted_nodes
 

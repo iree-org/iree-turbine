@@ -26,32 +26,63 @@ class ArgumentContext:
     def __init__(
         self, results: list[fx.Node], iter_args: list[fx.Node], num_stages: int
     ) -> None:
-        self.argument_map: list[dict[fx.Node, fx.Node]] = [
-            {} for _ in range(num_stages)
+        self.argument_map: list[list[dict[fx.Node, fx.Node]]] = [
+            [{} for _ in range(num_stages)] for _ in range(num_stages)
         ]
         self.results = results
         self.iter_args = iter_args
+        self.num_stages = num_stages
+        self.num_iterations = num_stages
         self.result_to_iter_arg: dict[fx.Node, fx.Node] = {}
         for result, iter_arg in zip(results, iter_args):
             self.result_to_iter_arg[result] = iter_arg
 
-    def map_arg_all_stages(self, from_: fx.Node, to_: fx.Node) -> None:
+    def map_arg_all(self, from_: fx.Node, to_: fx.Node) -> None:
         """
-        Maps the given argument from one to another into the argument context for all stages.
+        Maps the given argument from one to another into the argument context for all stages
+        and for all iterations.
         """
-        for stage in range(len(self.argument_map)):
-            self.argument_map[stage][from_] = to_
+        for iteration in range(self.num_iterations):
+            for stage in range(self.num_stages):
+                self.argument_map[iteration][stage][from_] = to_
+
+    def map_arg_all_iterations(self, stage: int, from_: fx.Node, to_: fx.Node) -> None:
+        """
+        Maps the given argument from one to another into the argument context for all stages
+        and for all iterations.
+        """
+        for iteration in range(self.num_iterations):
+            self.argument_map[iteration][stage][from_] = to_
 
     def get_mapped_results(self) -> list[fx.Node]:
         """
-        Gets the mapped results for all stages.
+        Gets the mapped results from the last iteration.
         """
         mapped_results = []
         for result in self.results:
-            for mapping in self.argument_map:
-                if result in mapping:
-                    mapped_results.append(mapping[result])
-                    break
+            stage = result.scheduling_parameters["stage"]
+            assert result in self.argument_map[self.num_iterations - 1][stage]
+            mapped_results.append(
+                self.argument_map[self.num_iterations - 1][stage][result]
+            )
+        return mapped_results
+
+    def get_kernel_iteration(self, stage: int) -> int:
+        """
+        Get the iteration from the stage for the kernel.
+        """
+        return self.num_stages - 1 - stage
+
+    def get_kernel_results(self) -> list[fx.Node]:
+        """
+        Gets the mapped results for the kernel. Here there
+        exists a fixed relationship between the iteration and stage.
+        """
+        mapped_results = []
+        for result in self.results:
+            stage = result.scheduling_parameters["stage"]
+            iteration = self.get_kernel_iteration(stage)
+            mapped_results.append(self.argument_map[iteration][stage][result])
         return mapped_results
 
     def __setitem__(self, key: tuple[int, fx.Node], value: fx.Node) -> None:
@@ -59,28 +90,67 @@ class ArgumentContext:
         Sets the argument mapping for the given stage.
         """
         assert isinstance(key, tuple), "Argument context key must be a tuple"
-        stage, from_ = key
+        iteration, stage, from_ = key
+        assert iteration < len(
+            self.argument_map
+        ), f"Iteration {iteration} not yet initialized"
         assert stage < len(self.argument_map), f"Stage {stage} not yet initialized"
-        self.argument_map[stage][from_] = value
+        self.argument_map[iteration][stage][from_] = value
 
     def __getitem__(self, value: tuple[int, fx.Node]) -> fx.Node:
         """
         Gets the argument mapping for the given stage.
         """
         assert isinstance(value, tuple), "Argument context key must be a tuple"
-        stage, key = value
+        iteration, stage, key = value
+        assert iteration < len(
+            self.argument_map
+        ), f"Iteration {iteration} not yet initialized"
         assert stage < len(self.argument_map), f"Stage {stage} not yet initialized"
-        return self.argument_map[stage].get(key, None)
+        return self.argument_map[iteration][stage].get(key, None)
 
     def __contains__(self, key: fx.Node | tuple[int, fx.Node]) -> bool:
         """
         Checks if the argument context contains the given node at a specified
-        stage or at all stages.
+        iteration and stage or at all iterations and stages.
         """
         if isinstance(key, tuple):
-            stage, key = key
-            return key in self.argument_map[stage]
-        return any(key in stage for stage in self.argument_map)
+            iteration, stage, key = key
+            return key in self.argument_map[iteration][stage]
+        return any(
+            key in self.argument_map[iteration][stage]
+            for iteration in range(self.num_iterations)
+            for stage in range(self.num_stages)
+        )
+
+    def contains_in_iteration(self, iteration: int, key: fx.Node) -> bool:
+        """
+        Checks if the argument context contains the given node at a specified
+        iteration.
+        """
+        return any(
+            key in self.argument_map[iteration][stage]
+            for stage in range(self.num_stages)
+        )
+
+    def get_from_iteration(self, iteration: int, key: fx.Node) -> fx.Node:
+        """
+        Gets the argument mapping for the given iteration.
+        """
+        for stage in range(self.num_stages):
+            if key in self.argument_map[iteration][stage]:
+                return self.argument_map[iteration][stage][key]
+        return None
+
+    def dump(self):
+        """
+        Dump the argument context to the logger.
+        """
+        for iteration in range(self.num_iterations):
+            for stage in range(self.num_stages):
+                logger.debug(f"Iteration: {iteration}, Stage: {stage}")
+                for key, value in self.argument_map[iteration][stage].items():
+                    logger.debug(f"  {key} -> {value}")
 
 
 def create_fill_stage_schedule(n: int) -> list[list[int]]:

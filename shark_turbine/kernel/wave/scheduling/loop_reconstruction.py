@@ -1,7 +1,16 @@
 from ..constraints import Constraint, TilingConstraint
 from ..._support.indexing import IndexSymbol
 from ..._support.tracing import CapturedTrace
-from ...ops.wave_ops import Reduction, IterArg, Output, Write, GetResult, get_custom
+from ...ops.wave_ops import (
+    Reduction,
+    IterArg,
+    Placeholder,
+    Allocate,
+    Output,
+    Write,
+    GetResult,
+    get_custom,
+)
 from .modulo_scheduling import ModuloScheduler
 from ..utils import (
     graph_copy,
@@ -40,7 +49,7 @@ def add_nodes_by_schedule(
     induction_variable: IndexSymbol,
     current_induction_variables: list[int],
     rotating_registers: dict[fx.Node, list[fx.Node]],
-    drain: bool = False,
+    fill_or_drain: bool = False,
 ):
     """
     Interleave the instructions in the partitioned graph by stage
@@ -65,19 +74,21 @@ def add_nodes_by_schedule(
             custom_node = get_custom(node)
             logger.debug(f"Node args: {node.args}")
             for arg in node.args:
-                if (stage, arg) in arg_context:
+                if arg_context.contains_in_iteration(iteration, arg):
                     logger.debug(
-                        f"Found arg: {arg} in partitioned argument map. Using {arg_context[(stage, arg)]}."
+                        f"Found arg: {arg} in partitioned argument map. Using {arg_context.get_from_iteration(iteration, arg)}."
                     )
                     continue
             new_node = custom_node.copy(
                 new_graph=reduction_graph,
                 arg_transform=lambda x: (
-                    arg_context[(stage, x)] if (stage, x) in arg_context else x
+                    arg_context.get_from_iteration(iteration, x)
+                    if arg_context.contains_in_iteration(iteration, x)
+                    else x
                 ),
             )
             # Update the argument context.
-            arg_context[(stage, node)] = new_node.fx_node
+            arg_context[(iteration, stage, node)] = new_node.fx_node
             logger.debug(
                 f"Copying Node: {node}, Stage: {stage}, Iteration: {iteration} -> {new_node.fx_node}"
             )
@@ -95,18 +106,34 @@ def add_nodes_by_schedule(
                 rotating_registers[node].append(new_node.fx_node)
                 rotating_registers[node].popleft()
                 # If draining, then override the rotating registers and update the argument context.
-                if drain:
+                if fill_or_drain:
                     for next_stage in range(stage + 1, len(stages)):
-                        arg_context[(next_stage, node)] = new_node.fx_node
+                        arg_context[(iteration, next_stage, node)] = new_node.fx_node
 
             # Update the init args in the argument context whenever a result is computed.
             if node in arg_context.results:
                 logger.debug(
                     f"Updating result: {node} -> {arg_context.result_to_iter_arg[node]} to {new_node.fx_node}."
                 )
-                arg_context.map_arg_all_stages(
+                arg_context.map_arg_all(
                     arg_context.result_to_iter_arg[node], new_node.fx_node
                 )
+
+
+def push_placeholders(
+    implicit_captures: list[fx.Node],
+    reduction_subgraph: fx.Node,
+    arg_context: ArgumentContext,
+):
+    """
+    Push placeholders into the argument context for the reduction graph.
+    """
+    for node in reduction_subgraph.nodes:
+        custom = get_custom(node)
+        if isinstance(custom, Placeholder) and not isinstance(custom, IterArg):
+            root_node = [x for x in implicit_captures if x.name == node.name][0]
+            assert root_node is not None
+            arg_context.map_arg_all(node, root_node)
 
 
 def construct_prologue(
@@ -135,6 +162,7 @@ def construct_prologue(
         reduction.iter_args(reduction_subgraph),
         scheduler.num_stages,
     )
+    push_placeholders(reduction.implicit_captures, reduction_subgraph, arg_context)
     with reduction.graph.inserting_before(reduction.fx_node):
         for i in range(scheduler.num_stages - 1):
             add_nodes_by_schedule(
@@ -146,6 +174,7 @@ def construct_prologue(
                 induction_variable,
                 new_induction_variables,
                 rotating_registers,
+                fill_or_drain=True,
             )
 
 
@@ -192,26 +221,31 @@ def push_rotating_registers(
     we evaluate which stage it belongs to and update the argument
     context for the next stage and n - 1 stages after it, where
     n is the total number of rotating registers.
-    If var a has [a, b, c] as rotating registers, then a is
-    used in stage 2, b in stage 1 and c in stage 0.
+    If var a has [a, b, c] as rotating registers, then in a 3-stage schedule
+        a is used in stage 2, (iteration 0)
+        b in stage 1, (iteration 1)
+        c in stage 0. (iteration 2)
     """
     new_rotating_registers: dict[fx.Node, deque[fx.Node]] = {}
     count = 0
     for node, registers in rotating_registers.items():
         new_registers: deque[fx.Node] = deque()
+        custom = get_custom(node)
+        stage = custom.scheduling_parameters["stage"]
+        iteration = arg_context.get_kernel_iteration(stage)
+        arg_context[(iteration, stage, node)] = registers[-1]
         for i, register in enumerate(registers):
-            custom = get_custom(node)
-            stage = custom.scheduling_parameters["stage"]
             mapped_stage = stage + len(registers) - i
+            mapped_iteration = arg_context.get_kernel_iteration(mapped_stage)
             if create_new_nodes:
                 iter_arg = IterArg(f"rotating_reg_{count}").add_to_graph(graph)
-                arg_context[(mapped_stage, node)] = iter_arg
+                arg_context[(mapped_iteration, mapped_stage, node)] = iter_arg
                 new_registers.append(iter_arg)
                 logger.debug(
                     f"Mapped orig: {node_map[node]} / mapped: {iter_arg} to stage {mapped_stage}."
                 )
             else:
-                arg_context[(mapped_stage, node)] = register
+                arg_context[(mapped_iteration, mapped_stage, node)] = register
                 logger.debug(
                     f"Mapped orig: {node_map[node]} / mapped: {register} to stage {mapped_stage}."
                 )
@@ -230,6 +264,7 @@ def construct_kernel(
     induction_variable: IndexSymbol,
     new_induction_variables: list[int],
     node_map: dict[fx.Node, fx.Node],
+    visualize: bool = False,
 ) -> tuple[Reduction, fx.Graph]:
     """
     Construct the kernel of the pipelined loop.
@@ -250,7 +285,6 @@ def construct_kernel(
             subgraph_name="pipelined_reduction",
             implicit_captures=reduction.implicit_captures,
         ).add_to_graph(reduction.graph)
-        custom = get_custom(pipelined_reduction)
         pipelined_reduction.index = reduction.index
         pipelined_reduction_graph = fx.Graph()
         reduction.graph.subgraphs["pipelined_reduction"] = pipelined_reduction_graph
@@ -261,15 +295,16 @@ def construct_kernel(
             reduction.iter_args(reduction_subgraph),
             scheduler.num_stages,
         )
+        push_placeholders(reduction.implicit_captures, reduction_subgraph, arg_context)
 
         # For the original iter args, we just map the old ones to the new ones.
         # Do this for all stages, since the original iter args are "dummy" nodes
         # during scheduling.
         for node in arg_context.iter_args:
             iter_arg = IterArg(node.name).add_to_graph(pipelined_reduction_graph)
-            arg_context.map_arg_all_stages(node, iter_arg)
+            arg_context.map_arg_all(node, iter_arg)
 
-        # Push the rotating registers into the argument map.
+        # Push the rotating registers into the argument context.
         new_rotating_registers: dict[fx.Node, deque[fx.Node]] = push_rotating_registers(
             arg_context,
             rotating_registers,
@@ -290,20 +325,17 @@ def construct_kernel(
         )
 
         # Create output node (last node in the graph).
-        return_vals = [
-            arg_context[(register.scheduling_parameters["stage"], register)]
-            for register in arg_context.results
-        ]
+        return_vals: list[fx.Node] = arg_context.get_kernel_results()
         for registers in new_rotating_registers.values():
             return_vals.extend(registers)
 
         Output(return_vals).add_to_graph(pipelined_reduction_graph)
         reduction.replace_all_uses_with(pipelined_reduction)
 
-        visualize = False
         if visualize:
             visualize_mapped_graphs(
                 pipelined_reduction_graph,
+                new_rotating_registers,
                 arg_context.argument_map,
                 "kernel.png",
             )
@@ -323,6 +355,7 @@ def construct_epilogue(
     stages: list[int],
     num_rotating_registers: dict[fx.Node, int],
     node_map: dict[fx.Node, fx.Node],
+    visualize: bool = False,
 ):
     """
     Construct the epilogue of the pipelined loop.
@@ -349,11 +382,10 @@ def construct_epilogue(
     existing_users = {x: x.users for x in existing_get_results}
 
     # Map the results from the kernel to the init args (for stages).
-    min_stage = min([x for row in stages for x in row if x is not None])
     for iter_arg, get_result in zip(
         reduction.iter_args(reduction_subgraph), existing_get_results
     ):
-        arg_context[(min_stage, iter_arg)] = get_result.fx_node
+        arg_context.map_arg_all(iter_arg, get_result.fx_node)
 
     with pipelined_reduction.graph.inserting_before(
         existing_get_results[0].fx_node.next
@@ -374,6 +406,7 @@ def construct_epilogue(
 
         # Push the rotating registers onto the argument map.
         push_rotating_registers(arg_context, rotating_registers, None, node_map, False)
+        push_placeholders(reduction.implicit_captures, reduction_subgraph, arg_context)
 
         for i in range(scheduler.num_stages - 1):
             add_nodes_by_schedule(
@@ -385,7 +418,7 @@ def construct_epilogue(
                 induction_variable,
                 new_induction_variables,
                 rotating_registers,
-                drain=True,
+                fill_or_drain=True,
             )
 
         # Replace the existing uses with the new results.
@@ -394,10 +427,12 @@ def construct_epilogue(
         for i, get_result in enumerate(existing_get_results):
             replace_uses_in(existing_users, get_result, new_results[i])
 
-        visualize = False
         if visualize:
             visualize_mapped_graphs(
-                pipelined_reduction.graph, arg_context.argument_map, "epilogue.png"
+                pipelined_reduction.graph,
+                rotating_registers,
+                arg_context.argument_map,
+                "epilogue.png",
             )
 
 
@@ -412,6 +447,7 @@ def construct_pipelined_loop(
     Given a graph annotated with scheduling parameters, construct a pipelined loop
     with a prologue, kernel and epilogue.
     """
+    visualize = True
     induction_variable = get_induction_variable(reduction, constraints)
     num_rotating_registers = liveness_analysis(graph, constraints, scheduler)
     rotating_registers: dict[fx.Node, deque[fx.Node]] = {
@@ -443,6 +479,7 @@ def construct_pipelined_loop(
         induction_variable,
         [induction_variable + i for i in range(scheduler.num_stages)],
         node_map,
+        visualize,
     )
     # Construct epilogue.
     construct_epilogue(
@@ -457,11 +494,13 @@ def construct_pipelined_loop(
         create_drain_stage_schedule(scheduler.num_stages),
         num_rotating_registers,
         node_map,
+        visualize,
     )
 
     # Remove the unpipelined reduction.
     reduction.graph.erase_node(reduction.fx_node)
 
-    visualize = False
     if visualize:
         visualize_graph(pipelined_reduction.graph, "pipelined.png")
+
+    breakpoint()
