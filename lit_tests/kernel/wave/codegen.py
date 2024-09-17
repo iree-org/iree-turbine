@@ -605,7 +605,10 @@ def test_gemm_pipelined():
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(gemm_pipelined(a, b, c).module_op)
+        mb = gemm_pipelined(a, b, c).module_op
+        print(mb)
+        with open("gemm_pipelined.mlir", "w") as f:
+            f.write(mb.get_asm())
 
 
 @run_test

@@ -455,7 +455,7 @@ def construct_pipelined_loop(
     node_map: dict[fx.Node, fx.Node],
     max_induction_variable: int,
     visualize: bool = False,
-):
+) -> fx.Node:
     """
     Given a graph annotated with scheduling parameters, construct a pipelined loop
     with a prologue, kernel and epilogue.
@@ -513,3 +513,5 @@ def construct_pipelined_loop(
 
     if visualize:
         visualize_graph(pipelined_reduction.graph, "pipelined.png")
+
+    return pipelined_reduction

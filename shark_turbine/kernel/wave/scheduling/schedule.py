@@ -71,14 +71,14 @@ def schedule_reduction(
     # to have atleast N iterations of the loop where N > num_stages - 1 (because
     # we will be peeling off num_stages iterations from the loop).
     tiling_constraint = get_tiling_constraint(reduction, constraints)
-    max_induction_variable = subs_idxc(tiling_constraint.dim) // subs_idxc(
-        tiling_constraint.tile_size
+    max_induction_variable = int(
+        subs_idxc(tiling_constraint.dim) // subs_idxc(tiling_constraint.tile_size)
     )
     if max_induction_variable <= scheduler.num_stages - 1:
         logger.warn("Not enough iterations to pipeline the loop. Skipping pipelining.")
         return {}
 
-    construct_pipelined_loop(
+    new_reduction = construct_pipelined_loop(
         trace,
         reduction,
         reduction_graph,
@@ -89,7 +89,7 @@ def schedule_reduction(
         visualize,
     )
 
-    return {reduction: max_induction_variable - (scheduler.num_stages - 1)}
+    return {new_reduction: max_induction_variable - (scheduler.num_stages - 1)}
 
 
 def schedule_graph(

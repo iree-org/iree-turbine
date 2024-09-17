@@ -126,7 +126,7 @@ class Interpreter:
                     load_indices = []
                     for index in op.indices:
                         load_indices.append(self.symbol_table[index])
-                    logger.debug("Load indices:", load_indices)
+                    print("Load indices:", [x.item() for x in load_indices])
                     memref = self.symbol_table[op.base]
                     result_type = op.result.type
                     result_shape = result_type.shape
@@ -245,7 +245,9 @@ if __name__ == "__main__":
     parser.add_argument("--thread_ids", nargs="+", type=int, help="Thread ids")
 
     args = parser.parse_args()
-    with open(args.file, "r") as f:
+    with open(args.input, "r") as f:
         asm = f.read()
+    parser.workgroup_ids = [0, 0, 0]
+    parser.thread_ids = [0, 0, 0]
     interpreter = Interpreter(parser.workgroup_ids, parser.thread_ids)  # type: ignore
     interpreter.interpret(asm)
