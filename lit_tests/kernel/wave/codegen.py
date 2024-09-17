@@ -582,7 +582,7 @@ def test_gemm_pipelined():
         {
             M: 128,
             N: 128,
-            K: 64,
+            K: 128,
             BLOCK_M: 64,
             BLOCK_N: 64,
             BLOCK_K: 32,

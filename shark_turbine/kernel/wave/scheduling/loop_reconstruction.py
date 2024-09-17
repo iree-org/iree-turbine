@@ -16,7 +16,6 @@ from ..utils import (
     graph_copy,
     erase_graph,
     get_induction_variable,
-    get_tiling_constraint,
     replace_uses_in,
 )
 from ..utils import subs_idxc
@@ -454,6 +453,7 @@ def construct_pipelined_loop(
     constraints: list[Constraint],
     scheduler: ModuloScheduler,
     node_map: dict[fx.Node, fx.Node],
+    max_induction_variable: int,
     visualize: bool = False,
 ):
     """
@@ -466,10 +466,6 @@ def construct_pipelined_loop(
         k: deque([None for _ in range(v)]) for k, v in num_rotating_registers.items()
     }
     partitioned_graph = partition_graph_by_stage(graph, scheduler)
-    tiling_constraint = get_tiling_constraint(reduction, constraints)
-    max_induction_variable = subs_idxc(tiling_constraint.dim) // subs_idxc(
-        tiling_constraint.tile_size
-    )
     # Construct prologue.
     construct_prologue(
         graph,

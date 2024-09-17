@@ -215,8 +215,9 @@ class LaunchableWave(Launchable):
         decompose_reduce_ops(graph, self.constraints, idxc.subs)
 
         # Schedule the reduction ops.
+        scheduling_metadata = {}
         if kwargs.get("schedule", False):
-            schedule_graph(graph, self.constraints)
+            scheduling_metadata = schedule_graph(graph, self.constraints)
 
         # Add shared memory barriers.
         add_shared_memory_barriers(graph)
@@ -244,7 +245,9 @@ class LaunchableWave(Launchable):
             entrypoint_name, kernel_sig, grid, workgroup_size, subgroup_size
         )
 
-        emitter = WaveEmitter(dispatch_entrypoint, graph, self.constraints)
+        emitter = WaveEmitter(
+            dispatch_entrypoint, graph, self.constraints, scheduling_metadata
+        )
         emitter.emit(graph.get_root_graph())
         emitter.finish()
 

@@ -77,6 +77,7 @@ class WaveEmitter:
     root_sig: BoundKernelSignature
     trace: CapturedTrace
     constraints: list[Constraint]
+    scheduling_metadata: dict[fx.Node, int]
     ip: InsertionPoint = None
     OP_HANDLERS: ClassVar[dict[str, Callable[["WaveEmitter", fx.Node], None]]] = {}
     _node_values: ClassVar[dict[fx.Node, List[IRProxyValue]]] = {}
@@ -767,7 +768,6 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
     flat_init_args, _ = pytree.tree_flatten((init_args))
     flat_init_args = [cast_py_value(emitter, arg) for arg in flat_init_args]
 
-    # Without scheduling, we assume that we always start at 0.
     start = arith_d.constant(IndexType.get(), int(0))
 
     idxc = IndexingContext.current()
@@ -780,7 +780,10 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
     # For now, we assume that dimensions that have tiling constraints on them,
     # do not have any other constraints.
     dim = axis.subs(idxc.subs)
-    end = arith_d.constant(IndexType.get(), int(dim // tile_size))
+    end_value = int(dim // tile_size)
+    if node in emitter.scheduling_metadata:
+        end_value = emitter.scheduling_metadata[node]
+    end = arith_d.constant(IndexType.get(), end_value)
 
     # Since we divide the end by the tile size, we need to make sure that the
     # step is 1.
