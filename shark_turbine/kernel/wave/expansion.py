@@ -13,7 +13,7 @@ from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
-from .utils import get_mma_dimensional_mapping, forward_slice
+from .utils import get_mma_dimensional_mapping
 from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.expansion")
@@ -285,6 +285,9 @@ def expand_graph(
             )
 
 
+last_expanded_iter_arg: fx.Node = None
+
+
 def _expand_node(
     node: CustomOp | list[CustomOp],
     trace: CapturedTrace,
@@ -293,6 +296,9 @@ def _expand_node(
     node_index_setter: Callable[[CustomOp, dict[IndexSymbol, int]], None],
     context: ExpandedNodeMap,
 ) -> CustomOp:
+
+    global last_expanded_iter_arg
+
     """Expand a single node or list of nodes in specific dimensions and recursively proceed to its inputs."""
     if isinstance(node, list):
         expanded_nodes = []
@@ -320,16 +326,23 @@ def _expand_node(
         # Allocate nodes are not expanded.
         return node
 
+    # We want to order the iter args so that they are in the same order as the
+    # init args and outputs.
     # Filter out the dimensions that are not indexed by the node
     restricted_dims = filter_and_zero_unselected_dims(dim_query, node.indexing_dims)
     logger.debug(f"Expanding node: {node} in {restricted_dims}")
     # Clone the node for the new expansion. The original node is reused for the
     # case of all dimensions being zero.
     if expansion_needed(restricted_dims, node.indexing_dims):
-        new_node = node.copy()
+        new_node = node.copy(
+            anchor=last_expanded_iter_arg if isinstance(node, IterArg) else None
+        )
     else:
         new_node = node
         logger.debug(f"did not clone node: {node} in {restricted_dims}")
+
+    if isinstance(node, IterArg):
+        last_expanded_iter_arg = new_node.fx_node
 
     new_node.fx_node.expanded_dims = restricted_dims
     new_node.fx_node.name = get_expanded_name(node, restricted_dims)
@@ -521,15 +534,8 @@ def _handle_reduction_dim(
         if isinstance(node, IterArg):
             iter_args.append(node)
 
-    # Get the outputs in the same order as the iter args.
     reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
-    results = list(reduction.outputs(reduction_subgraph))
-    new_outputs = []
-    for iter_arg in iter_args:
-        result = forward_slice(iter_arg.fx_node, reduction_subgraph, results)
-        assert result is not None, f"Could not find result for iter_arg {iter_arg}"
-        new_outputs.append(result)
-
+    new_outputs = list(reduction.outputs(reduction_subgraph))
     # Users of the loop carried nodes will be duplicated
     for idx, carried_node in enumerate(iter_args):
         # The initial nodes are expanded in the first dimension, so we start from 1

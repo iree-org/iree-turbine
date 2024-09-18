@@ -3,7 +3,7 @@ from ..._support.indexing import IndexSymbol
 from ..._support.tracing import CapturedTrace
 from ...ops.wave_ops import Reduction, IterArg, Output, Write, GetResult, get_custom
 from .modulo_scheduling import ModuloScheduler
-from ..utils import graph_copy, erase_graph, forward_slice
+from ..utils import graph_copy, erase_graph
 from ..utils import subs_idxc
 import torch.fx as fx
 import math
@@ -261,4 +261,4 @@ def interleave_instructions(instructions: list[tuple[int, int, fx.Node]]):
     them based on some criteria.
     """
     rng = random.Random(0)
-    rng.shuffle(instructions)
+    # rng.shuffle(instructions)

@@ -391,15 +391,3 @@ def replace_uses_in(users: dict[fx.Node, list[CustomOp]], old: CustomOp, new: fx
         for i, arg in enumerate(user.fx_node.args):
             if arg == old.fx_node:
                 user.update_arg(i, new)
-
-
-def forward_slice(node: fx.Node, graph: fx.Graph, targets: list[fx.Node]) -> fx.Node:
-    if node in targets:
-        return node
-    if len(node.users) == 0:
-        return None
-    for user in node.users:
-        result = forward_slice(user, graph, targets)
-        if result is not None:
-            return result
-    return None
