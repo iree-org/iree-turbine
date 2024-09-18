@@ -53,6 +53,7 @@ def set_register_shape(
             break
         elif isinstance(custom_user, ReduceOp):
             get_thread_shape = lambda reg_shape: max(reg_shape)
+            # Check that dim is non-reduction && in hw_constraint.vector_shape.
             is_valid_dim = lambda dim: dim != custom_user.dim and dim in vector_map
             # TODO: Modify num_reduction_dims once we add support for multi-dim reduction.
             num_reduction_dims = 1
