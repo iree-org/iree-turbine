@@ -34,9 +34,10 @@ class ArgumentContext:
         self.num_stages = num_stages
         self.num_iterations = num_stages
         self.result_to_iter_arg: dict[fx.Node, fx.Node] = {}
+        assert all([hasattr(x, "mapped_result") for x in iter_args])
         for result in results:
             for iter_arg in iter_args:
-                if iter_arg in result.args:
+                if iter_arg.mapped_result == result:
                     self.result_to_iter_arg[result] = iter_arg
                     break
 
