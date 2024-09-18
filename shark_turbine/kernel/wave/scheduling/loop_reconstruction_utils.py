@@ -34,8 +34,11 @@ class ArgumentContext:
         self.num_stages = num_stages
         self.num_iterations = num_stages
         self.result_to_iter_arg: dict[fx.Node, fx.Node] = {}
-        for result, iter_arg in zip(results, iter_args):
-            self.result_to_iter_arg[result] = iter_arg
+        for result in results:
+            for iter_arg in iter_args:
+                if iter_arg in result.args:
+                    self.result_to_iter_arg[result] = iter_arg
+                    break
 
     def map_arg_all(self, from_: fx.Node, to_: fx.Node) -> None:
         """
