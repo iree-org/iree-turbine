@@ -24,19 +24,27 @@ class ArgumentContext:
     """
 
     def __init__(
-        self, results: list[fx.Node], iter_args: list[fx.Node], num_stages: int
+        self,
+        results: list[fx.Node],
+        iter_args: list[fx.Node],
+        init_args: list[fx.Node],
+        num_stages: int,
     ) -> None:
         self.argument_map: list[list[dict[fx.Node, fx.Node]]] = [
             [{} for _ in range(num_stages)] for _ in range(num_stages)
         ]
         self.results = results
         self.iter_args = iter_args
+        self.init_args = init_args
         self.num_stages = num_stages
         self.num_iterations = num_stages
         self.result_to_iter_arg: dict[fx.Node, fx.Node] = {}
+        self.result_to_init_arg: dict[fx.Node, fx.Node] = {}
 
         for result, iter_arg in zip(results, iter_args):
             self.result_to_iter_arg[result] = iter_arg
+        for result, init_arg in zip(results, init_args):
+            self.result_to_init_arg[result] = init_arg
 
     def map_arg_all(self, from_: fx.Node, to_: fx.Node) -> None:
         """
@@ -123,6 +131,16 @@ class ArgumentContext:
             for iteration in range(self.num_iterations)
             for stage in range(self.num_stages)
         )
+
+    def lookup(self, key: fx.Node) -> Optional[fx.Node]:
+        """
+        Looks up the argument mapping for the given node.
+        """
+        for iteration in range(self.num_iterations):
+            for stage in range(self.num_stages):
+                if key in self.argument_map[iteration][stage]:
+                    return self.argument_map[iteration][stage][key]
+        return None
 
     def contains_in_iteration(self, iteration: int, key: fx.Node) -> bool:
         """

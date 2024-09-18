@@ -35,8 +35,15 @@ from .loop_reconstruction_utils import (
     partition_graph_by_stage,
     interleave_instructions,
 )
+from enum import Enum
 
 logger = get_logger("turbine.wave.scheduling.loop_reconstruction")
+
+
+class PipelineStage(Enum):
+    PROLOGUE = ("fill",)
+    KERNEL = ("kernel",)
+    EPILOGUE = "drain"
 
 
 def add_nodes_by_schedule(
@@ -48,13 +55,17 @@ def add_nodes_by_schedule(
     induction_variable: IndexSymbol,
     current_induction_variables: list[int],
     rotating_registers: dict[fx.Node, list[fx.Node]],
-    fill_or_drain: bool = False,
+    pipelining_stage: PipelineStage = PipelineStage.KERNEL,
 ):
     """
     Interleave the instructions in the partitioned graph by stage
     for a single initiation interval, updating the argument maps
     per stage starting at the provided start times and indices.
     """
+    fill_or_drain = pipelining_stage in [PipelineStage.PROLOGUE, PipelineStage.EPILOGUE]
+    fill = pipelining_stage == PipelineStage.PROLOGUE
+    drain = pipelining_stage == PipelineStage.EPILOGUE
+
     for cycle in range(initiation_interval):
         logger.debug(f"Cycle: {cycle}")
         # Interleave the instructions that are scheduled at the same cycle.
@@ -111,12 +122,20 @@ def add_nodes_by_schedule(
 
             # Update the init args in the argument context whenever a result is computed.
             if node in arg_context.results and fill_or_drain:
-                logger.debug(
-                    f"Updating result: {node} -> {arg_context.result_to_iter_arg[node]} to {new_node.fx_node}."
-                )
-                arg_context.map_arg_all(
-                    arg_context.result_to_iter_arg[node], new_node.fx_node
-                )
+                if drain:
+                    logger.debug(
+                        f"Updating result: {node} -> {arg_context.result_to_iter_arg[node]} to {new_node.fx_node}."
+                    )
+                    arg_context.map_arg_all(
+                        arg_context.result_to_iter_arg[node], new_node.fx_node
+                    )
+                if fill:
+                    logger.debug(
+                        f"Updating result: {node} -> {arg_context.result_to_init_arg[node]} to {new_node.fx_node}."
+                    )
+                    arg_context.map_arg_all(
+                        arg_context.result_to_init_arg[node], new_node.fx_node
+                    )
 
 
 def push_placeholders(
@@ -159,6 +178,7 @@ def construct_prologue(
     arg_context = ArgumentContext(
         reduction.outputs(reduction_subgraph),
         reduction.iter_args(reduction_subgraph),
+        reduction.init_args,
         scheduler.num_stages,
     )
 
@@ -180,8 +200,18 @@ def construct_prologue(
                 induction_variable,
                 new_induction_variables,
                 rotating_registers,
-                fill_or_drain=True,
+                PipelineStage.PROLOGUE,
             )
+
+    # During the prologue, we may have computed results that need to be passed as init args
+    # to the kernel.
+    new_init_args: list[fx.Node] = []
+    for init_arg in reduction.init_args:
+        mapped_init_arg = arg_context.lookup(init_arg)
+        if mapped_init_arg is None:
+            mapped_init_arg = init_arg
+        new_init_args.append(mapped_init_arg)
+    reduction.init_args = new_init_args
 
 
 def flatten_dict_values(
@@ -301,6 +331,7 @@ def construct_kernel(
         arg_context = ArgumentContext(
             reduction.outputs(reduction_subgraph),
             reduction.iter_args(reduction_subgraph),
+            reduction.init_args,
             scheduler.num_stages,
         )
         push_placeholders(reduction.implicit_captures, reduction_subgraph, arg_context)
@@ -332,6 +363,7 @@ def construct_kernel(
             induction_variable,
             new_induction_variables,
             new_rotating_registers,
+            PipelineStage.KERNEL,
         )
 
         # Create output node (last node in the graph).
@@ -382,6 +414,7 @@ def construct_epilogue(
     arg_context = ArgumentContext(
         reduction.outputs(reduction_subgraph),
         reduction.iter_args(reduction_subgraph),
+        reduction.init_args,
         scheduler.num_stages,
     )
 
@@ -428,7 +461,7 @@ def construct_epilogue(
                 induction_variable,
                 new_induction_variables,
                 rotating_registers,
-                fill_or_drain=True,
+                PipelineStage.EPILOGUE,
             )
 
         # Replace the existing uses with the new results.
