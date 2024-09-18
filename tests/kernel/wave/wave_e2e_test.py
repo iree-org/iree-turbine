@@ -268,8 +268,8 @@ def test_reduce_sum(shape):
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("test_reduce_max"))
-def test_reduce_max(shape):
+@pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
+def test_tiled_reduce_max(shape):
     M = tkl.sym.M
     N = tkl.sym.N
     wave_size = 64
@@ -286,7 +286,8 @@ def test_reduce_max(shape):
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
@@ -296,11 +297,19 @@ def test_reduce_max(shape):
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
     ):
-        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
-        res = lhs * rhs
-        res = tkw.max(res, dim=N)
-        tkw.write(res, c, elements_per_thread=1)
+        init_max = tkl.Register[M, tkl.f16](-1e6)
+
+        @tkw.reduction(N, init_args=[init_max])
+        def repeat(
+            partial_max: tkl.Register[M, tkl.f16],
+        ) -> tkl.Register[M, tkl.f16]:
+            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            res = lhs * rhs
+            partial_max = tkw.max(res, partial_max, dim=N)
+            return partial_max
+
+        tkw.write(repeat, c, elements_per_thread=1)
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
@@ -312,6 +321,7 @@ def test_reduce_max(shape):
         {
             M: shape[0],
             N: shape[1],
+            BLOCK_N: 128,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
