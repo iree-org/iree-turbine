@@ -51,7 +51,7 @@ def test_copy(shape):
     # elements.
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Max(sympy.Min(N, 256), 64)
+    BLOCK_N = sympy.Max(sympy.Min(N, 256), wave_size)
     ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
@@ -102,7 +102,7 @@ def test_transpose_read(shape):
 
     wave_size = 64
     BLOCK_N = 1
-    BLOCK_M = sympy.Max(sympy.Min(M, 256), 64)
+    BLOCK_M = sympy.Max(sympy.Min(M, 256), wave_size)
     ELEMS_PER_THREAD = BLOCK_M / wave_size
 
     constraints: list[tkw.Constraint] = [
@@ -158,7 +158,7 @@ def test_transpose_write(shape):
 
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Max(sympy.Min(N, 256), 64)
+    BLOCK_N = sympy.Max(sympy.Min(N, 256), wave_size)
     ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
