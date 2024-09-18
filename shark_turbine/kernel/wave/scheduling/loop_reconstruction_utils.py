@@ -3,7 +3,7 @@ from ..._support.indexing import IndexSymbol
 from ..._support.tracing import CapturedTrace
 from ...ops.wave_ops import Reduction, IterArg, Output, Write, GetResult, get_custom
 from .modulo_scheduling import ModuloScheduler
-from ..utils import graph_copy, erase_graph
+from ..utils import graph_copy, erase_graph, forward_slice
 from ..utils import subs_idxc
 import torch.fx as fx
 import math
@@ -34,12 +34,11 @@ class ArgumentContext:
         self.num_stages = num_stages
         self.num_iterations = num_stages
         self.result_to_iter_arg: dict[fx.Node, fx.Node] = {}
-        assert all([hasattr(x, "mapped_result") for x in iter_args])
-        for result in results:
-            for iter_arg in iter_args:
-                if iter_arg.mapped_result == result:
-                    self.result_to_iter_arg[result] = iter_arg
-                    break
+
+        for iter_arg in iter_args:
+            result = forward_slice(iter_arg, iter_arg.graph, results)
+            assert result is not None, f"Could not find result for iter_arg {iter_arg}"
+            self.result_to_iter_arg[result] = iter_arg
 
     def map_arg_all(self, from_: fx.Node, to_: fx.Node) -> None:
         """

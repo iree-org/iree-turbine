@@ -526,7 +526,6 @@ def _handle_reduction_dim(
     for idx, carried_node in enumerate(iter_args):
         # The initial nodes are expanded in the first dimension, so we start from 1
         for scale_idx in range(1, dim_scaling[reduction.axis]):
-            iter_arg = carried_node
             for user in carried_node.users:
                 if isinstance(user, Output):
                     continue
@@ -559,6 +558,5 @@ def _handle_reduction_dim(
                 user.graph.erase_node(dummy)
                 carried_node = user
                 new_outputs[idx] = new_node.fx_node
-            iter_arg.mapped_result = new_node.fx_node
 
     output.update_arg("return_vals", new_outputs)

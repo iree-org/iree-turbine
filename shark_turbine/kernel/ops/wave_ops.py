@@ -652,16 +652,6 @@ class IterArg(Placeholder):
     a reduction node.
     """
 
-    @property
-    def mapped_result(self) -> fx.Node:
-        if hasattr(self.fx_node, "mapped_result"):
-            return self.fx_node.mapped_result
-        return None
-
-    @mapped_result.setter
-    def mapped_result(self, value: fx.Node):
-        self.fx_node.mapped_result = value
-
 
 # Ops modeling TKW operations in the kernel language
 
