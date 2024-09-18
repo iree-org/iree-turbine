@@ -250,7 +250,7 @@ def compile_and_invoke(
     # TODO: More targets/backends support.
     if backend == "rocm":
         target = config["target"]
-        flags.append(f"--iree-rocm-target-chip={target}")
+        flags.append(f"--iree-hip-target={target}")
 
     if config.get("print_ir_after_all", False):
         flags.append("--mlir-print-ir-after-all")
