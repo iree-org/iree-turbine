@@ -35,9 +35,7 @@ class ArgumentContext:
         self.num_iterations = num_stages
         self.result_to_iter_arg: dict[fx.Node, fx.Node] = {}
 
-        for iter_arg in iter_args:
-            result = forward_slice(iter_arg, iter_arg.graph, results)
-            assert result is not None, f"Could not find result for iter_arg {iter_arg}"
+        for result, iter_arg in zip(results, iter_args):
             self.result_to_iter_arg[result] = iter_arg
 
     def map_arg_all(self, from_: fx.Node, to_: fx.Node) -> None:

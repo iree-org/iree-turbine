@@ -13,7 +13,7 @@ from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
-from .utils import get_mma_dimensional_mapping
+from .utils import get_mma_dimensional_mapping, forward_slice
 from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.expansion")
@@ -521,7 +521,15 @@ def _handle_reduction_dim(
         if isinstance(node, IterArg):
             iter_args.append(node)
 
-    new_outputs = list(reduction.outputs(trace.get_subgraph(reduction.subgraph_name)))
+    # Get the outputs in the same order as the iter args.
+    reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
+    results = list(reduction.outputs(reduction_subgraph))
+    new_outputs = []
+    for iter_arg in iter_args:
+        result = forward_slice(iter_arg.fx_node, reduction_subgraph, results)
+        assert result is not None, f"Could not find result for iter_arg {iter_arg}"
+        new_outputs.append(result)
+
     # Users of the loop carried nodes will be duplicated
     for idx, carried_node in enumerate(iter_args):
         # The initial nodes are expanded in the first dimension, so we start from 1
