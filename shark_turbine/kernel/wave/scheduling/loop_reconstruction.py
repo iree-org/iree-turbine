@@ -41,9 +41,9 @@ logger = get_logger("turbine.wave.scheduling.loop_reconstruction")
 
 
 class PipelineStage(Enum):
-    PROLOGUE = ("fill",)
-    KERNEL = ("kernel",)
-    EPILOGUE = "drain"
+    PROLOGUE = 0
+    KERNEL = 1
+    EPILOGUE = 2
 
 
 def add_nodes_by_schedule(
@@ -121,15 +121,18 @@ def add_nodes_by_schedule(
                         arg_context[(iteration, next_stage, node)] = new_node.fx_node
 
             # Update the init args in the argument context whenever a result is computed.
-            if node in arg_context.results and fill_or_drain:
-                if drain:
+            if node in arg_context.results:
+                if (
+                    pipelining_stage == PipelineStage.KERNEL
+                    or pipelining_stage == PipelineStage.EPILOGUE
+                ):
                     logger.debug(
                         f"Updating result: {node} -> {arg_context.result_to_iter_arg[node]} to {new_node.fx_node}."
                     )
                     arg_context.map_arg_all(
                         arg_context.result_to_iter_arg[node], new_node.fx_node
                     )
-                if fill:
+                if pipelining_stage == PipelineStage.PROLOGUE:
                     logger.debug(
                         f"Updating result: {node} -> {arg_context.result_to_init_arg[node]} to {new_node.fx_node}."
                     )
