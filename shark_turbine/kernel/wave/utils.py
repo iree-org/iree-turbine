@@ -123,6 +123,20 @@ def DCE(trace: CapturedTrace):
             get_custom(node).graph.erase_node(node)
 
 
+def remove_chained_getresult(trace: CapturedTrace):
+    def is_chained_getresult(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        idxc = IndexingContext.current()
+        return isinstance(custom, GetResult) and isinstance(
+            get_custom(custom.value), GetResult
+        )
+
+    while removable_nodes := trace.walk(is_chained_getresult):
+        for node in removable_nodes:
+            get_custom(node).replace_all_uses_with(get_custom(node).value)
+            get_custom(node).graph.erase_node(node)
+
+
 def delinearize_index(index: IndexExpr, shape: list[int]) -> list[IndexExpr]:
     """
     Delinearizes a 1D index into a multi-dimensional index
