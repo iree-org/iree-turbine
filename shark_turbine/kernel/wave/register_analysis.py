@@ -52,18 +52,29 @@ def set_register_shape(
             custom.fx_node.thread_shape = iter_arg.fx_node.thread_shape
             break
         elif isinstance(custom_user, ReduceOp):
-            reduced_shape = [
-                dim for dim in custom_user.type.symbolic_shape if dim != custom_user.dim
-            ]
+            get_thread_shape = lambda reg_shape: max(reg_shape)
+            is_valid_dim = lambda dim: dim != custom_user.dim and dim in vector_map
+            # TODO: Modify num_reduction_dims once we add support for multi-dim reduction.
+            num_reduction_dims = 1
             register_shape = [
-                vector_map[dim] for dim in reduced_shape if dim in vector_map
+                vector_map[dim]
+                for dim in custom_user.type.symbolic_shape
+                if is_valid_dim(dim)
             ]
+            expected_result_rank = (
+                len(custom_user.type.symbolic_shape) - num_reduction_dims
+            )
             # If rank do not match => some dims not found in hw_constraint.vector_shape.
-            if len(reduced_shape) != len(register_shape):
+            if len(register_shape) != expected_result_rank:
                 raise NotImplementedError(
                     "NYI: Handling of dim not in vector_shapes during register analysis."
                 )
-            custom.fx_node.thread_shape = register_shape
+            num_thread_dims = sum(1 for dim in register_shape if dim > 1)
+            if num_thread_dims > 1:
+                raise NotImplementedError(
+                    "NYI: Currently Register semantic only support 0-D vector."
+                )
+            custom.fx_node.thread_shape = get_thread_shape(register_shape)
         else:
             raise NotImplementedError(
                 f"Register shape propagation not implemented for {custom_user}"
