@@ -19,6 +19,9 @@ from iree.compiler.dialects.transform import (
     interpreter as transform_interpreter,
     any_op_t,
 )
+from iree.compiler.dialects import (
+    _structured_transform_ops_gen as structured_transform_ops,
+)
 
 import sympy
 import torch
@@ -47,6 +50,10 @@ def canonicalize_module(module: Operation):
                 with InsertionPoint(apply_patterns.regions[0].blocks[0]):
                     transform_d.apply_patterns_canonicalization()
                 transform_d.apply_cse(target)
+                loops = structured_transform_ops.structured_match(
+                    any_op_t(), target, ops=["scf.for"]
+                )
+                transform_d.apply_licm(loops)
                 transform_d.YieldOp([target])
         transform_interpreter.apply_named_sequence(
             module,

@@ -468,7 +468,7 @@ def construct_epilogue(
             )
 
         # Replace the existing uses with the new results.
-        new_results = arg_context.get_mapped_results()
+        new_results = arg_context.get_mapped_results(existing_get_results)
         assert len(new_results) == len(existing_get_results)
         for i, get_result in enumerate(existing_get_results):
             replace_uses_in(existing_users, get_result, new_results[i])
@@ -538,7 +538,7 @@ def construct_pipelined_loop(
         rotating_registers,
         induction_variable,
         [
-            max_induction_variable - (scheduler.num_stages - 1) + i
+            max_induction_variable - scheduler.num_stages + i
             for i in range(scheduler.num_stages)
         ],
         create_drain_stage_schedule(scheduler.num_stages),

@@ -63,17 +63,20 @@ class ArgumentContext:
         for iteration in range(self.num_iterations):
             self.argument_map[iteration][stage][from_] = to_
 
-    def get_mapped_results(self) -> list[fx.Node]:
+    def get_mapped_results(self, get_results: list[GetResult]) -> list[fx.Node]:
         """
-        Gets the mapped results from the last iteration.
+        Gets the mapped results from the last iteration. If the result is not
+        in the last iteration, then get it from the get result nodes.
         """
         mapped_results = []
-        for result in self.results:
+        for result, get_result in zip(self.results, get_results):
             stage = result.scheduling_parameters["stage"]
-            assert result in self.argument_map[self.num_iterations - 1][stage]
-            mapped_results.append(
-                self.argument_map[self.num_iterations - 1][stage][result]
-            )
+            if result not in self.argument_map[self.num_iterations - 1][stage]:
+                mapped_results.append(get_result.fx_node)
+            else:
+                mapped_results.append(
+                    self.argument_map[self.num_iterations - 1][stage][result]
+                )
         return mapped_results
 
     def get_kernel_iteration(self, stage: int) -> int:
