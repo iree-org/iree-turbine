@@ -1,23 +1,19 @@
 from .._support.tracing import CapturedTrace
-from ..ops.wave_ops import get_custom, Read, SharedMemoryBarrier
+from ..ops.wave_ops import (
+    get_custom,
+    Read,
+    SharedMemoryBarrier,
+    Write,
+    CustomOp,
+    Reduction,
+)
 import torch.fx as fx
+from ..lang.global_symbols import SHARED_ADDRESS_SPACE
 
 
-def get_last_write_dependency(write_dependency: list[Read]) -> Read:
-    """
-    Given a list of write dependencies, returns the last write dependency
-    in the graph. The last write dependency is the one that is
-    furthest from the root/start of the graph.
-    """
-    if len(write_dependency) == 1:
-        return write_dependency[0]
-    graph = get_custom(write_dependency[0]).graph
-    for node in reversed(graph.nodes):
-        if node in write_dependency:
-            return node
-
-
-def add_shared_memory_barriers(trace: CapturedTrace):
+def add_shared_memory_barriers(
+    trace: CapturedTrace | fx.Graph, last_node: CustomOp = None
+):
     """
     Adds shared memory barriers to the graph. The barriers are inserted
     by detecting read-after-write (RAW) based on the write dependencies
@@ -25,22 +21,25 @@ def add_shared_memory_barriers(trace: CapturedTrace):
     nodes. To minimize the number of barriers, we only insert barriers
     between nodes if there are no existing barriers between them.
     """
-    barriers: list[SharedMemoryBarrier] = []
-    for subgraph in trace.region_graph.subgraphs.values():
-        for node in subgraph.nodes:
-            custom = get_custom(node)
-            if isinstance(custom, Read) and custom.write_dependency:
-                write_dependency = get_last_write_dependency(custom.write_dependency)
-                if any(
-                    barrier.is_barrier_between(write_dependency, node)
-                    for barrier in barriers
-                ):
-                    continue
+    graph = trace
+    if isinstance(trace, CapturedTrace):
+        graph = trace.get_root_graph()
 
-                if (
-                    len(custom.write_dependency) > 1
-                    or custom.index != custom.write_dependency[0].index
-                ):
-                    with subgraph.inserting_before(node):
-                        barrier = SharedMemoryBarrier().add_to_graph(subgraph)
-                        barriers.append(get_custom(barrier))
+    for node in graph.nodes:
+        custom = get_custom(node)
+        if (
+            isinstance(custom, (Read, Write))
+            and custom.memory_type.address_space == SHARED_ADDRESS_SPACE
+        ):
+            if last_node is None:
+                last_node = custom
+                continue
+            if type(custom) != type(last_node):
+                with graph.inserting_before(node):
+                    SharedMemoryBarrier().add_to_graph(graph)
+            last_node = custom
+
+        if isinstance(custom, Reduction):
+            add_shared_memory_barriers(
+                trace.get_subgraph(custom.subgraph_name), last_node
+            )
