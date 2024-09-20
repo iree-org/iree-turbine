@@ -17,7 +17,7 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 from ..ops.wave_ops import get_custom, Output, Write, MMA
-from .constraints import HardwareConstraint, TilingConstraint
+from .constraints import Constraint, HardwareConstraint, TilingConstraint
 import torch.fx as fx
 import shark_turbine.kernel.lang as tkl
 
@@ -177,7 +177,7 @@ def get_hardware_vector_size(
     dim: IndexSymbol,
     hardware_constraint: HardwareConstraint,
     mma_indices: dict[IndexSymbol, int],
-) -> dict[IndexSymbol, int]:
+) -> int:
     """
     Given a hardware constraint, return the vector sizes for the given dimension.
     This could be a hardware specific vector size or a user specified vector size.
@@ -187,6 +187,19 @@ def get_hardware_vector_size(
     else:
         vector_size = hardware_constraint.vector_shapes[dim]
     return vector_size
+
+
+def get_hardware_vector_map(constraints: list[Constraint]) -> dict[IndexSymbol, int]:
+    """
+    Given a list of constraints, looks for hardware constraint and return a map
+    containing dim's and their respective vector sizes.
+    """
+    vector_map = {}
+    for c in constraints:
+        if isinstance(c, HardwareConstraint):
+            vector_map = c.vector_shapes
+            break
+    return vector_map
 
 
 def remove_global_indexing(

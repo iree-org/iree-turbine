@@ -60,6 +60,7 @@ jobs:
       if: "contains(matrix.os, 'mi300') && !cancelled()"
       run: |
         export WAVE_RUN_E2E_TESTS=1
+        export TEST_PARAMS_PATH=./tests/kernel/wave/test_param.json
         pytest -n 4 ./tests/kernel/wave/
 
     - name: Run LIT tests
