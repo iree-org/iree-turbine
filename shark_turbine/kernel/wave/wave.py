@@ -206,7 +206,7 @@ class LaunchableWave(Launchable):
         expand_graph(graph, self.constraints)
 
         # Register analysis to determine register shapes.
-        determine_register_shape(graph)
+        determine_register_shape(graph, self.constraints)
 
         # Optimizations.
         minimize_global_loads(graph, self.constraints)

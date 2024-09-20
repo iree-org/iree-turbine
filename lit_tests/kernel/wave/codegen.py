@@ -757,7 +757,7 @@ def test_reduce_sum():
 
 
 @run_test
-def test_reduce_max():
+def test_tiled_reduce_max():
     M = tkl.sym.M
     N = tkl.sym.N
     BLOCK_M = tkl.sym.BLOCK_M
@@ -773,7 +773,8 @@ def test_reduce_max():
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
@@ -783,15 +784,23 @@ def test_reduce_max():
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
     ):
-        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
-        res = lhs * rhs
-        res = tkw.max(res, dim=N)
-        tkw.write(res, c, elements_per_thread=1)
+        init_max = tkl.Register[M, tkl.f16](-1e6)
+
+        @tkw.reduction(N, init_args=[init_max])
+        def repeat(
+            partial_max: tkl.Register[M, tkl.f16],
+        ) -> tkl.Register[M, tkl.f16]:
+            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            res = lhs * rhs
+            partial_max = tkw.max(res, partial_max, dim=N)
+            return partial_max
+
+        tkw.write(repeat, c, elements_per_thread=1)
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
-    shape = (256, 128)
+    shape = (256, 512)
     a = torch.randn(shape, dtype=torch.float16)
     b = torch.randn(shape, dtype=torch.float16)
     c = torch.zeros((shape[0],), dtype=torch.float16)
@@ -813,6 +822,13 @@ def test_reduce_max():
         # CHECK-DAG: %[[C8:.+]] = arith.constant 8 : i32
         # CHECK-DAG: %[[C16:.+]] = arith.constant 16 : i32
         # CHECK-DAG: %[[C32:.+]] = arith.constant 32 : i32
+        # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
+        # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
+        # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
+        # CHECK-DAG: %[[INIT:.+]] = arith.constant dense<0xFC00> : vector<1xf16>
+        # Tile Reduction Loop
+        # CHECK: scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
+        # CHECK-SAME: iter_args(%[[ACC:.+]] = %[[INIT]]) -> (vector<1xf16>) {
         # Elementwise
         # CHECK: arith.mulf {{.*}} : vector<2xf16>
         # Local Reduction
@@ -829,7 +845,10 @@ def test_reduce_max():
         # CHECK: gpu.shuffle  xor %{{.+}}, %[[C16]], %{{.+}} : f32
         # CHECK: arith.maximumf {{.*}} : vector<1xf16>
         # CHECK: gpu.shuffle  xor %{{.+}}, %[[C32]], %{{.+}} : f32
-        # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+        # CHECK: %[[GLOBAL_REDUCE:.+]] = arith.maximumf {{.*}} : vector<1xf16>
+        # Accumulator Reduction
+        # CHECK: %[[ACC_REDUCE:.+]] = arith.maximumf %[[ACC]], %[[GLOBAL_REDUCE]]
+        # CHECK: scf.yield %[[ACC_REDUCE]] : vector<1xf16>
 
 
 @run_test
