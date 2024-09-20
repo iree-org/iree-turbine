@@ -3,5 +3,5 @@
 # more forgiving on the exact version.
 
 --find-links https://iree.dev/pip-release-links.html
-iree-compiler==20240913.1015
-iree_runtime==20240913.1015
+iree-compiler==20240918.1020
+iree_runtime==20240918.1020
