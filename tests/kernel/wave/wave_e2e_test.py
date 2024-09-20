@@ -274,8 +274,8 @@ def test_tiled_reduce_max(shape):
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
+    BLOCK_N = tkl.sym.BLOCK_N
+    ELEMS_PER_THREAD = BLOCK_N / wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -321,7 +321,7 @@ def test_tiled_reduce_max(shape):
         {
             M: shape[0],
             N: shape[1],
-            BLOCK_N: 128,
+            BLOCK_N: min(128, shape[1]),
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
