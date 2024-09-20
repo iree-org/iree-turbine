@@ -1011,6 +1011,17 @@ class ReduceOp(CustomOp, ABC):
         src_type = get_custom(self.arg).type
         return src_type
 
+    @property
+    def num_reduction_dims(self) -> int:
+        if self.dim is None:
+            raise NotImplementedError(
+                "Currently do not support ReduceOp with no dims specified."
+            )
+        if isinstance(self.dim, Sequence):
+            return len(self.dim)
+        else:
+            return 1
+
 
 # TODO: Add support for more shuffle types.
 @define_op("shuffle")
