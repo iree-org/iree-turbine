@@ -7,17 +7,17 @@ from ..compiler.ir import Context, Operation
 from .codegen import WaveEmitter
 from .constraints import (
     Constraint,
+    HardwareConstraint,
     TilingConstraint,
+    WaveConstraint,
     WorkgroupConstraint,
     get_grid_shape,
-    WaveConstraint,
-    HardwareConstraint,
 )
 from .codegen import WaveEmitter
 from .expansion import expand_graph
 from .promotion import promote_placeholders
 from .hoisting import hoist_allocs
-from .utils import canonicalize_module, compile_and_invoke
+from .utils import canonicalize_module, compile_and_invoke, safe_subs
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
 from .barriers import add_shared_memory_barriers
@@ -224,9 +224,9 @@ class LaunchableWave(Launchable):
         # Determine grid shape.
         self.grid_type.dims = [1, 1, 1]
         for constraint in self.workgroup_constraints:
-            self.grid_type.dims[constraint.workgroup_dim] = (
-                constraint.dim // constraint.tile_size
-            ).subs(idxc.subs)
+            self.grid_type.dims[constraint.workgroup_dim] = safe_subs(
+                constraint.count, idxc.subs
+            )
         grid = self.grid_type
 
         root_graph = graph.get_root_graph()

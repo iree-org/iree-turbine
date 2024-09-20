@@ -170,6 +170,13 @@ class WorkgroupConstraint(Constraint):
     tile_size: IndexExpr
     workgroup_dim: int
 
+    @property
+    def count(self) -> IndexExpr:
+        """
+        Returns an expression for the total number of workgroups for the specific workgroup_dim.
+        """
+        return ceiling(self.dim / self.tile_size)
+
     def apply(self) -> IndexSequence:
         match self.workgroup_dim:
             case 0:
@@ -193,9 +200,7 @@ def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]
         raise ValueError(
             "Multiple constraints in the same workgroup dimension are currently not supported."
         )
-    grid: list[IndexExpr] = [
-        constraint.dim // constraint.tile_size for constraint in wg_constraints
-    ]
+    grid: list[IndexExpr] = [constraint.count for constraint in wg_constraints]
     return grid
 
 
@@ -213,7 +218,8 @@ class TilingConstraint(Constraint):
     tile_size: IndexExpr
     induction_var: Optional[IndexExpr] = None
 
-    def iterations(self) -> IndexExpr:
+    @property
+    def count(self) -> IndexExpr:
         """
         Returns an expression for the number of iterations in the loop.
         """
