@@ -571,7 +571,8 @@ def test_im2col_mma():
 @pytest.mark.parametrize("c", [1, 3, 4, 10])
 @pytest.mark.parametrize("nf", [1, 2, 16])
 @pytest.mark.parametrize("stride", [1, 2, 3])
-def test_igemm_conv(n, c, nf, stride):
+@pytest.mark.parametrize("mem_space", [GLOBAL_ADDRESS_SPACE, SHARED_ADDRESS_SPACE])
+def test_igemm_conv(n, c, nf, stride, mem_space):
     h, w = 5, 5  # Image.
     cf, hf, wf = c, 2, 2  # Filters.
     padding = 0  # TODO: only pad=0 is supported for now
