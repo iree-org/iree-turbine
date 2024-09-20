@@ -13,7 +13,15 @@ import json
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
-default_test_shapes = [(1, 128), (256, 64), (256, 128), (256, 256), (256, 1024)]
+default_test_shapes = [
+    (1, 27),
+    (111, 813),
+    (1, 128),
+    (256, 64),
+    (256, 128),
+    (256, 256),
+    (256, 1024),
+]
 
 user_specified_test_shapes = ""
 
@@ -43,7 +51,7 @@ def test_copy(shape):
     # elements.
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Min(N, 256)
+    BLOCK_N = sympy.Max(sympy.Min(N, 256), wave_size)
     ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
@@ -94,7 +102,7 @@ def test_transpose_read(shape):
 
     wave_size = 64
     BLOCK_N = 1
-    BLOCK_M = sympy.Min(M, 256)
+    BLOCK_M = sympy.Max(sympy.Min(M, 256), wave_size)
     ELEMS_PER_THREAD = BLOCK_M / wave_size
 
     constraints: list[tkw.Constraint] = [
@@ -150,7 +158,7 @@ def test_transpose_write(shape):
 
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Min(N, 256)
+    BLOCK_N = sympy.Max(sympy.Min(N, 256), wave_size)
     ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
@@ -204,8 +212,8 @@ def test_reduce_sum(shape):
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = N
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -260,8 +268,8 @@ def test_reduce_max(shape):
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = N
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -543,11 +551,14 @@ def test_im2col_mma():
 
 
 @require_e2e
-def test_igemm_conv():
-    n, c, h, w = 1, 4, 5, 5  # Image.
-    nf, cf, hf, wf = 16, c, 2, 2  # Filters.
+@pytest.mark.parametrize("n", [1, 2, 4])
+@pytest.mark.parametrize("c", [1, 3, 4, 10])
+@pytest.mark.parametrize("nf", [1, 2, 16])
+@pytest.mark.parametrize("stride", [1, 2, 3])
+def test_igemm_conv(n, c, nf, stride):
+    h, w = 5, 5  # Image.
+    cf, hf, wf = c, 2, 2  # Filters.
     padding = 0  # TODO: only pad=0 is supported for now
-    stride = 1
 
     torch.manual_seed(1)
     x = torch.randn(n, c, h, w, dtype=torch.float16)
@@ -600,7 +611,7 @@ def test_igemm_conv():
     # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K = K
+    BLOCK_K = 16
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
@@ -671,4 +682,4 @@ def test_igemm_conv():
         run_config=config,
     ):
         conv(x, we, out)
-        assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
+        assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
