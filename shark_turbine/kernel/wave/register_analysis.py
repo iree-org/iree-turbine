@@ -4,12 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from ..wave.constraints import (
-    Constraint,
-    HardwareConstraint,
-    WorkgroupConstraint,
-    TilingConstraint,
-)
+from ..wave.constraints import Constraint
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from .._support.tracing import CapturedTrace
 from ...support.logging import get_logger
