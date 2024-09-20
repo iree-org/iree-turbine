@@ -28,6 +28,7 @@ from ..ops.wave_ops import Reduction, CustomOp, get_custom
 from .index_sequence_analysis import partition_strided_operators
 from .shared_memory_indexing import apply_shared_memory_indexing_corrections
 from .register_analysis import determine_register_shape
+from .scheduling.schedule import schedule_graph
 from .._support.indexing import IndexingContext, IndexExpr
 import shark_turbine.kernel.lang as tkl
 from .._support.tracing import (
@@ -210,11 +211,15 @@ class LaunchableWave(Launchable):
         # Partition strided operators.
         partition_strided_operators(graph, self.constraints)
 
-        # Add shared memory barriers.
-        add_shared_memory_barriers(graph)
-
         # Decompose reduce Ops.
         decompose_reduce_ops(graph, self.constraints, idxc.subs)
+
+        # Schedule the reduction ops.
+        if kwargs.get("schedule", False):
+            schedule_graph(graph, self.constraints)
+
+        # Add shared memory barriers.
+        add_shared_memory_barriers(graph)
 
         # Determine grid shape.
         self.grid_type.dims = [1, 1, 1]

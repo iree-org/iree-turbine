@@ -14,6 +14,18 @@ from shark_turbine.kernel.wave.scheduling.graph_utils import (
     all_pairs_longest_paths,
     evaluate_all_pairs_longest_paths,
 )
+import shark_turbine.kernel as tk
+import shark_turbine.kernel.lang as tkl
+import shark_turbine.kernel.wave as tkw
+from shark_turbine.kernel.lang.global_symbols import *
+from shark_turbine.kernel._support.tracing import CapturedTrace
+from shark_turbine.kernel._support.indexing import IndexingContext
+from shark_turbine.kernel.wave.promotion import promote_placeholders
+from shark_turbine.kernel.wave.hoisting import hoist_allocs
+from shark_turbine.kernel.wave.expansion import expand_graph
+from shark_turbine.kernel.wave.minimize_global_loads import minimize_global_loads
+from shark_turbine.kernel.wave.scheduling.schedule import schedule_graph
+from shark_turbine.kernel.ops.wave_ops import get_custom
 
 
 class SchedulingTest(unittest.TestCase):
@@ -176,7 +188,8 @@ class SchedulingTest(unittest.TestCase):
             visualize_graph(graph, "scheduling_test_graph.png")
         resources = np.array([1, 1])
         scheduler = ModuloScheduler(graph, weighted_edges, resources)
-        schedule = scheduler.schedule()
+        schedule, success = scheduler.schedule_graph()
+        assert success == True
         assert schedule[nodes["a"]] == 0
         assert schedule[nodes["b"]] == 4
         assert schedule[nodes["c"]] == 5
@@ -186,6 +199,225 @@ class SchedulingTest(unittest.TestCase):
             scheduler.resource_reservations
             == np.array([[1, 1], [1, 0], [1, 0], [0, 1]])
         )
+
+    def testGemmScheduling(self):
+
+        # Input sizes
+        M = tkl.sym.M
+        N = tkl.sym.N
+        K = tkl.sym.K
+        # Workgroup tile sizes
+        BLOCK_M = tkl.sym.BLOCK_M
+        BLOCK_N = tkl.sym.BLOCK_N
+        BLOCK_K = tkl.sym.BLOCK_K
+        # Address space (for GPU, shared(1) or global(0))
+        ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+        # Other hyperparameters
+        LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+        STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
+        ARGK = tkl.sym.ARGK
+
+        # Expose user-constraints
+        constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+        constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+        constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
+        constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, 0)]
+        constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, 1)]
+
+        constraints += [
+            tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
+        ]
+
+        @tkw.wave_trace_only(constraints)
+        def gemm(
+            a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+            b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+            c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        ):
+            c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+            @tkw.reduction(K, init_args=[c_reg])
+            def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+                a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+                b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+                acc = tkw.mma(a_reg, b_reg, acc)
+                return acc
+
+            tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+        hyperparams = {
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            LOAD_ELEMS_PER_THREAD: 4,
+            STORE_ELEMS_PER_THREAD: 4,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
+            BLOCK_K: 32,
+            M: 2048,
+            N: 10240,
+            K: 1280,
+            READ_SHARED_DELAY: 1,
+            WRITE_SHARED_DELAY: 1,
+            READ_GLOBAL_DELAY: 5,
+            WRITE_GLOBAL_DELAY: 5,
+            MMA_DELAY: 2,
+            SHARED_MEMORY_UNITS: 2,
+            GLOBAL_MEMORY_UNITS: 2,
+            MMA_UNITS: 2,
+        }
+        with tk.gen.TestLaunchContext(hyperparams, canonicalize=True, schedule=True):
+            trace: CapturedTrace = gemm()
+            IndexingContext.current().finalize()
+            promote_placeholders(trace, constraints)
+            hoist_allocs(trace)
+            expand_graph(trace, constraints)
+            minimize_global_loads(trace, constraints)
+            schedule_graph(trace, constraints)
+            subgraph = trace.get_subgraph("region_0")
+            initiation_interval = 5
+            correct_schedule = {
+                "acc_1_1_0": {
+                    "absolute_cycle": 14,
+                    "cycle": 4,
+                    "stage": 2,
+                    "initiation_interval": initiation_interval,
+                },
+                "acc_1_0_0": {
+                    "absolute_cycle": 14,
+                    "cycle": 4,
+                    "stage": 2,
+                    "initiation_interval": initiation_interval,
+                },
+                "acc_0_1_0": {
+                    "absolute_cycle": 13,
+                    "cycle": 3,
+                    "stage": 2,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_4": {
+                    "absolute_cycle": 0,
+                    "cycle": 0,
+                    "stage": 0,
+                    "initiation_interval": initiation_interval,
+                },
+                "write_2": {
+                    "absolute_cycle": 5,
+                    "cycle": 0,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_shared_0_0_0": {
+                    "absolute_cycle": 8,
+                    "cycle": 3,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_shared_0_0_1": {
+                    "absolute_cycle": 7,
+                    "cycle": 2,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_shared_1_0_0": {
+                    "absolute_cycle": 9,
+                    "cycle": 4,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_shared_1_0_1": {
+                    "absolute_cycle": 9,
+                    "cycle": 4,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_5": {
+                    "absolute_cycle": 0,
+                    "cycle": 0,
+                    "stage": 0,
+                    "initiation_interval": initiation_interval,
+                },
+                "write_3": {
+                    "absolute_cycle": 5,
+                    "cycle": 0,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_shared_0_0_0": {
+                    "absolute_cycle": 8,
+                    "cycle": 3,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_shared_0_0_1": {
+                    "absolute_cycle": 7,
+                    "cycle": 2,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_shared_0_1_0": {
+                    "absolute_cycle": 6,
+                    "cycle": 1,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "read_shared_0_1_1": {
+                    "absolute_cycle": 6,
+                    "cycle": 1,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "mma_0_0_0": {
+                    "absolute_cycle": 9,
+                    "cycle": 4,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "mma_0_0_1": {
+                    "absolute_cycle": 11,
+                    "cycle": 1,
+                    "stage": 2,
+                    "initiation_interval": initiation_interval,
+                },
+                "mma_1_1_0": {
+                    "absolute_cycle": 10,
+                    "cycle": 0,
+                    "stage": 2,
+                    "initiation_interval": initiation_interval,
+                },
+                "mma_1_1_1": {
+                    "absolute_cycle": 12,
+                    "cycle": 2,
+                    "stage": 2,
+                    "initiation_interval": initiation_interval,
+                },
+                "mma_1_0_0": {
+                    "absolute_cycle": 10,
+                    "cycle": 0,
+                    "stage": 2,
+                    "initiation_interval": initiation_interval,
+                },
+                "mma_1_0_1": {
+                    "absolute_cycle": 12,
+                    "cycle": 2,
+                    "stage": 2,
+                    "initiation_interval": initiation_interval,
+                },
+                "mma_0_1_0": {
+                    "absolute_cycle": 9,
+                    "cycle": 4,
+                    "stage": 1,
+                    "initiation_interval": initiation_interval,
+                },
+                "mma_0_1_1": {
+                    "absolute_cycle": 11,
+                    "cycle": 1,
+                    "stage": 2,
+                    "initiation_interval": initiation_interval,
+                },
+            }
+            for node in subgraph.nodes:
+                custom = get_custom(node)
+                if custom.name in correct_schedule:
+                    assert custom.scheduling_parameters == correct_schedule[custom.name]
 
 
 if __name__ == "__main__":

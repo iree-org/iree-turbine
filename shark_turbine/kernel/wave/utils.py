@@ -325,3 +325,30 @@ def subs_idxc(input: Any) -> Any:
     """
     idxc = IndexingContext.current()
     return safe_subs(input, idxc.subs)
+
+
+def graph_copy(graph: fx.Graph) -> tuple[fx.Graph, dict[fx.Node, fx.Node]]:
+    """
+    Copy the graph and return the new graph with the nodes in node_map.
+    Also return the mapping of old nodes to new nodes.
+    """
+    new_graph = fx.Graph()
+    node_map = {}
+    for node in graph.nodes:
+        custom = get_custom(node)
+        new_node = custom.copy(
+            new_graph=new_graph,
+            arg_transform=lambda x: node_map[x] if x in node_map else x,
+        )
+        node_map[node] = new_node.fx_node
+    return new_graph, node_map
+
+
+def erase_graph(graph: fx.Graph):
+    """
+    Erase all nodes in the graph.
+    """
+    for node in reversed(graph.nodes):
+        for user in node.users:
+            graph.erase_node(user)
+        graph.erase_node(node)
