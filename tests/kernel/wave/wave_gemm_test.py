@@ -12,6 +12,9 @@ import json
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
+# Whether to dump the generated MLIR module.
+test_dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
+
 default_test_shapes = [(1024, 5120, 640), (2048, 10240, 1280), (4096, 20480, 2560)]
 
 user_specified_test_shapes = ""
@@ -105,7 +108,13 @@ def testGemm(shape: tuple[int]):
         a = torch.randn(shape[0], shape[2], dtype=torch.float16)
         b = torch.randn(shape[1], shape[2], dtype=torch.float16)
         c = torch.zeros(shape[0], shape[1], dtype=torch.float32)
-        gemm(a, b, c)
+        mb = gemm(a, b, c)
+
+        if test_dump_generated_mlir:
+            filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
+            with open(filename, "w") as f:
+                f.write(mb.module_op.get_asm())
+
         iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
         generate_iree_ref("mmt", [a, b], [iree_ref], config)
         assert torch.equal(c, iree_ref)
