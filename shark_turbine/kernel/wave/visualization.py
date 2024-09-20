@@ -3,11 +3,6 @@ try:
     import pygraphviz as pgv
 except:
     graphviz_disabled = True
-pandas_disabled = False
-try:
-    import pandas as pd
-except:
-    matplotlib_disabled = True
 from torch import fx
 from .scheduling.graph_utils import Edge
 import math
@@ -58,8 +53,7 @@ def visualize_edges(edges: list[Edge], file_name: str):
 def visualize_schedule(
     schedule: dict[fx.Graph, int], initiation_interval: int, file_name: str
 ):
-    if pandas_disabled:
-        raise ImportError("pandas not installed, cannot visualize schedule")
+    import pandas as pd
 
     max_time = max(schedule.values())
     max_stage = math.ceil(max_time / initiation_interval)
