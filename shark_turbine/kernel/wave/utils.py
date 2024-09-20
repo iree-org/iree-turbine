@@ -352,3 +352,10 @@ def erase_graph(graph: fx.Graph):
         for user in node.users:
             graph.erase_node(user)
         graph.erase_node(node)
+
+
+def flip_except_first(nodes: list[fx.Node]) -> list[fx.Node]:
+    """
+    Flip the order of the nodes except the first node.
+    """
+    return nodes[:1] + nodes[1:][::-1]

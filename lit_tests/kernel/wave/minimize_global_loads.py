@@ -99,31 +99,31 @@ def test_gemm():
         # CHECK-NEXT: %b
         # CHECK-NEXT: %c
         # CHECK-NEXT: %register_0_0_0
-        # CHECK-NEXT: %register_1_1_0
-        # CHECK-NEXT: %register_1_0_0
         # CHECK-NEXT: %register_0_1_0
+        # CHECK-NEXT: %register_1_0_0
+        # CHECK-NEXT: %register_1_1_0
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %allocate_1
         # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: reduction
-        # CHECK-SAME (K, [%register_0_0_0, %register_1_1_0, %register_1_0_0, %register_0_1_0]
-        # CHECK-NEXT: %getresult_1_1_0
-        # CHECK-SAME: (%reduction, 3)
-        # CHECK-NEXT: %getresult_1_0_0
-        # CHECK-SAME: (%reduction, 2)
+        # CHECK-SAME (K, [%register_0_0_0, %register_0_1_0, %register_1_0_0, %register_1_1_0]
         # CHECK-NEXT: %getresult_0_1_0
         # CHECK-SAME: (%reduction, 1)
+        # CHECK-NEXT: %getresult_1_0_0
+        # CHECK-SAME: (%reduction, 2)
+        # CHECK-NEXT: %getresult_1_1_0
+        # CHECK-SAME: (%reduction, 3)
         # CHECK-NEXT: %getresult_0_0_0
         # CHECK-SAME: (%reduction, 0)
         # CHECK-NEXT: %write_0_0_0
         # CHECK-SAME: (%getresult_0_0_0, %c, 4, None)
-        # CHECK-NEXT: %write_1_1_0
-        # CHECK-SAME: (%getresult_1_1_0, %c, 4, None)
-        # CHECK-NEXT: %write_1_0_0
-        # CHECK-SAME: (%getresult_1_0_0, %c, 4, None)
         # CHECK-NEXT: %write_0_1_0
         # CHECK-SAME: (%getresult_0_1_0, %c, 4, None)
+        # CHECK-NEXT: %write_1_0_0
+        # CHECK-SAME: (%getresult_1_0_0, %c, 4, None)
+        # CHECK-NEXT: %write_1_1_0
+        # CHECK-SAME: (%getresult_1_1_0, %c, 4, None)
         # CHECK-NEXT: return None
 
         # Root graph (custom format):
@@ -133,32 +133,32 @@ def test_gemm():
         # CHECK-NEXT: register
         # CHECK-SAME: index={M: $WG0*BLOCK_M, N: $WG1*BLOCK_N + BLOCK_N/2})
         # CHECK-NEXT: register(
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
         # CHECK-NEXT: register(
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2})
         # CHECK-NEXT: register(
-        # CHECK-SAME: index={M: $WG0*BLOCK_M, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: reduction(
-        # CHECK-NEXT: get_result(value=reduction, res_idx=3)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=2)
         # CHECK-NEXT: get_result(value=reduction, res_idx=1)
+        # CHECK-NEXT: get_result(value=reduction, res_idx=2)
+        # CHECK-NEXT: get_result(value=reduction, res_idx=3)
         # CHECK-NEXT: get_result(value=reduction, res_idx=0)
         # CHECK-NEXT: write(register_=getresult_0_0_0, memory=c
         # CHECK-SAME: index={M: $WG0*BLOCK_M, N: $WG1*BLOCK_N + BLOCK_N/2})
-        # CHECK-NEXT: write(register_=getresult_1_1_0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
-        # CHECK-NEXT: write(register_=getresult_1_0_0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2})
         # CHECK-NEXT: write(register_=getresult_0_1_0, memory=c
         # CHECK-SAME: index={M: $WG0*BLOCK_M, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
+        # CHECK-NEXT: write(register_=getresult_1_0_0, memory=c
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2})
+        # CHECK-NEXT: write(register_=getresult_1_1_0, memory=c
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
 
         # Reduction subgraph:
         # CHECK: %acc_0_0_0
-        # CHECK-NEXT: %acc_1_1_0
-        # CHECK-NEXT: %acc_1_0_0
         # CHECK-NEXT: %acc_0_1_0
+        # CHECK-NEXT: %acc_1_0_0
+        # CHECK-NEXT: %acc_1_1_0
         # CHECK-NEXT: %a
         # CHECK-NEXT: %read_4
         # CHECK-SAME: (%a, 8, None, None)
@@ -199,24 +199,24 @@ def test_gemm():
         # CHECK-NEXT: %mma_0_0_1
         # CHECK-NEXT: %mma_0_0_2
         # CHECK-NEXT: %mma_0_0_3
-        # CHECK-NEXT: %mma_1_1_0
-        # CHECK-NEXT: %mma_1_1_1
-        # CHECK-NEXT: %mma_1_1_2
-        # CHECK-NEXT: %mma_1_1_3
-        # CHECK-NEXT: %mma_1_0_0
-        # CHECK-NEXT: %mma_1_0_1
-        # CHECK-NEXT: %mma_1_0_2
-        # CHECK-NEXT: %mma_1_0_3
         # CHECK-NEXT: %mma_0_1_0
         # CHECK-NEXT: %mma_0_1_1
         # CHECK-NEXT: %mma_0_1_2
         # CHECK-NEXT: %mma_0_1_3
+        # CHECK-NEXT: %mma_1_0_0
+        # CHECK-NEXT: %mma_1_0_1
+        # CHECK-NEXT: %mma_1_0_2
+        # CHECK-NEXT: %mma_1_0_3
+        # CHECK-NEXT: %mma_1_1_0
+        # CHECK-NEXT: %mma_1_1_1
+        # CHECK-NEXT: %mma_1_1_2
+        # CHECK-NEXT: %mma_1_1_3
 
         # Reduction subgraph (custom format):
         # CHECK: placeholder(_name=acc_0_0_0
-        # CHECK-NEXT: placeholder(_name=acc_1_1_0
-        # CHECK-NEXT: placeholder(_name=acc_1_0_0
         # CHECK-NEXT: placeholder(_name=acc_0_1_0
+        # CHECK-NEXT: placeholder(_name=acc_1_0_0
+        # CHECK-NEXT: placeholder(_name=acc_1_1_0
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: read(memory=a, elements_per_thread=8,
         # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
