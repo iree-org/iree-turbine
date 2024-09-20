@@ -200,7 +200,7 @@ def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]
         raise ValueError(
             "Multiple constraints in the same workgroup dimension are currently not supported."
         )
-    grid: list[IndexExpr] = [constraint.iterations for constraint in wg_constraints]
+    grid: list[IndexExpr] = [constraint.count for constraint in wg_constraints]
     return grid
 
 
