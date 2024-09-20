@@ -171,7 +171,7 @@ class WorkgroupConstraint(Constraint):
     workgroup_dim: int
 
     @property
-    def iterations(self) -> IndexExpr:
+    def count(self) -> IndexExpr:
         """
         Returns an expression for the total number of workgroups for the specific workgroup_dim.
         """
@@ -219,7 +219,7 @@ class TilingConstraint(Constraint):
     induction_var: Optional[IndexExpr] = None
 
     @property
-    def iterations(self) -> IndexExpr:
+    def count(self) -> IndexExpr:
         """
         Returns an expression for the number of iterations in the loop.
         """

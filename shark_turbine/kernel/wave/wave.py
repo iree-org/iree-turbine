@@ -225,7 +225,7 @@ class LaunchableWave(Launchable):
         self.grid_type.dims = [1, 1, 1]
         for constraint in self.workgroup_constraints:
             self.grid_type.dims[constraint.workgroup_dim] = safe_subs(
-                constraint.iterations, idxc.subs
+                constraint.count, idxc.subs
             )
         grid = self.grid_type
 
