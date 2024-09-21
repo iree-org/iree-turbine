@@ -12,7 +12,7 @@ import torch.fx as fx
 
 def add_shared_memory_barriers(
     trace: CapturedTrace | fx.Graph, last_node: fx.Node = None
-):
+) -> fx.Node:
     """
     Adds shared memory barriers to the graph. The barriers are inserted
     following a simple heuristic:
@@ -40,6 +40,8 @@ def add_shared_memory_barriers(
                     SharedMemoryBarrier().add_to_graph(graph)
             last_node = custom
         if isinstance(custom, Reduction):
-            add_shared_memory_barriers(
+            last_node = add_shared_memory_barriers(
                 trace.get_subgraph(custom.subgraph_name), last_node
             )
+
+    return last_node
