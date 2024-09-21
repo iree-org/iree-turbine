@@ -229,11 +229,12 @@ def test_gemm():
         # CHECK-NEXT: %read_0_0_1
         # CHECK-NEXT: %read_0_1_0
         # CHECK-NEXT: %read_0_1_1
+        # CHECK-NEXT: %shared_memory_barrier_1
         # CHECK-NEXT: %write_shared_0_0_0
         # CHECK-NEXT: %write_shared_0_0_1
         # CHECK-NEXT: %write_shared_0_1_0
         # CHECK-NEXT: %write_shared_0_1_1
-        # CHECK-NEXT: %shared_memory_barrier_1
+        # CHECK-NEXT: %shared_memory_barrier_2
         # CHECK-NEXT: %read_shared_0_0_0
         # CHECK-NEXT: %read_shared_0_0_1
         # CHECK-NEXT: %read_shared_0_1_0
