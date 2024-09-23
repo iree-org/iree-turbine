@@ -1,0 +1,54 @@
+\begin{thebibliography}{8}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Author(2018)]{anonymous}
+Author, N.~N.
+\newblock Suppressed for anonymity, 2018.
+
+\bibitem[Duda et~al.(2000)Duda, Hart, and Stork]{DudaHart2nd}
+Duda, R.~O., Hart, P.~E., and Stork, D.~G.
+\newblock \emph{Pattern Classification}.
+\newblock John Wiley and Sons, 2nd edition, 2000.
+
+\bibitem[Kearns(1989)]{kearns89}
+Kearns, M.~J.
+\newblock \emph{Computational Complexity of Machine Learning}.
+\newblock PhD thesis, Department of Computer Science, Harvard University, 1989.
+
+\bibitem[Langley(2000)]{langley00}
+Langley, P.
+\newblock Crafting papers on machine learning.
+\newblock In Langley, P. (ed.), \emph{Proceedings of the 17th International
+  Conference on Machine Learning (ICML 2000)}, pp.\  1207--1216, Stanford, CA,
+  2000. Morgan Kaufmann.
+
+\bibitem[Michalski et~al.(1983)Michalski, Carbonell, and
+  Mitchell]{MachineLearningI}
+Michalski, R.~S., Carbonell, J.~G., and Mitchell, T.~M. (eds.).
+\newblock \emph{Machine Learning: An Artificial Intelligence Approach, Vol. I}.
+\newblock Tioga, Palo Alto, CA, 1983.
+
+\bibitem[Mitchell(1980)]{mitchell80}
+Mitchell, T.~M.
+\newblock The need for biases in learning generalizations.
+\newblock Technical report, Computer Science Department, Rutgers University,
+  New Brunswick, MA, 1980.
+
+\bibitem[Newell \& Rosenbloom(1981)Newell and Rosenbloom]{Newell81}
+Newell, A. and Rosenbloom, P.~S.
+\newblock Mechanisms of skill acquisition and the law of practice.
+\newblock In Anderson, J.~R. (ed.), \emph{Cognitive Skills and Their
+  Acquisition}, chapter~1, pp.\  1--51. Lawrence Erlbaum Associates, Inc.,
+  Hillsdale, NJ, 1981.
+
+\bibitem[Samuel(1959)]{Samuel59}
+Samuel, A.~L.
+\newblock Some studies in machine learning using the game of checkers.
+\newblock \emph{IBM Journal of Research and Development}, 3\penalty0
+  (3):\penalty0 211--229, 1959.
+
+\end{thebibliography}
