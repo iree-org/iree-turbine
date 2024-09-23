@@ -198,12 +198,12 @@ class LaunchableWave(Launchable):
         # Initialize Vector shapes
         self.hardware_constraints[0].subs_vector_shapes(idxc.subs)
 
-        # Expansion
-        expand_graph(graph, self.constraints)
-
         # Promote the placeholders to the appropriate address space.
         promote_placeholders(graph, self.constraints)
         hoist_allocs(graph)
+
+        # Expansion
+        expand_graph(graph, self.constraints)
 
         # Register analysis to determine register shapes.
         determine_register_shape(graph, self.constraints)

@@ -710,6 +710,28 @@ class NewRegister(CustomOp):
         return Register[*self.shape, self.dtype]
 
 
+def _propagate_index_impl(
+    op: fx.Node, index: dict[IndexSymbol, IndexSequence], visited: set[fx.Node]
+):
+    if op in visited:
+        return
+
+    visited.add(op)
+    op.index = index
+    custom = get_custom(op)
+    match custom:
+        case Read(memory):
+            for user in memory.users:
+                _propagate_index_impl(user, index, visited)
+        case Write(reg):
+            _propagate_index_impl(reg, index, visited)
+
+
+def _propagate_index(op: fx.Node, index: dict[IndexSymbol, IndexSequence]):
+    visited = set()
+    _propagate_index_impl(op, index, visited)
+
+
 @define_op("mma")
 @dataclass
 class MMA(CustomOp):
@@ -783,9 +805,9 @@ class MMA(CustomOp):
         ensuring that the LHS and RHS indices are consistent with their
         corresponding address spaces.
         """
-        self.lhs.index = self.lhs_index
-        self.rhs.index = self.rhs_index
-        self.acc.index = self.acc_index
+        _propagate_index(self.lhs, self.lhs_index)
+        _propagate_index(self.rhs, self.rhs_index)
+        _propagate_index(self.acc, self.acc_index)
 
 
 @define_op("read")
