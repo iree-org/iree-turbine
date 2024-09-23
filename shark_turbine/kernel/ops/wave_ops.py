@@ -861,12 +861,23 @@ class Reduction(CustomOp):
         return wrapper
 
     @property
-    def indexing_dims(self) -> list[IndexSymbol]:
+    def indexing_dims(self) -> list[IndexSymbol] | list[list[IndexSymbol]]:
         expand_dims: list[IndexSymbol] = []
-        for user in self.users:
-            for indexing_dim in user.indexing_dims:
-                if indexing_dim not in expand_dims:
-                    expand_dims.append(indexing_dim)
+        return_node = [
+            nested_node
+            for nested_node in self.graph.subgraphs[self.subgraph_name].nodes
+            if isinstance(get_custom(nested_node), Output)
+        ]
+        assert len(return_node) == 1
+        return_vals = get_custom(return_node[0]).return_vals[0]
+        if not isinstance(return_vals, Sequence):
+            return_vals = [return_vals]
+        for return_val in return_vals:
+            return_dims = get_custom(return_val).indexing_dims
+            reduced_dims = [dims for dims in return_dims if dims != self.axis]
+            expand_dims.append(reduced_dims)
+        if len(expand_dims) == 1:
+            expand_dims = expand_dims[0]
         return expand_dims
 
     def iter_args(self, graph: fx.Graph) -> list[fx.Node]:
@@ -952,16 +963,24 @@ class GetResult(CustomOp):
 
     @property
     def type(self) -> "Memory":
-        return get_custom(self.value).type[self.res_idx]
+        src_type = get_custom(self.value).type
+        if isinstance(src_type, list):
+            return src_type[self.res_idx]
+        else:
+            return src_type
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
-        expand_dims: list[IndexSymbol] = []
-        for user in self.users:
-            for indexing_dim in user.indexing_dims:
-                if indexing_dim not in expand_dims:
-                    expand_dims.append(indexing_dim)
-        return expand_dims
+        has_multiple_value = lambda x: all(isinstance(el, list) for el in x)
+        is_valid_indexing_dim = lambda x: isinstance(src_indexing, list) and all(
+            isinstance(el, IndexSymbol) for el in x
+        )
+        src_indexing = get_custom(self.value).indexing_dims
+        if has_multiple_value(src_indexing):
+            assert self.res_idx <= len(src_indexing) - 1
+            src_indexing = src_indexing[self.res_idx]
+        assert is_valid_indexing_dim(src_indexing)
+        return src_indexing
 
     @property
     def index(self) -> dict[IndexSymbol, IndexSequence]:
