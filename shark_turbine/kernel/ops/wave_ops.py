@@ -710,26 +710,14 @@ class NewRegister(CustomOp):
         return Register[*self.shape, self.dtype]
 
 
-def _propagate_index_impl(
-    op: fx.Node, index: dict[IndexSymbol, IndexSequence], visited: set[fx.Node]
-):
-    if op in visited:
-        return
-
-    visited.add(op)
-    op.index = index
-    custom = get_custom(op)
-    match custom:
-        case Read(memory):
-            for user in memory.users:
-                _propagate_index_impl(user, index, visited)
-        case Write(reg):
-            _propagate_index_impl(reg, index, visited)
-
-
 def _propagate_index(op: fx.Node, index: dict[IndexSymbol, IndexSequence]):
-    visited = set()
-    _propagate_index_impl(op, index, visited)
+    op.index = index
+    if hasattr(op, "_promoted_set"):
+        for n in op._promoted_set:
+            if n is op:
+                continue
+
+            n.index = index
 
 
 @define_op("mma")

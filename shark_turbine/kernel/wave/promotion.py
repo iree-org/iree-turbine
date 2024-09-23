@@ -34,6 +34,9 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
                 custom_read = get_custom(promoted_read)
                 custom_read.write_dependency = [promoted_write]
             custom_node.memory_type.address_space = GLOBAL_ADDRESS_SPACE
+            promoted_set = {custom_node, promoted_read, promoted_write}
+            for n in promoted_set:
+                setattr(n, "_promoted_set", promoted_set)
 
 
 def promote_node(
