@@ -365,12 +365,15 @@ class CustomOp(ABC):
         new_name: Optional[str] = None,
         new_graph: Optional[fx.Graph] = None,
         arg_transform: Optional[Callable[[Any], Any]] = lambda x: x,
+        anchor: Optional[fx.Node] = None,
     ) -> Self:
         """Returns a duplicate of this node."""
         graph = new_graph
         if new_graph is None:
             graph = self.graph
-            graph.inserting_after(self.fx_node)
+            if anchor is None:
+                anchor = self.fx_node
+            graph.inserting_after(anchor)
         new_node = graph.node_copy(self.fx_node, arg_transform=arg_transform)
         new_node.tkw_op = self
         new_node.tkw_op_name = self.tkw_op_name
