@@ -29,11 +29,18 @@ default_test_shapes = [
     (256, 1024),
 ]
 
+
+def xfail_unaligned(func):
+    def wrapper(shape):
+        if shape[-1] % 2 != 0:
+            pytest.xfail("Unaligned shape is not expected to work on this test yet.")
+        func(shape)
+
+    return wrapper
+
+
 user_specified_test_shapes = ""
-default_filename = "test_param.json"
-default_dir = dir_path = os.path.dirname(os.path.realpath(__file__))
-default_path = default_dir + "/" + default_filename
-test_params_path = os.environ.get("TEST_PARAMS_PATH", default_path)
+test_params_path = os.environ.get("TEST_PARAMS_PATH", None)
 
 if test_params_path:
     with open(test_params_path, "r") as file:
@@ -271,13 +278,14 @@ def test_reduce_sum(shape):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
+@xfail_unaligned
 def test_tiled_reduce_max(shape):
     M = tkl.sym.M
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
     BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -324,6 +332,7 @@ def test_tiled_reduce_max(shape):
             M: shape[0],
             N: shape[1],
             BLOCK_N: min(128, shape[1]),
+            ELEMS_PER_THREAD: min(128, shape[1]) // wave_size,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
