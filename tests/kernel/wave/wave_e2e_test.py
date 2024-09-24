@@ -30,8 +30,10 @@ default_test_shapes = [
 ]
 
 user_specified_test_shapes = ""
-
-test_params_path = os.environ.get("TEST_PARAMS_PATH", None)
+default_filename = "test_param.json"
+default_dir = dir_path = os.path.dirname(os.path.realpath(__file__))
+default_path = default_dir + "/" + default_filename
+test_params_path = os.environ.get("TEST_PARAMS_PATH", default_path)
 
 if test_params_path:
     with open(test_params_path, "r") as file:
