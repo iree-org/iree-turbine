@@ -81,6 +81,11 @@ def get_indexed_dims(
     """
     if isinstance(nodeOrDims, CustomOp):
         nodeOrDims = nodeOrDims.indexing_dims
+    # Flatten dims for node with multiple values or expanded Reduction.
+    if all(isinstance(el, Sequence) for el in nodeOrDims):
+        flattened_dims = list(itertools.chain.from_iterable(nodeOrDims))
+        flatten_dims_set = dict.fromkeys(flattened_dims)
+        nodeOrDims = list(flatten_dims_set)
     return tuple((key, all_dims[key]) for key in nodeOrDims if key in all_dims)
 
 
