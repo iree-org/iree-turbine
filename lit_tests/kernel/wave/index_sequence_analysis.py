@@ -210,16 +210,16 @@ def test_gemm():
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 3, N: 64*$WG1 + Mod($T0, 16) + 32})
         # CHECK-NEXT: extract_slice(register_=getresult_1_1_0, offset=[0], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_4, memory=c, elements_per_thread=1,
-        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16), N: 64*$WG1 + Mod($T0, 16) + 48})
+        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 16, N: 64*$WG1 + Mod($T0, 16) + 48})
         # CHECK-NEXT: extract_slice(register_=getresult_1_1_0, offset=[1], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_5, memory=c, elements_per_thread=1,
-        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 1, N: 64*$WG1 + Mod($T0, 16) + 48})
+        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 17, N: 64*$WG1 + Mod($T0, 16) + 48})
         # CHECK-NEXT: extract_slice(register_=getresult_1_1_0, offset=[2], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_6, memory=c, elements_per_thread=1,
-        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 2, N: 64*$WG1 + Mod($T0, 16) + 48})
+        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 18, N: 64*$WG1 + Mod($T0, 16) + 48})
         # CHECK-NEXT: extract_slice(register_=getresult_1_1_0, offset=[3], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_7, memory=c, elements_per_thread=1,
-        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 3, N: 64*$WG1 + Mod($T0, 16) + 48})
+        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 19, N: 64*$WG1 + Mod($T0, 16) + 48})
         # CHECK-NEXT: extract_slice(register_=getresult_1_0_0, offset=[0], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_8, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 16, N: 64*$WG1 + Mod($T0, 16) + 32})
@@ -234,22 +234,22 @@ def test_gemm():
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 19, N: 64*$WG1 + Mod($T0, 16) + 32})
         # CHECK-NEXT: extract_slice(register_=getresult_0_1_0, offset=[0], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_12, memory=c, elements_per_thread=1,
-        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 16, N: 64*$WG1 + Mod($T0, 16) + 48})
+        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16), N: 64*$WG1 + Mod($T0, 16) + 48})
         # CHECK-NEXT: extract_slice(register_=getresult_0_1_0, offset=[1], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_13, memory=c, elements_per_thread=1,
-        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 17, N: 64*$WG1 + Mod($T0, 16) + 48})
+        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 1, N: 64*$WG1 + Mod($T0, 16) + 48})
         # CHECK-NEXT: extract_slice(register_=getresult_0_1_0, offset=[2], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_14, memory=c, elements_per_thread=1,
-        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 18, N: 64*$WG1 + Mod($T0, 16) + 48})
+        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 2, N: 64*$WG1 + Mod($T0, 16) + 48})
         # CHECK-NEXT: extract_slice(register_=getresult_0_1_0, offset=[3], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_15, memory=c, elements_per_thread=1,
-        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 19, N: 64*$WG1 + Mod($T0, 16) + 48})
+        # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 3, N: 64*$WG1 + Mod($T0, 16) + 48})
 
         # Reduction subgraph:
         # CHECK: %acc_0_0_0
-        # CHECK-NEXT: %acc_1_1_0
-        # CHECK-NEXT: %acc_1_0_0
         # CHECK-NEXT: %acc_0_1_0
+        # CHECK-NEXT: %acc_1_0_0
+        # CHECK-NEXT: %acc_1_1_0
         # CHECK-NEXT: %a
         # CHECK-NEXT: %read_4
         # CHECK-SAME: (%a, 8, None, None)
@@ -303,9 +303,9 @@ def test_gemm():
 
         # Reduction subgraph (custom format):
         # CHECK: placeholder(_name=acc_0_0_0
-        # CHECK-NEXT: placeholder(_name=acc_1_1_0
-        # CHECK-NEXT: placeholder(_name=acc_1_0_0
         # CHECK-NEXT: placeholder(_name=acc_0_1_0
+        # CHECK-NEXT: placeholder(_name=acc_1_0_0
+        # CHECK-NEXT: placeholder(_name=acc_1_1_0
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: read(memory=a, elements_per_thread=8,
         # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
