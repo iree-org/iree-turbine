@@ -970,10 +970,10 @@ class GetResult(CustomOp):
             return src_type
 
     @property
-    def indexing_dims(self) -> list[IndexSymbol]:
+    def indexing_dims(self) -> list[IndexExpr]:
         has_multiple_value = lambda x: all(isinstance(el, list) for el in x)
         is_valid_indexing_dim = lambda x: isinstance(src_indexing, list) and all(
-            isinstance(el, IndexSymbol) for el in x
+            isinstance(el, IndexExpr) for el in x
         )
         src_indexing = get_custom(self.value).indexing_dims
         if has_multiple_value(src_indexing):
