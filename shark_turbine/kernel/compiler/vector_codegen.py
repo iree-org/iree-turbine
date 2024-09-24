@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 """Code generation for generating vector-dialect based kernels.
 
 Such kernels operate on global memory at the boundary, scheduling

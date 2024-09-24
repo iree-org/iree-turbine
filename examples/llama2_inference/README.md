@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2024 The IREE Authors
+
+SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-->
+
 # LLAMA 2 Inference
 
 This example require some extra dependencies. Here's an easy way to get it running on a fresh server.

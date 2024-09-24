@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 import argparse
 import torch
 from ..support.logging import get_logger

@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2024 The IREE Authors
+
+SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-->
+
 # How to contribute
 
 We'd love to accept your patches and contributions to this project.

@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+version = 1
+
+[[annotations]]
+path = [
+     "**.mlir",
+     "tests/**",
+     "shark_turbine/kernel/wave/docs/**",
+     "iree-requirements-ci.txt",
+     "iree-requirements.txt",
+     "mypy-requirements.txt",
+     "pytorch-cpu-requirements.txt",
+     "pytorch-rocm-requirements.txt"
+]
+
+SPDX-FileCopyrightText = "2024 The IREE Authors"
+SPDX-License-Identifier = "Apache-2.0 WITH LLVM-exception"

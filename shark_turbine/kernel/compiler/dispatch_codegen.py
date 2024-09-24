@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 """Code generation support for top-level IREE dispatch constructs.
 
 This assumes that you have some form of code generation for the

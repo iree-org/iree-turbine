@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from shark_turbine.tools.interpreter import Interpreter
 import shark_turbine.kernel as tk
 import shark_turbine.kernel.lang as tkl
