@@ -30,16 +30,8 @@ default_test_shapes = [
 ]
 
 
-def xfail_unaligned(func):
-    def wrapper(shape):
-        if shape[-1] % 2 != 0:
-            pytest.xfail("Unaligned shape is not expected to work on this test yet.")
-        func(shape)
-
-    return wrapper
-
-
 user_specified_test_shapes = ""
+
 test_params_path = os.environ.get("TEST_PARAMS_PATH", None)
 
 if test_params_path:
@@ -51,6 +43,15 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     if test_name in user_specified_test_shapes:
         return user_specified_test_shapes[test_name]
     return default_test_shapes
+
+
+def xfail_unaligned(func):
+    def wrapper(shape):
+        if shape[-1] % 2 != 0:
+            pytest.xfail("Unaligned shape is not expected to work on this test yet.")
+        func(shape)
+
+    return wrapper
 
 
 @require_e2e
