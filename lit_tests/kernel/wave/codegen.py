@@ -756,6 +756,94 @@ def test_reduce_sum():
         # CHECK: arith.addf {{.*}} : vector<1xf16>
 
 
+# This test is to ensure that the propagation of indexing_dims between reduction and operations
+# outside the reduction is working properly.
+@run_test
+def test_reduction_and_elemwise():
+    M = tkl.sym.M
+    N = tkl.sym.N
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+    ):
+        init_max = tkl.Register[M, tkl.f16](-1e6)
+
+        @tkw.reduction(N, init_args=[init_max])
+        def repeat(
+            partial_max: tkl.Register[M, tkl.f16],
+        ) -> tkl.Register[M, tkl.f16]:
+            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+            partial_max = tkw.max(lhs, partial_max, dim=N)
+            return partial_max
+
+        result = repeat + repeat
+        tkw.write(result, c, elements_per_thread=1)
+
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+
+    shape = (256, 512)
+    a = torch.randn(shape, dtype=torch.float16)
+    c = torch.zeros((shape[0],), dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            BLOCK_M: 2,
+            BLOCK_N: 128,
+            ELEMS_PER_THREAD: 2,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+    ):
+        print(test(a, c).module_op)
+        # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
+        # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
+        # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
+        # CHECK-DAG: %[[INIT:.+]] = arith.constant dense<0xFC00> : vector<1xf16>
+
+        # Tile Reduction Loop
+        # CHECK: %[[TILED:.+]]:2 = scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
+        # CHECK-SAME: iter_args(%[[ACC0:.+]] = %[[INIT]], %[[ACC1:.+]] = %[[INIT]]) -> (vector<1xf16>, vector<1xf16>) {
+        # 1st Expanded Local Reduction
+        # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+        # 1st Expanded Global Reduction
+        # CHECK-COUNT-6: gpu.shuffle  xor
+        # 1st Expanded Accumulator Reduction
+        # CHECK: %[[ACC_REDUCE_0:.+]] = arith.maximumf %[[ACC0]], %{{.*}}
+
+        # 2nd Expanded Local Reduction
+        # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+        # 2nd Expanded Global Reduction
+        # CHECK-COUNT-6: gpu.shuffle  xor
+        # 2nd Expanded Accumulator Reduction
+        # CHECK: %[[ACC_REDUCE_1:.+]] = arith.maximumf %[[ACC1]], %{{.*}}
+
+        # CHECK: scf.yield %[[ACC_REDUCE_0]], %[[ACC_REDUCE_1]] : vector<1xf16>, vector<1xf16>
+        # CHECK: %[[POST_TILE_ELEMWISE_0:.+]] =  arith.addf %[[TILED]]#0, %[[TILED]]#0 : vector<1xf16>
+        # CHECK: %[[POST_TILE_ELEMWISE_1:.+]] =  arith.addf %[[TILED]]#1, %[[TILED]]#1 : vector<1xf16>
+        # CHECK: vector.store %[[POST_TILE_ELEMWISE_0:.+]], %{{.*}}
+        # CHECK: vector.store %[[POST_TILE_ELEMWISE_1:.+]], %{{.*}}
+
+
 @run_test
 def test_tiled_reduce_max():
     M = tkl.sym.M
