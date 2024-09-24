@@ -234,6 +234,8 @@ class _Hooks(FxImporterHooks):
             raise ValueError(f"Cannot store value to unmapped global for: {info}")
         logger.debug("Resolved  global for store %r", mapping)
         materialized_global: MaterializedGlobal = mapping.value  # type: ignore
+        assert isinstance(materialized_global.global_op, util_d.GlobalOp)
+        materialized_global.global_op.is_mutable = True
         converted_value = Operation.create(
             "torch_c.to_builtin_tensor",
             results=[materialized_global.ir_type],
@@ -251,7 +253,7 @@ class _Hooks(FxImporterHooks):
             return None
 
         # See if we know about it.
-        materialized_global = self._lift_tensor_to_global(literal)
+        materialized_global = self._lift_tensor_to_global(literal, info)
         if not materialized_global:
             # If it is unknown, just let the default importer take it on.
             return None
@@ -269,7 +271,7 @@ class _Hooks(FxImporterHooks):
         return converted_value
 
     def _lift_tensor_to_global(
-        self, literal: torch.Tensor
+        self, literal: torch.Tensor, info: InputInfo | None
     ) -> Optional[MaterializedGlobal]:
         module_builder = self.module_builder
         mapping = module_builder.global_ref_tracker.track(literal)
@@ -282,7 +284,7 @@ class _Hooks(FxImporterHooks):
         # Policy check: Should we auto-import? Generally, we keep "small"
         # tensors as inline as they can be optimized.
         external_trait = ExternalTensorTrait.get(literal)
-        if not self._should_lift_tensor_to_global(literal, external_trait):
+        if not self._should_lift_tensor_to_global(literal, external_trait, info):
             return None
 
         # If it is a tensor we haven't seen yet, materialize it
@@ -304,8 +306,13 @@ class _Hooks(FxImporterHooks):
         return materialized_global
 
     def _should_lift_tensor_to_global(
-        self, literal: torch.Tensor, external_trait: Optional[ExternalTensorTrait]
+        self,
+        literal: torch.Tensor,
+        external_trait: Optional[ExternalTensorTrait],
+        info: InputInfo | None,
     ) -> bool:
+        if info is not None and info.store_producer_node:
+            return True
         if external_trait is not None:
             return True
         volume = math.prod(literal.shape)
