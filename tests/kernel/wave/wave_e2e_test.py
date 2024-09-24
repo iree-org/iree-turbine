@@ -29,7 +29,6 @@ default_test_shapes = [
     (256, 1024),
 ]
 
-
 user_specified_test_shapes = ""
 
 test_params_path = os.environ.get("TEST_PARAMS_PATH", None)
