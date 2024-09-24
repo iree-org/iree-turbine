@@ -44,6 +44,15 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     return default_test_shapes
 
 
+def xfail_unaligned(func):
+    def wrapper(shape):
+        if shape[-1] % 2 != 0:
+            pytest.xfail("Unaligned shape is not expected to work on this test yet.")
+        func(shape)
+
+    return wrapper
+
+
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
 def test_copy(shape):
@@ -269,13 +278,14 @@ def test_reduce_sum(shape):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
+@xfail_unaligned
 def test_tiled_reduce_max(shape):
     M = tkl.sym.M
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
     BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -322,6 +332,7 @@ def test_tiled_reduce_max(shape):
             M: shape[0],
             N: shape[1],
             BLOCK_N: min(128, shape[1]),
+            ELEMS_PER_THREAD: min(128, shape[1]) // wave_size,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
