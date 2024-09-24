@@ -207,9 +207,9 @@ def test_gemm():
 
         # Reduction subgraph:
         # CHECK: %acc_0_0_0
-        # CHECK-NEXT: %acc_1_1_0
-        # CHECK-NEXT: %acc_1_0_0
         # CHECK-NEXT: %acc_0_1_0
+        # CHECK-NEXT: %acc_1_0_0
+        # CHECK-NEXT: %acc_1_1_0
         # CHECK-NEXT: %a
         # CHECK-NEXT: %read_0_0_0
         # CHECK-NEXT: %read_0_0_1

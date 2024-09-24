@@ -156,9 +156,9 @@ def test_gemm():
 
         # Reduction subgraph:
         # CHECK: %acc_0_0_0
-        # CHECK-NEXT: %acc_1_1_0
-        # CHECK-NEXT: %acc_1_0_0
         # CHECK-NEXT: %acc_0_1_0
+        # CHECK-NEXT: %acc_1_0_0
+        # CHECK-NEXT: %acc_1_1_0
         # CHECK-NEXT: %a
         # CHECK-NEXT: %read_4
         # CHECK-SAME: (%a, 8, None, None)
@@ -215,9 +215,9 @@ def test_gemm():
 
         # Reduction subgraph (custom format):
         # CHECK: placeholder(_name=acc_0_0_0
-        # CHECK-NEXT: placeholder(_name=acc_1_1_0
-        # CHECK-NEXT: placeholder(_name=acc_1_0_0
         # CHECK-NEXT: placeholder(_name=acc_0_1_0
+        # CHECK-NEXT: placeholder(_name=acc_1_0_0
+        # CHECK-NEXT: placeholder(_name=acc_1_1_0
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: read(memory=a, elements_per_thread=8,
         # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})

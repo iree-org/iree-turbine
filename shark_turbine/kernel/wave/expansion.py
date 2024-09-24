@@ -329,13 +329,27 @@ def _expand_node(
     # Filter out the dimensions that are not indexed by the node
     restricted_dims = filter_and_zero_unselected_dims(dim_query, node.indexing_dims)
     logger.debug(f"Expanding node: {node} in {restricted_dims}")
+
+    # For iter args, we want to insert
+    if not hasattr(_expand_node, "last_expanded_iter_arg"):
+        _expand_node.last_expanded_iter_arg = None
+
     # Clone the node for the new expansion. The original node is reused for the
     # case of all dimensions being zero.
     if expansion_needed(restricted_dims, node.indexing_dims):
-        new_node = node.copy()
+        new_node = node.copy(
+            anchor=(
+                _expand_node.last_expanded_iter_arg
+                if isinstance(node, IterArg)
+                else None
+            )
+        )
     else:
         new_node = node
         logger.debug(f"did not clone node: {node} in {restricted_dims}")
+
+    if isinstance(node, IterArg):
+        _expand_node.last_expanded_iter_arg = new_node.fx_node
 
     new_node.fx_node.expanded_dims = restricted_dims
     new_node.fx_node.name = get_expanded_name(node, restricted_dims)
