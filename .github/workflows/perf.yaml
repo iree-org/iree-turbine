@@ -44,12 +44,15 @@ jobs:
         path: ${{ env.PIP_CACHE_DIR }}
         key: pip-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('*requirements.txt') }}
 
+    - name: Set current date as env variable
+      run: echo "NOW=$(date +'%Y-%m-%dT%H:%M:%S')" >> "$GITHUB_ENV"
+
     - name: Install pip deps
       run: |
         python -m pip install --no-compile --upgrade pip
         # Note: We install in three steps in order to satisfy requirements
         # from non default locations first. Installing the PyTorch CPU
-        # wheels saves multiple minutes and a lot of bandwidth on runner setup.
+        # wheels saves signifcant time during setup.
         pip install --no-compile -r pytorch-cpu-requirements.txt
         pip install --no-cache-dir -r iree-requirements-ci.txt
         pip install -r requirements.txt -e .
@@ -62,7 +65,12 @@ jobs:
       run: |
         export WAVE_RUN_E2E_TESTS=1
         export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
+        export WAVE_BENCHMARK_E2E_TESTS=1
         pytest -n 1 ./tests/kernel/wave/
+        mkdir /artifacts/${{ github.sha }}
+        echo $'${{github.ref_name}}\n${{github.event.pull_request.title}}\n${{env.NOW}}' > /artifacts/${{ github.sha }}/ghinfo.txt
+        mv perf*.json /artifacts/${{ github.sha }}
+        npm run --prefix /infra/tkw/ build
     - name: Run LIT tests
       if: ${{ !cancelled() }}
       run: |

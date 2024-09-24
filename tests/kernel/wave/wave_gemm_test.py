@@ -17,6 +17,8 @@ import os
 import json
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
+_bench_e2e = int(os.environ.get("WAVE_BENCH_E2E_TESTS", 0))
+enable_benchmarking = True if _bench_e2e else False
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
 # Whether to dump the generated MLIR module.
 test_dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
@@ -107,9 +109,21 @@ def testGemm(shape: tuple[int]):
         N: shape[1],
         K: shape[2],
     }
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    prefix = f"wave_gemm_{'x'.join(map(str, shape))}"
+    config = {
+        "backend": "rocm",
+        "device": "hip",
+        "target": "gfx942",
+        "benchmark_results_file": "perf_" + prefix + ".json",
+        "benchmark_batch_size": 1000,
+        "benchmark_repetitions": 3,
+    }
     with tk.gen.TestLaunchContext(
-        hyperparams, canonicalize=True, run=True, run_config=config
+        hyperparams,
+        canonicalize=True,
+        run=True,
+        run_config=config,
+        run_bench=enable_benchmarking,
     ):
         a = torch.randn(shape[0], shape[2], dtype=torch.float16)
         b = torch.randn(shape[1], shape[2], dtype=torch.float16)
@@ -117,7 +131,7 @@ def testGemm(shape: tuple[int]):
         mb = gemm(a, b, c)
 
         if test_dump_generated_mlir:
-            filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
+            filename = prefix + ".mlir"
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
 
