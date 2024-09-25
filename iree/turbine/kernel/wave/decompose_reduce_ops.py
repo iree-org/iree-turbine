@@ -19,7 +19,7 @@ from ..ops.wave_ops import (
     ReduceOp,
     ShuffleOp,
     CustomOp,
-    ExtractSlice,
+    Extract,
     Reduction,
 )
 
@@ -40,9 +40,9 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph):
 def emit_local_reduction(
     binary_fn: Callable, src: fx.Node, graph: fx.Graph, local_reduction_size: int
 ) -> fx.Node:
-    init = get_graph_node(ExtractSlice(src, [0], [1], [1]), graph)
+    init = get_graph_node(Extract(src, [0]), graph)
     for i in range(1, local_reduction_size):
-        cur_slice = get_graph_node(ExtractSlice(src, [i], [1], [1]), graph)
+        cur_slice = get_graph_node(Extract(src, [i]), graph)
         init = get_graph_node(binary_fn(init, cur_slice), graph)
     return init
 
@@ -100,7 +100,7 @@ def decompose_reduce_ops(
                 )
 
             # Local Reduce
-            if reduction_dim is not custom.type.symbolic_shape[-1]:
+            if reduction_dim is not get_custom(custom.arg).type.symbolic_shape[-1]:
                 raise NotImplementedError(
                     "Only implemented reduction on fastest dimension."
                 )

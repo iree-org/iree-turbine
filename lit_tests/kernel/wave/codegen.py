@@ -1438,6 +1438,82 @@ def test_multiple_reduction_iv():
         # CHECK: scf.yield %[[ACC_MAX_0]], %[[ACC_SUM_0]], %[[ACC_MAX_1]], %[[ACC_SUM_1]]
 
 
+# This test is used to ensure:
+# 1. ReduceOp has correct symbolic shape for thread shape analysis.
+# 2. We can propagate the resolved indexing from broadcast.(in this case from sub to exp2.)
+@run_test
+def test_reduce_propagate_broadcast():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f32],
+    ):
+        init_max = tkl.Register[M, tkl.f32](-1e6)
+        init_sum = tkl.Register[M, tkl.f32](0)
+
+        @tkw.reduction(N, init_args=[init_max, init_sum])
+        def repeat(
+            partial_max: tkl.Register[M, tkl.f32],
+            partial_sum: tkl.Register[M, tkl.f32],
+        ) -> tkl.Register[M, tkl.f32]:
+            src = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            m_src = tkw.max(src, partial_max, dim=N)
+            exp_d = tkw.exp2(src - m_src)
+            sum_d = tkw.sum(exp_d, partial_sum, dim=N)
+            return m_src, sum_d
+
+        res_max, res_sum = repeat
+        tkw.write(res_sum, c, elements_per_thread=1)
+
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+
+    shape = (256, 1024)
+    a = torch.randn(shape, dtype=torch.float32)
+    c = torch.zeros((shape[0],), dtype=torch.float32)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            BLOCK_M: 1,
+            BLOCK_N: 128,
+            LOAD_ELEMS_PER_THREAD: 2,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run=False,
+        run_config=config,
+    ):
+        print(test(a, c).module_op)
+        # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
+        # CHECK-DAG: %[[C8:.+]] = arith.constant 8 : index
+        # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
+        # CHECK: %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<1xf32>
+        # CHECK: scf.for %{{.*}} = %[[C0]] to %[[C8]] step %[[C1]]
+        # CHECK-COUNT-7: arith.maximumf
+        # CHECK: %[[ACC_MAX:.+]] = arith.maximumf
+        # CHECK: %[[EXTRACT:.+]] = vector.extract %[[ACC_MAX]][0] : f32 from vector<1xf32>
+        # CHECK: %[[BROADCAST:.+]] = vector.splat %[[EXTRACT]] : vector<2xf32>
+        # CHECK: %[[SUBF:.+]] = arith.subf %{{.+}}, %[[BROADCAST]] : vector<2xf32>
+        # CHECK: %[[EXP2:.+]] = math.exp2 %[[SUBF]] : vector<2xf32>
+        # CHECK: %[[EXP2_SLICE_0:.+]] = vector.extract_strided_slice %[[EXP2]] {offsets = [0], sizes = [1], strides = [1]} : vector<2xf32> to vector<1xf32>
+        # CHECK: %[[EXP2_SLICE_1:.+]] = vector.extract_strided_slice %[[EXP2]] {offsets = [1], sizes = [1], strides = [1]} : vector<2xf32> to vector<1xf32>
+        # CHECK: arith.addf %[[EXP2_SLICE_0]], %[[EXP2_SLICE_1]]
+        # CHECK-COUNT-6: gpu.shuffle xor
+
+
 @run_test
 def test_broadcast_add():
     constraints: list[tkw.Constraint] = [

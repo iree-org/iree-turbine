@@ -13,6 +13,10 @@ from .utils import capture_forward_slice, capture_backward_slice, subs_idxc
 
 logger = get_logger("turbine.wave.thread_shape_analysis")
 
+################################################################
+# Index/Symbol and Thread size helper fn and data structure
+#################################################################
+
 
 @dataclass(order=True)
 class DimSize:
@@ -43,6 +47,23 @@ def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
         custom.index[target.dim].size = target.size
 
 
+#################################################################
+# Anchor Indicies and Conflict resolution helpers
+#################################################################
+
+anchorOpTypes = (Read, Write, MMA, ReduceOp)
+noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate)
+nonPropagatableTypes = anchorOpTypes + noHandleTypes
+
+
+def is_anchor_op(node: fx.Node):
+    return isinstance(get_custom(node), anchorOpTypes)
+
+
+def propagatable_op(node: fx.Node):
+    return not isinstance(get_custom(node), nonPropagatableTypes)
+
+
 def handle_binaryop_conflict(custom_node: CustomOp):
     # Analyze if we can resolve conflict with broadcast.
     lhs = get_custom(custom_node.lhs)
@@ -59,21 +80,32 @@ def handle_binaryop_conflict(custom_node: CustomOp):
     broadcast = Broadcast(broadcast_src.fx_node, dst_op.type)
     with custom_node.graph.inserting_before(custom_node.fx_node):
         broadcast.add_to_graph(custom_node.graph)
-    setattr(broadcast.fx_node, "index", dst_op.index)
-    custom_node.index = dst_op.index
     custom_node.update_arg(broadcast_idx, broadcast.fx_node)
-    return True
+    propagated_resolutions = capture_forward_slice(broadcast.fx_node, propagatable_op)
+    for node in propagated_resolutions:
+        setattr(node, "index", dst_op.index)
+    return propagated_resolutions
 
 
 # Returns True iff all conflicts are handled succesfully.
 def handle_conflicts(conflicted_ops: set[CustomOp]):
+    cummulative_resolved = set()
     for conflict in conflicted_ops:
         custom = get_custom(conflict)
         if isinstance(custom, BinaryPyOp):
-            handle_binaryop_conflict(custom)
+            resolved_ops = handle_binaryop_conflict(custom)
+            cummulative_resolved = cummulative_resolved.union(resolved_ops)
         else:
-            return False
-    return True
+            continue
+    # Superset because path/cumulative resolved includes resolution helper ops
+    # such as broadcast.
+    all_conflicts_resolved = cummulative_resolved.issuperset(conflicted_ops)
+    return all_conflicts_resolved
+
+
+###############################################################################
+# Main pass
+#####################################################################
 
 
 def determine_thread_shapes(trace: CapturedTrace):
@@ -118,18 +150,6 @@ def determine_thread_shapes(trace: CapturedTrace):
         thread_sizes_to_ops[frozenset({IndexSize(index=K, size=4), IndexSize(index=N, size=1)}] = set(rhs, ...)
 
     """
-
-    # Anchor ops are ops who's thread shape are predetermined.
-    anchorOpTypes = (Read, Write, MMA, ReduceOp)
-    noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate)
-    nonPropagatableTypes = anchorOpTypes + noHandleTypes
-
-    def is_anchor_op(node: fx.Node):
-        return isinstance(get_custom(node), anchorOpTypes)
-
-    def propagatable_op(node: fx.Node):
-        return not isinstance(get_custom(node), nonPropagatableTypes)
-
     anchor_ops = trace.walk(is_anchor_op)
     thread_size_to_ops: dict[frozenset[DimSize], set[CustomOp]] = {}
     for anchor_op in anchor_ops:

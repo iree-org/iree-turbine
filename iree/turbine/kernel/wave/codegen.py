@@ -59,6 +59,7 @@ from ..ops.wave_ops import (
     get_result,
     allocate,
     shared_memory_barrier,
+    extract,
     extract_slice,
     CustomOp,
     scheduling_barrier,
@@ -1121,6 +1122,26 @@ def handle_scheduling_group_barrier(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 # Slicing ops
 ###############################################################################
+
+
+@handle_op(extract)
+def handle_extract(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, offset = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    assert isinstance(offset, list) and len(offset) == 1
+    extract_vector = cast_vector(emitter, register)
+    result_type = VectorType.get([1], extract_vector.type.element_type)
+    element = vector_d.extract_strided_slice(
+        result_type,
+        extract_vector,
+        offset,
+        [1],
+        [1],
+    )
+
+    emitter.bind_node_proxy(node, IRProxyValue(element))
 
 
 @handle_op(extract_slice)
