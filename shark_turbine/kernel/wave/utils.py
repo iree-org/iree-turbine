@@ -1,5 +1,4 @@
 # Copyright 2024 The IREE Authors
-#
 # Licensed under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
@@ -16,7 +15,16 @@ from typing import Callable, Any, List, Tuple
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
-from ..ops.wave_ops import get_custom, Output, Write, MMA
+from ..ops.wave_ops import (
+    get_custom,
+    Output,
+    Write,
+    MMA,
+    CustomOp,
+    Reduction,
+    GetResult,
+    IterArg,
+)
 from .constraints import Constraint, HardwareConstraint, TilingConstraint
 import torch.fx as fx
 import shark_turbine.kernel.lang as tkl
@@ -145,7 +153,9 @@ def simplify_index(index: IndexExpr) -> IndexExpr:
     return subs_idxc(index.subs(mapping))
 
 
-def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
+def get_mma_dimensional_mapping(
+    trace: CapturedTrace,
+) -> tuple[dict[IndexSymbol, int], dict[IndexSymbol, list[fx.Node]]]:
     """
     Given a trace, determine the MMA dimensional mapping for all the
     MMA operations in the graph. For example, if we have
@@ -159,7 +169,8 @@ def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
         return isinstance(get_custom(node), MMA)
 
     mapping: dict[IndexSymbol, int] = {}
-    for node in trace.walk(is_mma):
+    mma_nodes = trace.walk(is_mma)
+    for node in mma_nodes:
         custom: MMA = get_custom(node)
         m, n = custom.acc_type.symbolic_shape[-2:]
         lhs_shape = custom.lhs_type.symbolic_shape
@@ -170,7 +181,7 @@ def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
         mapping[n] = 1
         mapping[k] = 2
 
-    return mapping
+    return mapping, capture_mma_slices([get_custom(x) for x in mma_nodes])
 
 
 def get_hardware_vector_size(
@@ -378,3 +389,132 @@ def erase_graph(graph: fx.Graph):
         for user in node.users:
             graph.erase_node(user)
         graph.erase_node(node)
+
+
+def get_users(
+    node: fx.Node, reduction: fx.Node = None
+) -> tuple[list[fx.Node], fx.Node]:
+    """
+    Return the users of a node, propagating through reductions.
+    """
+    users = []
+    for user in node.users:
+        custom = get_custom(user)
+        if isinstance(custom, Reduction):
+            # Map init arg to iter arg
+            reduction = custom
+            init_arg_idx = custom.init_args.index(node)
+            users.append(custom.iter_args[init_arg_idx])
+            continue
+        if isinstance(custom, Output) and reduction:
+            # Map output to get result
+            return_vals = custom.return_vals[0]
+            get_results = sorted(
+                [x for x in reduction.users if isinstance(get_custom(x), GetResult)],
+                lambda x: get_custom(x).res_idx,
+            )
+            if isinstance(return_vals, list):
+                output_idx = return_vals.index(node)
+                users.append(get_results[output_idx])
+            else:
+                users.append(get_results[0])
+            continue
+        users.append(user)
+    return users, reduction
+
+
+def get_inputs(
+    node: fx.Node, reduction: fx.Node = None
+) -> tuple[list[fx.Node], fx.Node]:
+    """
+    Return the inputs of a node, propagating through reductions.
+    """
+    inputs = []
+    for input in node.all_input_nodes:
+        custom = get_custom(input)
+        if isinstance(custom, GetResult):
+            reduction = custom.value
+            assert isinstance(
+                reduction, Reduction
+            ), "GetResult must be used by a Reduction"
+            # Map get result to output
+            inputs.append(reduction.outputs[custom.res_idx])
+            continue
+        if isinstance(custom, IterArg):
+            # Map iter args to init args
+            iter_arg_idx = reduction.iter_args.index(node)
+            inputs.append(reduction.init_args[iter_arg_idx])
+            continue
+        inputs.append(input)
+    return inputs, reduction
+
+
+def bfs(
+    node: fx.Node,
+    visited: list[fx.Node],
+    queue: list[fx.Node],
+    get_neighbors: Callable[[fx.Node, fx.Node], list[fx.Node]],
+):
+    """
+    Run BFS on the graph to capture the forward slice of a node.
+    """
+    visited.append(node)
+    queue.append(node)
+    reduction = None
+    while queue:
+        s = queue.pop(0)
+        neighbors, reduction = get_neighbors(s, reduction)
+        for neighbor in neighbors:
+            if neighbor not in visited:
+                visited.append(neighbor)
+                queue.append(neighbor)
+    return visited
+
+
+def capture_forward_slice(node: fx.Node) -> set[fx.Node]:
+    """
+    Run BFS on the graph to capture the forward slice of a node.
+    """
+    return bfs(node, [], [], lambda x, y: get_users(x, y))
+
+
+def capture_backward_slice(node: fx.Node) -> list[fx.Node]:
+    """
+    Capture backward slice from a node and return the tree.
+    Assumes graph is directed.
+    """
+    return bfs(node, [], [], lambda x, y: get_inputs(x, y))
+
+
+def capture_mma_slices(mma_nodes: list[MMA]) -> dict[IndexSymbol, list[fx.Node]]:
+    """
+    Given an index sequence, specialize it to a LHS, RHS or ACC index sequence
+    based on whether the node is used as the LHS, RHS or ACC in the MMA node.
+    """
+    mma_slices = {x: [] for x in [MMA_LHS, MMA_RHS, MMA_ACC]}
+    for mma in mma_nodes:
+        mma_slices[MMA_LHS] += capture_backward_slice(mma.lhs)
+        mma_slices[MMA_RHS] += capture_backward_slice(mma.rhs)
+        mma_slices[MMA_ACC] += capture_forward_slice(mma.acc)
+    return mma_slices
+
+
+def specialize_index_sequence(
+    index_seq: IndexSequence,
+    mma_slices: dict[IndexSymbol, list[fx.Node]],
+    custom: CustomOp,
+) -> IndexSequence:
+    """
+    Given an index sequence, specialize it to a LHS, RHS or ACC index sequence
+    based on whether the node is used as the LHS, RHS or ACC in the MMA node.
+    If the node is not used as any of the operands, return the original index sequence
+    with all the MMA symbols zeroed out.
+    """
+    if isinstance(custom, MMA):
+        return index_seq
+    operand_map = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 0}
+    for key in mma_slices:
+        if custom.fx_node in mma_slices[key]:
+            operand_map[key] = 1
+            return index_seq.subs(operand_map)
+    return index_seq.subs(operand_map)

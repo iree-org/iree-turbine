@@ -780,16 +780,6 @@ class MMA(CustomOp):
         custom_str += f"acc={self.acc} (index = {self.acc_index}))"
         return custom_str
 
-    def post_expansion(self, constraints: list["Constraint"]) -> None:
-        """
-        Once the arguments have been expanded, we set their indices,
-        ensuring that the LHS and RHS indices are consistent with their
-        corresponding address spaces.
-        """
-        self.lhs.index = self.lhs_index
-        self.rhs.index = self.rhs_index
-        self.acc.index = self.acc_index
-
 
 @define_op("read")
 @dataclass
