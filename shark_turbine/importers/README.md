@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2024 The IREE Authors
+
+SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-->
+
 # Importers from various systems
 
 This directory is self-contained and intended to be shared with other

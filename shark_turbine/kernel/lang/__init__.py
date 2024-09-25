@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from .prims import *
 from .types import *
 from .kernel_buffer import *

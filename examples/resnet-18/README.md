@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2024 The IREE Authors
+
+SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-->
+
 # Dynamic AOT Resnet-18 Example
 
 This example AOT-compiles a Resnet-18 module for performing inference on a dynamic number of input images.

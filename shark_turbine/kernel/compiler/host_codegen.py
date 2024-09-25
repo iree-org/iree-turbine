@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from .kernel_codegen import KernelSignature
 from .dispatch_codegen import StreamExecutable
 

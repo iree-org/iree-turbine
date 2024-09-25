@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2024 The IREE Authors
+
+SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-->
+
 # Matrix Multiplication
 
 Let's assume we want to compute the following matrix multiplication.

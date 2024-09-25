@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 """Code generation support for kernel entry-points.
 
 In a typical code generation stack, there are three elements:

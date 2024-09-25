@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
@@ -12,3 +16,7 @@ repos:
     rev: 22.10.0
     hooks:
     -   id: black
+-   repo: https://github.com/fsfe/reuse-tool
+    rev: v4.0.3
+    hooks:
+    -   id: reuse

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 The IREE Authors
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from transformers import AutoFeatureExtractor, AutoModelForImageClassification
 import torch
 from shark_turbine.aot import *
