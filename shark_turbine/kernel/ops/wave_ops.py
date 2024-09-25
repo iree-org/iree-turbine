@@ -96,6 +96,12 @@ def maximum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
+def broadcast(
+    arg: "Register", target_shape: Optional[IndexExpr | int] = None
+) -> "Register":
+    ...
+
+
 def sum(
     src: "Register",
     acc: Optional["Register"] = None,
@@ -900,7 +906,10 @@ class Reduction(CustomOp):
 
     @property
     def type(self) -> list[Memory | Register]:
-        return [get_custom(x).type for x in self.init_args]
+        res_types = [get_custom(x).type for x in self.init_args]
+        if len(res_types) == 1:
+            res_types = res_types[0]
+        return res_types
 
     def outputs(self, graph: fx.Graph) -> list[fx.Node]:
         for node in graph.nodes:
@@ -1020,6 +1029,34 @@ class ExtractSlice(CustomOp):
     @property
     def type(self) -> "Register":
         return get_custom(self.register_).type
+
+
+@define_op("broadcast")
+@dataclass
+class Broadcast(CustomOp, ABC):
+    """
+    Represents a Broadcast operation.
+
+    arg: Source tensor/value to broadcast
+    target_shape: symbolic target broadcast shape.
+    """
+
+    arg: fx.Node
+    target_type: Sequence[IndexSymbol] = None
+
+    @property
+    def target_shape(self):
+        return self.target_type.symbolic_shape
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return self.target_shape
+
+    @property
+    def type(self) -> Memory:
+        src_dtype = get_custom(self.arg).type.dtype
+        dst_type = Register[*self.target_shape, src_dtype]
+        return dst_type
 
 
 @define_interface_op("max")

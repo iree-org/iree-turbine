@@ -30,6 +30,7 @@ from .utils import (
     remove_chained_getresult,
     subs_idxc,
 )
+from .insert_broadcast import insert_broadcast
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
 from .barriers import add_shared_memory_barriers
@@ -220,6 +221,9 @@ class LaunchableWave(Launchable):
         # Promote the placeholders to the appropriate address space.
         promote_placeholders(graph, self.constraints)
         hoist_allocs(graph)
+
+        # Insert broadcasts on implicit broadcasted binaryOps.
+        insert_broadcast(graph)
 
         # Expansion
         expand_graph(graph, self.constraints)

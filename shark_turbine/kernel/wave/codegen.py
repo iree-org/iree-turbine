@@ -46,6 +46,7 @@ from shark_turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_
 from shark_turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import (
     write,
+    broadcast,
     register,
     mma,
     shuffle,
@@ -79,7 +80,7 @@ from .constraints import (
     WorkgroupConstraint,
     TilingConstraint,
 )
-from .utils import subs_idxc, find_index_bounds
+from .utils import subs_idxc, find_index_bounds, get_hardware_vector_map
 
 # Indexing imports.
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
@@ -1093,6 +1094,79 @@ def handle_extract_slice(emitter: WaveEmitter, node: fx.Node):
     )
 
     emitter.bind_node_proxy(node, IRProxyValue(element))
+
+
+###############################################################################
+# Reshape ops
+###############################################################################
+
+
+@handle_op(broadcast)
+def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, target_type = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    custom_arg = get_custom(register)
+    src_shape = get_custom(register).type.symbolic_shape
+    target_shape = target_type.symbolic_shape
+    hw_constraints = [
+        constraint
+        for constraint in emitter.constraints
+        if isinstance(constraint, HardwareConstraint)
+    ]
+    if len(hw_constraints) != 1:
+        raise NotImplementedError(
+            "Only support single HW Constraint for lowering broadcast."
+        )
+    hw_constraint = hw_constraints[0]
+    if not hasattr(hw_constraint, "vector_shapes"):
+        raise NotImplementedError(
+            "Only support broadcast for kernel with non-MMA constraints."
+        )
+
+    # As of writing of this pass, TKW expects only 1D vectors,
+    # or only 1 non-unit dim vector_shape. So we are not handling
+    # broadcast of N-d case.
+    broadcast_dims = set(target_shape) - set(src_shape)
+    if len(broadcast_dims) != 1:
+        raise NotImplementedError("NYI: Support for multiple broadcasting dims.")
+    broadcast_dim = next(iter(broadcast_dims))
+
+    # Extract vector shape of the broadcasted dimension from vector_shape.
+    vector_map = hw_constraint.vector_shapes
+    bcast_dim_wave_size = vector_map[broadcast_dim]
+    if bcast_dim_wave_size % hw_constraint.threads_per_wave != 0:
+        raise NotImplementedError(
+            "Only handle when vector_shape is factor of warp size."
+        )
+    bcast_dim_lane_dim_size = bcast_dim_wave_size // hw_constraint.threads_per_wave
+
+    # Ensure vector_shape for non-broadcast dim in source is unit dim.
+    src_dims = get_custom(register).indexing_dims
+    if any(vector_map.get(src_dim, 0) != 1 for src_dim in src_dims):
+        raise NotImplementedError(
+            "Cannot handle non broadcasted dim being non unit-dim in vector_shape constraints."
+        )
+
+    # Check MLIR shape
+    vector_src = cast_vector(emitter, register)
+    vector_type = vector_src.type
+    # Only support broadcasting vector<1xdtype> for now.
+    if not VectorType.isinstance(vector_type):
+        raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
+    assert vector_type.rank == 1
+    assert vector_type.shape[0] == 1
+
+    # Extract and Splat
+    # If by chance broadcast size  matches current size, we can return src.
+    if bcast_dim_lane_dim_size == vector_type.shape[0]:
+        emitter.bind_node_proxy(node, IRProxyValue(vector_src))
+
+    result_type = VectorType.get([bcast_dim_lane_dim_size], vector_type.element_type)
+    element = vector_d.extract(vector_src, static_position=[0], dynamic_position=[])
+    splat = vector_d.splat(result_type, element)
+    emitter.bind_node_proxy(node, IRProxyValue(splat))
 
 
 ###############################################################################
