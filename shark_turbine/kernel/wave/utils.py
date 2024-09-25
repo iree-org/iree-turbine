@@ -451,14 +451,14 @@ def get_inputs(
 
 def bfs(
     node: fx.Node,
-    visited: list[fx.Node],
-    queue: list[fx.Node],
     get_neighbors: Callable[[fx.Node, fx.Node], list[fx.Node]],
-):
+) -> set[fx.Node]:
     """
     Run BFS on the graph to capture the forward slice of a node.
     """
-    visited.append(node)
+    visited: set[fx.Node] = set()
+    queue: list[fx.Node] = []
+    visited.add(node)
     queue.append(node)
     reduction = None
     while queue:
@@ -466,7 +466,7 @@ def bfs(
         neighbors, reduction = get_neighbors(s, reduction)
         for neighbor in neighbors:
             if neighbor not in visited:
-                visited.append(neighbor)
+                visited.add(neighbor)
                 queue.append(neighbor)
     return visited
 
@@ -475,15 +475,15 @@ def capture_forward_slice(node: fx.Node) -> set[fx.Node]:
     """
     Run BFS on the graph to capture the forward slice of a node.
     """
-    return bfs(node, [], [], lambda x, y: get_users(x, y))
+    return bfs(node, lambda x, y: get_users(x, y))
 
 
-def capture_backward_slice(node: fx.Node) -> list[fx.Node]:
+def capture_backward_slice(node: fx.Node) -> set[fx.Node]:
     """
     Capture backward slice from a node and return the tree.
     Assumes graph is directed.
     """
-    return bfs(node, [], [], lambda x, y: get_inputs(x, y))
+    return bfs(node, lambda x, y: get_inputs(x, y))
 
 
 def capture_mma_slices(mma_nodes: list[MMA]) -> dict[IndexSymbol, list[fx.Node]]:
