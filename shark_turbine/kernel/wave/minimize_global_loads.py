@@ -63,12 +63,11 @@ def materialize_shape(
     constraint_tile_size: dict[IndexSymbol, int], symbolic_shape: list[IndexSymbol]
 ) -> list[int]:
     materialized_shape = []
-    idxc = IndexingContext.current()
     for dim in symbolic_shape:
         if dim in constraint_tile_size:
-            materialized_shape.append(constraint_tile_size[dim].subs(idxc.subs))
+            materialized_shape.append(subs_idxc(constraint_tile_size[dim]))
         else:
-            materialized_shape.append(dim.subs(idxc.subs))
+            materialized_shape.append(subs_idxc(dim))
     return materialized_shape
 
 
