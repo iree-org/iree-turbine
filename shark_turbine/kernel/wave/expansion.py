@@ -19,7 +19,7 @@ from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
-from .utils import get_mma_dimensional_mapping
+from .utils import get_mma_dimensional_mapping, specialize_index_sequence
 from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.expansion")
@@ -146,6 +146,7 @@ def compute_stride(
 def set_node_index(
     constraints: Sequence[Constraint],
     mma_index: dict[IndexSymbol, int],
+    mma_slices: dict[IndexSymbol, list[fx.Node]],
     dim_tile_size: dict[IndexSymbol, int],
     custom: CustomOp,
     dim_scaling: dict[IndexSymbol, int],
@@ -176,11 +177,7 @@ def set_node_index(
     for dim in custom.indexing_dims:
         index_seq = None
         for constraint in sorted_constraints:
-            mma_check = (
-                isinstance(constraint, HardwareConstraint)
-                and dim in mma_index
-                and isinstance(custom, MMA)
-            )
+            mma_check = isinstance(constraint, HardwareConstraint) and dim in mma_index
 
             vector_check = (
                 isinstance(constraint, HardwareConstraint)
@@ -222,6 +219,8 @@ def set_node_index(
                 index_seq = constraint.apply(
                     constraint_index, dim, elements_per_thread, stride
                 )
+                if mma_index:
+                    index_seq = specialize_index_sequence(index_seq, mma_slices, custom)
 
             else:
                 if index_seq is None:
@@ -251,10 +250,10 @@ def expand_graph(
         dim_scaling = constraints_or_scaling
         node_index_setter = lambda *args: None
     else:
-        mma_index = get_mma_dimensional_mapping(trace)
+        mma_index, mma_slices = get_mma_dimensional_mapping(trace)
         dim_scaling, dim_tile_size = get_dim_scaling(constraints_or_scaling, mma_index)
         node_index_setter = partial(
-            set_node_index, constraints_or_scaling, mma_index, dim_tile_size
+            set_node_index, constraints_or_scaling, mma_index, mma_slices, dim_tile_size
         )
 
     # Start from the back and expand in the corresponding indexing dimensions of a node
