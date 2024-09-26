@@ -39,6 +39,7 @@ from ..compiler.ir import (
     stream_d,
     scf_d,
     vector_d,
+    llvm_d,
 )
 from iree.turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_type
 
@@ -60,6 +61,8 @@ from ..ops.wave_ops import (
     shared_memory_barrier,
     extract_slice,
     CustomOp,
+    scheduling_barrier,
+    scheduling_group_barrier,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
@@ -84,6 +87,7 @@ from .utils import subs_idxc, find_index_bounds, get_hardware_vector_map
 
 # Indexing imports.
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
+from .scheduling.resources import get_scheduling_mask
 
 
 @dataclass
@@ -1069,6 +1073,38 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
 @handle_op(shared_memory_barrier)
 def handle_shared_memory_barrier(emitter: WaveEmitter, node: fx.Node):
     amdgpu_d.lds_barrier()
+
+
+@handle_op(scheduling_barrier)
+def handle_scheduling_barrier(emitter: WaveEmitter, node: fx.Node):
+    try:
+        operations = node.args[0]
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    mask = 0
+    for operation in operations:
+        mask |= get_scheduling_mask(operation)
+
+    mask = arith_d.constant(IntegerType.get_signless(32), mask)
+    llvm_d.call_intrinsic(None, "llvm.amdgcn.sched.barrier", [mask])
+
+
+@handle_op(scheduling_group_barrier)
+def handle_scheduling_group_barrier(emitter: WaveEmitter, node: fx.Node):
+    try:
+        instructions, sync_id = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    sync_id = arith_d.constant(IntegerType.get_signless(32), sync_id)
+    for instruction, counts in instructions.items():
+        mask = get_scheduling_mask(instruction)
+        if mask is None:
+            continue
+        mask = arith_d.constant(IntegerType.get_signless(32), mask)
+        counts = arith_d.constant(IntegerType.get_signless(32), counts)
+        llvm_d.call_intrinsic(
+            None, "llvm.amdgcn.sched.group.barrier", [mask, counts, sync_id]
+        )
 
 
 ###############################################################################

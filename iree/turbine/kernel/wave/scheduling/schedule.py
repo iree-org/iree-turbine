@@ -24,7 +24,10 @@ def visualize_scheduling_graph(edges: list[Edge]):
 
 
 def schedule_reduction(
-    reduction: Reduction, trace: CapturedTrace, constraints: list[Constraint]
+    reduction: Reduction,
+    trace: CapturedTrace,
+    constraints: list[Constraint],
+    use_scheduling_barriers: bool = False,
 ):
     """
     Clones the reduction graph and does the following:
@@ -93,13 +96,18 @@ def schedule_reduction(
         node_map,
         max_induction_variable,
         visualize,
+        use_scheduling_barriers,
     )
 
     # Update new reduction count.
     new_reduction.count = max_induction_variable - (scheduler.num_stages - 1)
 
 
-def schedule_graph(trace: CapturedTrace, constraints: list[Constraint]):
+def schedule_graph(
+    trace: CapturedTrace,
+    constraints: list[Constraint],
+    use_scheduling_barriers: bool = False,
+):
     """
     Given a graph, pipelines the reductions in the graph.
     """
@@ -112,4 +120,6 @@ def schedule_graph(trace: CapturedTrace, constraints: list[Constraint]):
         return
 
     for reduction_node in reduction_nodes:
-        schedule_reduction(get_custom(reduction_node), trace, constraints)
+        schedule_reduction(
+            get_custom(reduction_node), trace, constraints, use_scheduling_barriers
+        )

@@ -730,6 +730,7 @@ def test_gemm_pipelined():
         },
         canonicalize=True,
         schedule=True,
+        use_scheduling_barriers=True,
     ):
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
@@ -747,10 +748,14 @@ def test_gemm_pipelined():
         # CHECK-COUNT-1:    scf.for
         # CHECK-COUNT-4:    amdgpu.mfma
         # CHECK-COUNT-1:    amdgpu.lds_barrier
-        # CHECK-COUNT-10:   vector.load
+        # CHECK-COUNT-6:    vector.load
+        # CHECK-COUNT-3:    llvm.call_intrinsic "llvm.amdgcn.sched.group.barrier"
+        # CHECK-COUNT-4:    vector.load
+        # CHECK-COUNT-1:    llvm.call_intrinsic "llvm.amdgcn.sched.group.barrier"
         # CHECK-COUNT-4:    amdgpu.mfma
         # CHECK-COUNT-1:    amdgpu.lds_barrier
         # CHECK-COUNT-2:    vector.store
+        # CHECK-COUNT-2:    llvm.call_intrinsic "llvm.amdgcn.sched.group.barrier"
         # CHECK-COUNT-1:    scf.yield
         # CHECK-COUNT-4:    amdgpu.mfma
         # CHECK-COUNT-1:    amdgpu.lds_barrier
