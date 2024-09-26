@@ -126,7 +126,6 @@ def DCE(trace: CapturedTrace):
 def remove_chained_getresult(trace: CapturedTrace):
     def is_chained_getresult(node: fx.Node) -> bool:
         custom = get_custom(node)
-        idxc = IndexingContext.current()
         return isinstance(custom, GetResult) and isinstance(
             get_custom(custom.value), GetResult
         )

@@ -351,7 +351,7 @@ def test_toy_online_softmax(shape):
         # Assert equal does cast to boolean on torch.Tensor
         # which causes issues, hence we cast to numpy before
         # checking.
-        assert_allclose(ref, c, atol=0.07)
+        assert_allclose(ref, c, atol=0.015)
 
 
 @require_e2e

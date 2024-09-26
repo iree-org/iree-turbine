@@ -23,7 +23,12 @@ from .codegen import WaveEmitter
 from .expansion import expand_graph
 from .promotion import promote_placeholders
 from .hoisting import hoist_allocs
-from .utils import canonicalize_module, compile_and_invoke, safe_subs
+from .utils import (
+    canonicalize_module,
+    compile_and_invoke,
+    safe_subs,
+    remove_chained_getresult,
+)
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
 from .barriers import add_shared_memory_barriers
@@ -204,6 +209,9 @@ class LaunchableWave(Launchable):
 
         # Expansion
         expand_graph(graph, self.constraints)
+
+        # Clean up chains of GetResults
+        remove_chained_getresult(graph)
 
         # Register analysis to determine register shapes.
         determine_register_shape(graph, self.constraints)

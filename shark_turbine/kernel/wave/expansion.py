@@ -19,19 +19,15 @@ from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
-from .utils import (
-    get_mma_dimensional_mapping,
-    specialize_index_sequence,
-    remove_chained_getresult,
-)
+from .utils import get_mma_dimensional_mapping, specialize_index_sequence
 from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.expansion")
-# This represents a mapping of a node + indexing into the dimensions to the
-# corresponding expanded node in these specific dimensions. An example for a
-# record in this map is (read_0_0_0, ((M,0),(N,0),(K,1)) -> read_0_0_1
+# This represents a mapping of a node + indexing + res_idx(output index for op with multiple results)
+# of node into the dimensions to the corresponding expanded node in these specific dimensions.
+# An example for a record in this map is (read_0_0_0, ((M,0),(N,0),(K,1), 0) -> read_0_0_1.
 ExpandedNodeMap: TypeAlias = dict[
-    tuple[CustomOp, tuple[tuple[IndexSymbol, int], ...]], CustomOp
+    tuple[CustomOp, tuple[tuple[IndexSymbol, int], int, ...]], CustomOp
 ]
 
 
@@ -297,7 +293,6 @@ def expand_graph(
                 node_index_setter,
                 expansion_context,
             )
-    remove_chained_getresult(trace)
 
 
 def _expand_node(
