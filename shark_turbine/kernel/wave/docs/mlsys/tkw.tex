@@ -30,7 +30,7 @@
 \begin{document}
 
 \twocolumn[
-\mlsystitle{Submission and Formatting Instructions for MLSys 2024}
+\mlsystitle{Wave : A Python DSL for High Performance Machine Learning}
 
 % It is OKAY to include author information, even for blind
 % submissions: the style file will automatically remove it for you
@@ -94,6 +94,81 @@ Gross violations will trigger corrections at the camera-ready phase.
 %\printAffiliationsAndNotice{}  % leave blank if no need to mention equal contribution
 \printAffiliationsAndNotice{\mlsysEqualContribution} % otherwise use the standard text.
 
+\section{Introduction}
+Generative models have seen tremendous success in a wide variety of
+domains ranging from image generation to natural language processing and beyond.
+\cite{podell_sdxl_2023,dubey_llama_2024}. Much of this success is being
+driven by graphics processing units (GPUs) which while originally
+designed for graphics, are now being optimized for machine learning.
+Both datacenter and consumer grade GPUs feature powerful matrix multiplication hardware units
+and specialized instructions to enable high performance inference and training \cite{sun_dissecting_2023}.
+\\ \\
+Given the importance of GPUs in machine learning, significant
+effort has been put into developing frameworks that allow developers to
+write high performance machine learning models with a low barrier to entry. Frameworks such
+as Pytorch \cite{paszke_pytorch_2019} have become extremely popular
+because they expose a Python based approach to programming GPUs. Prior
+to the advent of these frameworks, developers had to write CUDA or OpenCL
+kernels by hand which required significant expertise to achieve
+good performance and did not scale well to new operators.
+\\ \\
+Under the hood, these machine learning frameworks rely heavily
+on vendor-specific libraries such as cuDNN \cite{chetlur_cudnn_2014} to achieve high performance.
+These libraries are performant but are black boxes consisting of
+hand-written kernels and often do not support the full set of
+fused operators encountered in machine learning models.
+To address these limitations, recent work has focused on developing
+Python domain specific languages (DSL) that allow developers to get high performance
+while reducing the kernel complexity. Triton \cite{tillet_triton_2019}.
+is a popular Python DSL that exposes a workgroup level programming
+model and allows developers to author high performance kernels.
+However, Triton kernels often get quite complex and start to
+resemble hand-written kernels as the kernel complexity grows.
+Furthermore, fusion of Triton kernels is limited to a few operators
+and remains an open problem.
+
+In this paper, we introduce Wave, a Python DSL for high performance machine learning.
+Wave exposes a subgroup (wave or warp) level programming model that allows
+for much simpler kernels compared to Triton. Through the use of constraints, Wave forces developers to
+come up with the distribution strategy for their kernel -
+which dimensions are parallel and which are sequential and how to distribute those
+dimensions across the memory and compute hierarchy of the GPU. This allows for a separation
+between the kernel and the distribution strategy and makes the kernel simpler.
+Wave also embraces symbolic data types using sympy to represent the shapes and
+memory access patterns of tensors in the kernel.
+It has a Python based compiler that uses torch.fx tracing to define
+and trace operators written in the language. The torch.fx graphs are then run through a series of optimization passes
+on the computation graph and are finally lowered to MLIR and subsequently LLVM. This code generation flow allows compiler writers
+to blend high productivity in Python with high performance from the MLIR and LLVM
+code generation flow.
+\\ \\
+In summary, the contributions of this paper are as follows:
+\begin{itemize}
+    \item A novel subgroup programming model for GPU with a Python DSL that separates distribution strategies from the core kernel allowing for simpler kernels,
+    \item A symbolic data type system that allows for reasoning about tensor shapes and memory access patterns in the kernel,
+    \item A Python compiler that leverages torch.fx for tracing and maps torch.fx graphs to MLIR and LLVM for high performance code generation.
+\end{itemize}
+
+
+\section{Memory Access Patterns}
+We represent memory access patterns in the language using the standard
+triplet notation consisting of an offset, number of elements, and absolute stride and associate
+a triplet with each tensor dimension. The memory access pattern for a given operation
+is determined by the access patterns of the operands of the operation as well as
+the user-specified constraints. For example, the memory access pattern for the output
+of an elementwise operation is determined from the access patterns of the inputs,
+whereas for a matrix-multiply accumulate operation, the memory access patterns of the operands are specified by
+the hardware constraint.
+\\ \\
+One of the advantages of the dimension based specification is that it obviates
+the need for any propagation of memory access patterns through the computation graph,
+as is commonly done in other frameworks. When setting the access pattern for a specific
+dimension of a tensor, the access pattern is taken to be the union of all possible
+access patterns with the determination of which access pattern to use based on
+the minimization of an appropriate metric across the entire graph (see Section 3).
+
+
+\iffalse
 \section{Electronic Submission}
 \label{submission}
 
@@ -527,8 +602,9 @@ support.
 % In the unusual situation where you want a paper to appear in the
 % references without citing it in the main text, use \nocite
 \nocite{langley00}
+\fi
 
-\bibliography{example_paper}
+\bibliography{tkw}
 \bibliographystyle{mlsys2024}
 
 
