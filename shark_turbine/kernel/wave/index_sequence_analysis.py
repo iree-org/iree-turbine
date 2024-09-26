@@ -24,7 +24,7 @@ def get_vector_shape(
     hardware_constraint: HardwareConstraint,
     symbolic_shape: list[IndexSymbol],
 ) -> list[int]:
-    mma_indices = get_mma_dimensional_mapping(trace)
+    mma_indices, _ = get_mma_dimensional_mapping(trace)
     return [
         get_hardware_vector_size(dim, hardware_constraint, mma_indices)
         for dim in symbolic_shape
