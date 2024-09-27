@@ -279,7 +279,7 @@ def test_reduce_sum(shape):
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
 @xfail_unaligned
-def test_tiled_reduce_max(shape):
+def test_toy_online_softmax(shape):
     M = tkl.sym.M
     N = tkl.sym.N
     wave_size = 64
@@ -303,30 +303,38 @@ def test_tiled_reduce_max(shape):
 
     @tkw.wave(constraints)
     def test(
-        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f32],
     ):
-        init_max = tkl.Register[M, tkl.f16](-1e6)
+        init_max = tkl.Register[M, tkl.f32](-1e6)
+        init_sum = tkl.Register[M, tkl.f32](0)
 
-        @tkw.reduction(N, init_args=[init_max])
+        @tkw.reduction(N, init_args=[init_max, init_sum])
         def repeat(
-            partial_max: tkl.Register[M, tkl.f16],
-        ) -> tkl.Register[M, tkl.f16]:
+            partial_max: tkl.Register[M, tkl.f32],
+            partial_sum: tkl.Register[M, tkl.f32],
+        ) -> tkl.Register[M, tkl.f32]:
             lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
             rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
             res = lhs * rhs
             partial_max = tkw.max(res, partial_max, dim=N)
-            return partial_max
+            partial_sum = tkw.sum(res, partial_sum, dim=N)
+            return partial_max, partial_sum
 
-        tkw.write(repeat, c, elements_per_thread=1)
+        res_max, res_sum = repeat
+        result = res_max / res_sum
+        tkw.write(result, c, elements_per_thread=1)
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
-    a = torch.randn(shape, dtype=torch.float16)
-    b = torch.randn(shape, dtype=torch.float16)
-    c = torch.zeros((shape[0],), dtype=torch.float16)
-    ref = torch.max((a * b), dim=-1)
+    torch.manual_seed(1)
+    a = torch.randn(shape, dtype=torch.float32)
+    b = torch.randn(shape, dtype=torch.float32)
+    c = torch.zeros((shape[0],), dtype=torch.float32)
+    ref_max = torch.max((a * b), dim=-1).values
+    ref_sum = torch.sum((a * b), dim=-1)
+    ref = ref_max / ref_sum
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -343,7 +351,7 @@ def test_tiled_reduce_max(shape):
         # Assert equal does cast to boolean on torch.Tensor
         # which causes issues, hence we cast to numpy before
         # checking.
-        assert_equal(c, ref.values.numpy())
+        assert_allclose(ref, c, atol=0.015)
 
 
 @require_e2e
