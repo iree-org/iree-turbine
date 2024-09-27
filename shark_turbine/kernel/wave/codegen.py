@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import functools
 import operator
 import sympy
 import math
@@ -171,6 +172,26 @@ def get_type_or_element_type(operand_type: IrType):
 def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     stack: list[OpResult] = []
 
+    def _broadcast(a, b):
+        if not isinstance(a, (Value, OpResult)):
+            a = a.result
+
+        if not isinstance(b, (Value, OpResult)):
+            b = b.result
+
+        if a.type == b.type:
+            return a, b
+
+        if isinstance(a.type, VectorType) and isinstance(b.type, IndexType):
+            b = vector_d.splat(a.type, b)
+            return a, b
+
+        if isinstance(a.type, IndexType) and isinstance(b.type, VectorType):
+            a = vector_d.splat(b.type, a)
+            return a, b
+
+        raise CodegenError(f"Cannot broadcast {a.type} and {b.type}")
+
     def _process_mul_add_ops(term, is_mul):
         args = []
         callables = []
@@ -187,9 +208,9 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 continue
 
             if is_mul:
-                operation = arith_d.MulIOp(operation, arg)
+                operation = arith_d.MulIOp(*_broadcast(operation, arg))
             else:
-                operation = arith_d.AddIOp(operation, arg)
+                operation = arith_d.AddIOp(*_broadcast(operation, arg))
 
         for arg in callables:
             operation = arg(operation, is_mul)
@@ -197,15 +218,28 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
         stack.append(operation)
 
     def _get_mul(numerator):
-        return lambda x: arith_d.MulIOp(x, numerator)
+        return lambda x: arith_d.MulIOp(*_broadcast(x, numerator))
 
     def _get_add(numerator, denominator):
-        return lambda x: arith_d.AddIOp(arith_d.MulIOp(x, denominator), numerator)
+        return lambda x: arith_d.AddIOp(
+            *_broadcast(arith_d.MulIOp(*_broadcast(x, denominator)), numerator)
+        )
 
     def _get_div(mul, add, denominator):
         return lambda x, is_mul: arith_d.DivSIOp(
-            mul(x) if is_mul else add(x), denominator
+            *_broadcast(mul(x) if is_mul else add(x), denominator)
         )
+
+    def _get_const(val):
+        if isinstance(val, int):
+            return arith_d.constant(IndexType.get(), res)
+
+        if isinstance(val, (tuple, list)):
+            vec_type = VectorType.get([len(val)], IndexType.get())
+            vals = [IntegerAttr.get(IndexType.get(), v) for v in val]
+            return arith_d.constant(vec_type, DenseElementsAttr.get(vals, vec_type))
+
+        raise CodegenError(f"Unsupported const val {val} : {type(val)}")
 
     induction_var_syms = []
     induction_vars = []
@@ -237,9 +271,9 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     for term in sympy.postorder_traversal(expr):
         match term:
             case sympy.Symbol():
-                if term in idxc.subs.keys():
-                    cst = arith_d.constant(IndexType.get(), idxc.subs[term])
-                    stack.append(cst)
+                res = idxc.get_val(term)
+                if res is not None:
+                    stack.append(_get_const(res))
                 elif term in dynamics.keys():
                     stack.append(dynamics[term])
                 else:
@@ -253,7 +287,7 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
             case sympy.Mod():
                 rhs = stack.pop()
                 lhs = stack.pop()
-                mod = arith_d.RemSIOp(lhs, rhs)
+                mod = arith_d.RemSIOp(*_broadcast(lhs, rhs))
                 stack.append(mod)
             case sympy.floor():
                 # TODO: Since divsi rounds to zero, this seems to work.
@@ -267,17 +301,22 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 # Assumes that the negative term is always carried on the numerator
                 if abs(term.p) > term.p:
                     zero = arith_d.constant(IndexType.get(), int(0))
-                    numerator = arith_d.SubIOp(zero, numerator)
+                    numerator = arith_d.SubIOp(*_broadcast(zero, numerator))
                 mul = lambda x: x
                 if abs(term.p) != 1:
                     mul = _get_mul(numerator)
                 add = _get_add(numerator, denominator)
                 operation = _get_div(mul, add, denominator)
                 stack.append(operation)
+            case sympy.StrictLessThan():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                res = arith_d.cmpi(arith_d.CmpIPredicate.slt, *_broadcast(lhs, rhs))
+                stack.append(res)
             case sympy.UnevaluatedExpr():
                 continue
             case _:
-                raise CodegenError(f"Can not handle {term} yet")
+                raise CodegenError(f"Can not handle {type(term)} : {term}")
     if len(stack) != 1:
         raise CodegenError(f"Expected single result, got {len(stack)}")
     return stack[0]
@@ -405,33 +444,21 @@ def _build_mask(
         if subs_idxc(work_size) == subs_idxc(dim):
             continue
 
-        bounds.append((dim, gen_sympy_index(emitter, dim)))
+        bounds.append(dim)
 
     if len(bounds) == 0:
         return None
 
-    mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
-    mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
-
+    idxc = IndexingContext.current()
     last_dim = tuple(index.keys())[-1]
     new_index = {k: _get_start_index(v) for k, v in index.items()}
-    for i in range(elements_per_thread):
 
-        cond = None
-        for dim, bound in bounds:
-            idx = gen_sympy_index(emitter, new_index[dim])
-            lt = arith_d.cmpi(arith_d.CmpIPredicate.slt, idx, bound)
-            if cond is None:
-                cond = lt
-            else:
-                cond = arith_d.andi(cond, lt)
+    new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
 
-        pos = arith_d.ConstantOp(IndexType.get(), i)
-        mask = vector_d.insertelement(cond, mask, position=pos)
-
-        new_index[last_dim] = new_index[last_dim] + 1
-
-    return mask
+    mask_expr = functools.reduce(
+        lambda a, b: sympy.And(a, b), (new_index[dim] < dim for dim in bounds)
+    )
+    return gen_sympy_index(emitter, mask_expr)
 
 
 def _construct_gather_scatter_indices(
