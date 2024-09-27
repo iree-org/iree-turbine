@@ -7,9 +7,7 @@ embedding and generating the calls/dispatches.
 
 from typing import Any, Callable, Optional, Type
 
-from .._support.indexing import (
-    IndexingContext,
-)
+from .._support.indexing import IndexingContext, IndexSymbol, IndexExpr
 
 from .base import (
     CodegenError,
@@ -99,6 +97,7 @@ class StreamExecutable:
         grid: Grid,
         workgroup_size: list[int] = None,
         subgroup_size: int = None,
+        dynamic_symbols: list[IndexSymbol] = [],
     ) -> "DispatchEntrypoint":
         """Defines a dispatch function with a signature like:
 
@@ -119,7 +118,6 @@ class StreamExecutable:
         The given name is not uniqued (must be unique as given by the caller).
         """
         kb_input_bindings = sig.kernel_buffer_input_bindings
-        kb_temp_bindings = sig.kernel_buffer_temporary_bindings
         kb_output_bindings = sig.kernel_buffer_output_bindings
         # TODO: The way we are doing grid bindings is wrong. The Grid type
         # should be paramerized with special grid axis symbols which are
@@ -127,18 +125,17 @@ class StreamExecutable:
         # just assuming that the grid dims can be resolved to constants , when
         # in reality, we should pass the workload and parameterize the grid
         # dims on the workloads.
-        workload_axis_bindings = []
+        dynamic_dim_bindings = sig.dynamic_dim_bindings
 
         # Input bindings are always user specified.
-        # Grid/workgroup bindings are in the inputs section but are implied.
-        # Temp bindings are a special kind of output bindings.
         # Output bindings are the real outputs.
-        linear_bindings = (
-            kb_input_bindings
-            + workload_axis_bindings
-            + kb_temp_bindings
-            + kb_output_bindings
-        )
+        # Dynamic dim bindings are the dynamic dims of the input and output tensors.
+        linear_bindings = kb_input_bindings + dynamic_dim_bindings + kb_output_bindings
+
+        dynamic_dim_indices = {
+            "begin": len(kb_input_bindings),
+            "end": len(linear_bindings) - len(kb_output_bindings),
+        }
 
         # TODO: This is sloppy. This assert will hit on some user errors for
         # unsupported type combinations and is just a last resort right now.
@@ -177,7 +174,7 @@ class StreamExecutable:
             with InsertionPoint.at_block_begin(self._exe_block):
                 export_op = stream_d.ExecutableExportOp(name, name)
                 export_block = export_op.workgroup_count.blocks.append(
-                    *([b.as_mlir_type() for b in workload_axis_bindings])
+                    *([b.as_mlir_type() for b in dynamic_dim_bindings])
                 )
 
             workgroup_builder = WorkgroupBuilder(
@@ -185,12 +182,30 @@ class StreamExecutable:
             )
 
             # TODO: Support passing workload to the dispatch function.
+            from ..wave.codegen import gen_sympy_index
+
+            # Map dynamic symbols to block arguments.
+            dynamic_symbols_mapping = {
+                k: v
+                for k, v in zip(
+                    dynamic_symbols, workgroup_builder.entry_block.arguments
+                )
+            }
+
             with InsertionPoint(workgroup_builder.entry_block):
                 result_type = IndexType.get()
-                workgroup_values = [
-                    arith_d.constant(result_type, IntegerAttr.get(result_type, dim))
-                    for dim in grid.dims
-                ]
+                workgroup_values = []
+                for dim in grid.dims:
+                    if isinstance(dim, IndexExpr):
+                        workgroup_values.append(
+                            gen_sympy_index(dynamic_symbols_mapping, dim)
+                        )
+                    else:
+                        workgroup_values.append(
+                            arith_d.constant(
+                                result_type, IntegerAttr.get(result_type, dim)
+                            )
+                        )
 
                 while len(workgroup_values) < 3:
                     workgroup_values.append(
@@ -198,7 +213,20 @@ class StreamExecutable:
                     )
             workgroup_builder.terminate(workgroup_values)
 
-        return DispatchEntrypoint(sig, def_func_block, linear_bindings)
+        # Map dynamic symbols to func arguments for dispatch entrypoint.
+        dynamic_symbols_mapping = {
+            k: v
+            for k, v in zip(
+                dynamic_symbols,
+                def_func_args[
+                    dynamic_dim_indices["begin"] : dynamic_dim_indices["end"]
+                ],
+            )
+        }
+
+        return DispatchEntrypoint(
+            sig, def_func_block, linear_bindings, dynamic_symbols_mapping
+        )
 
 
 class WorkgroupBuilder:
@@ -231,8 +259,10 @@ class DispatchEntrypoint(BoundKernelSignature):
         sig: KernelSignature,
         entry_block: Block,
         linear_bindings: list[BindingDesc],
+        dynamic_symbols_mapping: dict[IndexSymbol, Value],
     ):
         super().__init__(sig, entry_block)
+        self.dynamic_symbols_mapping = dynamic_symbols_mapping
         self._abi_value_by_reference: dict[tuple[str, Any], Value] = {
             b.reference: value
             for value, b in zip(entry_block.arguments, linear_bindings)
@@ -250,12 +280,15 @@ class DispatchEntrypoint(BoundKernelSignature):
             result_type = IndexType.get()
             zero_value = arith_d.constant(result_type, IntegerAttr.get(result_type, 0))
             linear_arg_value = self._abi_value_by_reference[binding.reference]
-            # TODO: Need to also look up dynamic symbol values.
             return stream_d.binding_subspan(
                 binding.as_mlir_type(),
                 linear_arg_value,
                 byte_offset=zero_value,
-                dynamic_dims=[],
+                dynamic_dims=[
+                    self.dynamic_symbols_mapping[dim]
+                    for dim in binding.kernel_buffer_type.symbolic_shape
+                    if dim in self.dynamic_symbols_mapping
+                ],
             )
 
         raise ValidationError(f"Unhandled binding type: {binding}")

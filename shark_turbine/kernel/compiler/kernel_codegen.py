@@ -177,6 +177,22 @@ class KernelSignature:
             and b.kernel_buffer_type.usage == KernelBufferUsage.TEMPORARY
         ]
 
+    @property
+    def dynamic_dim_bindings(self) -> list[BindingDesc]:
+        """Gets all dynamic dimension bindings."""
+        return [b for b in self.bindings if b.binding_type == BindingType.SYMBOL_VALUE]
+
+    def add_from_dynamic_symbols(self, dynamic_symbols: list[IndexSymbol]):
+        for symbol in dynamic_symbols:
+            self.bindings.append(
+                BindingDesc(
+                    ("symbol", symbol),
+                    BindingType.SYMBOL_VALUE,
+                    name=symbol.name,
+                    symbol_type=symbol,
+                )
+            )
+
     def add_from_graph_placeholders(self, graph: fx.Graph):
         # Extract all placeholder nodes.
         placeholder_nodes = filter_fx_graph(graph, is_placeholder)

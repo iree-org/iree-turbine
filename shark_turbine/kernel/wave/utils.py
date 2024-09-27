@@ -10,6 +10,7 @@ from ..compiler.ir import (
     Operation,
     transform_d,
     UnitAttr,
+    Value,
 )
 from typing import Optional, Callable, Any, List, Tuple
 from .._support.tracing import CapturedTrace
@@ -267,9 +268,14 @@ def _invoke(vm_context, device, entry_function, inputs, outputs):
     ret_list = rt.VmVariantList(len(outputs))
 
     for input in inputs:
-        input_cpu = input.cpu().contiguous()
-        device_array = rt.asdevicearray(device, input_cpu)
-        arg_list.push_ref(device_array._buffer_view)
+        if isinstance(input, torch.Tensor):
+            input_cpu = input.cpu().contiguous()
+            device_array = rt.asdevicearray(device, input_cpu)
+            arg_list.push_ref(device_array._buffer_view)
+        elif isinstance(input, int):
+            arg_list.push_int(input)
+        else:
+            raise ValueError(f"Unsupported input type: {type(input)}")
 
     vm_context.invoke(entry_function, arg_list, ret_list)
 
