@@ -78,7 +78,7 @@ from .constraints import (
     WorkgroupConstraint,
     TilingConstraint,
 )
-from .utils import subs_idxc
+from .utils import subs_idxc, find_index_bounds
 
 # Indexing imports.
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
@@ -442,22 +442,8 @@ def _is_identity_mapping(
 def _build_mask(
     emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
 ) -> Optional[OpResult]:
-    bounds = []
-    for constraint in emitter.constraints:
-        if not isinstance(constraint, (WorkgroupConstraint, TilingConstraint)):
-            continue
-
-        dim = constraint.dim
-        if dim not in index:
-            continue
-
-        work_size = constraint.count * constraint.tile_size
-        if subs_idxc(work_size) == subs_idxc(dim):
-            continue
-
-        bounds.append(dim)
-
-    if len(bounds) == 0:
+    bounds = find_index_bounds(emitter.constraints, index)
+    if bounds is None:
         return None
 
     idxc = IndexingContext.current()
