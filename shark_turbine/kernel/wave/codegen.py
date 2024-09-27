@@ -182,11 +182,17 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
         if a.type == b.type:
             return a, b
 
-        if isinstance(a.type, VectorType) and isinstance(b.type, IndexType):
+        if isinstance(a.type, VectorType) and isinstance(
+            b.type, (IndexType, IntegerType)
+        ):
+            assert a.type.element_type == b.type
             b = vector_d.splat(a.type, b)
             return a, b
 
-        if isinstance(a.type, IndexType) and isinstance(b.type, VectorType):
+        if isinstance(a.type, (IndexType, IntegerType)) and isinstance(
+            b.type, VectorType
+        ):
+            assert b.type.element_type == a.type
             a = vector_d.splat(b.type, a)
             return a, b
 
@@ -312,6 +318,11 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 rhs = stack.pop()
                 lhs = stack.pop()
                 res = arith_d.cmpi(arith_d.CmpIPredicate.slt, *_broadcast(lhs, rhs))
+                stack.append(res)
+            case sympy.And():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                res = arith_d.andi(*_broadcast(lhs, rhs))
                 stack.append(res)
             case sympy.UnevaluatedExpr():
                 continue
