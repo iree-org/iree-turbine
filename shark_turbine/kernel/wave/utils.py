@@ -11,7 +11,7 @@ from ..compiler.ir import (
     transform_d,
     UnitAttr,
 )
-from typing import Callable, Any, List, Tuple
+from typing import Optional, Callable, Any, List, Tuple
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
