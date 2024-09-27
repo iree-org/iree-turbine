@@ -503,7 +503,7 @@ def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
     if device:
         gcn_arch_name = gcn_arch_name
         device.compile_target_flags = device.compile_target_flags + (
-            f"--iree-rocm-target-chip={gcn_arch_name}",
+            f"--iree-hip-target={gcn_arch_name}",
         )
         device._recompute_target_keys()
     return device
