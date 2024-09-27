@@ -946,6 +946,111 @@ def test_tiled_reduce_max():
         # CHECK: scf.yield %[[ACC_REDUCE]] : vector<1xf16>
 
 
+# This test is to ensure that the we can handle multiple IV in reduction properly.
+@run_test
+def test_multiple_reduction_iv():
+    M = tkl.sym.M
+    N = tkl.sym.N
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+        d: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+    ):
+        init_max = tkl.Register[M, tkl.f16](-1e6)
+        init_sum = tkl.Register[M, tkl.f16](0)
+
+        @tkw.reduction(N, init_args=[init_max, init_sum])
+        def repeat(
+            partial_max: tkl.Register[M, tkl.f16],
+            partial_sum: tkl.Register[M, tkl.f16],
+        ) -> tkl.Register[M, tkl.f16]:
+            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+            partial_max = tkw.max(lhs, partial_max, dim=N)
+            partial_sum = tkw.sum(lhs, partial_sum, dim=N)
+            return partial_max, partial_sum
+
+        res_max, res_sum = repeat
+        tkw.write(res_max, c, elements_per_thread=1)
+        tkw.write(res_sum, d, elements_per_thread=1)
+
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+
+    shape = (256, 512)
+    a = torch.randn(shape, dtype=torch.float16)
+    c = torch.zeros((shape[0],), dtype=torch.float16)
+    d = torch.zeros((shape[0],), dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            BLOCK_M: 2,
+            BLOCK_N: 128,
+            ELEMS_PER_THREAD: 2,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+    ):
+        print(test(a, c).module_op)
+        # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
+        # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
+        # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
+        # CHECK-DAG: %[[INIT_MAX:.+]] = arith.constant dense<0xFC00> : vector<1xf16>
+        # CHECK-DAG: %[[INIT_SUM:.+]] = arith.constant dense<0.000000e+00> : vector<1xf16>
+
+        # Tile Reduction Loop
+        # CHECK: %[[TILED:.+]]:4 = scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
+        # CHECK-SAME: iter_args(%[[ACC0:.+]] = %[[INIT_MAX]], %[[ACC1:.+]] = %[[INIT_SUM]], %[[ACC2:.+]] = %[[INIT_MAX]], %[[ACC3:.+]] = %[[INIT_SUM]])
+        # CHECK-SAME: -> (vector<1xf16>, vector<1xf16>, vector<1xf16>, vector<1xf16>) {
+        # 1st Expanded Local Max Reduction
+        # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+        # 1st Expanded Global Max Reduction
+        # CHECK-COUNT-6: gpu.shuffle  xor
+        # 1st Expanded Accumulator Max Reduction
+        # CHECK: %[[ACC_MAX_0:.+]] = arith.maximumf %[[ACC0]], %{{.*}}
+
+        # 2nd Expanded Local Max Reduction
+        # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+        # 2nd Expanded Global Max Reduction
+        # CHECK-COUNT-6: gpu.shuffle  xor
+        # 2nd Expanded Accumulator Max Reduction
+        # CHECK: %[[ACC_MAX_1:.+]] = arith.maximumf %[[ACC2]], %{{.*}}
+
+        # 1st Expanded Local Sum Reduction
+        # CHECK: arith.addf {{.*}} : vector<1xf16>
+        # 1st Expanded Global Sum Reduction
+        # CHECK-COUNT-6: gpu.shuffle  xor
+        # 1st Expanded Accumulator Sum Reduction
+        # CHECK: %[[ACC_SUM_0:.+]] = arith.addf %[[ACC1]], %{{.*}}
+
+        # 2nd Expanded Local Sum Reduction
+        # CHECK: arith.addf {{.*}} : vector<1xf16>
+        # 2nd Expanded Global Sum Reduction
+        # CHECK-COUNT-6: gpu.shuffle  xor
+        # 2nd Expanded Accumulator Sum Reduction
+        # CHECK: %[[ACC_SUM_1:.+]] = arith.addf %[[ACC3]], %{{.*}}
+
+        # CHECK: scf.yield %[[ACC_MAX_0]], %[[ACC_SUM_0]], %[[ACC_MAX_1]], %[[ACC_SUM_1]]
+
+
 @run_test
 def test_binary_lowerings():
     constraints: list[tkw.Constraint] = [

@@ -486,7 +486,6 @@ class CustomOp(ABC):
         pass
 
 
-@define_py_op(operator.getitem)
 @define_py_op(operator.add)
 @define_py_op(operator.sub)
 @define_py_op(operator.mul)
@@ -945,6 +944,7 @@ class Write(CustomOp):
         return custom.index
 
 
+@define_py_op(operator.getitem)
 @define_op("get_result")
 @dataclass
 class GetResult(CustomOp):
