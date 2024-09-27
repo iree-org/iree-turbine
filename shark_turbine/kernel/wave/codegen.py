@@ -469,7 +469,13 @@ def _build_mask(
     mask_expr = functools.reduce(
         lambda a, b: sympy.And(a, b), (new_index[dim] < dim for dim in bounds)
     )
-    return gen_sympy_index(emitter, mask_expr)
+    mask = gen_sympy_index(emitter, mask_expr)
+
+    mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
+    if mask.type != mask_vec_type:
+        mask = vector_d.splat(mask_vec_type, mask)
+
+    return mask
 
 
 def _construct_gather_scatter_indices(
