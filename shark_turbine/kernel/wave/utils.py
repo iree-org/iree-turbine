@@ -346,7 +346,13 @@ def compile_and_invoke(
         _invoke(ctx.vm_context, device, func, kernel_inputs, kernel_outputs)
 
     if run_bench:
-        inputs = [inp.numpy() for inp in kernel_inputs]
+        inputs = []
+        # TODO: This is a workaround until benchmark_module uses the TemporaryFile API.
+        for i, inp in enumerate(kernel_inputs):
+            input_file_name = f"input_{i}.npy"
+            with open(input_file_name, "wb") as f:
+                numpy.save(f, inp.numpy())
+            inputs.append("@" + input_file_name)
         benchmark_results = bench.benchmark_module(
             mod,
             entry_function=func_name,
