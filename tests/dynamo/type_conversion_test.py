@@ -32,6 +32,7 @@ class TypeConversionTest(unittest.TestCase):
         self._compareNative("!torch.vtensor<[2, 2],f32>", "tensor<2x2xf32>")
         self._compareNative("!torch.vtensor<[?, ?],f32>", "tensor<?x?xf32>")
         self._compareNative("!torch.vtensor<[],f32>", "tensor<f32>")
+        self._compareNative("!torch.vtensor<[],complex<f32>>", "tensor<complex<f32>>")
 
     def _compareNative(self, torch_str: str, native_str: str, *, signless: bool = True):
         with self.conv._context:
