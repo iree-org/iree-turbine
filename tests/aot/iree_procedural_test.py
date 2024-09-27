@@ -6,6 +6,7 @@
 
 import logging
 import unittest
+import pytest
 
 import torch
 
@@ -44,59 +45,55 @@ class CompiledModuleAPI(unittest.TestCase):
 
     def testTensorEmpty(self):
         class BasicModule(CompiledModule):
-            def foobar(self, x=AbstractIndex):
-                empty = IREE.tensor_empty(x, 16)
+            def foobar(self):
+                empty = IREE.tensor_empty(1, 16)
                 dim0 = IREE.tensor_dim(empty, 0)
                 return empty, dim0
 
         inst = BasicModule(context=Context(), import_to=None)
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
-        self.assertIn("%0 = flow.tensor.empty : tensor<?x16xf32>{%arg0}", module_str)
-        # NOTE: We are testing below that the dynamic dimension is associated
-        # and used from the input vs being recalculated.
-        self.assertIn("return %0, %arg0 : tensor<?x16xf32>, index", module_str)
+        self.assertIn("%0 = flow.tensor.empty : tensor<1x16xf32>", module_str)
+        self.assertIn("return %0, %dim : tensor<1x16xf32>, index", module_str)
 
     def testTensorSplat(self):
         class BasicModule(CompiledModule):
-            def foobar(self, x=AbstractIndex, y=AbstractF32):
-                empty = IREE.tensor_splat(x, 34, value=y, dtype=torch.float32)
+            def foobar(self, y=AbstractF32):
+                empty = IREE.tensor_splat(2, 34, value=y, dtype=torch.float32)
                 dim0 = IREE.tensor_dim(empty, 0)
                 return empty, dim0
 
         inst = BasicModule(context=Context(), import_to=None)
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
-        self.assertIn(
-            "%0 = flow.tensor.splat %arg1 : tensor<?x34xf32>{%arg0}", module_str
-        )
+        self.assertIn("%0 = flow.tensor.splat %arg0 : tensor<2x34xf32>", module_str)
         # NOTE: We are testing below that the dynamic dimension is associated
         # and used from the input vs being recalculated.
-        self.assertIn("return %0, %arg0 : tensor<?x34xf32>, index", module_str)
+        self.assertIn("return %0, %dim : tensor<2x34xf32>, index", module_str)
 
     def testTensorSplatCasting(self):
         class BasicModule(CompiledModule):
-            def foobar(self, x=AbstractIndex, y=AbstractIndex):
-                empty = IREE.tensor_splat(x, 34, value=y, dtype=torch.int32)
+            def foobar(self, y=AbstractIndex):
+                empty = IREE.tensor_splat(8, 34, value=y, dtype=torch.int32)
                 dim0 = IREE.tensor_dim(empty, 0)
                 return empty, dim0
 
         inst = BasicModule(context=Context(), import_to=None)
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
-        self.assertIn("%0 = arith.index_castui %arg1 : index to i32", module_str)
-        self.assertIn("%1 = flow.tensor.splat %0 : tensor<?x34xi32>{%arg0}", module_str)
+        self.assertIn("%0 = arith.index_castui %arg0 : index to i32", module_str)
+        self.assertIn("%1 = flow.tensor.splat %0 : tensor<8x34xi32>", module_str)
 
     def testTensorTrace(self):
         class BasicModule(CompiledModule):
-            def foobar(self, x=AbstractTensor(None), y=AbstractTensor(3)):
+            def foobar(self, x=AbstractTensor(5), y=AbstractTensor(3)):
                 IREE.tensor_trace("DEBUG", x, y)
 
         inst = BasicModule(context=Context(), import_to=None)
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertIn(
-            'flow.tensor.trace "DEBUG" = [%arg0 : tensor<?xf32>{%dim}, %arg1 : tensor<3xf32>]',
+            'flow.tensor.trace "DEBUG" = [%arg0 : tensor<5xf32>, %arg1 : tensor<3xf32>]',
             module_str,
         )
 
@@ -128,6 +125,9 @@ class CompiledModuleAPI(unittest.TestCase):
             module_str,
         )
 
+    @pytest.mark.xfail(
+        reason="CompiledModule dynamic dims no longer supported in latest torch versions"
+    )
     def testTensorSliceDynamicIndex(self):
         class SliceDynamicIndex(CompiledModule):
             def foobar(self, x=AbstractIndex):
@@ -142,6 +142,9 @@ class CompiledModuleAPI(unittest.TestCase):
             module_str,
         )
 
+    @pytest.mark.xfail(
+        reason="CompiledModule dynamic dims no longer supported in latest torch versions"
+    )
     def testTensorSliceDynamicLength(self):
         class SliceDynamicIndex(CompiledModule):
             def foobar(self, x=AbstractIndex, y=AbstractIndex):
@@ -175,6 +178,9 @@ class CompiledModuleAPI(unittest.TestCase):
             module_str,
         )
 
+    @pytest.mark.xfail(
+        reason="CompiledModule dynamic dims no longer supported in latest torch versions"
+    )
     def testTensorUpdateDynamic(self):
         class UpdateDynamic(CompiledModule):
             def foobar(
@@ -199,16 +205,16 @@ class CompiledModuleAPI(unittest.TestCase):
 
     def testTensorReshape(self):
         class ReshapeModule(CompiledModule):
-            def foobar(self, x=AbstractIndex, y=AbstractIndex):
-                empty = IREE.tensor_empty(x, 16)
-                reshaped = IREE.tensor_reshape(empty, 1, y, y)
+            def foobar(self):
+                empty = IREE.tensor_empty(4, 16)
+                reshaped = IREE.tensor_reshape(empty, 1, 2, 2)
                 return reshaped
 
         inst = ReshapeModule(context=Context(), import_to=None)
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertIn(
-            "flow.tensor.reshape %0 : tensor<?x16xf32>{%arg0} -> tensor<1x?x?xf32>{%arg1, %arg1}",
+            "flow.tensor.reshape %0 : tensor<4x16xf32> -> tensor<1x2x2xf32>",
             module_str,
         )
 
