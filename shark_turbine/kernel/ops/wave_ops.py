@@ -905,7 +905,7 @@ class Reduction(CustomOp):
         return captured_vars
 
     @property
-    def type(self) -> list[Memory | Register]:
+    def type(self) -> Memory | Register | list[Memory | Register]:
         res_types = [get_custom(x).type for x in self.init_args]
         if len(res_types) == 1:
             res_types = res_types[0]
