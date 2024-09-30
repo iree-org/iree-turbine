@@ -41,6 +41,7 @@ from .support.procedural.exported_program import import_exported_program
 
 from .support.ir_utils import (
     ModuleBuilder,
+    ModuleBuilderOptions,
 )
 
 
@@ -162,11 +163,13 @@ class CompiledModuleClassInfo:
     __slots__ = [
         "all_exports",
         "ir_module_name",
+        "options",
     ]
 
-    def __init__(self, *, ir_module_name: str):
+    def __init__(self, *, ir_module_name: str, options: ModuleBuilderOptions):
         self.ir_module_name = ir_module_name
         self.all_exports: Dict[str, Exportable] = dict()
+        self.options = options
 
     def add_export(self, key: str, value: Exportable):
         if key in self.all_exports:
@@ -370,13 +373,23 @@ class CompiledModuleMeta(type):
     # It is passed the dictionary of declared attributes and any keyword
     # arguments from the class declaration:
     #   class Foo(Bar, kwarg="you probably just learned this is possible"):
-    def __new__(mcls, name: str, bases, dct, *, export_name: Optional[str] = None):
+    def __new__(
+        mcls,
+        name: str,
+        bases,
+        dct,
+        *,
+        export_name: Optional[str] = None,
+        options: Optional[ModuleBuilderOptions] = None,
+    ):
         if not _metaclass_setup_complete:
             return type.__new__(mcls, name, bases, dct)
 
         ir_module_name = _derive_ir_module_name(name, export_name)
         logger.debug("Create new CompiledModule: %s", ir_module_name)
-        info = CompiledModuleClassInfo(ir_module_name=ir_module_name)
+        info = CompiledModuleClassInfo(
+            ir_module_name=ir_module_name, options=options or ModuleBuilderOptions()
+        )
 
         # Process that attributes that were set as part of class definition.
         # Any attributes that we decide are part of the compiled module
@@ -436,6 +449,7 @@ class CompiledModule(metaclass=CompiledModuleMeta):
         dct: dict,
         *,
         export_name: Optional[str] = None,
+        options: Optional[ModuleBuilderOptions] = None,
     ) -> CompiledModuleMeta:
         """Creates a CompiledModule subclass with an explicit dictionary of members.
 
@@ -446,7 +460,9 @@ class CompiledModule(metaclass=CompiledModuleMeta):
           def member(): ...
         ```
         """
-        return CompiledModuleMeta(name, (cls,), dct, export_name=export_name)
+        return CompiledModuleMeta(
+            name, (cls,), dct, export_name=export_name, options=options
+        )
 
     @staticmethod
     def get_class_info(cls: CompiledModuleMeta) -> CompiledModuleClassInfo:
@@ -596,7 +612,7 @@ class CompiledModule(metaclass=CompiledModuleMeta):
                 module_op.attributes["sym_name"] = StringAttr.get(
                     class_info.ir_module_name, context=context
                 )
-        module_builder = ModuleBuilder(module_op)
+        module_builder = ModuleBuilder(module_op, options=class_info.options)
         info = CompiledModuleInstanceInfo(class_info, module_builder=module_builder)
         _all_compiled_module_instance_infos[self] = info
 

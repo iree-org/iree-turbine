@@ -7,6 +7,7 @@
 
 from typing import Callable, Dict, Optional, Sequence, Tuple
 
+from dataclasses import dataclass
 from pathlib import Path
 import tempfile
 
@@ -148,6 +149,12 @@ class GlobalAttributes:
 ###############################################################################
 
 
+@dataclass
+class ModuleBuilderOptions:
+    # Whether to import torch symbolic shape expressions for ExportedPrograms.
+    import_symbolic_shape_expressions: bool = False
+
+
 class ModuleBuilder:
     """Wrapper around module and IR accounting for a module being built."""
 
@@ -159,14 +166,18 @@ class ModuleBuilder:
         "last_global_op",
         "ip",
         "module_op",
+        "options",
         "symbol_table",
         "global_ref_tracker",
         "native_type_converter",
         "_auto_symbol_counts",
     ]
 
-    def __init__(self, module_op: Operation):
+    def __init__(
+        self, module_op: Operation, *, options: Optional[ModuleBuilderOptions] = None
+    ):
         self.module_op = module_op
+        self.options = options or ModuleBuilderOptions()
         self.context = module_op.context
         self.body = module_op.regions[0].blocks[0]
         self.symbol_table = SymbolTable(module_op)
