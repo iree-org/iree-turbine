@@ -1,3 +1,9 @@
+# Copyright 2024 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from ..wave.constraints import (
     Constraint,
     HardwareConstraint,
@@ -57,12 +63,11 @@ def materialize_shape(
     constraint_tile_size: dict[IndexSymbol, int], symbolic_shape: list[IndexSymbol]
 ) -> list[int]:
     materialized_shape = []
-    idxc = IndexingContext.current()
     for dim in symbolic_shape:
         if dim in constraint_tile_size:
-            materialized_shape.append(constraint_tile_size[dim].subs(idxc.subs))
+            materialized_shape.append(subs_idxc(constraint_tile_size[dim]))
         else:
-            materialized_shape.append(dim.subs(idxc.subs))
+            materialized_shape.append(subs_idxc(dim))
     return materialized_shape
 
 

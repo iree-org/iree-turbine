@@ -1,3 +1,8 @@
+# Copyright 2024 The IREE Authors
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from ..compiler.ir import (
     builtin_d,
     InsertionPoint,
@@ -10,14 +15,26 @@ from typing import Callable, Any, List, Tuple
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
-from ..ops.wave_ops import get_custom, Output, Write, MMA
-from .constraints import HardwareConstraint, TilingConstraint
+from ..ops.wave_ops import (
+    get_custom,
+    Output,
+    Write,
+    MMA,
+    CustomOp,
+    Reduction,
+    GetResult,
+    IterArg,
+)
+from .constraints import Constraint, HardwareConstraint, TilingConstraint
 import torch.fx as fx
 import shark_turbine.kernel.lang as tkl
 
 from iree.compiler.dialects.transform import (
     interpreter as transform_interpreter,
     any_op_t,
+)
+from iree.compiler.dialects import (
+    _structured_transform_ops_gen as structured_transform_ops,
 )
 
 import sympy
@@ -47,6 +64,10 @@ def canonicalize_module(module: Operation):
                 with InsertionPoint(apply_patterns.regions[0].blocks[0]):
                     transform_d.apply_patterns_canonicalization()
                 transform_d.apply_cse(target)
+                loops = structured_transform_ops.structured_match(
+                    any_op_t(), target, ops=["scf.for"]
+                )
+                transform_d.apply_licm(loops)
                 transform_d.YieldOp([target])
         transform_interpreter.apply_named_sequence(
             module,
@@ -102,6 +123,19 @@ def DCE(trace: CapturedTrace):
             get_custom(node).graph.erase_node(node)
 
 
+def remove_chained_getresult(trace: CapturedTrace):
+    def is_chained_getresult(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        return isinstance(custom, GetResult) and isinstance(
+            get_custom(custom.value), GetResult
+        )
+
+    while removable_nodes := trace.walk(is_chained_getresult):
+        for node in removable_nodes:
+            get_custom(node).replace_all_uses_with(get_custom(node).value)
+            get_custom(node).graph.erase_node(node)
+
+
 def delinearize_index(index: IndexExpr, shape: list[int]) -> list[IndexExpr]:
     """
     Delinearizes a 1D index into a multi-dimensional index
@@ -132,7 +166,9 @@ def simplify_index(index: IndexExpr) -> IndexExpr:
     return subs_idxc(index.subs(mapping))
 
 
-def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
+def get_mma_dimensional_mapping(
+    trace: CapturedTrace,
+) -> tuple[dict[IndexSymbol, int], dict[IndexSymbol, list[fx.Node]]]:
     """
     Given a trace, determine the MMA dimensional mapping for all the
     MMA operations in the graph. For example, if we have
@@ -146,7 +182,8 @@ def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
         return isinstance(get_custom(node), MMA)
 
     mapping: dict[IndexSymbol, int] = {}
-    for node in trace.walk(is_mma):
+    mma_nodes = trace.walk(is_mma)
+    for node in mma_nodes:
         custom: MMA = get_custom(node)
         m, n = custom.acc_type.symbolic_shape[-2:]
         lhs_shape = custom.lhs_type.symbolic_shape
@@ -157,14 +194,14 @@ def get_mma_dimensional_mapping(trace: CapturedTrace) -> dict[IndexSymbol, int]:
         mapping[n] = 1
         mapping[k] = 2
 
-    return mapping
+    return mapping, capture_mma_slices([get_custom(x) for x in mma_nodes])
 
 
 def get_hardware_vector_size(
     dim: IndexSymbol,
     hardware_constraint: HardwareConstraint,
     mma_indices: dict[IndexSymbol, int],
-) -> dict[IndexSymbol, int]:
+) -> int:
     """
     Given a hardware constraint, return the vector sizes for the given dimension.
     This could be a hardware specific vector size or a user specified vector size.
@@ -174,6 +211,19 @@ def get_hardware_vector_size(
     else:
         vector_size = hardware_constraint.vector_shapes[dim]
     return vector_size
+
+
+def get_hardware_vector_map(constraints: list[Constraint]) -> dict[IndexSymbol, int]:
+    """
+    Given a list of constraints, looks for hardware constraint and return a map
+    containing dim's and their respective vector sizes.
+    """
+    vector_map = {}
+    for c in constraints:
+        if isinstance(c, HardwareConstraint):
+            vector_map = c.vector_shapes
+            break
+    return vector_map
 
 
 def remove_global_indexing(
@@ -250,7 +300,7 @@ def compile_and_invoke(
     # TODO: More targets/backends support.
     if backend == "rocm":
         target = config["target"]
-        flags.append(f"--iree-rocm-target-chip={target}")
+        flags.append(f"--iree-hip-target={target}")
 
     if config.get("print_ir_after_all", False):
         flags.append("--mlir-print-ir-after-all")
@@ -325,3 +375,159 @@ def subs_idxc(input: Any) -> Any:
     """
     idxc = IndexingContext.current()
     return safe_subs(input, idxc.subs)
+
+
+def graph_copy(graph: fx.Graph) -> tuple[fx.Graph, dict[fx.Node, fx.Node]]:
+    """
+    Copy the graph and return the new graph with the nodes in node_map.
+    Also return the mapping of old nodes to new nodes.
+    """
+    new_graph = fx.Graph()
+    node_map = {}
+    for node in graph.nodes:
+        custom = get_custom(node)
+        new_node = custom.copy(
+            new_graph=new_graph,
+            arg_transform=lambda x: node_map[x] if x in node_map else x,
+        )
+        node_map[node] = new_node.fx_node
+    return new_graph, node_map
+
+
+def erase_graph(graph: fx.Graph):
+    """
+    Erase all nodes in the graph.
+    """
+    for node in reversed(graph.nodes):
+        for user in node.users:
+            graph.erase_node(user)
+        graph.erase_node(node)
+
+
+def get_users(
+    node: fx.Node, reduction: fx.Node = None
+) -> tuple[list[fx.Node], fx.Node]:
+    """
+    Return the users of a node, propagating through reductions.
+    """
+    users = []
+    for user in node.users:
+        custom = get_custom(user)
+        if isinstance(custom, Reduction):
+            # Map init arg to iter arg
+            reduction = custom
+            init_arg_idx = custom.init_args.index(node)
+            users.append(custom.iter_args[init_arg_idx])
+            continue
+        if isinstance(custom, Output) and reduction:
+            # Map output to get result
+            return_vals = custom.return_vals[0]
+            get_results = sorted(
+                [x for x in reduction.users if isinstance(get_custom(x), GetResult)],
+                lambda x: get_custom(x).res_idx,
+            )
+            if isinstance(return_vals, list):
+                output_idx = return_vals.index(node)
+                users.append(get_results[output_idx])
+            else:
+                users.append(get_results[0])
+            continue
+        users.append(user)
+    return users, reduction
+
+
+def get_inputs(
+    node: fx.Node, reduction: fx.Node = None
+) -> tuple[list[fx.Node], fx.Node]:
+    """
+    Return the inputs of a node, propagating through reductions.
+    """
+    inputs = []
+    for input in node.all_input_nodes:
+        custom = get_custom(input)
+        if isinstance(custom, GetResult):
+            reduction = custom.value
+            assert isinstance(
+                reduction, Reduction
+            ), "GetResult must be used by a Reduction"
+            # Map get result to output
+            inputs.append(reduction.outputs[custom.res_idx])
+            continue
+        if isinstance(custom, IterArg):
+            # Map iter args to init args
+            iter_arg_idx = reduction.iter_args.index(node)
+            inputs.append(reduction.init_args[iter_arg_idx])
+            continue
+        inputs.append(input)
+    return inputs, reduction
+
+
+def bfs(
+    node: fx.Node,
+    get_neighbors: Callable[[fx.Node, fx.Node], list[fx.Node]],
+) -> set[fx.Node]:
+    """
+    Run BFS on the graph to capture the forward slice of a node.
+    """
+    visited: set[fx.Node] = set()
+    queue: list[fx.Node] = []
+    visited.add(node)
+    queue.append(node)
+    reduction = None
+    while queue:
+        s = queue.pop(0)
+        neighbors, reduction = get_neighbors(s, reduction)
+        for neighbor in neighbors:
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(neighbor)
+    return visited
+
+
+def capture_forward_slice(node: fx.Node) -> set[fx.Node]:
+    """
+    Run BFS on the graph to capture the forward slice of a node.
+    """
+    return bfs(node, lambda x, y: get_users(x, y))
+
+
+def capture_backward_slice(node: fx.Node) -> set[fx.Node]:
+    """
+    Capture backward slice from a node and return the tree.
+    Assumes graph is directed.
+    """
+    return bfs(node, lambda x, y: get_inputs(x, y))
+
+
+def capture_mma_slices(mma_nodes: list[MMA]) -> dict[IndexSymbol, list[fx.Node]]:
+    """
+    Given an index sequence, specialize it to a LHS, RHS or ACC index sequence
+    based on whether the node is used as the LHS, RHS or ACC in the MMA node.
+    """
+    mma_slices = {x: [] for x in [MMA_LHS, MMA_RHS, MMA_ACC]}
+    for mma in mma_nodes:
+        mma_slices[MMA_LHS] += capture_backward_slice(mma.lhs)
+        mma_slices[MMA_RHS] += capture_backward_slice(mma.rhs)
+        mma_slices[MMA_ACC] += capture_forward_slice(mma.acc)
+    return mma_slices
+
+
+def specialize_index_sequence(
+    index_seq: IndexSequence,
+    mma_slices: dict[IndexSymbol, list[fx.Node]],
+    custom: CustomOp,
+) -> IndexSequence:
+    """
+    Given an index sequence, specialize it to a LHS, RHS or ACC index sequence
+    based on whether the node is used as the LHS, RHS or ACC in the MMA node.
+    If the node is not used as any of the operands, return the original index sequence
+    with all the MMA symbols zeroed out.
+    """
+    if isinstance(custom, MMA):
+        return index_seq
+    operand_map = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 0}
+    for key in mma_slices:
+        if custom.fx_node in mma_slices[key]:
+            operand_map[key] = 1
+            return index_seq.subs(operand_map)
+    return index_seq.subs(operand_map)

@@ -32,7 +32,7 @@ from ..support.ir_imports import (
 #   1. Local name (int, float, vtensor)
 #   2. Parameter block ("<...>"), including the delimitters
 #   3. Inner parameter block (no delimitters)
-DECOMPOSE_TORCH_TYPE_PATTERN = re.compile(r"^!torch.([^<]+)(<([^>]*)>)?$")
+DECOMPOSE_TORCH_TYPE_PATTERN = re.compile(r"^!torch\.([^<]+)(<(.*)>)?$")
 
 # Decomposes a vtensor parameter block into a dimension list and dtype. Groups:
 #   1. Dimension list

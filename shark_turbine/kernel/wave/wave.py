@@ -1,3 +1,9 @@
+# Copyright 2024 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from typing import Any, Callable, Optional
 import torch.fx as fx
 import inspect
@@ -7,17 +13,22 @@ from ..compiler.ir import Context, Operation
 from .codegen import WaveEmitter
 from .constraints import (
     Constraint,
+    HardwareConstraint,
     TilingConstraint,
+    WaveConstraint,
     WorkgroupConstraint,
     get_grid_shape,
-    WaveConstraint,
-    HardwareConstraint,
 )
 from .codegen import WaveEmitter
 from .expansion import expand_graph
 from .promotion import promote_placeholders
 from .hoisting import hoist_allocs
-from .utils import canonicalize_module, compile_and_invoke
+from .utils import (
+    canonicalize_module,
+    compile_and_invoke,
+    safe_subs,
+    remove_chained_getresult,
+)
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
 from .barriers import add_shared_memory_barriers
@@ -28,6 +39,7 @@ from ..ops.wave_ops import Reduction, CustomOp, get_custom
 from .index_sequence_analysis import partition_strided_operators
 from .shared_memory_indexing import apply_shared_memory_indexing_corrections
 from .register_analysis import determine_register_shape
+from .scheduling.schedule import schedule_graph
 from .._support.indexing import IndexingContext, IndexExpr
 import shark_turbine.kernel.lang as tkl
 from .._support.tracing import (
@@ -198,8 +210,11 @@ class LaunchableWave(Launchable):
         # Expansion
         expand_graph(graph, self.constraints)
 
+        # Clean up chains of GetResults
+        remove_chained_getresult(graph)
+
         # Register analysis to determine register shapes.
-        determine_register_shape(graph)
+        determine_register_shape(graph, self.constraints)
 
         # Optimizations.
         minimize_global_loads(graph, self.constraints)
@@ -210,18 +225,22 @@ class LaunchableWave(Launchable):
         # Partition strided operators.
         partition_strided_operators(graph, self.constraints)
 
-        # Add shared memory barriers.
-        add_shared_memory_barriers(graph)
-
         # Decompose reduce Ops.
         decompose_reduce_ops(graph, self.constraints, idxc.subs)
+
+        # Schedule the reduction ops.
+        if kwargs.get("schedule", False):
+            schedule_graph(graph, self.constraints)
+
+        # Add shared memory barriers.
+        add_shared_memory_barriers(graph)
 
         # Determine grid shape.
         self.grid_type.dims = [1, 1, 1]
         for constraint in self.workgroup_constraints:
-            self.grid_type.dims[constraint.workgroup_dim] = (
-                constraint.dim // constraint.tile_size
-            ).subs(idxc.subs)
+            self.grid_type.dims[constraint.workgroup_dim] = safe_subs(
+                constraint.count, idxc.subs
+            )
         grid = self.grid_type
 
         root_graph = graph.get_root_graph()

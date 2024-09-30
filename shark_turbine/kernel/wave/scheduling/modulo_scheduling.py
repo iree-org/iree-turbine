@@ -1,3 +1,9 @@
+# Copyright 2024 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 import torch.fx as fx
 from ....support.logging import get_logger
 from .graph_utils import (
@@ -79,7 +85,7 @@ class ModuloScheduler:
                     return False
         return True
 
-    def schedule(self) -> dict[fx.Node, int]:
+    def schedule_graph(self) -> tuple[dict[fx.Node, int], bool]:
         """
         Schedule the graph using the Modulo Scheduler.
         Returns a schedule which maps each node to a cycle.
@@ -105,6 +111,7 @@ class ModuloScheduler:
         # Generate the schedule.
         # TODO: Come up with a better heuristic on an upper bound for the initiation interval.
         T_max_range = 3 * T0
+        success = False
         for T in range(T0, T0 + T_max_range):
             logger.debug(f"Trying initiation interval: {T}.")
             self.RT = np.zeros((T, len(self.resources)))
@@ -136,6 +143,7 @@ class ModuloScheduler:
                     logger.debug(f"Failed to schedule SCC: {scc}.")
                     break
             if self.all_scc_scheduled(sccs):
+                success = True
                 logger.debug(
                     f"Successfully scheduled all SCCs with initiation interval: {T}."
                 )
@@ -144,7 +152,7 @@ class ModuloScheduler:
             raise Exception("Failed to schedule the graph.")
 
         self._initiation_interval = T
-        return self.schedule
+        return self.schedule, success
 
     def scc_scheduled(
         self,

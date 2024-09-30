@@ -131,13 +131,13 @@ def test_gemm():
         # CHECK-NEXT: placeholder(_name=b
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: register
-        # CHECK-SAME: index={M: $WG0*BLOCK_M, N: $WG1*BLOCK_N + BLOCK_N/2})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod($T0, 16), N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16)})
         # CHECK-NEXT: register(
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod($T0, 16) + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16})
         # CHECK-NEXT: register(
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod($T0, 16) + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16)})
         # CHECK-NEXT: register(
-        # CHECK-SAME: index={M: $WG0*BLOCK_M, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod($T0, 16), N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16})
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: reduction(
@@ -146,19 +146,19 @@ def test_gemm():
         # CHECK-NEXT: get_result(value=reduction, res_idx=1)
         # CHECK-NEXT: get_result(value=reduction, res_idx=0)
         # CHECK-NEXT: write(register_=getresult_0_0_0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M, N: $WG1*BLOCK_N + BLOCK_N/2})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod($T0, 16), N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16)})
         # CHECK-NEXT: write(register_=getresult_1_1_0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod($T0, 16) + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16})
         # CHECK-NEXT: write(register_=getresult_1_0_0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 16, N: $WG1*BLOCK_N + BLOCK_N/2})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod($T0, 16) + 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16)})
         # CHECK-NEXT: write(register_=getresult_0_1_0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M, N: $WG1*BLOCK_N + BLOCK_N/2 + 16})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod($T0, 16), N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16})
 
         # Reduction subgraph:
         # CHECK: %acc_0_0_0
-        # CHECK-NEXT: %acc_1_1_0
-        # CHECK-NEXT: %acc_1_0_0
         # CHECK-NEXT: %acc_0_1_0
+        # CHECK-NEXT: %acc_1_0_0
+        # CHECK-NEXT: %acc_1_1_0
         # CHECK-NEXT: %a
         # CHECK-NEXT: %read_4
         # CHECK-SAME: (%a, 8, None, None)
@@ -180,13 +180,14 @@ def test_gemm():
         # CHECK-NEXT: %b
         # CHECK-NEXT: %read_6
         # CHECK-SAME: (%b, 8, None, None)
+        # CHECK-NEXT: %shared_memory_barrier_1
         # CHECK-NEXT: %write_4
         # CHECK-SAME: (%read_6, %allocate_1, 8, None)
         # CHECK-NEXT: %read_7
         # CHECK-SAME: (%b, 8, None, None)
         # CHECK-NEXT: %write_5
         # CHECK-SAME: (%read_7, %allocate_1, 8, None)
-        # CHECK-NEXT: %shared_memory_barrier_1
+        # CHECK-NEXT: %shared_memory_barrier_2
         # CHECK-NEXT: %read_shared_0_0_0
         # CHECK-NEXT: %read_shared_0_0_1
         # CHECK-NEXT: %read_shared_0_0_2
@@ -214,9 +215,9 @@ def test_gemm():
 
         # Reduction subgraph (custom format):
         # CHECK: placeholder(_name=acc_0_0_0
-        # CHECK-NEXT: placeholder(_name=acc_1_1_0
-        # CHECK-NEXT: placeholder(_name=acc_1_0_0
         # CHECK-NEXT: placeholder(_name=acc_0_1_0
+        # CHECK-NEXT: placeholder(_name=acc_1_0_0
+        # CHECK-NEXT: placeholder(_name=acc_1_1_0
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: read(memory=a, elements_per_thread=8,
         # CHECK-SAME: index={M: $WG0*BLOCK_M + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
@@ -238,6 +239,7 @@ def test_gemm():
         # CHECK-NEXT: placeholder(_name=b, _type=Memory[N, K].of(f16))
         # CHECK-NEXT: read(memory=b, elements_per_thread=8,
         # CHECK-SAME: index={N: $WG1*BLOCK_N + BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-NEXT: shared_memory_barrier()
         # CHECK-NEXT: write(register_=read_6, memory=allocate_1, elements_per_thread=8,
         # CHECK-SAME: index={N: BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64), K: 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: read(memory=b, elements_per_thread=8,

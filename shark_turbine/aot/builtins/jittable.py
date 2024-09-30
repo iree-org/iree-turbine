@@ -308,7 +308,7 @@ class jittable(CallableIntrinsic):
 
     def _split_py_arg(self, arg) -> Tuple[Value, Any]:
         if isinstance(arg, IrTensor):
-            meta_tensor, _ = arg._to_meta_tensor()
+            meta_tensor = arg._to_meta_tensor()
             return arg.ir_value, meta_tensor
 
         raise TypeError(f"Unsupported argument to jittable: {arg}")

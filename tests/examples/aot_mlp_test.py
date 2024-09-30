@@ -22,9 +22,6 @@ class AOTMLPTest(unittest.TestCase):
     def testMLPExportSimple(self):
         _run("examples/aot_mlp/mlp_export_simple.py")
 
-    def testMLPExportSimple(self):
-        _run("examples/aot_mlp/mlp_export_dynamic.py")
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)

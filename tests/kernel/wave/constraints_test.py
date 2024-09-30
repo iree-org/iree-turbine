@@ -1,3 +1,9 @@
+# Copyright 2024 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 import logging
 import pytest
 import unittest
@@ -22,7 +28,10 @@ class ConstraintsTest(unittest.TestCase):
         constraints: list[WorkgroupConstraint] = [WorkgroupConstraint(M, BLOCK_M, 0)]
         constraints.append(WorkgroupConstraint(N, BLOCK_N, 1))
 
-        assert get_grid_shape(constraints) == [M // BLOCK_M, N // BLOCK_N]
+        assert get_grid_shape(constraints) == [
+            ceiling(M / BLOCK_M),
+            ceiling(N / BLOCK_N),
+        ]
 
         # Checking multiple constraints in the same dimension not supported
         constraints += [WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -43,8 +52,8 @@ class ConstraintsTest(unittest.TestCase):
         constraints: list[TilingConstraint] = [TilingConstraint(M, BLOCK_M)]
         constraints.append(TilingConstraint(N, BLOCK_N, I))
 
-        assert constraints[0].iterations() == ceiling(M / BLOCK_M)
-        assert constraints[1].iterations() == ceiling(N / BLOCK_N)
+        assert constraints[0].count == ceiling(M / BLOCK_M)
+        assert constraints[1].count == ceiling(N / BLOCK_N)
         assert constraints[1].apply().start == I * BLOCK_N
 
         with pytest.raises(

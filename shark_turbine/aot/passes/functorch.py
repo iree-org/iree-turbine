@@ -11,6 +11,7 @@ from torch.fx import (
     GraphModule,
 )
 from torch.fx.experimental import proxy_tensor
+from torch._subclasses.fake_tensor import unset_fake_temporarily
 from torch.utils import _pytree as pytree
 
 
@@ -43,7 +44,7 @@ from torch.utils import _pytree as pytree
 def functorch_functionalize(gm_callable: Any, *args) -> GraphModule:
     functionalized_callable = _functionalize_callabale(gm_callable)
     # TODO: There is more of a dance needed if the user has entered with a fake_mode.
-    with proxy_tensor.maybe_disable_fake_tensor_mode():
+    with unset_fake_temporarily():
         new_gm = proxy_tensor.make_fx(
             functionalized_callable,
             decomposition_table={},

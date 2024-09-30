@@ -6,6 +6,7 @@
 
 import logging
 import unittest
+import pytest
 
 import torch
 
@@ -72,6 +73,9 @@ class JittableTests(unittest.TestCase):
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
 
+    @pytest.mark.xfail(
+        reason="CompiledModule dynamic dims no longer supported in latest torch versions"
+    )
     def testDynamicDims(self):
         class DynamicDimsModule(CompiledModule):
             def dynamic_dim(self, a=AbstractTensor(None, 2), b=AbstractTensor(None, 1)):
@@ -108,6 +112,7 @@ class JittableTests(unittest.TestCase):
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
 
+    @pytest.mark.xfail(reason="CompiledModule dynamic dims no longer supported")
     def testIrImmediateTensorAsInputToDynamicDims(self):
         class ProcArgsModule(CompiledModule):
             def dynamic_dim(self, x=AbstractIndex):

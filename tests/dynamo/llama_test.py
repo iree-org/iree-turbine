@@ -315,7 +315,6 @@ def main():
     opt(example_tokens, start_pos)
 
 
-@pytest.mark.xfail(reason="https://github.com/nod-ai/SHARK-Turbine/issues/221")
 class ModelTests(unittest.TestCase):
     def testLLama(self):
         main()

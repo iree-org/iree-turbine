@@ -6,6 +6,7 @@
 
 import logging
 import unittest
+import pytest
 
 import torch
 
@@ -34,6 +35,9 @@ class FunctionalizeTests(unittest.TestCase):
         print(module_str)
         self.assertNotIn("add_", module_str)
 
+    @pytest.mark.xfail(
+        reason="CompiledModule dynamic dims no longer supported in latest torch versions"
+    )
     def testDynamicDims(self):
         class ProcArgsModule(CompiledModule):
             def dynamic_dim(self, a=AbstractTensor(None, 2), b=AbstractTensor(None, 1)):

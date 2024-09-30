@@ -23,6 +23,7 @@ from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
+import numpy as np
 
 if TYPE_CHECKING:
     from ..wave.constraints import Constraint
@@ -360,25 +361,33 @@ class CustomOp(ABC):
             raise IndexError("Index out of range")
 
     def copy(
-        self, new_name: Optional[str] = None, new_graph: Optional[fx.Graph] = None
+        self,
+        new_name: Optional[str] = None,
+        new_graph: Optional[fx.Graph] = None,
+        arg_transform: Optional[Callable[[Any], Any]] = lambda x: x,
+        anchor: Optional[fx.Node] = None,
     ) -> Self:
         """Returns a duplicate of this node."""
         graph = new_graph
         if new_graph is None:
             graph = self.graph
-            graph.inserting_after(self.fx_node)
-        new_node = graph.node_copy(self.fx_node)
+            if anchor is None:
+                anchor = self.fx_node
+            graph.inserting_after(anchor)
+        new_node = graph.node_copy(self.fx_node, arg_transform=arg_transform)
         new_node.tkw_op = self
         new_node.tkw_op_name = self.tkw_op_name
-        new_node.index = copy.deepcopy(self.fx_node.index)
+        if hasattr(self.fx_node, "index"):
+            new_node.index = copy.deepcopy(self.fx_node.index)
         if new_name:
             new_node.name = new_name
         return get_custom(new_node)
 
     def replace_all_uses_with(self, new_node: CustomOp | fx.Node):
         """Replace all uses of the current node with the new node."""
-        for user in self.users:
-            user.update_arg(user.get_node_arg_index(self), new_node)
+        if isinstance(new_node, CustomOp):
+            new_node = new_node.fx_node
+        self.fx_node.replace_all_uses_with(new_node)
 
     def erase(self):
         """Erase the current node from the graph where it exists."""
@@ -447,6 +456,28 @@ class CustomOp(ABC):
         else:
             raise ValueError("Index must be a dict")
 
+    @property
+    def rrt(self):
+        if hasattr(self.fx_node, "rrt"):
+            return self.fx_node.rrt
+
+    @rrt.setter
+    def rrt(self, value):
+        if not isinstance(value, np.ndarray):
+            raise ValueError("RRT must be a numpy array")
+        self.fx_node.rrt = value
+
+    @property
+    def scheduling_parameters(self):
+        if hasattr(self.fx_node, "scheduling_parameters"):
+            return self.fx_node.scheduling_parameters
+
+    @scheduling_parameters.setter
+    def scheduling_parameters(self, value: Any):
+        if not isinstance(value, dict):
+            raise ValueError("Scheduling parameters must be a dict")
+        self.fx_node.scheduling_parameters = value
+
     def post_expansion(self, constraints: list["Constraint"]) -> None:
         """
         Hook for post-expansion operations. This is called after the arguments
@@ -455,7 +486,6 @@ class CustomOp(ABC):
         pass
 
 
-@define_py_op(operator.getitem)
 @define_py_op(operator.add)
 @define_py_op(operator.sub)
 @define_py_op(operator.mul)
@@ -749,16 +779,6 @@ class MMA(CustomOp):
         custom_str += f"acc={self.acc} (index = {self.acc_index}))"
         return custom_str
 
-    def post_expansion(self, constraints: list["Constraint"]) -> None:
-        """
-        Once the arguments have been expanded, we set their indices,
-        ensuring that the LHS and RHS indices are consistent with their
-        corresponding address spaces.
-        """
-        self.lhs.index = self.lhs_index
-        self.rhs.index = self.rhs_index
-        self.acc.index = self.acc_index
-
 
 @define_op("read")
 @dataclass
@@ -830,12 +850,23 @@ class Reduction(CustomOp):
         return wrapper
 
     @property
-    def indexing_dims(self) -> list[IndexSymbol]:
+    def indexing_dims(self) -> list[IndexSymbol] | list[list[IndexSymbol]]:
         expand_dims: list[IndexSymbol] = []
-        for user in self.users:
-            for indexing_dim in user.indexing_dims:
-                if indexing_dim not in expand_dims:
-                    expand_dims.append(indexing_dim)
+        return_node = [
+            nested_node
+            for nested_node in self.graph.subgraphs[self.subgraph_name].nodes
+            if isinstance(get_custom(nested_node), Output)
+        ]
+        assert len(return_node) == 1
+        return_vals = get_custom(return_node[0]).return_vals[0]
+        if not isinstance(return_vals, Sequence):
+            return_vals = [return_vals]
+        for return_val in return_vals:
+            return_dims = get_custom(return_val).indexing_dims
+            reduced_dims = [dims for dims in return_dims if dims != self.axis]
+            expand_dims.append(reduced_dims)
+        if len(expand_dims) == 1:
+            expand_dims = expand_dims[0]
         return expand_dims
 
     def iter_args(self, graph: fx.Graph) -> list[fx.Node]:
@@ -913,6 +944,7 @@ class Write(CustomOp):
         return custom.index
 
 
+@define_py_op(operator.getitem)
 @define_op("get_result")
 @dataclass
 class GetResult(CustomOp):
@@ -921,16 +953,24 @@ class GetResult(CustomOp):
 
     @property
     def type(self) -> "Memory":
-        return get_custom(self.value).type[self.res_idx]
+        src_type = get_custom(self.value).type
+        if isinstance(src_type, list):
+            return src_type[self.res_idx]
+        else:
+            return src_type
 
     @property
-    def indexing_dims(self) -> list[IndexSymbol]:
-        expand_dims: list[IndexSymbol] = []
-        for user in self.users:
-            for indexing_dim in user.indexing_dims:
-                if indexing_dim not in expand_dims:
-                    expand_dims.append(indexing_dim)
-        return expand_dims
+    def indexing_dims(self) -> list[IndexExpr]:
+        has_multiple_value = lambda x: all(isinstance(el, list) for el in x)
+        is_valid_indexing_dim = lambda x: isinstance(src_indexing, list) and all(
+            isinstance(el, IndexExpr) for el in x
+        )
+        src_indexing = get_custom(self.value).indexing_dims
+        if has_multiple_value(src_indexing):
+            assert self.res_idx <= len(src_indexing) - 1
+            src_indexing = src_indexing[self.res_idx]
+        assert is_valid_indexing_dim(src_indexing)
+        return src_indexing
 
     @property
     def index(self) -> dict[IndexSymbol, IndexSequence]:
@@ -982,6 +1022,17 @@ class ReduceOp(CustomOp, ABC):
     def type(self) -> Memory:
         src_type = get_custom(self.arg).type
         return src_type
+
+    @property
+    def num_reduction_dims(self) -> int:
+        if self.dim is None:
+            raise NotImplementedError(
+                "Currently do not support ReduceOp with no dims specified."
+            )
+        if isinstance(self.dim, Sequence):
+            return len(self.dim)
+        else:
+            return 1
 
 
 # TODO: Add support for more shuffle types.

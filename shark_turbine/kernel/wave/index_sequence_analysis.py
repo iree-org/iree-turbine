@@ -1,3 +1,9 @@
+# Copyright 2024 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from ..ops.wave_ops import Write, ExtractSlice, get_custom
 from .constraints import Constraint, HardwareConstraint
 from .._support.tracing import CapturedTrace, IndexingContext
@@ -18,7 +24,7 @@ def get_vector_shape(
     hardware_constraint: HardwareConstraint,
     symbolic_shape: list[IndexSymbol],
 ) -> list[int]:
-    mma_indices = get_mma_dimensional_mapping(trace)
+    mma_indices, _ = get_mma_dimensional_mapping(trace)
     return [
         get_hardware_vector_size(dim, hardware_constraint, mma_indices)
         for dim in symbolic_shape

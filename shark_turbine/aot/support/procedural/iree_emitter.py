@@ -199,7 +199,7 @@ class IREEEmitter:
         result_value = flow_d.TensorReshapeOp(
             result_type,
             source.ir_value,
-            source.get_only_dynamic_dim_values(constant_cache=constant_cache),
+            [],  # forcing empty list for dynamic dims until supported in CompiledModule
             result_dynamic_dims,
         ).result
         result = IrImmediateTensor(result_value, dtype=source.dtype)
@@ -276,7 +276,7 @@ class IREEEmitter:
         result_value = flow_d.TensorSliceOp(
             result_type,
             source_value,
-            source.get_only_dynamic_dim_values(constant_cache=constant_cache),
+            [],  # forcing empty list for dynamic dims until supported in CompiledModule
             start_index_values,
             length_values,
             result_dynamic_dims,
@@ -295,26 +295,19 @@ class IREEEmitter:
         """Applies an update to a target at start_indices and returns the mutated target."""
         constant_cache: Dict[int, Value] = {}
         target = cast_tensor_value(target)
-        target_dynamic_dims = target.get_only_dynamic_dim_values(
-            constant_cache=constant_cache
-        )
         update = cast_tensor_value(update)
-        update_dynamic_dims = update.get_only_dynamic_dim_values(
-            constant_cache=constant_cache
-        )
         start_index_dim_values = [
             cast_index_value(idx, constant_cache=constant_cache)
             for idx in start_indices
         ]
         result_value = flow_d.TensorUpdateOp(
             target.ir_value,
-            target_dynamic_dims,
+            [],  # forcing empty list for dynamic dims until supported in CompiledModule
             start_index_dim_values,
             update.ir_value,
-            update_dynamic_dims,
+            [],  # forcing empty list for updated dynamic dims until supported in CompiledModule
         ).result
         result = IrImmediateTensor(result_value, target.dtype)
-        result.set_dynamic_dim_values(target_dynamic_dims)
         return result
 
     @emitter
@@ -342,11 +335,8 @@ class IREEEmitter:
 
     @emitter
     def tensor_trace(self, key: str, *ts: BuildableTensorType):
-        dynamic_dims = []
-        for t in ts:
-            dynamic_dims.extend(t.get_only_dynamic_dim_values())
         ts = tuple(cast_tensor_value(t).ir_value for t in ts)
-        flow_d.TensorTraceOp(StringAttr.get(key), ts, dynamic_dims)
+        flow_d.TensorTraceOp(StringAttr.get(key), ts, [])
 
 
 # Circular imports to resolve typing.
