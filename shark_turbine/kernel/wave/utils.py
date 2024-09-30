@@ -11,7 +11,7 @@ from ..compiler.ir import (
     transform_d,
     UnitAttr,
 )
-from typing import Callable, Any, List, Tuple
+from typing import Optional, Callable, Any, List, Tuple
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
@@ -25,7 +25,12 @@ from ..ops.wave_ops import (
     GetResult,
     IterArg,
 )
-from .constraints import Constraint, HardwareConstraint, TilingConstraint
+from .constraints import (
+    Constraint,
+    WorkgroupConstraint,
+    HardwareConstraint,
+    TilingConstraint,
+)
 import torch.fx as fx
 import shark_turbine.kernel.lang as tkl
 
@@ -531,3 +536,27 @@ def specialize_index_sequence(
             operand_map[key] = 1
             return index_seq.subs(operand_map)
     return index_seq.subs(operand_map)
+
+
+def find_index_bounds(
+    constraints: list[Constraint], index: dict[IndexExpr, IndexExpr]
+) -> Optional[list[IndexExpr]]:
+    bounds = []
+    for constraint in constraints:
+        if not isinstance(constraint, (WorkgroupConstraint, TilingConstraint)):
+            continue
+
+        dim = constraint.dim
+        if dim not in index:
+            continue
+
+        work_size = constraint.count * constraint.tile_size
+        if subs_idxc(work_size) == subs_idxc(dim):
+            continue
+
+        bounds.append(dim)
+
+    if len(bounds) == 0:
+        return None
+
+    return bounds

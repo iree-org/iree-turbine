@@ -99,6 +99,7 @@ class IndexingContext:
 
     __slots__ = [
         "subs",
+        "special_subs",
         "shaped_bindings",
         "dyn_dims",
         "frozen_subs",
@@ -109,6 +110,7 @@ class IndexingContext:
 
     def __init__(self):
         self.subs: dict[IndexSymbol, int] = {}
+        self.special_subs: dict[IndexSymbol, Any] = {}
         # Indexed by .instance
         self.shaped_bindings: dict[Any, _ShapedBinding] = {}
         self.dyn_dims: list[IndexSymbol] = []
@@ -244,6 +246,20 @@ class IndexingContext:
             return int(expr)
         except TypeError:
             return None
+
+    def iota(self, n: int) -> IndexExpr:
+        sym = index_symbol(f"$IOTA{n}")
+        if sym not in self.special_subs:
+            self.special_subs[sym] = tuple(range(n))
+
+        return sym
+
+    def get_val(self, sym: IndexSymbol) -> Any:
+        res = self.subs.get(sym, None)
+        if res is None:
+            res = self.special_subs.get(sym, None)
+
+        return res
 
     ##### Context management.
     @staticmethod
