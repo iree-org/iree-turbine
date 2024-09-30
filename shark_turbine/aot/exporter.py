@@ -26,6 +26,7 @@ from ..support.ir_imports import (
 from .builtins import *
 from .compiled_module import (
     CompiledModule,
+    ModuleBuilderOptions,
     ImportPhase,
 )
 from .fx_programs import FxPrograms
@@ -175,6 +176,7 @@ def export(
     module_name: Optional[str] = None,
     function_name: Optional[str] = None,
     strict_export: bool = True,
+    import_symbolic_shape_expressions: bool = False,
 ) -> ExportOutput:
     """Exports a torch.nn.Module.
 
@@ -223,6 +225,7 @@ def export(
     module_name: Optional[str] = None,
     function_name: Optional[str] = None,
     strict_export: bool = True,
+    import_symbolic_shape_expressions: bool = False,
 ) -> ExportOutput:
     """Generic export of supported entities.
 
@@ -270,11 +273,19 @@ def export(
             "LambdaCompiledModule",
             {(function_name or "main"): mdl},
             export_name=module_name or "module",
+            options=ModuleBuilderOptions(
+                import_symbolic_shape_expressions=import_symbolic_shape_expressions,
+            ),
         )
 
     elif isinstance(mdl, FxPrograms):
         TransformedModule = CompiledModule.create_from_dict(
-            "LambdaCompiledModule", mdl.programs, export_name=module_name or "module"
+            "LambdaCompiledModule",
+            mdl.programs,
+            export_name=module_name or "module",
+            options=ModuleBuilderOptions(
+                import_symbolic_shape_expressions=import_symbolic_shape_expressions,
+            ),
         )
     elif isinstance(mdl, torch.nn.Module):
         # Normalize arguments for torch.export.
@@ -302,6 +313,9 @@ def export(
             "LambdaCompiledModule",
             {(function_name or "main"): exported_program},
             export_name=module_name or "module",
+            options=ModuleBuilderOptions(
+                import_symbolic_shape_expressions=import_symbolic_shape_expressions,
+            ),
         )
     elif issubclass(mdl, CompiledModule):
         TransformedModule = mdl
