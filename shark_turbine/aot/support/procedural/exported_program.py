@@ -180,7 +180,6 @@ def import_exported_program(
     symbol_visibility: Optional[str],
 ) -> ExportedProgramIntrinsic:
     fx_importer = _create_fx_importer(module_builder)
-    print("SYMBOLIC=", module_builder.options.import_symbolic_shape_expressions)
     entry_func_op = fx_importer.import_program(
         exported_program,
         func_name=symbol_name,
