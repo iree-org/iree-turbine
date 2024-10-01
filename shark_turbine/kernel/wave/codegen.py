@@ -91,6 +91,7 @@ class WaveEmitter:
     root_sig: BoundKernelSignature
     trace: CapturedTrace
     constraints: list[Constraint]
+    dynamic_symbols: list[IndexSymbol]
     ip: InsertionPoint = None
     OP_HANDLERS: ClassVar[dict[str, Callable[["WaveEmitter", fx.Node], None]]] = {}
     _node_values: ClassVar[dict[fx.Node, List[IRProxyValue]]] = {}
@@ -110,6 +111,11 @@ class WaveEmitter:
             gpu_d.thread_id(gpu_d.Dimension.z),
         ]
         self.induction_vars: dict[IndexSymbol, Value] = {}
+        self.dynamic_dims: dict[IndexSymbol, Value] = {}
+        symbol_iterator = iter(self.dynamic_symbols)
+        for arg in self.root_sig.entry_block.arguments:
+            if arg.type == IndexType.get():
+                self.dynamic_dims[next(symbol_iterator)] = arg
 
     def emit(self, graph: Optional[fx.Graph] = None):
         with self.ip, Location.unknown():
@@ -169,7 +175,32 @@ def get_type_or_element_type(operand_type: IrType):
         return operand_type
 
 
-def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
+def add_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
+    induction_var_syms = []
+    induction_vars = []
+    if emitter.induction_vars:
+        for constraint in emitter.constraints:
+            if isinstance(constraint, TilingConstraint):
+                assert (
+                    constraint.dim in emitter.induction_vars
+                ), f"Could not find induction var for {constraint.dim} dimension"
+                induction_var_syms.append(constraint.induction_var)
+                induction_vars.append(emitter.induction_vars[constraint.dim])
+
+    # TODO: factor this out
+    all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars
+    dynamics = dict(
+        zip(
+            [THREAD_0, THREAD_1, THREAD_2, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2]
+            + induction_var_syms,
+            all_symbols,
+        )
+    )
+    dynamics.update(emitter.dynamic_dims)
+    return dynamics
+
+
+def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpResult:
     stack: list[OpResult] = []
 
     def _broadcast(a, b):
@@ -247,27 +278,6 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
 
         raise CodegenError(f"Unsupported const val {val} : {type(val)}")
 
-    induction_var_syms = []
-    induction_vars = []
-    if emitter.induction_vars:
-        for constraint in emitter.constraints:
-            if isinstance(constraint, TilingConstraint):
-                assert (
-                    constraint.dim in emitter.induction_vars
-                ), f"Could not find induction var for {constraint.dim} dimension"
-                induction_var_syms.append(constraint.induction_var)
-                induction_vars.append(emitter.induction_vars[constraint.dim])
-
-    # TODO: factor this out
-    all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars
-    dynamics = dict(
-        zip(
-            [THREAD_0, THREAD_1, THREAD_2, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2]
-            + induction_var_syms,
-            all_symbols,
-        )
-    )
-
     idxc = IndexingContext.current()
     # Substitute in frozen vars to simplify expression.
     if not isinstance(expr, sympy.Expr):
@@ -325,6 +335,11 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
                 lhs = stack.pop()
                 res = arith_d.andi(*_broadcast(lhs, rhs))
                 stack.append(res)
+            case sympy.ceiling():
+                value = stack.pop()
+                if not isinstance(value, arith_d.DivSIOp):
+                    raise CodegenError(f"Cannot handle ceil({value}) yet")
+                stack.append(arith_d.CeilDivSIOp(value.lhs, value.rhs))
             case sympy.UnevaluatedExpr():
                 continue
             case _:
@@ -412,7 +427,10 @@ def _get_start_indices(
 def _build_start_indices(
     emitter: WaveEmitter, src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
 ) -> list[OpResult]:
-    return [gen_sympy_index(emitter, i) for i in _get_start_indices(src_indices)]
+    return [
+        gen_sympy_index(add_emitter_subs(emitter), i)
+        for i in _get_start_indices(src_indices)
+    ]
 
 
 def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> IndexExpr:
@@ -456,7 +474,7 @@ def _build_mask(
     mask_expr = functools.reduce(
         lambda a, b: sympy.And(a, b), (new_index[dim] < dim for dim in bounds)
     )
-    mask = gen_sympy_index(emitter, mask_expr)
+    mask = gen_sympy_index(add_emitter_subs(emitter), mask_expr)
 
     mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
     if mask.type != mask_vec_type:
@@ -534,7 +552,7 @@ def _construct_gather_scatter_indices(
             # arith ops and then `vector.insertelement` them into offsets vec.
             offset = int(offset)
         else:
-            dyn_offset = gen_sympy_index(emitter, offset)
+            dyn_offset = gen_sympy_index(add_emitter_subs(emitter), offset)
             dynamic_offsets.append((i, dyn_offset))
             offset = 0
 

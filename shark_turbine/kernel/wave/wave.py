@@ -260,6 +260,8 @@ class LaunchableWave(Launchable):
         root_graph = graph.get_root_graph()
         kernel_sig = kernel_codegen.KernelSignature()
         kernel_sig.add_from_graph_placeholders(root_graph)
+        dynamic_symbols = kwargs.get("dynamic_symbols", [])
+        kernel_sig.add_from_dynamic_symbols(dynamic_symbols)
         kernel_sig.add_grid(self.grid_type)
         kernel_sig.determine_input_output_buffers(root_graph)
 
@@ -269,10 +271,17 @@ class LaunchableWave(Launchable):
         workgroup_size = self.hardware_constraints[0].threads_per_block
         subgroup_size = self.hardware_constraints[0].threads_per_wave
         dispatch_entrypoint = exe.define_entrypoint(
-            entrypoint_name, kernel_sig, grid, workgroup_size, subgroup_size
+            entrypoint_name,
+            kernel_sig,
+            grid,
+            workgroup_size,
+            subgroup_size,
+            dynamic_symbols,
         )
 
-        emitter = WaveEmitter(dispatch_entrypoint, graph, self.constraints)
+        emitter = WaveEmitter(
+            dispatch_entrypoint, graph, self.constraints, dynamic_symbols
+        )
         emitter.emit(graph.get_root_graph())
         emitter.finish()
 
@@ -294,7 +303,10 @@ class LaunchableWave(Launchable):
         run_bench = kwargs.get("run_bench", False)
         if run or run_bench:
             # TODO: cache compiled code
-            host_codegen.isolated_test_call(mb, exe, kernel_sig, entrypoint_name)
+            dynamic_symbols = kwargs.get("dynamic_symbols", [])
+            host_codegen.isolated_test_call(
+                mb, exe, kernel_sig, entrypoint_name, dynamic_symbols
+            )
             asm = mb.module_op.get_asm()
 
             kernel_inputs = []
@@ -306,6 +318,10 @@ class LaunchableWave(Launchable):
 
                 if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                     kernel_outputs.append(arg)
+
+            dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
+            if dynamic_symbols:
+                kernel_inputs += [dynamic_symbols_map[sym] for sym in dynamic_symbols]
 
             config = kwargs.get("run_config", None)
             if not config:
