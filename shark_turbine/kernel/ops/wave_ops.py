@@ -453,6 +453,8 @@ class CustomOp(ABC):
             self.fx_node.index = {}
             for dim, key in value.items():
                 self.fx_node.index[dim] = key
+        elif isinstance(value, list):
+            self.fx_node.index = value
         else:
             raise ValueError("Index must be a dict")
 
@@ -691,7 +693,7 @@ class SharedMemoryBarrier(CustomOp):
             prev_node, found_src = prev_node.prev, prev_node == src
         if not found_src:
             return False
-        while next_node and not found_dst:
+        while next_node.next.op != "root" and not found_dst:
             next_node, found_dst = next_node.next, next_node == dst
         return found_dst
 
@@ -909,6 +911,20 @@ class Reduction(CustomOp):
                     if isinstance(return_vals, list)
                     else None
                 )
+
+    @index.setter
+    def index(self, value: Any):
+        CustomOp.index.fset(self, value)
+
+    @property
+    def count(self) -> int:
+        if hasattr(self.fx_node, "count"):
+            return self.fx_node.count
+        return None
+
+    @count.setter
+    def count(self, value: int):
+        self.fx_node.count = value
 
 
 @define_op("write")
