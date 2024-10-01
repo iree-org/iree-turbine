@@ -126,6 +126,119 @@ def testGemm(shape: tuple[int]):
         assert torch.equal(c, iree_ref)
 
 
+# Format: (M, K, N, B)
+intermediate_size = 28672
+tensor_parallel_shape = 8
+hidden_size = 8192
+# Batch size can be 1, 2, 3, 4
+batch_size = 1
+gemm_silu_shapes = [
+    (
+        intermediate_size / tensor_parallel_shape,
+        hidden_size,
+        hidden_size,
+        1,
+    )
+]
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", gemm_silu_shapes)
+def testGemmSilu(shape: tuple[int]):
+
+    # FC1 and FC2 GEMM Sizes
+    # Weights matrices are of size (M0, K0).
+    # Input matrix is of size (BS, K0).
+    M = tkl.sym.M  # Reduction
+    K = tkl.sym.K  # Reduction
+    N = tkl.sym.N  # Parallel
+    B = tkl.sym.B  # Parallel
+
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_K = tkl.sym.BLOCK_K
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_B = tkl.sym.BLOCK_B
+
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+    # Other hyperparameters
+    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(B, BLOCK_B, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.TilingConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 2, 1))
+    ]
+
+    @tkw.wave(constraints)
+    def gemm_silu(
+        x: tkl.Memory[B, K, ADDRESS_SPACE, tkl.f16],
+        w0: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        w1: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        w2: tkl.Memory[N, M, ADDRESS_SPACE, tkl.f16],
+        output: tkl.Memory[B, N, ADDRESS_SPACE, tkl.f32],
+    ):
+
+        c_reg = tkl.Register[B, N, tkl.f32](0.0)
+
+        @tkw.reduction(M, init_args=[c_reg])
+        def outer_loop(acc: tkl.Register[B, N, tkl.f32]) -> tkl.Register[B, N, tkl.f32]:
+
+            c_reg0 = tkl.Register[B, M, tkl.f32](0.0)
+            c_reg1 = tkl.Register[B, M, tkl.f32](0.0)
+
+            @tkw.reduction(K, init_args=[c_reg0, c_reg1])
+            def inner_loop(
+                acc0: tkl.Register[B, M, tkl.f32], acc1: tkl.Register[B, M, tkl.f32]
+            ) -> tuple[tkl.Register[B, M, tkl.f32], tkl.Register[B, M, tkl.f32]]:
+                x_reg = tkw.read(x, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+                w0_reg = tkw.read(w0, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+                acc0 = tkw.mma(x_reg, w0_reg, acc0)
+                w1_reg = tkw.read(w1, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+                acc1 = tkw.mma(x_reg, w1_reg, acc1)
+                return acc0, acc1
+
+            w2_reg = tkw.read(w2, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            mm0, mm1 = inner_loop
+            silu = 1.0 / (1.0 + tkw.exp(-mm0))
+            y = silu * mm1
+            acc = tkw.mma(y, w2_reg, acc)
+            return acc
+
+        # repeat represents the results of the loop
+        tkw.write(outer_loop, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        LOAD_ELEMS_PER_THREAD: 4,
+        STORE_ELEMS_PER_THREAD: 4,
+        BLOCK_M: 64,
+        BLOCK_N: 64,
+        BLOCK_K: 32,
+        M: shape[0],
+        K: shape[1],
+        N: shape[2],
+        B: shape[3],
+    }
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    with tk.gen.TestLaunchContext(
+        hyperparams, canonicalize=True, run=True, run_config=config
+    ):
+        x = torch.randn(shape[3], shape[1], dtype=torch.float16)
+        w0 = torch.randn(shape[0], shape[1], dtype=torch.float16)
+        w1 = torch.zeros(shape[0], shape[1], dtype=torch.float16)
+        w2 = torch.zeros(shape[2], shape[0], dtype=torch.float16)
+        output = torch.zeros(shape[3], shape[2], dtype=torch.float32)
+        gemm_silu(x, w0, w1, w2, output)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     unittest.main()
