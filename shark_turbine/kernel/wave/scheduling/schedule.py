@@ -11,8 +11,12 @@ from .modulo_scheduling import ModuloScheduler
 from .graph_utils import create_scheduling_edges, Edge
 from .resources import get_available_resources, annotate_resource_usage
 from ..visualization import visualize_edges, visualize_graph, visualize_schedule
-from ..utils import subs_idxc, graph_copy, erase_graph
+from .loop_reconstruction import construct_pipelined_loop
+from ..utils import graph_copy, erase_graph, get_tiling_constraint, subs_idxc
 import torch.fx as fx
+from ....support.logging import get_logger
+
+logger = get_logger("turbine.wave.scheduling.schedule")
 
 
 def visualize_scheduling_graph(edges: list[Edge]):
@@ -67,6 +71,32 @@ def schedule_reduction(
             node.args = ()
 
     erase_graph(graph)
+
+    # After scheduling has completed, we have enough information to decide
+    # whether to pipeline the loop. For pipelining to be possible, we need
+    # to have atleast N iterations of the loop where N > num_stages - 1 (because
+    # we will be peeling off num_stages iterations from the loop).
+    tiling_constraint = get_tiling_constraint(reduction, constraints)
+    max_induction_variable = int(
+        subs_idxc(tiling_constraint.dim) // subs_idxc(tiling_constraint.tile_size)
+    )
+    if max_induction_variable <= scheduler.num_stages - 1:
+        logger.warn("Not enough iterations to pipeline the loop. Skipping pipelining.")
+        return {}
+
+    new_reduction = construct_pipelined_loop(
+        trace,
+        reduction,
+        reduction_graph,
+        constraints,
+        scheduler,
+        node_map,
+        max_induction_variable,
+        visualize,
+    )
+
+    # Update new reduction count.
+    new_reduction.count = max_induction_variable - (scheduler.num_stages - 1)
 
 
 def schedule_graph(trace: CapturedTrace, constraints: list[Constraint]):

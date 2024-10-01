@@ -249,13 +249,14 @@ def gen_sympy_index(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
 
     induction_var_syms = []
     induction_vars = []
-    for constraint in emitter.constraints:
-        if isinstance(constraint, TilingConstraint):
-            assert (
-                constraint.dim in emitter.induction_vars
-            ), f"Could not find induction var for {constraint.dim} dimension"
-            induction_var_syms.append(constraint.induction_var)
-            induction_vars.append(emitter.induction_vars[constraint.dim])
+    if emitter.induction_vars:
+        for constraint in emitter.constraints:
+            if isinstance(constraint, TilingConstraint):
+                assert (
+                    constraint.dim in emitter.induction_vars
+                ), f"Could not find induction var for {constraint.dim} dimension"
+                induction_var_syms.append(constraint.induction_var)
+                induction_vars.append(emitter.induction_vars[constraint.dim])
 
     # TODO: factor this out
     all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars
@@ -940,18 +941,11 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
     flat_init_args, _ = pytree.tree_flatten((init_args))
     flat_init_args = [cast_py_value(emitter, arg) for arg in flat_init_args]
 
-    # Without scheduling, we assume that we always start at 0.
     start = arith_d.constant(IndexType.get(), int(0))
-
-    count = None
-    for constraint in emitter.constraints:
-        if isinstance(constraint, TilingConstraint) and constraint.dim == axis:
-            count = subs_idxc(constraint.count)
-    assert count is not None, "Could not find tiling constraint for reduction axis."
 
     # For now, we assume that dimensions that have tiling constraints on them,
     # do not have any other constraints.
-    end = arith_d.constant(IndexType.get(), int(count))
+    end = arith_d.constant(IndexType.get(), int(node.count))
 
     # Since we divide the end by the tile size, we need to make sure that the
     # step is 1.
