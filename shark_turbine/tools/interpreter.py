@@ -190,7 +190,7 @@ class Interpreter:
                         offset[-1] += 1
                 case vector_d.ConstantMaskOp:
                     shape = op.result.type.shape
-                    value = torch.ones(shape, dtype=bool)
+                    value = torch.ones(shape, dtype=torch.bool)
                 case vector_d.GatherOp:
                     load_indices = []
                     for index in op.indices:
