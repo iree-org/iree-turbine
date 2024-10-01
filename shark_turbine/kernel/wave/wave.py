@@ -39,7 +39,7 @@ from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom
 from .index_sequence_analysis import partition_strided_operators
 from .shared_memory_indexing import apply_shared_memory_indexing_corrections
-from .register_analysis import determine_register_shape
+from .thread_shape_analysis import determine_thread_shapes
 from .scheduling.schedule import schedule_graph
 from .._support.indexing import IndexingContext, IndexExpr
 import shark_turbine.kernel.lang as tkl
@@ -227,9 +227,6 @@ class LaunchableWave(Launchable):
         # Clean up chains of GetResults
         remove_chained_getresult(graph)
 
-        # Register analysis to determine register shapes.
-        determine_register_shape(graph, self.constraints)
-
         # Optimizations.
         minimize_global_loads(graph, self.constraints)
 
@@ -238,6 +235,9 @@ class LaunchableWave(Launchable):
 
         # Partition strided operators.
         partition_strided_operators(graph, self.constraints)
+
+        # Analyze Thread Shapes per Op.
+        determine_thread_shapes(graph)
 
         # Decompose reduce Ops.
         decompose_reduce_ops(graph, self.constraints, idxc.subs)
