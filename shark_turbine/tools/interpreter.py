@@ -57,7 +57,7 @@ class Interpreter:
         if type(dtype) == IndexType:
             return torch.int64
         if dtype == IntegerType.get_signless(1):
-            return bool
+            return torch.bool
         raise NotImplementedError(f"Unsupported dtype: {dtype}")
 
     def callback(self, op: Operation) -> None:
