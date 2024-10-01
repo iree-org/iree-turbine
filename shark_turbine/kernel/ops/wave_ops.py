@@ -454,7 +454,7 @@ class CustomOp(ABC):
             for dim, key in value.items():
                 self.fx_node.index[dim] = key
         elif isinstance(value, list):
-            self.fx_node.index = list(value)
+            self.fx_node.index = value
         else:
             raise ValueError("Index must be a dict")
 
@@ -915,6 +915,16 @@ class Reduction(CustomOp):
     @index.setter
     def index(self, value: Any):
         CustomOp.index.fset(self, value)
+
+    @property
+    def count(self) -> int:
+        if hasattr(self.fx_node, "count"):
+            return self.fx_node.count
+        return None
+
+    @count.setter
+    def count(self, value: int):
+        self.fx_node.count = value
 
 
 @define_op("write")

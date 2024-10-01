@@ -91,7 +91,6 @@ class WaveEmitter:
     root_sig: BoundKernelSignature
     trace: CapturedTrace
     constraints: list[Constraint]
-    scheduling_metadata: dict[fx.Node, int]
     ip: InsertionPoint = None
     OP_HANDLERS: ClassVar[dict[str, Callable[["WaveEmitter", fx.Node], None]]] = {}
     _node_values: ClassVar[dict[fx.Node, List[IRProxyValue]]] = {}
@@ -944,18 +943,9 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
 
     start = arith_d.constant(IndexType.get(), int(0))
 
-    count = None
-    for constraint in emitter.constraints:
-        if isinstance(constraint, TilingConstraint) and constraint.dim == axis:
-            count = subs_idxc(constraint.count)
-    assert count is not None, "Could not find tiling constraint for reduction axis."
-
     # For now, we assume that dimensions that have tiling constraints on them,
     # do not have any other constraints.
-    end_value = int(count)
-    if node in emitter.scheduling_metadata:
-        end_value = emitter.scheduling_metadata[node]
-    end = arith_d.constant(IndexType.get(), end_value)
+    end = arith_d.constant(IndexType.get(), int(node.count))
 
     # Since we divide the end by the tile size, we need to make sure that the
     # step is 1.

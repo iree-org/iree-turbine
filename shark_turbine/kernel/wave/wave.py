@@ -28,6 +28,7 @@ from .utils import (
     compile_and_invoke,
     safe_subs,
     remove_chained_getresult,
+    subs_idxc,
 )
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
@@ -184,6 +185,18 @@ class LaunchableWave(Launchable):
                             / hardware_constraint.threads_per_wave
                         )
 
+    def initialize_reductions(self, trace: CapturedTrace) -> None:
+        """
+        For each reduction, initializes the reduction count by looking at the
+        tiling constraints associated with the reduction.
+
+        """
+        is_reduction = lambda node: isinstance(get_custom(node), Reduction)
+        for reduction in trace.walk(is_reduction):
+            for tiling_constraint in self.tiling_constraints:
+                if tiling_constraint.dim == get_custom(reduction).axis:
+                    reduction.count = subs_idxc(tiling_constraint.count)
+
     def _trace_and_get_kernel_signature(
         self,
         args,
@@ -196,6 +209,7 @@ class LaunchableWave(Launchable):
 
         self.create_induction_vars(graph)
         self.initialize_wave_constraints(graph)
+        self.initialize_reductions(graph)
 
         idxc = IndexingContext.current()
         idxc.finalize()
@@ -229,9 +243,8 @@ class LaunchableWave(Launchable):
         decompose_reduce_ops(graph, self.constraints, idxc.subs)
 
         # Schedule the reduction ops.
-        scheduling_metadata = {}
         if kwargs.get("schedule", False):
-            scheduling_metadata = schedule_graph(graph, self.constraints)
+            schedule_graph(graph, self.constraints)
 
         # Add shared memory barriers.
         add_shared_memory_barriers(graph)
@@ -259,9 +272,7 @@ class LaunchableWave(Launchable):
             entrypoint_name, kernel_sig, grid, workgroup_size, subgroup_size
         )
 
-        emitter = WaveEmitter(
-            dispatch_entrypoint, graph, self.constraints, scheduling_metadata
-        )
+        emitter = WaveEmitter(dispatch_entrypoint, graph, self.constraints)
         emitter.emit(graph.get_root_graph())
         emitter.finish()
 

@@ -25,7 +25,7 @@ def visualize_scheduling_graph(edges: list[Edge]):
 
 def schedule_reduction(
     reduction: Reduction, trace: CapturedTrace, constraints: list[Constraint]
-) -> dict[fx.Node, int]:
+):
     """
     Clones the reduction graph and does the following:
     1. Annotates resource usage for each node.
@@ -95,12 +95,11 @@ def schedule_reduction(
         visualize,
     )
 
-    return {new_reduction: max_induction_variable - (scheduler.num_stages - 1)}
+    # Update new reduction count.
+    new_reduction.count = max_induction_variable - (scheduler.num_stages - 1)
 
 
-def schedule_graph(
-    trace: CapturedTrace, constraints: list[Constraint]
-) -> dict[fx.Node, int]:
+def schedule_graph(trace: CapturedTrace, constraints: list[Constraint]):
     """
     Given a graph, pipelines the reductions in the graph.
     """
@@ -112,9 +111,5 @@ def schedule_graph(
     if not reduction_nodes:
         return
 
-    scheduling_metadata = {}
     for reduction_node in reduction_nodes:
-        scheduling_metadata.update(
-            schedule_reduction(get_custom(reduction_node), trace, constraints)
-        )
-    return scheduling_metadata
+        schedule_reduction(get_custom(reduction_node), trace, constraints)

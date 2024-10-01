@@ -576,6 +576,7 @@ def find_index_bounds(
 
     return bounds
 
+
 def get_induction_variable(
     reduction: Reduction, constraints: list[Constraint]
 ) -> IndexSymbol:
