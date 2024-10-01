@@ -21,18 +21,24 @@ ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
 
-def codegen_test_context(canonicalize: bool = False):
+def codegen_test_context(canonicalize: bool = False, dynamic_symbols=[]):
+    bindings = {
+        M: 16,
+        N: 16,
+        K: 16,
+        BLOCK_M: 16,
+        BLOCK_N: 16,
+        BLOCK_K: 16,
+        ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
+    }
+
+    # Remove dynamic symbols from the bindings.
+    for sym in dynamic_symbols:
+        if sym in bindings:
+            del bindings[sym]
+
     return tk.gen.TestLaunchContext(
-        {
-            M: 16,
-            N: 16,
-            K: 16,
-            BLOCK_M: 16,
-            BLOCK_N: 16,
-            BLOCK_K: 16,
-            ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
-        },
-        canonicalize=canonicalize,
+        bindings, canonicalize=canonicalize, dynamic_symbols=dynamic_symbols
     )
 
 
@@ -326,6 +332,72 @@ def test_read_write_mapping():
         # CHECK:            %[[D11:.+]] = vector.constant_mask [16] : vector<16xi1>
         # CHECK:            vector.scatter %[[D10]][%[[D8]], %[[D5]]] [%[[CST]]], %[[D11]], %[[D9]] : memref<16x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16>
+
+
+@run_test
+def test_dynamic_copy():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+        b = tkw.read(a, elements_per_thread=16)
+        tkw.write(b, a, elements_per_thread=16)
+
+    with codegen_test_context(canonicalize=True, dynamic_symbols=[M, N]):
+        a = torch.randn(16, 16, dtype=torch.float16)
+        print(test(a).module_op)
+
+    # CHECK:        stream.executable.export public @test workgroups(%[[ARG0:.*]]: index, %[[ARG1:.*]]:
+    # CHECK-SAME:       index) -> (index, index, index) {
+    # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
+    # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
+    # CHECK:            %[[D0:.+]] = arith.ceildivsi %[[ARG0]], %[[C16]] : index
+    # CHECK:            %[[D1:.+]] = arith.ceildivsi %[[ARG1]], %[[C16]] : index
+    # CHECK:            stream.return %[[D0]], %[[D1]], %[[C1]] : index, index, index
+    # CHECK:          }
+    # CHECK:          func.func @test(%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index)
+    # CHECK-SAME:       attributes {translation_info = #[[TRANSLATION:.+]]} {
+    # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<16xf16>
+    # CHECK-DAG:        %[[CST_0:.+]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> :
+    # CHECK-SAME:         vector<16xindex>
+    # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
+    # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
+    # CHECK-DAG:        %[[C16]] = arith.constant 16 : index
+    # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
+    # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
+    # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
+    # CHECK-DAG:        %[[THREAD_ID_X:.+]] = gpu.thread_id  x
+    # CHECK-DAG:        %[[THREAD_ID_Y:.+]] = gpu.thread_id  y
+    # CHECK:            %[[D0]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<?x?xf16>{%[[ARG1]],
+    # CHECK-SAME:         %[[ARG2]]}
+    # CHECK:            %[[D1]] = arith.muli %[[WORKGROUP_ID_0]], %[[C16]] : index
+    # CHECK:            %[[D2:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
+    # CHECK:            %[[D3:.+]] = arith.muli %[[D2]], %[[C16]] : index
+    # CHECK:            %[[D4:.+]] = arith.addi %[[D3]], %[[D1]] : index
+    # CHECK:            %[[D5:.+]] = arith.addi %[[D4]], %[[THREAD_ID_X]] : index
+    # CHECK:            %[[D6:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] : index
+    # CHECK:            %[[D7:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] : index
+    # CHECK:            %[[D8:.+]] = arith.addi %[[D7]], %[[D6]] : index
+    # CHECK:            %[[D9:.+]] = vector.splat %[[D8]] : vector<16xindex>
+    # CHECK:            %[[D10:.+]] = arith.addi %[[D9]], %[[CST_0]] : vector<16xindex>
+    # CHECK:            %[[D11:.+]] = vector.splat %[[ARG2]] : vector<16xindex>
+    # CHECK:            %[[D12:.+]] = arith.cmpi slt, %[[D10]], %[[D11]] : vector<16xindex>
+    # CHECK:            %[[D13:.+]] = arith.cmpi slt, %[[D5]], %[[ARG1]] : index
+    # CHECK:            %[[D14:.+]] = vector.splat %[[D13]] : vector<16xi1>
+    # CHECK:            %[[D15:.+]] = arith.andi %[[D12]], %[[D14]] : vector<16xi1>
+    # CHECK:            %[[D16:.+]] = vector.maskedload %[[D0]][%[[D5]], %[[D8]]], %[[D15]], %[[CST]] : memref<?x?xf16>,
+    # CHECK-SAME:         vector<16xi1>, vector<16xf16> into vector<16xf16>
+    # CHECK:            vector.maskedstore %[[D0]][%[[D5]], %[[D8]]], %[[D15]], %[[D16]] : memref<?x?xf16>, vector<16xi1>,
+    # CHECK-SAME:         vector<16xf16>
+    # CHECK:            return
 
 
 @run_test
