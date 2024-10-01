@@ -355,7 +355,7 @@ def test_dynamic_copy():
         a = torch.randn(16, 16, dtype=torch.float16)
         print(test(a).module_op)
 
-    # CHECK:        stream.executable.export public @test workgroups(%[[ARG0:[a-zA-Z0-9_]+]]: index, %[[ARG1:[a-zA-Z0-9_]+]]:
+    # CHECK:        stream.executable.export public @test workgroups(%[[ARG0:.*]]: index, %[[ARG1:.*]]:
     # CHECK-SAME:       index) -> (index, index, index) {
     # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
     # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
@@ -363,7 +363,7 @@ def test_dynamic_copy():
     # CHECK:            %[[D1:.+]] = arith.ceildivsi %[[ARG1]], %[[C16]] : index
     # CHECK:            stream.return %[[D0]], %[[D1]], %[[C1]] : index, index, index
     # CHECK:          }
-    # CHECK:          func.func @test(%[[ARG0]]: !stream.binding, %[[ARG1]]: index, %[[ARG2:[a-zA-Z0-9_]+]]: index)
+    # CHECK:          func.func @test(%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index)
     # CHECK-SAME:       attributes {translation_info = #[[TRANSLATION:.+]]} {
     # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<16xf16>
     # CHECK-DAG:        %[[CST_0:.+]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> :

@@ -178,13 +178,14 @@ def get_type_or_element_type(operand_type: IrType):
 def add_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
     induction_var_syms = []
     induction_vars = []
-    for constraint in emitter.constraints:
-        if isinstance(constraint, TilingConstraint):
-            assert (
-                constraint.dim in emitter.induction_vars
-            ), f"Could not find induction var for {constraint.dim} dimension"
-            induction_var_syms.append(constraint.induction_var)
-            induction_vars.append(emitter.induction_vars[constraint.dim])
+    if emitter.induction_vars:
+        for constraint in emitter.constraints:
+            if isinstance(constraint, TilingConstraint):
+                assert (
+                    constraint.dim in emitter.induction_vars
+                ), f"Could not find induction var for {constraint.dim} dimension"
+                induction_var_syms.append(constraint.induction_var)
+                induction_vars.append(emitter.induction_vars[constraint.dim])
 
     # TODO: factor this out
     all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars
