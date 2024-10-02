@@ -233,23 +233,43 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
 
         raise CodegenError(f"Cannot broadcast {a.type} and {b.type}")
 
+    def get_const_val(arg):
+        if isinstance(arg, OpResult):
+            arg = arg.owner.opview
+
+        if isinstance(arg, arith_d.ConstantOp):
+            value = arg.attributes["value"]
+            if isinstance(value, IntegerAttr):
+                return int(value)
+
+        return None
+
+    def muli_fold(lhs, rhs):
+        if get_const_val(lhs) == 1:
+            return rhs
+
+        if get_const_val(rhs) == 1:
+            return lhs
+
+        return arith_d.muli(lhs, rhs)
+
     # `x + (a/b)` transformed into `(x*b + a) / b`
     def _add(lhs, rhs):
         is_rational_lhs = isinstance(lhs, _Rational)
         is_rational_rhs = isinstance(rhs, _Rational)
         if is_rational_lhs and not is_rational_rhs:
-            numerator = arith_d.muli(*_broadcast(lhs.denominator, rhs))
+            numerator = muli_fold(*_broadcast(lhs.denominator, rhs))
             numerator = arith_d.addi(*_broadcast(numerator, lhs.numerator))
             return _Rational(numerator, lhs.denominator)
         elif not is_rational_lhs and is_rational_rhs:
-            numerator = arith_d.muli(*_broadcast(lhs, rhs.denominator))
+            numerator = muli_fold(*_broadcast(lhs, rhs.denominator))
             numerator = arith_d.addi(*_broadcast(numerator, rhs.numerator))
             return _Rational(numerator, rhs.denominator)
         elif is_rational_lhs and is_rational_rhs:
-            lhs_numerator = arith_d.muli(*_broadcast(lhs.numerator, rhs.denominator))
-            rhs_numerator = arith_d.muli(*_broadcast(rhs.numerator, lhs.denominator))
+            lhs_numerator = muli_fold(*_broadcast(lhs.numerator, rhs.denominator))
+            rhs_numerator = muli_fold(*_broadcast(rhs.numerator, lhs.denominator))
             numerator = arith_d.addi(*_broadcast(lhs_numerator, rhs_numerator))
-            denominator = arith_d.muli(*_broadcast(lhs.denominator, rhs.denominator))
+            denominator = muli_fold(*_broadcast(lhs.denominator, rhs.denominator))
             return _Rational(numerator, denominator)
         else:
             return arith_d.addi(*_broadcast(lhs, rhs))
@@ -259,17 +279,17 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
         is_rational_lhs = isinstance(lhs, _Rational)
         is_rational_rhs = isinstance(rhs, _Rational)
         if is_rational_lhs and not is_rational_rhs:
-            numerator = arith_d.muli(*_broadcast(lhs.numerator, rhs))
+            numerator = muli_fold(*_broadcast(lhs.numerator, rhs))
             return _Rational(numerator, lhs.denominator)
         elif not is_rational_lhs and is_rational_rhs:
-            numerator = arith_d.muli(*_broadcast(lhs, rhs.numerator))
+            numerator = muli_fold(*_broadcast(lhs, rhs.numerator))
             return _Rational(numerator, rhs.denominator)
         elif is_rational_lhs and is_rational_rhs:
-            numerator = arith_d.muli(*_broadcast(lhs.numerator, rhs.numerator))
-            denominator = arith_d.muli(*_broadcast(lhs.denominator, rhs.denominator))
+            numerator = muli_fold(*_broadcast(lhs.numerator, rhs.numerator))
+            denominator = muli_fold(*_broadcast(lhs.denominator, rhs.denominator))
             return _Rational(numerator, denominator)
         else:
-            return arith_d.muli(*_broadcast(lhs, rhs))
+            return muli_fold(*_broadcast(lhs, rhs))
 
     def _floor(value):
         if isinstance(value, _Rational):
