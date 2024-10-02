@@ -122,6 +122,7 @@ def testGemm(shape: tuple[int], enable_scheduling: bool):
         hyperparams,
         canonicalize=True,
         run=True,
+        run_bench=True,        
         run_config=config,
         schedule=enable_scheduling,
     ):
