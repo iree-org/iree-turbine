@@ -272,14 +272,14 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
             return arith_d.muli(*_broadcast(lhs, rhs))
 
     def _floor(value):
-        if insintance(value, _Rational):
-            value = arith_d.floordiv(*_broadcast(value.numerator, value.denominator))
+        if isinstance(value, _Rational):
+            value = arith_d.divsi(*_broadcast(value.numerator, value.denominator))
 
         return value
 
     def _ceiling(value):
-        if insintance(value, _Rational):
-            value = arith_d.ceildiv(*_broadcast(value.numerator, value.denominator))
+        if isinstance(value, _Rational):
+            value = arith_d.ceildivsi(*_broadcast(value.numerator, value.denominator))
 
         return value
 
@@ -309,7 +309,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
 
     def _get_const(val):
         if isinstance(val, int):
-            return arith_d.constant(IndexType.get(), res)
+            return arith_d.constant(IndexType.get(), val)
 
         if isinstance(val, (tuple, list)):
             vec_type = VectorType.get([len(val)], IndexType.get())
@@ -336,7 +336,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
                 else:
                     raise CodegenError(f"Unknown symbol {term}")
             case sympy.Integer():
-                stack.append(_get_const(term))
+                stack.append(_get_const(int(term)))
             case sympy.Mul():
                 args = _group_rationals(stack, len(term.args))
                 stack.append(_apply(args, _mul))
