@@ -394,8 +394,9 @@ def compile_and_invoke(
                 inputs.append("@" + tf.name)
 
         benchmark_results = bench.benchmark_module(
-             mod,
-             entry_function=func_name,)
+            mod,
+            entry_function=func_name,
+        )
 
         benchmark_results = bench.benchmark_module(
             mod,
@@ -406,7 +407,8 @@ def compile_and_invoke(
         )
         _print_bench_result(benchmark_results, bench_file)
         for tf in tempfiles:
-          tf.close()
+            tf.close()
+
 
 def safe_subs(input: Any, subs: List[Tuple[IndexExpr, IndexExpr]]) -> Any:
     """
