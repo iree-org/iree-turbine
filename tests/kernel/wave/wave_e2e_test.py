@@ -797,7 +797,7 @@ _igemm_cases = [
     (1, 5, 5, 1, 3, 3, 1, 1),
 ]
 
-perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_test)
+perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
 
 _igemm_cases += [
     perf_test(2, 128, 128, 16, 3, 3, 320, 1),

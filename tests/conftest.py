@@ -14,16 +14,18 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "perf_test: performace test")
+    config.addinivalue_line(
+        "markers", "perf_only: performace test, runs only with '--runperf'"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
     run_perf = config.getoption("--runperf")
     for item in items:
-        is_perf = next(item.iter_markers("perf_test"), None) is not None
+        is_perf_only = next(item.iter_markers("perf_only"), None) is not None
         if run_perf:
-            if not is_perf:
+            if not is_perf_only:
                 item.add_marker(pytest.mark.skip("skip non-perf test"))
         else:
-            if is_perf:
+            if is_perf_only:
                 item.add_marker(pytest.mark.skip("skip perf test"))
