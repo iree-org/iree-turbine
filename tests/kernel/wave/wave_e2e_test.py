@@ -797,7 +797,7 @@ _igemm_cases = [
     (1, 5, 5, 1, 3, 3, 1, 1),
 ]
 
-_skip_case = lambda a: pytest.param(a, marks=pytest.mark.skip)
+_skip_case = lambda a: pytest.param(*a, marks=pytest.mark.skip)
 
 # Skip some tests as they are too slow on CI.
 _igemm_cases += [
