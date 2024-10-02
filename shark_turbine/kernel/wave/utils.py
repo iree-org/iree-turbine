@@ -375,7 +375,7 @@ def compile_and_invoke(
         _invoke(ctx.vm_context, device, func, kernel_inputs, kernel_outputs)
 
     if run_bench:
-        bench_with_constant_weights = config.get("backend", False)
+        bench_with_constant_weights = config.get("bench_with_constant_weights", False)
         tempfiles = []
         inputs = []
         if bench_with_constant_weights:
@@ -388,7 +388,7 @@ def compile_and_invoke(
                 )
         else:
             for inp in kernel_inputs:
-                tf = tempfile.NamedTemporaryFile(delete=False)
+                tf = tempfile.NamedTemporaryFile()
                 torch.save(inp, tf)
                 tempfiles.append(tf)
                 inputs.append("@" + tf.name)
@@ -406,8 +406,6 @@ def compile_and_invoke(
             **benchmark_flags,
         )
         _print_bench_result(benchmark_results, bench_file)
-        for tf in tempfiles:
-            tf.close()
 
 
 def safe_subs(input: Any, subs: List[Tuple[IndexExpr, IndexExpr]]) -> Any:
