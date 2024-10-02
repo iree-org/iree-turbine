@@ -326,7 +326,7 @@ def _expand_node(
         return context[(node, get_indexed_dims(dim_query, node), res_idx)]
     elif isinstance(node, Reduction):
         return _expand_reduction(
-            node, trace, dim_query, dim_scaling, node_index_setter, context
+            node, trace, dim_query, dim_scaling, node_index_setter, context, res_idx
         )
     elif isinstance(node, Getitem):
         res_idx = node.res_idx
