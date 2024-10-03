@@ -65,7 +65,7 @@ def handle_binaryop_conflict(custom_node: CustomOp):
     return True
 
 
-# Returns True if all conflicts handled.
+# Returns True iff all conflicts are handled succesfully.
 def handle_conflicts(conflicted_ops: set[CustomOp]):
     for conflict in conflicted_ops:
         custom = get_custom(conflict)
