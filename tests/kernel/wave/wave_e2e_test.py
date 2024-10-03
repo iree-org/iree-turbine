@@ -830,10 +830,15 @@ _igemm_cases += [
     perf_test(2, 64, 64, 640, 3, 3, 640, 1),
 ]
 
+_mem_spaces = [
+    pytest.param(GLOBAL_ADDRESS_SPACE, id="global"),
+    pytest.param(SHARED_ADDRESS_SPACE, id="shared"),
+]
+
 
 @require_e2e
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
-@pytest.mark.parametrize("mem_space", [GLOBAL_ADDRESS_SPACE, SHARED_ADDRESS_SPACE])
+@pytest.mark.parametrize("mem_space", _mem_spaces)
 def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
