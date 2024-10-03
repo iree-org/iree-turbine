@@ -388,8 +388,8 @@ def compile_and_invoke(
                 )
         else:
             for inp in kernel_inputs:
-                tf = tempfile.NamedTemporaryFile()
-                torch.save(inp, tf)
+                tf = tempfile.NamedTemporaryFile(suffix=".npy")
+                numpy.save(tf, inp.numpy())
                 tempfiles.append(tf)
                 inputs.append("@" + tf.name)
 
