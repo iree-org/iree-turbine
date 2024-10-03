@@ -304,6 +304,10 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
         return value
 
     def _group_rationals(stack, count):
+        """Group rationals and non-rationals args into 2 contiguous sets.
+
+        This allows to mul/add all non-rationals first, reducing total number of ops.
+        """
         rationals = []
         non_rationals = []
         for _ in range(count):
