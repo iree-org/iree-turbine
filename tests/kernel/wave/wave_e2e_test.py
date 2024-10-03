@@ -102,7 +102,7 @@ def test_copy(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=True,
+        run_bench=False,
         run_config=config,
     ):
         test(a, b)
@@ -215,7 +215,7 @@ def test_transpose_read(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=True,
+        run_bench=False,
         run_config=config,
     ):
         test(a, b)
@@ -272,7 +272,7 @@ def test_transpose_write(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=True,
+        run_bench=False,
         run_config=config,
     ):
         test(a, b)
@@ -329,7 +329,7 @@ def test_reduce_sum(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=True,
+        run_bench=False,
         run_config=config,
     ):
         test(a, b, c)
@@ -405,7 +405,7 @@ def test_toy_online_softmax(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=True,
+        run_bench=False,
         run_config=config,
     ):
         test(a, b, c)
@@ -510,7 +510,7 @@ def test_im2col():
         },
         canonicalize=True,
         run=True,
-        run_bench=True,
+        run_bench=False,
         run_config=config,
     ):
         test(a, b)
@@ -641,7 +641,7 @@ def test_im2col_mma():
         },
         canonicalize=True,
         run=True,
-        run_bench=True,
+        run_bench=False,
         run_config=config,
     ):
         gpu_func(x, we, out)
@@ -956,7 +956,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space):
         },
         canonicalize=True,
         run=True,
-        run_bench=True,
+        run_bench=False,
         run_config=config,
     ):
         conv(x, we, out)
