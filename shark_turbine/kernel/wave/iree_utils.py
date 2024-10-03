@@ -82,5 +82,11 @@ def generate_iree_ref(
         raise ValueError(f"Unknown kernel type: {kernel_type}")
 
     compile_and_invoke(
-        asm, kernel_type, config, kernel_inputs, kernel_outputs, True, False
+        asm,
+        kernel_type,
+        config,
+        kernel_inputs,
+        kernel_outputs,
+        run=True,
+        run_bench=kwargs.get("run_bench", False),
     )
