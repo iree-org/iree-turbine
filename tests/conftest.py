@@ -9,7 +9,7 @@ import pytest
 
 def pytest_addoption(parser):
     parser.addoption(
-        "--runperf", action="store_true", default=False, help="run performace tests"
+        "--runperf", action="store_true", default=False, help="run performance tests"
     )
 
 
