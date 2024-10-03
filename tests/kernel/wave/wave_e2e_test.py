@@ -961,7 +961,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
         run_bench=run_bench,
         run_config=config,
     ):
-
         conv(x, we, out)
         assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
 
