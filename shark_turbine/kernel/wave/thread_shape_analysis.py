@@ -41,13 +41,6 @@ def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
         custom.index[target.dim].size = target.size
 
 
-# Function called on op post propagation for extra processing/handling.
-def post_propagation(custom: CustomOp, target_dim_sizes: list[DimSize]):
-    if isinstance(custom, IterArg):
-        init_args = custom.parent_op().init_args[custom.get_iter_idx()]
-        set_index_size(get_custom(init_args), target_dim_sizes)
-
-
 def determine_thread_shapes(trace: CapturedTrace):
     """
     This function does analysis and propagation of thread shape. It does by such:
@@ -121,7 +114,9 @@ def determine_thread_shapes(trace: CapturedTrace):
             lhs_bwd_slice = capture_backward_slice(custom.lhs, propagatable_op)
             rhs_bwd_slice = capture_backward_slice(custom.rhs, propagatable_op)
             acc_slice = capture_forward_slice(custom.acc, propagatable_op)
-            acc_slice.union(capture_backward_slice(custom.acc, propagatable_op))
+            acc_slice = acc_slice.union(
+                capture_backward_slice(custom.acc, propagatable_op)
+            )
             acc_index = get_dim_sizes(custom.acc_index)
             lhs_index = get_dim_sizes(custom.lhs_index)
             rhs_index = get_dim_sizes(custom.rhs_index)
@@ -145,4 +140,3 @@ def determine_thread_shapes(trace: CapturedTrace):
         for user in target_ops:
             custom_user = get_custom(user)
             set_index_size(custom_user, target_index_size)
-            post_propagation(custom_user, target_index_size)

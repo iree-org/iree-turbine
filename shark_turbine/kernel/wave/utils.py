@@ -469,25 +469,26 @@ def get_inputs(
     Return the inputs of a node, propagating through reductions.
     """
     inputs = []
-    for input in node.all_input_nodes:
-        custom = get_custom(input)
-        if isinstance(custom, GetResult):
-            reduction = get_custom(custom.value)
-            assert isinstance(
-                get_custom(reduction), Reduction
-            ), "GetResult must be used by a Reduction"
-            # Map get result to output
-            reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
-            inputs.append(reduction.outputs(reduction_subgraph)[custom.res_idx])
-            continue
-        if isinstance(custom, IterArg):
-            # Map iter args to init args
-            if reduction is None:
-                reduction = custom.parent_op()
-            iter_arg_idx = custom.get_iter_idx()
-            inputs.append(reduction.init_args[iter_arg_idx])
-            continue
-        inputs.append(input)
+    custom = get_custom(node)
+    if isinstance(custom, IterArg):
+        # Map iter args to init args
+        local_reduction = reduction
+        if reduction is None:
+            local_reduction = custom.parent_op()
+        iter_arg_idx = custom.get_iter_idx()
+        inputs.append(local_reduction.init_args[iter_arg_idx])
+    elif isinstance(custom, GetResult):
+        reduction = get_custom(custom.value)
+        assert isinstance(
+            get_custom(reduction), Reduction
+        ), "GetResult must be used by a Reduction"
+        # Map get result to output
+        reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
+        inputs.append(reduction.outputs(reduction_subgraph)[custom.res_idx])
+    else:
+        # Default handling for other ops.
+        for input in node.all_input_nodes:
+            inputs.append(input)
     return inputs, reduction
 
 
