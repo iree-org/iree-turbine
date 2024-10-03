@@ -59,8 +59,8 @@ jobs:
     - name: Run e2e tests on MI300
       if: "contains(matrix.os, 'mi300') && !cancelled()"
       run: |
+        export LD_LIBRARY_PATH="/opt/rocm/lib/"
         export WAVE_RUN_E2E_TESTS=1
-        export LD_LIBRARY_PATH=/opt/rocm/lib/
         pytest -n 4 ./tests/kernel/wave/
 
     - name: Run LIT tests
