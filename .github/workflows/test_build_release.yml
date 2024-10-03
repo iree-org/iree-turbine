@@ -22,6 +22,7 @@ jobs:
       matrix:
         version: [3.11]
         os: [ubuntu-latest]
+      fail-fast: false
     runs-on: ${{matrix.os}}
     steps:
       - name: "Setting up Python"
