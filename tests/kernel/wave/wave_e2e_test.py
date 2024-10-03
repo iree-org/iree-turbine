@@ -942,6 +942,10 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
     run_bench = request.config.getoption("--runperf")
+    if run_bench:
+        config["benchmark_batch_size"] = 1000
+        config["benchmark_repetitions"] = 3
+
     with tk.gen.TestLaunchContext(
         {
             N: n,
