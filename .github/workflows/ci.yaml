@@ -18,6 +18,7 @@ jobs:
   test:
     name: "Unit Tests and Type Checking"
     strategy:
+      fail-fast: false
       matrix:
         version: [3.11]
         os: [ubuntu-latest, nodai-amdgpu-mi300-x86-64]

@@ -19,6 +19,7 @@ jobs:
   test:
     name: "Test Build Release Process"
     strategy:
+      fail-fast: false
       matrix:
         version: [3.11]
         os: [ubuntu-latest]
