@@ -953,7 +953,8 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
         config["benchmark_repetitions"] = 3
 
     if dump_perf:
-        config["benchmark_results_file"] = "tk_" + request.node.name
+        perf_filename = request.node.name + ".json"
+        config["benchmark_results_file"] = "tk_" + perf_filename
 
     with tk.gen.TestLaunchContext(
         {
@@ -979,7 +980,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
 
         if run_bench:
             if dump_perf:
-                config["benchmark_results_file"] = "iree_" + request.node.name
+                config["benchmark_results_file"] = "iree_" + perf_filename
 
             iree_ref = torch.zeros_like(out_ref)
             generate_iree_ref(
