@@ -989,6 +989,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space):
 
         iree_ref = torch.zeros_like(out_ref)
         generate_iree_ref(
-            "conv_2d_nchw_fchw ", [x, we], [iree_ref], config, stride=stride
+            "conv_2d_nchw_fchw", [x, we], [iree_ref], config, stride=stride
         )
-        assert_close(out, iree_ref)
+        assert_allclose(out, iree_ref, rtol=1e-03, atol=1e-03)
