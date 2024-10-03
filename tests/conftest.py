@@ -15,7 +15,7 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     config.addinivalue_line(
-        "markers", "perf_only: performace test, runs only with '--runperf'"
+        "markers", "perf_only: performance test, runs only with '--runperf'"
     )
 
 
