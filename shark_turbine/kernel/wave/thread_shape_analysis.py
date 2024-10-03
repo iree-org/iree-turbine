@@ -15,16 +15,16 @@ logger = get_logger("turbine.wave.thread_shape_analysis")
 
 
 @dataclass(order=True)
-class IndexSize:
-    index: IndexSymbol
+class DimSize:
+    dim: IndexSymbol
     size: int
 
     def __hash__(self):
-        return hash((self.index, self.size))
+        return hash((self.dim, self.size))
 
 
 def get_index_sizes(indices: list[IndexSequence]):
-    dims = frozenset([IndexSize(index, seq.size) for index, seq in indices.items()])
+    dims = frozenset([DimSize(dim, seq.size) for dim, seq in indices.items()])
     return dims
 
 
@@ -32,17 +32,17 @@ def get_custom_index_sizes(custom: CustomOp):
     return get_index_sizes(custom.index)
 
 
-def set_index_size(custom: CustomOp, target_index_sizes: list[IndexSize]):
+def set_index_size(custom: CustomOp, target_index_sizes: list[DimSize]):
     for target in target_index_sizes:
-        if target.index not in custom.index:
+        if target.dim not in custom.index:
             raise NotImplementedError(
                 "NYI: Handle when source target index size is not found in target/user index."
             )
-        custom.index[target.index].size = target.size
+        custom.index[target.dim].size = target.size
 
 
 # Function called on op post propagation for extra processing/handling.
-def post_propagation(custom: CustomOp, target_index_sizes: list[IndexSize]):
+def post_propagation(custom: CustomOp, target_index_sizes: list[DimSize]):
     if isinstance(custom, IterArg):
         init_args = custom.parent_op().init_args[custom.get_iter_idx()]
         set_index_size(get_custom(init_args), target_index_sizes)
@@ -57,6 +57,38 @@ def determine_thread_shapes(trace: CapturedTrace):
     3. We bucket these ops to Variadic(Index->elem_per_thread) mapping.
     4. At every bucket of (index -> elem_per_thread), we apply these information
        by updating their indexSequence size.
+
+    We stored the buckets above in a variable/dict called `thread_size_to_ops`.
+
+    `thread_size_to_ops` is a dict that uses thread_shapes as key and for every
+    key/thread_shape will map to a set of fx.nodes that needs to have that
+    thread_shape in it's indexSequence.
+
+    `thread_shapes` is used to store thread_size at every dimension that the op
+    cares about. We use a frozenset[DimSize] to represent it, where  DimSize
+    is essentially a pair<dimension: IndexSymbol, thread_size: int>. we are using
+    frozen_set since we do not care about the order of dims for the shape/size
+    propagation.
+
+    We use sets[CustomOp] to represent the values of `thread_size_ops` S.T we can
+    easily find any conflicting of index using set operations and handle/resolve it
+    if required.
+
+    For better illustration, here's an example:
+    Kernel:
+        imm = tkw.mul(x, y)
+        lhs = tkw.neg(imm)
+        a = tkw.mma(lhs, rhs, acc)
+        b = tkw.exp2(a)
+    Anchors:
+        mma.lhs: {IndexSize(index=M, size=1), IndexSize(index=K, size=4)}
+        mma.rhs: {IndexSize(index=K, size=4), IndexSize(index=N, size=1)}
+        mma.acc: {IndexSize(index=M, size=4), IndexSize(index=N, size=1)}
+    Bucket Entry:
+        thread_sizes_to_ops[frozenset({IndexSize(index=M, size=1), IndexSize(index=K, size=4)}] = set(lhs, imm, x, y)
+        thread_sizes_to_ops[frozenset({IndexSize(index=M, size=4), IndexSize(index=N, size=1)}] = set(acc, exp2_0)
+        thread_sizes_to_ops[frozenset({IndexSize(index=K, size=4), IndexSize(index=N, size=1)}] = set(rhs, ...)
+
     """
 
     # Anchor ops are ops who's thread shape are predetermined.
@@ -71,19 +103,17 @@ def determine_thread_shapes(trace: CapturedTrace):
         return not isinstance(get_custom(node), nonPropagatableTypes)
 
     anchor_ops = trace.walk(is_anchor_op)
-    thread_size_to_ops: dict[IndexSymbol, set[CustomOp]] = {}
+    thread_size_to_ops: dict[frozenset[DimSize], set[CustomOp]] = {}
     for anchor_op in anchor_ops:
         custom = get_custom(anchor_op)
         index_sizes = get_custom_index_sizes(custom)
         if isinstance(custom, (Read, ReduceOp)):
             fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
-            fwd_slice.remove(custom.fx_node)
             thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
                 index_sizes, set([])
             ).union(fwd_slice)
         elif isinstance(custom, Write):
             bwd_slice = capture_backward_slice(custom.fx_node, propagatable_op)
-            bwd_slice.remove(custom.fx_node)
             thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
                 index_sizes, set([])
             ).union(bwd_slice)
