@@ -494,28 +494,33 @@ def get_inputs(
     Return the inputs of a node, propagating through reductions.
     """
     inputs = []
-    for input in node.all_input_nodes:
-        custom = get_custom(input)
-        if isinstance(custom, GetResult):
-            reduction = custom.value
-            assert isinstance(
-                reduction, Reduction
-            ), "GetResult must be used by a Reduction"
-            # Map get result to output
-            inputs.append(reduction.outputs[custom.res_idx])
-            continue
-        if isinstance(custom, IterArg):
-            # Map iter args to init args
-            iter_arg_idx = reduction.iter_args.index(node)
-            inputs.append(reduction.init_args[iter_arg_idx])
-            continue
-        inputs.append(input)
+    custom = get_custom(node)
+    if isinstance(custom, IterArg):
+        # Map iter args to init args
+        local_reduction = reduction
+        if reduction is None:
+            local_reduction = custom.parent_op()
+        iter_arg_idx = custom.get_iter_idx()
+        inputs.append(local_reduction.init_args[iter_arg_idx])
+    elif isinstance(custom, GetResult):
+        reduction = get_custom(custom.value)
+        assert isinstance(
+            get_custom(reduction), Reduction
+        ), "GetResult must be used by a Reduction"
+        # Map get result to output
+        reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
+        inputs.append(reduction.outputs(reduction_subgraph)[custom.res_idx])
+    else:
+        # Default handling for other ops.
+        for input in node.all_input_nodes:
+            inputs.append(input)
     return inputs, reduction
 
 
 def bfs(
     node: fx.Node,
     get_neighbors: Callable[[fx.Node, fx.Node], list[fx.Node]],
+    filter_fn: Callable[[fx.node], bool],
 ) -> set[fx.Node]:
     """
     Run BFS on the graph to capture the forward slice of a node.
@@ -529,25 +534,29 @@ def bfs(
         s = queue.pop(0)
         neighbors, reduction = get_neighbors(s, reduction)
         for neighbor in neighbors:
-            if neighbor not in visited:
+            if neighbor not in visited and filter_fn(neighbor):
                 visited.add(neighbor)
                 queue.append(neighbor)
     return visited
 
 
-def capture_forward_slice(node: fx.Node) -> set[fx.Node]:
+def capture_forward_slice(
+    node: fx.Node, filter_fn: Callable[[fx.node], bool] = lambda x: True
+) -> set[fx.Node]:
     """
     Run BFS on the graph to capture the forward slice of a node.
     """
-    return bfs(node, lambda x, y: get_users(x, y))
+    return bfs(node, lambda x, y: get_users(x, y), filter_fn)
 
 
-def capture_backward_slice(node: fx.Node) -> set[fx.Node]:
+def capture_backward_slice(
+    node: fx.Node, filter_fn: Callable[[fx.node], bool] = lambda x: True
+) -> set[fx.Node]:
     """
     Capture backward slice from a node and return the tree.
     Assumes graph is directed.
     """
-    return bfs(node, lambda x, y: get_inputs(x, y))
+    return bfs(node, lambda x, y: get_inputs(x, y), filter_fn)
 
 
 def capture_mma_slices(mma_nodes: list[MMA]) -> dict[IndexSymbol, list[fx.Node]]:

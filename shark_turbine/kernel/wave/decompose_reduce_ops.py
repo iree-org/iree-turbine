@@ -20,9 +20,10 @@ from ..ops.wave_ops import (
     ShuffleOp,
     CustomOp,
     ExtractSlice,
+    Reduction,
 )
 
-from .utils import DCE
+from .utils import DCE, subs_idxc
 import torch.fx as fx
 import math
 from typing import Callable
@@ -103,9 +104,11 @@ def decompose_reduce_ops(
                 raise NotImplementedError(
                     "Only implemented reduction on fastest dimension."
                 )
-            reduction_block_size = constraint_tile_size[reduction_dim]
-            reduction_size = reduction_block_size.subs(index_map)
-            local_reduction_size = reduction_size / subgroup_size
+
+            get_thread_shape = lambda index: max(
+                subs_idxc(x.size) for x in index.values()
+            )
+            local_reduction_size = get_thread_shape(get_custom(custom.arg).index)
             local_reduction = emit_local_reduction(
                 binary_fn, reduction_src, custom.graph, local_reduction_size
             )
