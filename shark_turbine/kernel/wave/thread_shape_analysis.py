@@ -23,17 +23,17 @@ class DimSize:
         return hash((self.dim, self.size))
 
 
-def get_index_sizes(indices: list[IndexSequence]):
+def get_dim_sizes(indices: list[IndexSequence]):
     dims = frozenset([DimSize(dim, seq.size) for dim, seq in indices.items()])
     return dims
 
 
-def get_custom_index_sizes(custom: CustomOp):
-    return get_index_sizes(custom.index)
+def get_custom_dim_sizes(custom: CustomOp):
+    return get_dim_sizes(custom.index)
 
 
-def set_index_size(custom: CustomOp, target_index_sizes: list[DimSize]):
-    for target in target_index_sizes:
+def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
+    for target in target_dim_sizes:
         if target.dim not in custom.index:
             raise NotImplementedError(
                 "NYI: Handle when source target index size is not found in target/user index."
@@ -42,10 +42,10 @@ def set_index_size(custom: CustomOp, target_index_sizes: list[DimSize]):
 
 
 # Function called on op post propagation for extra processing/handling.
-def post_propagation(custom: CustomOp, target_index_sizes: list[DimSize]):
+def post_propagation(custom: CustomOp, target_dim_sizes: list[DimSize]):
     if isinstance(custom, IterArg):
         init_args = custom.parent_op().init_args[custom.get_iter_idx()]
-        set_index_size(get_custom(init_args), target_index_sizes)
+        set_index_size(get_custom(init_args), target_dim_sizes)
 
 
 def determine_thread_shapes(trace: CapturedTrace):
@@ -106,7 +106,7 @@ def determine_thread_shapes(trace: CapturedTrace):
     thread_size_to_ops: dict[frozenset[DimSize], set[CustomOp]] = {}
     for anchor_op in anchor_ops:
         custom = get_custom(anchor_op)
-        index_sizes = get_custom_index_sizes(custom)
+        index_sizes = get_custom_dim_sizes(custom)
         if isinstance(custom, (Read, ReduceOp)):
             fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
             thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
@@ -122,9 +122,9 @@ def determine_thread_shapes(trace: CapturedTrace):
             rhs_bwd_slice = capture_backward_slice(custom.rhs, propagatable_op)
             acc_slice = capture_forward_slice(custom.acc, propagatable_op)
             acc_slice.union(capture_backward_slice(custom.acc, propagatable_op))
-            acc_index = get_index_sizes(custom.acc_index)
-            lhs_index = get_index_sizes(custom.lhs_index)
-            rhs_index = get_index_sizes(custom.rhs_index)
+            acc_index = get_dim_sizes(custom.acc_index)
+            lhs_index = get_dim_sizes(custom.lhs_index)
+            rhs_index = get_dim_sizes(custom.rhs_index)
             thread_size_to_ops[acc_index] = thread_size_to_ops.get(
                 acc_index, set([])
             ).union(acc_slice)
