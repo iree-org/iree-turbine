@@ -11,6 +11,12 @@ def pytest_addoption(parser):
     parser.addoption(
         "--runperf", action="store_true", default=False, help="run performance tests"
     )
+    parser.addoption(
+        "--dump-perf-file",
+        action="store_true",
+        default=False,
+        help="save performance info into file, based on current test name",
+    )
 
 
 def pytest_configure(config):

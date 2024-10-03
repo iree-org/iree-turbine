@@ -947,10 +947,13 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
     run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-file")
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3
-        print("run tk")
+
+    if dump_perf:
+        config["benchmark_results_file"] = "tk_" + request.node.name
 
     with tk.gen.TestLaunchContext(
         {
@@ -975,7 +978,9 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
         assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
 
         if run_bench:
-            print("run iree")
+            if dump_perf:
+                config["benchmark_results_file"] = "iree_" + request.node.name
+
             iree_ref = torch.zeros_like(out_ref)
             generate_iree_ref(
                 "conv_2d_nchw_fchw",
