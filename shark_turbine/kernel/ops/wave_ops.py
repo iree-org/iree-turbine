@@ -651,6 +651,13 @@ class IterArg(Placeholder):
     a reduction node.
     """
 
+    def parent_op(self):
+        return get_custom(self.graph.parent_op)
+
+    def get_iter_idx(self):
+        src_reduction = self.parent_op()
+        return src_reduction.iter_args(self.graph).index(self.fx_node)
+
 
 # Ops modeling TKW operations in the kernel language
 
@@ -847,6 +854,7 @@ class Reduction(CustomOp):
             node._add_proxy_to_graph(graph)
             node.fx_node.node.tkw_op = cls
             node.fx_node.node.tkw_op_name = cls.tkw_op_name
+            graph.subgraphs[subgraph_name].parent_op = node.fx_node.node
             return node.fx_node
 
         return wrapper
