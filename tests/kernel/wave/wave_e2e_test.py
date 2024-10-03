@@ -830,6 +830,7 @@ _igemm_cases += [
     perf_test(2, 64, 64, 640, 3, 3, 640, 1),
 ]
 
+
 @require_e2e
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
 @pytest.mark.parametrize("mem_space", [GLOBAL_ADDRESS_SPACE, SHARED_ADDRESS_SPACE])
