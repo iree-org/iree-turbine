@@ -1125,29 +1125,9 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
             "Only support broadcast for kernel with non-MMA constraints."
         )
 
-    # As of writing of this pass, TKW expects only 1D vectors,
-    # or only 1 non-unit dim vector_shape. So we are not handling
-    # broadcast of N-d case.
-    broadcast_dims = set(target_shape) - set(src_shape)
-    if len(broadcast_dims) != 1:
-        raise NotImplementedError("NYI: Support for multiple broadcasting dims.")
-    broadcast_dim = next(iter(broadcast_dims))
-
-    # Extract vector shape of the broadcasted dimension from vector_shape.
-    vector_map = hw_constraint.vector_shapes
-    bcast_dim_wave_size = vector_map[broadcast_dim]
-    if bcast_dim_wave_size % hw_constraint.threads_per_wave != 0:
-        raise NotImplementedError(
-            "Only handle when vector_shape is factor of warp size."
-        )
-    bcast_dim_lane_dim_size = bcast_dim_wave_size // hw_constraint.threads_per_wave
-
-    # Ensure vector_shape for non-broadcast dim in source is unit dim.
-    src_dims = get_custom(register).indexing_dims
-    if any(vector_map.get(src_dim, 0) != 1 for src_dim in src_dims):
-        raise NotImplementedError(
-            "Cannot handle non broadcasted dim being non unit-dim in vector_shape constraints."
-        )
+    # Get thread_shape/size for broadcast.
+    get_thread_shape = lambda index: max(x.size for x in index.values())
+    bcast_dim_lane_dim_size = get_thread_shape(node.index)
 
     # Check MLIR shape
     vector_src = cast_vector(emitter, register)
