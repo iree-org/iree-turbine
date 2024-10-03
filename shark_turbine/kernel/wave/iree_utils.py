@@ -57,7 +57,7 @@ def generate_iree_ref(
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
     config: dict[str, str],
-    **kwargs: dict[Any, Any],
+    **kwargs: dict[str, Any],
 ):
     """
     Generate a reference output for the given kernel type and arguments.
