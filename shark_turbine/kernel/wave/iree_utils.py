@@ -70,7 +70,7 @@ def generate_iree_ref(
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
         asm = get_mmt_asm(lhs_type, rhs_type, acc_type)
-    if kernel_type.startswith(conv_str):
+    elif kernel_type.startswith(conv_str):
         lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
