@@ -60,7 +60,7 @@ jobs:
       if: "contains(matrix.os, 'mi300') && !cancelled()"
       run: |
         export WAVE_RUN_E2E_TESTS=1
-        pytest -n 4 ./tests/kernel/wave/
+        pytest -n 4 --capture=tee-sys ./tests/kernel/wave/
 
     - name: Run LIT tests
       if: ${{ !cancelled() }}
