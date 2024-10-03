@@ -1107,23 +1107,6 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
         register, target_type = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
-    custom_arg = get_custom(register)
-    src_shape = get_custom(register).type.symbolic_shape
-    target_shape = target_type.symbolic_shape
-    hw_constraints = [
-        constraint
-        for constraint in emitter.constraints
-        if isinstance(constraint, HardwareConstraint)
-    ]
-    if len(hw_constraints) != 1:
-        raise NotImplementedError(
-            "Only support single HW Constraint for lowering broadcast."
-        )
-    hw_constraint = hw_constraints[0]
-    if not hasattr(hw_constraint, "vector_shapes"):
-        raise NotImplementedError(
-            "Only support broadcast for kernel with non-MMA constraints."
-        )
 
     # Get thread_shape/size for broadcast.
     get_thread_shape = lambda index: max(x.size for x in index.values())
