@@ -833,7 +833,7 @@ _igemm_cases += [
 @require_e2e
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
 @pytest.mark.parametrize("mem_space", [GLOBAL_ADDRESS_SPACE, SHARED_ADDRESS_SPACE])
-def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space):
+def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
 
@@ -940,7 +940,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space):
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
-    run_bench = True
+    run_bench = request.config.getoption("--runperf")
     with tk.gen.TestLaunchContext(
         {
             N: n,
@@ -964,13 +964,13 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space):
         conv(x, we, out)
         assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
 
-        iree_ref = torch.zeros_like(out_ref)
-        generate_iree_ref(
-            "conv_2d_nchw_fchw",
-            [x, we],
-            [iree_ref],
-            config,
-            stride=stride,
-            run_bench=run_bench,
-        )
-        # assert_allclose(out, iree_ref, rtol=1e-03, atol=1e-03)
+        if run_bench:
+            iree_ref = torch.zeros_like(out_ref)
+            generate_iree_ref(
+                "conv_2d_nchw_fchw",
+                [x, we],
+                [iree_ref],
+                config,
+                stride=stride,
+                run_bench=True,
+            )
