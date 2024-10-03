@@ -396,11 +396,6 @@ def compile_and_invoke(
         benchmark_results = bench.benchmark_module(
             mod,
             entry_function=func_name,
-        )
-
-        benchmark_results = bench.benchmark_module(
-            mod,
-            entry_function=func_name,
             device=device,
             inputs=inputs,
             **benchmark_flags,
