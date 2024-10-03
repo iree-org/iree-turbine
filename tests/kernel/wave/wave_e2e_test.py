@@ -943,8 +943,9 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
 
     run_bench = request.config.getoption("--runperf")
     if run_bench:
-        config["benchmark_batch_size"] = 1000
+        config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3
+        print("run tk")
 
     with tk.gen.TestLaunchContext(
         {
@@ -969,6 +970,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
         assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
 
         if run_bench:
+            print("run iree")
             iree_ref = torch.zeros_like(out_ref)
             generate_iree_ref(
                 "conv_2d_nchw_fchw",
