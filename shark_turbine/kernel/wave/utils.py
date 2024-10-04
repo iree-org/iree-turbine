@@ -334,6 +334,9 @@ def compile_and_invoke(
     if config.get("print_ir_after_all", False):
         flags.append("--mlir-print-ir-after-all")
 
+    if config.get("dump_intermediates", False):
+        flags.append("--iree-hal-dump-executable-intermediates-to=tmp/intermediates")
+
     if run_bench:
         bench_batch_size = config.get("benchmark_batch_size", None)
         bench_repetitions = config.get("benchmark_repetitions", None)
