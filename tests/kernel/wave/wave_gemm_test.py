@@ -52,6 +52,7 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 @pytest.mark.parametrize("enable_scheduling", [False, True])
 def testGemm(shape: tuple[int], enable_scheduling: bool, request):
     run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
     # Input sizes
     M = tkl.sym.M
     N = tkl.sym.N
@@ -126,6 +127,15 @@ def testGemm(shape: tuple[int], enable_scheduling: bool, request):
         MMA_UNITS: 4,
     }
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    if run_bench:
+        config["benchmark_batch_size"] = 10
+        config["benchmark_repetitions"] = 3
+    if dump_perf is not None:
+        perf_filename = request.node.name + ".json"
+        config["benchmark_results_file"] = os.path.join(
+            dump_perf, "tk_" + perf_filename
+        )
+
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -144,6 +154,11 @@ def testGemm(shape: tuple[int], enable_scheduling: bool, request):
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
 
-        iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
-        generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=True)
+        if run_bench:
+            if dump_perf is not None:
+                config["benchmark_results_file"] = os.path.join(
+                    dump_perf, "iree_" + perf_filename
+                )
+            iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
+            generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=run_bench)
         assert_close(c, iree_ref)
