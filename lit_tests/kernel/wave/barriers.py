@@ -98,7 +98,7 @@ def test_read_write_equal_sizes():
         # CHECK-NEXT: %read_0_1
         # CHECK-SAME: (%a, 4, None, None)
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %write_shared_0_0
         # CHECK-SAME: (%read_0_0, %allocate, 4, None)
         # CHECK-NEXT: %write_shared_1_1
@@ -182,9 +182,9 @@ def test_gemm():
         # CHECK-NEXT: %register_1_0_0
         # CHECK-NEXT: %register_0_1_0
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %allocate_1
-        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: reduction
         # CHECK-SAME (K, [%register_0_0_0, %register_1_1_0, %register_1_0_0, %register_0_1_0]
         # CHECK-NEXT: %getresult_1_1_0
