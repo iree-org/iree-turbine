@@ -24,6 +24,14 @@ test_dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
 
 default_test_shapes = [(1024, 5120, 640), (2048, 10240, 1280), (4096, 20480, 2560)]
 
+perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
+
+default_test_shapes += [
+    perf_test((1024, 5120, 640)),
+    perf_test((2048, 10240, 1280)),
+    perf_test((4096, 20480, 2560)),
+]
+
 user_specified_test_shapes = ""
 
 test_params_path = os.environ.get("TEST_PARAMS_PATH", None)
@@ -42,8 +50,8 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize("enable_scheduling", [False, True])
-def testGemm(shape: tuple[int], enable_scheduling: bool):
-
+def testGemm(shape: tuple[int], enable_scheduling: bool, request):
+    run_bench = request.config.getoption("--runperf")
     # Input sizes
     M = tkl.sym.M
     N = tkl.sym.N
@@ -122,7 +130,7 @@ def testGemm(shape: tuple[int], enable_scheduling: bool):
         hyperparams,
         canonicalize=True,
         run=True,
-        run_bench=False,
+        run_bench=run_bench,
         run_config=config,
         schedule=enable_scheduling,
     ):
@@ -137,5 +145,5 @@ def testGemm(shape: tuple[int], enable_scheduling: bool):
                 f.write(mb.module_op.get_asm())
 
         iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
-        generate_iree_ref("mmt", [a, b], [iree_ref], config)
+        generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=True)
         assert_close(c, iree_ref)
