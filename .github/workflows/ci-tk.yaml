@@ -1,13 +1,10 @@
-name: PERF
+name: "TK CI"
 
 on:
-  workflow_dispatch:
   pull_request:
   push:
     branches:
     - main
-  schedule:
-  - cron: '30 5 * * *'
 
 concurrency:
   # A PR number if a pull request and otherwise the commit hash. This cancels
@@ -24,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [nodai-amdgpu-mi300-x86-64]
+        os: [ubuntu-latest, nodai-amdgpu-mi300-x86-64]
     runs-on: ${{matrix.os}}
     env:
       PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
@@ -55,9 +52,23 @@ jobs:
         pip install --no-cache-dir -r iree-requirements-ci.txt
         pip install -r requirements.txt -e .
 
+    - name: Run unit tests
+      if: ${{ !cancelled() }}
+      run: |
+        pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
+
     - name: Run e2e tests on MI300
       if: "contains(matrix.os, 'mi300') && !cancelled()"
       run: |
         export WAVE_RUN_E2E_TESTS=1
-        export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
-        pytest -n 1 --capture=tee-sys -vv ./tests/kernel/wave/
+        pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
+
+    - name: Run LIT tests
+      if: ${{ !cancelled() }}
+      run: |
+        lit lit_tests/ -v
+
+    - name: MyPy Type Checking
+      if: ${{ !cancelled() }}
+      run: |
+        mypy
