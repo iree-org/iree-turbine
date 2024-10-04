@@ -60,4 +60,4 @@ jobs:
       run: |
         export WAVE_RUN_E2E_TESTS=1
         export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
-        pytest -n 1 ./tests/kernel/wave/
+        pytest -n 1 --capture=tee-sys -vv ./tests/kernel/wave/
