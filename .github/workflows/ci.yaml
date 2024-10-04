@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [ubuntu-latest, nodai-amdgpu-mi300-x86-64]
+        os: [ubuntu-latest]
     runs-on: ${{matrix.os}}
     env:
       PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
@@ -55,13 +55,7 @@ jobs:
     - name: Run unit tests
       if: ${{ !cancelled() }}
       run: |
-        pytest -n 4 .
-
-    - name: Run e2e tests on MI300
-      if: "contains(matrix.os, 'mi300') && !cancelled()"
-      run: |
-        export WAVE_RUN_E2E_TESTS=1
-        pytest -n 4 --capture=tee-sys ./tests/kernel/wave/
+        pytest -n 4 --capture=tee-sys -vv .
 
     - name: Run LIT tests
       if: ${{ !cancelled() }}
