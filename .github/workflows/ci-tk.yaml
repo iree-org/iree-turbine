@@ -1,4 +1,4 @@
-name: CI
+name: "TK CI"
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   test:
-    name: "[TKW] Unit Tests and Type Checking"
+    name: "Unit Tests and Type Checking"
     strategy:
       fail-fast: false
       matrix:
