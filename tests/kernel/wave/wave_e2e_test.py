@@ -56,7 +56,8 @@ def xfail_unaligned(func):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-def test_copy(shape):
+def test_copy(shape, request):
+    run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -103,7 +104,7 @@ def test_copy(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=False,
+        run_bench=run_bench,
         run_config=config,
     ):
         test(a, b)
@@ -112,7 +113,8 @@ def test_copy(shape):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-def test_dynamic_copy(shape):
+def test_dynamic_copy(shape, request):
+    run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -159,6 +161,7 @@ def test_dynamic_copy(shape):
         dynamic_symbols_map={M: shape[0], N: shape[1]},
         canonicalize=True,
         run=True,
+        run_bench=run_bench,
         run_config=config,
     ):
         test(a, b)
@@ -167,7 +170,8 @@ def test_dynamic_copy(shape):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_transpose_read"))
-def test_transpose_read(shape):
+def test_transpose_read(shape, request):
+    run_bench = request.config.getoption("--runperf")
     shape = shape[::-1]
     M = tkl.sym.M
     N = tkl.sym.N
@@ -216,7 +220,7 @@ def test_transpose_read(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=False,
+        run_bench=run_bench,
         run_config=config,
     ):
         test(a, b)
@@ -225,7 +229,8 @@ def test_transpose_read(shape):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_transpose_write"))
-def test_transpose_write(shape):
+def test_transpose_write(shape, request):
+    run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -273,7 +278,7 @@ def test_transpose_write(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=False,
+        run_bench=run_bench,
         run_config=config,
     ):
         test(a, b)
@@ -282,7 +287,8 @@ def test_transpose_write(shape):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_reduce_sum"))
-def test_reduce_sum(shape):
+def test_reduce_sum(shape, request):
+    run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
     wave_size = 64
@@ -330,7 +336,7 @@ def test_reduce_sum(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=False,
+        run_bench=run_bench,
         run_config=config,
     ):
         test(a, b, c)
@@ -406,7 +412,6 @@ def test_toy_online_softmax(shape):
         },
         canonicalize=True,
         run=True,
-        run_bench=False,
         run_config=config,
     ):
         test(a, b, c)
@@ -417,7 +422,8 @@ def test_toy_online_softmax(shape):
 
 
 @require_e2e
-def test_im2col():
+def test_im2col(request):
+    run_bench = request.config.getoption("--runperf")
     # TODO: we don't support unaligned access at the moment so all sizes must
     # be aligned to WG/Wave sizes, c * hw * wf == 8 and number of windows == 64.
     n, c, h, w = 1, 2, 9, 9  # Image.
@@ -511,7 +517,7 @@ def test_im2col():
         },
         canonicalize=True,
         run=True,
-        run_bench=False,
+        run_bench=run_bench,
         run_config=config,
     ):
         test(a, b)
@@ -519,7 +525,8 @@ def test_im2col():
 
 
 @require_e2e
-def test_im2col_mma():
+def test_im2col_mma(request):
+    run_bench = request.config.getoption("--runperf")
     # igemm without final col2im
     n, c, h, w = 1, 4, 9, 9  # Image.
     nf, cf, hf, wf = 64, c, 2, 2  # Filters.
@@ -642,7 +649,7 @@ def test_im2col_mma():
         },
         canonicalize=True,
         run=True,
-        run_bench=False,
+        run_bench=run_bench,
         run_config=config,
     ):
         gpu_func(x, we, out)
