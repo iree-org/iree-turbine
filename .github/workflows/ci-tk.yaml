@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   test:
-    name: "Unit Tests and Type Checking"
+    name: "[TKW] Unit Tests and Type Checking"
     strategy:
       fail-fast: false
       matrix:
