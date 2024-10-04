@@ -46,6 +46,7 @@ from shark_turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_
 from shark_turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import (
     write,
+    broadcast,
     register,
     mma,
     shuffle,
@@ -79,7 +80,7 @@ from .constraints import (
     WorkgroupConstraint,
     TilingConstraint,
 )
-from .utils import subs_idxc, find_index_bounds
+from .utils import subs_idxc, find_index_bounds, get_hardware_vector_map
 
 # Indexing imports.
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
@@ -1093,6 +1094,42 @@ def handle_extract_slice(emitter: WaveEmitter, node: fx.Node):
     )
 
     emitter.bind_node_proxy(node, IRProxyValue(element))
+
+
+###############################################################################
+# Reshape ops
+###############################################################################
+
+
+@handle_op(broadcast)
+def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, target_type = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    # Get thread_shape/size for broadcast.
+    get_thread_shape = lambda index: max(x.size for x in index.values())
+    bcast_dim_lane_dim_size = get_thread_shape(node.index)
+
+    # Check MLIR shape
+    vector_src = cast_vector(emitter, register)
+    vector_type = vector_src.type
+    # Only support broadcasting vector<1xdtype> for now.
+    if not VectorType.isinstance(vector_type):
+        raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
+    assert vector_type.rank == 1
+    assert vector_type.shape[0] == 1
+
+    # Extract and Splat
+    # If by chance broadcast size  matches current size, we can return src.
+    if bcast_dim_lane_dim_size == vector_type.shape[0]:
+        emitter.bind_node_proxy(node, IRProxyValue(vector_src))
+
+    result_type = VectorType.get([bcast_dim_lane_dim_size], vector_type.element_type)
+    element = vector_d.extract(vector_src, static_position=[0], dynamic_position=[])
+    splat = vector_d.splat(result_type, element)
+    emitter.bind_node_proxy(node, IRProxyValue(splat))
 
 
 ###############################################################################

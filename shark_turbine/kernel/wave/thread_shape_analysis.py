@@ -9,7 +9,7 @@ from shark_turbine.kernel._support.tracing import CapturedTrace
 import torch.fx as fx
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
-from .utils import capture_forward_slice, capture_backward_slice
+from .utils import capture_forward_slice, capture_backward_slice, subs_idxc
 
 logger = get_logger("turbine.wave.thread_shape_analysis")
 
@@ -24,7 +24,9 @@ class DimSize:
 
 
 def get_dim_sizes(indices: list[IndexSequence]):
-    dims = frozenset([DimSize(dim, seq.size) for dim, seq in indices.items()])
+    dims = frozenset(
+        [DimSize(dim, subs_idxc(seq.size)) for dim, seq in indices.items()]
+    )
     return dims
 
 
@@ -39,6 +41,39 @@ def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
                 "NYI: Handle when source target index size is not found in target/user index."
             )
         custom.index[target.dim].size = target.size
+
+
+def handle_binaryop_conflict(custom_node: CustomOp):
+    # Analyze if we can resolve conflict with broadcast.
+    lhs = get_custom(custom_node.lhs)
+    rhs = get_custom(custom_node.rhs)
+    lhs_dim_set = set(lhs.type.symbolic_shape)
+    rhs_dim_set = set(rhs.type.symbolic_shape)
+    if lhs_dim_set == rhs_dim_set:
+        raise ValueError("Cannot broadcast if lhs and rhs is already same.")
+    if lhs_dim_set.isdisjoint(rhs_dim_set):
+        raise ValueError("Cannot broadcast if lhs and rhs has disjointed shapes.")
+    # Determine the correct indexSize for binaryOp and insert broadcasting.
+    dst_op = lhs if lhs_dim_set > rhs_dim_set else rhs
+    broadcast_idx, broadcast_src = (1, rhs) if lhs_dim_set > rhs_dim_set else (0, lhs)
+    broadcast = Broadcast(broadcast_src.fx_node, dst_op.type)
+    with custom_node.graph.inserting_before(custom_node.fx_node):
+        broadcast.add_to_graph(custom_node.graph)
+    setattr(broadcast.fx_node, "index", dst_op.index)
+    custom_node.index = dst_op.index
+    custom_node.update_arg(broadcast_idx, broadcast.fx_node)
+    return True
+
+
+# Returns True iff all conflicts are handled succesfully.
+def handle_conflicts(conflicted_ops: set[CustomOp]):
+    for conflict in conflicted_ops:
+        custom = get_custom(conflict)
+        if isinstance(custom, BinaryPyOp):
+            handle_binaryop_conflict(custom)
+        else:
+            return False
+    return True
 
 
 def determine_thread_shapes(trace: CapturedTrace):
@@ -133,10 +168,14 @@ def determine_thread_shapes(trace: CapturedTrace):
     # Go through each index-size buckets, and apply the index-size to ops in the bucket.
     cummulative_set = set()
     for target_index_size, target_ops in thread_size_to_ops.items():
-        # Ensure that we do not have any conflicts.
+        # Try to handle conflicts and remove from target set if successfully handled.
         if not cummulative_set.isdisjoint(target_ops):
-            raise NotImplementedError("NYI: Handling of conflicting thread shape.")
+            conflicted_ops = cummulative_set.intersection(target_ops)
+            if handle_conflicts(conflicted_ops) == False:
+                raise NotImplementedError("Failed to handle conflicting thread shape.")
+            target_ops = target_ops.difference(conflicted_ops)
         cummulative_set = cummulative_set.union(target_ops)
+        # Set target ops's indexSize to be the determined from analysis.
         for user in target_ops:
             custom_user = get_custom(user)
             set_index_size(custom_user, target_index_size)
