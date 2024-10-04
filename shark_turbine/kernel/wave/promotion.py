@@ -15,6 +15,25 @@ from .utils import subs_idxc
 logger = get_logger("turbine.wave.promotion")
 
 
+def apply_padding(
+    shape: tuple[IndexSymbol | int], dtype: DataType
+) -> tuple[IndexSymbol | int]:
+    """
+    When accessing shared memory, we need to be cognizant of bank conflicts
+    that can have a significant impact on performance. One way to mitigate
+    these conflicts is by applying padding to the shared memory allocation.
+    This function applies padding of 64 bits to the shared memory allocation.
+    While this approach accomplishes the goal of reducing bank conflicts, it
+    is inefficient in terms of memory usage. A more sophisticated approach
+    would involve swizzling of the shared memory access patterns.
+    """
+    padding = 64 // dtype.bitwidth()
+    return tuple(
+        value + padding if i == len(shape) - 1 else value
+        for i, value in enumerate(shape)
+    )
+
+
 def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
     match custom_node:
         case Read(memory, elements_per_thread) if get_custom(
@@ -47,9 +66,10 @@ def promote_node(
     assert isinstance(node, Read) or isinstance(node, Write)
     with node.graph.inserting_before(node.fx_node.next):
         constrained_shape = get_constrained_shape(node.type.symbolic_shape, constraints)
+        padded_shape = apply_padding(constrained_shape, node.type.dtype)
         allocate_node = Allocate(
             node.type.symbolic_shape,
-            constrained_shape,
+            padded_shape,
             node.type.dtype,
             address_space,
         )
