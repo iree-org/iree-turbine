@@ -9,6 +9,7 @@ import shark_turbine.kernel.lang as tkl
 import shark_turbine.kernel.wave as tkw
 from shark_turbine.kernel.wave.wave_sim import wave_sim
 from shark_turbine.kernel.lang.global_symbols import *
+from shark_turbine.kernel.wave.iree_utils import generate_iree_ref
 import torch
 from numpy.testing import assert_allclose, assert_equal
 import pytest
@@ -829,11 +830,16 @@ _igemm_cases += [
     perf_test(2, 64, 64, 640, 3, 3, 640, 1),
 ]
 
+_mem_spaces = [
+    pytest.param(GLOBAL_ADDRESS_SPACE, id="global"),
+    pytest.param(SHARED_ADDRESS_SPACE, id="shared"),
+]
+
 
 @require_e2e
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
-@pytest.mark.parametrize("mem_space", [GLOBAL_ADDRESS_SPACE, SHARED_ADDRESS_SPACE])
-def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space):
+@pytest.mark.parametrize("mem_space", _mem_spaces)
+def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
 
@@ -940,6 +946,18 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space):
 
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    if run_bench:
+        config["benchmark_batch_size"] = 10
+        config["benchmark_repetitions"] = 3
+
+    if dump_perf is not None:
+        perf_filename = request.node.name + ".json"
+        config["benchmark_results_file"] = os.path.join(
+            dump_perf, "tk_" + perf_filename
+        )
+
     with tk.gen.TestLaunchContext(
         {
             N: n,
@@ -956,8 +974,24 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space):
         },
         canonicalize=True,
         run=True,
-        run_bench=False,
+        run_bench=run_bench,
         run_config=config,
     ):
         conv(x, we, out)
         assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
+
+        if run_bench:
+            if dump_perf is not None:
+                config["benchmark_results_file"] = os.path.join(
+                    dump_perf, "iree_" + perf_filename
+                )
+
+            iree_ref = torch.zeros_like(out_ref)
+            generate_iree_ref(
+                "conv_2d_nchw_fchw",
+                [x, we],
+                [iree_ref],
+                config,
+                stride=stride,
+                run_bench=True,
+            )

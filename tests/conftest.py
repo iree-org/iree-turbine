@@ -11,11 +11,17 @@ def pytest_addoption(parser):
     parser.addoption(
         "--runperf", action="store_true", default=False, help="run performance tests"
     )
+    parser.addoption(
+        "--dump-perf-files-path",
+        action="store",
+        default=None,
+        help="save performance info into provided directory, filename based on current test name",
+    )
 
 
 def pytest_configure(config):
     config.addinivalue_line(
-        "markers", "perf_only: performace test, runs only with '--runperf'"
+        "markers", "perf_only: performance test, runs only with '--runperf'"
     )
 
 
