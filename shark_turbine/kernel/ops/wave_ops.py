@@ -502,7 +502,12 @@ class CustomOp(ABC):
 @dataclass
 class BinaryPyOp(CustomOp, ABC):
     """
-    Represents a binary python operator.
+    Represents an elementwise binary python operator.
+
+    DTYPE requirement: lhs and rhs needs to have the same dtpye.
+    Shape requirement: lhs and rhs either have same shape or
+                       their shape must be broadcastable to
+                       one another.
     """
 
     lhs: Any
