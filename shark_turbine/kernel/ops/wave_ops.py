@@ -96,6 +96,12 @@ def maximum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
+def broadcast(
+    arg: "Register", target_shape: Optional[IndexExpr | int] = None
+) -> "Register":
+    ...
+
+
 def sum(
     src: "Register",
     acc: Optional["Register"] = None,
@@ -496,7 +502,12 @@ class CustomOp(ABC):
 @dataclass
 class BinaryPyOp(CustomOp, ABC):
     """
-    Represents a binary python operator.
+    Represents an elementwise binary python operator.
+
+    DTYPE requirement: lhs and rhs needs to have the same dtpye.
+    Shape requirement: lhs and rhs either have same shape or
+                       their shape must be broadcastable to
+                       one another.
     """
 
     lhs: Any
@@ -522,9 +533,16 @@ class BinaryPyOp(CustomOp, ABC):
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
         has_same_type = has_same_custom_type(lhs_type, rhs_type)
-        if not has_same_type:
-            raise ValueError("Expected lhs and rhs to have same type post-expansion")
-        return lhs_type
+        if has_same_type:
+            return lhs_type
+        lhs_dim_set = set(lhs_type.symbolic_shape)
+        rhs_dim_set = set(rhs_type.symbolic_shape)
+        if lhs_dim_set.isdisjoint(rhs_dim_set):
+            raise ValueError(
+                "BinaryPyOp requires lhs and rhs shape to be at least broadcastable."
+            )
+        broadcasted_type = lhs_type if lhs_dim_set > rhs_dim_set else rhstype
+        return broadcasted_type
 
 
 @define_interface_op("exp2")
@@ -899,8 +917,11 @@ class Reduction(CustomOp):
         return captured_vars
 
     @property
-    def type(self) -> list[Memory | Register]:
-        return [get_custom(x).type for x in self.init_args]
+    def type(self) -> Memory | Register | list[Memory | Register]:
+        res_types = [get_custom(x).type for x in self.init_args]
+        if len(res_types) == 1:
+            res_types = res_types[0]
+        return res_types
 
     def outputs(self, graph: fx.Graph) -> list[fx.Node]:
         for node in graph.nodes:
@@ -1020,6 +1041,34 @@ class ExtractSlice(CustomOp):
     @property
     def type(self) -> "Register":
         return get_custom(self.register_).type
+
+
+@define_op("broadcast")
+@dataclass
+class Broadcast(CustomOp, ABC):
+    """
+    Represents a Broadcast operation.
+
+    arg: Source tensor/value to broadcast
+    target_shape: symbolic target broadcast shape.
+    """
+
+    arg: fx.Node
+    target_type: Sequence[IndexSymbol] = None
+
+    @property
+    def target_shape(self):
+        return self.target_type.symbolic_shape
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return self.target_shape
+
+    @property
+    def type(self) -> Memory:
+        src_dtype = get_custom(self.arg).type.dtype
+        dst_type = Register[*self.target_shape, src_dtype]
+        return dst_type
 
 
 @define_interface_op("max")
