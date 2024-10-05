@@ -3,7 +3,7 @@ import unittest
 from torch import nn
 import torch
 
-from shark_turbine.aot import *
+from iree.turbine.aot import *
 
 logger = logging.getLogger(__file__)
 

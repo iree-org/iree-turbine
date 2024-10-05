@@ -7,7 +7,7 @@
 import logging
 import unittest
 
-from shark_turbine.kernel.lang import (
+from iree.turbine.kernel.lang import (
     Index,
 )
 

@@ -8,15 +8,15 @@ import logging
 import unittest
 
 import torch
-import shark_turbine.kernel as tk
-import shark_turbine.kernel.lang as tkl
+import iree.turbine.kernel as tk
+import iree.turbine.kernel.lang as tkl
 
-from shark_turbine.kernel.compiler import (
+from iree.turbine.kernel.compiler import (
     builder,
     kernel_codegen,
     vector_codegen,
 )
-from shark_turbine.kernel._support import (
+from iree.turbine.kernel._support import (
     indexing,
 )
 

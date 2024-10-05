@@ -14,8 +14,8 @@ from iree.compiler.ir import (
     Operation,
 )
 
-from shark_turbine.transforms import rewriter
-from shark_turbine.transforms.general import rename_parameters
+from iree.turbine.transforms import rewriter
+from iree.turbine.transforms.general import rename_parameters
 
 SIMPLE_GLOBALS_ASM = r"""
 module {

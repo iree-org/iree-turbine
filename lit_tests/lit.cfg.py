@@ -7,7 +7,7 @@ import lit.util
 
 import lit.llvm
 
-from shark_turbine.support.logging import get_logger
+from iree.turbine.support.logging import get_logger
 
 logger = get_logger("turbine.lit_tests")
 

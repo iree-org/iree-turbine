@@ -1,11 +1,11 @@
 # RUN: python %s | FileCheck %s
 
 from typing import Callable
-from shark_turbine.kernel._support.tracing import CapturedTrace
-import shark_turbine.kernel.lang as tkl
-import shark_turbine.kernel.wave as tkw
-from shark_turbine.kernel.ops.wave_ops import get_custom, Read, Write
-from shark_turbine.kernel.wave.utils import run_test, print_trace
+from iree.turbine.kernel._support.tracing import CapturedTrace
+import iree.turbine.kernel.lang as tkl
+import iree.turbine.kernel.wave as tkw
+from iree.turbine.kernel.ops.wave_ops import get_custom, Read, Write
+from iree.turbine.kernel.wave.utils import run_test, print_trace
 
 M = tkl.sym.M
 N = tkl.sym.N

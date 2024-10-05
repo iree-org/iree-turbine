@@ -9,9 +9,9 @@ import pytest
 import sympy
 import unittest
 
-from shark_turbine.kernel.lang import Memory, Register, sym, f16
-from shark_turbine.kernel.lang.wave_types import AddressSpace
-from shark_turbine.kernel.lang.kernel_buffer import KernelBufferUsage
+from iree.turbine.kernel.lang import Memory, Register, sym, f16
+from iree.turbine.kernel.lang.wave_types import AddressSpace
+from iree.turbine.kernel.lang.kernel_buffer import KernelBufferUsage
 
 M = sym.M
 N = sym.N

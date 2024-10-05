@@ -11,8 +11,8 @@ import unittest
 class TopLevelPackageTest(unittest.TestCase):
     def testIreeTurbineRedirect(self):
         # We have a temporary redirect of the top-level API to the
-        # iree.turbine namespace.
-        from iree.turbine import aot, dynamo, kernel, ops, runtime
+        # shark-turbine namespace.
+        from shark_turbine import aot, dynamo, kernel, ops, runtime
 
 
 if __name__ == "__main__":

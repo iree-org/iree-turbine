@@ -8,11 +8,11 @@ from parameterized import parameterized_class
 import torch
 import unittest
 
-from shark_turbine.aot.params import (
+from iree.turbine.aot.params import (
     ParameterArchiveBuilder,
 )
 
-from shark_turbine.runtime import (
+from iree.turbine.runtime import (
     Launchable,
 )
 

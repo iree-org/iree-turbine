@@ -12,7 +12,7 @@ import unittest
 import torch
 import torch.nn as nn
 
-from shark_turbine.aot import (
+from iree.turbine.aot import (
     export,
     externalize_module_parameters,
     save_module_parameters,

@@ -8,8 +8,8 @@ import logging
 import pytest
 import unittest
 from sympy import ceiling
-from shark_turbine.kernel.lang import sym
-from shark_turbine.kernel.wave.constraints import (
+from iree.turbine.kernel.lang import sym
+from iree.turbine.kernel.wave.constraints import (
     WorkgroupConstraint,
     get_grid_shape,
     TilingConstraint,

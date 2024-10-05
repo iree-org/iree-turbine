@@ -10,7 +10,7 @@ import tempfile
 import pytest
 import torch
 
-from shark_turbine.aot import (
+from iree.turbine.aot import (
     FxPrograms,
     FxProgramsBuilder,
 )

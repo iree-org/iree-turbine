@@ -11,7 +11,7 @@ from iree.compiler.ir import (
     Context,
 )
 
-from shark_turbine.aot import *
+from iree.turbine.aot import *
 
 import torch
 import torch.nn as nn

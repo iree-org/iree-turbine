@@ -33,7 +33,7 @@ from .constraints import (
     TilingConstraint,
 )
 import torch.fx as fx
-import shark_turbine.kernel.lang as tkl
+import iree.turbine.kernel.lang as tkl
 
 
 import tempfile

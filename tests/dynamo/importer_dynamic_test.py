@@ -14,7 +14,7 @@ from torch._export import dynamic_dim
 
 # from torch._export.constraints import constrain_as_size, constrain_as_value
 from iree.compiler.extras.fx_importer import FxImporter
-from shark_turbine.dynamo.passes import turbine_cpu_pass_pipeline
+from iree.turbine.dynamo.passes import turbine_cpu_pass_pipeline
 import torch
 import torch._dynamo as dynamo
 from torch._dynamo.backends.common import aot_autograd

@@ -9,7 +9,7 @@ import unittest
 import torch
 import torch.nn as nn
 
-import shark_turbine.aot as aot
+import iree.turbine.aot as aot
 
 
 class MLP(nn.Module):
