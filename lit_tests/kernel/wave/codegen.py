@@ -758,6 +758,84 @@ def test_gemm_pipelined():
         # CHECK-COUNT-8:    amdgpu.mfma
 
 
+# This test is used to check two things
+# 1. Reduction with multiple different types(MMA, ReduceOp) of iterArg works
+# 2. ReduceOp lowering works using constraints from MMA (not just vector_shape).
+@run_test
+def test_gemm_and_reduce():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, ADDRESS_SPACE_0, tkl.f16],
+        d: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+        init_max = tkl.Register[M, tkl.f16](-1e6)
+
+        @tkw.reduction(K, init_args=[init_max, c_reg])
+        def repeat(
+            partial_max: tkl.Register[M, tkl.f16], acc: tkl.Register[M, N, tkl.f32]
+        ) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            partial_max = tkw.max(a_reg, partial_max, dim=K)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return partial_max, acc
+
+        res_max, res_mm = repeat
+        tkw.write(res_max, c, elements_per_thread=1)
+        tkw.write(res_mm, d, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 64,
+            N: 128,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 16,
+            LOAD_ELEMS_PER_THREAD: 4,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        a = torch.randn(64, 32, dtype=torch.float16)
+        b = torch.randn(128, 32, dtype=torch.float16)
+        c = torch.zeros(64, dtype=torch.float16)
+        d = torch.zeros(64, 128, dtype=torch.float32)
+        print(gemm(a, b, c, d).module_op)
+        # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
+        # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
+        # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
+
+        # Tile Reduction Loop
+        # Note: Shape is 32x20 instead of 32x16 because of padding to avoid bank conflicts
+        # CHECK: %{{.*}}:2 = scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
+        # CHECK-SAME: iter_args(%[[ACC0:.+]] = %{{.*}}, %[[ACC1:.+]] = {{.*}})
+        # CHECK-COUNT-2: vector.load{{.*}} memref<32x20xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK-COUNT-6: gpu.shuffle  xor
+        #         CHECK: %[[MAX:.+]] = arith.maximumf %[[ACC0]], %{{.*}}
+        #         CHECK: %[[MMA:.+]] = amdgpu.mfma %{{.*}} * %{{.*}} + %[[ACC1]]
+        #         CHECK: scf.yield %[[MAX]], %[[MMA]] : vector<1xf16>, vector<4xf32>
+
+
 @run_test
 def test_add_float():
     constraints: list[tkw.Constraint] = [
