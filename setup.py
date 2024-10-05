@@ -81,7 +81,7 @@ setup(
     name=f"{TURBINE_PACKAGE_NAME}",
     version=f"{PACKAGE_VERSION}",
     author="IREE Authors",
-    author_email="stella@nod.ai",
+    author_email="iree-technical-discussion@lists.lfaidata.foundation",
     description="IREE Turbine Machine Learning Deployment Tools",
     long_description=README,
     long_description_content_type="text/markdown",
