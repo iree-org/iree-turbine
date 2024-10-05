@@ -10,8 +10,8 @@ import unittest
 import torch
 import torch.nn as nn
 
-import shark_turbine.aot as aot
-import shark_turbine.ops as ops
+import iree.turbine.aot as aot
+import iree.turbine.ops as ops
 
 
 # See runtime/op_reg/kernel_aot_test.py for additional tests of the trace

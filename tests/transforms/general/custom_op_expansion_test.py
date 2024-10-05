@@ -9,15 +9,15 @@ from pathlib import Path
 import torch
 import unittest
 
-from shark_turbine.transforms.general.custom_op_expansion import ExpandCustomOpsPass
-from shark_turbine.runtime.op_reg import (
+from iree.turbine.transforms.general.custom_op_expansion import ExpandCustomOpsPass
+from iree.turbine.runtime.op_reg import (
     def_library,
     CustomOp,
     KernelBuilder,
     KernelSelection,
 )
 
-from shark_turbine.support.ir_imports import (
+from iree.turbine.support.ir_imports import (
     Context,
     Module,
 )

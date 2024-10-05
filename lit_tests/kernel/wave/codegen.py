@@ -2,11 +2,11 @@
 
 import pytest
 from typing import Callable
-import shark_turbine.kernel as tk
-import shark_turbine.kernel.lang as tkl
-import shark_turbine.kernel.wave as tkw
-from shark_turbine.kernel.lang.global_symbols import *
-from shark_turbine.kernel.wave.utils import run_test
+import iree.turbine.kernel as tk
+import iree.turbine.kernel.lang as tkl
+import iree.turbine.kernel.wave as tkw
+from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel.wave.utils import run_test
 import torch
 
 M = tkl.sym.M

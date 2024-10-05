@@ -42,7 +42,7 @@ from .shared_memory_indexing import apply_shared_memory_indexing_corrections
 from .thread_shape_analysis import determine_thread_shapes
 from .scheduling.schedule import schedule_graph
 from .._support.indexing import IndexingContext, IndexExpr
-import shark_turbine.kernel.lang as tkl
+import iree.turbine.kernel.lang as tkl
 from .._support.tracing import (
     CapturedTrace,
     CompiledContext,

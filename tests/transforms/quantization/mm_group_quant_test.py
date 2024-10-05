@@ -14,8 +14,8 @@ from iree.compiler.ir import (
     Operation,
 )
 
-from shark_turbine.transforms import rewriter
-from shark_turbine.transforms.quantization import mm_group_quant
+from iree.turbine.transforms import rewriter
+from iree.turbine.transforms.quantization import mm_group_quant
 
 MM_F32_TO_INT4_CONTENTS = (
     Path(__file__).resolve().parent / "mm_f32_to_int4.mlir"

@@ -14,8 +14,8 @@ from iree.compiler.ir import (
     Context,
 )
 
-from shark_turbine.aot import *
-from shark_turbine.aot.builtins import *
+from iree.turbine.aot import *
+from iree.turbine.aot.builtins import *
 
 
 class TorchExportTests(unittest.TestCase):

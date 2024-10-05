@@ -15,8 +15,7 @@ THIS_DIR = os.path.realpath(os.path.dirname(__file__))
 REPO_DIR = THIS_DIR
 VERSION_INFO_FILE = os.path.join(REPO_DIR, "version_info.json")
 
-# Transitional as we migrate from shark-turbine -> iree-turbine.
-TURBINE_PACKAGE_NAME = os.getenv("TURBINE_PACKAGE_NAME", "shark-turbine")
+TURBINE_PACKAGE_NAME = "iree-turbine"
 
 with open(
     os.path.join(
@@ -81,12 +80,12 @@ class BuildCommand(distutils.command.build.build):
 setup(
     name=f"{TURBINE_PACKAGE_NAME}",
     version=f"{PACKAGE_VERSION}",
-    author="SHARK Authors",
-    author_email="stella@nod.ai",
-    description="SHARK Turbine Machine Learning Deployment Tools",
+    author="IREE Authors",
+    author_email="iree-technical-discussion@lists.lfaidata.foundation",
+    description="IREE Turbine Machine Learning Deployment Tools",
     long_description=README,
     long_description_content_type="text/markdown",
-    url="https://github.com/nod-ai/SHARK-Turbine",
+    url="https://github.com/iree-org/iree-turbine/",
     license="Apache-2.0",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -96,11 +95,11 @@ setup(
     packages=packages,
     include_package_data=True,
     package_data={
-        "shark_turbine": ["ops/templates/*.mlir"],  # Include MLIR templates
+        "iree.turbine": ["ops/templates/*.mlir"],  # Include MLIR templates
     },
     entry_points={
         "torch_dynamo_backends": [
-            "turbine_cpu = shark_turbine.dynamo.backends.cpu:backend",
+            "turbine_cpu = iree.turbine.dynamo.backends.cpu:backend",
         ],
     },
     install_requires=[

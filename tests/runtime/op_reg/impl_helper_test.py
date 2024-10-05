@@ -9,7 +9,7 @@ import unittest
 
 import torch
 
-from shark_turbine.ops import _str_format_test_ops
+from iree.turbine.ops import _str_format_test_ops
 
 
 class KernelRegTest(unittest.TestCase):

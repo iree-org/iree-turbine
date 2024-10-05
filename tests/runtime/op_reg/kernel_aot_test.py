@@ -10,10 +10,10 @@ import unittest
 import torch
 import torch.nn as nn
 
-import shark_turbine.aot as aot
-import shark_turbine.ops as ops
+import iree.turbine.aot as aot
+import iree.turbine.ops as ops
 
-from shark_turbine.transforms.general.custom_op_expansion import ExpandCustomOpsPass
+from iree.turbine.transforms.general.custom_op_expansion import ExpandCustomOpsPass
 
 
 class MLP(nn.Module):

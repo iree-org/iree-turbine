@@ -6,8 +6,8 @@
 
 import logging
 import unittest
-from shark_turbine.kernel.lang import sym
-from shark_turbine.kernel.wave.utils import delinearize_index
+from iree.turbine.kernel.lang import sym
+from iree.turbine.kernel.wave.utils import delinearize_index
 import numpy as np
 
 M = sym.M

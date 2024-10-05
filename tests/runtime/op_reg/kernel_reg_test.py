@@ -9,9 +9,9 @@ import unittest
 
 import torch
 
-from shark_turbine.runtime.op_reg import *
+from iree.turbine.runtime.op_reg import *
 
-from shark_turbine.runtime.op_reg.compiler import _testing_get_cache_size
+from iree.turbine.runtime.op_reg.compiler import _testing_get_cache_size
 
 
 class KernelRegTest(unittest.TestCase):

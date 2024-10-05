@@ -2,7 +2,7 @@ import torch
 
 import pytest
 
-from shark_turbine.aot import *
+from iree.turbine.aot import *
 
 
 @pytest.mark.parametrize(
