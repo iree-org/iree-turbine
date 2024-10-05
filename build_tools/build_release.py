@@ -159,10 +159,8 @@ def main():
         print("Downloading remaining requirements")
         download_requirements(REPO_ROOT / "requirements.txt")
 
-    print("Building shark-turbine")
-    build_wheel(REPO_ROOT)
     print("Building iree-turbine")
-    build_wheel(REPO_ROOT, env={"TURBINE_PACKAGE_NAME": "iree-turbine"})
+    build_wheel(REPO_ROOT)
 
 
 if __name__ == "__main__":
