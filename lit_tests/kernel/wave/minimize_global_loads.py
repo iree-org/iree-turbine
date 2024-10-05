@@ -3,21 +3,21 @@
 import logging
 from typing import Callable
 import unittest
-import shark_turbine.kernel as tk
-import shark_turbine.kernel.lang as tkl
-import shark_turbine.kernel.wave as tkw
-from shark_turbine.kernel.wave.promotion import promote_placeholders
-from shark_turbine.kernel.wave.hoisting import hoist_allocs
-from shark_turbine.kernel.wave.barriers import add_shared_memory_barriers
-from shark_turbine.kernel.wave.expansion import expand_graph
-from shark_turbine.kernel.lang.global_symbols import *
-from shark_turbine.kernel._support.tracing import CapturedTrace
-from shark_turbine.kernel._support.indexing import IndexingContext
-from shark_turbine.kernel.ops.wave_ops import *
-from shark_turbine.kernel.wave.utils import run_test, print_trace
-from shark_turbine.kernel.wave.minimize_global_loads import minimize_global_loads
-from shark_turbine.kernel.wave.visualization import visualize_graph
-from shark_turbine.kernel.wave.shared_memory_indexing import (
+import iree.turbine.kernel as tk
+import iree.turbine.kernel.lang as tkl
+import iree.turbine.kernel.wave as tkw
+from iree.turbine.kernel.wave.promotion import promote_placeholders
+from iree.turbine.kernel.wave.hoisting import hoist_allocs
+from iree.turbine.kernel.wave.barriers import add_shared_memory_barriers
+from iree.turbine.kernel.wave.expansion import expand_graph
+from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel._support.tracing import CapturedTrace
+from iree.turbine.kernel._support.indexing import IndexingContext
+from iree.turbine.kernel.ops.wave_ops import *
+from iree.turbine.kernel.wave.utils import run_test, print_trace
+from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
+from iree.turbine.kernel.wave.visualization import visualize_graph
+from iree.turbine.kernel.wave.shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
 )
 

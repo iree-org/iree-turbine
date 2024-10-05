@@ -1,9 +1,9 @@
 import logging
 import pytest
 import unittest
-from shark_turbine.kernel.lang import sym
-from shark_turbine.kernel._support.indexing import IndexSymbol, IndexingContext
-from shark_turbine.kernel.compiler.utils import strides_from_symbolic_shape
+from iree.turbine.kernel.lang import sym
+from iree.turbine.kernel._support.indexing import IndexSymbol, IndexingContext
+from iree.turbine.kernel.compiler.utils import strides_from_symbolic_shape
 
 
 class UtilsTest(unittest.TestCase):

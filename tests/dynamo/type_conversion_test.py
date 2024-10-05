@@ -12,7 +12,7 @@ from iree.compiler.ir import (
     Type as IrType,
 )
 
-import shark_turbine.dynamo.type_conversion as tc
+import iree.turbine.dynamo.type_conversion as tc
 
 
 class TypeConversionTest(unittest.TestCase):

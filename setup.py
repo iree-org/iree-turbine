@@ -96,11 +96,11 @@ setup(
     packages=packages,
     include_package_data=True,
     package_data={
-        "shark_turbine": ["ops/templates/*.mlir"],  # Include MLIR templates
+        "iree.turbine": ["ops/templates/*.mlir"],  # Include MLIR templates
     },
     entry_points={
         "torch_dynamo_backends": [
-            "turbine_cpu = shark_turbine.dynamo.backends.cpu:backend",
+            "turbine_cpu = iree.turbine.dynamo.backends.cpu:backend",
         ],
     },
     install_requires=[

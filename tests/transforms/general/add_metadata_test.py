@@ -11,7 +11,7 @@ import unittest
 
 from iree.compiler.ir import Context, Operation, Module
 
-from shark_turbine.transforms.general import add_metadata
+from iree.turbine.transforms.general import add_metadata
 
 SIMPLE_FUNC_ASM = r"""
 func.func @list_func(%arg0 : !iree_input.list<!iree_input.variant>) -> !iree_input.list<!iree_input.variant> {

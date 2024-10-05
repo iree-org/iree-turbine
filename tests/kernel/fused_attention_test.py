@@ -8,8 +8,8 @@ import logging
 import unittest
 
 import torch
-import shark_turbine.kernel as tk
-import shark_turbine.kernel.lang as tkl
+import iree.turbine.kernel as tk
+import iree.turbine.kernel.lang as tkl
 
 BATCH = tkl.sym.BATCH
 N_HEADS = tkl.sym.N_HEADS

@@ -12,7 +12,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import re
 
-from shark_turbine.support.ir_imports import *
+from iree.turbine.support.ir_imports import *
 
 from ..rewriter import *
 from iree.compiler.ir import Context, DictAttr

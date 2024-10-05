@@ -2,16 +2,16 @@
 
 import logging
 import unittest
-import shark_turbine.kernel as tk
-import shark_turbine.kernel.lang as tkl
-import shark_turbine.kernel.wave as tkw
-from shark_turbine.kernel.wave.promotion import promote_node, promote_placeholders
-from shark_turbine.kernel.wave.hoisting import hoist_allocs
-from shark_turbine.kernel.lang.global_symbols import *
-from shark_turbine.kernel._support.tracing import CapturedTrace
-from shark_turbine.kernel._support.indexing import IndexingContext
-from shark_turbine.kernel.ops.wave_ops import *
-from shark_turbine.kernel.wave.utils import run_test, print_trace
+import iree.turbine.kernel as tk
+import iree.turbine.kernel.lang as tkl
+import iree.turbine.kernel.wave as tkw
+from iree.turbine.kernel.wave.promotion import promote_node, promote_placeholders
+from iree.turbine.kernel.wave.hoisting import hoist_allocs
+from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel._support.tracing import CapturedTrace
+from iree.turbine.kernel._support.indexing import IndexingContext
+from iree.turbine.kernel.ops.wave_ops import *
+from iree.turbine.kernel.wave.utils import run_test, print_trace
 
 
 def get_read_nodes(graph: fx.Graph) -> list[CustomOp]:

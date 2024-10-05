@@ -9,7 +9,7 @@ import torch
 import logging
 import unittest
 
-from shark_turbine.aot import decompositions
+from iree.turbine.aot import decompositions
 
 
 class DecompTest(unittest.TestCase):

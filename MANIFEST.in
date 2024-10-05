@@ -2,4 +2,4 @@ include README.md
 include requirements.txt
 include pytorch-cpu-requirements.txt
 include version_info.json
-include shark_turbine/ops/templates/*.mlir
+include iree/turbine/ops/templates/*.mlir

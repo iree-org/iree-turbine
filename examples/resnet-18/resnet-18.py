@@ -1,6 +1,6 @@
 from transformers import AutoFeatureExtractor, AutoModelForImageClassification
 import torch
-from shark_turbine.aot import *
+from iree.turbine.aot import *
 import iree.runtime as rt
 
 # Loading feature extractor and pretrained model from huggingface

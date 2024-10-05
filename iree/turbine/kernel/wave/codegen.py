@@ -40,10 +40,10 @@ from ..compiler.ir import (
     scf_d,
     vector_d,
 )
-from shark_turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_type
+from iree.turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_type
 
 # TK infrastructure imports.
-from shark_turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import (
     write,
     broadcast,

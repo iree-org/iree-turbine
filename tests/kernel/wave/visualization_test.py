@@ -9,15 +9,15 @@ from typing import Callable
 import unittest
 import os
 import pytest
-import shark_turbine.kernel as tk
-import shark_turbine.kernel.lang as tkl
-import shark_turbine.kernel.wave as tkw
-from shark_turbine.kernel.wave.expansion import expand_graph
-from shark_turbine.kernel._support.tracing import CapturedTrace
-from shark_turbine.kernel._support.indexing import IndexingContext
-from shark_turbine.kernel.ops.wave_ops import get_custom
-from shark_turbine.kernel.lang.global_symbols import *
-from shark_turbine.kernel.wave.visualization import visualize_graph
+import iree.turbine.kernel as tk
+import iree.turbine.kernel.lang as tkl
+import iree.turbine.kernel.wave as tkw
+from iree.turbine.kernel.wave.expansion import expand_graph
+from iree.turbine.kernel._support.tracing import CapturedTrace
+from iree.turbine.kernel._support.indexing import IndexingContext
+from iree.turbine.kernel.ops.wave_ops import get_custom
+from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel.wave.visualization import visualize_graph
 
 
 def run(func: Callable[[], None]) -> Callable[[], None]:

@@ -9,8 +9,8 @@ import unittest
 
 import torch
 
-from shark_turbine.kernel._support.indexing import *
-from shark_turbine.kernel.lang import *
+from iree.turbine.kernel._support.indexing import *
+from iree.turbine.kernel.lang import *
 
 M = sym.M
 N = sym.N
