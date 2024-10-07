@@ -24,7 +24,7 @@ def pytest_configure(config):
         "markers", "perf_only: performance test, runs only with '--runperf'"
     )
     config.addinivalue_line(
-        "markers", "validate_only: validation test, never run with '--runperf'"
+        "markers", "validate_only: validation test, never runs with '--runperf'"
     )
 
 
