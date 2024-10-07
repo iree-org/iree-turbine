@@ -594,8 +594,8 @@ def _construct_gather_scatter_indices(
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
         # be equivalent to just vector.load
-        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
-        subs[-1] = (subs[-1][0], start_indices_orig[-1] + i)
+        subs = [(sym, 0) for sym in iters.keys()]
+        subs[-1] = (subs[-1][0], i)
         indices = [i.subs(subs) for i in index_mapping]
 
         # First, we build indices as if resulting gather/scatter `start_indices`
@@ -605,9 +605,10 @@ def _construct_gather_scatter_indices(
         # simple cases like transpose, the resulting expression should fold into
         # simple constant while more complex expressions may requires actual
         # arith ops on dynamic values.
-        offset = _compute_offset(indices, strides) - start_indices_offset
-        offset = subs_idxc(offset)
+        offset = _compute_offset(indices, strides)
+        offset = sympy.simplify(subs_idxc(offset))
 
+        print(offset)
         if offset.is_number:
             # If resulted offset sympy expr is convertible to int constant it
             # will be directly encoded into `arith.constant`.
