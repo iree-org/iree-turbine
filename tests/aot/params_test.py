@@ -12,6 +12,9 @@ import unittest
 import torch
 import torch.nn as nn
 
+import iree.runtime as rt
+import iree.compiler as ireec
+
 from iree.turbine.aot import (
     export,
     externalize_module_parameters,
@@ -33,6 +36,56 @@ class SimpleParamsModule(nn.Module):
         result = self.classifier(x) + torch.tensor([1.0], dtype=torch.float32)
         result = torch.matmul(result, self.large_tensor + self.dup_large_tensor)
         return result
+
+
+class LinearModule(torch.nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(in_features, out_features))
+        self.bias = torch.nn.Parameter(torch.randn(out_features))
+
+    def forward(self, input):
+        return (input @ self.weight) + self.bias
+
+
+class ExternalParamsTest(unittest.TestCase):
+    def setUp(self):
+        self.instance = rt.VmInstance()
+        self.device = rt.get_device(ireec.core.DEFAULT_TESTING_DRIVER)
+        self.config = rt.Config(device=self.device)
+
+    def testSeparateWeightsAtRuntime(self):
+        linear_module = LinearModule(4, 3).requires_grad_(False)
+        externalize_module_parameters(linear_module)
+        wt = linear_module.weight.data.contiguous()
+        bias = linear_module.bias.data.contiguous()
+
+        input = torch.randn(4)
+        exported_module = export(linear_module, input)
+        binary = exported_module.compile(save_to=None)
+
+        idx = rt.ParameterIndex()
+        idx.add_buffer("weight", wt.detach().numpy().tobytes())
+        idx.add_buffer("bias", bias.detach().numpy().tobytes())
+
+        config = rt.Config(driver_name="local-task")
+        instance = config.vm_instance
+        param_module = rt.create_io_parameters_module(
+            instance,
+            idx.create_provider(scope="model"),
+        )
+
+        vm_modules = rt.load_vm_modules(
+            param_module,
+            rt.create_hal_module(instance, config.device),
+            rt.VmModule.copy_buffer(instance, binary.map_memory()),
+            config=config,
+        )
+
+        m = vm_modules[-1]
+        result_vm = m.main(input).to_host()
+        result_torch = linear_module(input)
+        torch.testing.assert_close(torch.from_numpy(result_vm), result_torch)
 
 
 class ParamsTest(unittest.TestCase):
