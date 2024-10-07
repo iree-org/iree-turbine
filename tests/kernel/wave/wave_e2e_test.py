@@ -871,11 +871,20 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
             BLOCK_K: 32,
             ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: mem_space,
+            READ_SHARED_DELAY: 1,
+            WRITE_SHARED_DELAY: 1,
+            READ_GLOBAL_DELAY: 2,
+            WRITE_GLOBAL_DELAY: 2,
+            MMA_DELAY: 1,
+            SHARED_MEMORY_UNITS: 4,
+            GLOBAL_MEMORY_UNITS: 4,
+            MMA_UNITS: 4,
         },
         canonicalize=True,
         run=True,
         run_bench=run_bench,
         run_config=config,
+        schedule=True,
     ):
         out = torch.zeros_like(out_ref)
         conv(x, we, out)
