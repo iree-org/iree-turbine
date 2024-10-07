@@ -749,20 +749,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     K = HF * WF * C
     M = SZ_OUT * N
 
-    if layout == "nchw_fchw":
-        x_type = tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16]
-        we_type = tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, tkl.f16]
-        out_type = tkl.Memory[N, NF, H_OUT, W_OUT, GLOBAL_ADDRESS_SPACE, tkl.f32]
-    elif layout == "nhwc_hwcf":
-        x_type = tkl.Memory[N, H, W, C, ADDRESS_SPACE, tkl.f16]
-        we_type = tkl.Memory[HF, WF, C, NF, ADDRESS_SPACE, tkl.f16]
-        out_type = tkl.Memory[N, H_OUT, W_OUT, HF, GLOBAL_ADDRESS_SPACE, tkl.f32]
-        x = torch.permute(x, (0, 2, 3, 1)).clone(torch.contiguous_format)
-        we = torch.permute(we, (2, 3, 1, 0)).clone(torch.contiguous_format)
-        out_ref = torch.permute(out_ref, (0, 2, 3, 1)).clone(torch.contiguous_format)
-    else:
-        raise ValueError(f"Invalid layout: {layout}")
-
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
 
