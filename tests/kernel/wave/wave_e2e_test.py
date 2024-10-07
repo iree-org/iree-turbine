@@ -686,6 +686,7 @@ _igemm_cases = [
 ]
 
 perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
+validation_test = lambda *a: pytest.param(*a, marks=pytest.mark.validate_only)
 
 _igemm_cases += [
     perf_test(2, 128, 128, 16, 3, 3, 320, 1),
@@ -711,8 +712,13 @@ _igemm_cases += [
 ]
 
 _mem_spaces = [
-    pytest.param(GLOBAL_ADDRESS_SPACE, id="global"),
+    pytest.param(GLOBAL_ADDRESS_SPACE, id="global", marks=pytest.mark.validate_only),
     pytest.param(SHARED_ADDRESS_SPACE, id="shared"),
+]
+
+_layouts = [
+    pytest.param("nchw_fchw", marks=pytest.mark.validate_only),
+    pytest.param("nhwc_hwcf"),
 ]
 
 

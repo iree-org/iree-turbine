@@ -23,14 +23,22 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "perf_only: performance test, runs only with '--runperf'"
     )
+    config.addinivalue_line(
+        "markers", "validate_only: validation test, never run with '--runperf'"
+    )
+
+
+def _has_marker(item, marker):
+    return next(item.iter_markers(marker), None) is not None
 
 
 def pytest_collection_modifyitems(config, items):
     run_perf = config.getoption("--runperf")
     for item in items:
-        is_perf_only = next(item.iter_markers("perf_only"), None) is not None
+        is_validate_only = _has_marker("validate_only")
+        is_perf_only = _has_marker("perf_only")
         if run_perf:
-            if not is_perf_only:
+            if not is_perf_only or is_validate_only:
                 item.add_marker(pytest.mark.skip("skip non-perf test"))
         else:
             if is_perf_only:
