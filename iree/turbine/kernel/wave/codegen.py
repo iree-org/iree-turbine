@@ -667,7 +667,10 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         mask = _build_mask(
             emitter, index, cast_py_literal(emitter, elements_per_thread)
         )
-        if mask is None:
+        if (
+            mask is None
+            or get_custom(node).memory_type.address_space == SHARED_ADDRESS_SPACE
+        ):
             result = vector_d.load(vector_type, kb_src, start_indices)
         else:
             zero = get_constant_attr(0, element_type)
@@ -730,7 +733,10 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         mask = _build_mask(
             emitter, index, cast_py_literal(emitter, elements_per_thread)
         )
-        if mask is None:
+        if (
+            mask is None
+            or get_custom(node).memory_type.address_space == SHARED_ADDRESS_SPACE
+        ):
             vector_d.store(insert_vector, kb_dest, start_indices)
         else:
             vector_d.maskedstore(kb_dest, start_indices, mask, insert_vector)
