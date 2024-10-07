@@ -725,7 +725,7 @@ _layouts = [
 @require_e2e
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
 @pytest.mark.parametrize("mem_space", _mem_spaces)
-@pytest.mark.parametrize("layout", ["nchw_fchw", "nhwc_hwcf"])
+@pytest.mark.parametrize("layout", _layouts)
 def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
