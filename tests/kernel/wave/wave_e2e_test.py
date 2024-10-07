@@ -843,8 +843,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
             repeat, out, mapping=out_mapping, elements_per_thread=ELEMS_PER_THREAD
         )
 
-    out = torch.zeros_like(out_ref)
-
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
     run_bench = request.config.getoption("--runperf")
@@ -878,6 +876,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         run_bench=run_bench,
         run_config=config,
     ):
+        out = torch.zeros_like(out_ref)
         conv(x, we, out)
         assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
 
@@ -887,6 +886,10 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
                     dump_perf, "iree_" + perf_filename
                 )
 
+            config["print_ir_after_all"] = True
+            config[
+                "iree_preprocessing_pass_pipeline"
+            ] = "builtin.module(iree-preprocessing-transpose-convolution-pipeline, iree-preprocessing-pad-to-intrinsics)"
             iree_ref = torch.zeros_like(out_ref)
             generate_iree_ref(
                 "conv_2d_" + layout,

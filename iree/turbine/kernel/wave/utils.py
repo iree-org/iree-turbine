@@ -334,6 +334,10 @@ def compile_and_invoke(
     if config.get("print_ir_after_all", False):
         flags.append("--mlir-print-ir-after-all")
 
+    preprocessing_pipeline = config.get("iree_preprocessing_pass_pipeline", None)
+    if preprocessing_pipeline is not None:
+        flags.append(f"--iree-preprocessing-pass-pipeline={preprocessing_pipeline}")
+
     if "dump_intermediates" in config:
         intermediates_path = config.get("dump_intermediates")
         flags.append(
