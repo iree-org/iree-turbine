@@ -781,7 +781,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K = 16
+    BLOCK_K = tkl.sym.BLOCK_K
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
@@ -805,8 +805,8 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     constraints: list[tkw.Constraint] = []
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(NF, BLOCK_N)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(NF, BLOCK_N / 2)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [
@@ -866,8 +866,9 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
             NF: nf,
             WF: wf,
             HF: hf,
-            BLOCK_M: 16,
-            BLOCK_N: 16,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
+            BLOCK_K: 32,
             ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: mem_space,
         },
