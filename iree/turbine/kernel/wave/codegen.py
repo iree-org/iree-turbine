@@ -401,6 +401,12 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
                 _enforce_non_rational(lhs, term)
                 res = arith_d.andi(*_broadcast(lhs, rhs))
                 stack.append(res)
+            case sympy.logic.boolalg.BooleanFalse():
+                res = arith_d.constant(IntegerType.get_signless(1), 0)
+                stack.append(res)
+            case sympy.logic.boolalg.BooleanTrue():
+                res = arith_d.constant(IntegerType.get_signless(1), 1)
+                stack.append(res)
             case sympy.UnevaluatedExpr():
                 continue
             case _:
