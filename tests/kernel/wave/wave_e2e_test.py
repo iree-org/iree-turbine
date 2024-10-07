@@ -846,7 +846,8 @@ _mem_spaces = [
 @require_e2e
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
 @pytest.mark.parametrize("mem_space", _mem_spaces)
-def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
+@pytest.mark.parametrize("layout", ["nchw_fchw", "nhwc_hwcf"])
+def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
 
@@ -868,6 +869,20 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
 
     K = HF * WF * C
     M = SZ_OUT * N
+
+    if layout == "nchw_fchw":
+        x_type = tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16]
+        we_type = tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, tkl.f16]
+        out_type = tkl.Memory[N, NF, H_OUT, W_OUT, GLOBAL_ADDRESS_SPACE, tkl.f32]
+    elif layout == "nhwc_hwcf":
+        x_type = tkl.Memory[N, H, W, C, ADDRESS_SPACE, tkl.f16]
+        we_type = tkl.Memory[HF, WF, C, NF, ADDRESS_SPACE, tkl.f16]
+        out_type = tkl.Memory[N, H_OUT, W_OUT, HF, GLOBAL_ADDRESS_SPACE, tkl.f32]
+        x = torch.permute(x, (0, 2, 3, 1)).clone(torch.contiguous_format)
+        we = torch.permute(we, (2, 3, 1, 0)).clone(torch.contiguous_format)
+        out_ref = torch.permute(out_ref, (0, 2, 3, 1)).clone(torch.contiguous_format)
+    else:
+        raise ValueError(f"Invalid layout: {layout}")
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -924,9 +939,9 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
 
     @tkw.wave(constraints)
     def conv(
-        x: tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16],
-        we: tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, tkl.f16],
-        out: tkl.Memory[N, NF, H_OUT, W_OUT, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        x: x_type,
+        we: we_type,
+        out: out_type,
     ):
         c_reg = tkl.Register[M, NF, tkl.f32](0.0)
 
@@ -995,7 +1010,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, request):
 
             iree_ref = torch.zeros_like(out_ref)
             generate_iree_ref(
-                "conv_2d_nchw_fchw",
+                "conv_2d_" + layout,
                 [x, we],
                 [iree_ref],
                 config,
