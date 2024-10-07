@@ -886,7 +886,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
                     dump_perf, "iree_" + perf_filename
                 )
 
-            config["print_ir_after_all"] = True
             config[
                 "iree_preprocessing_pass_pipeline"
             ] = "builtin.module(iree-preprocessing-transpose-convolution-pipeline, iree-preprocessing-pad-to-intrinsics)"
