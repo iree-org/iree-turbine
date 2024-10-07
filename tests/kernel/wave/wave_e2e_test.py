@@ -916,9 +916,9 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         x_type = tkl.Memory[N, H, W, C, ADDRESS_SPACE, tkl.f16]
         we_type = tkl.Memory[HF, WF, C, NF, ADDRESS_SPACE, tkl.f16]
         out_type = tkl.Memory[N, H_OUT, W_OUT, HF, GLOBAL_ADDRESS_SPACE, tkl.f32]
-        x = torch.permute(x, (0, 2, 3, 1)).clone(torch.contiguous_format)
-        we = torch.permute(we, (2, 3, 1, 0)).clone(torch.contiguous_format)
-        out_ref = torch.permute(out_ref, (0, 2, 3, 1)).clone(torch.contiguous_format)
+        x = torch.permute(x, (0, 2, 3, 1)).contiguous()
+        we = torch.permute(we, (2, 3, 1, 0)).contiguous()
+        out_ref = torch.permute(out_ref, (0, 2, 3, 1)).contiguous()
     else:
         raise ValueError(f"Invalid layout: {layout}")
 
