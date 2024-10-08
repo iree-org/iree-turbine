@@ -812,7 +812,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
+            waves_per_block=(2, 2, 1),
         )
     ]
 
