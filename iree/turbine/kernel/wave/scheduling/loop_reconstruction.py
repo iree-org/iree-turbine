@@ -1,32 +1,24 @@
-from ..constraints import Constraint, TilingConstraint
+from ..constraints import Constraint
 from ..._support.indexing import IndexSymbol
 from ..._support.tracing import CapturedTrace
 from ...ops.wave_ops import (
     Reduction,
     IterArg,
     Placeholder,
-    Allocate,
     Output,
-    Write,
     GetResult,
     get_custom,
+    SchedulingGroupBarrier,
 )
 from .modulo_scheduling import ModuloScheduler
 from ..utils import (
-    graph_copy,
-    erase_graph,
     get_induction_variable,
     replace_uses_in,
 )
-from ..utils import subs_idxc
 import torch.fx as fx
-import math
-from collections import deque
+from collections import deque, defaultdict
 from ..visualization import visualize_mapped_graphs, visualize_graph
 from ....support.logging import get_logger
-from ...lang.global_symbols import SHARED_ADDRESS_SPACE
-import random
-from typing import Optional
 from .loop_reconstruction_utils import (
     ArgumentContext,
     create_fill_stage_schedule,
@@ -35,6 +27,7 @@ from .loop_reconstruction_utils import (
     partition_graph_by_stage,
     interleave_instructions,
 )
+from .resources import get_custom_operation_type
 from enum import Enum
 
 logger = get_logger("turbine.wave.scheduling.loop_reconstruction")
@@ -56,6 +49,7 @@ def add_nodes_by_schedule(
     current_induction_variables: list[int],
     rotating_registers: dict[fx.Node, list[fx.Node]],
     pipelining_stage: PipelineStage = PipelineStage.KERNEL,
+    use_scheduling_barriers: bool = False,
 ):
     """
     Interleave the instructions in the partitioned graph by stage
@@ -63,8 +57,6 @@ def add_nodes_by_schedule(
     per stage starting at the provided start times and indices.
     """
     fill_or_drain = pipelining_stage in [PipelineStage.PROLOGUE, PipelineStage.EPILOGUE]
-    fill = pipelining_stage == PipelineStage.PROLOGUE
-    drain = pipelining_stage == PipelineStage.EPILOGUE
 
     for cycle in range(initiation_interval):
         logger.debug(f"Cycle: {cycle}")
@@ -79,6 +71,7 @@ def add_nodes_by_schedule(
                 interleaved_instructions.append((iteration, stage, node))
         interleave_instructions(interleaved_instructions)
 
+        instructions = defaultdict(int)
         for iteration, stage, node in interleaved_instructions:
             logger.debug(f"Node: {node}, Stage: {stage}, Iteration: {iteration}")
             custom_node = get_custom(node)
@@ -97,6 +90,7 @@ def add_nodes_by_schedule(
                     else x
                 ),
             )
+            instructions[get_custom_operation_type(new_node)] += 1
             # Update the argument context.
             arg_context[(iteration, stage, node)] = new_node.fx_node
             logger.debug(
@@ -139,6 +133,9 @@ def add_nodes_by_schedule(
                     arg_context.map_arg_all(
                         arg_context.result_to_init_arg[node], new_node.fx_node
                     )
+
+        if pipelining_stage == PipelineStage.KERNEL and use_scheduling_barriers:
+            SchedulingGroupBarrier(instructions, 0).add_to_graph(reduction_graph)
 
 
 def push_placeholders(
@@ -306,6 +303,7 @@ def construct_kernel(
     new_induction_variables: list[int],
     node_map: dict[fx.Node, fx.Node],
     visualize: bool = False,
+    use_scheduling_barriers: bool = False,
 ) -> tuple[Reduction, fx.Graph]:
     """
     Construct the kernel of the pipelined loop.
@@ -367,6 +365,7 @@ def construct_kernel(
             new_induction_variables,
             new_rotating_registers,
             PipelineStage.KERNEL,
+            use_scheduling_barriers,
         )
 
         # Create output node (last node in the graph).
@@ -491,6 +490,7 @@ def construct_pipelined_loop(
     node_map: dict[fx.Node, fx.Node],
     max_induction_variable: int,
     visualize: bool = False,
+    use_scheduling_barriers: bool = False,
 ) -> fx.Node:
     """
     Given a graph annotated with scheduling parameters, construct a pipelined loop
@@ -524,6 +524,7 @@ def construct_pipelined_loop(
         [induction_variable + i for i in range(scheduler.num_stages)],
         node_map,
         visualize,
+        use_scheduling_barriers,
     )
     trace.add_subgraph(
         get_custom(pipelined_reduction).subgraph_name, pipelined_reduction_graph

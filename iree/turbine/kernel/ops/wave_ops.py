@@ -27,6 +27,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from ..wave.constraints import Constraint
+    from ..wave.scheduling.resources import Operation
 
 T = TypeVar("T", bound=Type[Any])
 AccT = TypeVar("AccT")
@@ -721,6 +722,32 @@ class SharedMemoryBarrier(CustomOp):
         while next_node.next.op != "root" and not found_dst:
             next_node, found_dst = next_node.next, next_node == dst
         return found_dst
+
+
+@define_op("scheduling_barrier")
+@dataclass
+class SchedulingBarrier(CustomOp):
+    """
+    Represents a scheduling barrier in the graph.
+    Takes in a list of operations that are allowed to cross
+    the barrier.
+    """
+
+    operations: list[Operation]
+
+
+@define_op("scheduling_group_barrier")
+@dataclass
+class SchedulingGroupBarrier(CustomOp):
+    """
+    Represents a scheduling group barrier in the graph.
+    The scheduling group barrier defines scheduling groups.
+    Each scheduling group contains different instructions in a specific order.
+    The sync_id identifies scheduling groups that need to be aware of each other.
+    """
+
+    instructions: dict[Operation, int]
+    sync_id: int
 
 
 @define_op("register")

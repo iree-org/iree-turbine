@@ -93,7 +93,7 @@ def test_gemm_pipelined():
         expand_graph(trace, constraints)
         minimize_global_loads(trace, constraints)
         apply_shared_memory_indexing_corrections(trace, constraints)
-        schedule_graph(trace, constraints)
+        schedule_graph(trace, constraints, True)
 
         print_subgraph(trace, "pipelined_reduction", False)
         # CHECK: %acc_0_0_0
@@ -113,28 +113,38 @@ def test_gemm_pipelined():
         # CHECK-NEXT: %read_shared_0_0_1
         # CHECK-NEXT: %read_4
         # CHECK-NEXT: %read_5
+        # CHECK-NEXT: %scheduling_group_barrier
+        # CHECK-SAME: ({Operation.MMA: 1, Operation.READ_SHARED: 2, Operation.READ_GLOBAL: 2}, 0)
         # CHECK-NEXT: %read_shared_1_0_0
         # CHECK-NEXT: %read_shared_1_0_1
         # CHECK-NEXT: %mma_0_0_0
         # CHECK-SAME: (%read_shared_0_0_0, %read_shared_0_0_1, %acc_0_0_0)
         # CHECK-NEXT: %mma_0_1_0
         # CHECK-SAME: (%read_shared_0_0_0, %rotating_reg_3, %acc_0_1_0)
+        # CHECK-NEXT: %scheduling_group_barrier
+        # CHECK-SAME: ({Operation.READ_SHARED: 2, Operation.MMA: 2}, 0)
         # CHECK-NEXT: %mma_0_0_1
         # CHECK-SAME: (%rotating_reg_0, %rotating_reg_2, %mma_0_0_0)
         # CHECK-NEXT: %mma_1_0_0
         # CHECK-SAME: (%read_shared_1_0_0, %read_shared_0_0_1, %acc_1_0_0)
         # CHECK-NEXT: %write_2
         # CHECK-NEXT: %write_3
+        # CHECK-NEXT: %scheduling_group_barrier
+        # CHECK-SAME: ({Operation.MMA: 2, Operation.WRITE_SHARED: 2}, 0)
         # CHECK-NEXT: %mma_1_0_1
         # CHECK-SAME: (%read_shared_1_0_1, %rotating_reg_2, %mma_1_0_0)
         # CHECK-NEXT: %mma_0_1_1
         # CHECK-SAME: (%rotating_reg_0, %rotating_reg_5, %mma_0_1_0)
         # CHECK-NEXT: %read_shared_0_1_0
         # CHECK-NEXT: %read_shared_0_1_1
+        # CHECK-NEXT: %scheduling_group_barrier
+        # CHECK-SAME: ({Operation.MMA: 2, Operation.READ_SHARED: 2}, 0)
         # CHECK-NEXT: %mma_1_1_0
         # CHECK-SAME: (%read_shared_1_0_0, %rotating_reg_3, %mma_1_1_1)
         # CHECK-NEXT: %read_shared_0_0_2
         # CHECK-NEXT: %read_shared_0_0_3
+        # CHECK-NEXT: %scheduling_group_barrier
+        # CHECK-SAME: ({Operation.MMA: 1, Operation.READ_SHARED: 2}, 0)
         # CHECK-NEXT: [mma_0_0_1, mma_0_1_1, mma_1_0_1, mma_1_1_1, read_shared_0_0_2, read_shared_1_0_1, read_shared_0_0_3, read_shared_0_1_0, rotating_reg_5, read_shared_0_1_1, mma_1_1_0]
 
         print_subgraph(trace, "region_1", False)
