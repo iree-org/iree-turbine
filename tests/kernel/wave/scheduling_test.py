@@ -32,6 +32,9 @@ from iree.turbine.kernel.wave.expansion import expand_graph
 from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
 from iree.turbine.kernel.wave.scheduling.schedule import schedule_graph
 from iree.turbine.kernel.ops.wave_ops import get_custom
+from copy import deepcopy
+import filecmp
+import os
 
 
 class SchedulingTest(unittest.TestCase):
@@ -271,13 +274,15 @@ class SchedulingTest(unittest.TestCase):
             MMA_UNITS: 2,
         }
         with tk.gen.TestLaunchContext(hyperparams, canonicalize=True, schedule=True):
+
             trace: CapturedTrace = gemm()
             IndexingContext.current().finalize()
             promote_placeholders(trace, constraints)
             hoist_allocs(trace)
             expand_graph(trace, constraints)
             minimize_global_loads(trace, constraints)
-            schedule_graph(trace, constraints)
+
+            schedule_graph(trace, constraints, False, "schedule.csv", None)
             subgraph = trace.get_subgraph("region_0")
             initiation_interval = 5
             correct_schedule = {
@@ -424,6 +429,39 @@ class SchedulingTest(unittest.TestCase):
                 custom = get_custom(node)
                 if custom.name in correct_schedule:
                     assert custom.scheduling_parameters == correct_schedule[custom.name]
+
+        # TODO: Debug why gemm2 is necessary. Using gemm for a second trace
+        # causes a node mismatch when loading the schedule.
+        @tkw.wave_trace_only(constraints)
+        def gemm2(
+            a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+            b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+            c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        ):
+            c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+            @tkw.reduction(K, init_args=[c_reg])
+            def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+                a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+                b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+                acc = tkw.mma(a_reg, b_reg, acc)
+                return acc
+
+            tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+        with tk.gen.TestLaunchContext(hyperparams, canonicalize=True, schedule=True):
+
+            trace: CapturedTrace = gemm2()
+            IndexingContext.current().finalize()
+            promote_placeholders(trace, constraints)
+            hoist_allocs(trace)
+            expand_graph(trace, constraints)
+            minimize_global_loads(trace, constraints)
+
+            schedule_graph(
+                trace, constraints, False, "new_schedule.csv", "schedule.csv"
+            )
+            assert filecmp.cmp("schedule.csv", "new_schedule.csv", shallow=False)
 
 
 if __name__ == "__main__":

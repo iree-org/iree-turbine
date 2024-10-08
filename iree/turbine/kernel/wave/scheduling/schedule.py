@@ -28,6 +28,8 @@ def schedule_reduction(
     trace: CapturedTrace,
     constraints: list[Constraint],
     use_scheduling_barriers: bool = False,
+    export_schedule_file: str = None,
+    user_specified_schedule_file: str = None,
 ):
     """
     Clones the reduction graph and does the following:
@@ -49,7 +51,17 @@ def schedule_reduction(
         visualize_graph(graph, "scheduling_fx_graph.png")
 
     scheduler = ModuloScheduler(graph, edges, get_available_resources())
-    schedule, success = scheduler.schedule_graph()
+
+    if user_specified_schedule_file:
+        scheduler.load_schedule(user_specified_schedule_file, graph)
+        success = True
+        schedule = scheduler.schedule
+    else:
+        schedule, success = scheduler.schedule_graph()
+
+    if export_schedule_file:
+        scheduler.save_schedule(export_schedule_file, graph)
+
     if not success:
         raise ValueError("Scheduling failed.")
     if visualize:
@@ -107,6 +119,8 @@ def schedule_graph(
     trace: CapturedTrace,
     constraints: list[Constraint],
     use_scheduling_barriers: bool = False,
+    export_schedule_file: str = None,
+    user_specified_schedule_file: str = None,
 ):
     """
     Given a graph, pipelines the reductions in the graph.
@@ -121,5 +135,10 @@ def schedule_graph(
 
     for reduction_node in reduction_nodes:
         schedule_reduction(
-            get_custom(reduction_node), trace, constraints, use_scheduling_barriers
+            get_custom(reduction_node),
+            trace,
+            constraints,
+            use_scheduling_barriers,
+            export_schedule_file,
+            user_specified_schedule_file,
         )
