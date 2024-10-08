@@ -803,8 +803,8 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = []
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-    constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 0)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(NF, BLOCK_N / 2)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
@@ -867,7 +867,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
             WF: wf,
             HF: hf,
             BLOCK_M: 64,
-            BLOCK_N: 64,
+            BLOCK_N: 128,
             BLOCK_K: 32,
             ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: mem_space,
