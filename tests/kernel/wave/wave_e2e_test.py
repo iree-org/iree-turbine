@@ -887,7 +887,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
-        schedule=True,
+        schedule=False,
     ):
         out = torch.zeros_like(out_ref)
         conv(x, we, out)
