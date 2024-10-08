@@ -757,14 +757,14 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         inputs={
             N: i // SZ_OUT,
             C: j // (HF * WF),
-            H: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
-            W: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+            W: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
+            H: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
         },
         outputs={M: i, K: j},
     )
     w_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={NF: i % NF, C: j // (HF * WF), HF: j % WF, WF: (j % (HF * WF)) // WF},
+        inputs={NF: i % NF, C: j // (HF * WF), WF: j % WF, HF: (j % (HF * WF)) // WF},
         outputs={NF: i, K: j},
     )
     out_mapping = tkw.IndexMapping(
@@ -773,8 +773,8 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         outputs={
             N: i // SZ_OUT,
             NF: j,
-            H_OUT: (i % SZ_OUT) % W_OUT,
-            W_OUT: (i % SZ_OUT) // W_OUT,
+            W_OUT: (i % SZ_OUT) % W_OUT,
+            H_OUT: (i % SZ_OUT) // W_OUT,
         },
     )
 
