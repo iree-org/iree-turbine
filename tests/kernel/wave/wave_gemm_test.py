@@ -21,6 +21,8 @@ _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
 # Whether to dump the generated MLIR module.
 test_dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
+# Whether to use scheduling group barriers (needs LLVM fix).
+enable_scheduling_barriers = int(os.environ.get("WAVE_USE_SCHED_BARRIERS", 0))
 
 default_test_shapes = [(1024, 5120, 640), (2048, 10240, 1280), (4096, 20480, 2560)]
 
@@ -143,6 +145,7 @@ def testGemm(shape: tuple[int], enable_scheduling: bool, request):
         run_bench=run_bench,
         run_config=config,
         schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
     ):
         a = torch.randn(shape[0], shape[2], dtype=torch.float16)
         b = torch.randn(shape[1], shape[2], dtype=torch.float16)

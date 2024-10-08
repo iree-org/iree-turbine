@@ -243,8 +243,18 @@ class LaunchableWave(Launchable):
         decompose_reduce_ops(graph, self.constraints, idxc.subs)
 
         # Schedule the reduction ops.
+        # Scheduling should always be used with use_scheduling_barriers=True,
+        # as this is the only way we can ensure that LLVM enforces our desired schedule.
+        # However, due a bug in LLVM, you will need to patch your local LLVM repo
+        # with the following PR: https://github.com/kerbowa/llvm-project/commit/ee52732cddae42deed2e3387a83b20ec05860b4e
+        # Specifically:
+        # git remote add sched_fixes https://github.com/kerbowa/llvm-project.git
+        # git fetch sched_fixes
+        # git cherry-pick ee52732cddae42deed2e3387a83b20ec05860b4e
+        # [Manually resolve conflicts consistent with the PR]
         if kwargs.get("schedule", False):
-            schedule_graph(graph, self.constraints)
+            use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
+            schedule_graph(graph, self.constraints, use_scheduling_barriers)
 
         # Add shared memory barriers.
         add_shared_memory_barriers(graph)

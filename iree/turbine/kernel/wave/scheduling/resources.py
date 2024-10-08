@@ -6,7 +6,15 @@
 
 from ...lang.global_symbols import *
 from ..utils import subs_idxc
-from ...ops.wave_ops import Read, Write, MMA, IterArg, Output, get_custom
+from ...ops.wave_ops import (
+    Read,
+    Write,
+    MMA,
+    IterArg,
+    Output,
+    get_custom,
+    CustomOp,
+)
 import torch.fx as fx
 from enum import Enum
 import numpy as np
@@ -24,6 +32,9 @@ class Operation(Enum):
     READ_GLOBAL = "read_global"
     WRITE_GLOBAL = "write_global"
     MMA = "mma"
+    ALU = "alu"
+    VALU = "valu"
+    SALU = "salu"
     NOOP = "noop"
 
 
@@ -47,6 +58,29 @@ resource_reservation_table = {
     Operation.MMA: np.array([[0, 0, 1]]),
     Operation.NOOP: np.array([[0, 0, 0]]),
 }
+
+
+def get_custom_operation_type(custom: CustomOp) -> Operation:
+    if isinstance(custom, Read):
+        return (
+            Operation.READ_GLOBAL
+            if custom.memory_type.address_space == GLOBAL_ADDRESS_SPACE
+            else Operation.READ_SHARED
+        )
+    elif isinstance(custom, Write):
+        return (
+            Operation.WRITE_GLOBAL
+            if custom.memory_type.address_space == GLOBAL_ADDRESS_SPACE
+            else Operation.WRITE_SHARED
+        )
+    elif isinstance(custom, MMA):
+        return Operation.MMA
+    elif isinstance(custom, IterArg):
+        return Operation.NOOP
+    elif isinstance(custom, Output):
+        return Operation.NOOP
+    else:
+        return None
 
 
 def annotate_resource_usage(
@@ -79,3 +113,27 @@ def annotate_resource_usage(
         else:
             ignore_nodes.add(node)
     return ignore_nodes, iter_args, output
+
+
+def get_scheduling_mask(operation: Operation) -> int:
+    """
+    Returns the scheduling mask for the given operation.
+    """
+    match operation:
+        case Operation.READ_GLOBAL:
+            return int("0x20", 0)
+        case Operation.WRITE_GLOBAL:
+            return int("0x40", 0)
+        case Operation.READ_SHARED:
+            return int("0x100", 0)
+        case Operation.WRITE_SHARED:
+            return int("0x200", 0)
+        case Operation.MMA:
+            return int("0x8", 0)
+        case Operation.ALU:
+            return int("0x1", 0)
+        case Operation.VALU:
+            return int("0x2", 0)
+        case Operation.SALU:
+            return int("0x4", 0)
+    return None
