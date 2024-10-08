@@ -289,28 +289,28 @@ The Wave compiler is a Python-based compiler designed to process and optimize ke
 
 \begin{tikzpicture}[node distance=0.5cm, auto]
     % Define styles
-    \tikzstyle{block} = [rectangle, draw, fill=blue!20, 
+    \tikzstyle{block} = [rectangle, draw, fill=blue!20,
         text width=5em, text centered, rounded corners, minimum height=3em]
-    \tikzstyle{mlir} = [rectangle, draw, fill=gray!20, 
+    \tikzstyle{mlir} = [rectangle, draw, fill=gray!20,
         text width=20em, text centered, minimum height=7em]
-    \tikzstyle{wave_compiler} = [rectangle, draw, fill=gray!20, 
+    \tikzstyle{wave_compiler} = [rectangle, draw, fill=gray!20,
         text width=20em, text centered, minimum height=19em]
-    \tikzstyle{dialect} = [rectangle, draw, fill=yellow!20, 
+    \tikzstyle{dialect} = [rectangle, draw, fill=yellow!20,
         text width=5em, text centered, rounded corners, minimum height=2em]
     \tikzstyle{line} = [draw, ->]
 
     % Place nodes
-    
+
     \node [text width=10em, text centered] (wave) {Wave Kernel};
-    
+
     \node [wave_compiler, below=of wave] (wave_compiler) {};
     \node [anchor=north west, inner sep=0.5em] at (wave_compiler.north west) {Wave Compiler};
-    
+
     \node [block, below=1cm of wave] (tracing) {Tracing (torch.fx)};
     \node [block, below=of tracing] (symbolic) {Symbolic Analysis};
     \node [block, below=of symbolic] (optimization) {Optimization Passes};
     \node [block, below=of optimization] (mlir_codegen) {MLIR Codegen};
-    
+
     % MLIR box with dialects
     \node [mlir, below=of mlir_codegen] (mlir) {};
     \node [anchor=north west, inner sep=0.5em] at (mlir.north west) {MLIR};
