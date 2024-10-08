@@ -801,18 +801,21 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     else:
         raise ValueError(f"Invalid layout: {layout}")
 
+    ratio_m = 2
+    ratio_n = 2
+
     # Expose user-constraints
     constraints: list[tkw.Constraint] = []
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(NF, BLOCK_N / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / ratio_m)]
+    constraints += [tkw.WaveConstraint(NF, BLOCK_N / ratio_n)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
+            waves_per_block=(ratio_n, ratio_m, 1),
         )
     ]
 
