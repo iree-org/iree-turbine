@@ -4,7 +4,6 @@ from typing import (
     ClassVar,
     Iterable,
     Optional,
-    Self,
     Type,
     TypeAlias,
     TypeVar,
@@ -196,7 +195,7 @@ class IndexMapping:
     def num_iterators(self) -> int:
         return len(self.iters)
 
-    def substitute(self, subs: Iterable[tuple[IndexExpr, IndexExpr]]) -> Self:
+    def substitute(self, subs: Iterable[tuple[IndexExpr, IndexExpr]]):
         new_inputs = {
             key: _subs_expr(val, subs) for key, val in self.input_mapping.items()
         }
