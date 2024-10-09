@@ -39,6 +39,9 @@
 \definecolor{purple}{RGB}{125,71,147}		%#7d4793
 \definecolor{green}{RGB}{113,138,98}		%#718a62
 
+\usepackage{tikz}
+\usetikzlibrary{positioning, fit, backgrounds}
+
 \usepackage[framemethod=tikz]{mdframed}
 \lstdefinelanguage{Wave}{
     language=Python,
@@ -282,6 +285,63 @@ def gemm(
 
 \section{Wave Compiler}
 \label{section:wave_compiler}
+The Wave compiler is a Python-based compiler designed to process and optimize kernels written in the Wave language. It leverages symbolic types to represent memory access patterns and perform reasoning about them. The compilation process involves several key steps:
+
+\begin{tikzpicture}[node distance=0.5cm, auto]
+    % Define styles
+    \tikzstyle{block} = [rectangle, draw, fill=blue!20,
+        text width=5em, text centered, rounded corners, minimum height=3em]
+    \tikzstyle{mlir} = [rectangle, draw, fill=gray!20,
+        text width=20em, text centered, minimum height=7em]
+    \tikzstyle{wave_compiler} = [rectangle, draw, fill=gray!20,
+        text width=20em, text centered, minimum height=19em]
+    \tikzstyle{dialect} = [rectangle, draw, fill=yellow!20,
+        text width=5em, text centered, rounded corners, minimum height=2em]
+    \tikzstyle{line} = [draw, ->]
+
+    % Place nodes
+
+    \node [text width=10em, text centered] (wave) {Wave Kernel};
+
+    \node [wave_compiler, below=of wave] (wave_compiler) {};
+    \node [anchor=north west, inner sep=0.5em] at (wave_compiler.north west) {Wave Compiler};
+
+    \node [block, below=1cm of wave] (tracing) {Tracing (torch.fx)};
+    \node [block, below=of tracing] (symbolic) {Symbolic Analysis};
+    \node [block, below=of symbolic] (optimization) {Optimization Passes};
+    \node [block, below=of optimization] (mlir_codegen) {MLIR Codegen};
+
+    % MLIR box with dialects
+    \node [mlir, below=of mlir_codegen] (mlir) {};
+    \node [anchor=north west, inner sep=0.5em] at (mlir.north west) {MLIR};
+    \node [dialect, left=3em of mlir.center] (dialect1) {amdgpu Dialect};
+    \node [dialect, at=(mlir.center)] (gpu_dialect) {GPU Dialect};
+    \node [dialect, right=3em of mlir.center] (llvm_dialect) {LLVM Dialect};
+    \node [block, below=of mlir] (llvm) {LLVM IR};
+
+    % Draw edges
+    \path [line] (wave) -- (tracing);
+    \path [line] (tracing) -- (symbolic);
+    \path [line] (symbolic) -- (optimization);
+    \path [line] (optimization) -- (mlir_codegen);
+    \path [line] (mlir_codegen) -- (dialect1);
+    \path [line] (mlir_codegen) -- (gpu_dialect);
+    \path [line] (mlir_codegen) -- (llvm_dialect);
+
+    \path [line] (mlir) -- (llvm);
+
+    % Add a note about constraints
+    \node [text width=5em, text centered, below right=-0.25cm and 0.5cm of symbolic] (constraints) {Constraint Processing};
+    \draw [dashed, ->] (constraints) -- (symbolic);
+    \draw [dashed, ->] (constraints) -- (optimization);
+\end{tikzpicture}
+
+\subsection{Tracing with torch.fx}
+
+The Wave compiler utilizes torch.fx~\cite{reed2022torch} for symbolic tracing of the kernel. This process involves executing the Python kernel program with special \emph{Proxy} objects that act as placeholders for actual values. As the program runs, torch.fx records all definitions and function calls, effectively capturing the computational structure of the kernel. The result is a comprehensive representation of the kernel's logic in the form of the torch.fx graph IR. By leveraging torch.fx, Wave strikes a balance between the flexibility of a Python-embedded DSL and the power of a custom compiler, allowing for specialized optimizations while maintaining an accessible and extensible programming model.
+
+\subsection{Intermediate Representation}
+We extended the torch.fx intermediate representation (IR) with custom primitives and types to accurately model the Wave programming model. Our enhancements include custom primitives representing Wave-specific constructs such as wave-level operations and memory accesses.
 
 \section{Numerical Experiments}
 \label{section:numerical_experiments}
