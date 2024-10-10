@@ -1,9 +1,15 @@
-\begin{thebibliography}{6}
+\begin{thebibliography}{9}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
   \providecommand{\doi}[1]{doi: #1}\else
   \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Aho et~al.(2006)Aho, Lam, Sethi, and Ullman]{dragonbook}
+Aho, A.~V., Lam, M.~S., Sethi, R., and Ullman, J.~D.
+\newblock \emph{Compilers: Principles, Techniques, and Tools (2nd Edition)}.
+\newblock Addison-Wesley Longman Publishing Co., Inc., USA, 2006.
+\newblock ISBN 0321486811.
 
 \bibitem[Chetlur et~al.(2014)Chetlur, Woolley, Vandermersch, Cohen, Tran,
   Catanzaro, and Shelhamer]{chetlur_cudnn_2014}
@@ -174,14 +180,30 @@ Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen,
 \newblock URL \url{http://arxiv.org/abs/1912.01703}.
 \newblock arXiv:1912.01703 [cs, stat].
 
-\bibitem[Podell et~al.(2023)Podell, English, Lacey, Blattmann, Dockhorn,
-  Müller, Penna, and Rombach]{podell_sdxl_2023}
+\bibitem[Podell et~al.(2023{\natexlab{a}})Podell, English, Lacey, Blattmann,
+  Dockhorn, Müller, Penna, and
+  Rombach]{podell2023sdxlimprovinglatentdiffusion}
+Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J.,
+  Penna, J., and Rombach, R.
+\newblock Sdxl: Improving latent diffusion models for high-resolution image
+  synthesis, 2023{\natexlab{a}}.
+\newblock URL \url{https://arxiv.org/abs/2307.01952}.
+
+\bibitem[Podell et~al.(2023{\natexlab{b}})Podell, English, Lacey, Blattmann,
+  Dockhorn, Müller, Penna, and Rombach]{podell_sdxl_2023}
 Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J.,
   Penna, J., and Rombach, R.
 \newblock {SDXL}: {Improving} {Latent} {Diffusion} {Models} for
-  {High}-{Resolution} {Image} {Synthesis}, July 2023.
+  {High}-{Resolution} {Image} {Synthesis}, July 2023{\natexlab{b}}.
 \newblock URL \url{http://arxiv.org/abs/2307.01952}.
 \newblock arXiv:2307.01952 [cs].
+
+\bibitem[Reed et~al.(2022)Reed, DeVito, He, Ussery, and Ansel]{reed2022torch}
+Reed, J., DeVito, Z., He, H., Ussery, A., and Ansel, J.
+\newblock torch. fx: Practical program capture and transformation for deep
+  learning in python.
+\newblock \emph{Proceedings of Machine Learning and Systems}, 4:\penalty0
+  638--651, 2022.
 
 \bibitem[Sun et~al.(2023)Sun, Li, Geng, Stuijk, and
   Corporaal]{sun_dissecting_2023}
