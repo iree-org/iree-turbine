@@ -831,7 +831,8 @@ class NewRegister(CustomOp):
 
     @property
     def type(self) -> "Register":
-        return Register[*self.shape, self.dtype]
+        return None
+        # return Register[*self.shape, self.dtype]
 
 
 @define_op("mma")
@@ -935,7 +936,8 @@ class Read(CustomOp):
     @property
     def type(self) -> "Register":
         dtype = self.memory_type.dtype
-        return Register[*self.indexing_dims, dtype]
+        return None
+        # return Register[*self.indexing_dims, dtype]
 
     @property
     def memory_type(self) -> "Memory":
@@ -1255,8 +1257,8 @@ class Broadcast(CustomOp, ABC):
     @property
     def type(self) -> Memory:
         src_dtype = get_custom(self.arg).type.dtype
-        dst_type = Register[*self.target_shape, src_dtype]
-        return dst_type
+        # dst_type = Register[*self.target_shape, src_dtype]
+        return None
 
 
 @define_interface_op("max")
