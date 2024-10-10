@@ -40,7 +40,8 @@
 \definecolor{green}{RGB}{113,138,98}		%#718a62
 
 \usepackage{tikz}
-\usetikzlibrary{positioning, fit, backgrounds}
+\usetikzlibrary{arrows, positioning, fit, shapes, backgrounds}
+\usepackage{dot2texi}
 
 \usepackage[framemethod=tikz]{mdframed}
 \lstdefinelanguage{Wave}{
@@ -364,8 +365,65 @@ We start at the leaf nodes of the kernel and follow def-uses upward until we rea
 \end{enumerate}
 % TODO: Preliminary, maybe better to just express this as an algorihm?
 
-% TODO: Can we produce a figure (or graph) of pre-expansion and post-expansion? Maybe only expansion in a single dimension if this gets too large otherwise?
+% Define layers
+\pgfdeclarelayer{background}
+\pgfdeclarelayer{foreground}
+\pgfsetlayers{background,main,foreground}
 
+\begin{figure*}
+    \centering
+\begin{tikzpicture}[>=latex',scale=0.45]
+    \tikzstyle{n} = [draw,shape=ellipse,inner sep=1pt,fill=black!20]
+    \tikzstyle{every node}=[font=\footnotesize]
+    \input{dot_files/gemm_traced_initial_converted}
+\end{tikzpicture}%
+\hspace{0.3cm}
+\begin{tikzpicture}[>=latex',scale=0.45]
+    % set node style
+    \tikzstyle{n} = [draw,shape=ellipse,inner sep=1pt,fill=black!20]
+    \tikzstyle{every node}=[font=\footnotesize]
+    % Generate this file (and the one above) by copying the dot file and running (on macos):
+    % pbpaste | dot2tex -f tikz --codeonly | pbcopy
+    % The result will be in your clipboard
+    \input{dot_files/gemm_expanded_converted}
+    % Note: Conversion can also be done by the package directly but then its harder to see the errors
+    % \begin{dot2tex}[dot,tikz,codeonly,styleonly,options=-s]
+    %     \input{dot_files/gemm_expanded.dot}
+    % \end{dot2tex}
+    \tikzstyle{highlight} = [rounded corners=0.5em,line width=1em,cap=round]
+
+    % Annotations in the background
+    \begin{pgfonlayer}{background}
+        % Expansion 1: dims: (0,1,0)?
+        \begin {scope}[draw=red!20,ultra thick]
+            \draw[highlight] (b.center) -- (mma010.center);
+            \draw[highlight] (b.center) -- (read010.center) -- (mma010.center);
+            \draw[highlight] (acc010.center) -- (mma010.center);
+        \end{scope}
+
+        % Expansion 2: dims: (1,0,0)?
+        \begin {scope}[draw=blue!20,ultra thick]
+            \draw[highlight] (a.center) -- (read100.center) -- (mma100.center);
+            \draw[highlight] (acc100.center) -- (mma100.center);
+        \end{scope}
+
+        % Expansion 3: dims: (1,1,0)?
+        \begin {scope}[draw=green!20,ultra thick]
+            \draw[highlight] (read100.center) -- (mma110.center);
+            \draw[highlight] (read010.center) -- (mma110.center);
+            \draw[highlight] (acc110.center) -- (mma110.center);
+        \end{scope}
+
+        % TODO: Generate the intermediate graphs of the expansion of the reduction dimension and add the colorings to the figure as well.
+        % TODO: double check the expand dims I have here
+
+        % TODO: We are not showing the complete graph here, only the subgraph of the reduction, which might be confusing. Simply addind the different writes instead of the output node might improve this already.
+    \end{pgfonlayer}
+\end{tikzpicture}
+    \caption{a) (left) The graph representation of the traced gemm kernel of Listing \ref{lst:gemm}. b) (right) shows the fully expanded gemm kernel. We highlight the added nodes in subsequent expansion steps in different colors: 1. Expansion in $(0,1,0)$ {\color{red!100}red}, 2. Expansion in $(1,0,0)$ {\color{blue!100}blue}, 3. Expansion in $(1,1,0)?$ {\color{green!100}green}.}
+    \label{fig:enter-label}
+\end{figure*}
+% TODO: Make this a proper subfigure with a) and b)
 
 % Thought:
 % We name this programming model \emph{SIWT} (Single Instruction, Wave of Threads) denoting that a single instruction is executed by a wave of threads. This is inspired by the SIMT execution model where instructions are executed by all threads in lockstep.

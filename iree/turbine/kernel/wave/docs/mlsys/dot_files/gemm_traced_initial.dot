@@ -1,0 +1,14 @@
+strict digraph "" {
+        node [style="n"];
+        acc000  [label=acc000];
+        mma000  [label=mma000];
+        acc000 -> mma000;
+        a       [label=a];
+        read000 [label=read000];
+        a -> read000;
+        read000 -> mma000;
+        b       [label=b];
+        b -> read000;
+        output  [label=output];
+        mma000 -> output;
+}
