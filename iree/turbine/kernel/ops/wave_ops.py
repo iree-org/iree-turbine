@@ -9,7 +9,6 @@ from typing import (
     Any,
     Callable,
     Optional,
-    Self,
     Sequence,
     Type,
     TypeVar,
@@ -373,7 +372,7 @@ class CustomOp(ABC):
         new_graph: Optional[fx.Graph] = None,
         arg_transform: Optional[Callable[[Any], Any]] = lambda x: x,
         anchor: Optional[fx.Node] = None,
-    ) -> Self:
+    ):
         """Returns a duplicate of this node."""
         graph = new_graph
         if new_graph is None:
@@ -699,7 +698,7 @@ class Allocate(CustomOp):
 
     @property
     def type(self) -> "Memory":
-        return Memory[*self.shape, self.address_space, self.dtype]
+        return None
 
 
 @define_op("shared_memory_barrier")
