@@ -231,6 +231,9 @@ class LaunchableWave(Launchable):
         # Set indices.
         set_node_indices(graph, self.constraints)
 
+        # Analyze Thread Shapes per Op.
+        determine_thread_shapes(graph)
+
         # Expansion
         expand_graph(graph, self.constraints)
 
@@ -248,9 +251,6 @@ class LaunchableWave(Launchable):
 
         # Partition strided operators.
         partition_strided_operators(graph, self.constraints)
-
-        # Analyze Thread Shapes per Op.
-        determine_thread_shapes(graph)
 
         # Align sizes to WG/Tile sizes
         # This pass changes indexing keys, which can interfere with other passes,

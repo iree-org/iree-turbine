@@ -961,6 +961,19 @@ class Reduction(CustomOp):
 
         return wrapper
 
+    def get_root_graph(self):
+        """
+        Get root graph from some child graph inside a nested graph.
+        Using the assumption that any child/nested graph should have a parent_op,
+        who we can query for it's owner graph from to go up one level.
+        """
+        cur_graph = self.graph
+        while not hasattr(cur_graph, "subgraphs"):
+            if not hasattr(cur_graph, "parent_op"):
+                raise ValueError("All subgraphs should have parent_op")
+            cur_graph = cur_graph.parent_op.graph
+        return cur_graph
+
     @property
     def indexing_dims(self) -> list[IndexSymbol] | list[list[IndexSymbol]]:
         expand_dims: list[IndexSymbol] = []
@@ -1014,15 +1027,18 @@ class Reduction(CustomOp):
 
     @property
     def index(self) -> list[dict[IndexSymbol, IndexSequence]]:
-        if not hasattr(self.graph, "subgraphs"):
-            return None
-        for node in self.graph.subgraphs[self.subgraph_name].nodes:
+        for node in self.get_root_graph().subgraphs[self.subgraph_name].nodes:
             if isinstance(output := get_custom(node), Output):
                 return_vals = output.return_vals[0]
                 return (
-                    [val.index for val in return_vals]
-                    if isinstance(return_vals, list)
-                    else None
+                    [
+                        get_custom(val).acc_index
+                        if isinstance(get_custom(val), MMA)
+                        else val.index
+                        for val in return_vals
+                    ]
+                    if isinstance(return_vals, (Sequence))
+                    else return_vals.index
                 )
 
     @index.setter
@@ -1111,11 +1127,12 @@ class GetResult(CustomOp):
     @property
     def index(self) -> dict[IndexSymbol, IndexSequence]:
         custom = get_custom(self.value)
-        if custom.index is None:
+        custom_index = custom.index
+        if custom_index is None:
             return None
         if not isinstance(custom, Reduction):
             return custom.index
-        assert isinstance(custom.index, list) and self.res_idx < len(
+        assert isinstance(custom_index, Sequence) and self.res_idx < len(
             custom.indexing_dims
         )
         return custom.index[self.res_idx]

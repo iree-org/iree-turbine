@@ -51,8 +51,9 @@ def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
 # Anchor Indicies and Conflict resolution helpers
 #################################################################
 
-anchorOpTypes = (Read, Write, MMA, ReduceOp)
+anchorOpTypes = (Read, Write, MMA, ReduceOp, GetResult)
 noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate)
+legalSubtypes = (IterArg,)
 nonPropagatableTypes = anchorOpTypes + noHandleTypes
 
 
@@ -61,7 +62,10 @@ def is_anchor_op(node: fx.Node):
 
 
 def propagatable_op(node: fx.Node):
-    return not isinstance(get_custom(node), nonPropagatableTypes)
+    custom_node = get_custom(node)
+    return not isinstance(custom_node, nonPropagatableTypes) or isinstance(
+        custom_node, legalSubtypes
+    )
 
 
 def handle_binaryop_conflict(custom_node: CustomOp):
@@ -71,7 +75,8 @@ def handle_binaryop_conflict(custom_node: CustomOp):
     lhs_dim_set = set(lhs.type.symbolic_shape)
     rhs_dim_set = set(rhs.type.symbolic_shape)
     if lhs_dim_set == rhs_dim_set:
-        raise ValueError("Cannot broadcast if lhs and rhs is already same.")
+        # Could be caused by consumers(likely also binaryOp) of this node.
+        return []
     if lhs_dim_set.isdisjoint(rhs_dim_set):
         raise ValueError("Cannot broadcast if lhs and rhs has disjointed shapes.")
     # Determine the correct indexSize for binaryOp and insert broadcasting.
@@ -84,7 +89,8 @@ def handle_binaryop_conflict(custom_node: CustomOp):
     propagated_resolutions = capture_forward_slice(broadcast.fx_node, propagatable_op)
     for node in propagated_resolutions:
         get_custom(node).index = dst_op.index
-    return propagated_resolutions
+    resolved_resolutions = capture_backward_slice(broadcast.fx_node, propagatable_op)
+    return propagated_resolutions.union(resolved_resolutions)
 
 
 # Returns True iff all conflicts are handled succesfully.
@@ -155,11 +161,26 @@ def determine_thread_shapes(trace: CapturedTrace):
     for anchor_op in anchor_ops:
         custom = get_custom(anchor_op)
         index_sizes = get_custom_dim_sizes(custom)
-        if isinstance(custom, (Read, ReduceOp)):
+        if isinstance(custom, (Read, GetResult)):
             fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
             thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
                 index_sizes, set([])
             ).union(fwd_slice)
+        elif isinstance(custom, ReduceOp):
+            fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
+            bwd_slice = set()
+            if custom.init != None and not isinstance(
+                get_custom(custom.init), ReduceOp
+            ):
+                bwd_slice = capture_backward_slice(custom.init, propagatable_op)
+            reduce_dims = frozenset(
+                [DimSize(dim, 1) for dim in custom.index.keys() if dim != custom.dim]
+            )
+            thread_size_to_ops[reduce_dims] = (
+                thread_size_to_ops.get(reduce_dims, set([]))
+                .union(fwd_slice)
+                .union(bwd_slice)
+            )
         elif isinstance(custom, Write):
             bwd_slice = capture_backward_slice(custom.fx_node, propagatable_op)
             thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
