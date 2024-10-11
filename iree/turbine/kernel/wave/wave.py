@@ -254,7 +254,17 @@ class LaunchableWave(Launchable):
         # [Manually resolve conflicts consistent with the PR]
         if kwargs.get("schedule", False):
             use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
-            schedule_graph(graph, self.constraints, use_scheduling_barriers)
+            export_schedule_file = kwargs.get("export_schedule_file", None)
+            user_specified_schedule_file = kwargs.get(
+                "user_specified_schedule_file", None
+            )
+            schedule_graph(
+                graph,
+                self.constraints,
+                use_scheduling_barriers,
+                export_schedule_file,
+                user_specified_schedule_file,
+            )
 
         # Add shared memory barriers.
         add_shared_memory_barriers(graph)

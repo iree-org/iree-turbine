@@ -19,6 +19,7 @@ from .graph_utils import (
 from typing import Callable
 import numpy as np
 import math
+import csv
 
 logger = get_logger("turbine.wave.modulo_scheduling")
 
@@ -272,3 +273,59 @@ class ModuloScheduler:
         """
         max_cycle = max([t for t in self.schedule.values()])
         return math.ceil(max_cycle / self.initiation_interval)
+
+    def load_schedule(self, path: str, graph: fx.Graph) -> None:
+        """
+        Load a schedule into the scheduler.
+        The schedule consists of a mapping from nodes in the graph to cycles.
+        The nodes must be in the same order as the graph.
+        """
+        self._initiation_interval = 0
+        self.schedule: dict[fx.Node, int] = {}
+        print(f"Loading schedule from: {path}.\n")
+        data = []
+        with open(path, "r") as file:
+            schedule_reader = csv.reader(file, delimiter=",")
+            for row in schedule_reader:
+                data.append(
+                    {
+                        "cycle": int(row[0]),
+                        "name": row[1],
+                        "initiation_interval": int(row[2]),
+                        "relative_cycle": int(row[3]),
+                        "graph_index": int(row[4]),
+                    }
+                )
+        data.sort(key=lambda x: x["graph_index"])
+        for i, node in enumerate(graph.nodes):
+            self.schedule[node] = data[i]["cycle"]
+            self._initiation_interval = data[i]["initiation_interval"]
+            print(f"Loaded schedule for node: {node.name} -> {self.schedule[node]}.")
+        print(f"Set initiation interval: {self._initiation_interval}.")
+
+    def save_schedule(self, path: str, graph: fx.Graph) -> None:
+        """
+        Save the schedule to a file. First, assign an index to each node in the graph
+        to specify the order in which they should be loaded. The schedule format is:
+        # cycle, node name, initiation interval, cycle % initiation interval, graph index.
+        Only the cycle should be modified by users.
+        """
+        nodes_with_metadata = []
+        for i, node in enumerate(graph.nodes):
+            nodes_with_metadata.append((i, node, self.schedule[node]))
+        nodes_with_metadata.sort(key=lambda x: x[2])
+
+        with open(path, "w") as file:
+            schedule_writer = csv.writer(file, delimiter=",")
+            for graph_index, node, cycle in nodes_with_metadata:
+                assert node in self.schedule, f"Node {node} not scheduled."
+                schedule_writer.writerow(
+                    [
+                        cycle,
+                        node.name,
+                        self._initiation_interval,
+                        cycle % self._initiation_interval,
+                        graph_index,
+                    ]
+                )
+        logger.info(f"Saved schedule to: {path}.")
