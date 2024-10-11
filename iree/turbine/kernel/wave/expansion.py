@@ -222,7 +222,13 @@ def set_node_index(
                         continue
                 index_seq = constraint.apply(dim, *inputs, dim in mma_index)
                 if dim in mma_index:
-                    index_seq = specialize_index_sequence(index_seq, mma_slices, custom)
+                    # We need to keep track of expand src, because specialize_index_sequence
+                    # gets slices of fx.Nodes to apply mma index before expansion.
+                    # Hence won't recognize newly expanded ops.
+                    pre_expanded_src = getattr(custom.fx_node, "expanded_src", custom)
+                    index_seq = specialize_index_sequence(
+                        index_seq, mma_slices, pre_expanded_src
+                    )
 
             elif constraint.dim == dim:
                 if index_seq is None:
@@ -369,6 +375,7 @@ def _expand_node(
         _expand_node.last_expanded_iter_arg = new_node.fx_node
 
     new_node.fx_node.expanded_dims = restricted_dims
+    new_node.fx_node.expanded_src = node
     new_node.fx_node.name = get_expanded_name(node, restricted_dims)
     node_index_setter(new_node, restricted_dims)
 
