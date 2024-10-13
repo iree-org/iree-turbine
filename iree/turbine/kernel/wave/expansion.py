@@ -19,7 +19,12 @@ from ..ops.wave_ops import *
 from .._support.indexing import IndexingContext, IndexSequence
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
-from .utils import get_mma_dimensional_mapping, specialize_index_sequence
+from .utils import (
+    get_mma_dimensional_mapping,
+    specialize_index_sequence,
+    get_hardware_constraint,
+    get_workgroup_constraints,
+)
 from ..lang.global_symbols import *
 
 logger = get_logger("turbine.wave.expansion")
@@ -163,7 +168,7 @@ def set_node_index(
     dimensions M, N and K, but allow each mapping to be piecewise conditioned
     on the operand.
     """
-    hardware_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)]
+    hardware_constraint = [get_hardware_constraint(constraints)]
     workgroup_constraints = {
         c.dim: c for c in constraints if isinstance(c, WorkgroupConstraint)
     }
@@ -174,31 +179,28 @@ def set_node_index(
     sorted_constraints = hardware_constraint + other_constraints
 
     index = {}
+    # The semantics of elements_per_thread are that it represents the number of
+    # elements that are loaded contiguously from memory.
+    elements_per_thread = getattr(custom, "elements_per_thread", None)
+
     for dim in custom.indexing_dims:
         index_seq = None
         for constraint in sorted_constraints:
-            mma_check = isinstance(constraint, HardwareConstraint) and dim in mma_index
-
-            vector_check = (
-                isinstance(constraint, HardwareConstraint)
-                and constraint.vector_shapes is not None
-                and hasattr(custom, "elements_per_thread")
-            )
-
-            constraint_check = (
-                not isinstance(constraint, HardwareConstraint) and dim == constraint.dim
-            )
-
-            if (not (mma_check or vector_check)) and (not constraint_check):
-                continue
-
             if isinstance(constraint, HardwareConstraint):
-
-                # The semantics of elements_per_thread are that it represents the number of
-                # elements that are loaded contiguously from memory.
-                elements_per_thread = getattr(custom, "elements_per_thread", None)
-                constraint_index, elements_per_thread, stride = (
-                    (
+                inputs = None
+                if dim in mma_index:
+                    inputs = (mma_index[dim], elements_per_thread, None)
+                else:
+                    # Assumes vector shapes are associated with workgroup dims.
+                    assert (
+                        dim in workgroup_constraints
+                    ), f"Dimension {dim} not found in workgroup constraints"
+                    assert (
+                        dim in constraint.vector_shapes
+                    ), f"Dimension {dim} not found in vector shapes"
+                    if constraint.vector_shapes[dim] == 0:
+                        continue
+                    inputs = (
                         workgroup_constraints[dim].workgroup_dim,
                         (
                             1
@@ -213,16 +215,16 @@ def set_node_index(
                             custom.indexing_dims, constraint.vector_shapes, dim
                         ),
                     )
-                    if constraint.vector_shapes is not None
-                    else (mma_index[dim], elements_per_thread, None)
-                )
-                index_seq = constraint.apply(
-                    constraint_index, dim, elements_per_thread, stride
-                )
-                if mma_index:
+                    if elements_per_thread is None:
+                        # Here we end up with a situation where there will be no thread level
+                        # dependence in the dimensional index.
+                        # TODO: Evaluate if this is a valid case.
+                        continue
+                index_seq = constraint.apply(dim, *inputs, dim in mma_index)
+                if dim in mma_index:
                     index_seq = specialize_index_sequence(index_seq, mma_slices, custom)
 
-            else:
+            elif constraint.dim == dim:
                 if index_seq is None:
                     index_seq = constraint.apply()
                 else:
@@ -250,7 +252,9 @@ def expand_graph(
         dim_scaling = constraints_or_scaling
         node_index_setter = lambda *args: None
     else:
-        mma_index, mma_slices = get_mma_dimensional_mapping(trace)
+        mma_index, mma_slices = get_mma_dimensional_mapping(
+            trace, get_hardware_constraint(constraints_or_scaling)
+        )
         dim_scaling, dim_tile_size = get_dim_scaling(constraints_or_scaling, mma_index)
         node_index_setter = partial(
             set_node_index, constraints_or_scaling, mma_index, mma_slices, dim_tile_size
@@ -527,12 +531,16 @@ def get_dim_scaling(
                     f"Attempting to determine vector shape for unmapped dimension {constraint.dim}"
                 )
 
-            if mma_indices:
+            if mma_indices and constraint.dim in mma_indices:
                 vector_size = hardware_constraints[0].mma_matrix_shapes[
                     mma_indices[constraint.dim]
                 ]
             else:
                 vector_size = hardware_constraints[0].vector_shapes[constraint.dim]
+
+            # No dim scaling for dims with 0 vector size.
+            if vector_size == 0:
+                continue
 
             wave_count = 1
             if isinstance(constraint, WorkgroupConstraint):

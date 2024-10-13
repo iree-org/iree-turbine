@@ -20,15 +20,16 @@ import numpy as np
 
 
 def get_vector_shape(
-    trace: CapturedTrace,
     hardware_constraint: HardwareConstraint,
     symbolic_shape: list[IndexSymbol],
 ) -> list[int]:
-    mma_indices, _ = get_mma_dimensional_mapping(trace)
-    return [
-        get_hardware_vector_size(dim, hardware_constraint, mma_indices)
-        for dim in symbolic_shape
+    assert all(
+        dim in hardware_constraint.vector_shapes for dim in symbolic_shape
+    ), "Missing vector shape in hardware constraint"
+    vector_shapes = [
+        max(hardware_constraint.vector_shapes[dim], 1) for dim in symbolic_shape
     ]
+    return vector_shapes
 
 
 def partition_strided_operators(trace: CapturedTrace, constraints: list[Constraint]):
@@ -46,7 +47,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         read more than a single element.
         """
         custom = get_custom(node)
-        if isinstance(custom, Write) and len(custom.register_type.symbolic_shape) == 2:
+        if isinstance(custom, Write):
             strides = [
                 simplify_index(custom.register_index[dim]).stride
                 for dim in custom.register_index
@@ -69,13 +70,12 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
     for operator in strided_operators:
         custom = get_custom(operator)
         simplified_index = {
-            dim: simplify_index(custom.register_index[dim]) for dim in custom.index
+            dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
+            for dim in custom.index
         }
 
         max_stride = int(max(simplified_index[dim].stride for dim in simplified_index))
-        shape = get_vector_shape(
-            trace, hw_constraint, custom.register_type.symbolic_shape
-        )
+        shape = get_vector_shape(hw_constraint, custom.register_type.symbolic_shape)
         elements_per_thread = subs_idxc(custom.elements_per_thread)
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):

@@ -192,6 +192,7 @@ def simplify_index(index: IndexExpr) -> IndexExpr:
 
 def get_mma_dimensional_mapping(
     trace: CapturedTrace,
+    hardware_constraint: HardwareConstraint,
 ) -> tuple[dict[IndexSymbol, int], dict[IndexSymbol, list[fx.Node]]]:
     """
     Given a trace, determine the MMA dimensional mapping for all the
@@ -200,6 +201,9 @@ def get_mma_dimensional_mapping(
     where a_reg has shape UxV, b has shape SxV and acc has shape UxS,
     we map U to the MMA M dimension (0), S to the MMA N dimension (1) and
     V to the MMA K dimension (2).
+
+    Also update the vector shapes in the hardware constraint based on the
+    discovered MMA dimensions.
     """
 
     def is_mma(node):
@@ -217,6 +221,13 @@ def get_mma_dimensional_mapping(
         mapping[m] = 0
         mapping[n] = 1
         mapping[k] = 2
+        # Update vector shapes in hardware constraint.
+        M, N, K = hardware_constraint.mma_matrix_shapes
+        if not hardware_constraint.vector_shapes:
+            hardware_constraint.vector_shapes = {}
+        hardware_constraint.vector_shapes[m] = M
+        hardware_constraint.vector_shapes[n] = N
+        hardware_constraint.vector_shapes[k] = K
 
     return mapping, capture_mma_slices([get_custom(x) for x in mma_nodes])
 
@@ -509,9 +520,7 @@ def get_inputs(
         inputs.append(local_reduction.init_args[iter_arg_idx])
     elif isinstance(custom, GetResult):
         reduction = get_custom(custom.value)
-        assert isinstance(
-            get_custom(reduction), Reduction
-        ), "GetResult must be used by a Reduction"
+        assert isinstance(reduction, Reduction), "GetResult must be used by a Reduction"
         # Map get result to output
         reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
         inputs.append(reduction.outputs(reduction_subgraph)[custom.res_idx])
@@ -649,6 +658,20 @@ def get_tiling_constraint(
             return constraint
     else:
         raise ValueError(f"Could not find tiling constraint for reduction {reduction}")
+
+
+def get_hardware_constraint(constraints: list[Constraint]) -> HardwareConstraint:
+    for constraint in constraints:
+        if isinstance(constraint, HardwareConstraint):
+            return constraint
+    else:
+        raise ValueError(f"Could not find hardware constraint in {constraints}")
+
+
+def get_workgroup_constraints(
+    constraints: list[Constraint],
+) -> list[WorkgroupConstraint]:
+    return [x for x in constraints if isinstance(x, WorkgroupConstraint)]
 
 
 def replace_uses_in(users: dict[fx.Node, list[CustomOp]], old: CustomOp, new: fx.Node):
