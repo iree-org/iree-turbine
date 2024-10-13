@@ -262,7 +262,10 @@ class ParameterArchiveBuilder:
 
     def save(self, file_path: Union[str, Path]):
         """Saves the archive."""
-        self._index.create_archive_file(str(file_path))
+        str_file_path = str(file_path)
+        if not str_file_path.endswith(".irpa"):
+            str_file_path = str_file_path + ".irpa"
+        self._index.create_archive_file(str_file_path)
 
     def add_tensor(self, name: str, tensor: torch.Tensor):
         """Adds an named tensor to the archive."""
