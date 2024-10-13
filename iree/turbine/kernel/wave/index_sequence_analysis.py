@@ -24,11 +24,20 @@ def get_vector_shape(
     hardware_constraint: HardwareConstraint,
     symbolic_shape: list[IndexSymbol],
 ) -> list[int]:
-    mma_indices, _ = get_mma_dimensional_mapping(trace)
-    return [
-        get_hardware_vector_size(dim, hardware_constraint, mma_indices)
-        for dim in symbolic_shape
-    ]
+    assert all(
+        dim in hardware_constraint.vector_shapes for dim in symbolic_shape
+    ), "Missing vector shape in hardware constraint"
+    vector_shapes: list[int] = []
+    for dim in symbolic_shape:
+        assert (
+            dim in hardware_constraint.vector_shapes
+        ), f"Missing vector shape for {dim}"
+        vector_shapes.append(hardware_constraint.vector_shapes[dim])
+        # For unraveling the vector shape, we need to ensure that the vector shape
+        # is at least 1 in each dimension.
+        if hardware_constraint.vector_shapes[dim] == 0:
+            vector_shapes[-1] = 1
+    return vector_shapes
 
 
 def partition_strided_operators(trace: CapturedTrace, constraints: list[Constraint]):
@@ -46,7 +55,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         read more than a single element.
         """
         custom = get_custom(node)
-        if isinstance(custom, Write) and len(custom.register_type.symbolic_shape) == 2:
+        if isinstance(custom, Write):
             strides = [
                 simplify_index(custom.register_index[dim]).stride
                 for dim in custom.register_index

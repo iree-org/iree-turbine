@@ -10,14 +10,17 @@ from .utils import compile_and_invoke
 from ...support.conversions import TORCH_DTYPE_TO_MLIR_TYPE_ASM
 
 
-def get_mmt_asm(lhs_type: str, rhs_type: str, acc_type: str) -> str:
+def get_mmt_asm(
+    lhs_type: str, rhs_type: str, acc_type: str, batch: bool = False
+) -> str:
     acc_dtype = acc_type.split("x")[-1]
+    operator = "batch_matmul_transpose_b" if batch else "matmul_transpose_b"
     matmul_function = f"""
     func.func @mmt(%lhs: tensor<{lhs_type}>, %rhs: tensor<{rhs_type}>) -> tensor<{acc_type}> {{
       %c0 = arith.constant 0.0 : {acc_dtype}
       %init = tensor.empty() : tensor<{acc_type}>
       %inital_result = linalg.fill ins(%c0 : {acc_dtype}) outs(%init : tensor<{acc_type}>) -> tensor<{acc_type}>
-      %result = linalg.matmul_transpose_b ins(%lhs, %rhs: tensor<{lhs_type}>, tensor<{rhs_type}>)
+      %result = linalg.{operator} ins(%lhs, %rhs: tensor<{lhs_type}>, tensor<{rhs_type}>)
                  outs(%inital_result: tensor<{acc_type}>) -> tensor<{acc_type}>
       return %result : tensor<{acc_type}>
     }}"""
@@ -70,6 +73,11 @@ def generate_iree_ref(
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
         asm = get_mmt_asm(lhs_type, rhs_type, acc_type)
+    elif kernel_type == "bmmt":
+        lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
+        rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
+        acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
+        asm = get_mmt_asm(lhs_type, rhs_type, acc_type, batch=True)
     elif kernel_type.startswith(conv_str):
         lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)

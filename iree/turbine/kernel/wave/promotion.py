@@ -10,7 +10,7 @@ from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 from .constraints import Constraint, get_constrained_shape
-from .utils import subs_idxc
+from .utils import subs_idxc, get_hardware_constraint
 
 logger = get_logger("turbine.wave.promotion")
 
@@ -52,6 +52,30 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
             custom_node.memory_type.address_space = GLOBAL_ADDRESS_SPACE
 
 
+def remove_zero_dims(
+    original_shape: tuple[IndexSymbol | int],
+    distributed_shape: tuple[IndexSymbol | int],
+    constraints: list[Constraint],
+) -> tuple[tuple[IndexSymbol | int], tuple[IndexSymbol | int]]:
+    """
+    Removes dimensions of size 0 from the shape. These can be batch dimensions
+    that are not used for promotion.
+    """
+    hardware_constraint = get_hardware_constraint(constraints)
+    new_shape: list[IndexSymbol | int] = []
+    new_distributed_shape: list[IndexSymbol | int] = []
+    for dim, distributed_dim in zip(original_shape, distributed_shape):
+        if (
+            hardware_constraint.vector_shapes
+            and dim in hardware_constraint.vector_shapes
+            and hardware_constraint.vector_shapes[dim] == 0
+        ):
+            continue
+        new_distributed_shape.append(distributed_dim)
+        new_shape.append(dim)
+    return tuple(new_shape), tuple(new_distributed_shape)
+
+
 def promote_node(
     node: Read | Write, address_space: IndexSymbol, constraints: list[Constraint]
 ):
@@ -67,9 +91,12 @@ def promote_node(
     with node.graph.inserting_before(node.fx_node.next):
         constrained_shape = get_constrained_shape(node.type.symbolic_shape, constraints)
         padded_shape = apply_padding(constrained_shape, node.type.dtype)
+        reduced_symbolic_shape, reduced_constrained_shape = remove_zero_dims(
+            node.type.symbolic_shape, padded_shape, constraints
+        )
         allocate_node = Allocate(
-            node.type.symbolic_shape,
-            padded_shape,
+            reduced_symbolic_shape,
+            reduced_constrained_shape,
             node.type.dtype,
             address_space,
         )

@@ -52,6 +52,9 @@ class HardwareConstraint(Constraint):
     these situations, the user can specify the vector shape they
     want to tile to by specifying the vector shapes dictionary
     which maps a tensor dimension to its corresponding tile size.
+
+    Both mma constraints and vector shapes can be specified, but
+    the mapping from symbols to shapes should be injective.
     """
 
     threads_per_wave: int
@@ -116,8 +119,6 @@ class HardwareConstraint(Constraint):
         elements_per_thread: int | IndexSymbol,
         stride: int,
     ) -> IndexSequence:
-        if dim not in self.vector_shapes:
-            raise ValueError(f"No vector shape specified for dimension {dim}")
         thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
         return IndexSequence(
             thread_id * elements_per_thread, elements_per_thread, stride
@@ -125,12 +126,13 @@ class HardwareConstraint(Constraint):
 
     def apply(
         self,
-        constraint_index: int,
         dim: IndexSymbol,
+        constraint_index: int,
         elements_per_thread: int | IndexSymbol,
         stride: int,
+        is_mma_dim: bool,
     ) -> IndexSequence:
-        if self.vector_shapes is not None:
+        if not is_mma_dim:
             return self.compute_access_pattern_using_vector_shapes(
                 dim, constraint_index, elements_per_thread, stride
             )
