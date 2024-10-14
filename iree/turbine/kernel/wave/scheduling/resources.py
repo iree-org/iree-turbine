@@ -14,6 +14,7 @@ from ...ops.wave_ops import (
     Output,
     get_custom,
     CustomOp,
+    CastOp,
 )
 import torch.fx as fx
 from enum import Enum
@@ -105,7 +106,7 @@ def annotate_resource_usage(
             )
         elif isinstance(custom, MMA):
             custom.rrt = resource_reservation_table[Operation.MMA]
-        elif isinstance(custom, IterArg):
+        elif isinstance(custom, (IterArg, CastOp)):
             iter_args.append(node)
             custom.rrt = resource_reservation_table[Operation.NOOP]
         elif isinstance(custom, Output):

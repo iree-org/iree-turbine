@@ -79,7 +79,7 @@ def add_nodes_by_schedule(
             for arg in node.args:
                 if arg_context.contains_in_iteration(iteration, arg):
                     logger.debug(
-                        f"Found arg: {arg} in partitioned argument map. Using {arg_context.get_from_iteration(iteration, arg)}."
+                        f"Found arg: {arg} at iteration {iteration} in partitioned argument map. Using {arg_context.get_from_iteration(iteration, arg)}."
                     )
                     continue
             new_node = custom_node.copy(
@@ -271,9 +271,9 @@ def push_rotating_registers(
         iteration = arg_context.get_kernel_iteration(stage)
         arg_context[(iteration, stage, node)] = registers[-1]
         for i, register in enumerate(registers):
-            mapped_stage = stage + len(registers) - i
-            mapped_iteration = arg_context.get_kernel_iteration(mapped_stage)
             if create_new_nodes:
+                mapped_stage = stage + len(registers) - i
+                mapped_iteration = arg_context.get_kernel_iteration(mapped_stage)
                 iter_arg = IterArg(f"rotating_reg_{count}").add_to_graph(graph)
                 iter_arg.type = get_custom(node).type
                 iter_arg.index = get_custom(node).index
@@ -283,9 +283,11 @@ def push_rotating_registers(
                     f"Mapped orig: {node_map[node]} / mapped: {iter_arg} to stage {mapped_stage}."
                 )
             else:
+                mapped_stage = stage + len(registers) - i - 1
+                mapped_iteration = arg_context.get_kernel_iteration(mapped_stage)
                 arg_context[(mapped_iteration, mapped_stage, node)] = register
                 logger.debug(
-                    f"Mapped orig: {node_map[node]} / mapped: {register} to stage {mapped_stage}."
+                    f"Mapped orig: {node_map[node]} / mapped: {register} to stage {mapped_stage} at iteration {mapped_iteration}."
                 )
             count += 1
         if new_registers:
