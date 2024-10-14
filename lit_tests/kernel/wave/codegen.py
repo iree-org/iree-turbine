@@ -274,6 +274,48 @@ def test_read_write_masked():
 
 
 @run_test
+def test_read_write_masked_shared():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 4, N: 4}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f16],
+    ):
+        res = tkw.read(a, elements_per_thread=4)
+        tkw.write(res, b, elements_per_thread=4)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 1,
+            N: 3,
+            BLOCK_M: 4,
+            BLOCK_N: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        a = torch.randn(4, 4, dtype=torch.float16)
+        b = torch.zeros(4, 4, dtype=torch.float16)
+        print(test(a, b).module_op)
+
+        # Check shared mem load stores are non masked
+        # CHECK:            %{{.*}} = vector.maskedload {{.*}} : memref<1x3xf16, strided<[3, 1], offset: ?>>, vector<4xi1>, vector<4xf16> into vector<4xf16>
+        # CHECK:            vector.store {{.*}} : memref<4x8xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK:            %{{.*}} = vector.load {{.*}} : memref<4x8xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK:            vector.maskedstore {{.*}} : memref<1x3xf16, strided<[3, 1], offset: ?>>, vector<4xi1>, vector<4xf16>
+
+
+@run_test
 def test_read_write_mapping():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(

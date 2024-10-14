@@ -642,6 +642,10 @@ def _construct_gather_scatter_indices(
     return start_indices, offsets_vec, mask
 
 
+def _is_shared_mem(node: fx.Node) -> bool:
+    return get_custom(node).memory_type.address_space == SHARED_ADDRESS_SPACE
+
+
 @handle_op(read)
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
@@ -664,8 +668,12 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     input_shape = _get_symbolic_shape(memory)
     if mapping is None or _is_identity_mapping(mapping, input_shape=input_shape):
         start_indices = _build_start_indices(emitter, index)
-        mask = _build_mask(
-            emitter, index, cast_py_literal(emitter, elements_per_thread)
+        mask = (
+            None
+            if _is_shared_mem(node)
+            else _build_mask(
+                emitter, index, cast_py_literal(emitter, elements_per_thread)
+            )
         )
         if mask is None:
             result = vector_d.load(vector_type, kb_src, start_indices)
@@ -727,8 +735,12 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         mapping, input_shape=input_shape, output_shape=output_shape
     ):
         start_indices = _build_start_indices(emitter, index)
-        mask = _build_mask(
-            emitter, index, cast_py_literal(emitter, elements_per_thread)
+        mask = (
+            None
+            if _is_shared_mem(node)
+            else _build_mask(
+                emitter, index, cast_py_literal(emitter, elements_per_thread)
+            )
         )
         if mask is None:
             vector_d.store(insert_vector, kb_dest, start_indices)
