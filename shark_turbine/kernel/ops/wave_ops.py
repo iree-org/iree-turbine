@@ -7,7 +7,6 @@ from typing import (
     Any,
     Callable,
     Optional,
-    Self,
     Sequence,
     Type,
     TypeVar,
@@ -199,7 +198,7 @@ class CustomOp(ABC):
 
     def copy(
         self, new_name: Optional[str] = None, new_graph: Optional[fx.Graph] = None
-    ) -> Self:
+    ):
         """Returns a duplicate of this node."""
         graph = new_graph
         if new_graph is None:
