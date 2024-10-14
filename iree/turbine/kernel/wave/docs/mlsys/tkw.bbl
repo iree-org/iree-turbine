@@ -1,0 +1,208 @@
+\begin{thebibliography}{6}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Chetlur et~al.(2014)Chetlur, Woolley, Vandermersch, Cohen, Tran,
+  Catanzaro, and Shelhamer]{chetlur_cudnn_2014}
+Chetlur, S., Woolley, C., Vandermersch, P., Cohen, J., Tran, J., Catanzaro, B.,
+  and Shelhamer, E.
+\newblock {cuDNN}: {Efficient} {Primitives} for {Deep} {Learning}, December
+  2014.
+\newblock URL \url{http://arxiv.org/abs/1410.0759}.
+\newblock arXiv:1410.0759 [cs].
+
+\bibitem[Dubey et~al.(2024)Dubey, Jauhri, Pandey, Kadian, Al-Dahle, Letman,
+  Mathur, Schelten, Yang, Fan, Goyal, Hartshorn, Yang, Mitra, Sravankumar,
+  Korenev, Hinsvark, Rao, Zhang, Rodriguez, Gregerson, Spataru, Roziere, Biron,
+  Tang, Chern, Caucheteux, Nayak, Bi, Marra, McConnell, Keller, Touret, Wu,
+  Wong, Ferrer, Nikolaidis, Allonsius, Song, Pintz, Livshits, Esiobu,
+  Choudhary, Mahajan, Garcia-Olano, Perino, Hupkes, Lakomkin, AlBadawy,
+  Lobanova, Dinan, Smith, Radenovic, Zhang, Synnaeve, Lee, Anderson, Nail,
+  Mialon, Pang, Cucurell, Nguyen, Korevaar, Xu, Touvron, Zarov, Ibarra,
+  Kloumann, Misra, Evtimov, Copet, Lee, Geffert, Vranes, Park, Mahadeokar,
+  Shah, van~der Linde, Billock, Hong, Lee, Fu, Chi, Huang, Liu, Wang, Yu,
+  Bitton, Spisak, Park, Rocca, Johnstun, Saxe, Jia, Alwala, Upasani, Plawiak,
+  Li, Heafield, Stone, El-Arini, Iyer, Malik, Chiu, Bhalla, Rantala-Yeary,
+  van~der Maaten, Chen, Tan, Jenkins, Martin, Madaan, Malo, Blecher, Landzaat,
+  de~Oliveira, Muzzi, Pasupuleti, Singh, Paluri, Kardas, Oldham, Rita, Pavlova,
+  Kambadur, Lewis, Si, Singh, Hassan, Goyal, Torabi, Bashlykov, Bogoychev,
+  Chatterji, Duchenne, Çelebi, Alrassy, Zhang, Li, Vasic, Weng, Bhargava,
+  Dubal, Krishnan, Koura, Xu, He, Dong, Srinivasan, Ganapathy, Calderer,
+  Cabral, Stojnic, Raileanu, Girdhar, Patel, Sauvestre, Polidoro, Sumbaly,
+  Taylor, Silva, Hou, Wang, Hosseini, Chennabasappa, Singh, Bell, Kim, Edunov,
+  Nie, Narang, Raparthy, Shen, Wan, Bhosale, Zhang, Vandenhende, Batra,
+  Whitman, Sootla, Collot, Gururangan, Borodinsky, Herman, Fowler, Sheasha,
+  Georgiou, Scialom, Speckbacher, Mihaylov, Xiao, Karn, Goswami, Gupta,
+  Ramanathan, Kerkez, Gonguet, Do, Vogeti, Petrovic, Chu, Xiong, Fu, Meers,
+  Martinet, Wang, Tan, Xie, Jia, Wang, Goldschlag, Gaur, Babaei, Wen, Song,
+  Zhang, Li, Mao, Coudert, Yan, Chen, Papakipos, Singh, Grattafiori, Jain,
+  Kelsey, Shajnfeld, Gangidi, Victoria, Goldstand, Menon, Sharma, Boesenberg,
+  Vaughan, Baevski, Feinstein, Kallet, Sangani, Yunus, Lupu, Alvarado, Caples,
+  Gu, Ho, Poulton, Ryan, Ramchandani, Franco, Saraf, Chowdhury, Gabriel,
+  Bharambe, Eisenman, Yazdan, James, Maurer, Leonhardi, Huang, Loyd, De~Paola,
+  Paranjape, Liu, Wu, Ni, Hancock, Wasti, Spence, Stojkovic, Gamido, Montalvo,
+  Parker, Burton, Mejia, Wang, Kim, Zhou, Hu, Chu, Cai, Tindal, Feichtenhofer,
+  Civin, Beaty, Kreymer, Li, Wyatt, Adkins, Xu, Testuggine, David, Parikh,
+  Liskovich, Foss, Wang, Le, Holland, Dowling, Jamil, Montgomery, Presani,
+  Hahn, Wood, Brinkman, Arcaute, Dunbar, Smothers, Sun, Kreuk, Tian, Ozgenel,
+  Caggioni, Guzmán, Kanayet, Seide, Florez, Schwarz, Badeer, Swee, Halpern,
+  Thattai, Herman, Sizov, Guangyi, Zhang, Lakshminarayanan, Shojanazeri, Zou,
+  Wang, Zha, Habeeb, Rudolph, Suk, Aspegren, Goldman, Damlaj, Molybog, Tufanov,
+  Veliche, Gat, Weissman, Geboski, Kohli, Asher, Gaya, Marcus, Tang, Chan,
+  Zhen, Reizenstein, Teboul, Zhong, Jin, Yang, Cummings, Carvill, Shepard,
+  McPhie, Torres, Ginsburg, Wang, Wu, U, Saxena, Prasad, Khandelwal, Zand,
+  Matosich, Veeraraghavan, Michelena, Li, Huang, Chawla, Lakhotia, Huang, Chen,
+  Garg, A, Silva, Bell, Zhang, Guo, Yu, Moshkovich, Wehrstedt, Khabsa, Avalani,
+  Bhatt, Tsimpoukelli, Mankus, Hasson, Lennie, Reso, Groshev, Naumov, Lathi,
+  Keneally, Seltzer, Valko, Restrepo, Patel, Vyatskov, Samvelyan, Clark, Macey,
+  Wang, Hermoso, Metanat, Rastegari, Bansal, Santhanam, Parks, White, Bawa,
+  Singhal, Egebo, Usunier, Laptev, Dong, Zhang, Cheng, Chernoguz, Hart,
+  Salpekar, Kalinli, Kent, Parekh, Saab, Balaji, Rittner, Bontrager, Roux,
+  Dollar, Zvyagina, Ratanchandani, Yuvraj, Liang, Alao, Rodriguez, Ayub,
+  Murthy, Nayani, Mitra, Li, Hogan, Battey, Wang, Maheswari, Howes, Rinott,
+  Bondu, Datta, Chugh, Hunt, Dhillon, Sidorov, Pan, Verma, Yamamoto, Ramaswamy,
+  Lindsay, Lindsay, Feng, Lin, Zha, Shankar, Zhang, Zhang, Wang, Agarwal,
+  Sajuyigbe, Chintala, Max, Chen, Kehoe, Satterfield, Govindaprasad, Gupta,
+  Cho, Virk, Subramanian, Choudhury, Goldman, Remez, Glaser, Best, Kohler,
+  Robinson, Li, Zhang, Matthews, Chou, Shaked, Vontimitta, Ajayi, Montanez,
+  Mohan, Kumar, Mangla, Albiero, Ionescu, Poenaru, Mihailescu, Ivanov, Li,
+  Wang, Jiang, Bouaziz, Constable, Tang, Wang, Wu, Wang, Xia, Wu, Gao, Chen,
+  Hu, Jia, Qi, Li, Zhang, Zhang, Adi, Nam, Yu, Wang, Hao, Qian, He, Rait,
+  DeVito, Rosnbrick, Wen, Yang, and Zhao]{dubey_llama_2024}
+Dubey, A., Jauhri, A., Pandey, A., Kadian, A., Al-Dahle, A., Letman, A.,
+  Mathur, A., Schelten, A., Yang, A., Fan, A., Goyal, A., Hartshorn, A., Yang,
+  A., Mitra, A., Sravankumar, A., Korenev, A., Hinsvark, A., Rao, A., Zhang,
+  A., Rodriguez, A., Gregerson, A., Spataru, A., Roziere, B., Biron, B., Tang,
+  B., Chern, B., Caucheteux, C., Nayak, C., Bi, C., Marra, C., McConnell, C.,
+  Keller, C., Touret, C., Wu, C., Wong, C., Ferrer, C.~C., Nikolaidis, C.,
+  Allonsius, D., Song, D., Pintz, D., Livshits, D., Esiobu, D., Choudhary, D.,
+  Mahajan, D., Garcia-Olano, D., Perino, D., Hupkes, D., Lakomkin, E.,
+  AlBadawy, E., Lobanova, E., Dinan, E., Smith, E.~M., Radenovic, F., Zhang,
+  F., Synnaeve, G., Lee, G., Anderson, G.~L., Nail, G., Mialon, G., Pang, G.,
+  Cucurell, G., Nguyen, H., Korevaar, H., Xu, H., Touvron, H., Zarov, I.,
+  Ibarra, I.~A., Kloumann, I., Misra, I., Evtimov, I., Copet, J., Lee, J.,
+  Geffert, J., Vranes, J., Park, J., Mahadeokar, J., Shah, J., van~der Linde,
+  J., Billock, J., Hong, J., Lee, J., Fu, J., Chi, J., Huang, J., Liu, J.,
+  Wang, J., Yu, J., Bitton, J., Spisak, J., Park, J., Rocca, J., Johnstun, J.,
+  Saxe, J., Jia, J., Alwala, K.~V., Upasani, K., Plawiak, K., Li, K., Heafield,
+  K., Stone, K., El-Arini, K., Iyer, K., Malik, K., Chiu, K., Bhalla, K.,
+  Rantala-Yeary, L., van~der Maaten, L., Chen, L., Tan, L., Jenkins, L.,
+  Martin, L., Madaan, L., Malo, L., Blecher, L., Landzaat, L., de~Oliveira, L.,
+  Muzzi, M., Pasupuleti, M., Singh, M., Paluri, M., Kardas, M., Oldham, M.,
+  Rita, M., Pavlova, M., Kambadur, M., Lewis, M., Si, M., Singh, M.~K., Hassan,
+  M., Goyal, N., Torabi, N., Bashlykov, N., Bogoychev, N., Chatterji, N.,
+  Duchenne, O., Çelebi, O., Alrassy, P., Zhang, P., Li, P., Vasic, P., Weng,
+  P., Bhargava, P., Dubal, P., Krishnan, P., Koura, P.~S., Xu, P., He, Q.,
+  Dong, Q., Srinivasan, R., Ganapathy, R., Calderer, R., Cabral, R.~S.,
+  Stojnic, R., Raileanu, R., Girdhar, R., Patel, R., Sauvestre, R., Polidoro,
+  R., Sumbaly, R., Taylor, R., Silva, R., Hou, R., Wang, R., Hosseini, S.,
+  Chennabasappa, S., Singh, S., Bell, S., Kim, S.~S., Edunov, S., Nie, S.,
+  Narang, S., Raparthy, S., Shen, S., Wan, S., Bhosale, S., Zhang, S.,
+  Vandenhende, S., Batra, S., Whitman, S., Sootla, S., Collot, S., Gururangan,
+  S., Borodinsky, S., Herman, T., Fowler, T., Sheasha, T., Georgiou, T.,
+  Scialom, T., Speckbacher, T., Mihaylov, T., Xiao, T., Karn, U., Goswami, V.,
+  Gupta, V., Ramanathan, V., Kerkez, V., Gonguet, V., Do, V., Vogeti, V.,
+  Petrovic, V., Chu, W., Xiong, W., Fu, W., Meers, W., Martinet, X., Wang, X.,
+  Tan, X.~E., Xie, X., Jia, X., Wang, X., Goldschlag, Y., Gaur, Y., Babaei, Y.,
+  Wen, Y., Song, Y., Zhang, Y., Li, Y., Mao, Y., Coudert, Z.~D., Yan, Z., Chen,
+  Z., Papakipos, Z., Singh, A., Grattafiori, A., Jain, A., Kelsey, A.,
+  Shajnfeld, A., Gangidi, A., Victoria, A., Goldstand, A., Menon, A., Sharma,
+  A., Boesenberg, A., Vaughan, A., Baevski, A., Feinstein, A., Kallet, A.,
+  Sangani, A., Yunus, A., Lupu, A., Alvarado, A., Caples, A., Gu, A., Ho, A.,
+  Poulton, A., Ryan, A., Ramchandani, A., Franco, A., Saraf, A., Chowdhury, A.,
+  Gabriel, A., Bharambe, A., Eisenman, A., Yazdan, A., James, B., Maurer, B.,
+  Leonhardi, B., Huang, B., Loyd, B., De~Paola, B., Paranjape, B., Liu, B., Wu,
+  B., Ni, B., Hancock, B., Wasti, B., Spence, B., Stojkovic, B., Gamido, B.,
+  Montalvo, B., Parker, C., Burton, C., Mejia, C., Wang, C., Kim, C., Zhou, C.,
+  Hu, C., Chu, C.-H., Cai, C., Tindal, C., Feichtenhofer, C., Civin, D., Beaty,
+  D., Kreymer, D., Li, D., Wyatt, D., Adkins, D., Xu, D., Testuggine, D.,
+  David, D., Parikh, D., Liskovich, D., Foss, D., Wang, D., Le, D., Holland,
+  D., Dowling, E., Jamil, E., Montgomery, E., Presani, E., Hahn, E., Wood, E.,
+  Brinkman, E., Arcaute, E., Dunbar, E., Smothers, E., Sun, F., Kreuk, F.,
+  Tian, F., Ozgenel, F., Caggioni, F., Guzmán, F., Kanayet, F., Seide, F.,
+  Florez, G.~M., Schwarz, G., Badeer, G., Swee, G., Halpern, G., Thattai, G.,
+  Herman, G., Sizov, G., Guangyi, Zhang, Lakshminarayanan, G., Shojanazeri, H.,
+  Zou, H., Wang, H., Zha, H., Habeeb, H., Rudolph, H., Suk, H., Aspegren, H.,
+  Goldman, H., Damlaj, I., Molybog, I., Tufanov, I., Veliche, I.-E., Gat, I.,
+  Weissman, J., Geboski, J., Kohli, J., Asher, J., Gaya, J.-B., Marcus, J.,
+  Tang, J., Chan, J., Zhen, J., Reizenstein, J., Teboul, J., Zhong, J., Jin,
+  J., Yang, J., Cummings, J., Carvill, J., Shepard, J., McPhie, J., Torres, J.,
+  Ginsburg, J., Wang, J., Wu, K., U, K.~H., Saxena, K., Prasad, K., Khandelwal,
+  K., Zand, K., Matosich, K., Veeraraghavan, K., Michelena, K., Li, K., Huang,
+  K., Chawla, K., Lakhotia, K., Huang, K., Chen, L., Garg, L., A, L., Silva,
+  L., Bell, L., Zhang, L., Guo, L., Yu, L., Moshkovich, L., Wehrstedt, L.,
+  Khabsa, M., Avalani, M., Bhatt, M., Tsimpoukelli, M., Mankus, M., Hasson, M.,
+  Lennie, M., Reso, M., Groshev, M., Naumov, M., Lathi, M., Keneally, M.,
+  Seltzer, M.~L., Valko, M., Restrepo, M., Patel, M., Vyatskov, M., Samvelyan,
+  M., Clark, M., Macey, M., Wang, M., Hermoso, M.~J., Metanat, M., Rastegari,
+  M., Bansal, M., Santhanam, N., Parks, N., White, N., Bawa, N., Singhal, N.,
+  Egebo, N., Usunier, N., Laptev, N.~P., Dong, N., Zhang, N., Cheng, N.,
+  Chernoguz, O., Hart, O., Salpekar, O., Kalinli, O., Kent, P., Parekh, P.,
+  Saab, P., Balaji, P., Rittner, P., Bontrager, P., Roux, P., Dollar, P.,
+  Zvyagina, P., Ratanchandani, P., Yuvraj, P., Liang, Q., Alao, R., Rodriguez,
+  R., Ayub, R., Murthy, R., Nayani, R., Mitra, R., Li, R., Hogan, R., Battey,
+  R., Wang, R., Maheswari, R., Howes, R., Rinott, R., Bondu, S.~J., Datta, S.,
+  Chugh, S., Hunt, S., Dhillon, S., Sidorov, S., Pan, S., Verma, S., Yamamoto,
+  S., Ramaswamy, S., Lindsay, S., Lindsay, S., Feng, S., Lin, S., Zha, S.~C.,
+  Shankar, S., Zhang, S., Zhang, S., Wang, S., Agarwal, S., Sajuyigbe, S.,
+  Chintala, S., Max, S., Chen, S., Kehoe, S., Satterfield, S., Govindaprasad,
+  S., Gupta, S., Cho, S., Virk, S., Subramanian, S., Choudhury, S., Goldman,
+  S., Remez, T., Glaser, T., Best, T., Kohler, T., Robinson, T., Li, T., Zhang,
+  T., Matthews, T., Chou, T., Shaked, T., Vontimitta, V., Ajayi, V., Montanez,
+  V., Mohan, V., Kumar, V.~S., Mangla, V., Albiero, V., Ionescu, V., Poenaru,
+  V., Mihailescu, V.~T., Ivanov, V., Li, W., Wang, W., Jiang, W., Bouaziz, W.,
+  Constable, W., Tang, X., Wang, X., Wu, X., Wang, X., Xia, X., Wu, X., Gao,
+  X., Chen, Y., Hu, Y., Jia, Y., Qi, Y., Li, Y., Zhang, Y., Zhang, Y., Adi, Y.,
+  Nam, Y., Yu, Wang, Hao, Y., Qian, Y., He, Y., Rait, Z., DeVito, Z.,
+  Rosnbrick, Z., Wen, Z., Yang, Z., and Zhao, Z.
+\newblock The {Llama} 3 {Herd} of {Models}, August 2024.
+\newblock URL \url{http://arxiv.org/abs/2407.21783}.
+\newblock arXiv:2407.21783 [cs].
+
+\bibitem[Paszke et~al.(2019)Paszke, Gross, Massa, Lerer, Bradbury, Chanan,
+  Killeen, Lin, Gimelshein, Antiga, Desmaison, Köpf, Yang, DeVito, Raison,
+  Tejani, Chilamkurthy, Steiner, Fang, Bai, and Chintala]{paszke_pytorch_2019}
+Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen,
+  T., Lin, Z., Gimelshein, N., Antiga, L., Desmaison, A., Köpf, A., Yang, E.,
+  DeVito, Z., Raison, M., Tejani, A., Chilamkurthy, S., Steiner, B., Fang, L.,
+  Bai, J., and Chintala, S.
+\newblock {PyTorch}: {An} {Imperative} {Style}, {High}-{Performance} {Deep}
+  {Learning} {Library}, December 2019.
+\newblock URL \url{http://arxiv.org/abs/1912.01703}.
+\newblock arXiv:1912.01703 [cs, stat].
+
+\bibitem[Podell et~al.(2023)Podell, English, Lacey, Blattmann, Dockhorn,
+  Müller, Penna, and Rombach]{podell_sdxl_2023}
+Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J.,
+  Penna, J., and Rombach, R.
+\newblock {SDXL}: {Improving} {Latent} {Diffusion} {Models} for
+  {High}-{Resolution} {Image} {Synthesis}, July 2023.
+\newblock URL \url{http://arxiv.org/abs/2307.01952}.
+\newblock arXiv:2307.01952 [cs].
+
+\bibitem[Sun et~al.(2023)Sun, Li, Geng, Stuijk, and
+  Corporaal]{sun_dissecting_2023}
+Sun, W., Li, A., Geng, T., Stuijk, S., and Corporaal, H.
+\newblock Dissecting {Tensor} {Cores} via {Microbenchmarks}: {Latency},
+  {Throughput} and {Numeric} {Behaviors}.
+\newblock \emph{IEEE Transactions on Parallel and Distributed Systems},
+  34\penalty0 (1):\penalty0 246--261, January 2023.
+\newblock ISSN 1045-9219, 1558-2183, 2161-9883.
+\newblock \doi{10.1109/TPDS.2022.3217824}.
+\newblock URL \url{https://ieeexplore.ieee.org/document/9931992/}.
+
+\bibitem[Tillet et~al.(2019)Tillet, Kung, and Cox]{tillet_triton_2019}
+Tillet, P., Kung, H.~T., and Cox, D.
+\newblock Triton: an intermediate language and compiler for tiled neural
+  network computations.
+\newblock In \emph{Proceedings of the 3rd {ACM} {SIGPLAN} {International}
+  {Workshop} on {Machine} {Learning} and {Programming} {Languages}}, pp.\
+  10--19, Phoenix AZ USA, June 2019. ACM.
+\newblock ISBN 978-1-4503-6719-6.
+\newblock \doi{10.1145/3315508.3329973}.
+\newblock URL \url{https://dl.acm.org/doi/10.1145/3315508.3329973}.
+
+\end{thebibliography}

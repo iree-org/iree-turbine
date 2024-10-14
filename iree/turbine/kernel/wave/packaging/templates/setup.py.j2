@@ -1,0 +1,12 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="{{kernel_package_name}}",
+    version="{{kernel_version}}",
+    packages=find_packages(),
+    include_package_data=True,
+    package_data={"": ["*.vmfb"]},
+    install_requires=[
+        "iree-runtime==20240918.1020",
+    ],
+)
