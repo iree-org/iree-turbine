@@ -244,6 +244,8 @@ def get_scheduling_weight(node: fx.Node) -> EdgeWeight:
             weight = EdgeWeight(0, delay_table[Operation.MMA])
         case IterArg():
             weight = EdgeWeight(1, 0)
+        case CastOp():
+            weight = EdgeWeight(0, delay_table[Operation.NOOP])
         case _:
             raise ValueError(f"Unsupported node type: {custom_node}")
     weight.delay = subs_idxc(weight.delay)

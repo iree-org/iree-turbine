@@ -18,6 +18,8 @@ from ..lang.global_symbols import *
 class MMAType(Enum):
     F32_16x16x16_F16 = 0
     F32_32x32x8_F16 = 1
+    F32_16x16x32_F8 = 2
+    F32_32x32x16_F8 = 3
 
 
 @dataclass
@@ -85,6 +87,10 @@ class HardwareConstraint(Constraint):
                 return (16, 16, 16)
             case MMAType.F32_32x32x8_F16:
                 return (32, 32, 8)
+            case MMAType.F32_16x16x32_F8:
+                return (16, 16, 32)
+            case MMAType.F32_32x32x16_F8:
+                return (32, 32, 16)
             case _:
                 return ()
 
@@ -142,7 +148,8 @@ class HardwareConstraint(Constraint):
             case MMAType.F32_16x16x16_F16:
                 offset = [
                     Piecewise(
-                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
+                        (lane % 16, ~MMA_ACC),
+                        (4 * floor(lane / 16), MMA_ACC),
                     ),  # M
                     lane % 16,  # N
                     4 * floor(lane / 16),  # K
@@ -157,11 +164,80 @@ class HardwareConstraint(Constraint):
                     1,  # N
                     1,  # K
                 ]
-                return IndexSequence(
-                    offset[constraint_index],
-                    size[constraint_index],
-                    stride[constraint_index],
-                )
+            case MMAType.F32_32x32x8_F16:
+                offset = [
+                    Piecewise(
+                        (lane % 32, ~MMA_ACC),
+                        (
+                            (8 * floor(GPR_NUM / 4) % 32)
+                            + 4 * floor(lane / 32)
+                            + (GPR_NUM % 4),
+                            MMA_ACC,
+                        ),
+                    ),  # M
+                    lane % 32,  # N
+                    4 * floor(lane / 32),  # K
+                ]
+                size = [
+                    Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
+                    1,  # N
+                    4,  # K
+                ]
+                stride = [
+                    Piecewise((1, ~MMA_ACC), (32, MMA_ACC)),  # M
+                    1,  # N
+                    1,  # K
+                ]
+            case MMAType.F32_16x16x32_F8:
+                offset = [
+                    Piecewise(
+                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
+                    ),  # M
+                    lane % 16,  # N
+                    8 * floor(lane / 16),  # K
+                ]
+                size = [
+                    Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
+                    1,  # N
+                    8,  # K
+                ]
+                stride = [
+                    Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
+                    1,  # N
+                    1,  # K
+                ]
+            case MMAType.F32_32x32x16_F8:
+                offset = [
+                    Piecewise(
+                        (lane % 32, ~MMA_ACC),
+                        (
+                            (8 * floor(GPR_NUM / 4) % 32)
+                            + 4 * floor(lane / 32)
+                            + (GPR_NUM % 4),
+                            MMA_ACC,
+                        ),
+                    ),  # M
+                    lane % 32,  # N
+                    8 * floor(lane / 32),  # K
+                ]
+                size = [
+                    Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
+                    1,  # N
+                    8,  # K
+                ]
+                stride = [
+                    Piecewise((1, ~MMA_ACC), (32, MMA_ACC)),  # M
+                    1,  # N
+                    1,  # K
+                ]
+            case _:
+                raise ValueError("Unsupported MMA type")
+
+        return IndexSequence(
+            offset[constraint_index],
+            size[constraint_index],
+            stride[constraint_index],
+        )
 
 
 @dataclass

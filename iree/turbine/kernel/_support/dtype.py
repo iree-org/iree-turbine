@@ -9,11 +9,15 @@ __all__ = [
     "f16",
     "f32",
     "f64",
+    "f8E5M2",
+    "f8E5M2FNUZ",
+    "f8E4M3FN",
+    "f8E4M3FNUZ",
     "index",
 ]
 
 _INT_TYPES = ["i1", "i4", "i8", "i16", "i32", "i64"]
-_FLOAT_TYPES = ["f16", "f32", "f64"]
+_FLOAT_TYPES = ["f16", "f32", "f64", "f8E5M2", "f8E5M2FNUZ", "f8E4M3FN", "f8E4M3FNUZ"]
 _INDEX_TYPES = ["index"]
 
 
@@ -49,6 +53,8 @@ class DataType:
             return 1
         if self._name == "index":
             return 64
+        if "f8" in self._name:
+            return 8
         return int(self._name[1:])
 
 
@@ -63,4 +69,8 @@ f64 = DataType("f64")
 f16 = DataType("f16")
 f32 = DataType("f32")
 f64 = DataType("f64")
+f8e5m2 = DataType("f8E5M2")
+f8e5m2fnuz = DataType("f8E5M2FNUZ")
+f8e4m3fn = DataType("f8E4M3FN")
+f8e4m3fnuz = DataType("f8E4M3FNUZ")
 index = DataType("index")

@@ -34,6 +34,7 @@ from ...support.ir_imports import (
     F16Type,
     F32Type,
     F64Type,
+    Float8E4M3FNUZType,
     FloatAttr,
     FunctionType,
     IndexType,
@@ -464,7 +465,7 @@ def build_tensor_dim_value(
 
 # API name  inspired by mlir/python/mlir/dialects/_arith_ops_ext.py
 def _is_float_type(type):
-    return isinstance(type, (BF16Type, F16Type, F32Type, F64Type))
+    return isinstance(type, (BF16Type, F16Type, F32Type, F64Type, Float8E4M3FNUZType))
 
 
 def _is_integer_like_type(type):
