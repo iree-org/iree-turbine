@@ -682,3 +682,7 @@ def replace_uses_in(users: dict[fx.Node, list[CustomOp]], old: CustomOp, new: fx
         for i, arg in enumerate(user.fx_node.args):
             if arg == old.fx_node:
                 user.update_arg(i, new)
+
+
+def ceildiv(a: int, b: int) -> int:
+    return -(a // -b)
