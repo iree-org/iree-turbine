@@ -262,13 +262,14 @@ def get_hardware_vector_map(constraints: list[Constraint]) -> dict[IndexSymbol, 
 
 
 def remove_global_indexing(
-    index: dict[IndexSymbol, IndexSequence], tilingConstraints: list[TilingConstraint]
+    index: dict[IndexSymbol, IndexSequence], constraints: list[Constraint]
 ) -> dict[IndexSymbol, IndexSequence]:
     """
     This function takes the index sequence for a global read and removes all
     workgroup and induction level indexing. This is necessary for writes to shared memory
     that operate on promoted memory.
     """
+    tiling_constraints = [c for c in constraints if isinstance(c, TilingConstraint)]
     workgroup_ids = [WORKGROUP_0, WORKGROUP_1, WORKGROUP_2]
     new_index = {key: index[key].subs({w: 0 for w in workgroup_ids}) for key in index}
     for key in new_index:

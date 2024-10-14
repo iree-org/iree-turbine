@@ -20,13 +20,12 @@ def apply_shared_memory_indexing_corrections(
     Global indexing is an indexing that arises from Workgroup constraints
     and Tiling constraints.
     """
-    tiling_constraints = [c for c in constraints if isinstance(c, TilingConstraint)]
 
     def is_shared_memory_read_or_write(node: fx.Node):
         custom = get_custom(node)
         if isinstance(custom, (Read, Write)):
             if custom.memory_type.address_space == SHARED_ADDRESS_SPACE:
-                custom.index = remove_global_indexing(custom.index, tiling_constraints)
+                custom.index = remove_global_indexing(custom.index, constraints)
         return False
 
     trace.walk(is_shared_memory_read_or_write)
