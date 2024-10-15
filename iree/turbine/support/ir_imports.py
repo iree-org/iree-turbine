@@ -10,11 +10,13 @@
 from iree.compiler.ir import (
     AsmState,
     Attribute,
+    ArrayAttr,
     Block,
     BlockArgument,
     Context,
     DenseElementsAttr,
     DenseResourceElementsAttr,
+    DictAttr,
     FlatSymbolRefAttr,
     FloatAttr,
     FunctionType,

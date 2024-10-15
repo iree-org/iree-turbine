@@ -51,6 +51,25 @@ class TransferToLogicalDeviceTest(unittest.TestCase):
             asm, "flow.tensor.transfer %.+ to #hal.device.promise<@__device.1>"
         )
 
+    def testEagerInPlace(self):
+        t1 = torch.randn(3, 4)
+        t2 = ops.iree.transfer_to_logical_device_("1", t1)
+        self.assertIs(None, t2)
+
+    def testAotInPlace(self):
+        class MyModule(nn.Module):
+            def forward(self, x):
+                ops.iree.transfer_to_logical_device_("1", x)
+                x += 1
+                return x
+
+        cm = aot.export(MyModule(), args=(torch.empty(9, 8),))
+        asm = str(cm.mlir_module)
+        self.assertRegex(
+            asm,
+            "@.+\(%.+: !torch.tensor<\[9,8\],f32> {iree.abi.affinity = #hal.device.promise<@__device_1>}",
+        )
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
