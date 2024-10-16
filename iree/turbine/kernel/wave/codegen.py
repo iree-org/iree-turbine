@@ -639,9 +639,16 @@ def _construct_gather_scatter_indices(
 
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
     if need_dynamic_offsets:
+        # In case we need dynamic `offsets_vec`, set all `start_indices` to 0
+        # and encode entire index info in `offsets_vec`.
         result_index = {key: 0 for key in symbolc_shape}
         start_indices = _build_start_indices(emitter, result_index)
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
+        # Last item in `subs` corresponds to last item in `start_indices_orig`
+        # which is fastest changing dim.
+        # Replacing last element with `idxc.iota(elements_per_thread)` will
+        # generate vectorized index code, each element in it corresponding to
+        # individual vector element index.
         subs[-1] = (
             subs[-1][0],
             start_indices_orig[-1] + idxc.iota(elements_per_thread),
