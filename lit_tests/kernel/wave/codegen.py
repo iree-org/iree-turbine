@@ -759,24 +759,24 @@ def test_batched_gemm():
         # CHECK:            %[[D1:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<12x128x64xf16,
         # CHECK-SAME:         strided<[8192, 64, 1], offset: ?>>
         # CHECK:            %[[D2:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
-        # CHECK:            %[[D3:.+]] = arith.muli %[[D2]], %[[C16]] : index
-        # CHECK:            %[[D4:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] : index
+        # CHECK:            %[[D3:.+]] = arith.muli %[[D2]], %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D4:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] overflow<nsw, nuw> : index
         # CHECK:            %[[D5:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C16]] : index
-        # CHECK:            %[[D6:.+]] = arith.addi %[[D5]], %[[D4]] : index
-        # CHECK:            %[[D7:.+]] = arith.addi %[[D6]], %[[D3]] : index
+        # CHECK:            %[[D6:.+]] = arith.addi %[[D5]], %[[D4]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D7:.+]] = arith.addi %[[D6]], %[[D3]] overflow<nsw, nuw> : index
         # CHECK:            %[[D8:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C64]] : index
         # CHECK:            %[[D9:.+]] = arith.divsi %[[D8]], %[[C16]] : index
-        # CHECK:            %[[D10:.+]] = arith.muli %[[D9]], %[[C4]] : index
-        # CHECK:            %[[D11:.+]] = arith.addi %[[D5]], %[[D3]] : index
-        # CHECK:            %[[D12:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
-        # CHECK:            %[[D13:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
-        # CHECK:            %[[D14:.+]] = arith.addi %[[D5]], %[[D13]] : index
-        # CHECK:            %[[D15:.+]] = arith.addi %[[D14]], %[[D12]] : index
-        # CHECK:            %[[D16:.+]] = arith.addi %[[D5]], %[[D12]] : index
+        # CHECK:            %[[D10:.+]] = arith.muli %[[D9]], %[[C4]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D11:.+]] = arith.addi %[[D5]], %[[D3]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D12:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D13:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D14:.+]] = arith.addi %[[D5]], %[[D13]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D15:.+]] = arith.addi %[[D14]], %[[D12]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D16:.+]] = arith.addi %[[D5]], %[[D12]] overflow<nsw, nuw> : index
         # CHECK:            %[[D17:.+]] = scf.for %[[ARG3:[a-zA-Z0-9_]+]] = %[[C0]] to %[[C4]] step %[[C1]]
         # CHECK-SAME:         iter_args(%[[ARG4:[a-zA-Z0-9_]+]] = %[[CST]]) -> (vector<4xf32>) {
-        # CHECK:              %[[D39:.+]] = arith.muli %[[ARG3]], %[[C16]] : index
-        # CHECK:              %[[D40:.+]] = arith.addi %[[D39]], %[[D10]] : index
+        # CHECK:              %[[D39:.+]] = arith.muli %[[ARG3]], %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:              %[[D40:.+]] = arith.addi %[[D39]], %[[D10]] overflow<nsw, nuw> : index
         # CHECK:              %[[D41:.+]] = vector.load %[[D0]][%[[WORKGROUP_ID_2]], %[[D7]], %[[D40]]] : memref<12x64x64xf16,
         # CHECK-SAME:           strided<[4096, 64, 1], offset: ?>>, vector<4xf16>
         # CHECK:              vector.store %[[D41]], %[[ALLOC]][%[[C0]], %[[D11]], %[[D10]]] : memref<1x32x20xf16,
@@ -802,32 +802,32 @@ def test_batched_gemm():
         # CHECK-SAME:         strided<[8192, 128, 1], offset: ?>>
         # CHECK:            %[[D20:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C64]] : index
         # CHECK:            %[[D21:.+]] = arith.divsi %[[D20]], %[[C16]] : index
-        # CHECK:            %[[D22:.+]] = arith.muli %[[D21]], %[[C4]] : index
+        # CHECK:            %[[D22:.+]] = arith.muli %[[D21]], %[[C4]] overflow<nsw, nuw> : index
         # CHECK:            %[[D23:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
-        # CHECK:            %[[D24:.+]] = arith.muli %[[D23]], %[[C16]] : index
-        # CHECK:            %[[D25:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] : index
-        # CHECK:            %[[D26:.+]] = arith.addi %[[D25]], %[[D24]] : index
-        # CHECK:            %[[D27:.+]] = arith.addi %[[D26]], %[[D22]] : index
-        # CHECK:            %[[D28:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] : index
-        # CHECK:            %[[D29:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] : index
+        # CHECK:            %[[D24:.+]] = arith.muli %[[D23]], %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D25:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C32]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D26:.+]] = arith.addi %[[D25]], %[[D24]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D27:.+]] = arith.addi %[[D26]], %[[D22]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D28:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D29:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C32]] overflow<nsw, nuw> : index
         # CHECK:            %[[D30:.+]] = arith.remsi %[[THREAD_ID_X]], %[[C16]] : index
-        # CHECK:            %[[D31:.+]] = arith.addi %[[D30]], %[[D29]] : index
-        # CHECK:            %[[D32:.+]] = arith.addi %[[D31]], %[[D28]] : index
+        # CHECK:            %[[D31:.+]] = arith.addi %[[D30]], %[[D29]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D32:.+]] = arith.addi %[[D31]], %[[D28]] overflow<nsw, nuw> : index
         # CHECK:            vector.store %[[D18]], %[[D19]][%[[WORKGROUP_ID_2]], %[[D27]], %[[D32]]] : memref<12x64x128xf32,
         # CHECK-SAME:         strided<[8192, 128, 1], offset: ?>>, vector<1xf32>
         # CHECK:            %[[D33:.+]] = vector.extract_strided_slice %[[D17]] {offsets = [1], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D34:.+]] = arith.addi %[[D27]], %[[C1]] : index
+        # CHECK:            %[[D34:.+]] = arith.addi %[[D27]], %[[C1]] overflow<nsw, nuw> : index
         # CHECK:            vector.store %[[D33]], %[[D19]][%[[WORKGROUP_ID_2]], %[[D34]], %[[D32]]] : memref<12x64x128xf32,
         # CHECK-SAME:         strided<[8192, 128, 1], offset: ?>>, vector<1xf32>
         # CHECK:            %[[D35:.+]] = vector.extract_strided_slice %[[D17]] {offsets = [2], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D36:.+]] = arith.addi %[[D27]], %[[C2]] : index
+        # CHECK:            %[[D36:.+]] = arith.addi %[[D27]], %[[C2]] overflow<nsw, nuw> : index
         # CHECK:            vector.store %[[D35]], %[[D19]][%[[WORKGROUP_ID_2]], %[[D36]], %[[D32]]] : memref<12x64x128xf32,
         # CHECK-SAME:         strided<[8192, 128, 1], offset: ?>>, vector<1xf32>
         # CHECK:            %[[D37:.+]] = vector.extract_strided_slice %[[D17]] {offsets = [3], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
-        # CHECK:            %[[D38:.+]] = arith.addi %[[D27]], %[[C3]] : index
+        # CHECK:            %[[D38:.+]] = arith.addi %[[D27]], %[[C3]] overflow<nsw, nuw> : index
         # CHECK:            vector.store %[[D37]], %[[D19]][%[[WORKGROUP_ID_2]], %[[D38]], %[[D32]]] : memref<12x64x128xf32,
         # CHECK-SAME:         strided<[8192, 128, 1], offset: ?>>, vector<1xf32>
         # CHECK:            return
