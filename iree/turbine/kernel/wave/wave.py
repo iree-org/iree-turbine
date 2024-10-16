@@ -318,7 +318,6 @@ class LaunchableWave(Launchable):
                 mb, exe, kernel_sig, entrypoint_name, dynamic_symbols
             )
             asm = mb.module_op.get_asm()
-            print(asm)
 
             kernel_inputs = []
             kernel_outputs = []
