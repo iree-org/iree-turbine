@@ -273,18 +273,27 @@ def remove_global_indexing(
     workgroup_ids = [WORKGROUP_0, WORKGROUP_1, WORKGROUP_2]
     subs = {w: 0 for w in workgroup_ids}
 
+    new_index = {key: safe_subs(index[key], subs) for key in index}
+    for key in new_index:
+        for constraint in tiling_constraints:
+            new_index[key] = new_index[key].subs({constraint.induction_var: 0})
+    return new_index
+
+
+def align_index_vars(
+    index: dict[IndexSymbol, IndexSequence], constraints: list[Constraint]
+) -> dict[IndexSymbol, IndexSequence]:
+    """
+    This function aligns index vars with Workgroup/Tiling constraints so it never
+    need partial reads/writes.
+    """
     key_subs = {
         c.dim: (c.count * c.tile_size)
         for c in constraints
         if isinstance(c, (TilingConstraint, WorkgroupConstraint))
         and subs_idxc(c.dim) != subs_idxc(c.count * c.tile_size)
     }
-
-    new_index = {safe_subs(key, key_subs): safe_subs(index[key], subs) for key in index}
-    for key in new_index:
-        for constraint in tiling_constraints:
-            new_index[key] = new_index[key].subs({constraint.induction_var: 0})
-    return new_index
+    return {safe_subs(key, key_subs): index[key] for key in index}
 
 
 def _invoke(vm_context, device, entry_function, inputs, outputs):
