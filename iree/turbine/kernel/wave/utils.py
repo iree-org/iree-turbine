@@ -280,6 +280,10 @@ def remove_global_indexing(
     return new_index
 
 
+def is_shared_mem_access(custom: "CustomOp") -> bool:
+    return custom.memory_type.address_space == SHARED_ADDRESS_SPACE
+
+
 def align_index_vars(
     index: dict[IndexSymbol, IndexSequence], constraints: list[Constraint]
 ) -> dict[IndexSymbol, IndexSequence]:

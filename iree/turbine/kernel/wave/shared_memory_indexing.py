@@ -7,13 +7,9 @@
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import Read, Write, MMA, get_custom
 from ..lang.global_symbols import *
-from .utils import remove_global_indexing, align_index_vars
+from .utils import remove_global_indexing, is_shared_mem_access
 from .constraints import Constraint, TilingConstraint
 import torch.fx as fx
-
-
-def is_shared_mem_access(custom: "CustomOp") -> bool:
-    return custom.memory_type.address_space == SHARED_ADDRESS_SPACE
 
 
 def apply_shared_memory_indexing_corrections(
@@ -42,10 +38,6 @@ def align_index_sizes(trace: CapturedTrace, constraints: list[Constraint]):
 
     def need_align(node: fx.Node):
         custom = get_custom(node)
-        if isinstance(custom, (Read, Write)) and is_shared_mem_access(custom):
-            custom.index = align_index_vars(custom.index, constraints)
-        elif isinstance(custom, MMA):
-            custom.index = align_index_vars(custom.index, constraints)
-        return False
+        custom.align_index(constraints)
 
     trace.walk(need_align)
