@@ -412,6 +412,12 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
                 _enforce_non_rational(lhs, term)
                 res = arith_d.andi(*_broadcast(lhs, rhs))
                 stack.append(res)
+            case sympy.logic.boolalg.BooleanFalse():
+                res = arith_d.constant(IntegerType.get_signless(1), 0)
+                stack.append(res)
+            case sympy.logic.boolalg.BooleanTrue():
+                res = arith_d.constant(IntegerType.get_signless(1), 1)
+                stack.append(res)
             case sympy.UnevaluatedExpr():
                 continue
             case _:
@@ -599,8 +605,8 @@ def _construct_gather_scatter_indices(
 
     start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
-    dynamic_offsets = []
 
+    need_dynamic_offsets = False
     start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
@@ -626,22 +632,36 @@ def _construct_gather_scatter_indices(
             # arith ops and then `vector.insertelement` them into offsets vec.
             offset = int(offset)
         else:
-            dyn_offset = gen_sympy_index(add_emitter_subs(emitter), offset)
-            dynamic_offsets.append((i, dyn_offset))
-            offset = 0
+            need_dynamic_offsets = True
+            break
 
         offsets.append(IntegerAttr.get(IndexType.get(), offset))
 
-    start_indices = _build_start_indices(emitter, result_index)
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
-
-    offsets_vec = arith_d.ConstantOp(
-        offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
-    )
-
-    for i, off in dynamic_offsets:
-        pos = arith_d.ConstantOp(IndexType.get(), i)
-        offsets_vec = vector_d.insertelement(off, offsets_vec, position=pos)
+    if need_dynamic_offsets:
+        # In case we need dynamic `offsets_vec`, set all `start_indices` to 0
+        # and encode entire index info in `offsets_vec`.
+        result_index = {key: 0 for key in symbolc_shape}
+        start_indices = _build_start_indices(emitter, result_index)
+        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
+        # Last item in `subs` corresponds to last item in `start_indices_orig`
+        # which is fastest changing dim.
+        # Replacing last element with `idxc.iota(elements_per_thread)` will
+        # generate vectorized index code, each element in it corresponding to
+        # individual vector element index.
+        subs[-1] = (
+            subs[-1][0],
+            start_indices_orig[-1] + idxc.iota(elements_per_thread),
+        )
+        indices = [i.subs(subs) for i in index_mapping]
+        offsets_vec = gen_sympy_index(
+            add_emitter_subs(emitter), _compute_offset(indices, strides)
+        )
+    else:
+        start_indices = _build_start_indices(emitter, result_index)
+        offsets_vec = arith_d.ConstantOp(
+            offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
+        )
 
     mask = _build_mask(emitter, index, elements_per_thread)
     if mask is None:
