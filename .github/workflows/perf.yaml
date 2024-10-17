@@ -1,11 +1,8 @@
 name: PERF
 
 on:
-  workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-    - main
+  issue_comment:
+    types: [created, edited]
   schedule:
   - cron: '30 5 * * *'
 
@@ -19,7 +16,8 @@ concurrency:
 
 jobs:
   test:
-    name: "Unit Tests and Type Checking"
+    name: "Perf Tests"
+    if: ${{ github.event.issue.pull_request }} && contains(github.event.comment.body, '/turbine_run_perf')
     strategy:
       fail-fast: false
       matrix:
