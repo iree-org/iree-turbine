@@ -922,9 +922,11 @@ def test_gemm_pipelined():
         # CHECK-COUNT-8:    amdgpu.mfma
 
 
-# This test is used to check two things
+# This test is used to check three things
 # 1. Reduction with multiple different types(MMA, ReduceOp) of iterArg works
 # 2. ReduceOp lowering works using constraints from MMA (not just vector_shape).
+# 3. We can propagate layout of multiple Reduction results through IterArg/GetResult
+#    and observe that broadcast is being generated to resolve binaryOp.
 @run_test
 def test_gemm_and_reduce():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -945,8 +947,7 @@ def test_gemm_and_reduce():
     def gemm(
         a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, ADDRESS_SPACE_0, tkl.f16],
-        d: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
         init_max = tkl.Register[M, tkl.f16](-1e6)
@@ -962,8 +963,8 @@ def test_gemm_and_reduce():
             return partial_max, acc
 
         res_max, res_mm = repeat
-        tkw.write(res_max, c, elements_per_thread=1)
-        tkw.write(res_mm, d, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        res = res_mm / tkw.cast(res_max, tkl.f32)
+        tkw.write(res, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     with tk.gen.TestLaunchContext(
         {
@@ -982,22 +983,25 @@ def test_gemm_and_reduce():
     ):
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
-        c = torch.zeros(64, dtype=torch.float16)
-        d = torch.zeros(64, 128, dtype=torch.float32)
-        print(gemm(a, b, c, d).module_op)
+        c = torch.zeros(64, 128, dtype=torch.float32)
+        print(gemm(a, b, c).module_op)
         # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
         # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
         # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
 
         # Tile Reduction Loop
         # Note: Shape is 32x20 instead of 32x16 because of padding to avoid bank conflicts
-        # CHECK: %{{.*}}:2 = scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
+        # CHECK: %[[LOOP:.+]]:2 = scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
         # CHECK-SAME: iter_args(%[[ACC0:.+]] = %{{.*}}, %[[ACC1:.+]] = {{.*}})
         # CHECK-COUNT-2: vector.load{{.*}} memref<32x20xf16, #gpu.address_space<workgroup>>, vector<4xf16>
         # CHECK-COUNT-6: gpu.shuffle  xor
         #         CHECK: %[[MAX:.+]] = arith.maximumf %[[ACC0]], %{{.*}}
         #         CHECK: %[[MMA:.+]] = amdgpu.mfma %{{.*}} * %{{.*}} + %[[ACC1]]
         #         CHECK: scf.yield %[[MAX]], %[[MMA]] : vector<1xf16>, vector<4xf32>
+        # CHECK: %[[MAX_EXT:.+]] = arith.extf %[[LOOP]]#0 : vector<1xf16> to vector<1xf32>
+        # CHECK: %[[BCAST_SRC:.+]] = vector.extract %[[MAX_EXT]][0] : f32 from vector<1xf32>
+        # CHECK: %[[BROADCAST:.+]] = vector.splat %19 : vector<4xf32>
+        # CHECK: arith.divf %[[LOOP]]#1, %[[BROADCAST]] : vector<4xf32>
 
 
 @run_test

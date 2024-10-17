@@ -915,6 +915,19 @@ class Reduction(CustomOp):
 
         return wrapper
 
+    def get_root_graph(self):
+        """
+        Get root graph from some child graph inside a nested graph.
+        Using the assumption that any child/nested graph should have a parent_op,
+        who we can query for it's owner graph from to go up one level.
+        """
+        cur_graph = self.graph
+        while not hasattr(cur_graph, "subgraphs"):
+            if not hasattr(cur_graph, "parent_op"):
+                raise ValueError("All subgraphs should have parent_op")
+            cur_graph = cur_graph.parent_op.graph
+        return cur_graph
+
     @property
     def indexing_dims(self) -> list[IndexSymbol] | list[list[IndexSymbol]]:
         expand_dims: list[IndexSymbol] = []
@@ -968,15 +981,18 @@ class Reduction(CustomOp):
 
     @property
     def index(self) -> list[dict[IndexSymbol, IndexSequence]]:
-        if not hasattr(self.graph, "subgraphs"):
-            return None
-        for node in self.graph.subgraphs[self.subgraph_name].nodes:
+        for node in self.get_root_graph().subgraphs[self.subgraph_name].nodes:
             if isinstance(output := get_custom(node), Output):
                 return_vals = output.return_vals[0]
                 return (
-                    [val.index for val in return_vals]
+                    [
+                        get_custom(val).acc_index
+                        if isinstance(get_custom(val), MMA)
+                        else val.index
+                        for val in return_vals
+                    ]
                     if isinstance(return_vals, list)
-                    else None
+                    else return_vals.index
                 )
 
     @index.setter
@@ -1058,10 +1074,18 @@ class GetResult(CustomOp):
     @property
     def index(self) -> dict[IndexSymbol, IndexSequence]:
         custom = get_custom(self.value)
-        if custom.index is None:
+        custom_index = custom.index
+        if custom_index is None:
             return None
-        assert isinstance(custom.index, list) and self.res_idx < len(custom.index)
-        return custom.index[self.res_idx]
+        if isinstance(custom_index, dict):
+            return custom_index
+        elif isinstance(custom_index, list):
+            assert self.res_idx < len(custom_index)
+            return custom_index[self.res_idx]
+        else:
+            return ValueError(
+                f"Did not expect index of GetResult's src to be {type(custom_index)}"
+            )
 
     @index.setter
     def index(self, value: dict[IndexSymbol, IndexSequence]):
