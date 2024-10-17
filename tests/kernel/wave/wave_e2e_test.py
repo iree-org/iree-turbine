@@ -898,3 +898,61 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
                 stride=stride,
                 run_bench=True,
             )
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", [256, 64])
+def test_cast(shape, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Each workgroup works on single row of input data, and rows are further
+    # split into blocks of size up to 256. We have single wave per WG,
+    # and with default wave size of 64, each thread is operating on up to 4
+    # elements.
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+    ELEMS_PER_THREAD = BLOCK_N / wave_size
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.cast(res, tkl.f16)
+        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+
+    a = torch.randn(shape, dtype=torch.float32)
+    b = torch.zeros(shape, dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run=True,
+        run_bench=run_bench,
+        run_config=config,
+    ):
+        test(a, b)
+        assert_allclose(a.to(dtype=torch.float16), b)
