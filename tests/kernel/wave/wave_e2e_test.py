@@ -901,7 +901,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", [256, 64])
+@pytest.mark.parametrize("shape", [(256, 64)])
 def test_cast(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M

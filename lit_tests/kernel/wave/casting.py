@@ -63,7 +63,8 @@ def test_cast():
     ):
         a_reg = tkw.read(a, elements_per_thread=16)
         a_reg = tkw.cast(a_reg, tkl.f32)
-        a_reg = tkw.cast(a_reg, tkl.i32)
+        a_reg = tkw.cast(a_reg, tkl.i8)
+        a_reg = tkw.cast(a_reg, tkl.f16)
         a_reg = tkw.cast(a_reg, tkl.i16)
         a_reg = tkw.cast(a_reg, tkl.i32)
         a_reg = tkw.cast(a_reg, tkl.f32)
@@ -76,8 +77,9 @@ def test_cast():
         print(test(a, b).module_op)
 
         # CHECK:  %[[D0:.*]] = arith.extf {{.*}} : vector<16xf16> to vector<16xf32>
-        # CHECK:  %[[D1:.*]] = arith.fptosi %[[D0]] : vector<16xf32> to vector<16xi32>
-        # CHECK:  %[[D2:.*]] = arith.trunci %[[D1]] : vector<16xi32> to vector<16xi16>
-        # CHECK:  %[[D3:.*]] = arith.extsi %[[D2]] : vector<16xi16> to vector<16xi32>
-        # CHECK:  %[[D4:.*]] = arith.sitofp %[[D3]] : vector<16xi32> to vector<16xf32>
-        # CHECK:  %[[D5:.*]] = arith.truncf %[[D4]] : vector<16xf32> to vector<16xf16>
+        # CHECK:  %[[D1:.*]] = arith.fptosi %[[D0]] : vector<16xf32> to vector<16xi8>
+        # CHECK:  %[[D2:.*]] = arith.sitofp %[[D1]] : vector<16xi8> to vector<16xf16>
+        # CHECK:  %[[D3:.*]] = arith.fptosi %[[D2]] : vector<16xf16> to vector<16xi16>
+        # CHECK:  %[[D4:.*]] = arith.extsi %[[D3]] : vector<16xi16> to vector<16xi32>
+        # CHECK:  %[[D5:.*]] = arith.sitofp %[[D4]] : vector<16xi32> to vector<16xf32>
+        # CHECK:  %[[D6:.*]] = arith.truncf %[[D5]] : vector<16xf32> to vector<16xf16>

@@ -1220,6 +1220,7 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
     vector_src = cast_vector(emitter, register)
     src_vector_type = vector_src.type
+    src_elem_type = src_vector_type.element_type
     dst_elem_type = IrType.parse(dtype.ir_type_asm())
     dst_vector_type = VectorType.get(src_vector_type.shape, dst_elem_type)
 
@@ -1227,12 +1228,12 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
         emitter.bind_node_proxy(node, vector_src)
         return
 
-    is_src_float = _is_float_type(src_vector_type.element_type)
+    is_src_float = _is_float_type(src_elem_type)
     is_dst_float = _is_float_type(dst_elem_type)
+    is_src_int = _is_integer_like_type(src_elem_type)
+    is_dst_int = _is_integer_like_type(dst_elem_type)
 
     conversion_ops = {
-        (True, True): lambda _, x: x,
-        (False, False): lambda _, x: x,
         (True, False): arith_d.fptosi,
         (False, True): arith_d.sitofp,
     }
@@ -1244,20 +1245,16 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
         (False, False): arith_d.trunci,
     }
 
-    dtype = (
-        get_float_type(dst_elem_type.width)
-        if is_dst_float
-        else IntegerType.get_signless(dst_elem_type.width)
-    )
-    converted_vector = conversion_ops[(is_src_float, is_dst_float)](
-        VectorType.get(src_vector_type.shape, dtype), vector_src
-    )
-
-    casted_vector = cast_ops[
-        (
-            src_vector_type.element_type.width < dst_elem_type.width,
-            is_dst_float and is_src_float,
+    if (is_src_float and is_dst_float) or (is_src_int and is_dst_int):
+        casted_vector = cast_ops[
+            (
+                src_vector_type.element_type.width < dst_elem_type.width,
+                is_dst_float and is_src_float,
+            )
+        ](dst_vector_type, vector_src)
+    else:
+        casted_vector = conversion_ops[(is_src_float, is_dst_float)](
+            dst_vector_type, vector_src
         )
-    ](dst_vector_type, converted_vector)
 
     emitter.bind_node_proxy(node, IRProxyValue(casted_vector))

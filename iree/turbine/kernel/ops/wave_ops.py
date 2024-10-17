@@ -1160,7 +1160,7 @@ class ShuffleOp(CustomOp):
         return get_custom(self.arg).indexing_dims
 
     @property
-    def type(self) -> Memory:
+    def type(self) -> Register:
         src_type = get_custom(self.arg).type
         return src_type
 
