@@ -1734,6 +1734,11 @@ def test_igemm():
     K = HF * WF * C
     M = SZ_OUT * N
 
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
 
@@ -1741,15 +1746,20 @@ def test_igemm():
         num_iterators=2,
         inputs={
             N: i // SZ_OUT,
-            C: j // (HF * WF),
-            H: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
-            W: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+            C: j % C,
+            H: (i % SZ_OUT) % W_OUT * stride + (j // C) % WF,
+            W: (i % SZ_OUT) // W_OUT * stride + (j // C) // WF,
         },
         outputs={M: i, K: j},
     )
     w_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={NF: i % NF, C: j // (HF * WF), HF: j % WF, WF: (j % (HF * WF)) // WF},
+        inputs={
+            NF: i * BLOCK_N,
+            C: j % C,
+            HF: (j // C) % WF,
+            WF: (j // C) // WF,
+        },
         outputs={NF: i, K: j},
     )
     out_mapping = tkw.IndexMapping(
@@ -1763,10 +1773,6 @@ def test_igemm():
         },
     )
 
-    # Workgroup tile sizes
-    BLOCK_M = tkl.sym.BLOCK_M
-    BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K = 16
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
@@ -1780,18 +1786,21 @@ def test_igemm():
     we = torch.permute(we, (2, 3, 1, 0)).contiguous()
     out = torch.permute(out, (0, 2, 3, 1)).contiguous()
 
+    ratio_m = 2
+    ratio_n = 2
+
     # Expose user-constraints
     constraints: list[tkw.Constraint] = []
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-    constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(NF, BLOCK_N)]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / ratio_m)]
+    constraints += [tkw.WaveConstraint(NF, BLOCK_N / ratio_n)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
+            waves_per_block=(ratio_n, ratio_m, 1),
         )
     ]
 
@@ -1831,8 +1840,9 @@ def test_igemm():
             NF: nf,
             WF: wf,
             HF: hf,
-            BLOCK_M: 16,
-            BLOCK_N: 16,
+            BLOCK_M: 64,
+            BLOCK_N: 128,
+            BLOCK_K: 32,
             ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         },
@@ -1844,6 +1854,7 @@ def test_igemm():
 
         # Check we are setting gather start indices to 0
         #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<2x64x64x640xf16
+        #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<3x3x640x640xf16
         #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<3x3x640x640xf16
 
 
