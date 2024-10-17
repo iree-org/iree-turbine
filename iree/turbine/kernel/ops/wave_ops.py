@@ -1073,9 +1073,10 @@ class Extract(CustomOp):
     Extract is an op used to represent extracting of
     a scalar from TKW's 1-D vector on the specified index.
 
-    This can also be viewed as indexing/slicing on the fastest
-    dimension. Hence, the semantic of this op is designed to
-    see itself as a reduction on the indexed/fastest dimension.
+    This can also be viewed as indexing/slicing on the fastest dim/
+    SIMT/thread world, as opposed to the SIMD/wave world.
+    Hence, from the SIMD/wave world POV, the indexed dim
+    will be unit-size/"reduced".
     """
 
     register_: fx.Proxy
