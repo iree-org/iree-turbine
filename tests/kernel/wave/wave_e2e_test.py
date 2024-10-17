@@ -774,12 +774,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     )
     w_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={
-            NF: i * BLOCK_N,
-            C: j % C,
-            HF: (j // C) % WF,
-            WF: (j // C) // WF,
-        },
+        inputs={NF: i % NF, C: j % C, HF: (j // C) % WF, WF: (j // C) // WF},
         outputs={NF: i, K: j},
     )
     out_mapping = tkw.IndexMapping(
