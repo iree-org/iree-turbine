@@ -174,6 +174,20 @@ class WaveEmitter:
         )
         self._node_values[node] = proxies
 
+    def get_induction_vars_and_syms(self) -> tuple[list[OpResult], list[IndexExpr]]:
+        induction_var_syms = []
+        induction_vars = []
+        if self.induction_vars:
+            for constraint in self.constraints:
+                if isinstance(constraint, TilingConstraint):
+                    assert (
+                        constraint.dim in self.induction_vars
+                    ), f"Could not find induction var for {constraint.dim} dimension"
+                    induction_var_syms.append(constraint.induction_var)
+                    induction_vars.append(self.induction_vars[constraint.dim])
+
+        return induction_vars, induction_var_syms
+
 
 def get_type_or_element_type(operand_type: IrType):
     assert isinstance(operand_type, IrType)
@@ -184,16 +198,7 @@ def get_type_or_element_type(operand_type: IrType):
 
 
 def add_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
-    induction_var_syms = []
-    induction_vars = []
-    if emitter.induction_vars:
-        for constraint in emitter.constraints:
-            if isinstance(constraint, TilingConstraint):
-                assert (
-                    constraint.dim in emitter.induction_vars
-                ), f"Could not find induction var for {constraint.dim} dimension"
-                induction_var_syms.append(constraint.induction_var)
-                induction_vars.append(emitter.induction_vars[constraint.dim])
+    induction_vars, induction_var_syms = emitter.get_induction_vars_and_syms()
 
     # TODO: factor this out
     all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars
@@ -594,9 +599,9 @@ def _construct_gather_scatter_indices(
 
     # As we only support identity input/output mapping for now, we can directly
     # substitute iterators with corresponding expanded index.
-    subs = [
+    subs = list(idxc.subs.items()) + [
         (sym, expr.start) for sym, expr in zip(iters.keys(), index.values())
-    ] + list(idxc.subs.items())
+    ]
 
     # Contruct input/output index, substituting iterators in input mapping with
     # expanded index.
@@ -606,6 +611,48 @@ def _construct_gather_scatter_indices(
     offsets = []
 
     start_indices = _get_start_indices(result_index)
+
+    prev_indices = start_indices
+    subs1 = [
+        (THREAD_0, 0),
+        (THREAD_1, 0),
+        (THREAD_2, 0),
+        (WORKGROUP_0, 0),
+        (WORKGROUP_1, 0),
+        (WORKGROUP_2, 0),
+    ]
+    subs1 += [(k, 0) for k in emitter.get_induction_vars_and_syms()[1]]
+
+    expected_diff = [0] * len(start_indices)
+    expected_diff[-1] = 1
+    is_contiguous = True
+    for i in range(1, elements_per_thread, 1):
+        subs[-1] = (subs[-1][0], subs[-1][1] + 1)
+        next_result_index = {
+            key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)
+        }
+        next_indices = _get_start_indices(next_result_index)
+        diff = [
+            sympy.simplify(a.subs(subs1) - b.subs(subs1))
+            for a, b in zip(next_indices, prev_indices)
+        ]
+        if diff != expected_diff:
+            is_contiguous = False
+            break
+
+        prev_indices = next_indices
+
+    mask = _build_mask(emitter, index, elements_per_thread)
+    if mask is None:
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+
+    if is_contiguous:
+        start_indices = _build_start_indices(emitter, result_index)
+        return start_indices, None, mask
+
     start_indices_orig = _get_start_indices(index)
 
     need_dynamic_offsets = False
@@ -665,13 +712,6 @@ def _construct_gather_scatter_indices(
             offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
         )
 
-    mask = _build_mask(emitter, index, elements_per_thread)
-    if mask is None:
-        mask_vec_type = VectorType.get(
-            [elements_per_thread], IntegerType.get_signless(1)
-        )
-        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
-
     return start_indices, offsets_vec, mask
 
 
@@ -724,9 +764,14 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         zero = arith_d.ConstantOp(vector_type.element_type, zero)
         passthru = vector_d.splat(vector_type, zero)
 
-        result = vector_d.gather(
-            vector_type, kb_src, start_indices, offsets_vec, mask, passthru
-        )
+        if offsets_vec is None:
+            result = vector_d.maskedload(
+                vector_type, kb_src, start_indices, mask, passthru
+            )
+        else:
+            result = vector_d.gather(
+                vector_type, kb_src, start_indices, offsets_vec, mask, passthru
+            )
 
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
@@ -781,7 +826,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             is_read=False,
         )
 
-        if elements_per_thread == 1:
+        if offsets_vec is None:
             vector_d.maskedstore(kb_dest, start_indices, mask, insert_vector)
         else:
             vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
