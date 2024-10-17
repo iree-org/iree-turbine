@@ -738,6 +738,11 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     convRef.weight = torch.nn.Parameter(we)
     out_ref = convRef(x).detach()
 
+    # h_out = (h + 2 * padding - hf) // stride + 1
+    # w_out = (w + 2 * padding - wf) // stride + 1
+    # res_shape = (n, nf, h_out, w_out)
+    # out_ref = torch.zeros(res_shape, dtype=torch.float32)
+
     sym = tkl.sym
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
     NF, HF, WF = sym.NF, sym.HF, sym.WF
@@ -749,6 +754,11 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     K = HF * WF * C
     M = SZ_OUT * N
 
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
 
@@ -756,15 +766,20 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         num_iterators=2,
         inputs={
             N: i // SZ_OUT,
-            C: j // (HF * WF),
-            H: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
-            W: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+            C: j % C,
+            H: (i % SZ_OUT) % W_OUT * stride + (j // C) % WF,
+            W: (i % SZ_OUT) // W_OUT * stride + (j // C) // WF,
         },
         outputs={M: i, K: j},
     )
     w_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={NF: i % NF, C: j // (HF * WF), HF: j % WF, WF: (j % (HF * WF)) // WF},
+        inputs={
+            NF: i * BLOCK_N,
+            C: j % C,
+            HF: (j // C) % WF,
+            WF: (j // C) // WF,
+        },
         outputs={NF: i, K: j},
     )
     out_mapping = tkw.IndexMapping(
@@ -778,10 +793,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         },
     )
 
-    # Workgroup tile sizes
-    BLOCK_M = tkl.sym.BLOCK_M
-    BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K = 16
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
@@ -801,18 +812,21 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     else:
         raise ValueError(f"Invalid layout: {layout}")
 
+    ratio_m = 2
+    ratio_n = 2
+
     # Expose user-constraints
     constraints: list[tkw.Constraint] = []
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-    constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(NF, BLOCK_N)]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / ratio_m)]
+    constraints += [tkw.WaveConstraint(NF, BLOCK_N / ratio_n)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
+            waves_per_block=(ratio_n, ratio_m, 1),
         )
     ]
 
@@ -850,6 +864,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3
+        # config["print_ir_after_all"] = True
 
     if dump_perf is not None:
         perf_filename = request.node.name + ".json"
@@ -866,15 +881,25 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
             NF: nf,
             WF: wf,
             HF: hf,
-            BLOCK_M: 16,
-            BLOCK_N: 16,
+            BLOCK_M: 64,
+            BLOCK_N: 128,
+            BLOCK_K: 32,
             ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: mem_space,
+            READ_SHARED_DELAY: 1,
+            WRITE_SHARED_DELAY: 1,
+            READ_GLOBAL_DELAY: 2,
+            WRITE_GLOBAL_DELAY: 2,
+            MMA_DELAY: 1,
+            SHARED_MEMORY_UNITS: 4,
+            GLOBAL_MEMORY_UNITS: 4,
+            MMA_UNITS: 4,
         },
         canonicalize=True,
         run=True,
         run_bench=run_bench,
         run_config=config,
+        schedule=False,
     ):
         out = torch.zeros_like(out_ref)
         conv(x, we, out)
