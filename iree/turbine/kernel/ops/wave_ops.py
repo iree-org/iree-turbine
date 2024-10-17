@@ -1073,10 +1073,9 @@ class Extract(CustomOp):
     Extract is an op used to represent extracting of
     a scalar from TKW's 1-D vector on the specified index.
 
-    This can also be viewed as indexing/slicing on the fastest dim/
-    SIMT/thread world, as opposed to the SIMD/wave world.
-    Hence, from the SIMD/wave world POV, the indexed dim
-    will be unit-size/"reduced".
+    This can also be viewed as indexing/slicing on the fastest
+    dimension. Hence, the semantic of this op is designed to
+    see itself as a reduction on the indexed/fastest dimension.
     """
 
     register_: fx.Proxy
@@ -1091,22 +1090,16 @@ class Extract(CustomOp):
         if len(src_type.symbolic_shape) <= 1:
             return src_type
 
-        # Typically only fastest dim has non-unit dim,
-        # but if all unit-dim get fastest/last one.
-        all_unit_dims = lambda index: all(x.size == 1 for x in index.values())
-        if all_unit_dims(self.register_.index):
-            dst_shape = src_type.symbolic_shape[:-1]
-            dst_type = Register[*dst_shape, src_type.dtype]
-            return dst_type
-
+        # Typically fastest dim is the last dimension,
         # If non-unit dim exists => non-unit dim is fastest dim.
         non_unit_dim = [k for k, v in self.register_.index.items() if v.size != 1]
-        if len(non_unit_dim) != 1:
+        if len(non_unit_dim) > 1:
             raise NotImplementedError(
-                f"NYI: Extract only support exactly 1 non-unit dim, but found: {len(non_unit_dim)}"
+                f"NYI: Extract only support 1 non-unit dim, but found: {len(non_unit_dim)}"
             )
         dst_shape = list(src_type.symbolic_shape)
-        dst_shape.remove(non_unit_dim[0])
+        dim_to_remove = dst_shape[-1] if not non_unit_dim else non_unit_dim[0]
+        dst_shape.remove(dim_to_remove)
         dst_type = Register[*dst_shape, src_type.dtype]
         return dst_type
 

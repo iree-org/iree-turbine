@@ -83,7 +83,7 @@ def handle_binaryop_conflict(custom_node: CustomOp):
     custom_node.update_arg(broadcast_idx, broadcast.fx_node)
     propagated_resolutions = capture_forward_slice(broadcast.fx_node, propagatable_op)
     for node in propagated_resolutions:
-        setattr(node, "index", dst_op.index)
+        get_custom(node).index = dst_op.index
     return propagated_resolutions
 
 
