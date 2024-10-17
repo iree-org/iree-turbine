@@ -1046,12 +1046,7 @@ def test_igemm():
     )
     w_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={
-            NF: i * BLOCK_N,
-            C: j % C,
-            HF: (j // C) % WF,
-            WF: (j // C) // WF,
-        },
+        inputs={NF: i % NF, C: j % C, HF: (j // C) % WF, WF: (j // C) // WF},
         outputs={NF: i, K: j},
     )
     out_mapping = tkw.IndexMapping(
@@ -1144,8 +1139,10 @@ def test_igemm():
         #      CHECK: func @conv
         #  CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
 
-        # Check we are setting gather start indices to 0
-        #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<2x64x64x640xf16
+        # Input load must be contiguous.
+        #      CHECK: %{{.*}} = vector.maskedload %{{.*}}[%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}], %{{.*}}, %{{.*}} : memref<2x64x64x640xf16
+
+        # Weights are done via gather, check we are setting gather start indices to 0.
         #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<3x3x640x640xf16
         #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<3x3x640x640xf16
 
