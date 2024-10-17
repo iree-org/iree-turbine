@@ -45,6 +45,13 @@ def allocate(
     ...
 
 
+def extract(
+    register: "Register",
+    offsets: tuple[IndexExpr],
+) -> "Register":
+    ...
+
+
 def extract_slice(
     register: "Register",
     offsets: tuple[IndexExpr],
@@ -1061,6 +1068,46 @@ class GetResult(CustomOp):
         CustomOp.index.fset(self, value)
 
 
+@define_op("extract")
+@dataclass
+class Extract(CustomOp):
+    """
+    Op Rationale:
+
+    Extract is an op used to represent extracting of
+    a scalar from TKW's 1-D vector on the specified index.
+
+    This can also be viewed as indexing/slicing on the fastest
+    dimension. Hence, the semantic of this op is designed to
+    see itself as a reduction on the indexed/fastest dimension.
+    """
+
+    register_: fx.Proxy
+    offset: IndexExpr | int
+
+    @property
+    def type(self) -> "Register":
+        # Intuition here is we are trying to extract an element
+        # from fastest dim => we reduce the fastest dim.
+        src_type = get_custom(self.register_).type
+        # Return itself if just 0-D/1-D symbolic.
+        if len(src_type.symbolic_shape) <= 1:
+            return src_type
+
+        # Typically fastest dim is the last dimension,
+        # If non-unit dim exists => non-unit dim is fastest dim.
+        non_unit_dim = [k for k, v in self.register_.index.items() if v.size != 1]
+        if len(non_unit_dim) > 1:
+            raise NotImplementedError(
+                f"NYI: Extract only support 1 non-unit dim, but found: {len(non_unit_dim)}"
+            )
+        dst_shape = list(src_type.symbolic_shape)
+        dim_to_remove = dst_shape[-1] if not non_unit_dim else non_unit_dim[0]
+        dst_shape.remove(dim_to_remove)
+        dst_type = Register[*dst_shape, src_type.dtype]
+        return dst_type
+
+
 @define_op("extract_slice")
 @dataclass
 class ExtractSlice(CustomOp):
@@ -1120,12 +1167,16 @@ class ReduceOp(CustomOp, ABC):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
-        return get_custom(self.arg).indexing_dims
+        src_indexing = get_custom(self.arg).indexing_dims
+        dst_indexing = [dim for dim in src_indexing if dim != self.dim]
+        return dst_indexing
 
     @property
     def type(self) -> Memory:
         src_type = get_custom(self.arg).type
-        return src_type
+        reduced_dims = [dims for dims in src_type.symbolic_shape if dims != self.dim]
+        dst_type = Register[*reduced_dims, src_type.dtype]
+        return dst_type
 
     @property
     def num_reduction_dims(self) -> int:
