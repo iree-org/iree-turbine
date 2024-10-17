@@ -18,6 +18,7 @@ from ..compiler.ir import (
     Attribute,
     DenseElementsAttr,
     FloatAttr,
+    F16Type,
     F32Type,
     IndexType,
     InsertionPoint,
@@ -63,6 +64,7 @@ from ..ops.wave_ops import (
     CustomOp,
     scheduling_barrier,
     scheduling_group_barrier,
+    cast,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
@@ -1218,3 +1220,61 @@ def handle_get_result(emitter: WaveEmitter, node: fx.Node):
 @handle_op(operator.getitem)
 def handle_getitem(emitter: WaveEmitter, node: fx.Node):
     raise NotImplementedError("getitem: Currently only stub implementation")
+
+
+def get_float_type(bitwidth: int):
+    match bitwidth:
+        case 16:
+            return F16Type.get()
+        case 32:
+            return F32Type.get()
+        case _:
+            raise NotImplementedError(f"Unsupported float bitwidth: {bitwidth}")
+
+
+@handle_op(cast)
+def handle_cast(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, dtype = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    vector_src = cast_vector(emitter, register)
+    src_vector_type = vector_src.type
+    src_elem_type = src_vector_type.element_type
+    dst_elem_type = IrType.parse(dtype.ir_type_asm())
+    dst_vector_type = VectorType.get(src_vector_type.shape, dst_elem_type)
+
+    if src_vector_type == dst_vector_type:
+        emitter.bind_node_proxy(node, vector_src)
+        return
+
+    is_src_float = _is_float_type(src_elem_type)
+    is_dst_float = _is_float_type(dst_elem_type)
+    is_src_int = _is_integer_like_type(src_elem_type)
+    is_dst_int = _is_integer_like_type(dst_elem_type)
+
+    conversion_ops = {
+        (True, False): arith_d.fptosi,
+        (False, True): arith_d.sitofp,
+    }
+
+    cast_ops = {
+        (True, True): arith_d.extf,
+        (True, False): arith_d.extsi,
+        (False, True): arith_d.truncf,
+        (False, False): arith_d.trunci,
+    }
+
+    if (is_src_float and is_dst_float) or (is_src_int and is_dst_int):
+        casted_vector = cast_ops[
+            (
+                src_vector_type.element_type.width < dst_elem_type.width,
+                is_dst_float and is_src_float,
+            )
+        ](dst_vector_type, vector_src)
+    else:
+        casted_vector = conversion_ops[(is_src_float, is_dst_float)](
+            dst_vector_type, vector_src
+        )
+
+    emitter.bind_node_proxy(node, IRProxyValue(casted_vector))

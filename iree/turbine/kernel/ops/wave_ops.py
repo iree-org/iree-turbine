@@ -123,6 +123,10 @@ def shuffle(src: "Register", offset: int, width: int) -> "Register":
     ...
 
 
+def cast(src: "Register", dtype: DataType) -> "Register":
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -1156,6 +1160,26 @@ class ShuffleOp(CustomOp):
         return get_custom(self.arg).indexing_dims
 
     @property
-    def type(self) -> Memory:
+    def type(self) -> Register:
         src_type = get_custom(self.arg).type
         return src_type
+
+
+@define_op("cast")
+@dataclass
+class CastOp(CustomOp, ABC):
+    """
+    Represents a cast operation.
+    """
+
+    arg: fx.Node
+    dtype: DataType
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    @property
+    def type(self) -> Memory:
+        src_shape = get_custom(self.arg).type.symbolic_shape
+        return Register[*src_shape, self.dtype]
