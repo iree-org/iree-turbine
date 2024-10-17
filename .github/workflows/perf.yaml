@@ -18,7 +18,7 @@ concurrency:
 jobs:
   test:
     name: "Perf Tests"
-    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, '/turbine_run_perf') && github.event.author_association == "MEMBER" }}
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, '/turbine_run_perf') && github.event.author_association == 'MEMBER' }}
     strategy:
       fail-fast: false
       matrix:
