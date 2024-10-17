@@ -1,6 +1,7 @@
 name: PERF
 
 on:
+  workflow_dispatch:
   issue_comment:
     types: [created, edited]
   schedule:
