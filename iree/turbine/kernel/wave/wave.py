@@ -38,7 +38,10 @@ from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom
 from .index_sequence_analysis import partition_strided_operators
-from .shared_memory_indexing import apply_shared_memory_indexing_corrections
+from .shared_memory_indexing import (
+    apply_shared_memory_indexing_corrections,
+    align_index_sizes,
+)
 from .thread_shape_analysis import determine_thread_shapes
 from .scheduling.schedule import schedule_graph
 from .._support.indexing import IndexingContext, IndexExpr
@@ -238,6 +241,9 @@ class LaunchableWave(Launchable):
 
         # Analyze Thread Shapes per Op.
         determine_thread_shapes(graph)
+
+        # Align sizes to WG/Tile sizes
+        align_index_sizes(graph, self.constraints)
 
         # Decompose reduce Ops.
         decompose_reduce_ops(graph, self.constraints, idxc.subs)

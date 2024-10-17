@@ -14,7 +14,7 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
-from .utils import delinearize_index, DCE, subs_idxc
+from .utils import delinearize_index, DCE, subs_idxc, ceildiv
 from math import prod
 import torch.fx as fx
 from collections import defaultdict
@@ -97,7 +97,9 @@ def identify_optimizable_loads(
             continue
 
         total_number_of_elements = prod(materialized_shape)
-        expected_number_of_loads = total_number_of_elements // max_elements_per_load
+        expected_number_of_loads = ceildiv(
+            total_number_of_elements, max_elements_per_load
+        )
         actual_number_of_loads = len(
             [x for x in global_read_nodes if get_custom(x).memory == custom.memory]
         )

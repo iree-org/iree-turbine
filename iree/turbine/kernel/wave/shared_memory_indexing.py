@@ -5,9 +5,9 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from .._support.tracing import CapturedTrace
-from ..ops.wave_ops import Read, Write, get_custom
+from ..ops.wave_ops import Read, Write, MMA, get_custom
 from ..lang.global_symbols import *
-from .utils import remove_global_indexing
+from .utils import remove_global_indexing, is_shared_mem_access
 from .constraints import Constraint, TilingConstraint
 import torch.fx as fx
 
@@ -20,13 +20,24 @@ def apply_shared_memory_indexing_corrections(
     Global indexing is an indexing that arises from Workgroup constraints
     and Tiling constraints.
     """
-    tiling_constraints = [c for c in constraints if isinstance(c, TilingConstraint)]
 
     def is_shared_memory_read_or_write(node: fx.Node):
         custom = get_custom(node)
-        if isinstance(custom, (Read, Write)):
-            if custom.memory_type.address_space == SHARED_ADDRESS_SPACE:
-                custom.index = remove_global_indexing(custom.index, tiling_constraints)
+        if isinstance(custom, (Read, Write)) and is_shared_mem_access(custom):
+            custom.index = remove_global_indexing(custom.index, constraints)
         return False
 
     trace.walk(is_shared_memory_read_or_write)
+
+
+def align_index_sizes(trace: CapturedTrace, constraints: list[Constraint]):
+    """
+    Adjust ops index sizes to WG/Tile size, so shared mem ops never need to
+    do partial read/writes.
+    """
+
+    def need_align(node: fx.Node):
+        custom = get_custom(node)
+        custom.align_index(constraints)
+
+    trace.walk(need_align)

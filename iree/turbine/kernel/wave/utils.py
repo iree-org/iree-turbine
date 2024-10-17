@@ -262,19 +262,42 @@ def get_hardware_vector_map(constraints: list[Constraint]) -> dict[IndexSymbol, 
 
 
 def remove_global_indexing(
-    index: dict[IndexSymbol, IndexSequence], tilingConstraints: list[TilingConstraint]
+    index: dict[IndexSymbol, IndexSequence], constraints: list[Constraint]
 ) -> dict[IndexSymbol, IndexSequence]:
     """
     This function takes the index sequence for a global read and removes all
     workgroup and induction level indexing. This is necessary for writes to shared memory
     that operate on promoted memory.
     """
+    tiling_constraints = [c for c in constraints if isinstance(c, TilingConstraint)]
     workgroup_ids = [WORKGROUP_0, WORKGROUP_1, WORKGROUP_2]
-    new_index = {key: index[key].subs({w: 0 for w in workgroup_ids}) for key in index}
+    subs = {w: 0 for w in workgroup_ids}
+
+    new_index = {key: safe_subs(index[key], subs) for key in index}
     for key in new_index:
-        for constraint in tilingConstraints:
+        for constraint in tiling_constraints:
             new_index[key] = new_index[key].subs({constraint.induction_var: 0})
     return new_index
+
+
+def is_shared_mem_access(custom: "CustomOp") -> bool:
+    return custom.memory_type.address_space == SHARED_ADDRESS_SPACE
+
+
+def align_index_vars(
+    index: dict[IndexSymbol, IndexSequence], constraints: list[Constraint]
+) -> dict[IndexSymbol, IndexSequence]:
+    """
+    This function aligns index vars with Workgroup/Tiling constraints so it never
+    need partial reads/writes.
+    """
+    key_subs = {
+        c.dim: (c.count * c.tile_size)
+        for c in constraints
+        if isinstance(c, (TilingConstraint, WorkgroupConstraint))
+        and subs_idxc(c.dim) != subs_idxc(c.count * c.tile_size)
+    }
+    return {safe_subs(key, key_subs): index[key] for key in index}
 
 
 def _invoke(vm_context, device, entry_function, inputs, outputs):
@@ -682,3 +705,7 @@ def replace_uses_in(users: dict[fx.Node, list[CustomOp]], old: CustomOp, new: fx
         for i, arg in enumerate(user.fx_node.args):
             if arg == old.fx_node:
                 user.update_arg(i, new)
+
+
+def ceildiv(a: int, b: int) -> int:
+    return -(a // -b)
