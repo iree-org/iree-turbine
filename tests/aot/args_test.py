@@ -65,6 +65,24 @@ class ArgsTest(unittest.TestCase):
             msg=f"Did not find two linalg.generics in module: module_str",
         )
 
+    def testDeviceAffinities(self):
+        class ProcArgsModule(CompiledModule):
+            @CompiledModule.signature_info(arg_device={1: DeviceAffinity(1)})
+            def foobar(self, a=AbstractTensor(3, 2), b=AbstractTensor(1, 1)):
+                return a, b
+
+        inst = ProcArgsModule(context=Context(), import_to="import")
+        module_str = str(CompiledModule.get_mlir_module(inst))
+        print(module_str)
+        self.assertRegex(
+            module_str,
+            (
+                "func.func @foobar\("
+                "%.+: tensor<3x2xf32>, "
+                "%.+: tensor<1x1xf32> {iree.abi.affinity = #hal.device.promise<@__device_1>}\)"
+            ),
+        )
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)

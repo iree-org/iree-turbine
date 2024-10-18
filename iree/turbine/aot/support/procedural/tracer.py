@@ -21,6 +21,7 @@ from torch.utils._pytree import (
 )
 
 from ....support.ir_imports import (
+    DictAttr,
     Location,
     StringAttr,
     Value,
@@ -29,9 +30,7 @@ from ....support.ir_imports import (
 
 from ....support.logging import aot_logger as logger
 
-from ..ir_utils import (
-    ModuleBuilder,
-)
+from ..ir_utils import ModuleBuilder, attributes_from_argument_device_affinities
 
 from .base import (
     AbstractIntrinsic,
@@ -44,6 +43,8 @@ from .base import (
 from .globals import (
     LiveGlobalCollectionProxy,
 )
+
+from ...tensor_traits import DeviceAffinity
 
 ###############################################################################
 # Concrete procedure building IrTracer.
@@ -78,6 +79,7 @@ class ProcedureTrace(IrTrace):
         posargs: Sequence,
         kwargs: dict,
         loc: Location,
+        arg_device: dict[int, DeviceAffinity] | None = None,
     ) -> "ProcedureTrace":
         # Unpack arguments.
         arguments_flat, arguments_tree_def = tree_flatten((posargs, kwargs))
@@ -88,7 +90,17 @@ class ProcedureTrace(IrTrace):
             argument_ir_types.append(arg.get_ir_type(module_builder))
 
         with loc:
-            _, func_op = module_builder.create_func_op(symbol_name, argument_ir_types)
+            argument_attributes = [
+                DictAttr.get(d)
+                for d in attributes_from_argument_device_affinities(
+                    arg_device,
+                    arguments_count=len(argument_ir_types),
+                    context=module_builder.context,
+                )
+            ]
+            _, func_op = module_builder.create_func_op(
+                symbol_name, argument_ir_types, argument_attributes=argument_attributes
+            )
 
         # Bind proxy arguments to an IR value.
         ir_proxy_arguments_flat = []

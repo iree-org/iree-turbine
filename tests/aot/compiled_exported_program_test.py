@@ -177,6 +177,30 @@ class TorchExportTests(unittest.TestCase):
         self.assertIn("%_buffers.buf = util.global.load @_buffers.buf", module_str)
         self.assertIn("util.global.store", module_str)
 
+    def testDeviceAffinities(self):
+        class Module(torch.nn.Module):
+            def forward(self, x, y):
+                return x, y
+
+        module = Module()
+        export_output = export(
+            module,
+            function_name="foo",
+            args=(torch.empty(1, dtype=torch.int8), torch.empty(2, dtype=torch.int8)),
+            arg_device={1: DeviceAffinity(1)},
+        )
+        asm = str(export_output.mlir_module)
+        print(asm)
+        self.assertRegex(
+            asm,
+            (
+                "func.func @foo\("
+                "%.+: !torch.vtensor<\[1\],si8>, "
+                "%.+: !torch.vtensor<\[2\],si8> "
+                "{iree.abi.affinity = #hal.device.promise<@__device_1>}\)"
+            ),
+        )
+
 
 class SimpleParams(nn.Module):
     def __init__(self):
