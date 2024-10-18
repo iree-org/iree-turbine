@@ -273,7 +273,7 @@ class CompiledModuleClassInfo:
         input_sig = []
         parameter_list = list(sig.parameters.values())
         # TODO: Reconstitute a pytree so as to handle kwargs?
-        # See: https://github.com/nod-ai/SHARK-Turbine/issues/128
+        # See: https://github.com/nod-ai/SHARK-ModelDev/issues/128
         for param in parameter_list[1:]:
             if (
                 param.kind != inspect.Parameter.POSITIONAL_ONLY
@@ -285,7 +285,7 @@ class CompiledModuleClassInfo:
             param_desc = param.default
             if param_desc is inspect.Parameter.empty:
                 # TODO: Merge from a decorator?
-                # See: https://github.com/nod-ai/SHARK-Turbine/issues/126
+                # See: https://github.com/nod-ai/SHARK-ModelDev/issues/126
                 raise TypeError(
                     f"export function {name} missing required default value annotation "
                     f"for '{param.name}'"
@@ -542,7 +542,7 @@ class CompiledModule(metaclass=CompiledModuleMeta):
                 pm.run(module_op)
             except MLIRError:
                 # TODO: Better error handling.
-                # See: https://github.com/nod-ai/SHARK-Turbine/issues/127
+                # See: https://github.com/nod-ai/SHARK-ModelDev/issues/127
                 print(module_op, file=sys.stderr)
                 raise
 
@@ -638,7 +638,7 @@ class CompiledModule(metaclass=CompiledModuleMeta):
         # Instantiate procs.
         # TODO: This should be done in two phases, first binding the symbols
         # and then defining them, enabling dependence.
-        # See: https://github.com/nod-ai/SHARK-Turbine/issues/129
+        # See: https://github.com/nod-ai/SHARK-ModelDev/issues/129
         for key, proc_def in info.class_info.export_procs:
 
             def do_export(proc_def: ExportProcDef):

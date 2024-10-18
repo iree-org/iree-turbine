@@ -118,7 +118,7 @@ class ProcedureTrace(IrTrace):
     def trace_py_func(self, py_f: Callable):
         with new_ir_trace_scope(self) as t:
             # TODO: Create IR proxies for python arguments.
-            # See: https://github.com/nod-ai/SHARK-Turbine/issues/135
+            # See: https://github.com/nod-ai/SHARK-ModelDev/issues/135
             return_py_value = _unproxy(py_f(*self.proxy_posargs, **self.proxy_kwargs))
             if return_py_value is None:
                 self.emit_return()
