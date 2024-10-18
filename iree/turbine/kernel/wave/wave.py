@@ -243,6 +243,8 @@ class LaunchableWave(Launchable):
         determine_thread_shapes(graph)
 
         # Align sizes to WG/Tile sizes
+        # This pass changes indexing keys, which can interfere with other passes,
+        # so it should be called clese to the end of pipeline.
         align_index_sizes(graph, self.constraints)
 
         # Decompose reduce Ops.
