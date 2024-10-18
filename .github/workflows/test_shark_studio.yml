@@ -1,4 +1,4 @@
-name: Test SHARK
+name: Test SHARK Studio
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-shark:
+  test-shark-studio:
     strategy:
       matrix:
         version: [3.11]
