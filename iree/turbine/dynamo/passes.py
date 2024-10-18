@@ -2,7 +2,7 @@ import torch
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch._decomp import get_decompositions
 from torch.func import functionalize
-from typing import List, Optional
+from typing import List, Optional, Mapping
 
 from .decompositions import DEFAULT_DECOMPOSITIONS
 
@@ -15,7 +15,7 @@ def apply_decompositions(
     if decompose_ops is None:
         return gm
 
-    decompositions = get_decompositions(decompose_ops)
+    decompositions: Mapping = get_decompositions(decompose_ops)
     gm = make_fx(
         functionalize(gm),
         decomposition_table=decompositions,
