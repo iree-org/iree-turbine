@@ -128,6 +128,7 @@ def test_read_mapped():
         # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
         # CHECK:            %[[ARR:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>
+        # CHECK-DAG:        %[[MASK:.+]] = vector.constant_mask [16] : vector<16xi1>
         # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
         # CHECK:            %[[D0:.+]] = arith.muli %[[THREAD_ID_X]], %[[C16]] overflow<nsw, nuw> : index
         # CHECK-DAG:        %[[C16_0:.+]] = arith.constant 16 : index
@@ -143,8 +144,7 @@ def test_read_mapped():
         # CHECK-DAG:        %[[C17:.+]] = arith.constant 17 : index
         # CHECK:            %[[D7:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C17]] overflow<nsw, nuw> : index
         # CHECK:            %[[D8:.+]] = arith.addi %[[D7]], %[[D6]] overflow<nsw, nuw> : index
-        # CHECK:            %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240]> : vector<16xindex>
-        # CHECK:            %[[MASK:.+]] = vector.constant_mask [16] : vector<16xi1>
+        # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240]> : vector<16xindex>
         # CHECK-DAG:        %[[CST_2:.+]] = arith.constant 0.000000e+00 : f16
         # CHECK:            %[[D9:.+]] = vector.splat %[[CST_2]] : vector<16xf16>
         # CHECK:            %[[D10:.+]] = vector.gather %[[ARR]][%[[D5]], %[[D8]]] [%[[CST]]], %[[MASK]], %[[D9]] :
