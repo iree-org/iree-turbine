@@ -13,6 +13,7 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
+from iree.turbine.kernel.wave.constraints import MMAType
 import os
 import json
 from torch.testing import assert_close
@@ -51,10 +52,43 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     return default_test_shapes[test_name]
 
 
+def get_load_elems_per_thread(mfma_variant: MMAType) -> int:
+    match mfma_variant:
+        case MMAType.F32_16x16x16_F16:
+            return 4
+        case MMAType.F32_32x32x8_F16:
+            return 4
+        case MMAType.F32_16x16x32_F8:
+            return 8
+        case MMAType.F32_32x32x16_F8:
+            return 8
+
+
+def get_store_elems_per_thread(mfma_variant: MMAType) -> int:
+    match mfma_variant:
+        case MMAType.F32_16x16x16_F16:
+            return 4
+        case MMAType.F32_32x32x8_F16:
+            return 16
+        case MMAType.F32_16x16x32_F8:
+            return 4
+        case MMAType.F32_32x32x16_F8:
+            return 16
+
+
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize("enable_scheduling", [False, True])
-def testGemm(shape: tuple[int], enable_scheduling: bool, request):
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        MMAType.F32_16x16x16_F16,
+        MMAType.F32_32x32x8_F16,
+    ],
+)
+def testGemm(
+    shape: tuple[int], enable_scheduling: bool, mfma_variant: MMAType, request
+):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
     # Input sizes
@@ -79,7 +113,9 @@ def testGemm(shape: tuple[int], enable_scheduling: bool, request):
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
+        )
     ]
 
     # Wave-level micro-kernel.
@@ -113,8 +149,8 @@ def testGemm(shape: tuple[int], enable_scheduling: bool, request):
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: 4,
-        STORE_ELEMS_PER_THREAD: 4,
+        LOAD_ELEMS_PER_THREAD: get_load_elems_per_thread(mfma_variant),
+        STORE_ELEMS_PER_THREAD: get_store_elems_per_thread(mfma_variant),
         BLOCK_M: 64,
         BLOCK_N: 64,
         BLOCK_K: 32,
@@ -166,6 +202,125 @@ def testGemm(shape: tuple[int], enable_scheduling: bool, request):
                 )
         iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
         generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=run_bench)
+        assert_close(c, iree_ref)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+@pytest.mark.parametrize("enable_scheduling", [False, True])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        MMAType.F32_16x16x32_F8,
+        MMAType.F32_32x32x16_F8,
+    ],
+)
+def testF8Gemm(
+    shape: tuple[int], enable_scheduling: bool, mfma_variant: MMAType, request
+):
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    # Input sizes
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+    # Other hyperparameters
+    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.cast(a_reg, tkl.f8e4m3fnuz)
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.cast(b_reg, tkl.f8e4m3fnuz)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        LOAD_ELEMS_PER_THREAD: get_load_elems_per_thread(mfma_variant),
+        STORE_ELEMS_PER_THREAD: get_store_elems_per_thread(mfma_variant),
+        BLOCK_M: 64,
+        BLOCK_N: 64,
+        BLOCK_K: 32,
+        M: shape[0],
+        N: shape[1],
+        K: shape[2],
+        READ_SHARED_DELAY: 1,
+        WRITE_SHARED_DELAY: 1,
+        READ_GLOBAL_DELAY: 2,
+        WRITE_GLOBAL_DELAY: 2,
+        MMA_DELAY: 1,
+        SHARED_MEMORY_UNITS: 4,
+        GLOBAL_MEMORY_UNITS: 4,
+        MMA_UNITS: 4,
+    }
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    if run_bench:
+        config["benchmark_batch_size"] = 10
+        config["benchmark_repetitions"] = 3
+    if dump_perf is not None:
+        perf_filename = request.node.name + ".json"
+        config["benchmark_results_file"] = os.path.join(
+            dump_perf, "tk_" + perf_filename
+        )
+
+    with tk.gen.TestLaunchContext(
+        hyperparams,
+        canonicalize=True,
+        run=True,
+        run_bench=run_bench,
+        run_config=config,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+    ):
+        a = torch.randn(shape[0], shape[2], dtype=torch.float16)
+        b = torch.randn(shape[1], shape[2], dtype=torch.float16)
+        c = torch.zeros(shape[0], shape[1], dtype=torch.float32)
+        mb = gemm(a, b, c)
+
+        if test_dump_generated_mlir:
+            filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
+            with open(filename, "w") as f:
+                f.write(mb.module_op.get_asm())
+
+        if run_bench:
+            if dump_perf is not None:
+                config["benchmark_results_file"] = os.path.join(
+                    dump_perf, "iree_" + perf_filename
+                )
+        iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
+        generate_iree_ref("mmt_f8", [a, b], [iree_ref], config, run_bench=run_bench)
         assert_close(c, iree_ref)
 
 

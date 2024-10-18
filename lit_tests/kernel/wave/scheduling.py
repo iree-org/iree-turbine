@@ -210,7 +210,7 @@ def test_gemm_pipelined():
         # CHECK-NEXT: %get_result_9
         # CHECK-NEXT: %get_result_10
         # CHECK-NEXT: %mma_1_1_1
-        # CHECK-SAME: (%get_result_5, %get_result_9, %get_result_10)
+        # CHECK-SAME: (%get_result_5, %get_result_8, %get_result_10)
         # CHECK-NEXT: %read_shared_0_0_6
         # CHECK-NEXT: %read_shared_0_0_7
         # CHECK-NEXT: %read_shared_1_0_2

@@ -21,6 +21,7 @@ import numpy as np
 from functools import partial
 from typing import Sequence
 from ...support.logging import get_logger
+import sympy
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -80,15 +81,29 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             for dim in custom.index
         }
 
-        max_stride = int(max(simplified_index[dim].stride for dim in simplified_index))
         shape = get_vector_shape(hw_constraint, custom.register_type.symbolic_shape)
         elements_per_thread = subs_idxc(custom.elements_per_thread)
+        max_stride_dim, max_stride = max(
+            [(dim, seq.stride) for dim, seq in simplified_index.items()],
+            key=lambda item: item[1],
+        )
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):
+                # Non-contiguous access patterns can have varying offsets. We
+                # handle that here.
+                gpr_offset = [
+                    expr
+                    for expr in simplified_index[max_stride_dim].start.args
+                    if expr.has(GPR_NUM)
+                ]
+                if not gpr_offset:
+                    gpr_offset = i
+                else:
+                    gpr_offset = sympy.Add(*gpr_offset).subs({GPR_NUM: i})
                 extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
                     custom.graph
                 )
-                offset = np.unravel_index(i * max_stride, shape)
+                offset = np.unravel_index(int(gpr_offset * max_stride), shape)
                 write = Write(
                     extract,
                     custom.memory,
@@ -96,9 +111,12 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                     elements_per_thread=1,
                 ).add_to_graph(custom.graph)
                 write.index = {
-                    dim: IndexSequence(simplified_index[dim].start + offset[j], 1, 1)
+                    dim: IndexSequence(
+                        simplified_index[dim].start.subs({GPR_NUM: 0}) + offset[j], 1, 1
+                    )
                     for j, dim in enumerate(custom.register_type.symbolic_shape)
                 }
+
         custom.graph.erase_node(operator)
 
 
