@@ -570,6 +570,117 @@ def _build_mask(
     return mask
 
 
+def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
+    def check_mul(mul):
+        ret = None
+        for arg in mul.args:
+            if arg.is_number:
+                if ret is not None:
+                    return None
+
+                ret = arg
+                continue
+
+            if not isinstance(arg, (sympy.floor, sympy.Mod)):
+                return None
+
+        return ret
+
+    def transform_mod(expr):
+        if not isinstance(expr, sympy.Mod):
+            return None
+
+        p, q = expr.args
+        if not q.is_number:
+            return None
+
+        if not isinstance(p, sympy.Add):
+            return None
+
+        c = None
+        terms = []
+        mult = None
+        for arg in p.args:
+            if arg.is_number:
+                if c is not None:
+                    return None
+
+                c = arg
+                continue
+
+            if not isinstance(arg, sympy.Mul):
+                return None
+
+            m = check_mul(arg)
+            if (m is None) or (q % m != 0):
+                return None
+
+            mult = m if (mult is None) or (m < mult) else mult
+            terms.append(arg)
+
+        if c >= mult:
+            return None
+
+        return (sum(terms) % q) + c
+
+    def check_mul_rational(mul):
+        ret = None
+        for arg in mul.args:
+            if isinstance(arg, sympy.Rational):
+                if ret is not None:
+                    return None
+
+                ret = arg
+                continue
+
+            if not isinstance(arg, (sympy.floor, sympy.Mod)):
+                return None
+
+        return ret
+
+    def transform_floor(expr):
+        if not isinstance(expr, sympy.floor):
+            return None
+
+        expr = expr.args[0]
+        if not isinstance(expr, sympy.Add):
+            return None
+
+        c = None
+        for arg in expr.args:
+            if isinstance(arg, sympy.Rational):
+                if c is not None:
+                    return None
+
+                c = arg
+
+        if c is None:
+            return None
+
+        terms = []
+        for arg in expr.args:
+            if isinstance(arg, sympy.Rational):
+                continue
+
+            if not isinstance(arg, sympy.Mul):
+                return None
+
+            r = check_mul_rational(arg)
+            if r is None:
+                return None
+
+            if r < c:
+                return None
+
+            terms.append(arg)
+
+        return sympy.floor(sum(terms))
+
+    expr = expr.replace(lambda e: transform_mod(e) is not None, transform_mod)
+    expr = expr.replace(lambda e: transform_floor(e) is not None, transform_floor)
+    return sympy.simplify(expr)
+
+
 def _construct_gather_scatter_indices(
     emitter: WaveEmitter,
     symbolc_shape: tuple[IndexExpr],
@@ -612,30 +723,20 @@ def _construct_gather_scatter_indices(
 
     start_indices = _get_start_indices(result_index)
 
-    prev_indices = start_indices
-    subs1 = [
-        (THREAD_0, 0),
-        (THREAD_1, 0),
-        (THREAD_2, 0),
-        (WORKGROUP_0, 0),
-        (WORKGROUP_1, 0),
-        (WORKGROUP_2, 0),
-    ]
-    subs1 += [(k, 0) for k in emitter.get_induction_vars_and_syms()[1]]
-
     expected_diff = [0] * len(start_indices)
     expected_diff[-1] = 1
     is_contiguous = True
+    subs[-1] = (subs[-1][0], (subs[-1][1] // elements_per_thread) * elements_per_thread)
+    prev_indices = _get_start_indices(
+        {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
+    )
     for i in range(1, elements_per_thread, 1):
         subs[-1] = (subs[-1][0], subs[-1][1] + 1)
         next_result_index = {
             key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)
         }
         next_indices = _get_start_indices(next_result_index)
-        diff = [
-            sympy.simplify(a.subs(subs1) - b.subs(subs1))
-            for a, b in zip(next_indices, prev_indices)
-        ]
+        diff = [_simplify_sympy_expr(a - b) for a, b in zip(next_indices, prev_indices)]
         if diff != expected_diff:
             is_contiguous = False
             break
