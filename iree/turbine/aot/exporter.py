@@ -33,6 +33,7 @@ from .fx_programs import FxPrograms
 from . import decompositions
 
 __all__ = [
+    "DeviceAffinity",
     "export",
     "ExportOutput",
 ]
@@ -47,6 +48,13 @@ ModuleLike = Union[
     FxPrograms,
 ]
 SaveableTarget = Union[str, Path, None, Output]
+
+
+class DeviceAffinity:
+    """This is used to provide device affinities to exported function arguments."""
+
+    def __init__(self, moniker: str):
+        self.moniker = moniker
 
 
 class ExportOutput:
@@ -177,6 +185,7 @@ def export(
     function_name: Optional[str] = None,
     strict_export: bool = True,
     import_symbolic_shape_expressions: bool = False,
+    argument_device_affinities: dict[int, DeviceAffinity] | None = None,
 ) -> ExportOutput:
     """Exports a torch.nn.Module.
 
@@ -199,6 +208,7 @@ def export(
     *,
     module_name: Optional[str] = None,
     function_name: Optional[str] = None,
+    argument_device_affinities: dict[int, DeviceAffinity] | None = None,
 ) -> ExportOutput:
     """Exports a single entry-point module consisting of an ExportedProgram."""
     ...
@@ -226,6 +236,7 @@ def export(
     function_name: Optional[str] = None,
     strict_export: bool = True,
     import_symbolic_shape_expressions: bool = False,
+    argument_device_affinities: dict[int, DeviceAffinity] | None = None,
 ) -> ExportOutput:
     """Generic export of supported entities.
 
@@ -247,6 +258,10 @@ def export(
         must be empty.
       kwargs: Example keyword arguments.
       dynamic_shapes: Dynamic shape specs to pass to torch.export.
+      argument_device_affinities: device affinities for the exported function
+        arguments. On what devices should the program expect its arguments.
+        It is a mapping of argument index to device affinity of the flattened
+        arguments.
 
     Returns:
       An ExportOutput object that wraps the compilation and provides
@@ -266,12 +281,18 @@ def export(
             "This is an experimental feature in PyTorch that the IREE Turbine project is still evaluating. Please report issues or experiences."
         )
 
+    from .compiled_module import ExportTargetDef
+
     TransformedModule: Any
     current_decomps = decompositions.current_aot_decompositions()
     if isinstance(mdl, torch.export.ExportedProgram):
         TransformedModule = CompiledModule.create_from_dict(
             "LambdaCompiledModule",
-            {(function_name or "main"): mdl},
+            {
+                (function_name or "main"): ExportTargetDef(
+                    mdl, argument_device_affinities=argument_device_affinities
+                )
+            },
             export_name=module_name or "module",
             options=ModuleBuilderOptions(
                 import_symbolic_shape_expressions=import_symbolic_shape_expressions,
@@ -311,7 +332,12 @@ def export(
 
         TransformedModule = CompiledModule.create_from_dict(
             "LambdaCompiledModule",
-            {(function_name or "main"): exported_program},
+            {
+                (function_name or "main"): ExportTargetDef(
+                    exported_program,
+                    argument_device_affinities=argument_device_affinities,
+                )
+            },
             export_name=module_name or "module",
             options=ModuleBuilderOptions(
                 import_symbolic_shape_expressions=import_symbolic_shape_expressions,
