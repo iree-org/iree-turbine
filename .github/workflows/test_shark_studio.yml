@@ -32,11 +32,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: "nod-ai/SHARK-Studio"
-          path: SHARK
+          path: SHARK-Studio
 
       - name: "Install SHARK Studio"
         run: |
-          cd $GITHUB_WORKSPACE/SHARK
+          cd $GITHUB_WORKSPACE/SHARK-Studio
           python${{ matrix.version }} -m venv shark.venv
           source shark.venv/bin/activate
           pip install -r requirements.txt --no-cache-dir
