@@ -500,6 +500,16 @@ class CustomOp(ABC):
 
     @property
     def expanded_dims(self) -> dict[IndexSymbol, int]:
+        """
+        During expansion each node is expanded along its indexing dimensions.
+        The expanded_dims property stores the dimensions along which the node
+        has been expanded as well as the scaling along that dimension.
+
+        For example, a node with indexing dimensions [M, N] with
+        dimensional scaling {M: 2, N: 2}, will be expanded to 4 nodes,
+        with each expanded node mapping to the following expanded_dims
+        {M: 0, N: 0}, {M: 0, N: 1}, {M: 1, N: 0}, {M: 1, N: 1}.
+        """
         if hasattr(self.fx_node, "expanded_dims"):
             return self.fx_node.expanded_dims
         return None
