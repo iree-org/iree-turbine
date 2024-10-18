@@ -1,4 +1,4 @@
-name: Test SHARK
+name: Test SHARK Studio
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-shark:
+  test-shark-studio:
     strategy:
       matrix:
         version: [3.11]
@@ -31,12 +31,12 @@ jobs:
       - name: "Checkout SHARK"
         uses: actions/checkout@v4
         with:
-          repository: "nod-ai/SHARK"
-          path: SHARK
+          repository: "nod-ai/SHARK-Studio"
+          path: SHARK-Studio
 
-      - name: "Install SHARK"
+      - name: "Install SHARK Studio"
         run: |
-          cd $GITHUB_WORKSPACE/SHARK
+          cd $GITHUB_WORKSPACE/SHARK-Studio
           python${{ matrix.version }} -m venv shark.venv
           source shark.venv/bin/activate
           pip install -r requirements.txt --no-cache-dir

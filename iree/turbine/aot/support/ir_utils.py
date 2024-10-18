@@ -206,7 +206,7 @@ class ModuleBuilder:
 
     def handle_mlir_error(self, op: Operation, e: MLIRError, message: str):
         # TODO: Replace with a real dumping facility.
-        # See: https://github.com/nod-ai/SHARK-Turbine/issues/136
+        # See: https://github.com/nod-ai/SHARK-ModelDev/issues/136
         dump_path = Path(tempfile.gettempdir()) / "turbine_module_builder_error.mlir"
         logger.exception(f"{message} (dumping to {dump_path})")
         try:

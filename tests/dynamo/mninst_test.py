@@ -17,7 +17,7 @@ import torchvision.datasets as datasets
 import torch._dynamo.config
 
 torch._dynamo.config.dynamic_shapes = (
-    False  # TODO: https://github.com/nod-ai/SHARK-Turbine/issues/93
+    False  # TODO: https://github.com/nod-ai/SHARK-ModelDev/issues/93
 )
 
 

@@ -474,8 +474,8 @@ def _get_device_state() -> DeviceState:
     return DeviceState(driver="local-task")
 
 
-# Inspiration from https://github.com/nod-ai/SHARK-Turbine/blob/8293de5414889c72ff5cd10bf33c43fb0a3ea3ee/python/iree/turbine/aot/builtins/jittable.py#L212-L237
-# and https://github.com/nod-ai/SHARK-Turbine/blob/main/python/iree/turbine/dynamo/backends/cpu.py
+# Inspiration from https://github.com/nod-ai/SHARK-ModelDev/blob/8293de5414889c72ff5cd10bf33c43fb0a3ea3ee/python/iree/turbine/aot/builtins/jittable.py#L212-L237
+# and https://github.com/nod-ai/SHARK-ModelDev/blob/main/python/iree/turbine/dynamo/backends/cpu.py
 # TODO: Try to generalize for other devices.
 def compute_method(super_fn, *args, **kwargs):
     # Compute factory fns reserve the last arg as src_op

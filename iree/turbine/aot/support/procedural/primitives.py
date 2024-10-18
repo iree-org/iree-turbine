@@ -92,7 +92,7 @@ class IrScalar(Intrinsic):
             # Type check and promotion.
             # TODO: Add more comprehensive type promotion hiearchy as seen in
             # https://jax.readthedocs.io/en/latest/jep/9407-type-promotion.html
-            # See: https://github.com/nod-ai/SHARK-Turbine/issues/132
+            # See: https://github.com/nod-ai/SHARK-ModelDev/issues/132
             lhs = self.ir_value
             if isinstance(other, IrScalar):
                 # Assumes when both are Value, they have same type.
@@ -241,7 +241,7 @@ class IrTensor(Intrinsic):
             # TODO: Add MLIR API support for creating an insertion point after
             # an operation and use that to set the InsertionPoint to the
             # earliest point.
-            # See: https://github.com/nod-ai/SHARK-Turbine/issues/133
+            # See: https://github.com/nod-ai/SHARK-ModelDev/issues/133
             dim_value = build_tensor_dim_value(
                 resolved_ir_value, index, constant_cache=constant_cache
             )
@@ -294,7 +294,7 @@ class IrTensor(Intrinsic):
         # cannot be dynamic, and we must use a >= 2 dimension value to represent
         # a dynamic quantity. We therefore adjust the shape in this way and
         # add a dynamic_dim constraint.
-        # See: https://github.com/nod-ai/SHARK-Turbine/issues/134
+        # See: https://github.com/nod-ai/SHARK-ModelDev/issues/134
         extents = [2 if d < 0 else d for d in shape]
         mt = self._meta_tensor = torch.empty(extents, dtype=self.dtype)
         # Generate constraints that are aligned with any dynamic dimensions or None
