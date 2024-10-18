@@ -5,8 +5,8 @@ This example AOT-compiles a Resnet-18 module for performing inference on a dynam
 To run this example (with Python3.11), you should clone the repository to your local device and install the requirements in a virtual environment.
 
 ```bash
-git clone https://github.com/nod-ai/SHARK-Turbine.git
-cd SHARK-Turbine/examples/resnet-18
+git clone https://github.com/nod-ai/SHARK-ModelDev.git
+cd SHARK-ModelDev/examples/resnet-18
 python -m venv rn18_venv
 source ./rn18_venv/bin/activate
 pip install -r requirements.txt

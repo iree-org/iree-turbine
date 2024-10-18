@@ -31,10 +31,10 @@ jobs:
       - name: "Checkout SHARK"
         uses: actions/checkout@v4
         with:
-          repository: "nod-ai/SHARK"
+          repository: "nod-ai/SHARK-Studio"
           path: SHARK
 
-      - name: "Install SHARK"
+      - name: "Install SHARK Studio"
         run: |
           cd $GITHUB_WORKSPACE/SHARK
           python${{ matrix.version }} -m venv shark.venv
