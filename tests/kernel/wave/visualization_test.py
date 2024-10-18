@@ -18,6 +18,10 @@ from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.ops.wave_ops import get_custom
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.visualization import visualize_graph
+from iree.turbine.kernel.wave.index_sequence_analysis import (
+    set_node_indices,
+    set_post_expansion_indices,
+)
 
 
 def run(func: Callable[[], None]) -> Callable[[], None]:
@@ -89,7 +93,9 @@ def test_gemm():
     ):
         graph = gemm()
         IndexingContext.current().finalize()
+        set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
         visualize_graph(graph.get_subgraph("region_0"), "gemm.png")
         assert os.path.exists("gemm.png")
 

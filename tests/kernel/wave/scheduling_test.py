@@ -32,6 +32,10 @@ from iree.turbine.kernel.wave.expansion import expand_graph
 from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
 from iree.turbine.kernel.wave.scheduling.schedule import schedule_graph
 from iree.turbine.kernel.ops.wave_ops import get_custom
+from iree.turbine.kernel.wave.index_sequence_analysis import (
+    set_node_indices,
+    set_post_expansion_indices,
+)
 
 
 class SchedulingTest(unittest.TestCase):
@@ -275,7 +279,9 @@ class SchedulingTest(unittest.TestCase):
             IndexingContext.current().finalize()
             promote_placeholders(trace, constraints)
             hoist_allocs(trace)
+            set_node_indices(trace, constraints)
             expand_graph(trace, constraints)
+            set_post_expansion_indices(trace, constraints)
             minimize_global_loads(trace, constraints)
             schedule_graph(trace, constraints)
             subgraph = trace.get_subgraph("region_0")

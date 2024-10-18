@@ -18,6 +18,10 @@ from iree.turbine.kernel.wave.shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import schedule_graph
+from iree.turbine.kernel.wave.index_sequence_analysis import (
+    set_node_indices,
+    set_post_expansion_indices,
+)
 
 
 # Input sizes
@@ -90,7 +94,9 @@ def test_gemm_pipelined():
         IndexingContext.current().finalize()
         promote_placeholders(trace, constraints)
         hoist_allocs(trace)
+        set_node_indices(trace, constraints)
         expand_graph(trace, constraints)
+        set_post_expansion_indices(trace, constraints)
         minimize_global_loads(trace, constraints)
         apply_shared_memory_indexing_corrections(trace, constraints)
         schedule_graph(trace, constraints, True)

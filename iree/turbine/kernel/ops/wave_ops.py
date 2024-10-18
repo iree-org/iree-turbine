@@ -498,6 +498,28 @@ class CustomOp(ABC):
             raise ValueError("Scheduling parameters must be a dict")
         self.fx_node.scheduling_parameters = value
 
+    @property
+    def expanded_dims(self) -> dict[IndexSymbol, int]:
+        """
+        During expansion each node is expanded along its indexing dimensions.
+        The expanded_dims property stores the dimensions along which the node
+        has been expanded as well as the scaling along that dimension.
+
+        For example, a node with indexing dimensions [M, N] with
+        dimensional scaling {M: 2, N: 2}, will be expanded to 4 nodes,
+        with each expanded node mapping to the following expanded_dims
+        {M: 0, N: 0}, {M: 0, N: 1}, {M: 1, N: 0}, {M: 1, N: 1}.
+        """
+        if hasattr(self.fx_node, "expanded_dims"):
+            return self.fx_node.expanded_dims
+        return None
+
+    @expanded_dims.setter
+    def expanded_dims(self, value: dict[IndexSymbol, int]):
+        if not isinstance(value, dict):
+            raise ValueError("Expanded dims must be a dict")
+        self.fx_node.expanded_dims = value
+
     def post_expansion(self, constraints: list["Constraint"]) -> None:
         """
         Hook for post-expansion operations. This is called after the arguments
@@ -1091,7 +1113,11 @@ class GetResult(CustomOp):
         custom = get_custom(self.value)
         if custom.index is None:
             return None
-        assert isinstance(custom.index, list) and self.res_idx < len(custom.index)
+        if not isinstance(custom, Reduction):
+            return custom.index
+        assert isinstance(custom.index, list) and self.res_idx < len(
+            custom.indexing_dims
+        )
         return custom.index[self.res_idx]
 
     @index.setter

@@ -20,6 +20,10 @@ from iree.turbine.kernel.wave.visualization import visualize_graph
 from iree.turbine.kernel.wave.shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
 )
+from iree.turbine.kernel.wave.index_sequence_analysis import (
+    set_node_indices,
+    set_post_expansion_indices,
+)
 
 
 # Input sizes
@@ -85,7 +89,9 @@ def test_gemm():
         IndexingContext.current().finalize()
         promote_placeholders(trace, constraints)
         hoist_allocs(trace)
+        set_node_indices(trace, constraints)
         expand_graph(trace, constraints)
+        set_post_expansion_indices(trace, constraints)
         if visualize:
             visualize_graph(trace.get_subgraph("region_0"), "before.png")
         minimize_global_loads(trace, constraints)
