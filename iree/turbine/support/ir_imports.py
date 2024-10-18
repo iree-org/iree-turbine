@@ -8,6 +8,7 @@
 """Unifies all imports of iree.compiler.ir into one place."""
 
 from iree.compiler.ir import (
+    ArrayAttr,
     AsmState,
     Attribute,
     Block,
@@ -15,6 +16,7 @@ from iree.compiler.ir import (
     Context,
     DenseElementsAttr,
     DenseResourceElementsAttr,
+    DictAttr,
     FlatSymbolRefAttr,
     FloatAttr,
     FunctionType,

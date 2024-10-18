@@ -49,6 +49,11 @@ __all__ = [
     "CompiledModule",
 ]
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .exporter import DeviceAffinity
+
 ################################################################################
 # Data structures
 ################################################################################
@@ -107,12 +112,27 @@ class PyOnlyDef:
         return self.py_value(*args, **kwargs)
 
 
+class ExportTargetDef:
+    def __init__(
+        self,
+        target: Union[Callable, ExportedProgram],
+        *,
+        argument_device_affinities: dict[int, "DeviceAffinity"] | None = None,
+    ):
+        self.target = target
+        self.argument_device_affinities = argument_device_affinities
+
+    def __call__(self, *args, **kwargs):
+        return self.target(*args, **kwargs)
+
+
 class ExportProcDef:
     __slots__ = [
         "callable",
         "export_name",
         "signature",
         "file_line_loc",
+        "argument_device_affinities",
     ]
 
     def __init__(
@@ -122,14 +142,22 @@ class ExportProcDef:
         *,
         signature,
         file_line_loc: Optional[Tuple[str, int]] = None,
+        argument_device_affinities: dict[int, "DeviceAffinity"] | None = None,
     ):
         self.export_name = export_name
         self.callable = callable
         self.signature = signature
         self.file_line_loc = file_line_loc
+        self.argument_device_affinities = argument_device_affinities
 
     def copy(self) -> "ExportProcDef":
-        return ExportProcDef(self.export_name, self.callable, signature=self.signature)
+        return ExportProcDef(
+            self.export_name,
+            self.callable,
+            signature=self.signature,
+            file_line_loc=self.file_line_loc,
+            argument_device_affinities=self.argument_device_affinities,
+        )
 
     def __repr__(self):
         return f"<def {self.export_name}({self.signature})>"
@@ -142,14 +170,19 @@ class ExportedProgramDef:
         *,
         export_name: Optional[str] = None,
         public: bool = False,
+        argument_device_affinities: dict[int, "DeviceAffinity"] | None = None,
     ):
         self.export_name = export_name
         self.exported_program = ep
         self.public = public
+        self.argument_device_affinities = argument_device_affinities
 
     def copy(self) -> "ExportedProgramDef":
         return ExportedProgramDef(
-            self.exported_program, export_name=self.export_name, public=self.public
+            self.exported_program,
+            export_name=self.export_name,
+            public=self.public,
+            argument_device_affinities=self.argument_device_affinities,
         )
 
     def __repr__(self):
@@ -207,6 +240,21 @@ class CompiledModuleClassInfo:
         )  # type: ignore
 
     def def_attribute(self, key, value):
+        if isinstance(value, ExportTargetDef):
+            if isinstance(value.target, ExportedProgram):
+                value = ExportedProgramDef(
+                    value.target,
+                    export_name=key,
+                    public=not key.startswith("_"),
+                    argument_device_affinities=value.argument_device_affinities,
+                )
+            else:
+                # We expect exported function.
+                assert callable(value.target) and inspect.isfunction(value.target)
+                return self.def_export_proc(
+                    key, value.target, value.argument_device_affinities
+                )
+
         # Some decorators, the only thing we do is convert them to PyOnlyDef.
         # Do that first so the generic descriptor code below handles them.
         if isinstance(value, builtins.jittable):
@@ -250,7 +298,12 @@ class CompiledModuleClassInfo:
             f"compiled module: {value!r}"
         )
 
-    def def_export_proc(self, name, f) -> ExportProcDef:
+    def def_export_proc(
+        self,
+        name,
+        f,
+        argument_device_affinities: dict[int, "DeviceAffinity"] | None = None,
+    ) -> ExportProcDef:
         logging.debug("DEFINE EXPORT: %s = %r", name, f)
         # Get a reasonable location.
         file_line_loc = None
@@ -292,7 +345,13 @@ class CompiledModuleClassInfo:
                 )
             input_sig.append(param_desc)
 
-        info = ExportProcDef(name, f, signature=input_sig, file_line_loc=file_line_loc)
+        info = ExportProcDef(
+            name,
+            f,
+            signature=input_sig,
+            file_line_loc=file_line_loc,
+            argument_device_affinities=argument_device_affinities,
+        )
         self.add_export(name, info)
         return info
 
@@ -568,6 +627,22 @@ class CompiledModule(metaclass=CompiledModuleMeta):
 
     jittable = staticmethod(builtins.jittable)
 
+    @staticmethod
+    def annotate(
+        *,
+        argument_device_affinities: dict[int, "DeviceAffinity"] | None = None,
+    ) -> Callable:
+        """Annotate an export target function.
+        This annotation is only required when additional information needs to be
+        provided."""
+
+        def _decorator(f: Callable):
+            return ExportTargetDef(
+                f, argument_device_affinities=argument_device_affinities
+            )
+
+        return _decorator
+
     def __getattr__(self, name):
         info = CompiledModule.get_info(self)
         try:
@@ -633,6 +708,7 @@ class CompiledModule(metaclass=CompiledModuleMeta):
                 ep_def.exported_program,
                 symbol_name=ep_def.export_name or "main",
                 symbol_visibility=None if ep_def.public else "private",
+                argument_device_affinities=ep_def.argument_device_affinities or {},
             )
 
         # Instantiate procs.
@@ -661,6 +737,7 @@ class CompiledModule(metaclass=CompiledModuleMeta):
                     posargs=proc_def.signature,
                     kwargs={},  # TODO(#128): kwargs
                     loc=loc,
+                    argument_device_affinities=proc_def.argument_device_affinities,
                 )
                 trace.trace_py_func(invoke_with_self)
                 info.shadow_dict[key] = _uncallable_public_export
