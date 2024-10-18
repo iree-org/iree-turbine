@@ -6,6 +6,10 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.expansion import expand_graph
+from iree.turbine.kernel.wave.index_sequence_analysis import (
+    set_node_indices,
+    set_post_expansion_indices,
+)
 from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils import run_test, print_trace
@@ -62,7 +66,9 @@ def test_read_write_equal_sizes():
     ):
         graph = read_write_same_size()
         IndexingContext.current().finalize()
+        set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
         print_trace(graph)
         # CHECK: %a
         # CHECK-NEXT: %c
@@ -141,7 +147,9 @@ def test_read_write():
     ):
         graph = read_write_different_dims()
         IndexingContext.current().finalize()
+        set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
         print_trace(graph)
         # CHECK: %a
         # CHECK-NEXT: %c
@@ -216,7 +224,9 @@ def test_gemm():
     ):
         graph = gemm()
         IndexingContext.current().finalize()
+        set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
         print_trace(graph)
         # Root graph:
         # CHECK: %a
@@ -400,7 +410,9 @@ def test_batched_gemm():
     ):
         graph = batched_gemm()
         IndexingContext.current().finalize()
+        set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
         print_trace(graph)
         # Root graph:
         # CHECK: %a
@@ -559,7 +571,9 @@ def test_gemm_reduction_expansion_only():
     ):
         graph = gemm()
         IndexingContext.current().finalize()
+        set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
         print_trace(graph)
         # Root graph:
         # CHECK: %a
@@ -660,7 +674,9 @@ def py_arithmetic_different_dims():
     ):
         graph = py_arithmetic_different_dims()
         IndexingContext.current().finalize()
+        set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
         print_trace(graph)
         # CHECK: %a
         # CHECK-NEXT: %c

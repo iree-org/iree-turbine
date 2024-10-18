@@ -6,6 +6,10 @@ import unittest
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
+from iree.turbine.kernel.wave.index_sequence_analysis import (
+    set_node_indices,
+    set_post_expansion_indices,
+)
 from iree.turbine.kernel.wave.promotion import promote_node, promote_placeholders
 from iree.turbine.kernel.wave.barriers import add_shared_memory_barriers
 from iree.turbine.kernel.wave.hoisting import hoist_allocs
@@ -83,7 +87,9 @@ def test_read_write_equal_sizes():
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
         promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
+        set_node_indices(trace, constraints)
         expand_graph(trace, constraints)
+        set_post_expansion_indices(trace, constraints)
         tweak_index(graph)
         add_shared_memory_barriers(trace)
         print_trace(trace, False)
@@ -169,7 +175,9 @@ def test_gemm():
         for read_node in read_nodes:
             promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
         hoist_allocs(trace)
+        set_node_indices(trace, constraints)
         expand_graph(trace, constraints)
+        set_post_expansion_indices(trace, constraints)
         tweak_index(graph)
         add_shared_memory_barriers(trace)
         print_trace(trace, False)

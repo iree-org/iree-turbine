@@ -37,7 +37,11 @@ from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom
-from .index_sequence_analysis import partition_strided_operators
+from .index_sequence_analysis import (
+    partition_strided_operators,
+    set_node_indices,
+    set_post_expansion_indices,
+)
 from .shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
     align_index_sizes,
@@ -224,8 +228,14 @@ class LaunchableWave(Launchable):
         promote_placeholders(graph, self.constraints)
         hoist_allocs(graph)
 
+        # Set indices.
+        set_node_indices(graph, self.constraints)
+
         # Expansion
         expand_graph(graph, self.constraints)
+
+        # Set post expansion indices.
+        set_post_expansion_indices(graph, self.constraints)
 
         # Clean up chains of GetResults
         remove_chained_getresult(graph)

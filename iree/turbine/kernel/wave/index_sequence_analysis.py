@@ -4,19 +4,25 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from ..ops.wave_ops import Write, ExtractSlice, get_custom
-from .constraints import Constraint, HardwareConstraint
+from ..ops.wave_ops import Write, ExtractSlice, get_custom, Reduction
+from .constraints import Constraint, HardwareConstraint, WorkgroupConstraint
 from .._support.tracing import CapturedTrace, IndexingContext
 from .._support.indexing import IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 from .utils import (
     simplify_index,
     get_mma_dimensional_mapping,
-    get_hardware_vector_size,
+    get_hardware_constraint,
     subs_idxc,
+    specialize_index_sequence,
 )
 import torch.fx as fx
 import numpy as np
+from functools import partial
+from typing import Sequence
+from ...support.logging import get_logger
+
+logger = get_logger("turbine.wave.index_sequence_analysis")
 
 
 def get_vector_shape(
@@ -94,3 +100,159 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                     for j, dim in enumerate(custom.register_type.symbolic_shape)
                 }
         custom.graph.erase_node(operator)
+
+
+def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
+    mma_index, mma_slices = get_mma_dimensional_mapping(
+        trace, get_hardware_constraint(constraints)
+    )
+    trace.walk(partial(set_node_index, constraints, mma_index, mma_slices))
+
+
+def compute_stride(
+    symbolic_shape: tuple[IndexSymbol, ...],
+    vector_shapes: dict[IndexSymbol, int],
+    target_dim: IndexSymbol,
+) -> int:
+    """
+    Compute the stride for a given dimension based on the vector shapes.
+    The stride is the product of the vector shapes of all dimensions that are
+    not the given dimension.
+    """
+    stride = 1
+    for dim in reversed(symbolic_shape):
+        if dim == target_dim:
+            break
+        assert dim in vector_shapes, f"Dimension {dim} not found in vector shapes"
+        stride *= vector_shapes[dim]
+
+    try:
+        stride = int(stride)
+    except Exception as e:
+        logger.error(e)
+    return stride
+
+
+def is_contiguous_dim(
+    dim: IndexSymbol, symbolic_shape: list[IndexSymbol], vector_shapes: list[int]
+) -> bool:
+    """
+    Checks if the given dimension is stored contiguously in memory. This happens if
+    the dimension is the last one in the symbolic shape or all dimensions after it
+    are unit dimensions.
+    """
+    is_innermost_dim = dim == symbolic_shape[-1]
+    dim_index = symbolic_shape.index(dim)
+    static_shape = [vector_shapes[dim] for dim in symbolic_shape]
+    all_unit_dims = all(dim == 1 for dim in static_shape[dim_index + 1 :])
+    return is_innermost_dim or all_unit_dims
+
+
+def set_node_index(
+    constraints: Sequence[Constraint],
+    mma_index: dict[IndexSymbol, int],
+    mma_slices: dict[IndexSymbol, list[fx.Node]],
+    node: fx.Node,
+):
+    """
+    Set the index of the node based on the user constraints. In certain
+    operators (like read, write), there is only a single index associated
+    with the node (the index to read from, the index to write to). But for
+    other operators like mma, each operand reads from a different index.
+
+    Rather than maintain operand specific indices for operators, we maintain
+    dimension specific indices for each operator. So for an mma operator that
+    has a signature of (MxK, NxK) -> MxN, we maintain only 3 mappings for
+    dimensions M, N and K, but allow each mapping to be piecewise conditioned
+    on the operand.
+    """
+    hardware_constraint = [get_hardware_constraint(constraints)]
+    workgroup_constraints = {
+        c.dim: c for c in constraints if isinstance(c, WorkgroupConstraint)
+    }
+    other_constraints = [
+        c for c in constraints if not isinstance(c, HardwareConstraint)
+    ]
+    # Apply hardware constraint first since it dictates the stride and size.
+    sorted_constraints = hardware_constraint + other_constraints
+
+    index = {}
+    # The semantics of elements_per_thread are that it represents the number of
+    # elements that are loaded contiguously from memory.
+    custom = get_custom(node)
+
+    elements_per_thread = getattr(custom, "elements_per_thread", None)
+
+    if isinstance(custom, Reduction):
+        return
+
+    for dim in custom.indexing_dims:
+        index_seq = None
+        for constraint in sorted_constraints:
+            if isinstance(constraint, HardwareConstraint):
+                inputs = None
+                if dim in mma_index:
+                    inputs = (mma_index[dim], elements_per_thread, None)
+                else:
+                    # Assumes vector shapes are associated with workgroup dims.
+                    if dim not in workgroup_constraints:
+                        continue
+                    assert (
+                        dim in constraint.vector_shapes
+                    ), f"Dimension {dim} not found in vector shapes"
+                    if constraint.vector_shapes[dim] == 0:
+                        continue
+                    inputs = (
+                        workgroup_constraints[dim].workgroup_dim,
+                        (
+                            1
+                            if not is_contiguous_dim(
+                                dim,
+                                custom.indexing_dims,
+                                constraint.vector_shapes,
+                            )
+                            else elements_per_thread
+                        ),
+                        compute_stride(
+                            custom.indexing_dims, constraint.vector_shapes, dim
+                        ),
+                    )
+                    if elements_per_thread is None:
+                        # Here we end up with a situation where there will be no thread level
+                        # dependence in the dimensional index.
+                        # TODO: Evaluate if this is a valid case.
+                        continue
+                index_seq = constraint.apply(dim, *inputs, dim in mma_index)
+                if dim in mma_index:
+                    index_seq = specialize_index_sequence(index_seq, mma_slices, custom)
+
+            elif constraint.dim == dim:
+                if index_seq is None:
+                    index_seq = constraint.apply()
+                else:
+                    index_seq.start += constraint.apply().start
+
+        if index_seq is not None:
+            index.update({dim: index_seq})
+        else:
+            index.update({dim: IndexSequence(0, 1, 1)})
+
+    custom.index = index
+
+
+def set_post_expansion_indices(trace: CapturedTrace, constraints: list[Constraint]):
+    """
+    Add offsets to the indices based on the expanded dims.
+    """
+    hw_cons = get_hardware_constraint(constraints)
+
+    def apply_offset(node: fx.Node):
+        custom = get_custom(node)
+        if custom.expanded_dims is None:
+            return False
+        for dim, scale in custom.expanded_dims.items():
+            if dim in custom.index:
+                custom.index[dim].start += scale * hw_cons.vector_shapes[dim]
+        return False
+
+    trace.walk(apply_offset)
