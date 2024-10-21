@@ -51,7 +51,7 @@ def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
 # Anchor Indicies and Conflict resolution helpers
 #################################################################
 
-anchorOpTypes = (Read, Write, MMA, ReduceOp, GetResult)
+anchorOpTypes = (Read, Write, MMA, ReduceOp)
 noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate)
 legalSubtypes = (IterArg,)
 nonPropagatableTypes = anchorOpTypes + noHandleTypes
@@ -68,7 +68,13 @@ def propagatable_op(node: fx.Node):
     )
 
 
-def handle_binaryop_conflict(custom_node: CustomOp):
+def handle_binaryop_conflict(custom_node: CustomOp) -> list[fx.Node]:
+    """
+    This function will attempt to resolve binaryOp conflicts
+    by inserting broadcastOp. It will then propagate the resolutions,
+    and return the list of fx.Nodes that we have resolved.
+    """
+
     # Analyze if we can resolve conflict with broadcast.
     lhs = get_custom(custom_node.lhs)
     rhs = get_custom(custom_node.rhs)
@@ -161,7 +167,7 @@ def determine_thread_shapes(trace: CapturedTrace):
     for anchor_op in anchor_ops:
         custom = get_custom(anchor_op)
         index_sizes = get_custom_dim_sizes(custom)
-        if isinstance(custom, (Read, GetResult)):
+        if isinstance(custom, Read):
             fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
             thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
                 index_sizes, set([])

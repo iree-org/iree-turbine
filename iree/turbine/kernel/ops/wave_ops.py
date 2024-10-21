@@ -963,9 +963,10 @@ class Reduction(CustomOp):
 
     def get_root_graph(self):
         """
-        Get root graph from some child graph inside a nested graph.
-        Using the assumption that any child/nested graph should have a parent_op,
-        who we can query for it's owner graph from to go up one level.
+        Return the "root"/most outter layer of our computation graph.
+        This is done by iteratively accessing parent_graph of current
+        graph. This is done until we find the "root" graph who
+        will have "subgraph" attribute.
         """
         cur_graph = self.graph
         while not hasattr(cur_graph, "subgraphs"):
