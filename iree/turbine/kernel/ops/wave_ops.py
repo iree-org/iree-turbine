@@ -1236,19 +1236,41 @@ class ReduceOp(CustomOp, ABC):
     dim: which symbolic dim to reduce.
     """
 
-    arg: fx.Node
+    arg: fx.Node | list[fx.Node]
     init: fx.Node = None
     dim: Optional[Any] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
-        src_indexing = get_custom(self.arg).indexing_dims
+        # Local import to break circular dep.
+        from ..wave.utils import all_equal
+
+        if isinstance(self.arg, Sequence):
+            src_indexings = [get_custom(arg).indexing_dims for arg in self.arg]
+            if not all_equal(src_indexings):
+                raise NotImplementedError(
+                    "NYI: Only support case where all inputs to ReduceOp to have same indexing dim."
+                )
+            src_indexing = src_indexings[0]
+        else:
+            src_indexing = get_custom(self.arg).indexing_dims
         dst_indexing = [dim for dim in src_indexing if dim != self.dim]
         return dst_indexing
 
     @property
     def type(self) -> Memory:
-        src_type = get_custom(self.arg).type
+        if isinstance(self.arg, Sequence):
+            # Local import to break circular dep.
+            from ..wave.utils import all_equal
+
+            src_types = [get_custom(arg).type for arg in self.arg]
+            if not all_equal(src_types):
+                raise NotImplementedError(
+                    "NYI: Only support case where all inputs to ReduceOp to have same type."
+                )
+            src_type = src_types[0]
+        else:
+            src_type = get_custom(self.arg).type
         reduced_dims = [dims for dims in src_type.symbolic_shape if dims != self.dim]
         dst_type = Register[*reduced_dims, src_type.dtype]
         return dst_type

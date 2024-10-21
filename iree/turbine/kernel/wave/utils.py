@@ -739,3 +739,9 @@ def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
             return 4
         case MMAType.F32_32x32x16_F8:
             return 16
+
+
+def all_equal(input_list: list[Any]) -> bool:
+    if len(input_list) == 0:
+        return True
+    return all(elem == input_list[0] for elem in input_list)
