@@ -83,8 +83,10 @@ class transfer_to_logical_device(CustomOp):
     def select(self, ksel: KernelSelection):
         ksel.attr_str(0)
         ta = ksel.arg_tensor(1)
-        ta.specialize_all_dims()
-        ksel.return_tensor(ta.t).specialize_all_dims()
+        spec = [i for i, s in enumerate(ta.t.shape) if isinstance(s, int)]
+
+        ta.specialize_dims(*spec)
+        ksel.return_tensor(ta.t).specialize_dims(*spec)
 
     def eager_execute(self, device_moniker, tensor):
         return tensor
