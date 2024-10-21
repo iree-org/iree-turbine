@@ -128,6 +128,7 @@ def test_read_mapped():
         # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
         # CHECK:            %[[ARR:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>
+        # CHECK-DAG:        %[[MASK:.+]] = vector.constant_mask [16] : vector<16xi1>
         # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
         # CHECK:            %[[D0:.+]] = arith.muli %[[THREAD_ID_X]], %[[C16]] overflow<nsw, nuw> : index
         # CHECK-DAG:        %[[C16_0:.+]] = arith.constant 16 : index
@@ -143,8 +144,7 @@ def test_read_mapped():
         # CHECK-DAG:        %[[C17:.+]] = arith.constant 17 : index
         # CHECK:            %[[D7:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C17]] overflow<nsw, nuw> : index
         # CHECK:            %[[D8:.+]] = arith.addi %[[D7]], %[[D6]] overflow<nsw, nuw> : index
-        # CHECK:            %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240]> : vector<16xindex>
-        # CHECK:            %[[MASK:.+]] = vector.constant_mask [16] : vector<16xi1>
+        # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240]> : vector<16xindex>
         # CHECK-DAG:        %[[CST_2:.+]] = arith.constant 0.000000e+00 : f16
         # CHECK:            %[[D9:.+]] = vector.splat %[[CST_2]] : vector<16xf16>
         # CHECK:            %[[D10:.+]] = vector.gather %[[ARR]][%[[D5]], %[[D8]]] [%[[CST]]], %[[MASK]], %[[D9]] :
@@ -1072,6 +1072,11 @@ def test_igemm():
     K = HF * WF * C
     M = SZ_OUT * N
 
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
 
@@ -1079,15 +1084,15 @@ def test_igemm():
         num_iterators=2,
         inputs={
             N: i // SZ_OUT,
-            C: j // (HF * WF),
-            H: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
-            W: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+            C: j % C,
+            H: (i % SZ_OUT) % W_OUT * stride + (j // C) % WF,
+            W: (i % SZ_OUT) // W_OUT * stride + (j // C) // WF,
         },
         outputs={M: i, K: j},
     )
     w_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={NF: i % NF, C: j // (HF * WF), HF: j % WF, WF: (j % (HF * WF)) // WF},
+        inputs={NF: i % NF, C: j % C, HF: (j // C) % WF, WF: (j // C) // WF},
         outputs={NF: i, K: j},
     )
     out_mapping = tkw.IndexMapping(
@@ -1101,10 +1106,6 @@ def test_igemm():
         },
     )
 
-    # Workgroup tile sizes
-    BLOCK_M = tkl.sym.BLOCK_M
-    BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K = 16
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
@@ -1118,18 +1119,21 @@ def test_igemm():
     we = torch.permute(we, (2, 3, 1, 0)).contiguous()
     out = torch.permute(out, (0, 2, 3, 1)).contiguous()
 
+    ratio_m = 2
+    ratio_n = 2
+
     # Expose user-constraints
     constraints: list[tkw.Constraint] = []
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-    constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(NF, BLOCK_N)]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / ratio_m)]
+    constraints += [tkw.WaveConstraint(NF, BLOCK_N / ratio_n)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
+            waves_per_block=(ratio_n, ratio_m, 1),
         )
     ]
 
@@ -1169,8 +1173,9 @@ def test_igemm():
             NF: nf,
             WF: wf,
             HF: hf,
-            BLOCK_M: 16,
-            BLOCK_N: 16,
+            BLOCK_M: 64,
+            BLOCK_N: 128,
+            BLOCK_K: 32,
             ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         },
@@ -1180,8 +1185,11 @@ def test_igemm():
         #      CHECK: func @conv
         #  CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
 
-        # Check we are setting gather start indices to 0
-        #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<2x64x64x640xf16
+        # Input load must be contiguous.
+        #      CHECK: %{{.*}} = vector.maskedload %{{.*}}[%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}], %{{.*}}, %{{.*}} : memref<2x64x64x640xf16
+
+        # Weights are done via gather, check we are setting gather start indices to 0.
+        #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<3x3x640x640xf16
         #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<3x3x640x640xf16
 
 
