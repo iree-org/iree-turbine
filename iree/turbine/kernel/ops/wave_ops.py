@@ -963,7 +963,7 @@ class Reduction(CustomOp):
 
     def get_root_graph(self):
         """
-        Return the "root"/most outter layer of our computation graph.
+        Return the "root"/outermost layer of our computation graph.
         This is done by iteratively accessing parent_graph of current
         graph. This is done until we find the "root" graph who
         will have "subgraph" attribute.
