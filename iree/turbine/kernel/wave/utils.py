@@ -509,18 +509,23 @@ def get_users(
             init_arg_idx = custom.init_args.index(node)
             users.append(custom.iter_args[init_arg_idx])
             continue
-        if isinstance(custom, Output) and reduction:
+        if isinstance(custom, Output):
             # Map output to get result
             return_vals = custom.return_vals[0]
-            get_results = sorted(
-                [x for x in reduction.users if isinstance(get_custom(x), GetResult)],
-                lambda x: get_custom(x).res_idx,
-            )
-            if isinstance(return_vals, list):
-                output_idx = return_vals.index(node)
-                users.append(get_results[output_idx])
+            parent_reduction = custom.graph.parent_op
+            if not isinstance(return_vals, (list, tuple)):
+                users.append(next(iter(parent_reduction.users)))
             else:
-                users.append(get_results[0])
+                # Handles case where DCE eliminate unused GetResult.
+                get_results = {
+                    get_custom(x).res_idx: x
+                    for x in parent_reduction.users
+                    if isinstance(get_custom(x), GetResult)
+                }
+                output_idx = return_vals.index(node)
+                # Sometime IterArg only used within the tkw.Reduction region
+                if output_idx in get_results:
+                    users.append(get_results[output_idx])
             continue
         users.append(user)
     return users, reduction
