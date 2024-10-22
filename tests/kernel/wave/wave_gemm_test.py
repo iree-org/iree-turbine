@@ -13,6 +13,10 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
+from iree.turbine.kernel.wave.utils import (
+    get_mfma_load_elems_per_thread,
+    get_mfma_store_elems_per_thread,
+)
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
 import json
@@ -50,30 +54,6 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     if test_name in user_specified_test_shapes:
         return user_specified_test_shapes[test_name]
     return default_test_shapes[test_name]
-
-
-def get_load_elems_per_thread(mfma_variant: MMAType) -> int:
-    match mfma_variant:
-        case MMAType.F32_16x16x16_F16:
-            return 4
-        case MMAType.F32_32x32x8_F16:
-            return 4
-        case MMAType.F32_16x16x32_F8:
-            return 8
-        case MMAType.F32_32x32x16_F8:
-            return 8
-
-
-def get_store_elems_per_thread(mfma_variant: MMAType) -> int:
-    match mfma_variant:
-        case MMAType.F32_16x16x16_F16:
-            return 4
-        case MMAType.F32_32x32x8_F16:
-            return 16
-        case MMAType.F32_16x16x32_F8:
-            return 4
-        case MMAType.F32_32x32x16_F8:
-            return 16
 
 
 @require_e2e
@@ -149,8 +129,8 @@ def testGemm(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_store_elems_per_thread(mfma_variant),
+        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
+        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_M: 64,
         BLOCK_N: 64,
         BLOCK_K: 32,
@@ -268,8 +248,8 @@ def testF8Gemm(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_store_elems_per_thread(mfma_variant),
+        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
+        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_M: 64,
         BLOCK_N: 64,
         BLOCK_K: 32,
