@@ -11,20 +11,43 @@ from ...support.conversions import TORCH_DTYPE_TO_MLIR_TYPE_ASM
 
 
 def get_mmt_asm(
-    lhs_type: str, rhs_type: str, acc_type: str, batch: bool = False
+    lhs_type: str,
+    rhs_type: str,
+    acc_type: str,
+    batch: bool = False,
+    cast_fp8: bool = False,
 ) -> str:
     acc_dtype = acc_type.split("x")[-1]
     operator = "batch_matmul_transpose_b" if batch else "matmul_transpose_b"
     func_name = "bmmt" if batch else "mmt"
-    matmul_function = f"""
-    func.func @{func_name}(%lhs: tensor<{lhs_type}>, %rhs: tensor<{rhs_type}>) -> tensor<{acc_type}> {{
-      %c0 = arith.constant 0.0 : {acc_dtype}
-      %init = tensor.empty() : tensor<{acc_type}>
-      %inital_result = linalg.fill ins(%c0 : {acc_dtype}) outs(%init : tensor<{acc_type}>) -> tensor<{acc_type}>
-      %result = linalg.{operator} ins(%lhs, %rhs: tensor<{lhs_type}>, tensor<{rhs_type}>)
-                 outs(%inital_result: tensor<{acc_type}>) -> tensor<{acc_type}>
-      return %result : tensor<{acc_type}>
-    }}"""
+    func_name = func_name + "_f8" if cast_fp8 else func_name
+    if not cast_fp8:
+        matmul_function = f"""
+        func.func @{func_name}(%lhs: tensor<{lhs_type}>, %rhs: tensor<{rhs_type}>) -> tensor<{acc_type}> {{
+          %c0 = arith.constant 0.0 : {acc_dtype}
+          %init = tensor.empty() : tensor<{acc_type}>
+          %inital_result = linalg.fill ins(%c0 : {acc_dtype}) outs(%init : tensor<{acc_type}>) -> tensor<{acc_type}>
+          %result = linalg.{operator} ins(%lhs, %rhs: tensor<{lhs_type}>, tensor<{rhs_type}>)
+                     outs(%inital_result: tensor<{acc_type}>) -> tensor<{acc_type}>
+          return %result : tensor<{acc_type}>
+        }}"""
+    else:
+        dtype = lhs_type.split("x")[-1]
+        f8_dtype = "f8E4M3FNUZ"
+        lhs_type_f8 = lhs_type.replace(dtype, f8_dtype)
+        dtype = rhs_type.split("x")[-1]
+        rhs_type_f8 = rhs_type.replace(dtype, f8_dtype)
+        matmul_function = f"""
+        func.func @{func_name}(%lhs: tensor<{lhs_type}>, %rhs: tensor<{rhs_type}>) -> tensor<{acc_type}> {{
+          %c0 = arith.constant 0.0 : {acc_dtype}
+          %init = tensor.empty() : tensor<{acc_type}>
+          %inital_result = linalg.fill ins(%c0 : {acc_dtype}) outs(%init : tensor<{acc_type}>) -> tensor<{acc_type}>
+          %lhs_f8 = arith.truncf %lhs : tensor<{lhs_type}> to tensor<{lhs_type_f8}>
+          %rhs_f8 = arith.truncf %rhs : tensor<{rhs_type}> to tensor<{rhs_type_f8}>
+          %result = linalg.{operator} ins(%lhs_f8, %rhs_f8: tensor<{lhs_type_f8}>, tensor<{rhs_type_f8}>)
+                     outs(%inital_result: tensor<{acc_type}>) -> tensor<{acc_type}>
+          return %result : tensor<{acc_type}>
+        }}"""
     return matmul_function
 
 
@@ -69,11 +92,13 @@ def generate_iree_ref(
 
     asm = None
     conv_str = "conv_"
-    if kernel_type == "mmt":
+    if kernel_type == "mmt" or kernel_type == "mmt_f8":
         lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
-        asm = get_mmt_asm(lhs_type, rhs_type, acc_type)
+        asm = get_mmt_asm(
+            lhs_type, rhs_type, acc_type, batch=False, cast_fp8=kernel_type == "mmt_f8"
+        )
     elif kernel_type == "bmmt":
         lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)

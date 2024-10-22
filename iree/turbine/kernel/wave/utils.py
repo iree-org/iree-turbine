@@ -31,6 +31,7 @@ from .constraints import (
     WorkgroupConstraint,
     HardwareConstraint,
     TilingConstraint,
+    MMAType,
 )
 import torch.fx as fx
 import iree.turbine.kernel.lang as tkl
@@ -714,3 +715,27 @@ def replace_uses_in(users: dict[fx.Node, list[CustomOp]], old: CustomOp, new: fx
 
 def ceildiv(a: int, b: int) -> int:
     return -(a // -b)
+
+
+def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
+    match mfma_variant:
+        case MMAType.F32_16x16x16_F16:
+            return 4
+        case MMAType.F32_32x32x8_F16:
+            return 4
+        case MMAType.F32_16x16x32_F8:
+            return 8
+        case MMAType.F32_32x32x16_F8:
+            return 8
+
+
+def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
+    match mfma_variant:
+        case MMAType.F32_16x16x16_F16:
+            return 4
+        case MMAType.F32_32x32x8_F16:
+            return 16
+        case MMAType.F32_16x16x32_F8:
+            return 4
+        case MMAType.F32_32x32x16_F8:
+            return 16
