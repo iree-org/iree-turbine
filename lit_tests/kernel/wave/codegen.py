@@ -1264,13 +1264,14 @@ def test_mutliple_local_reduce_sum():
         print(test(a, b, c).module_op)
         # CHECK: %[[LHS:.+]] = vector.load {{.*}} : memref<256x128xf16
         # CHECK: %[[RHS:.+]] = vector.load {{.*}} : memref<256x128xf16
-        # CHECK: %[[LHS0:.+]] = vector.extract_strided_slice %[[LHS]] {offsets = [0], sizes = [1], strides = [1]}
-        # CHECK: %[[LHS1:.+]] = vector.extract_strided_slice %[[LHS]] {offsets = [1], sizes = [1], strides = [1]}
-        # CHECK: %[[REDUC_0:.+]] = arith.addf %[[LHS0]], %[[LHS1]] : vector<1xf16>
-        # CHECK: %[[RHS0:.+]] = vector.extract_strided_slice %[[RHS]] {offsets = [0], sizes = [1], strides = [1]}
-        # CHECK: %[[REDUC_1:.+]] = arith.addf %[[REDUC_0]], %[[RHS0]] : vector<1xf16>
-        # CHECK: %[[RHS1:.+]] = vector.extract_strided_slice %[[RHS]] {offsets = [1], sizes = [1], strides = [1]}
-        # CHECK: %[[REDUC_2:.+]] = arith.addf %[[REDUC_1]], %[[RHS1]] : vector<1xf16>
+        # Reduce all sources locally.
+        # CHECK: %[[SRC_REDUC:.+]] = arith.addf %[[LHS]], %[[RHS]] : vector<2xf16>
+        # Do Local Reductions.
+        # CHECK: %[[LOCAL_REDUC0:.+]] = vector.extract_strided_slice %[[SRC_REDUC]] {offsets = [0], sizes = [1], strides = [1]}
+        # CHECK: %[[LOCAL_REDUC1:.+]] = vector.extract_strided_slice %[[SRC_REDUC]] {offsets = [1], sizes = [1], strides = [1]}
+        # CHECK: %[[REDUC_0:.+]] = arith.addf %[[LOCAL_REDUC0]], %[[LOCAL_REDUC1]] : vector<1xf16>
+        # Expanded Global Max Reduction
+        # CHECK-COUNT-6: gpu.shuffle  xor
 
 
 # This test is to ensure that the propagation of indexing_dims between reduction and operations

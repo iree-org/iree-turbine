@@ -37,17 +37,23 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph):
     return custom
 
 
-def emit_local_reduction(
-    binary_fn: Callable, src: list[fx.Node], graph: fx.Graph, local_reduction_size: int
+def emit_sources_reduction(
+    binary_fn: Callable, src: list[fx.Node], graph: fx.Graph
 ) -> fx.Node:
-    init = None
-    for i in range(len(src)):
-        for j in range(local_reduction_size):
-            if init is None:
-                init = get_graph_node(Extract(src[i], [j]), graph)
-                continue
-            cur_slice = get_graph_node(Extract(src[i], [j]), graph)
-            init = get_graph_node(binary_fn(init, cur_slice), graph)
+    init = src[0]
+    for i in range(1, len(src)):
+        init = get_graph_node(binary_fn(init, src[i]), graph)
+    init.index = src[0].index
+    return init
+
+
+def emit_local_reduction(
+    binary_fn: Callable, src: fx.Node, graph: fx.Graph, local_reduction_size: int
+) -> fx.Node:
+    init = get_graph_node(Extract(src, [0]), graph)
+    for i in range(1, local_reduction_size):
+        cur_slice = get_graph_node(Extract(src, [i]), graph)
+        init = get_graph_node(binary_fn(init, cur_slice), graph)
     return init
 
 
@@ -71,11 +77,12 @@ def decompose_reduce_ops(
 ):
     """
     The lowering for multi_reduction is done in two steps:
-      1. Local Reduce: Each thread reduces all elements carried by it along
+      1. Source Reduce: Each thread reduce locally all it's sources.
+      2. Local Reduce: Each thread reduces all elements carried by it along
          the reduction dimensions.
-      2. Thread Reduce: Each thread reduces result of step 1 across threads
+      3. Thread Reduce: Each thread reduces result of step 1 across threads
          by doing a butterfly shuffle.
-      3. Accumulator Reduce: Each thread reduces it's intermediate reduced
+      4. Accumulator Reduce: Each thread reduces it's intermediate reduced
          results with the accumulator it holds.
     """
     # Get reducte nodes.
@@ -128,8 +135,11 @@ def decompose_reduce_ops(
                 raise NotImplementedError(
                     "NYI: Expect all reduce_src to have same local reduce size."
                 )
+            src_reduction = emit_sources_reduction(
+                binary_fn, reduction_src, custom.graph
+            )
             local_reduction = emit_local_reduction(
-                binary_fn, reduction_src, custom.graph, local_reduce_sizes[0]
+                binary_fn, src_reduction, custom.graph, local_reduce_sizes[0]
             )
 
             # Global Reduce
