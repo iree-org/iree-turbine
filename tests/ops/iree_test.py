@@ -36,7 +36,7 @@ class TransferToLogicalDeviceTest(unittest.TestCase):
     def testEager(self):
         t1 = torch.randn(3, 4)
         t2 = ops.iree.transfer_to_logical_device("1", t1)
-        self.assertIs(t1, t2)
+        assert torch.all(t1 == t2)
 
     def testAOT(self):
         class MyModule(nn.Module):

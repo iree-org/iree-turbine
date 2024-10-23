@@ -89,7 +89,7 @@ class transfer_to_logical_device(CustomOp):
         ksel.return_tensor(ta.t).specialize_dims(*spec)
 
     def eager_execute(self, device_moniker, tensor):
-        return tensor
+        return tensor.clone()
 
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
         moniker = cast(AttrArg, ksel.arg_descs[0]).v
