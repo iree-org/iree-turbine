@@ -61,10 +61,10 @@ def test_save_load_dynamic_shapes():
     prog_0 = new_programs.programs["dynamic_batch"]
     prog_1 = new_programs.programs["bs32"]
 
-    for key, value_0 in prog_0.state_dict.items():
-        value_1 = prog_1.state_dict[key]
+    for key, value_0 in prog_0.target.state_dict.items():
+        value_1 = prog_1.target.state_dict[key]
         assert value_0 is value_1, f"State dict item {key} was not aliased on load"
 
-    for key, value_0 in prog_0.constants.items():
-        value_1 = prog_1.constants[key]
+    for key, value_0 in prog_0.target.constants.items():
+        value_1 = prog_1.target.constants[key]
         assert value_0 is value_1, f"Constant item {key} was not aliased on load"

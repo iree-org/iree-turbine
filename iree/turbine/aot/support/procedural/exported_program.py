@@ -45,12 +45,15 @@ from ....support.ir_imports import (
 )
 
 from ...tensor_traits import (
+    DeviceAffinity,
     ExternalTensorTrait,
 )
 
 from ..ir_utils import (
+    attributes_from_argument_device_affinities,
     GlobalAttributes,
     ModuleBuilder,
+    update_func_op_argument_attributes,
 )
 
 from .base import (
@@ -70,6 +73,9 @@ from .primitives import (
 from .tracer import (
     IrTrace,
 )
+
+from typing import TYPE_CHECKING
+
 
 # Limit of tensor volumes. Over this limit, otherwise uncategorized tensor
 # constants will be emitted out-of-line. Under the limit, inline.
@@ -178,6 +184,7 @@ def import_exported_program(
     exported_program: torch.export.ExportedProgram,
     symbol_name: str,
     symbol_visibility: Optional[str],
+    arg_device: dict[int, DeviceAffinity] | None,
 ) -> ExportedProgramIntrinsic:
     fx_importer = _create_fx_importer(module_builder)
     entry_func_op = fx_importer.import_program(
@@ -185,6 +192,14 @@ def import_exported_program(
         func_name=symbol_name,
         func_visibility=symbol_visibility,
         import_symbolic_shape_expressions=module_builder.options.import_symbolic_shape_expressions,
+    )
+    update_func_op_argument_attributes(
+        entry_func_op,
+        attributes_from_argument_device_affinities(
+            arg_device,
+            len(entry_func_op.arguments),
+            entry_func_op.context,
+        ),
     )
 
     module_call_graph = exported_program.module_call_graph

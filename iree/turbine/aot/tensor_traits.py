@@ -11,8 +11,24 @@ import torch
 
 
 __all__ = [
+    "DeviceAffinity",
     "ExternalTensorTrait",
 ]
+
+
+class DeviceAffinity:
+    """This is used to provide device affinities to exported function arguments."""
+
+    def __init__(self, ordinal: int):
+        self.ordinal = ordinal
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, DeviceAffinity):
+            return False
+        return self.ordinal == other.ordinal
+
+    def __repr__(self) -> str:
+        return f"DeviceAffinity({self.ordinal})"
 
 
 @dataclass

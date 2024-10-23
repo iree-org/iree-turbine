@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Optional, Union
+from .compiled_module import ExportTargetDef
 
 import functools
 
@@ -21,6 +22,12 @@ import torch
 import torch.nn as nn
 
 from .decompositions import current_aot_decompositions
+from .tensor_traits import DeviceAffinity
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .compiled_module import ExportTargetDef
 
 # The dynamic_shapes support showed up in the Torch 2.3 timeframe.
 _supports_dynamic_shapes = hasattr(torch.export, "Dim")
@@ -61,7 +68,7 @@ class FxPrograms:
     """
 
     def __init__(self):
-        self.programs: dict[str, torch.export.ExportedProgram] = {}
+        self.programs: dict[str, ExportTargetDef] = {}
 
     def save(self, path: Union[str, os.PathLike]) -> int:
         """Saves the set of exported programs to a descriptor file.
@@ -86,7 +93,9 @@ class FxPrograms:
         count_deduped = 0
 
         # Save each.
-        for program_name, ep in self.programs.items():
+        for program_name, export_def in self.programs.items():
+            ep = export_def.target
+            assert isinstance(ep, torch.export.ExportedProgram)
             # First validate the ep with normal rules, which we will then
             # disable since we are violating the spec.
             ep._validate()
@@ -129,7 +138,7 @@ class FxPrograms:
             ep = torch.export.load(path.parent / program_file_name)
             _unsharify_state_dict(shared_state_dict, ep.state_dict)
             _unsharify_state_dict(shared_constants, _get_optional_constants(ep))
-            instance.programs[program_name] = ep
+            instance.programs[program_name] = ExportTargetDef(ep)
         return instance
 
 
@@ -169,6 +178,7 @@ class FxProgramsBuilder(FxPrograms):
         dynamic_shapes=None,
         strict: bool = True,
         name: Optional[str] = None,
+        arg_device: dict[int, DeviceAffinity] | None = None,
     ):
         if f is None:
             return functools.partial(
@@ -178,6 +188,7 @@ class FxProgramsBuilder(FxPrograms):
                 strict=strict,
                 dynamic_shapes=dynamic_shapes,
                 name=name,
+                arg_device=arg_device,
             )
 
         if name is None:
@@ -234,7 +245,10 @@ class FxProgramsBuilder(FxPrograms):
 
             _patch_op_dispatch_for_export()
             program = program.run_decompositions(current_decomps)
-        fx_builder.programs[name] = program
+        fx_builder.programs[name] = ExportTargetDef(
+            program,
+            arg_device=arg_device,
+        )
         return program
 
 

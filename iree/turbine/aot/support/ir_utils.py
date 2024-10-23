@@ -10,6 +10,7 @@ from typing import Callable, Dict, Optional, Sequence, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 import tempfile
+from itertools import zip_longest
 
 import numpy as np
 import torch
@@ -26,11 +27,13 @@ from ...dynamo.type_conversion import (
 )
 
 from ...support.ir_imports import (
-    AsmState,
+    ArrayAttr,
     Attribute,
     BF16Type,
+    Context,
     DenseElementsAttr,
     DenseResourceElementsAttr,
+    DictAttr,
     F16Type,
     F32Type,
     F64Type,
@@ -63,6 +66,7 @@ from ...support.conversions import (
 from ...support.logging import aot_logger as logger
 
 from ..tensor_traits import (
+    DeviceAffinity,
     ExternalTensorTrait,
 )
 
@@ -235,6 +239,8 @@ class ModuleBuilder:
         argument_types: Sequence[IrType],
         is_public: bool = True,
         add_entry_block: bool = True,
+        # Array of DictAttr corresponding to the attributes for each argument.
+        argument_attributes: ArrayAttr | list[DictAttr] | None = None,
     ) -> Tuple[str, func_d.FuncOp]:
         with self.ip:
             ftype = FunctionType.get(argument_types, [])
@@ -245,6 +251,8 @@ class ModuleBuilder:
                 func_op.add_entry_block()
             self.symbol_table.insert(func_op)
             actual_symbol_name = StringAttr(func_op.attributes["sym_name"]).value
+            if argument_attributes is not None:
+                func_op.arg_attrs = argument_attributes
             return actual_symbol_name, func_op
 
     def torch_dtype_to_iree_type(self, dtype: torch.dtype) -> IrType:
@@ -470,3 +478,48 @@ def _is_float_type(type):
 
 def _is_integer_like_type(type):
     return isinstance(type, (IntegerType, IndexType))
+
+
+def _attribute_from_device_affinity(
+    affinity: DeviceAffinity, context: Context
+) -> Attribute:
+    return Attribute.parse(
+        f'#hal.device.promise<@"__device_{affinity.ordinal}">', context
+    )
+
+
+def attributes_from_argument_device_affinities(
+    affinities: dict[int, DeviceAffinity] | None,
+    arguments_count: int,
+    context: Context,
+) -> list[dict[str, Attribute]]:
+    """Get as attributes for function op arguments."""
+    if affinities is None:
+        return [{} for _ in range(arguments_count)]
+    return [
+        {"iree.abi.affinity": _attribute_from_device_affinity(affinities[i], context)}
+        if i in affinities
+        else {}
+        for i in range(arguments_count)
+    ]
+
+
+def update_func_op_argument_attributes(
+    func_op: func_d.FuncOp, attributes: list[dict[str, Attribute]]
+):
+    if func_d.ARGUMENT_ATTRIBUTE_NAME not in func_op.attributes:
+        mutable_arg_attrs: list[dict[str, Attribute]] = [
+            {} for _ in range(len(func_op.arguments))
+        ]
+    else:
+        mutable_arg_attrs = [
+            {named_attr.name: named_attr.attr for named_attr in dict_attr}
+            for dict_attr in func_op.arg_attrs
+        ]
+
+    for src, dst in zip_longest(attributes, mutable_arg_attrs):
+        dst.update(src)
+
+    func_op.arg_attrs = [
+        DictAttr.get(d, context=func_op.context) for d in mutable_arg_attrs
+    ]
