@@ -11,6 +11,7 @@ from iree.compiler.ir import (
     ArrayAttr,
     AsmState,
     Attribute,
+    ArrayAttr,
     Block,
     BlockArgument,
     Context,
