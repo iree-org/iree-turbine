@@ -38,7 +38,7 @@ class DeviceTensorTrait:
     it is to be loaded to a speific device at execution time.
     """
 
-    device_id: str
+    ordinal: int
 
     @staticmethod
     def get(from_tensor: torch.Tensor) -> Optional["DeviceTensorTrait"]:

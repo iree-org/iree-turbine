@@ -123,7 +123,7 @@ class ExternalTensorTest(unittest.TestCase):
 class DeviceTensorTest(unittest.TestCase):
     def testDeviceTensorTrait(self):
         t = torch.ones([2, 3], dtype=torch.float32)
-        trait = DeviceTensorTrait(device_id="__device_who")
+        trait = DeviceTensorTrait(ordinal=7)
         self.assertIsNone(trait.get(t))
         trait.set(t)
         self.assertIs(DeviceTensorTrait.get(t), trait)
