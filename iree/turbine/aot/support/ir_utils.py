@@ -67,6 +67,7 @@ from ...support.logging import aot_logger as logger
 
 from ..tensor_traits import (
     DeviceAffinity,
+    DeviceTensorTrait,
     ExternalTensorTrait,
 )
 
@@ -272,6 +273,7 @@ class ModuleBuilder:
     ) -> Tuple[str, Operation, IrType]:
         element_type = self.torch_dtype_to_iree_type(t.dtype)
         external, external_scope, external_name = attrs.infer_external_from_tensor(t)
+        device = DeviceTensorTrait.get(t)
 
         # Always create globals at the top. Then after created, if there was
         # a prior one, move the new one to after it to maintain declaration
@@ -287,6 +289,10 @@ class ModuleBuilder:
                 ir_attrs["noinline"] = UnitAttr.get()
             if attrs.mutable:
                 ir_attrs["is_mutable"] = UnitAttr.get()
+            if device:
+                ir_attrs["iree.abi.affinity"] = Attribute.parse(
+                    f"#hal.device.promise<@{device.device_id}>"
+                )
             if external:
                 # Emit named external reference.
                 external_scope_attr = StringAttr.get(external_scope or "model")

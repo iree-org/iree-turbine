@@ -16,6 +16,7 @@ from iree.turbine.aot import (
     export,
     externalize_module_parameters,
     save_module_parameters,
+    DeviceTensorTrait,
     ExternalTensorTrait,
     ParameterArchive,
     ParameterArchiveBuilder,
@@ -117,6 +118,15 @@ class ExternalTensorTest(unittest.TestCase):
         self.assertIsNone(trait.get(t))
         trait.set(t)
         self.assertIs(ExternalTensorTrait.get(t), trait)
+
+
+class DeviceTensorTest(unittest.TestCase):
+    def testDeviceTensorTrait(self):
+        t = torch.ones([2, 3], dtype=torch.float32)
+        trait = DeviceTensorTrait(device_id="__device_who")
+        self.assertIsNone(trait.get(t))
+        trait.set(t)
+        self.assertIs(DeviceTensorTrait.get(t), trait)
 
 
 if __name__ == "__main__":
