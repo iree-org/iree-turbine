@@ -23,7 +23,7 @@ from ..ops.wave_ops import (
     Reduction,
 )
 
-from .utils import DCE, subs_idxc
+from .utils import DCE, subs_idxc, all_equal
 import torch.fx as fx
 import math
 from typing import Callable
@@ -35,6 +35,16 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph):
     custom.add_to_graph(graph)
     custom = custom.fx_node
     return custom
+
+
+def emit_sources_reduction(
+    binary_fn: Callable, src: list[fx.Node], graph: fx.Graph
+) -> fx.Node:
+    init = src[0]
+    for i in range(1, len(src)):
+        init = get_graph_node(binary_fn(init, src[i]), graph)
+    init.index = src[0].index
+    return init
 
 
 def emit_local_reduction(
@@ -67,11 +77,12 @@ def decompose_reduce_ops(
 ):
     """
     The lowering for multi_reduction is done in two steps:
-      1. Local Reduce: Each thread reduces all elements carried by it along
+      1. Source Reduce: Each thread reduce locally all it's sources.
+      2. Local Reduce: Each thread reduces all elements carried by it along
          the reduction dimensions.
-      2. Thread Reduce: Each thread reduces result of step 1 across threads
+      3. Thread Reduce: Each thread reduces result of step 2 across threads
          by doing a butterfly shuffle.
-      3. Accumulator Reduce: Each thread reduces it's intermediate reduced
+      4. Accumulator Reduce: Each thread reduces it's intermediate reduced
          results with the accumulator it holds.
     """
     # Get reducte nodes.
@@ -98,9 +109,18 @@ def decompose_reduce_ops(
                 raise ValueError(
                     "No reduction dim specified, please specify a reduction dim."
                 )
+            if not isinstance(reduction_src, (list, tuple)):
+                reduction_src = [reduction_src]
 
             # Local Reduce
-            if reduction_dim is not get_custom(custom.arg).type.symbolic_shape[-1]:
+            src_fastest_dims = [
+                get_custom(arg).type.symbolic_shape[-1] for arg in reduction_src
+            ]
+            if not all_equal(src_fastest_dims):
+                raise NotImplementedError(
+                    "NYI: Expect all reduce_src to have same fastest dim."
+                )
+            if reduction_dim is not src_fastest_dims[0]:
                 raise NotImplementedError(
                     "Only implemented reduction on fastest dimension."
                 )
@@ -108,9 +128,18 @@ def decompose_reduce_ops(
             get_thread_shape = lambda index: max(
                 subs_idxc(x.size) for x in index.values()
             )
-            local_reduction_size = get_thread_shape(get_custom(custom.arg).index)
+            local_reduce_sizes = [
+                get_thread_shape(get_custom(arg).index) for arg in reduction_src
+            ]
+            if not all_equal(local_reduce_sizes):
+                raise NotImplementedError(
+                    "NYI: Expect all reduce_src to have same local reduce size."
+                )
+            src_reduction = emit_sources_reduction(
+                binary_fn, reduction_src, custom.graph
+            )
             local_reduction = emit_local_reduction(
-                binary_fn, reduction_src, custom.graph, local_reduction_size
+                binary_fn, src_reduction, custom.graph, local_reduce_sizes[0]
             )
 
             # Global Reduce
