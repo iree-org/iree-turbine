@@ -80,7 +80,7 @@ def decompose_reduce_ops(
       1. Source Reduce: Each thread reduce locally all it's sources.
       2. Local Reduce: Each thread reduces all elements carried by it along
          the reduction dimensions.
-      3. Thread Reduce: Each thread reduces result of step 1 across threads
+      3. Thread Reduce: Each thread reduces result of step 2 across threads
          by doing a butterfly shuffle.
       4. Accumulator Reduce: Each thread reduces it's intermediate reduced
          results with the accumulator it holds.
