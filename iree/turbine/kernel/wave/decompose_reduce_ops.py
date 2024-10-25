@@ -11,7 +11,7 @@ from ..wave.constraints import (
     TilingConstraint,
 )
 from .._support.tracing import CapturedTrace
-from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
+from .._support.indexing import IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import (
     get_custom,
     Add,
@@ -22,6 +22,7 @@ from ..ops.wave_ops import (
     Extract,
     Reduction,
 )
+from ..lang.global_symbols import *
 
 from .utils import DCE, subs_idxc, all_equal
 import torch.fx as fx
@@ -29,6 +30,51 @@ import math
 from typing import Callable
 
 TKW_COMBINER = {"sum": Add, "max": Maximum}
+
+
+def determine_shuffle_config(
+    index: dict[IndexSymbol, IndexSequence],
+    reduction_dim: IndexSymbol,
+    vector_shapes: dict[IndexSymbol, int],
+    subgroup_size: int,
+    induction_vars: list[IndexSymbol],
+):
+    """
+    This function determines the cluster size and stride for a given index.
+    The cluster size specifies the number of threads that participate in a shuffle.
+    The cluster stride specifies the stride between the threads. In order to
+    determine the cluster stride, we do a binary search on the start value of the
+    index sequence.
+
+    """
+    access_pattern = index[reduction_dim]
+    elements_per_thread = access_pattern.size
+    cluster_size = vector_shapes[reduction_dim] // elements_per_thread
+
+    # Since we are only concerned with what happens within a subgroup,
+    # we can ignore the TID_1 and TID_2 components of the index. We can
+    # also ignore the GPR_NUM since we can assume we are only dealing with the
+    # same GPR_NUM. We ignore the workgroup indices and induction variables as well.
+    # Finally, we substitute in all variables that are known in the indexing context.
+    ignore = [
+        THREAD_1,
+        THREAD_2,
+        GPR_NUM,
+        WORKGROUP_0,
+        WORKGROUP_1,
+        WORKGROUP_2,
+    ] + induction_vars
+    offset = access_pattern.start.subs({k: 0 for k in ignore})
+    offset = subs_idxc(offset)
+    offset_table = [offset.subs({THREAD_0: i}) for i in range(subgroup_size)]
+    # Determine the thread ids participating in the shuffle.
+    thread_ids = []
+    for i in range(cluster_size):
+        thread_ids.append(offset_table.index(i * elements_per_thread))
+
+    cluster_stride = [x - y for x, y in zip(thread_ids[1:], thread_ids[:-1])]
+    assert all_equal(cluster_stride), f"Cluster stride must be equal across threads."
+    return cluster_size, cluster_stride[0]
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph):
@@ -58,15 +104,20 @@ def emit_local_reduction(
 
 
 def emit_global_reduction(
-    binary_fn: Callable, src: fx.Node, graph: fx.Graph, subgroup_size: int
+    binary_fn: Callable,
+    src: fx.Node,
+    graph: fx.Graph,
+    subgroup_size: int,
+    cluster_size: int,
+    cluster_stride: int,
 ) -> fx.Node:
     init = src
-    num_steps = int(math.log2(float(subgroup_size)))
-    for i in range(num_steps):
-        shuffle_offset = 2**i
-        shuffle_val = ShuffleOp(init, shuffle_offset, subgroup_size)
+    num_steps = int(math.log2(float(cluster_size)))
+    for _ in range(num_steps):
+        shuffle_val = ShuffleOp(init, cluster_stride, subgroup_size)
         shuffle_node = get_graph_node(shuffle_val, graph)
         init = get_graph_node(binary_fn(init, shuffle_node), graph)
+        cluster_stride <<= 1
     return init
 
 
@@ -99,6 +150,9 @@ def decompose_reduce_ops(
         for c in constraints
         if isinstance(c, TilingConstraint) or isinstance(c, WorkgroupConstraint)
     }
+    induction_vars = [
+        c.induction_var for c in constraints if isinstance(c, TilingConstraint)
+    ]
     subgroup_size = hardware_constraint.threads_per_wave
     for node in reduce_nodes:
         custom = get_custom(node)
@@ -143,8 +197,20 @@ def decompose_reduce_ops(
             )
 
             # Global Reduce
+            cluster_size, cluster_stride = determine_shuffle_config(
+                reduction_src[0].index,
+                reduction_dim,
+                node.vector_shapes,
+                subgroup_size,
+                induction_vars,
+            )
             global_reduction = emit_global_reduction(
-                binary_fn, local_reduction, custom.graph, subgroup_size
+                binary_fn,
+                local_reduction,
+                custom.graph,
+                subgroup_size,
+                cluster_size,
+                cluster_stride,
             )
 
             # Local Accumulator Reduce
