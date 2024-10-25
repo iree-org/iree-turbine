@@ -4,7 +4,15 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from ..ops.wave_ops import Write, ExtractSlice, get_custom, Reduction
+from ..ops.wave_ops import (
+    Write,
+    ExtractSlice,
+    get_custom,
+    Reduction,
+    MMA,
+    Placeholder,
+    IterArg,
+)
 from .constraints import Constraint, HardwareConstraint, WorkgroupConstraint
 from .._support.tracing import CapturedTrace, IndexingContext
 from .._support.indexing import IndexSymbol, IndexSequence
@@ -27,15 +35,10 @@ logger = get_logger("turbine.wave.index_sequence_analysis")
 
 
 def get_vector_shape(
-    hardware_constraint: HardwareConstraint,
+    vector_shapes: dict[IndexSymbol, int],
     symbolic_shape: list[IndexSymbol],
 ) -> list[int]:
-    assert all(
-        dim in hardware_constraint.vector_shapes for dim in symbolic_shape
-    ), "Missing vector shape in hardware constraint"
-    vector_shapes = [
-        max(hardware_constraint.vector_shapes[dim], 1) for dim in symbolic_shape
-    ]
+    vector_shapes = [max(vector_shapes[dim], 1) for dim in symbolic_shape]
     return vector_shapes
 
 
@@ -81,7 +84,9 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             for dim in custom.index
         }
 
-        shape = get_vector_shape(hw_constraint, custom.register_type.symbolic_shape)
+        shape = get_vector_shape(
+            custom.vector_shapes, custom.register_type.symbolic_shape
+        )
         elements_per_thread = subs_idxc(custom.elements_per_thread)
         max_stride_dim, max_stride = max(
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
@@ -124,6 +129,7 @@ def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
     mma_index, mma_slices = get_mma_dimensional_mapping(
         trace, get_hardware_constraint(constraints)
     )
+    trace.walk(partial(set_vector_shapes, constraints, mma_index, mma_slices))
     trace.walk(partial(set_node_index, constraints, mma_index, mma_slices))
 
 
@@ -166,10 +172,49 @@ def is_contiguous_dim(
     return is_innermost_dim or all_unit_dims
 
 
+def set_vector_shapes(
+    constraints: Sequence[Constraint],
+    mma_index: dict[MMA, dict[IndexSymbol, int]],
+    mma_slices: dict[MMA, dict[IndexSymbol, list[fx.Node]]],
+    node: fx.Node,
+):
+    """
+    Set the vector shapes for the specific op based on whether the op lies in
+    an MMA slice as well as the anchor node.
+    """
+    custom = get_custom(node)
+    # MMA & Reduction nodes already have their vector shapes set.
+    if isinstance(custom, (MMA, Reduction)):
+        return
+    # Add vector shapes from constraints to all ops. These are global constraints.
+    custom.vector_shapes = {}
+    hw_constraint = get_hardware_constraint(constraints)
+    if hw_constraint.vector_shapes:
+        custom.vector_shapes = hw_constraint.vector_shapes
+
+    if len(mma_slices) == 1:
+        # If there is just one MMA slice, there is no ambiguity in the vector shapes
+        # and we set that singular MMA op as the anchor for all ops.
+        mma = list(mma_slices.keys())[0]
+        custom.anchor = mma
+        custom.vector_shapes = custom.vector_shapes | mma.vector_shapes
+        return
+
+    for mma in mma_slices:
+        if (
+            node in mma_slices[mma][MMA_ACC]
+            or node in mma_slices[mma][MMA_LHS]
+            or node in mma_slices[mma][MMA_RHS]
+        ):
+            custom.anchor = mma
+            custom.vector_shapes = custom.vector_shapes | mma.vector_shapes
+            return
+
+
 def set_node_index(
     constraints: Sequence[Constraint],
-    mma_index: dict[IndexSymbol, int],
-    mma_slices: dict[IndexSymbol, list[fx.Node]],
+    mma_index: dict[MMA, dict[IndexSymbol, int]],
+    mma_slices: dict[MMA, dict[IndexSymbol, list[fx.Node]]],
     node: fx.Node,
 ):
     """
@@ -198,10 +243,11 @@ def set_node_index(
     # The semantics of elements_per_thread are that it represents the number of
     # elements that are loaded contiguously from memory.
     custom = get_custom(node)
+    anchor = custom.anchor
 
     elements_per_thread = getattr(custom, "elements_per_thread", None)
 
-    if isinstance(custom, Reduction):
+    if isinstance(custom, (Reduction, Placeholder)) and not isinstance(custom, IterArg):
         return
 
     for dim in custom.indexing_dims:
@@ -209,8 +255,8 @@ def set_node_index(
         for constraint in sorted_constraints:
             if isinstance(constraint, HardwareConstraint):
                 inputs = None
-                if dim in mma_index:
-                    inputs = (mma_index[dim], elements_per_thread, None)
+                if anchor and dim in mma_index[anchor]:
+                    inputs = (mma_index[anchor][dim], elements_per_thread, None)
                 else:
                     # Assumes vector shapes are associated with workgroup dims.
                     if dim not in workgroup_constraints:
@@ -240,9 +286,13 @@ def set_node_index(
                         # dependence in the dimensional index.
                         # TODO: Evaluate if this is a valid case.
                         continue
-                index_seq = constraint.apply(dim, *inputs, dim in mma_index)
-                if dim in mma_index:
-                    index_seq = specialize_index_sequence(index_seq, mma_slices, custom)
+                index_seq = constraint.apply(
+                    dim, *inputs, anchor and dim in mma_index[anchor]
+                )
+                if anchor and dim in mma_index[anchor]:
+                    index_seq = specialize_index_sequence(
+                        index_seq, mma_slices[anchor], custom
+                    )
 
             elif constraint.dim == dim:
                 if index_seq is None:
@@ -262,7 +312,6 @@ def set_post_expansion_indices(trace: CapturedTrace, constraints: list[Constrain
     """
     Add offsets to the indices based on the expanded dims.
     """
-    hw_cons = get_hardware_constraint(constraints)
 
     def apply_offset(node: fx.Node):
         custom = get_custom(node)
@@ -270,7 +319,7 @@ def set_post_expansion_indices(trace: CapturedTrace, constraints: list[Constrain
             return False
         for dim, scale in custom.expanded_dims.items():
             if dim in custom.index:
-                custom.index[dim].start += scale * hw_cons.vector_shapes[dim]
+                custom.index[dim].start += scale * custom.vector_shapes[dim]
         return False
 
     trace.walk(apply_offset)

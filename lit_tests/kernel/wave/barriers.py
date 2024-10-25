@@ -115,13 +115,13 @@ def test_read_write_equal_sizes():
         # CHECK-SAME: (%read_0_1, %allocate, 4, None)
         # CHECK-NEXT: %shared_memory_barrier
         # CHECK-NEXT: %read_shared_0_0
-        # CHECK-SAME: (%allocate, 4, None, [%write_shared_0_0])
+        # CHECK-SAME: (%allocate, 4, None, [%write_shared_0_0]
         # CHECK-NEXT: %read_shared_1_1
-        # CHECK-SAME: (%allocate, 4, None, [%write_shared_1_1])
+        # CHECK-SAME: (%allocate, 4, None, [%write_shared_1_1]
         # CHECK-NEXT: %read_shared_1_0
-        # CHECK-SAME: (%allocate, 4, None, [%write_shared_1_0])
+        # CHECK-SAME: (%allocate, 4, None, [%write_shared_1_0]
         # CHECK-NEXT: %read_shared_0_1
-        # CHECK-SAME: (%allocate, 4, None, [%write_shared_0_1])
+        # CHECK-SAME: (%allocate, 4, None, [%write_shared_0_1]
         # CHECK-NEXT: %write_0_0
         # CHECK-SAME: (%read_shared_0_0, %c, 4, None)
         # CHECK-NEXT: %write_1_1
