@@ -615,7 +615,7 @@ class BinaryPyOp(CustomOp, ABC):
             raise ValueError(
                 "BinaryPyOp requires lhs and rhs shape to be at least broadcastable."
             )
-        broadcasted_type = lhs_type if lhs_dim_set > rhs_dim_set else rhstype
+        broadcasted_type = lhs_type if lhs_dim_set > rhs_dim_set else rhs_type
         return broadcasted_type
 
 

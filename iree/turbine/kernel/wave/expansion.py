@@ -630,7 +630,7 @@ def _handle_reduction_dim(
     # Collect MMA and ReduceOp who's reduction axis matches parent ReductionOp.
     reduction_root_ops = []
     for node in (get_custom(fx_node) for fx_node in reduction_subgraph.nodes):
-        if isinstance(node, MMA) and reduction.axis == node.reduction_dim:
+        if isinstance(node, (MMA, ReduceOp)) and reduction.axis == node.reduction_dim:
             reduction_root_ops.append(node)
 
     new_outputs = list(reduction.outputs(trace.get_subgraph(reduction.subgraph_name)))
@@ -643,14 +643,33 @@ def _handle_reduction_dim(
         op_output_index = get_output_index(root_op)
         if dim_scaling[reduction.axis] <= 1:
             continue
-        latest_reduced_op = _expand_mma_tiled_reduction(
-            root_op,
-            trace,
-            dims,
-            dim_scaling,
-            context,
-            get_node_dim_scaling,
-            res_idx,
-        )
+        if isinstance(root_op, MMA):
+            latest_reduced_op = _expand_mma_tiled_reduction(
+                root_op,
+                trace,
+                dims,
+                dim_scaling,
+                context,
+                get_node_dim_scaling,
+                res_idx,
+            )
+        elif isinstance(root_op, ReduceOp):
+            original_src = latest_reduced_op.arg
+            for scale_idx in range(1, dim_scaling[reduction.axis]):
+                dims[root_op.reduction_dim] = scale_idx
+                current_src = latest_reduced_op.arg
+                if not isinstance(current_src, Sequence):
+                    current_src = [current_src]
+                expanded_src = _expand_node(
+                    get_custom(original_src),
+                    trace,
+                    dims,
+                    dim_scaling,
+                    context,
+                    get_node_dim_scaling,
+                    res_idx,
+                )
+                current_src.append(expanded_src.fx_node)
+                latest_reduced_op.update_arg("arg", current_src)
         new_outputs[op_output_index] = latest_reduced_op.fx_node
     output.update_arg("return_vals", new_outputs)
