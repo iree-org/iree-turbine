@@ -125,12 +125,21 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         custom.graph.erase_node(operator)
 
 
+def preprocess_nodes(
+    constraints: Sequence[Constraint],
+    mma_index: dict[MMA, dict[IndexSymbol, int]],
+    mma_slices: dict[MMA, dict[IndexSymbol, list[fx.Node]]],
+    node: fx.Node,
+):
+    set_vector_shapes(constraints, mma_index, mma_slices, node)
+    set_node_index(constraints, mma_index, mma_slices, node)
+
+
 def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
     mma_index, mma_slices = get_mma_dimensional_mapping(
         trace, get_hardware_constraint(constraints)
     )
-    trace.walk(partial(set_vector_shapes, constraints, mma_index, mma_slices))
-    trace.walk(partial(set_node_index, constraints, mma_index, mma_slices))
+    trace.walk(partial(preprocess_nodes, constraints, mma_index, mma_slices))
 
 
 def compute_stride(
