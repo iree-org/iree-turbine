@@ -102,12 +102,19 @@ def testChainedGemm(
         )
     ]
 
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    k = tkw.IndexMapping.iterator(2)
+    mapping = tkw.IndexMapping(
+        num_iterators=3, inputs={B: i, M: j, N: k}, outputs={B: i, N: k, M: j}
+    )
+
     @tkw.wave(constraints)
     def chained_gemm(
         q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[B, N, M, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
@@ -126,7 +133,9 @@ def testChainedGemm(
             return acc
 
         # repeat represents the results of the loop
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(
+            repeat, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD
+        )
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -172,7 +181,7 @@ def testChainedGemm(
         q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[2], shape[4], dtype=torch.float16)
-        output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+        output = torch.zeros(shape[0], shape[2], shape[1], dtype=torch.float32)
         mb = chained_gemm(q, k, v, output)
 
         if test_dump_generated_mlir:
@@ -180,7 +189,7 @@ def testChainedGemm(
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
 
-        iree_ref = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+        iree_ref = torch.zeros(shape[0], shape[2], shape[1], dtype=torch.float32)
         generate_iree_ref(
             "chain_mmt", [q, k, v], [iree_ref], config, run_bench=run_bench
         )

@@ -16,10 +16,11 @@ def get_chain_mmt_asm(
     B, M, K1, input_dtype = query_type.split("x")
     B, K2, K1, input_dtype = key_type.split("x")
     B, N, K2, input_dtype = value_type.split("x")
-    B, M, N, output_dtype = output_type.split("x")
+    B, N, M, output_dtype = output_type.split("x")
     intermediate_output_type = f"{B}x{K2}x{M}x{output_dtype}"
     intermediate_cast_type = f"{B}x{K2}x{M}x{input_dtype}"
     transposed_cast_type = f"{B}x{M}x{K2}x{input_dtype}"
+    transposed_output_type = f"{B}x{M}x{N}x{output_dtype}"
     return f"""
     func.func @chain_mmt(%query: tensor<{query_type}>, %key: tensor<{key_type}>, %value: tensor<{value_type}>) -> tensor<{output_type}> {{
       %c0 = arith.constant 0.0 : f32
@@ -30,11 +31,13 @@ def get_chain_mmt_asm(
       %trunc = arith.truncf %result : tensor<{intermediate_output_type}> to tensor<{intermediate_cast_type}>
       %init2 = tensor.empty() : tensor<{transposed_cast_type}>
       %transpose = linalg.transpose ins(%trunc: tensor<{intermediate_cast_type}>) outs(%init2: tensor<{transposed_cast_type}>) permutation=[0, 2, 1]
-      %init3 = tensor.empty() : tensor<{output_type}>
-      %inital_result3 = linalg.fill ins(%c0 : f32) outs(%init3 : tensor<{output_type}>) -> tensor<{output_type}>
+      %init3 = tensor.empty() : tensor<{transposed_output_type}>
+      %inital_result3 = linalg.fill ins(%c0 : f32) outs(%init3 : tensor<{transposed_output_type}>) -> tensor<{transposed_output_type}>
       %result2 = linalg.batch_matmul_transpose_b ins(%transpose, %value: tensor<{transposed_cast_type}>, tensor<{value_type}>)
-                outs(%inital_result3 : tensor<{output_type}>) -> tensor<{output_type}>
-      return %result2 : tensor<{output_type}>
+                outs(%inital_result3 : tensor<{transposed_output_type}>) -> tensor<{transposed_output_type}>
+      %init4 = tensor.empty() : tensor<{output_type}>
+      %transpose2 = linalg.transpose ins(%result2: tensor<{transposed_output_type}>) outs(%init4: tensor<{output_type}>) permutation=[0, 2, 1]
+      return %transpose2 : tensor<{output_type}>
     }}"""
 
 
