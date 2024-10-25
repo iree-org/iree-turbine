@@ -66,6 +66,7 @@ from ..ops.wave_ops import (
     scheduling_barrier,
     scheduling_group_barrier,
     cast,
+    permute,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
@@ -1299,3 +1300,13 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
         )
 
     emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
+
+
+@handle_op(permute)
+def handle_permute(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, _ = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    vector_src = cast_py_value(emitter, register)
+    emitter.bind_node_proxy(node, vector_src)

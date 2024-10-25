@@ -134,6 +134,10 @@ def cast(src: "Register", dtype: DataType) -> "Register":
     ...
 
 
+def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -399,6 +403,10 @@ class CustomOp(ABC):
             new_node.index = copy.deepcopy(self.fx_node.index)
         if new_name:
             new_node.name = new_name
+        if hasattr(self.fx_node, "vector_shapes"):
+            new_node.vector_shapes = self.fx_node.vector_shapes
+        if hasattr(self.fx_node, "reduction_dim"):
+            new_node.reduction_dim = self.fx_node.reduction_dim
         return get_custom(new_node)
 
     def replace_all_uses_with(self, new_node: CustomOp | fx.Node):
@@ -520,12 +528,29 @@ class CustomOp(ABC):
             raise ValueError("Expanded dims must be a dict")
         self.fx_node.expanded_dims = value
 
-    def post_expansion(self, constraints: list["Constraint"]) -> None:
+    @property
+    def anchor(self) -> fx.Node:
         """
-        Hook for post-expansion operations. This is called after the arguments
-        of the node are expanded.
+        The anchor is a node that provides information to the node
+        such as vector_shapes, indexing information etc.
         """
-        pass
+        if hasattr(self.fx_node, "anchor"):
+            return self.fx_node.anchor
+        return None
+
+    @anchor.setter
+    def anchor(self, value: fx.Node):
+        self.fx_node.anchor = value
+
+    @property
+    def vector_shapes(self) -> dict[IndexSymbol, int]:
+        if hasattr(self.fx_node, "vector_shapes"):
+            return self.fx_node.vector_shapes
+        return None
+
+    @vector_shapes.setter
+    def vector_shapes(self, value: dict[IndexSymbol, int]):
+        self.fx_node.vector_shapes = value
 
     def align_index(self, constraints: list["Constraint"]) -> None:
         """
@@ -883,6 +908,15 @@ class MMA(CustomOp):
 
         self.index = align_index_vars(self.index, constraints)
 
+    @property
+    def reduction_dim(self) -> IndexSymbol:
+        if hasattr(self.fx_node, "reduction_dim"):
+            return self.fx_node.reduction_dim
+
+    @reduction_dim.setter
+    def reduction_dim(self, value: IndexSymbol):
+        self.fx_node.reduction_dim = value
+
 
 @define_op("read")
 @dataclass
@@ -1033,9 +1067,11 @@ class Reduction(CustomOp):
                 return_vals = output.return_vals[0]
                 return (
                     [
-                        get_custom(val).acc_index
-                        if isinstance(get_custom(val), MMA)
-                        else val.index
+                        (
+                            get_custom(val).acc_index
+                            if isinstance(get_custom(val), MMA)
+                            else val.index
+                        )
                         for val in return_vals
                     ]
                     if isinstance(return_vals, (Sequence))
@@ -1331,3 +1367,42 @@ class CastOp(CustomOp, ABC):
     def type(self) -> Memory:
         src_shape = get_custom(self.arg).type.symbolic_shape
         return Register[*src_shape, self.dtype]
+
+
+@define_op("permute")
+@dataclass
+class Permute(CustomOp, ABC):
+    """
+    Represents a permute operation that
+    permutes arg into the target shape.
+    """
+
+    arg: fx.Node
+    target_shape: Sequence[IndexExpr]
+
+    @property
+    def indexing_dims(self) -> list[IndexExpr]:
+        return self.target_shape
+
+    @property
+    def type(self) -> Register:
+        src_type = get_custom(self.arg).type
+        assert set(src_type.symbolic_shape) == set(
+            self.target_shape
+        ), f"Target shape {self.target_shape} must be a permutation of source shape {src_type.symbolic_shape}"
+        return Register[*self.target_shape, src_type.dtype]
+
+    @property
+    def index(self) -> Optional[dict[IndexSymbol, IndexSequence]]:
+        """
+        Computes the permuted index based on the target shape.
+        """
+        src_type = get_custom(self.arg).type
+        dim_map = {
+            tgt: src for src, tgt in zip(src_type.symbolic_shape, self.target_shape)
+        }
+        return {tgt: get_custom(self.arg).index[src] for tgt, src in dim_map.items()}
+
+    @index.setter
+    def index(self, value: Any):
+        CustomOp.index.fset(self, value)

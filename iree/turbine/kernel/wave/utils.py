@@ -194,23 +194,23 @@ def simplify_index(index: IndexExpr) -> IndexExpr:
 def get_mma_dimensional_mapping(
     trace: CapturedTrace,
     hardware_constraint: HardwareConstraint,
-) -> tuple[dict[IndexSymbol, int], dict[IndexSymbol, list[fx.Node]]]:
+) -> tuple[
+    dict[MMA, dict[IndexSymbol, int]], dict[MMA, dict[IndexSymbol, list[fx.Node]]]
+]:
     """
     Given a trace, determine the MMA dimensional mapping for all the
     MMA operations in the graph. For example, if we have
         acc = tkw.mma(a_reg, b_reg, acc)
     where a_reg has shape UxV, b has shape SxV and acc has shape UxS,
     we map U to the MMA M dimension (0), S to the MMA N dimension (1) and
-    V to the MMA K dimension (2).
-
-    Also update the vector shapes in the hardware constraint based on the
-    discovered MMA dimensions.
+    V to the MMA K dimension (2). We maintain this map per mma node and
+    also update the vector_shapes of the mma node based on this information.
     """
 
     def is_mma(node):
         return isinstance(get_custom(node), MMA)
 
-    mapping: dict[IndexSymbol, int] = {}
+    mapping: dict[MMA, dict[IndexSymbol, int]] = {}
     mma_nodes = trace.walk(is_mma)
     for node in mma_nodes:
         custom: MMA = get_custom(node)
@@ -219,18 +219,30 @@ def get_mma_dimensional_mapping(
         rhs_shape = custom.rhs_type.symbolic_shape
         acc_shape = custom.acc_type.symbolic_shape
         k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
-        mapping[m] = 0
-        mapping[n] = 1
-        mapping[k] = 2
-        # Update vector shapes in hardware constraint.
-        M, N, K = hardware_constraint.mma_matrix_shapes
-        if not hardware_constraint.vector_shapes:
-            hardware_constraint.vector_shapes = {}
-        hardware_constraint.vector_shapes[m] = M
-        hardware_constraint.vector_shapes[n] = N
-        hardware_constraint.vector_shapes[k] = K
+        if custom not in mapping:
+            mapping[custom] = {}
+        mapping[custom][m] = 0
+        mapping[custom][n] = 1
+        mapping[custom][k] = 2
+        custom.vector_shapes = {
+            m: hardware_constraint.mma_matrix_shapes[0],
+            n: hardware_constraint.mma_matrix_shapes[1],
+            k: hardware_constraint.mma_matrix_shapes[2],
+        }
+        if hardware_constraint.vector_shapes:
+            custom.vector_shapes.update(hardware_constraint.vector_shapes)
+        custom.anchor = custom
+        custom.reduction_dim = k
 
-    return mapping, capture_mma_slices([get_custom(x) for x in mma_nodes])
+        # Since expansion proceeds bottom-up, we set the vector shapes
+        # of the parent reduction to the vector shapes of the last MMA node.
+        if hasattr(custom.graph, "parent_op"):
+            reduction = get_custom(custom.graph.parent_op)
+            reduction.vector_shapes = custom.vector_shapes
+            reduction.anchor = custom
+
+    mma_slices = {get_custom(x): capture_mma_slices(get_custom(x)) for x in mma_nodes}
+    return mapping, mma_slices
 
 
 def get_hardware_vector_size(
@@ -503,7 +515,9 @@ def get_users(
     """
     users = []
     for user in node.users:
-        custom = get_custom(user)
+        custom = user
+        if not isinstance(custom, CustomOp):
+            custom = get_custom(user)
         if isinstance(custom, Reduction):
             # Map init arg to iter arg
             reduction = custom
@@ -553,6 +567,9 @@ def get_inputs(
         # Map get result to output
         reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
         inputs.append(reduction.outputs(reduction_subgraph)[custom.res_idx])
+    elif isinstance(custom, Reduction):
+        reduction_subgraph = custom.get_root_graph().subgraphs[custom.subgraph_name]
+        inputs.append(custom.outputs(reduction_subgraph))
     else:
         # Default handling for other ops.
         for input in node.all_input_nodes:
@@ -602,16 +619,18 @@ def capture_backward_slice(
     return bfs(node, lambda x, y: get_inputs(x, y), filter_fn)
 
 
-def capture_mma_slices(mma_nodes: list[MMA]) -> dict[IndexSymbol, list[fx.Node]]:
+def capture_mma_slices(mma: MMA) -> dict[IndexSymbol, list[fx.Node]]:
     """
     Given an index sequence, specialize it to a LHS, RHS or ACC index sequence
     based on whether the node is used as the LHS, RHS or ACC in the MMA node.
     """
     mma_slices = {x: [] for x in [MMA_LHS, MMA_RHS, MMA_ACC]}
-    for mma in mma_nodes:
-        mma_slices[MMA_LHS] += capture_backward_slice(mma.lhs)
-        mma_slices[MMA_RHS] += capture_backward_slice(mma.rhs)
-        mma_slices[MMA_ACC] += capture_forward_slice(mma.acc)
+    is_not_mma = lambda x: not isinstance(get_custom(x), MMA)
+    mma_slices[MMA_LHS] += capture_backward_slice(mma.lhs, is_not_mma)
+    mma_slices[MMA_RHS] += capture_backward_slice(mma.rhs, is_not_mma)
+    mma_slices[MMA_ACC] += capture_forward_slice(mma.fx_node, is_not_mma).union(
+        capture_backward_slice(mma.acc, is_not_mma)
+    )
     return mma_slices
 
 

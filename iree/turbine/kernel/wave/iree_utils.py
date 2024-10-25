@@ -10,6 +10,34 @@ from .utils import compile_and_invoke
 from ...support.conversions import TORCH_DTYPE_TO_MLIR_TYPE_ASM
 
 
+def get_chain_mmt_asm(
+    query_type: str, key_type: str, value_type: str, output_type: str
+) -> str:
+    B, M, K1, input_dtype = query_type.split("x")
+    B, K2, K1, input_dtype = key_type.split("x")
+    B, N, K2, input_dtype = value_type.split("x")
+    B, M, N, output_dtype = output_type.split("x")
+    intermediate_output_type = f"{B}x{K2}x{M}x{output_dtype}"
+    intermediate_cast_type = f"{B}x{K2}x{M}x{input_dtype}"
+    transposed_cast_type = f"{B}x{M}x{K2}x{input_dtype}"
+    return f"""
+    func.func @chain_mmt(%query: tensor<{query_type}>, %key: tensor<{key_type}>, %value: tensor<{value_type}>) -> tensor<{output_type}> {{
+      %c0 = arith.constant 0.0 : f32
+      %init = tensor.empty() : tensor<{intermediate_output_type}>
+      %inital_result = linalg.fill ins(%c0 : f32) outs(%init : tensor<{intermediate_output_type}>) -> tensor<{intermediate_output_type}>
+      %result = linalg.batch_matmul_transpose_b ins(%key, %query : tensor<{key_type}>, tensor<{query_type}>)
+                outs(%inital_result : tensor<{intermediate_output_type}>) -> tensor<{intermediate_output_type}>
+      %trunc = arith.truncf %result : tensor<{intermediate_output_type}> to tensor<{intermediate_cast_type}>
+      %init2 = tensor.empty() : tensor<{transposed_cast_type}>
+      %transpose = linalg.transpose ins(%trunc: tensor<{intermediate_cast_type}>) outs(%init2: tensor<{transposed_cast_type}>) permutation=[0, 2, 1]
+      %init3 = tensor.empty() : tensor<{output_type}>
+      %inital_result3 = linalg.fill ins(%c0 : f32) outs(%init3 : tensor<{output_type}>) -> tensor<{output_type}>
+      %result2 = linalg.batch_matmul_transpose_b ins(%transpose, %value: tensor<{transposed_cast_type}>, tensor<{value_type}>)
+                outs(%inital_result3 : tensor<{output_type}>) -> tensor<{output_type}>
+      return %result2 : tensor<{output_type}>
+    }}"""
+
+
 def get_mmt_asm(
     lhs_type: str,
     rhs_type: str,
@@ -104,6 +132,12 @@ def generate_iree_ref(
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
         asm = get_mmt_asm(lhs_type, rhs_type, acc_type, batch=True)
+    elif kernel_type == "chain_mmt":
+        query_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
+        key_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
+        value_type = get_type_str(kernel_inputs[2].shape, kernel_inputs[2].dtype)
+        output_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
+        asm = get_chain_mmt_asm(query_type, key_type, value_type, output_type)
     elif kernel_type.startswith(conv_str):
         lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)

@@ -88,14 +88,22 @@ def handle_binaryop_conflict(custom_node: CustomOp) -> list[fx.Node]:
     # Determine the correct indexSize for binaryOp and insert broadcasting.
     dst_op = lhs if lhs_dim_set > rhs_dim_set else rhs
     broadcast_idx, broadcast_src = (1, rhs) if lhs_dim_set > rhs_dim_set else (0, lhs)
-    broadcast = Broadcast(broadcast_src.fx_node, dst_op.type)
     with custom_node.graph.inserting_before(custom_node.fx_node):
-        broadcast.add_to_graph(custom_node.graph)
-    custom_node.update_arg(broadcast_idx, broadcast.fx_node)
-    propagated_resolutions = capture_forward_slice(broadcast.fx_node, propagatable_op)
+        broadcast = Broadcast(broadcast_src.fx_node, dst_op.type).add_to_graph(
+            custom_node.graph
+        )
+        custom_broadcast = get_custom(broadcast)
+        custom_broadcast.vector_shapes = broadcast_src.vector_shapes
+        custom_broadcast.anchor = broadcast_src.anchor
+        custom_node.update_arg(broadcast_idx, custom_broadcast.fx_node)
+    propagated_resolutions = capture_forward_slice(
+        custom_broadcast.fx_node, propagatable_op
+    )
     for node in propagated_resolutions:
         get_custom(node).index = dst_op.index
-    resolved_resolutions = capture_backward_slice(broadcast.fx_node, propagatable_op)
+    resolved_resolutions = capture_backward_slice(
+        custom_broadcast.fx_node, propagatable_op
+    )
     return propagated_resolutions.union(resolved_resolutions)
 
 

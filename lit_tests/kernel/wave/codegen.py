@@ -751,6 +751,85 @@ def test_batched_gemm():
 
 
 @run_test
+def test_chained_gemm():
+    K1 = tkl.sym.K1
+    K2 = tkl.sym.K2
+    BLOCK_K2 = tkl.sym.BLOCK_K2
+
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+            vector_shapes={B: 0},
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def chained_gemm(
+        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+
+        @tkw.reduction(K2, init_args=[c_reg])
+        def repeat(
+            acc: tkl.Register[B, M, N, tkl.f32]
+        ) -> tkl.Register[B, M, N, tkl.f32]:
+            inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
+            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            kq_reg = tkw.mma(k_reg, q_reg, inner_acc)
+            qk_reg = tkw.permute(kq_reg, target_shape=[B, M, K2])
+            qk_cast_reg = tkw.cast(qk_reg, tkl.f16)
+            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            acc = tkw.mma(qk_cast_reg, v_reg, acc)
+            return acc
+
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 128,
+            N: 128,
+            K1: 32,
+            K2: 256,
+            B: 8,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
+            BLOCK_K2: 32,
+            BLOCK_B: 1,
+            LOAD_ELEMS_PER_THREAD: 4,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        q = torch.randn(8, 64, 64, dtype=torch.float16)
+        k = torch.randn(8, 256, 64, dtype=torch.float16)
+        v = torch.zeros(8, 128, 256, dtype=torch.float16)
+        output = torch.zeros(8, 64, 128, dtype=torch.float32)
+        print(chained_gemm(q, k, v, output).module_op)
+
+        # CHECK:           func.func @chained_gemm(
+        # CHECK:             {{.*}} = scf.for
+        # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-4:       {{.*}} = arith.truncf
+        # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
+        # CHECK:             scf.yield
+
+
+@run_test
 def test_gemm_pipelined():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
