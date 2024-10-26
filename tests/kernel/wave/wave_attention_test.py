@@ -62,6 +62,7 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     "mfma_variant",
     [
         MMAType.F32_16x16x16_F16,
+        MMAType.F32_32x32x8_F16,
     ],
 )
 def testChainedGemm(
@@ -262,6 +263,7 @@ def testAttention(
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
+
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
         @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])

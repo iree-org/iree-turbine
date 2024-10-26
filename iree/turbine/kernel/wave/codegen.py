@@ -67,6 +67,7 @@ from ..ops.wave_ops import (
     scheduling_group_barrier,
     cast,
     permute,
+    reshape,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
@@ -1310,3 +1311,36 @@ def handle_permute(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
     vector_src = cast_py_value(emitter, register)
     emitter.bind_node_proxy(node, vector_src)
+
+
+@handle_op(reshape)
+def handle_reshape(emitter: WaveEmitter, node: fx.Node):
+    try:
+        args, target_vector_shapes = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    custom = get_custom(node)
+    innermost_dim = custom.type.symbolic_shape[-1]
+    offset = custom.expanded_dims[innermost_dim]
+
+    # Determine whether to extract or combine.
+    if len(args) == 1:
+        # Extract the appropriate slice.
+        size = (
+            target_vector_shapes[innermost_dim] // custom.vector_shapes[innermost_dim]
+        )
+        vector = cast_vector(emitter, args[0])
+        result_type = VectorType.get([size], vector.type.element_type)
+        slice = vector_d.extract_strided_slice(
+            result_type,
+            vector,
+            [offset * size],
+            [size],
+            [1],
+        )
+        emitter.bind_node_proxy(node, IRProxyValue(slice))
+        return
+
+    raise NotImplementedError(
+        "reshape: Currently only handles cases where target_vector_shapes > custom.vector_shapes"
+    )

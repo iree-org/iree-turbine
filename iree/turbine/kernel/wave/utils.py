@@ -12,7 +12,7 @@ from ..compiler.ir import (
     UnitAttr,
     Value,
 )
-from typing import Optional, Callable, Any, List, Tuple
+from typing import Optional, Callable, Any, List, Tuple, Sequence
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
@@ -25,6 +25,7 @@ from ..ops.wave_ops import (
     Reduction,
     GetResult,
     IterArg,
+    Reshape,
 )
 from .constraints import (
     Constraint,
@@ -192,6 +193,20 @@ def simplify_index(index: IndexExpr) -> IndexExpr:
     return subs_idxc(index.subs(mapping))
 
 
+def is_reshape_needed(
+    node: CustomOp,
+    node_vector_shapes: dict[IndexSymbol, int],
+    vector_shapes: dict[IndexSymbol, int],
+) -> bool:
+    for dim in node.type.symbolic_shape:
+        if dim not in vector_shapes:
+            # Ignore nodes that are not used in both mmas.
+            return False
+        if node_vector_shapes[dim] != vector_shapes[dim]:
+            return True
+    return False
+
+
 def get_mma_dimensional_mapping(
     trace: CapturedTrace,
     hardware_constraint: HardwareConstraint,
@@ -213,6 +228,7 @@ def get_mma_dimensional_mapping(
 
     mapping: dict[MMA, dict[IndexSymbol, int]] = {}
     mma_nodes = trace.walk(is_mma)
+    last_vector_shapes = {}
     for node in mma_nodes:
         custom: MMA = get_custom(node)
         m, n = custom.acc_type.symbolic_shape[-2:]
@@ -234,6 +250,19 @@ def get_mma_dimensional_mapping(
             custom.vector_shapes.update(hardware_constraint.vector_shapes)
         custom.anchor = custom
         custom.reduction_dim = k
+        if last_vector_shapes and last_vector_shapes != custom.vector_shapes:
+            with custom.graph.inserting_before(custom.fx_node):
+                for i, arg in custom.node_args.items():
+                    if is_reshape_needed(arg, custom.vector_shapes, last_vector_shapes):
+                        reshape = Reshape(arg.fx_node, last_vector_shapes).add_to_graph(
+                            custom.graph
+                        )
+                        custom_reshape = get_custom(reshape)
+                        custom_reshape.vector_shapes = custom.vector_shapes
+                        custom_reshape.anchor = custom
+                        custom.update_arg(i, reshape)
+
+        last_vector_shapes = custom.vector_shapes
 
         # Since expansion proceeds bottom-up, we set the vector shapes
         # of the parent reduction to the vector shapes of the last MMA node.

@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from ..ops.wave_ops import (
+    Allocate,
     Write,
     ExtractSlice,
     get_custom,
@@ -12,6 +13,8 @@ from ..ops.wave_ops import (
     MMA,
     Placeholder,
     IterArg,
+    CustomOp,
+    Reshape,
 )
 from .constraints import Constraint, HardwareConstraint, WorkgroupConstraint
 from .._support.tracing import CapturedTrace, IndexingContext
@@ -182,6 +185,19 @@ def is_contiguous_dim(
     return is_innermost_dim or all_unit_dims
 
 
+def add_reshape(custom: CustomOp):
+    for arg in custom.node_args.values():
+        if not isinstance(arg, Sequence):
+            arg = [arg]
+        for subarg in arg:
+            # These are ops in the parent graph that have not had their vector shapes set yet.
+            if subarg.vector_shapes is None:
+                continue
+            if subarg.vector_shapes != custom.vector_shapes:
+                with custom.graph.inserting_before(custom.fx_node):
+                    Reshape(subarg, custom.vector_shapes).add_to_graph(custom.graph)
+
+
 def set_vector_shapes(
     constraints: Sequence[Constraint],
     mma_index: dict[MMA, dict[IndexSymbol, int]],
@@ -193,8 +209,8 @@ def set_vector_shapes(
     an MMA slice as well as the anchor node.
     """
     custom = get_custom(node)
-    # MMA & Reduction nodes already have their vector shapes set.
-    if isinstance(custom, (MMA, Reduction)):
+    # MMA, Reduction & Reshape nodes already have their vector shapes set.
+    if isinstance(custom, (MMA, Reduction, Reshape)):
         return
     # Add vector shapes from constraints to all ops. These are global constraints.
     custom.vector_shapes = {}
