@@ -409,11 +409,15 @@ class CustomOp(ABC):
             new_node.reduction_dim = self.fx_node.reduction_dim
         return get_custom(new_node)
 
-    def replace_all_uses_with(self, new_node: CustomOp | fx.Node):
+    def replace_all_uses_with(
+        self,
+        new_node: CustomOp | fx.Node,
+        filter_fn: Callable[[fx.node], bool] = lambda x: True,
+    ):
         """Replace all uses of the current node with the new node."""
         if isinstance(new_node, CustomOp):
             new_node = new_node.fx_node
-        self.fx_node.replace_all_uses_with(new_node)
+        self.fx_node.replace_all_uses_with(new_node, filter_fn)
 
     def erase(self):
         """Erase the current node from the graph where it exists."""
@@ -1321,6 +1325,10 @@ class ReduceOp(CustomOp, ABC):
             return len(self.dim)
         else:
             return 1
+
+    @property
+    def reduction_dim(self) -> IndexSymbol:
+        return self.dim
 
 
 # TODO: Add support for more shuffle types.
