@@ -23,6 +23,7 @@ from .utils import (
     get_hardware_constraint,
     subs_idxc,
     specialize_index_sequence,
+    capture_backward_slice,
 )
 import torch.fx as fx
 import numpy as np
@@ -238,6 +239,11 @@ def set_node_index(
     dimensions M, N and K, but allow each mapping to be piecewise conditioned
     on the operand.
     """
+    custom = get_custom(node)
+    anchor = custom.anchor
+    if isinstance(custom, (Reduction, Placeholder)) and not isinstance(custom, IterArg):
+        return
+
     hardware_constraint = [get_hardware_constraint(constraints)]
     workgroup_constraints = {
         c.dim: c for c in constraints if isinstance(c, WorkgroupConstraint)
@@ -251,13 +257,17 @@ def set_node_index(
     index = {}
     # The semantics of elements_per_thread are that it represents the number of
     # elements that are loaded contiguously from memory.
-    custom = get_custom(node)
-    anchor = custom.anchor
-
     elements_per_thread = getattr(custom, "elements_per_thread", None)
-
-    if isinstance(custom, (Reduction, Placeholder)) and not isinstance(custom, IterArg):
-        return
+    # For elementwise operations that do not have an elements per thread attribute,
+    # look back to the backward slice to see if they can find an appropriate value.
+    # TODO: Remove this once set_node_index is integrated with thread_shape_analysis.
+    if elements_per_thread is None:
+        backward_slice = capture_backward_slice(node)
+        for bwd_node in backward_slice:
+            custom_node = get_custom(bwd_node)
+            elements_per_thread = getattr(custom_node, "elements_per_thread", None)
+            if elements_per_thread:
+                break
 
     for dim in custom.indexing_dims:
         index_seq = None

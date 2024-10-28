@@ -990,7 +990,7 @@ def test_gemm_and_reduce():
         # CHECK: %[[LOOP:.+]]:2 = scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
         # CHECK-SAME: iter_args(%[[ACC0:.+]] = %{{.*}}, %[[ACC1:.+]] = {{.*}})
         # CHECK-COUNT-2: vector.load{{.*}} memref<32x20xf16, #gpu.address_space<workgroup>>, vector<4xf16>
-        # CHECK-COUNT-6: gpu.shuffle  xor
+        # CHECK-COUNT-2: gpu.shuffle  xor
         #         CHECK: %[[MAX:.+]] = arith.maximumf %[[ACC0]], %{{.*}}
         #         CHECK: %[[MMA:.+]] = amdgpu.mfma %{{.*}} * %{{.*}} + %[[ACC1]]
         #         CHECK: scf.yield %[[MAX]], %[[MMA]] : vector<1xf16>, vector<4xf32>
