@@ -22,6 +22,12 @@ class MMAType(Enum):
     F32_32x32x16_F8 = 3
 
 
+class MMAOperand(Enum):
+    M = 0
+    N = 1
+    K = 2
+
+
 @dataclass
 class Constraint(ABC):
     """
@@ -133,7 +139,7 @@ class HardwareConstraint(Constraint):
     def apply(
         self,
         dim: IndexSymbol,
-        constraint_index: int,
+        constraint_index: int | MMAOperand,
         elements_per_thread: int | IndexSymbol,
         stride: int,
         is_mma_dim: bool,
@@ -232,11 +238,13 @@ class HardwareConstraint(Constraint):
                 ]
             case _:
                 raise ValueError("Unsupported MMA type")
-
+        assert isinstance(
+            constraint_index, MMAOperand
+        ), f"Invalid MMA operand {constraint_index}"
         return IndexSequence(
-            offset[constraint_index],
-            size[constraint_index],
-            stride[constraint_index],
+            offset[constraint_index.value],
+            size[constraint_index.value],
+            stride[constraint_index.value],
         )
 
 

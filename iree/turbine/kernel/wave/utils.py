@@ -32,6 +32,7 @@ from .constraints import (
     HardwareConstraint,
     TilingConstraint,
     MMAType,
+    MMAOperand,
 )
 import torch.fx as fx
 import iree.turbine.kernel.lang as tkl
@@ -221,9 +222,9 @@ def get_mma_dimensional_mapping(
         k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
         if custom not in mapping:
             mapping[custom] = {}
-        mapping[custom][m] = 0
-        mapping[custom][n] = 1
-        mapping[custom][k] = 2
+        mapping[custom][m] = MMAOperand.M
+        mapping[custom][n] = MMAOperand.N
+        mapping[custom][k] = MMAOperand.K
         custom.vector_shapes = {
             m: hardware_constraint.mma_matrix_shapes[0],
             n: hardware_constraint.mma_matrix_shapes[1],
