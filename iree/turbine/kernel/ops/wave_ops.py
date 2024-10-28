@@ -611,7 +611,7 @@ class BinaryPyOp(CustomOp, ABC):
             raise ValueError(
                 "BinaryPyOp requires lhs and rhs shape to be at least broadcastable."
             )
-        broadcasted_type = lhs_type if lhs_dim_set > rhs_dim_set else rhstype
+        broadcasted_type = lhs_type if lhs_dim_set > rhs_dim_set else rhs_type
         return broadcasted_type
 
 
@@ -1300,7 +1300,12 @@ class ReduceOp(CustomOp, ABC):
             from ..wave.utils import all_equal
 
             src_types = [get_custom(arg).type for arg in self.arg]
-            if not all_equal(src_types):
+            ref_shape = src_types[0].symbolic_shape
+            ref_dtype = src_types[0].dtype
+            if not all(
+                src_type.symbolic_shape == ref_shape and src_type.dtype == ref_dtype
+                for src_type in src_types
+            ):
                 raise NotImplementedError(
                     "NYI: Only support case where all inputs to ReduceOp to have same type."
                 )
@@ -1321,6 +1326,10 @@ class ReduceOp(CustomOp, ABC):
             return len(self.dim)
         else:
             return 1
+
+    @property
+    def reduction_dim(self) -> IndexSymbol:
+        return self.dim
 
 
 # TODO: Add support for more shuffle types.
