@@ -327,33 +327,35 @@ def _expand_reduction(
                 (reduction, get_indexed_dims(dims, expand_dims), arg_idx)
             ] = new_node
 
-            # Proceed with expansion inside the reduction
-            new_output_args.append(
-                _expand_node(
-                    arg,
-                    trace,
-                    dims,
-                    get_node_dim_scaling(arg),
-                    context,
-                    get_node_dim_scaling,
-                    res_idx,
-                )
+            expanded_output = _expand_node(
+                arg,
+                trace,
+                dims,
+                get_node_dim_scaling(arg),
+                context,
+                get_node_dim_scaling,
+                res_idx,
             )
+            # Proceed with expansion inside the reduction
+            if expanded_output in new_output_args:
+                continue
+            new_output_args.append(expanded_output)
 
         # Proceed with expansion outside the reduction
         for init_arg in reduction.init_args:
             custom_init_arg = get_custom(init_arg)
-            new_init_args.append(
-                _expand_node(
-                    custom_init_arg,
-                    trace,
-                    dims,
-                    get_node_dim_scaling(custom_init_arg),
-                    context,
-                    get_node_dim_scaling,
-                    res_idx,
-                )
+            expanded_init_arg = _expand_node(
+                custom_init_arg,
+                trace,
+                dims,
+                get_node_dim_scaling(custom_init_arg),
+                context,
+                get_node_dim_scaling,
+                res_idx,
             )
+            if expanded_init_arg in new_init_args:
+                continue
+            new_init_args.append(expanded_init_arg)
 
     # Update init_args and return values
     reduction.update_arg(
@@ -672,4 +674,8 @@ def _handle_reduction_dim(
                 current_src.append(expanded_src.fx_node)
                 latest_reduced_op.update_arg("arg", current_src)
         new_outputs[op_output_index] = latest_reduced_op.fx_node
+        init_dims = root_op.fx_node.expanded_dims
+        context[
+            (root_op, get_indexed_dims(init_dims, root_op), res_idx)
+        ] = latest_reduced_op
     output.update_arg("return_vals", new_outputs)
