@@ -592,7 +592,7 @@ def _expand_mma_tiled_reduction(
             res_idx,
         )
 
-        # This expansion always happens, user should never be reused
+        # Node is always cloned; Hence, will never be equal to latest reduced op
         assert new_node != latest_reduced_op
         # Update MMA_{t} to accumulate on MMA_{t-1}, and then save
         # current MMA_{t} to outputs for use in next loop.
@@ -617,7 +617,7 @@ def _handle_reduction_dim(
     iter_args: list[CustomOp] = []
     reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
 
-    # TODO: Add support for case where we process MMA before returning to IterArg.
+    # TODO: Handle case where MMAs/ReduceOps do not have Output as direct consumer.
     def get_output_index(custom: CustomOp):
         output_users = [
             get_custom(user)
@@ -643,8 +643,6 @@ def _handle_reduction_dim(
         dims = dict(root_op.fx_node.expanded_dims)
         latest_reduced_op = root_op
         op_output_index = get_output_index(root_op)
-        if dim_scaling[reduction.axis] <= 1:
-            continue
         if isinstance(root_op, MMA):
             latest_reduced_op = _expand_mma_tiled_reduction(
                 root_op,
