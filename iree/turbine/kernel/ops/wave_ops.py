@@ -409,15 +409,11 @@ class CustomOp(ABC):
             new_node.reduction_dim = self.fx_node.reduction_dim
         return get_custom(new_node)
 
-    def replace_all_uses_with(
-        self,
-        new_node: CustomOp | fx.Node,
-        filter_fn: Callable[[fx.node], bool] = lambda x: True,
-    ):
+    def replace_all_uses_with(self, new_node: CustomOp | fx.Node):
         """Replace all uses of the current node with the new node."""
         if isinstance(new_node, CustomOp):
             new_node = new_node.fx_node
-        self.fx_node.replace_all_uses_with(new_node, filter_fn)
+        self.fx_node.replace_all_uses_with(new_node)
 
     def erase(self):
         """Erase the current node from the graph where it exists."""
@@ -1304,7 +1300,12 @@ class ReduceOp(CustomOp, ABC):
             from ..wave.utils import all_equal
 
             src_types = [get_custom(arg).type for arg in self.arg]
-            if not all_equal(src_types):
+            ref_shape = src_types[0].symbolic_shape
+            ref_dtype = src_types[0].dtype
+            if not all(
+                src_type.symbolic_shape == ref_shape and src_type.dtype == ref_dtype
+                for src_type in src_types
+            ):
                 raise NotImplementedError(
                     "NYI: Only support case where all inputs to ReduceOp to have same type."
                 )
