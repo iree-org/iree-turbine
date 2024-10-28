@@ -565,6 +565,7 @@ def _expand_mma_tiled_reduction(
     res_idx: int,
 ) -> CustomOp:
     latest_reduced_op = mma
+    # The initial nodes are expanded in the first dimension, so we start from 1
     for scale_idx in range(1, dim_scaling[mma.reduction_dim]):
         dim_query[mma.reduction_dim] = scale_idx
         # Temporarily replace the loop carried arg here to avoid
@@ -638,7 +639,6 @@ def _handle_reduction_dim(
     new_outputs = list(reduction.outputs(trace.get_subgraph(reduction.subgraph_name)))
     # Users of the loop carried nodes will be duplicated
     for root_op in reduction_root_ops:
-        # The initial nodes are expanded in the first dimension, so we start from 1
         dim_scaling = get_node_dim_scaling(root_op)
         dims = dict(root_op.fx_node.expanded_dims)
         latest_reduced_op = root_op
@@ -657,6 +657,7 @@ def _handle_reduction_dim(
             )
         elif isinstance(root_op, ReduceOp):
             original_src = latest_reduced_op.arg
+            # The initial nodes are expanded in the first dimension, so we start from 1
             for scale_idx in range(1, dim_scaling[reduction.axis]):
                 dims[root_op.reduction_dim] = scale_idx
                 current_src = latest_reduced_op.arg
