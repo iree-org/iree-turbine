@@ -365,6 +365,8 @@ def _expand_reduction(
                 get_node_dim_scaling,
                 res_idx,
             )
+            # TODO: Handle expansion of induction variables with "non-complete" dims
+            #       by checking on the indexing_dims on each induction variable.
             if expanded_init_arg in new_init_args:
                 continue
             new_init_args.append(expanded_init_arg)
