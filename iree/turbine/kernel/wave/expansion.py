@@ -316,6 +316,7 @@ def _expand_reduction(
         dims = {dim: val for dim, val in zip(dim_scaling.keys(), dim_vals)}
         if not isinstance(return_vals, Sequence):
             return_vals = [return_vals]
+        # Proceed with expansion inside the reduction
         for arg_idx, arg in enumerate(return_vals):
             arg = get_custom(arg)
             # Add GetResult nodes for the corresponding dimensions
@@ -336,7 +337,18 @@ def _expand_reduction(
                 get_node_dim_scaling,
                 res_idx,
             )
-            # Proceed with expansion inside the reduction
+            # If condition below is needed to skip over induction variable
+            # who doesn't have all dims of ReductionOp. For example,
+            # a reduction Op that has induction variables of types
+            # (max, mma) -> [M], [M, N]
+            # will have indexing dims of ([M, N]).
+            # However, the 1st induction variable won't expand in N-dim
+            # M:0, N:0 expand(max) -> max_0_0_0
+            # M:0, N:1 expand(max) -> max_0_0_0
+            # but will get added to the `new_output_args` without the if condition.
+
+            # TODO: Handle expansion of induction variables with "non-complete" dims
+            #       by checking on the indexing_dims on each induction variable.
             if expanded_output in new_output_args:
                 continue
             new_output_args.append(expanded_output)
