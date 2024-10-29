@@ -185,19 +185,6 @@ def is_contiguous_dim(
     return is_innermost_dim or all_unit_dims
 
 
-def add_reshape(custom: CustomOp):
-    for arg in custom.node_args.values():
-        if not isinstance(arg, Sequence):
-            arg = [arg]
-        for subarg in arg:
-            # These are ops in the parent graph that have not had their vector shapes set yet.
-            if subarg.vector_shapes is None:
-                continue
-            if subarg.vector_shapes != custom.vector_shapes:
-                with custom.graph.inserting_before(custom.fx_node):
-                    Reshape(subarg, custom.vector_shapes).add_to_graph(custom.graph)
-
-
 def set_vector_shapes(
     constraints: Sequence[Constraint],
     mma_index: dict[MMA, dict[IndexSymbol, int]],

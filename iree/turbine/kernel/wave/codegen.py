@@ -1324,23 +1324,23 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
     offset = custom.expanded_dims[innermost_dim]
 
     # Determine whether to extract or combine.
-    if len(args) == 1:
-        # Extract the appropriate slice.
-        size = (
-            target_vector_shapes[innermost_dim] // custom.vector_shapes[innermost_dim]
+    if len(args) > 1:
+        raise NotImplementedError(
+            "reshape: Currently only handles cases where target_vector_shapes > custom.vector_shapes"
         )
-        vector = cast_vector(emitter, args[0])
-        result_type = VectorType.get([size], vector.type.element_type)
-        slice = vector_d.extract_strided_slice(
-            result_type,
-            vector,
-            [offset * size],
-            [size],
-            [1],
-        )
-        emitter.bind_node_proxy(node, IRProxyValue(slice))
-        return
 
-    raise NotImplementedError(
-        "reshape: Currently only handles cases where target_vector_shapes > custom.vector_shapes"
+    # Extract the appropriate slice. The offset is obtained from the expanded_dim
+    # and so corresponds to the dim_query during expansion. To obtain the
+    # actual offset, we need to multiple by the size which is determined by comparing
+    # the source and target vector shapes along the innermost dimension.
+    size = target_vector_shapes[innermost_dim] // custom.vector_shapes[innermost_dim]
+    vector = cast_vector(emitter, args[0])
+    result_type = VectorType.get([size], vector.type.element_type)
+    slice = vector_d.extract_strided_slice(
+        result_type,
+        vector,
+        [offset * size],
+        [size],
+        [1],
     )
+    emitter.bind_node_proxy(node, IRProxyValue(slice))

@@ -228,7 +228,6 @@ def get_mma_dimensional_mapping(
 
     mapping: dict[MMA, dict[IndexSymbol, int]] = {}
     mma_nodes = trace.walk(is_mma)
-    last_vector_shapes = {}
     for node in mma_nodes:
         custom: MMA = get_custom(node)
         m, n = custom.acc_type.symbolic_shape[-2:]
@@ -250,19 +249,6 @@ def get_mma_dimensional_mapping(
             custom.vector_shapes.update(hardware_constraint.vector_shapes)
         custom.anchor = custom
         custom.reduction_dim = k
-        if last_vector_shapes and last_vector_shapes != custom.vector_shapes:
-            with custom.graph.inserting_before(custom.fx_node):
-                for i, arg in custom.node_args.items():
-                    if is_reshape_needed(arg, custom.vector_shapes, last_vector_shapes):
-                        reshape = Reshape(arg.fx_node, last_vector_shapes).add_to_graph(
-                            custom.graph
-                        )
-                        custom_reshape = get_custom(reshape)
-                        custom_reshape.vector_shapes = custom.vector_shapes
-                        custom_reshape.anchor = custom
-                        custom.update_arg(i, reshape)
-
-        last_vector_shapes = custom.vector_shapes
 
         # Since expansion proceeds bottom-up, we set the vector shapes
         # of the parent reduction to the vector shapes of the last MMA node.
@@ -272,6 +258,32 @@ def get_mma_dimensional_mapping(
             reduction.anchor = custom
 
     mma_slices = {get_custom(x): capture_mma_slices(get_custom(x)) for x in mma_nodes}
+
+    # Determine if any reshapes are required. Reshapes are added for
+    # chained matmuls when the vector shapes of the operands in one matmul
+    # differ from those in another matmul.
+    for src in mma_nodes:
+        custom_src = get_custom(src)
+        for dst in mma_nodes:
+            if src == dst:
+                continue
+            custom_dst = get_custom(dst)
+            lhs_slice = capture_backward_slice(custom_dst.lhs)
+            rhs_slice = capture_backward_slice(custom_dst.rhs)
+            if src in lhs_slice or src in rhs_slice:
+                with custom_dst.graph.inserting_before(dst):
+                    for i, arg in custom_dst.node_args.items():
+                        if is_reshape_needed(
+                            arg, custom_dst.vector_shapes, custom_src.vector_shapes
+                        ):
+                            reshape = Reshape(
+                                arg.fx_node, custom_src.vector_shapes
+                            ).add_to_graph(custom.graph)
+                            custom_reshape = get_custom(reshape)
+                            custom_reshape.vector_shapes = custom.vector_shapes
+                            custom_reshape.anchor = custom
+                            custom.update_arg(i, reshape)
+
     return mapping, mma_slices
 
 
