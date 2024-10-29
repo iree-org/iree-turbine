@@ -1400,18 +1400,3 @@ class Permute(CustomOp, ABC):
             self.target_shape
         ), f"Target shape {self.target_shape} must be a permutation of source shape {src_type.symbolic_shape}"
         return Register[*self.target_shape, src_type.dtype]
-
-    @property
-    def index(self) -> Optional[dict[IndexSymbol, IndexSequence]]:
-        """
-        Computes the permuted index based on the target shape.
-        """
-        src_type = get_custom(self.arg).type
-        dim_map = {
-            tgt: src for src, tgt in zip(src_type.symbolic_shape, self.target_shape)
-        }
-        return {tgt: get_custom(self.arg).index[src] for tgt, src in dim_map.items()}
-
-    @index.setter
-    def index(self, value: Any):
-        CustomOp.index.fset(self, value)
