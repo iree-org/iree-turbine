@@ -1216,8 +1216,8 @@ class Extract(CustomOp):
         dst_shape = list(src_type.symbolic_shape)
         dim_to_remove = dst_shape[-1] if not non_unit_dim else non_unit_dim[0]
         dst_shape.remove(dim_to_remove)
-        dst_type = Register[*dst_shape, src_type.dtype]
-        return dst_type
+        # dst_type = Register[*dst_shape, src_type.dtype]
+        return None
 
 
 @define_op("extract_slice")
@@ -1309,8 +1309,8 @@ class ReduceOp(CustomOp, ABC):
         else:
             src_type = get_custom(self.arg).type
         reduced_dims = [dims for dims in src_type.symbolic_shape if dims != self.dim]
-        dst_type = Register[*reduced_dims, src_type.dtype]
-        return dst_type
+        # dst_type = Register[*reduced_dims, src_type.dtype]
+        return None
 
     @property
     def num_reduction_dims(self) -> int:
@@ -1367,7 +1367,8 @@ class CastOp(CustomOp, ABC):
     @property
     def type(self) -> Memory:
         src_shape = get_custom(self.arg).type.symbolic_shape
-        return Register[*src_shape, self.dtype]
+        # return Register[*src_shape, self.dtype]
+        return None
 
 
 @define_op("permute")
@@ -1391,7 +1392,8 @@ class Permute(CustomOp, ABC):
         assert set(src_type.symbolic_shape) == set(
             self.target_shape
         ), f"Target shape {self.target_shape} must be a permutation of source shape {src_type.symbolic_shape}"
-        return Register[*self.target_shape, src_type.dtype]
+        # return Register[*self.target_shape, src_type.dtype]
+        return None
 
     @property
     def index(self) -> Optional[dict[IndexSymbol, IndexSequence]]:
