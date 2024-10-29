@@ -919,6 +919,178 @@ def test_chained_gemm_32x32x8():
 
 
 @run_test
+def test_chained_gemm_32x32x16():
+    K1 = tkl.sym.K1
+    K2 = tkl.sym.K2
+    BLOCK_K2 = tkl.sym.BLOCK_K2
+
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    mfma_variant = tkw.MMAType.F32_32x32x16_F8
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=mfma_variant,
+            vector_shapes={B: 0},
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def chained_gemm_32x32x16(
+        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+
+        @tkw.reduction(K2, init_args=[c_reg])
+        def repeat(
+            acc: tkl.Register[B, M, N, tkl.f32]
+        ) -> tkl.Register[B, M, N, tkl.f32]:
+            inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
+            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.cast(q_reg, tkl.f8e4m3fnuz)
+            k_reg = tkw.cast(k_reg, tkl.f8e4m3fnuz)
+            kq_reg = tkw.mma(k_reg, q_reg, inner_acc)
+            qk_reg = tkw.permute(kq_reg, target_shape=[B, M, K2])
+            qk_cast_reg = tkw.cast(qk_reg, tkl.f8e4m3fnuz)
+            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.cast(v_reg, tkl.f8e4m3fnuz)
+            acc = tkw.mma(qk_cast_reg, v_reg, acc)
+            return acc
+
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 128,
+            N: 128,
+            K1: 32,
+            K2: 256,
+            B: 8,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
+            BLOCK_K2: 32,
+            BLOCK_B: 1,
+            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
+            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        q = torch.randn(8, 64, 64, dtype=torch.float16)
+        k = torch.randn(8, 256, 64, dtype=torch.float16)
+        v = torch.zeros(8, 128, 256, dtype=torch.float16)
+        output = torch.zeros(8, 64, 128, dtype=torch.float32)
+        print(chained_gemm_32x32x16(q, k, v, output).module_op)
+
+        # CHECK:           func.func @chained_gemm_32x32x16(
+        # CHECK:             {{.*}} = scf.for
+        # CHECK-COUNT-2:       {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-3:       {{.*}} = arith.truncf
+        # CHECK:               {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [0], sizes = [8], strides = [1]}
+        # CHECK:               {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [8], sizes = [8], strides = [1]}
+        # CHECK-COUNT-2:       {{.*}} = amdgpu.mfma
+        # CHECK:             scf.yield
+
+
+@run_test
+def test_chained_gemm_16x16x32():
+    K1 = tkl.sym.K1
+    K2 = tkl.sym.K2
+    BLOCK_K2 = tkl.sym.BLOCK_K2
+
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    mfma_variant = tkw.MMAType.F32_16x16x32_F8
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=mfma_variant,
+            vector_shapes={B: 0},
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def chained_gemm_16x16x32(
+        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+
+        @tkw.reduction(K2, init_args=[c_reg])
+        def repeat(
+            acc: tkl.Register[B, M, N, tkl.f32]
+        ) -> tkl.Register[B, M, N, tkl.f32]:
+            inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
+            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.cast(q_reg, tkl.f8e4m3fnuz)
+            k_reg = tkw.cast(k_reg, tkl.f8e4m3fnuz)
+            kq_reg = tkw.mma(k_reg, q_reg, inner_acc)
+            qk_reg = tkw.permute(kq_reg, target_shape=[B, M, K2])
+            qk_cast_reg = tkw.cast(qk_reg, tkl.f8e4m3fnuz)
+            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.cast(v_reg, tkl.f8e4m3fnuz)
+            acc = tkw.mma(qk_cast_reg, v_reg, acc)
+            return acc
+
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 128,
+            N: 128,
+            K1: 32,
+            K2: 256,
+            B: 8,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
+            BLOCK_K2: 32,
+            BLOCK_B: 1,
+            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
+            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        q = torch.randn(8, 64, 64, dtype=torch.float16)
+        k = torch.randn(8, 256, 64, dtype=torch.float16)
+        v = torch.zeros(8, 128, 256, dtype=torch.float16)
+        output = torch.zeros(8, 64, 128, dtype=torch.float32)
+        print(chained_gemm_16x16x32(q, k, v, output).module_op)
+
+        # CHECK:           func.func @chained_gemm_16x16x32(
+        # CHECK:             {{.*}} = scf.for
+        # CHECK-COUNT-4:       {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-6:       {{.*}} = arith.truncf
+        # CHECK:               {{.*}} = vector.insert_strided_slice {{.*}} {offsets = [0], strides = [1]}
+        # CHECK:               {{.*}} = vector.insert_strided_slice {{.*}} {offsets = [4], strides = [1]}
+        # CHECK:               {{.*}} = vector.insert_strided_slice {{.*}} {offsets = [0], strides = [1]}
+        # CHECK:               {{.*}} = vector.insert_strided_slice {{.*}} {offsets = [4], strides = [1]}
+        # CHECK-COUNT-4:       {{.*}} = amdgpu.mfma
+        # CHECK:             scf.yield
+
+
+@run_test
 def test_gemm_pipelined():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]

@@ -1325,16 +1325,35 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
 
     # Determine whether to extract or combine.
     if len(args) > 1:
-        raise NotImplementedError(
-            "reshape: Currently only handles cases where target_vector_shapes > custom.vector_shapes"
-        )
+        concatenated = None
+        for i, sub_arg in enumerate(args):
+            vector = cast_vector(emitter, sub_arg)
+            shape = vector.type.shape[0]
+            if concatenated is None:
+                element_type = vector.type.element_type
+                vector_type = VectorType.get([shape * len(args)], element_type)
+                concatenated = arith_d.ConstantOp(
+                    vector_type,
+                    DenseElementsAttr.get_splat(
+                        vector_type, get_constant_attr(0, element_type)
+                    ),
+                ).result
+            concatenated = vector_d.insert_strided_slice(
+                vector, concatenated, [i * shape], [1]
+            )
+        emitter.bind_node_proxy(node, IRProxyValue(concatenated))
+        return
 
     # Extract the appropriate slice. The offset is obtained from the expanded_dim
     # and so corresponds to the dim_query during expansion. To obtain the
-    # actual offset, we need to multiple by the size which is determined by comparing
-    # the source and target vector shapes along the innermost dimension.
-    size = target_vector_shapes[innermost_dim] // custom.vector_shapes[innermost_dim]
+    # actual offset, we need to multiply by the size. The size is obtained by
+    # computing the number of partitions using the source and target vector shapes
+    # and dividing the incoming vector shape by the number of partitions.
+    num_partitions = (
+        target_vector_shapes[innermost_dim] // custom.vector_shapes[innermost_dim]
+    )
     vector = cast_vector(emitter, args[0])
+    size = vector.type.shape[0] // num_partitions
     result_type = VectorType.get([size], vector.type.element_type)
     slice = vector_d.extract_strided_slice(
         result_type,
