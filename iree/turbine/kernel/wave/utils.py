@@ -289,11 +289,14 @@ def get_mma_dimensional_mapping(
                 return prev_mma
         return None
 
+    # Look in the backward slices of both the LHS and RHS to find
+    # mmas. If found, add reshapes if necessary.
     for mma in mma_nodes:
         custom_mma = get_custom(mma)
-        prev_mma = find_mma_in_slice(custom_mma.lhs) or find_mma_in_slice(
-            custom_mma.rhs
-        )
+        prev_mma = find_mma_in_slice(custom_mma.lhs)
+        if prev_mma:
+            add_reshape_if_needed(custom_mma, prev_mma)
+        prev_mma = find_mma_in_slice(custom_mma.rhs)
         if prev_mma:
             add_reshape_if_needed(custom_mma, prev_mma)
 
