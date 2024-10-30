@@ -1,7 +1,15 @@
 from ..constraints import Constraint, TilingConstraint
 from ..._support.indexing import IndexSymbol
 from ..._support.tracing import CapturedTrace
-from ...ops.wave_ops import Reduction, IterArg, Output, Write, GetResult, get_custom
+from ...ops.wave_ops import (
+    Reduction,
+    IterArg,
+    Output,
+    Write,
+    GetResult,
+    get_custom,
+    Placeholder,
+)
 from .modulo_scheduling import ModuloScheduler
 from ..utils import graph_copy, erase_graph
 from ..utils import subs_idxc
@@ -52,6 +60,17 @@ class ArgumentContext:
         and for all iterations.
         """
         for iteration in range(self.num_iterations):
+            for stage in range(self.num_stages):
+                self.argument_map[iteration][stage][from_] = to_
+
+    def map_arg_all_after_iteration(
+        self, from_: fx.Node, to_: fx.Node, iteration: int
+    ) -> None:
+        """
+        Maps the given argument from one to another into the argument context for all stages
+        after the specified iteration.
+        """
+        for iteration in range(iteration + 1, self.num_iterations):
             for stage in range(self.num_stages):
                 self.argument_map[iteration][stage][from_] = to_
 
@@ -139,7 +158,7 @@ class ArgumentContext:
         """
         Looks up the argument mapping for the given node.
         """
-        for iteration in range(self.num_iterations):
+        for iteration in range(self.num_iterations - 1, -1, -1):
             for stage in range(self.num_stages):
                 if key in self.argument_map[iteration][stage]:
                     return self.argument_map[iteration][stage][key]
@@ -155,10 +174,15 @@ class ArgumentContext:
             for stage in range(self.num_stages)
         )
 
-    def get_from_iteration(self, iteration: int, key: fx.Node) -> fx.Node:
+    def get_from_iteration(self, iteration: int, key: fx.Node, stage: int) -> fx.Node:
         """
-        Gets the argument mapping for the given iteration.
+        Gets the argument mapping for the given iteration with
+        preference to the given stage.
         """
+
+        if stage and key in self.argument_map[iteration][stage]:
+            return self.argument_map[iteration][stage][key]
+
         for stage in range(self.num_stages):
             if key in self.argument_map[iteration][stage]:
                 return self.argument_map[iteration][stage][key]
@@ -207,9 +231,7 @@ def create_drain_stage_schedule(n: int) -> list[list[int]]:
     return schedule
 
 
-def liveness_analysis(
-    graph: fx.Graph, constraints: list[Constraint], scheduler: ModuloScheduler
-) -> dict[fx.Node, int]:
+def liveness_analysis(graph: fx.Graph, reduction: Reduction) -> dict[fx.Node, int]:
     """
     Perform liveness analysis on the graph to determine the live ranges of
     variables and use that to deduce how many rotating registers we need.
@@ -227,11 +249,11 @@ def liveness_analysis(
             logger.debug(
                 f"Node: {node}, User: {user.fx_node}, lifetime: {user.scheduling_parameters['stage'] - custom.scheduling_parameters['stage']}"
             )
-            lifetime[node] = max(
+            user_lifetime = (
                 user.scheduling_parameters["stage"]
-                - custom.scheduling_parameters["stage"],
-                lifetime[node],
+                - custom.scheduling_parameters["stage"]
             )
+            lifetime[node] = max(user_lifetime, lifetime[node])
 
     # Determine how many copies we need for each node. If the lifetime of a node
     # is l clocks and the initiation interval is T, then only ceil(l/T) values

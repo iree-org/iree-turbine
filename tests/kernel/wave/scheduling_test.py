@@ -179,9 +179,8 @@ class SchedulingTest(unittest.TestCase):
 
     def testAPLP(self):
         graph, weighted_edges, nodes = self.create_weighted_graph()
-        D = all_pairs_longest_paths(graph, weighted_edges)
         T = 4
-        D3 = evaluate_all_pairs_longest_paths(D, T)
+        D3 = all_pairs_longest_paths(graph, weighted_edges, T)
         assert D3[(nodes["a"], nodes["b"])] == 2
         assert D3[(nodes["a"], nodes["c"])] == 3
         assert D3[(nodes["a"], nodes["d"])] == 4
@@ -274,6 +273,10 @@ class SchedulingTest(unittest.TestCase):
             SHARED_MEMORY_UNITS: 2,
             GLOBAL_MEMORY_UNITS: 2,
             MMA_UNITS: 2,
+            VALU_DELAY: 1,
+            VALU_UNITS: 2,
+            SHUFFLE_DELAY: 1,
+            SHUFFLE_UNITS: 2,
         }
         with tk.gen.TestLaunchContext(hyperparams, canonicalize=True, schedule=True):
             trace: CapturedTrace = gemm()
@@ -290,21 +293,21 @@ class SchedulingTest(unittest.TestCase):
             initiation_interval = 5
             correct_schedule = {
                 "acc_1_1_0": {
-                    "absolute_cycle": 14,
-                    "cycle": 4,
+                    "absolute_cycle": 10,
+                    "cycle": 0,
                     "stage": 2,
                     "initiation_interval": initiation_interval,
                 },
                 "acc_1_0_0": {
-                    "absolute_cycle": 14,
-                    "cycle": 4,
+                    "absolute_cycle": 10,
+                    "cycle": 0,
                     "stage": 2,
                     "initiation_interval": initiation_interval,
                 },
                 "acc_0_1_0": {
-                    "absolute_cycle": 13,
-                    "cycle": 3,
-                    "stage": 2,
+                    "absolute_cycle": 9,
+                    "cycle": 4,
+                    "stage": 1,
                     "initiation_interval": initiation_interval,
                 },
                 "read_4": {

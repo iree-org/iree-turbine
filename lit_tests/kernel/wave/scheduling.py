@@ -89,6 +89,10 @@ def test_gemm_pipelined():
             SHARED_MEMORY_UNITS: 2,
             GLOBAL_MEMORY_UNITS: 2,
             MMA_UNITS: 2,
+            VALU_DELAY: 1,
+            VALU_UNITS: 2,
+            SHUFFLE_DELAY: 1,
+            SHUFFLE_UNITS: 2,
         }
     ):
         trace: CapturedTrace = gemm_pipelined()

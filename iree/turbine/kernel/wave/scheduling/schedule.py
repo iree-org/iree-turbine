@@ -6,7 +6,7 @@
 
 from ..constraints import Constraint
 from ..._support.tracing import CapturedTrace
-from ...ops.wave_ops import Reduction, IterArg, get_custom
+from ...ops.wave_ops import Reduction, IterArg, get_custom, CustomOp
 from .modulo_scheduling import ModuloScheduler
 from .graph_utils import create_scheduling_edges, Edge
 from .resources import get_available_resources, annotate_resource_usage
@@ -15,6 +15,7 @@ from .loop_reconstruction import construct_pipelined_loop
 from ..utils import graph_copy, erase_graph, get_tiling_constraint, subs_idxc
 import torch.fx as fx
 from ....support.logging import get_logger
+import math
 
 logger = get_logger("turbine.wave.scheduling.schedule")
 
@@ -59,6 +60,7 @@ def schedule_reduction(
     # that each node is scheduled in as well as the cycle in
     # each stage when the node should be issued.
     inverse_node_map = {v: k for k, v in node_map.items()}
+    iter_args: list[CustomOp] = []
     for node, cycle in schedule.items():
         if node not in inverse_node_map:
             continue
@@ -72,6 +74,16 @@ def schedule_reduction(
         # Erase edges between outputs and iter args.
         if isinstance(get_custom(node), IterArg):
             node.args = ()
+            iter_args.append(custom)
+
+    for custom in iter_args:
+        cycle = min([x.scheduling_parameters["absolute_cycle"] for x in custom.users])
+        custom.scheduling_parameters = {
+            "absolute_cycle": cycle,
+            "cycle": cycle % scheduler.initiation_interval,
+            "stage": cycle // scheduler.initiation_interval,
+            "initiation_interval": scheduler.initiation_interval,
+        }
 
     erase_graph(graph)
 

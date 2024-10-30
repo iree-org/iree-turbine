@@ -349,7 +349,7 @@ def testChainedGemm_f8(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_attention"))
-@pytest.mark.parametrize("enable_scheduling", [False])
+@pytest.mark.parametrize("enable_scheduling", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -474,9 +474,13 @@ def testAttention(
         READ_GLOBAL_DELAY: 2,
         WRITE_GLOBAL_DELAY: 2,
         MMA_DELAY: 1,
+        VALU_DELAY: 1,
+        SHUFFLE_DELAY: 1,
         SHARED_MEMORY_UNITS: 4,
         GLOBAL_MEMORY_UNITS: 4,
         MMA_UNITS: 4,
+        VALU_UNITS: 2,
+        SHUFFLE_UNITS: 2,
     }
     config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
     if run_bench:
