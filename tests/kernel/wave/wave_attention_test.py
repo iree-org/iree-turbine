@@ -354,6 +354,7 @@ def testChainedGemm_f8(
     "mfma_variant",
     [
         MMAType.F32_16x16x16_F16,
+        MMAType.F32_32x32x8_F16,
     ],
 )
 def testAttention(
@@ -386,12 +387,19 @@ def testAttention(
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
+    if mfma_variant == MMAType.F32_16x16x16_F16:
+        Mvec = 16
+        Nvec = 16
+    if mfma_variant == MMAType.F32_32x32x8_F16:
+        Mvec = 32
+        Nvec = 32
+
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
-            vector_shapes={B: 0, M: 16, N: 16},
+            vector_shapes={B: 0, M: Mvec, N: Nvec},
         )
     ]
 

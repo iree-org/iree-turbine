@@ -48,8 +48,6 @@ def determine_shuffle_config(
 
     """
     access_pattern = index[reduction_dim]
-    elements_per_thread = access_pattern.size
-    cluster_size = vector_shapes[reduction_dim] // elements_per_thread
 
     # Since we are only concerned with what happens within a subgroup,
     # we can ignore the TID_1 and TID_2 components of the index. We can
@@ -67,11 +65,11 @@ def determine_shuffle_config(
     offset = access_pattern.start.subs({k: 0 for k in ignore})
     offset = subs_idxc(offset)
     offset_table = [offset.subs({THREAD_0: i}) for i in range(subgroup_size)]
-    # Determine the thread ids participating in the shuffle.
+    unique_offsets = list(dict.fromkeys(offset_table))
+    cluster_size = len(set(offset_table))
     thread_ids = []
-    for i in range(cluster_size):
-        thread_ids.append(offset_table.index(i * elements_per_thread))
-
+    for thread_offset in unique_offsets:
+        thread_ids.append(offset_table.index(thread_offset))
     cluster_stride = [x - y for x, y in zip(thread_ids[1:], thread_ids[:-1])]
     assert all_equal(cluster_stride), f"Cluster stride must be equal across threads."
     return cluster_size, cluster_stride[0]

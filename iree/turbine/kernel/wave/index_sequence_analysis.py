@@ -219,6 +219,9 @@ def set_vector_shapes(
             or node in mma_slices[mma][MMA_LHS]
             or node in mma_slices[mma][MMA_RHS]
         ):
+            # Ensure that the operators indexing dims are present in the anchor.
+            if not set(custom.indexing_dims).issubset(mma.indexing_dims):
+                continue
             custom.anchor = mma
             custom.vector_shapes = custom.vector_shapes | mma.vector_shapes
             return
