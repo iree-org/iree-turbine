@@ -138,6 +138,10 @@ def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
     ...
 
 
+def reshape(inputs: Sequence["Register"]) -> "Register":
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -1400,3 +1404,28 @@ class Permute(CustomOp, ABC):
             self.target_shape
         ), f"Target shape {self.target_shape} must be a permutation of source shape {src_type.symbolic_shape}"
         return Register[*self.target_shape, src_type.dtype]
+
+
+def _to_sequence(input: Any | Sequence[Any]) -> Sequence[Any]:
+    return input if isinstance(input, Sequence) else (input,)
+
+
+@define_op("reshape")
+@dataclass
+class Reshape(CustomOp, ABC):
+    """
+    Represents a reshape operation that reshapes
+    vectors along the same dimension.
+
+    """
+
+    args: fx.Node | Sequence[fx.Node]
+    target_vector_shape: dict[IndexSymbol, int]
+
+    @property
+    def indexing_dims(self) -> list[IndexExpr]:
+        return get_custom(_to_sequence(self.args)[0]).indexing_dims
+
+    @property
+    def type(self) -> Register:
+        return get_custom(_to_sequence(self.args)[0]).type

@@ -250,6 +250,20 @@ def _expand_node(
     new_node.expanded_dims = restricted_dims
     new_node.fx_node.name = get_expanded_name(node, restricted_dims)
 
+    # For reshapes, we need more explicit control over how the arguments are expanded.
+    if isinstance(new_node, Reshape):
+        _expand_reshape(
+            new_node,
+            trace,
+            dim_query,
+            dim_scaling,
+            context,
+            get_node_dim_scaling,
+            res_idx,
+        )
+        context[(node, get_indexed_dims(restricted_dims, node), res_idx)] = new_node
+        return new_node
+
     # Proceed with expansion of the arguments
     for i, arg in node.node_args.items():
         arg_list = arg
@@ -494,6 +508,84 @@ def _expand_mma_reduction(
 
     context[context_key] = new_node
     return new_node
+
+
+def _expand_reshape(
+    reshape: Reshape,
+    trace: CapturedTrace,
+    dim_query: dict[IndexSymbol, int],
+    dim_scaling: dict[IndexSymbol, int],
+    context: ExpandedNodeMap,
+    get_node_dim_scaling: Callable[[fx.Node], dict[IndexSymbol, int]],
+    res_idx: int,
+) -> CustomOp:
+    """
+    When expanding a reshape, we have to expand the arguments of the reshape and then concatenate them together
+    for the expanded node. Say we have a node with indexing dims = [M, N] with vector shapes m=8, n=2 and
+    the reshape wants to map it to m=4, n=4. So we start by expanding the node
+    node: {m = 0, n = 0}
+        arg: {m = 0, n = 0}
+        arg: {m = 0, n = 1}
+    node: {m = 1, n = 0}
+        arg: {m = 0, n = 0}
+        arg: {m = 0, n = 1}
+    node: {m = 2, n = 0}
+        arg: {m = 1, n = 0}
+        arg: {m = 1, n = 1}
+    node: {m = 3, n = 0}
+        arg: {m = 1, n = 0}
+        arg: {m = 1, n = 1}
+    ...
+    In general,
+    For the (m = i, n = j) expansion of the reshape node, we expand the arguments of the reshape node
+    using the following recipe:
+    - if m_src < m_dst, => we have a one to many mapping from source to destination
+        so we expand the arguments along m = i // (m_dst / m_src) and we expand the argument only once.
+    - if m_src > m_dst, => we have a many to one mapping from source to destination
+        so we expand the arguments along m = i * (m_src / m_dst), ... and we expand the argument m_dst / m_src times.
+
+    In situations where the argument has been expanded along the same dimension, we reuse the expanded node
+    by making use of the context.
+    """
+
+    dim_combinations = {}
+    for dim, value in dim_query.items():
+        if dim not in reshape.target_vector_shape:
+            continue
+        if reshape.vector_shapes[dim] < reshape.target_vector_shape[dim]:
+            scale_factor = (
+                reshape.target_vector_shape[dim] // reshape.vector_shapes[dim]
+            )
+            dim_combinations[dim] = [value // scale_factor]
+        else:
+            scale_factor = (
+                reshape.vector_shapes[dim] // reshape.target_vector_shape[dim]
+            )
+            begin = value * scale_factor
+            dim_combinations[dim] = list(range(begin, begin + scale_factor))
+    reshape_dim_combinations = list(itertools.product(*dim_combinations.values()))
+
+    new_args = []
+    for i, arg_dim_query in enumerate(reshape_dim_combinations):
+        arg_dim_query = {
+            dim: val for dim, val in zip(dim_combinations.keys(), arg_dim_query)
+        }
+        if isinstance(reshape.args, Sequence):
+            custom_arg = get_custom(reshape.args[i])
+        else:
+            custom_arg = get_custom(reshape.args)
+        new_node = _expand_node(
+            custom_arg,
+            trace,
+            arg_dim_query,
+            get_node_dim_scaling(custom_arg.fx_node),
+            context,
+            get_node_dim_scaling,
+            res_idx,
+        )
+        new_args.append(new_node.fx_node)
+
+    reshape.update_arg("args", new_args)
 
 
 def get_expanded_name(node: CustomOp, dims: dict[IndexSymbol, int]) -> str:

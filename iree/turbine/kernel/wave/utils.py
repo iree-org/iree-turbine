@@ -12,7 +12,7 @@ from ..compiler.ir import (
     UnitAttr,
     Value,
 )
-from typing import Optional, Callable, Any, List, Tuple
+from typing import Optional, Callable, Any, List, Tuple, Sequence
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
@@ -25,6 +25,7 @@ from ..ops.wave_ops import (
     Reduction,
     GetResult,
     IterArg,
+    Reshape,
 )
 from .constraints import (
     Constraint,
@@ -192,6 +193,20 @@ def simplify_index(index: IndexExpr) -> IndexExpr:
     return subs_idxc(index.subs(mapping))
 
 
+def is_reshape_needed(
+    node: CustomOp,
+    node_vector_shapes: dict[IndexSymbol, int],
+    vector_shapes: dict[IndexSymbol, int],
+) -> bool:
+    for dim in node.type.symbolic_shape:
+        if dim not in vector_shapes:
+            # Ignore nodes that are not used in both mmas.
+            return False
+        if node_vector_shapes[dim] != vector_shapes[dim]:
+            return True
+    return False
+
+
 def get_mma_dimensional_mapping(
     trace: CapturedTrace,
     hardware_constraint: HardwareConstraint,
@@ -243,6 +258,48 @@ def get_mma_dimensional_mapping(
             reduction.anchor = custom
 
     mma_slices = {get_custom(x): capture_mma_slices(get_custom(x)) for x in mma_nodes}
+
+    # Determine if any reshapes are required. Reshapes are added for
+    # chained matmuls when the vector shapes of the operands in one matmul
+    # differ from those in another matmul. The mma_slices contain all the ops
+    # in the backward slice of the lhs and rhs upto a previous mma (if one exists).
+    # So we check for the previous node of the first operator in the slice to see
+    # if it is an MMA and if so check if a reshape is required.
+    def add_reshape_if_needed(mma: MMA, prev_mma: MMA):
+        with mma.graph.inserting_before(mma.fx_node):
+            for i, arg in mma.node_args.items():
+                if is_reshape_needed(arg, mma.vector_shapes, prev_mma.vector_shapes):
+                    reshape = Reshape(arg.fx_node, prev_mma.vector_shapes).add_to_graph(
+                        custom.graph
+                    )
+                    custom_reshape = get_custom(reshape)
+                    custom_reshape.vector_shapes = custom.vector_shapes
+                    custom_reshape.anchor = custom
+                    custom.update_arg(i, reshape)
+
+    def find_mma_in_slice(node: CustomOp) -> Optional[MMA]:
+        """
+        Find the closest mma by iterating through the backward slice of a node
+        in reverse.
+        """
+        slice = list(capture_backward_slice(node))
+        for arg in reversed(slice):
+            prev_mma = get_custom(arg)
+            if isinstance(prev_mma, MMA):
+                return prev_mma
+        return None
+
+    # Look in the backward slices of both the LHS and RHS to find
+    # mmas. If found, add reshapes if necessary.
+    for mma in mma_nodes:
+        custom_mma = get_custom(mma)
+        prev_mma = find_mma_in_slice(custom_mma.lhs)
+        if prev_mma:
+            add_reshape_if_needed(custom_mma, prev_mma)
+        prev_mma = find_mma_in_slice(custom_mma.rhs)
+        if prev_mma:
+            add_reshape_if_needed(custom_mma, prev_mma)
+
     return mapping, mma_slices
 
 

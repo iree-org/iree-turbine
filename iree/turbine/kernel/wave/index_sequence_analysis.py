@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from ..ops.wave_ops import (
+    Allocate,
     Write,
     ExtractSlice,
     get_custom,
@@ -12,6 +13,8 @@ from ..ops.wave_ops import (
     MMA,
     Placeholder,
     IterArg,
+    CustomOp,
+    Reshape,
 )
 from .constraints import Constraint, HardwareConstraint, WorkgroupConstraint
 from .._support.tracing import CapturedTrace, IndexingContext
@@ -193,8 +196,8 @@ def set_vector_shapes(
     an MMA slice as well as the anchor node.
     """
     custom = get_custom(node)
-    # MMA & Reduction nodes already have their vector shapes set.
-    if isinstance(custom, (MMA, Reduction)):
+    # MMA, Reduction & Reshape nodes already have their vector shapes set.
+    if isinstance(custom, (MMA, Reduction, Reshape)):
         return
     # Add vector shapes from constraints to all ops. These are global constraints.
     custom.vector_shapes = {}

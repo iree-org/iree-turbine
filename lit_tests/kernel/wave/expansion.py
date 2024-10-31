@@ -21,12 +21,15 @@ M = tkl.sym.M
 N = tkl.sym.N
 K = tkl.sym.K
 B = tkl.sym.B
+K1 = tkl.sym.K1
+K2 = tkl.sym.K2
 
 # Workgroup tile sizes
 BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_K = tkl.sym.BLOCK_K
 BLOCK_B = tkl.sym.BLOCK_B
+BLOCK_K2 = tkl.sym.BLOCK_K2
 
 # Address space (for GPU, shared(1) or global(0))
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -837,6 +840,125 @@ def py_arithmetic_different_dims():
         # CHECK-NEXT: write(register_=neg_0_0_0, memory=c, elements_per_thread=4, index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
 
         # CHECK: -----
+
+
+@tkw.wave_trace_only()
+def chained_gemm_32x32x8(
+    q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
+    k: tkl.Memory[B, K2, K1, SHARED_ADDRESS_SPACE, tkl.f16],
+    v: tkl.Memory[B, N, K2, SHARED_ADDRESS_SPACE, tkl.f16],
+    c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+):
+    c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+
+    @tkw.reduction(K2, init_args=[c_reg])
+    def repeat(acc: tkl.Register[B, M, N, tkl.f32]) -> tkl.Register[B, M, N, tkl.f32]:
+        inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
+        q_reg = tkw.read(q, elements_per_thread=4)
+        k_reg = tkw.read(k, elements_per_thread=4)
+        kq_reg = tkw.mma(k_reg, q_reg, inner_acc)
+        qk_reg = tkw.permute(kq_reg, target_shape=[B, M, K2])
+        qk_cast_reg = tkw.cast(qk_reg, tkl.f16)
+        v_reg = tkw.read(v, elements_per_thread=4)
+        acc = tkw.mma(qk_cast_reg, v_reg, acc)
+        return acc
+
+    tkw.write(repeat, c, elements_per_thread=16)
+
+
+@run_test
+def test_chained_gemm_32x32x8():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.TilingConstraint(K2, BLOCK_K2, ARGK)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, THREAD_1)]
+
+    mfma_variant = tkw.MMAType.F32_32x32x8_F16
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=mfma_variant,
+            vector_shapes={B: 0},
+        )
+    ]
+
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_B: 1,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
+            BLOCK_K2: 32,
+            K1: 32,
+        }
+    ):
+        graph = chained_gemm_32x32x8()
+        IndexingContext.current().finalize()
+        set_node_indices(graph, constraints)
+        expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
+        print_trace(graph)
+
+        # CHECK: %acc_0_0_0
+        # CHECK: %register
+        # CHECK: %q
+        # CHECK: %read_0_0_0
+        # CHECK-SAME: (args = (%q, 4, None, None)
+        # CHECK: %read_0_0_1
+        # CHECK-SAME: (args = (%q, 4, None, None)
+        # CHECK: %read_0_0_2
+        # CHECK-SAME: (args = (%q, 4, None, None)
+        # CHECK: %read_0_0_3
+        # CHECK-SAME: (args = (%q, 4, None, None)
+        # CHECK: %k
+        # CHECK: %read_shared_0_0_0
+        # CHECK-SAME: (args = (%k, 4, None, None)
+        # CHECK: %read_shared_0_0_1
+        # CHECK-SAME: (args = (%k, 4, None, None)
+        # CHECK: %read_shared_0_0_2
+        # CHECK-SAME: (args = (%k, 4, None, None)
+        # CHECK: %read_shared_0_0_3
+        # CHECK-SAME: (args = (%k, 4, None, None)
+        # CHECK: %mma_0_0_0
+        # CHECK-SAME: (args = (%read_shared_0_0_0, %read_0_0_0, %register)
+        # CHECK: %mma_0_0_1
+        # CHECK-SAME: (args = (%read_shared_0_0_1, %read_0_0_1, %mma_0_0_0)
+        # CHECK: %mma_0_0_2
+        # CHECK-SAME: (args = (%read_shared_0_0_2, %read_0_0_2, %mma_0_0_1)
+        # CHECK: %mma_0_0_3
+        # CHECK-SAME: (args = (%read_shared_0_0_3, %read_0_0_3, %mma_0_0_2)
+        # CHECK: %permute_0_0
+        # CHECK-SAME: (args = (%mma_0_0_3, [B, M, K2])
+        # CHECK: %cast_0_0
+        # CHECK-SAME: (args = (%permute_0_0, f16)
+        # CHECK: %v
+        # CHECK: %read_shared_0_0_0
+        # CHECK-SAME: (args = (%v, 4, None, None)
+        # CHECK: %read_shared_0_0_1
+        # CHECK-SAME: (args = (%v, 4, None, None)
+        # CHECK: %read_shared_0_0_2
+        # CHECK-SAME: (args = (%v, 4, None, None)
+        # CHECK: %read_shared_0_0_3
+        # CHECK-SAME: (args = (%v, 4, None, None)
+        # CHECK: %reshape_0_0_0
+        # CHECK-SAME: (args = ([%cast_0_0], {K2: 32, M: 32, K1: 8, B: 0})
+        # CHECK: %reshape_0_0_1
+        # CHECK-SAME: (args = ([%cast_0_0], {K2: 32, M: 32, K1: 8, B: 0})
+        # CHECK: %reshape_0_0_2
+        # CHECK-SAME: (args = ([%cast_0_0], {K2: 32, M: 32, K1: 8, B: 0})
+        # CHECK: %reshape_0_0_3
+        # CHECK-SAME: (args = ([%cast_0_0], {K2: 32, M: 32, K1: 8, B: 0})
+        # CHECK: %mma_0_0_0
+        # CHECK-SAME: (args = (%reshape_0_0_0, %read_shared_0_0_0, %acc_0_0_0)
+        # CHECK: %mma_0_0_1
+        # CHECK-SAME: (args = (%reshape_0_0_1, %read_shared_0_0_1, %mma_0_0_0)
+        # CHECK: %mma_0_0_2
+        # CHECK-SAME: (args = (%reshape_0_0_2, %read_shared_0_0_2, %mma_0_0_1)
+        # CHECK: %mma_0_0_3
+        # CHECK-SAME: (args = (%reshape_0_0_3, %read_shared_0_0_3, %mma_0_0_2)
+        # CHECK: return [mma_0_0_3]
 
 
 if __name__ == "__main__":
