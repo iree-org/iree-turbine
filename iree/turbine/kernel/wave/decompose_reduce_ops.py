@@ -66,7 +66,9 @@ def determine_shuffle_config(
     offset = subs_idxc(offset)
     offset_table = [offset.subs({THREAD_0: i}) for i in range(subgroup_size)]
     unique_offsets = list(dict.fromkeys(offset_table))
-    cluster_size = len(set(offset_table))
+    # The cluster size represents the number of unique threads that are participating in a shuffle.
+    # We can obtain this information by just computing the number of unique entries in the offset table.
+    cluster_size = len(unique_offsets)
     thread_ids = []
     for thread_offset in unique_offsets:
         thread_ids.append(offset_table.index(thread_offset))

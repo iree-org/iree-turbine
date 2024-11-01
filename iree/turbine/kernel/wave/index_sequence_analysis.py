@@ -220,6 +220,11 @@ def set_vector_shapes(
             or node in mma_slices[mma][MMA_RHS]
         ):
             # Ensure that the operators indexing dims are present in the anchor.
+            # For example, say we have a write node with indexing dimensions [B, M, N]
+            # and there are two potential options for anchors: an MMA with
+            # indexing dimensions [B, M, K1, K2] and another with indexing dimensions
+            # [B, M, N, K2], we want to pick the second one otherwise the index
+            # that is set from the anchor will not be accurate.
             if not set(custom.indexing_dims).issubset(mma.indexing_dims):
                 continue
             custom.anchor = mma
