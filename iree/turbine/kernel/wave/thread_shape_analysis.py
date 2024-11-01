@@ -51,7 +51,7 @@ def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
 # Anchor Indicies and Conflict resolution helpers
 #################################################################
 
-anchorOpTypes = (Read, Write, MMA, ReduceOp)
+anchorOpTypes = (Read, Write, MMA, ReduceOp, Reshape)
 noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate)
 legalSubtypes = (IterArg,)
 nonPropagatableTypes = anchorOpTypes + noHandleTypes
@@ -201,9 +201,13 @@ def determine_thread_shapes(trace: CapturedTrace):
                 index_sizes, set([])
             ).union(bwd_slice)
         elif isinstance(custom, MMA):
-            lhs_bwd_slice = capture_backward_slice(custom.lhs, propagatable_op)
-            rhs_bwd_slice = capture_backward_slice(custom.rhs, propagatable_op)
-            acc_slice = capture_forward_slice(custom.acc, propagatable_op)
+            lhs_bwd_slice = set([custom.lhs])
+            if propagatable_op(custom.lhs):
+                lhs_bwd_slice = capture_backward_slice(custom.lhs, propagatable_op)
+            rhs_bwd_slice = set([custom.rhs])
+            if propagatable_op(custom.rhs):
+                rhs_bwd_slice = capture_backward_slice(custom.rhs, propagatable_op)
+            acc_slice = capture_forward_slice(custom.fx_node, propagatable_op)
             if not isinstance(get_custom(custom.acc), MMA):
                 acc_slice = acc_slice.union(
                     capture_backward_slice(custom.acc, propagatable_op)
@@ -220,6 +224,15 @@ def determine_thread_shapes(trace: CapturedTrace):
             thread_size_to_ops[rhs_index] = thread_size_to_ops.get(
                 rhs_index, set([])
             ).union(rhs_bwd_slice)
+        elif isinstance(custom, Reshape):
+            # The reshape op acts like a barrier for the MMA preventing
+            # the mma from propagating the thread shapes of its reshaped
+            # operands backwards.
+            bwd_size = get_dim_sizes(custom.args.index)
+            bwd_slice = capture_backward_slice(custom.args, propagatable_op)
+            thread_size_to_ops[bwd_size] = thread_size_to_ops.get(
+                bwd_size, set([])
+            ).union(bwd_slice)
 
     # Go through each index-size buckets, and apply the index-size to ops in the bucket.
     cummulative_set = set()

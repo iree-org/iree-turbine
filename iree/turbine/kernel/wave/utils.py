@@ -265,17 +265,18 @@ def get_mma_dimensional_mapping(
     # in the backward slice of the lhs and rhs upto a previous mma (if one exists).
     # So we check for the previous node of the first operator in the slice to see
     # if it is an MMA and if so check if a reshape is required.
-    def add_reshape_if_needed(mma: MMA, prev_mma: MMA):
+    def add_reshape_if_needed(mma: MMA, prev_mma: MMA, arg_index: int):
         with mma.graph.inserting_before(mma.fx_node):
-            for i, arg in mma.node_args.items():
-                if is_reshape_needed(arg, mma.vector_shapes, prev_mma.vector_shapes):
-                    reshape = Reshape(arg.fx_node, prev_mma.vector_shapes).add_to_graph(
-                        custom.graph
-                    )
-                    custom_reshape = get_custom(reshape)
-                    custom_reshape.vector_shapes = custom.vector_shapes
-                    custom_reshape.anchor = custom
-                    custom.update_arg(i, reshape)
+            arg = mma.lhs if arg_index == 0 else mma.rhs
+            arg = get_custom(arg)
+            if is_reshape_needed(arg, mma.vector_shapes, prev_mma.vector_shapes):
+                reshape = Reshape(arg.fx_node, prev_mma.vector_shapes).add_to_graph(
+                    custom.graph
+                )
+                custom_reshape = get_custom(reshape)
+                custom_reshape.vector_shapes = custom.vector_shapes
+                custom_reshape.anchor = custom
+                custom.update_arg(arg_index, reshape)
 
     def find_mma_in_slice(node: CustomOp) -> Optional[MMA]:
         """
@@ -295,10 +296,10 @@ def get_mma_dimensional_mapping(
         custom_mma = get_custom(mma)
         prev_mma = find_mma_in_slice(custom_mma.lhs)
         if prev_mma:
-            add_reshape_if_needed(custom_mma, prev_mma)
+            add_reshape_if_needed(custom_mma, prev_mma, 0)
         prev_mma = find_mma_in_slice(custom_mma.rhs)
         if prev_mma:
-            add_reshape_if_needed(custom_mma, prev_mma)
+            add_reshape_if_needed(custom_mma, prev_mma, 1)
 
     return mapping, mma_slices
 
@@ -641,7 +642,8 @@ def bfs(
     filter_fn: Callable[[fx.node], bool],
 ) -> set[fx.Node]:
     """
-    Run BFS on the graph to capture the forward slice of a node.
+    Run BFS on the graph. The filter function is not applied to
+    the incoming node.
     """
     visited: set[fx.Node] = set()
     queue: list[fx.Node] = []
