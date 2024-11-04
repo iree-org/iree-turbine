@@ -338,7 +338,7 @@ class CustomOp(ABC):
         vars_str = ", ".join(vars_list)
         return f"{self.tkw_op_name}({vars_str})"
 
-    def add_to_graph(self, region_graph: RegionGraph) -> fx.Node:
+    def add_to_graph(self, region_graph: RegionGraph, type: Any = None) -> fx.Node:
         arg_list = tuple([value for _, value in vars(self).items()])
         self.graph = region_graph
         self.fx_node = region_graph.create_node(
@@ -350,6 +350,10 @@ class CustomOp(ABC):
         self.fx_node.tkw_op = self.__class__
         self.fx_node.tkw_op_name = self.tkw_op_name
         self.fx_node.index = None
+        if type is None:
+            get_custom(self.fx_node).infer_type()
+        else:
+            self.fx_node.type = type
         return self.fx_node
 
     def _add_proxy_to_graph(self, region_graph: RegionGraph):
@@ -556,6 +560,23 @@ class CustomOp(ABC):
     def vector_shapes(self, value: dict[IndexSymbol, int]):
         self.fx_node.vector_shapes = value
 
+    @property
+    def type(self) -> Any:
+        if hasattr(self.fx_node, "type"):
+            return self.fx_node.type
+        return None
+
+    @type.setter
+    def type(self, value: Any):
+        self.fx_node.type = value
+
+    def infer_type(self):
+        """
+        Infer the type of this operator using the types
+        of its arguments.
+        """
+        pass
+
     def align_index(self, constraints: list["Constraint"]) -> None:
         """
         Align index to WG/Tile sizes.
@@ -602,13 +623,13 @@ class BinaryPyOp(CustomOp, ABC):
     def py_operator(self) -> str:
         return self.tkw_op_name
 
-    @property
-    def type(self) -> Memory:
+    def infer_type(self):
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
         has_same_type = has_same_custom_type(lhs_type, rhs_type)
         if has_same_type:
-            return lhs_type
+            self.type = lhs_type
+            return
         lhs_dim_set = set(lhs_type.symbolic_shape)
         rhs_dim_set = set(rhs_type.symbolic_shape)
         if lhs_dim_set.isdisjoint(rhs_dim_set):
@@ -616,7 +637,7 @@ class BinaryPyOp(CustomOp, ABC):
                 "BinaryPyOp requires lhs and rhs shape to be at least broadcastable."
             )
         broadcasted_type = lhs_type if lhs_dim_set > rhs_dim_set else rhs_type
-        return broadcasted_type
+        self.type = broadcasted_type
 
 
 @define_interface_op("exp2")
@@ -637,10 +658,9 @@ class UnaryPyOp(CustomOp, ABC):
     def py_operator(self) -> str:
         return self.tkw_op_name
 
-    @property
-    def type(self) -> Memory:
+    def infer_type(self):
         src_type = get_custom(self.arg).type
-        return src_type
+        self.type = src_type
 
 
 @final
@@ -868,9 +888,8 @@ class MMA(CustomOp):
     def acc_type(self) -> Memory:
         return get_custom(self.acc).type
 
-    @property
-    def type(self) -> Memory:
-        return self.acc_type
+    def infer_type(self):
+        self.type = self.acc_type
 
     def operand_index(
         self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
@@ -925,6 +944,7 @@ class MMA(CustomOp):
 @define_op("read")
 @dataclass
 class Read(CustomOp):
+
     memory: fx.Proxy
     elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
@@ -937,10 +957,9 @@ class Read(CustomOp):
         # TODO: This could contain ints.
         return list(self.memory_type.symbolic_shape)
 
-    @property
-    def type(self) -> "Register":
+    def infer_type(self):
         dtype = self.memory_type.dtype
-        return Register[*self.indexing_dims, dtype]
+        self.type = Register[*self.indexing_dims, dtype]
 
     @property
     def memory_type(self) -> "Memory":
@@ -1052,12 +1071,11 @@ class Reduction(CustomOp):
                 captured_vars.append(nested_node)
         return captured_vars
 
-    @property
-    def type(self) -> Memory | Register | list[Memory | Register]:
+    def infer_type(self):
         res_types = [get_custom(x).type for x in self.init_args]
         if len(res_types) == 1:
             res_types = res_types[0]
-        return res_types
+        self.type = res_types
 
     def outputs(self, graph: fx.Graph) -> list[fx.Node]:
         for node in graph.nodes:
@@ -1110,11 +1128,12 @@ class Write(CustomOp):
         if self.mapping is not None:
             return list(self.mapping.input_shape)
         # TODO: This could contain ints.
-        return list(self.type.symbolic_shape)
+        return list(self.memory_type.symbolic_shape)
 
-    @property
-    def type(self) -> "Memory":
-        return get_custom(self.memory).type
+    def infer_type(self):
+        address_space = self.memory_type.address_space
+        dtype = self.memory_type.dtype
+        self.type = Memory[*self.indexing_dims, address_space, dtype]
 
     @property
     def memory_type(self) -> "Memory":
@@ -1144,13 +1163,12 @@ class GetResult(CustomOp):
     value: fx.Node
     res_idx: int
 
-    @property
-    def type(self) -> "Memory":
+    def infer_type(self):
         src_type = get_custom(self.value).type
         if isinstance(src_type, list):
-            return src_type[self.res_idx]
+            self.type = src_type[self.res_idx]
         else:
-            return src_type
+            self.type = src_type
 
     @property
     def indexing_dims(self) -> list[IndexExpr]:
@@ -1200,14 +1218,14 @@ class Extract(CustomOp):
     register_: fx.Proxy
     offset: IndexExpr | int
 
-    @property
-    def type(self) -> "Register":
+    def infer_type(self):
         # Intuition here is we are trying to extract an element
         # from fastest dim => we reduce the fastest dim.
         src_type = get_custom(self.register_).type
         # Return itself if just 0-D/1-D symbolic.
         if len(src_type.symbolic_shape) <= 1:
-            return src_type
+            self.type = src_type
+            return
 
         # Typically fastest dim is the last dimension,
         # If non-unit dim exists => non-unit dim is fastest dim.
@@ -1220,7 +1238,7 @@ class Extract(CustomOp):
         dim_to_remove = dst_shape[-1] if not non_unit_dim else non_unit_dim[0]
         dst_shape.remove(dim_to_remove)
         dst_type = Register[*dst_shape, src_type.dtype]
-        return dst_type
+        self.type = dst_type
 
 
 @define_op("extract_slice")
@@ -1297,12 +1315,8 @@ class ReduceOp(CustomOp, ABC):
         dst_indexing = [dim for dim in src_indexing if dim != self.dim]
         return dst_indexing
 
-    @property
-    def type(self) -> Memory:
+    def infer_type(self):
         if isinstance(self.arg, Sequence):
-            # Local import to break circular dep.
-            from ..wave.utils import all_equal
-
             src_types = [get_custom(arg).type for arg in self.arg]
             ref_shape = src_types[0].symbolic_shape
             ref_dtype = src_types[0].dtype
@@ -1318,7 +1332,7 @@ class ReduceOp(CustomOp, ABC):
             src_type = get_custom(self.arg).type
         reduced_dims = [dims for dims in src_type.symbolic_shape if dims != self.dim]
         dst_type = Register[*reduced_dims, src_type.dtype]
-        return dst_type
+        self.type = dst_type
 
     @property
     def num_reduction_dims(self) -> int:
@@ -1376,10 +1390,9 @@ class CastOp(CustomOp, ABC):
     def indexing_dims(self) -> list[IndexSymbol]:
         return get_custom(self.arg).indexing_dims
 
-    @property
-    def type(self) -> Memory:
+    def infer_type(self):
         src_shape = get_custom(self.arg).type.symbolic_shape
-        return Register[*src_shape, self.dtype]
+        self.type = Register[*src_shape, self.dtype]
 
 
 @define_op("permute")
@@ -1397,13 +1410,12 @@ class Permute(CustomOp, ABC):
     def indexing_dims(self) -> list[IndexExpr]:
         return self.target_shape
 
-    @property
-    def type(self) -> Register:
+    def infer_type(self):
         src_type = get_custom(self.arg).type
         assert set(src_type.symbolic_shape) == set(
             self.target_shape
         ), f"Target shape {self.target_shape} must be a permutation of source shape {src_type.symbolic_shape}"
-        return Register[*self.target_shape, src_type.dtype]
+        self.type = Register[*self.target_shape, src_type.dtype]
 
 
 def _to_sequence(input: Any | Sequence[Any]) -> Sequence[Any]:

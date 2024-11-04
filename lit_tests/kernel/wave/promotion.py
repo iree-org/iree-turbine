@@ -7,6 +7,7 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.promotion import promote_node, promote_placeholders
 from iree.turbine.kernel.wave.hoisting import hoist_allocs
+from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel._support.indexing import IndexingContext
@@ -67,6 +68,7 @@ def test_read_write_equal_sizes():
         graph: fx.Graph = trace.get_root_graph()
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
+        infer_types(trace)
         promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
         print_trace(trace, False)
         # CHECK: %a
@@ -116,6 +118,7 @@ def test_read_write_equal_sizes_different_address_spaces():
     ):
         trace: CapturedTrace = read_write_same_size_different_address_spaces()
         IndexingContext.current().finalize()
+        infer_types(trace)
         promote_placeholders(trace, constraints)
         print_trace(trace, False)
         # CHECK: %a
@@ -170,10 +173,11 @@ def test_gemm():
         trace: CapturedTrace = gemm()
         graph: fx.Graph = trace.get_subgraph("region_0")
         read_nodes = get_read_nodes(graph)
+        IndexingContext.current().finalize()
+        infer_types(trace)
         for read_node in read_nodes:
             promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
         hoist_allocs(trace)
-        IndexingContext.current().finalize()
         print_trace(trace, False)
         # Root graph:
         # CHECK: %a

@@ -336,7 +336,7 @@ def _expand_reduction(
             # Add GetResult nodes for the corresponding dimensions
             reduction.graph.inserting_after(reduction.fx_node)
             new_node = GetResult(reduction.fx_node, len(new_output_args))
-            new_node.add_to_graph(reduction.graph)
+            new_node.add_to_graph(reduction.graph, arg.type)
             new_node.fx_node.name = get_expanded_name(new_node, dims)
             context[
                 (reduction, get_indexed_dims(dims, expand_dims), arg_idx)
