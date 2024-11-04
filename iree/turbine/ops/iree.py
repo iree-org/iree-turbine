@@ -6,6 +6,8 @@
 
 """Custom ops for built-in IREE functionality."""
 from typing import cast
+import numpy as np
+import os
 
 from ..support.ir_imports import (
     Attribute,
@@ -23,6 +25,8 @@ from ..runtime.op_reg import (
     AttrArg,
     def_library,
 )
+
+from ..support import debugging
 
 __all__ = [
     "trace",
@@ -45,6 +49,9 @@ class trace_tensor(CustomOp):
     def select(self, ksel: KernelSelection):
         ksel.attr_str(0)
         ksel.arg_tensor(1, inplace_tied=True)
+
+    def eager_execute(self, key, tensor):
+        debugging.trace_tensor_callback(key, tensor)
 
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
         key = cast(AttrArg, ksel.arg_descs[0])
