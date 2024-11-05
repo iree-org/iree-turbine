@@ -6,12 +6,15 @@
 
 import logging
 import unittest
-
+import tempfile
 import torch
 import torch.nn as nn
+import numpy as np
+import os
 
 import iree.turbine.aot as aot
 import iree.turbine.ops as ops
+import iree.turbine.support.debugging as debugging
 
 
 # See runtime/op_reg/kernel_aot_test.py for additional tests of the trace
@@ -19,7 +22,16 @@ import iree.turbine.ops as ops
 class TraceTensorTest(unittest.TestCase):
     def testEager(self):
         t = torch.randn(3, 4)
-        ops.iree.trace_tensor("TEST", t)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            stashed_runtime_trace_dir = debugging.flags.runtime_trace_dir
+            debugging.flags.runtime_trace_dir = tmp_dir
+
+            ops.iree.trace_tensor("TEST", t)
+            recorded_tensor = np.load(os.path.join(tmp_dir, "TEST.npy"))
+            np.testing.assert_equal(recorded_tensor, t)
+
+            # recover the original so we don't influence other tests.
+            debugging.flags.runtime_trace_dir = stashed_runtime_trace_dir
 
     def testAOT(self):
         class MyModule(nn.Module):

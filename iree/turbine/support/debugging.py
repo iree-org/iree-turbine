@@ -6,15 +6,21 @@
 
 """Debug flags and settings."""
 
-from typing import Optional
+from typing import Callable, Optional
 from dataclasses import dataclass
 import logging
 import re
 import os
+import torch
+import numpy as np
 
 __all__ = [
+    "default_trace_tensor_callback",
     "flags",
     "NDEBUG",
+    "trace_tensor_callback",
+    "trace_tensor_to_npy",
+    "TraceTensorCallback",
 ]
 
 # We use the native logging vs our .logging setup because our logging depends
@@ -99,3 +105,15 @@ class DebugFlags:
 
 
 flags = DebugFlags.parse_from_env()
+
+TraceKey = str
+TraceTensorCallback = Callable[[TraceKey, torch.Tensor], None]
+
+
+def trace_tensor_to_npy(key: TraceKey, tensor: torch.Tensor):
+    if flags.runtime_trace_dir is not None:
+        np.save(os.path.join(flags.runtime_trace_dir, f"{key}.npy"), tensor)
+
+
+default_trace_tensor_callback = trace_tensor_to_npy
+trace_tensor_callback = default_trace_tensor_callback
