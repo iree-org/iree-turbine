@@ -30,14 +30,14 @@ WHEEL_DIR = REPO_ROOT / "wheelhouse"
 # a specific wheel".
 IREE_PLATFORM_ARGS = [
     # Linux aarch64
-    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.9"],
+    # ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.9"],
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.10"],
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.11"],
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.12"],
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13"],
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13t"],
     # Linux x86_64
-    ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.9"],
+    # ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.9"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.10"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.11"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.12"],
