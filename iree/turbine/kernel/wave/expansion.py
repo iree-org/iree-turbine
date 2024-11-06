@@ -336,6 +336,11 @@ def _expand_reduction(
             # Add GetResult nodes for the corresponding dimensions
             reduction.graph.inserting_after(reduction.fx_node)
             new_node = GetResult(reduction.fx_node, len(new_output_args))
+            # Usually we would rely on infer_types inside add_to_graph to figure out
+            # the type of the new node. However, in this case, the logic to determine
+            # the type requires the reduction node to have its init_args set, which has
+            # not happened yet (it happens later). So instead, since we have access to
+            # arg, we just set the type directly.
             new_node.add_to_graph(reduction.graph, arg.type)
             new_node.fx_node.name = get_expanded_name(new_node, dims)
             context[
