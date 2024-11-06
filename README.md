@@ -1,5 +1,7 @@
 # IREE Turbine
 
+[![PyPI version](https://badge.fury.io/py/iree-turbine.svg)](https://badge.fury.io/py/iree-turbine)
+
 ![image](https://netl.doe.gov/sites/default/files/2020-11/Turbine-8412270026_83cfc8ee8f_c.jpg)
 
 Turbine is IREE's frontend for PyTorch.
@@ -15,24 +17,26 @@ Turbine provides a collection of tools:
 * *Custom Ops*: Integration for defining custom PyTorch ops and implementing them in
   terms of IREE's backend IR or a Pythonic kernel language.
 
-## Contact Us
+## Contact us
 
 Turbine is under active development. Feel free to reach out on one of
-[IREE's communication channels](https://github.com/iree-org/iree?tab=readme-ov-file#communication-channels) (specifically, we monitor the
-#pytorch channel on the IREE Discord server).
+[IREE's communication channels](https://github.com/iree-org/iree?tab=readme-ov-file#communication-channels)
+(specifically, we monitor the `#pytorch` and `#turbine` channels on the IREE
+Discord server).
 
-## Quick Start for Users
+## Quick start for users
 
-1. Install from source:
+1. Install from PyPI:
 
-```
+```bash
 pip install iree-turbine
 # Or for editable: see instructions under developers
 ```
 
-The above does install some unecessary cuda/cudnn packages for cpu use. To avoid this you
-can specify pytorch-cpu and install via:
-```
+The above does install some cuda/cudnn packages which are unnecessary for most
+usage. To avoid this you can install just pytorch-cpu via:
+
+```bash
 pip install -r pytorch-cpu-requirements.txt
 pip install iree-turbine
 ```
@@ -65,12 +69,12 @@ these canonical directions mirror what the CI does.
 We recommend setting up a virtual environment (venv). The project is configured
 to ignore `.venv` directories, and editors like VSCode pick them up by default.
 
-```
+```bash
 python -m venv --prompt iree-turbine .venv
 source .venv/bin/activate
 ```
 
-### Install PyTorch for Your System
+### Install PyTorch for your system
 
 If no explicit action is taken, the default PyTorch version will be installed.
 This will give you a current CUDA-based version. Install a different variant
@@ -78,27 +82,31 @@ by doing so explicitly first:
 
 *CPU:*
 
-```
+```bash
 pip install -r pytorch-cpu-requirements.txt
 ```
 
 *ROCM:*
 
-```
+```bash
 pip install -r pytorch-rocm-requirements.txt
 ```
 
-### Install Development Packages
+### Install development packages
 
-```
+```bash
 # Install editable local projects.
 pip install -r requirements.txt -e .
 ```
 
-### Running Tests
+### Running tests
 
-```
+```bash
+# Python unit tests
 pytest .
+
+# Lit tests
+lit lit_tests/ -v
 ```
 
 ### Optional: Pre-commits and developer settings
@@ -120,11 +128,11 @@ sure to specify [additional options for the Python bindings](https://iree.dev/bu
 -DIREE_BUILD_PYTHON_BINDINGS=ON -DPython3_EXECUTABLE="$(which python)"
 ```
 
-#### Configuring Python
+#### Configuring python
 
 Uninstall existing packages:
 
-```
+```bash
 pip uninstall iree-compiler
 pip uninstall iree-runtime
 ```
@@ -132,6 +140,6 @@ pip uninstall iree-runtime
 Copy the `.env` file from `iree/` to this source directory to get IDE
 support and add to your path for use from your shell:
 
-```
+```bash
 source .env && export PYTHONPATH
 ```
