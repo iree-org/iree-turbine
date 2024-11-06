@@ -35,14 +35,14 @@ IREE_PLATFORM_ARGS = [
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.11"],
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.12"],
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13"],
-    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13t"],
+    # ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13t"],
     # Linux x86_64
     # ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.9"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.10"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.11"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.12"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.13"],
-    ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.13t"],
+    # ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.13t"],
     # MacOS
     ["--platform", "macosx_13_0_universal2", "--python-version", "3.11"],
     ["--platform", "macosx_13_0_universal2", "--python-version", "3.12"],
