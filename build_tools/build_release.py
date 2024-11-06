@@ -34,15 +34,23 @@ IREE_PLATFORM_ARGS = [
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.10"],
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.11"],
     ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.12"],
+    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13"],
+    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13t"],
     # Linux x86_64
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.9"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.10"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.11"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.12"],
+    ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.13"],
+    ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.13t"],
     # MacOS
     ["--platform", "macosx_13_0_universal2", "--python-version", "3.11"],
+    ["--platform", "macosx_13_0_universal2", "--python-version", "3.12"],
+    ["--platform", "macosx_13_0_universal2", "--python-version", "3.13"],
     # Windows
     ["--platform", "win_amd64", "--python-version", "3.11"],
+    ["--platform", "win_amd64", "--python-version", "3.12"],
+    ["--platform", "win_amd64", "--python-version", "3.13"],
 ]
 
 
@@ -55,13 +63,13 @@ def write_version_info(args):
     with open(VERSION_INFO_FILE, "rt") as f:
         info_dict = json.load(f)
 
-    # Compute core-version.
-    core_version = eval_version(args.core_version)
-    if args.core_pre_version:
-        core_version += eval_version(args.core_pre_version)
-    if args.core_post_version:
-        core_version += f".{eval_version(args.core_post_version)}"
-    info_dict["core-version"] = core_version
+    # Compute package-version.
+    package_version = eval_version(args.package_version)
+    if args.package_pre_version:
+        package_version += eval_version(args.package_pre_version)
+    if args.package_post_version:
+        package_version += f".{eval_version(args.package_post_version)}"
+    info_dict["package-version"] = package_version
 
     with open(VERSION_INFO_FILE, "wt") as f:
         json.dump(info_dict, f)
@@ -112,12 +120,16 @@ def download_iree_binaries():
         ]
         args.extend(platform_args)
         args += [
-            "-f",
-            "https://iree.dev/pip-release-links.html",
+            # Uncomment to allow nightly releases (if not pinned in the file)
+            # "-f",
+            # "https://iree.dev/pip-release-links.html",
             "-f",
             WHEEL_DIR,
+            # Note: could also drop `-ci` here, if coordinating a release
+            # across projects and new stable versions of the IREE packages
+            # haven't yet been pushed.
             "-r",
-            REPO_ROOT / "iree-requirements.txt",
+            REPO_ROOT / "iree-requirements-ci.txt",
         ]
         exec(args)
 
@@ -130,16 +142,14 @@ def build_wheel(path, env=None):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--package-version", help="Version to use", required=True)
     parser.add_argument(
-        "--core-version", help="Version for the core component", required=True
-    )
-    parser.add_argument(
-        "--core-pre-version",
+        "--package-pre-version",
         help="Pre-release version segment or (YYYYMMDD)",
         default="",
     )
     parser.add_argument(
-        "--core-post-version",
+        "--package-post-version",
         help="Post-release version segment or (YYYYMMDD)",
         default="",
     )
