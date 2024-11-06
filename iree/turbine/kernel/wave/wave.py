@@ -49,6 +49,7 @@ from .shared_memory_indexing import (
 from .thread_shape_analysis import determine_thread_shapes
 from .scheduling.schedule import schedule_graph
 from .._support.indexing import IndexingContext, IndexExpr
+from .type_inference import infer_types
 import iree.turbine.kernel.lang as tkl
 from .._support.tracing import (
     CapturedTrace,
@@ -223,6 +224,9 @@ class LaunchableWave(Launchable):
 
         # Initialize Vector shapes
         self.hardware_constraints[0].subs_vector_shapes(idxc.subs)
+
+        # Do type inference.
+        infer_types(graph)
 
         # Promote the placeholders to the appropriate address space.
         promote_placeholders(graph, self.constraints)

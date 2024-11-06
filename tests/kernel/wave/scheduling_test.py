@@ -29,6 +29,7 @@ from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.wave.promotion import promote_placeholders
 from iree.turbine.kernel.wave.hoisting import hoist_allocs
 from iree.turbine.kernel.wave.expansion import expand_graph
+from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
 from iree.turbine.kernel.wave.scheduling.schedule import schedule_graph
 from iree.turbine.kernel.ops.wave_ops import get_custom
@@ -277,6 +278,7 @@ class SchedulingTest(unittest.TestCase):
         with tk.gen.TestLaunchContext(hyperparams, canonicalize=True, schedule=True):
             trace: CapturedTrace = gemm()
             IndexingContext.current().finalize()
+            infer_types(trace)
             promote_placeholders(trace, constraints)
             hoist_allocs(trace)
             set_node_indices(trace, constraints)
