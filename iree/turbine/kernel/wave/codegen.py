@@ -1139,7 +1139,7 @@ def handle_scheduling_group_barrier(emitter: WaveEmitter, node: fx.Node):
         mask = arith_d.constant(IntegerType.get_signless(32), mask)
         counts = arith_d.constant(IntegerType.get_signless(32), counts)
         llvm_d.call_intrinsic(
-            None, "llvm.amdgcn.sched.group.barrier", [mask, counts, sync_id]
+            None, "llvm.amdgcn.sched.group.barrier", [mask, counts, sync_id], [], []
         )
 
 
