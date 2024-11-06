@@ -33,7 +33,7 @@ def load_version_info():
 
 
 version_info = load_version_info()
-PACKAGE_VERSION = version_info["core-version"]
+PACKAGE_VERSION = version_info["package-version"]
 
 packages = find_namespace_packages(
     include=[
