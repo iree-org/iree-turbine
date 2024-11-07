@@ -1,14 +1,16 @@
 # Dynamic AOT Resnet-18 Example
 
-This example AOT-compiles a Resnet-18 module for performing inference on a dynamic number of input images.
+This example AOT-compiles a Resnet-18 module for performing inference on a
+dynamic number of input images.
 
-To run this example (with Python3.11), you should clone the repository to your local device and install the requirements in a virtual environment.
+To run this example, you should clone the repository to your local device and
+install the requirements in a virtual environment:
 
 ```bash
-git clone https://github.com/nod-ai/SHARK-ModelDev.git
-cd SHARK-ModelDev/examples/resnet-18
-python -m venv rn18_venv
-source ./rn18_venv/bin/activate
+git clone https://github.com/iree-org/iree-turbine.git
+cd iree-turbine/examples/resnet-18
+python -m venv rn18.venv
+source ./rn18.venv/bin/activate
 pip install -r requirements.txt
 ```
 
