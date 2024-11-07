@@ -118,9 +118,9 @@ commits locally, hooks will run. See https://pre-commit.com/
 ### Using a development compiler
 
 If doing native development of the compiler, it can be useful to switch to
-source builds for iree-compiler and iree-runtime.
+source builds for iree-base-compiler and iree-base-runtime.
 
-In order to do this, check out [IREE](https://github.com/openxla/iree) and
+In order to do this, check out [IREE](https://github.com/iree-org/iree) and
 follow the instructions to [build from source](https://iree.dev/building-from-source/getting-started/), making
 sure to specify [additional options for the Python bindings](https://iree.dev/building-from-source/getting-started/#building-with-cmake):
 
@@ -130,11 +130,10 @@ sure to specify [additional options for the Python bindings](https://iree.dev/bu
 
 #### Configuring python
 
-Uninstall existing packages:
+Uninstall existing packages (including any with the old package names):
 
 ```bash
-pip uninstall iree-compiler
-pip uninstall iree-runtime
+pip uninstall iree-compiler iree-base-compiler iree-runtime iree-base-runtime
 ```
 
 Copy the `.env` file from `iree/` to this source directory to get IDE

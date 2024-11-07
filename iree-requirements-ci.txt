@@ -6,5 +6,5 @@
 # Uncomment to select a nightly version.
 # --find-links https://iree.dev/pip-release-links.html
 
-iree-compiler==20241104.1068
-iree_runtime==20241104.1068
+iree-base-compiler==2.9.0
+iree-base-runtime==2.9.0
