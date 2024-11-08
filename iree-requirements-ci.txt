@@ -4,7 +4,7 @@
 # forgiving on the exact version.
 
 # Uncomment to select a nightly version.
-# --find-links https://iree.dev/pip-release-links.html
+--find-links https://iree.dev/pip-release-links.html
 
-iree-compiler==20241104.1068
-iree_runtime==20241104.1068
+iree-compiler==20241106.1070
+iree_runtime==20241106.1070
