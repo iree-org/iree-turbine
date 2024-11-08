@@ -194,7 +194,7 @@ class Storage:
         device._tx_timepoint += 1
         signal_sem = (device._tx_timeline, device._tx_timepoint)
         hal_device.queue_execute(
-            [cb], wait_semaphores=self.ready_fence, signal_semaphores=[signal_sem]
+            cb, wait_semaphores=self.ready_fence, signal_semaphores=[signal_sem]
         )
         self.ready_fence.insert(*signal_sem)
 
