@@ -34,7 +34,7 @@ compiled_binary = exported.compile(save_to=None)
 
 # return type is rt.array_interop.DeviceArray
 # np.array of outputs can be accessed via to_host() method
-def shark_infer(x):
+def run_inference(x):
     config = rt.Config("local-task")
     vmm = rt.load_vm_module(
         rt.VmModule.wrap_buffer(config.vm_instance, compiled_binary.map_memory()),
@@ -59,7 +59,7 @@ def compare_labels(id0, id1):
 # compiled module and standard inference (forward function)
 
 x = torch.randn(10, 3, 224, 224)
-y0 = shark_infer(x)
+y0 = run_inference(x)
 y1 = forward(x)
 print_labels(y0)
 print(
