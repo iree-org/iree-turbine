@@ -19,4 +19,4 @@ pip uninstall -y shark-turbine iree-turbine iree-compiler iree-runtime
 pip install iree-turbine
 
 # Run tests
-pytest -n 4 --ignore=tests/kernel/wave/ "${REPO_ROOT}"
+pytest -n 4 "${REPO_ROOT}"
