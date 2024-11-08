@@ -113,6 +113,7 @@ setup(
         "testing": [
             f"pytest{get_version_spec('pytest')}",
             f"pytest-xdist{get_version_spec('pytest-xdist')}",
+            f"pytest-timeout{get_version_spec('pytest-timeout')}",
             f"parameterized{get_version_spec('parameterized')}",
         ],
     },
