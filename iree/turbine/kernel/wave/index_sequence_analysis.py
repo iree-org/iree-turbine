@@ -6,6 +6,7 @@
 
 from ..ops.wave_ops import (
     Allocate,
+    Read,
     Write,
     ExtractSlice,
     get_custom,
@@ -88,6 +89,111 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
             for dim in custom.index
         }
+
+        shape = get_vector_shape(
+            custom.vector_shapes, custom.register_type.symbolic_shape
+        )
+        elements_per_thread = subs_idxc(custom.elements_per_thread)
+        max_stride_dim, max_stride = max(
+            [(dim, seq.stride) for dim, seq in simplified_index.items()],
+            key=lambda item: item[1],
+        )
+        with custom.graph.inserting_before(operator):
+            for i in range(elements_per_thread):
+                # Non-contiguous access patterns can have varying offsets. We
+                # handle that here.
+                gpr_offset = [
+                    expr
+                    for expr in simplified_index[max_stride_dim].start.args
+                    if expr.has(GPR_NUM)
+                ]
+                if not gpr_offset:
+                    gpr_offset = i
+                else:
+                    gpr_offset = sympy.Add(*gpr_offset).subs({GPR_NUM: i})
+                extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
+                    custom.graph
+                )
+                offset = np.unravel_index(int(gpr_offset * max_stride), shape)
+                write = Write(
+                    extract,
+                    custom.memory,
+                    mapping=custom.mapping,
+                    elements_per_thread=1,
+                ).add_to_graph(custom.graph)
+                write.index = {
+                    dim: IndexSequence(
+                        simplified_index[dim].start.subs({GPR_NUM: 0}) + offset[j], 1, 1
+                    )
+                    for j, dim in enumerate(custom.register_type.symbolic_shape)
+                }
+
+        custom.graph.erase_node(operator)
+
+
+def decompose_reads_with_gpr_offsets(
+    trace: CapturedTrace, constraints: list[Constraint]
+):
+    """
+    This function analyzes the index sequence of operators in the graph
+    that are writes on 2d tensors. If the operator has an access pattern where
+    the strides are greater than one on a single dimension, this function splits the
+    operands into individual elements and constructs a write for
+    each individual element.
+    """
+
+    def has_strided_access(node: fx.Node) -> bool:
+        """
+        Checks for writes on 2d tensors with strided access on a single dimension that
+        read more than a single element.
+        """
+        custom = get_custom(node)
+        if isinstance(custom, Read):
+            strides = [custom.index[dim].stride for dim in custom.index]
+            elements_per_thread = [custom.index[dim].size for dim in custom.index]
+            strides = [x for x, y in zip(strides, elements_per_thread) if y > 1]
+            num_strided_accesses = sum(1 for stride in strides if stride > 1)
+            if num_strided_accesses > 1:
+                raise NotImplementedError(
+                    "Support for strided accesses on more than one dimension not implemented yet!"
+                )
+            return num_strided_accesses == 1
+        elif isinstance(custom, Write):
+            strides = [
+                simplify_index(custom.register_index[dim]).stride
+                for dim in custom.register_index
+            ]
+            elements_per_thread = [
+                simplify_index(custom.register_index[dim]).size
+                for dim in custom.register_index
+            ]
+            strides = [x for x, y in zip(strides, elements_per_thread) if y > 1]
+            num_strided_accesses = sum(1 for stride in strides if stride > 1)
+            if num_strided_accesses > 1:
+                raise NotImplementedError(
+                    "Support for strided accesses on more than one dimension not implemented yet!"
+                )
+            return num_strided_accesses == 1
+        return False
+
+    strided_operators = trace.walk(has_strided_access)
+    hw_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)][0]
+    for operator in strided_operators:
+        custom = get_custom(operator)
+        if isinstance(custom, Read):
+            simplified_index = {
+                dim: simplify_index(custom.index.get(dim, custom.index[dim]))
+                for dim in custom.index
+            }
+        elif isinstance(custom, Write):
+            simplified_index = {
+                dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
+                for dim in custom.index
+            }
+        else:
+            raise NotImplementedError(
+                "Expected strided operator to only be read or write."
+            )
 
         shape = get_vector_shape(
             custom.vector_shapes, custom.register_type.symbolic_shape
