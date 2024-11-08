@@ -22,4 +22,4 @@ pip install --no-index -f "${WHEELHOUSE_DIR}" torchvision
 pip freeze
 
 # Run tests
-pytest -n 4 --ignore=tests/kernel/wave/ "${REPO_ROOT}"
+pytest -n 4 --timeout=60 --ignore=tests/kernel/wave/ "${REPO_ROOT}"
