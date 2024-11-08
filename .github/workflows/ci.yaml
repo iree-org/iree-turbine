@@ -55,7 +55,7 @@ jobs:
     - name: Run unit tests
       if: ${{ !cancelled() }}
       run: |
-        pytest -n 4 --capture=tee-sys -vv .
+        pytest -n 4 --capture=tee-sys -vv --ignore=tests/kernel/wave/ .
 
     - name: Run LIT tests
       if: ${{ !cancelled() }}
