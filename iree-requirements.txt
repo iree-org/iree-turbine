@@ -1,2 +1,2 @@
-iree-compiler
-iree-runtime
+iree-base-compiler
+iree-base-runtime

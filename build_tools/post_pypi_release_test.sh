@@ -13,7 +13,7 @@ WHEELHOUSE_DIR="${REPO_ROOT?}/wheelhouse"
 
 # Use same environment from build_release, but uninstall the local wheels
 source "${WHEELHOUSE_DIR}"/test.venv/bin/activate
-pip uninstall -y shark-turbine iree-turbine iree-compiler iree-runtime
+pip uninstall -y iree-turbine iree-base-compiler iree-base-runtime
 
 # Install from pypi now that latest is released
 pip install iree-turbine

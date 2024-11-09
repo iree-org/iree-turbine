@@ -4,7 +4,10 @@
 # forgiving on the exact version.
 
 # Uncomment to select a nightly version.
---find-links https://iree.dev/pip-release-links.html
+# --find-links https://iree.dev/pip-release-links.html
 
-iree-compiler==20241107.1071
-iree_runtime==20241107.1071
+# Uncomment to skip versions from PyPI (so _only_ nightly versions).
+# --no-index
+
+iree-base-compiler<=2.9.0
+iree-base-runtime<=2.9.0

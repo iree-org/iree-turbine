@@ -1,8 +1,8 @@
 # Releasing iree-turbine
 
 This project hosts the https://pypi.org/project/iree-turbine/ package, which
-depends on the https://pypi.org/project/iree-compiler/ and
-https://pypi.org/project/iree-runtime/ packages. Releases can either be
+depends on the https://pypi.org/project/iree-base-compiler/ and
+https://pypi.org/project/iree-base-runtime/ packages. Releases can either be
 conducted independently, or they can be coordinated across projects by
 initiating a release here.
 
@@ -21,8 +21,8 @@ Build an official release:
 ```
 
 This will download all deps, including wheels for all supported platforms and
-Python versions for iree-compiler and iree-runtime. All wheels will be placed
-in the `wheelhouse/` directory.
+Python versions for iree-base-compiler and iree-base-runtime. All wheels will
+be placed in the `wheelhouse/` directory.
 
 ## Testing
 
@@ -47,7 +47,7 @@ pip freeze
 Push IREE deps (if needed/updated):
 
 ```bash
-twine upload wheelhouse/iree_compiler-* wheelhouse/iree_runtime-*
+twine upload wheelhouse/iree_base_compiler-* wheelhouse/iree_base_runtime-*
 ```
 
 Push built wheels:
@@ -58,12 +58,8 @@ twine upload wheelhouse/iree_turbine-*
 
 ## Install from PyPI and Sanity Check
 
-TODO: Script this
-
 From the testing venv:
 
 ```bash
-pip uninstall -y iree-turbine iree-compiler iree-runtime
-pip install iree-turbine
-pytest .
+./build_tools/post_pypi_release_test.sh
 ```
