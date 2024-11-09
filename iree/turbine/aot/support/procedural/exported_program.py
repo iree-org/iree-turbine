@@ -252,8 +252,9 @@ class _Hooks(FxImporterHooks):
             raise ValueError(f"Cannot store value to unmapped global for: {info}")
         logger.debug("Resolved  global for store %r", mapping)
         materialized_global: MaterializedGlobal = mapping.value  # type: ignore
-        assert isinstance(materialized_global.global_op, util_d.GlobalOp)
-        materialized_global.global_op.is_mutable = True
+        materialized_global_op_opview = materialized_global.global_op.opview
+        assert isinstance(materialized_global_op_opview, util_d.GlobalOp)
+        materialized_global_op_opview.is_mutable = True
         converted_value = Operation.create(
             "torch_c.to_builtin_tensor",
             results=[materialized_global.ir_type],
