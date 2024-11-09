@@ -222,7 +222,7 @@ class export_buffers(GlobalsDef, TreeAbstractifiable):
         return self._tree[key]
 
     def __repr__(self):
-        names = [name for name, _ in self._param_list]
+        names = [name for name, _ in self._buffer_list]
         return f"<export_buffers {', '.join(names)}>"
 
 
