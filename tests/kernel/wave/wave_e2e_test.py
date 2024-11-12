@@ -10,6 +10,7 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.wave_sim import wave_sim
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
+from iree.turbine.kernel.wave.utils import get_default_run_config
 import torch
 from numpy.testing import assert_allclose, assert_equal
 import pytest
@@ -92,7 +93,7 @@ def test_copy(shape, request):
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     a = torch.randn(shape, dtype=torch.float16)
     b = torch.zeros(shape, dtype=torch.float16)
@@ -149,7 +150,7 @@ def test_dynamic_copy(shape, request):
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     a = torch.randn(shape, dtype=torch.float16)
     b = torch.zeros(shape, dtype=torch.float16)
@@ -208,7 +209,7 @@ def test_transpose_read(shape, request):
         res = tkw.read(a, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     a = torch.randn(shape, dtype=torch.float16)
     b = torch.zeros(shape[::-1], dtype=torch.float16)
@@ -266,7 +267,7 @@ def test_transpose_write(shape, request):
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     a = torch.randn(shape, dtype=torch.float16)
     b = torch.zeros(shape[::-1], dtype=torch.float16)
@@ -321,7 +322,7 @@ def test_reduce_sum(shape, request):
         res = tkw.sum(res, dim=N)
         tkw.write(res, c, elements_per_thread=1)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     torch.manual_seed(1)
     a = torch.randn(shape, dtype=torch.float16)
@@ -393,7 +394,7 @@ def test_toy_online_softmax(shape):
         result = res_max / res_sum
         tkw.write(result, c, elements_per_thread=1)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     torch.manual_seed(1)
     a = torch.randn(shape, dtype=torch.float32)
@@ -492,7 +493,7 @@ def test_im2col(request):
         res = tkw.read(a, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     h_out = (h + 2 * padding - hf) // stride + 1
     w_out = (w + 2 * padding - wf) // stride + 1
@@ -631,7 +632,7 @@ def test_im2col_mma(request):
 
     out = torch.zeros_like(out_ref)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     with tk.gen.TestLaunchContext(
         {
@@ -843,7 +844,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
             repeat, out, mapping=out_mapping, elements_per_thread=ELEMS_PER_THREAD
         )
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
@@ -939,7 +940,7 @@ def test_cast(shape, request):
         res = tkw.cast(res, tkl.f16)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     a = torch.randn(shape, dtype=torch.float32)
     b = torch.zeros(shape, dtype=torch.float16)

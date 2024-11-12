@@ -96,6 +96,11 @@ def run_test(func: Callable[[], None]) -> Callable[[], None]:
     return func
 
 
+def get_default_run_config() -> dict[Any, Any]:
+    """Return default config for testing."""
+    return {"backend": "rocm", "device": "hip", "target": "gfx942"}
+
+
 def print_trace(trace: CapturedTrace, custom_print: bool = True):
     """
     Prints all subgraphs of a trace starting with the root graph.

@@ -15,6 +15,7 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
+    get_default_run_config,
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
@@ -161,7 +162,7 @@ def testChainedGemm(
         GLOBAL_MEMORY_UNITS: 4,
         MMA_UNITS: 4,
     }
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3
@@ -310,7 +311,7 @@ def testChainedGemm_f8(
         GLOBAL_MEMORY_UNITS: 4,
         MMA_UNITS: 4,
     }
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3
@@ -478,7 +479,7 @@ def testAttention(
         GLOBAL_MEMORY_UNITS: 4,
         MMA_UNITS: 4,
     }
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3

@@ -8,6 +8,7 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils import (
     run_test,
+    get_default_run_config,
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
@@ -1508,7 +1509,7 @@ def test_reduce_sum():
         res = tkw.sum(res, dim=N)
         tkw.write(res, c, elements_per_thread=1)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     shape = (256, 128)
     a = torch.randn(shape, dtype=torch.float16)
@@ -1584,7 +1585,7 @@ def test_mutliple_local_reduce_sum():
         res = tkw.sum([lhs, rhs], dim=N)
         tkw.write(res, c, elements_per_thread=1)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     shape = (256, 128)
     a = torch.randn(shape, dtype=torch.float16)
@@ -1656,7 +1657,7 @@ def test_reduction_and_elemwise():
         result = repeat + repeat
         tkw.write(result, c, elements_per_thread=1)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     shape = (256, 512)
     a = torch.randn(shape, dtype=torch.float16)
@@ -1744,7 +1745,7 @@ def test_tiled_reduce_max():
 
         tkw.write(repeat, c, elements_per_thread=1)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     shape = (256, 512)
     a = torch.randn(shape, dtype=torch.float16)
@@ -1843,7 +1844,7 @@ def test_multiple_reduction_iv():
         tkw.write(res_max, c, elements_per_thread=1)
         tkw.write(res_sum, d, elements_per_thread=1)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     shape = (256, 512)
     a = torch.randn(shape, dtype=torch.float16)
@@ -1942,7 +1943,7 @@ def test_reduce_propagate_broadcast():
         res_max, res_sum = repeat
         tkw.write(res_sum, c, elements_per_thread=1)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     shape = (256, 1024)
     a = torch.randn(shape, dtype=torch.float32)
@@ -2003,7 +2004,7 @@ def test_broadcast_add():
         res = lhs + rhs
         tkw.write(res, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     shape = (256, 128)
     a = torch.ones(shape, dtype=torch.float16)
