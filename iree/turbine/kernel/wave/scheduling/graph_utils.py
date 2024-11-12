@@ -211,6 +211,8 @@ def all_pairs_longest_paths(
     Uses the Floyd-Warshall algorithm and assumes that the cycles don't
     have positive weights. This function computes the distances in parallel
     by parallelizing across the start nodes.
+
+    T is the initiation interval that is computed during modulo scheduling.
     """
     N = len(graph.nodes)
     D = np.zeros((N, N), dtype=np.float32)

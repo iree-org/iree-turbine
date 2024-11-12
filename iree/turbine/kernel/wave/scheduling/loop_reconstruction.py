@@ -134,6 +134,21 @@ def add_nodes_by_schedule(
                     new_node.fx_node,
                     iteration,
                 )
+                # In situations where we have an iter_arg as a rotating register,
+                # we also have the output as a rotating register. So when we
+                # are updating the output, we update the iter_arg as well with the
+                # old value of the output rotating register. Consider this example:
+                # Say we have the following:
+                #
+                # Stage 0:
+                # iter_arg0
+                #
+                #
+                # output = compute(...) -> here we update iter_arg0 to have the output value
+                #                          for the next stage, so that it gets picked up in stage1.
+                #
+                # Stage 1:
+                # b = use(iter_arg0)
                 if (
                     pipelining_stage == PipelineStage.KERNEL
                     or pipelining_stage == PipelineStage.PROLOGUE
@@ -177,7 +192,15 @@ def push_placeholders(
 
 
 def add_missing_registers(graph: fx.Graph):
-    """ """
+    """
+    This function goes through the graph and finds MMA operators whose accumulator
+    is undefined (not in the current graph). For those operators, it replaces the accumulator
+    with a new register of the same shape and type and with the same index.
+
+    This is necessary in situations where the register is defined inside the loop
+    but when we are trying to insert MMA operators outside the loop (such as for the
+    prologue and epilogue).
+    """
     for node in graph.nodes:
         custom = get_custom(node)
         if isinstance(custom, MMA):
