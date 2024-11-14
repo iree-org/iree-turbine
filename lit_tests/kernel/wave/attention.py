@@ -110,7 +110,7 @@ def test_attention_32x32x8():
         BLOCK_B: 1,
         BLOCK_M: 64,
         BLOCK_N: 64,
-        BLOCK_K2: 32,
+        BLOCK_K2: 64,
         B: shape[0],
         M: shape[1],
         N: shape[2],
