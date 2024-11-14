@@ -199,7 +199,9 @@ class IndexMapping:
         self.iteration_shape = iter_shape
         self.input_mapping = inputs
         self.output_mapping = outputs
-        if not isinstance(dynamic_val_mappings, (list, tuple)):
+        if dynamic_val_mappings is None:
+            dynamic_val_mappings = ()
+        elif not isinstance(dynamic_val_mappings, (list, tuple)):
             dynamic_val_mappings = (dynamic_val_mappings,)
 
         self.dynamic_val_mappings = tuple(dynamic_val_mappings)
@@ -209,6 +211,10 @@ class IndexMapping:
     @property
     def num_iterators(self) -> int:
         return len(self.iters)
+
+    @property
+    def num_dynamic_vals(self) -> int:
+        return len(self.dynamic_vals)
 
     def substitute(self, subs: Iterable[tuple[IndexExpr, IndexExpr]]) -> Self:
         new_inputs = {

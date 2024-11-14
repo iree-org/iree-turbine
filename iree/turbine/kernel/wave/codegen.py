@@ -711,9 +711,11 @@ def _construct_gather_scatter_indices(
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
     try:
-        memory, elements_per_thread, mapping, _ = node.args
+        memory, elements_per_thread, mapping, dyn_vals, _ = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
+
+    assert len(dyn_vals) == 0, "Dynamic vals are not implemented yet"
 
     vector_shape = cast_py_literal(emitter, (elements_per_thread,))
     # memory has no IR node yet.
@@ -766,9 +768,11 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
 @handle_op(write)
 def handle_write(emitter: WaveEmitter, node: fx.Node):
     try:
-        register, memory, elements_per_thread, mapping = node.args
+        register, memory, elements_per_thread, mapping, dyn_vals = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
+
+    assert len(dyn_vals) == 0, "Dynamic vals are not implemented yet"
 
     # memory has no IR node yet.
     kb_dest, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
