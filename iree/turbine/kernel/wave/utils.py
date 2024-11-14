@@ -24,6 +24,7 @@ from ..ops.wave_ops import (
     CustomOp,
     Reduction,
     GetResult,
+    ExtractSlice,
     IterArg,
     Reshape,
 )
@@ -185,6 +186,31 @@ def remove_chained_getresult(trace: CapturedTrace):
         for node in removable_nodes:
             get_custom(node).replace_all_uses_with(get_custom(node).value)
             get_custom(node).graph.erase_node(node)
+
+
+def remove_chained_extractslice(trace: CapturedTrace):
+    def is_chained_extractslice(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        if not isinstance(custom, ExtractSlice):
+            return False
+        register = get_custom(custom.register_)
+        if not isinstance(register, ExtractSlice):
+            return False
+        return custom.rank == register.rank
+
+    while removable_nodes := trace.walk(is_chained_extractslice):
+        for node in removable_nodes:
+            dst_extract = get_custom(node)
+            src_extract = get_custom(dst_extract.register_)
+            dst_extract.register_ = src_extract.register_
+            new_offset = [
+                dst_i + src_i
+                for dst_i, src_i in zip(dst_extract.offset, src_extract.offset)
+            ]
+            dst_extract.update_arg("register_", src_extract.register_)
+            dst_extract.update_arg("offset", new_offset)
+            if len(src_extract.fx_node.users) == 0:
+                get_custom(node).graph.erase_node(src_extract.fx_node)
 
 
 def delinearize_index(index: IndexExpr, shape: list[int]) -> list[IndexExpr]:

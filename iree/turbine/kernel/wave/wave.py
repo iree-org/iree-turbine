@@ -28,6 +28,7 @@ from .utils import (
     compile_and_invoke,
     safe_subs,
     remove_chained_getresult,
+    remove_chained_extractslice,
     subs_idxc,
 )
 from .minimize_global_loads import minimize_global_loads
@@ -38,6 +39,7 @@ from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom
 from .index_sequence_analysis import (
+    partition_ops_with_gpr_offsets,
     partition_strided_operators,
     set_node_indices,
     set_post_expansion_indices,
@@ -254,7 +256,9 @@ class LaunchableWave(Launchable):
         apply_shared_memory_indexing_corrections(graph, self.constraints)
 
         # Partition strided operators.
+        partition_ops_with_gpr_offsets(graph, self.constraints)
         partition_strided_operators(graph, self.constraints)
+        remove_chained_extractslice(graph)
 
         # Decompose reduce Ops.
         decompose_reduce_ops(graph, self.constraints, idxc.subs)

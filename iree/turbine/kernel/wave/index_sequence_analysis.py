@@ -64,13 +64,9 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         """
         custom = get_custom(node)
         if isinstance(custom, Write):
-            strides = [
-                simplify_index(custom.register_index[dim]).stride
-                for dim in custom.register_index
-            ]
+            strides = [simplify_index(custom.index[dim]).stride for dim in custom.index]
             elements_per_thread = [
-                simplify_index(custom.register_index[dim]).size
-                for dim in custom.register_index
+                simplify_index(custom.index[dim]).size for dim in custom.index
             ]
             strides = [x for x, y in zip(strides, elements_per_thread) if y > 1]
             num_strided_accesses = sum(1 for stride in strides if stride > 1)
@@ -86,7 +82,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
     for operator in strided_operators:
         custom = get_custom(operator)
         simplified_index = {
-            dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
+            dim: simplify_index(custom.index.get(dim, custom.index[dim]))
             for dim in custom.index
         }
 
@@ -102,19 +98,10 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             for i in range(elements_per_thread):
                 # Non-contiguous access patterns can have varying offsets. We
                 # handle that here.
-                gpr_offset = [
-                    expr
-                    for expr in simplified_index[max_stride_dim].start.args
-                    if expr.has(GPR_NUM)
-                ]
-                if not gpr_offset:
-                    gpr_offset = i
-                else:
-                    gpr_offset = sympy.Add(*gpr_offset).subs({GPR_NUM: i})
                 extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
                     custom.graph
                 )
-                offset = np.unravel_index(int(gpr_offset * max_stride), shape)
+                offset = np.unravel_index(int(i * max_stride), shape)
                 write = Write(
                     extract,
                     custom.memory,
@@ -131,9 +118,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         custom.graph.erase_node(operator)
 
 
-def decompose_reads_with_gpr_offsets(
-    trace: CapturedTrace, constraints: list[Constraint]
-):
+def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Constraint]):
     """
     This function analyzes the index sequence of operators in the graph
     that are writes on 2d tensors. If the operator has an access pattern where
@@ -142,98 +127,86 @@ def decompose_reads_with_gpr_offsets(
     each individual element.
     """
 
-    def has_strided_access(node: fx.Node) -> bool:
+    def has_gpr_offsets(node: fx.Node) -> bool:
         """
         Checks for writes on 2d tensors with strided access on a single dimension that
         read more than a single element.
         """
         custom = get_custom(node)
-        if isinstance(custom, Read):
-            strides = [custom.index[dim].stride for dim in custom.index]
-            elements_per_thread = [custom.index[dim].size for dim in custom.index]
-            strides = [x for x, y in zip(strides, elements_per_thread) if y > 1]
-            num_strided_accesses = sum(1 for stride in strides if stride > 1)
-            if num_strided_accesses > 1:
-                raise NotImplementedError(
-                    "Support for strided accesses on more than one dimension not implemented yet!"
-                )
-            return num_strided_accesses == 1
-        elif isinstance(custom, Write):
-            strides = [
-                simplify_index(custom.register_index[dim]).stride
-                for dim in custom.register_index
-            ]
-            elements_per_thread = [
-                simplify_index(custom.register_index[dim]).size
-                for dim in custom.register_index
-            ]
-            strides = [x for x, y in zip(strides, elements_per_thread) if y > 1]
-            num_strided_accesses = sum(1 for stride in strides if stride > 1)
-            if num_strided_accesses > 1:
-                raise NotImplementedError(
-                    "Support for strided accesses on more than one dimension not implemented yet!"
-                )
-            return num_strided_accesses == 1
-        return False
+        if not isinstance(custom, (Read, Write)):
+            return False
+        dims_with_gpr_offset = [
+            v.start for k, v in custom.index.items() if v.start.has(GPR_NUM)
+        ]
+        if not dims_with_gpr_offset:
+            return False
+        num_dims_with_gpr_offsets = len(dims_with_gpr_offset)
+        if num_dims_with_gpr_offsets > 1:
+            raise NotImplementedError("Currently only handle 1 dim with gpr offset.")
+        return True
 
-    strided_operators = trace.walk(has_strided_access)
-    hw_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)][0]
+    strided_operators = trace.walk(has_gpr_offsets)
     for operator in strided_operators:
         custom = get_custom(operator)
-        if isinstance(custom, Read):
-            simplified_index = {
-                dim: simplify_index(custom.index.get(dim, custom.index[dim]))
-                for dim in custom.index
-            }
-        elif isinstance(custom, Write):
-            simplified_index = {
-                dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
-                for dim in custom.index
-            }
-        else:
-            raise NotImplementedError(
-                "Expected strided operator to only be read or write."
-            )
-
-        shape = get_vector_shape(
-            custom.vector_shapes, custom.register_type.symbolic_shape
-        )
+        simplified_index = {
+            dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
+            for dim in custom.index
+        }
         elements_per_thread = subs_idxc(custom.elements_per_thread)
-        max_stride_dim, max_stride = max(
-            [(dim, seq.stride) for dim, seq in simplified_index.items()],
-            key=lambda item: item[1],
-        )
+        gpr_offsets = [
+            v.start for k, v in simplified_index.items() if v.start.has(GPR_NUM)
+        ]
+        assert len(gpr_offsets) == 1, "Expected only 1-Dim has gpr offsets"
+        gpr_offset_expr = gpr_offsets[0]
+        gpr_cur_base_offset = gpr_offset_expr.subs({GPR_NUM: 0})
+        cur_elem_id = 0
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):
-                # Non-contiguous access patterns can have varying offsets. We
-                # handle that here.
-                gpr_offset = [
-                    expr
-                    for expr in simplified_index[max_stride_dim].start.args
-                    if expr.has(GPR_NUM)
-                ]
-                if not gpr_offset:
-                    gpr_offset = i
-                else:
-                    gpr_offset = sympy.Add(*gpr_offset).subs({GPR_NUM: i})
-                extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
-                    custom.graph
-                )
-                offset = np.unravel_index(int(gpr_offset * max_stride), shape)
-                write = Write(
-                    extract,
-                    custom.memory,
-                    mapping=custom.mapping,
-                    elements_per_thread=1,
-                ).add_to_graph(custom.graph)
-                write.index = {
-                    dim: IndexSequence(
-                        simplified_index[dim].start.subs({GPR_NUM: 0}) + offset[j], 1, 1
+                # Break apart Reads/Writes that has non-contiguous GPR Read/Writes.
+                next_gpr_offset = gpr_offset_expr.subs({GPR_NUM: i + 1})
+                cur_gpr_offset = gpr_offset_expr.subs({GPR_NUM: i})
+                gpr_offset_step = next_gpr_offset - cur_gpr_offset
+                if not isinstance(gpr_offset_step, sympy.Integer):
+                    raise NotImplementedError(
+                        "Only constant integer GPR offset steps supported."
                     )
-                    for j, dim in enumerate(custom.register_type.symbolic_shape)
-                }
+                gpr_offset_step = int(gpr_offset_step)
 
-        custom.graph.erase_node(operator)
+                # Create new write when there is a jump in GPR offset
+                # or at the end of the loop.
+                if gpr_offset_step > 1 or i == elements_per_thread - 1:
+                    # Get VGPR number of elements.
+                    gpr_size = (cur_gpr_offset - gpr_cur_base_offset) + 1
+                    assert isinstance(
+                        gpr_size, sympy.Integer
+                    ), "Expected gpr_size to be int."
+                    gpr_size = int(gpr_size)
+
+                    # Generate new Read/Write that has contiguous VGPR elements.
+                    extract = ExtractSlice(
+                        custom.register_, [cur_elem_id], [gpr_size], [1]
+                    ).add_to_graph(custom.graph)
+                    write = Write(
+                        extract,
+                        custom.memory,
+                        mapping=custom.mapping,
+                        elements_per_thread=gpr_size,
+                    ).add_to_graph(custom.graph)
+                    write.index = {
+                        dim: IndexSequence(
+                            simplified_index[dim].start.subs({GPR_NUM: cur_elem_id}),
+                            gpr_size,
+                            simplified_index[dim].stride,
+                        )
+                        for dim in simplified_index
+                    }
+                    write.vector_shapes = custom.vector_shapes
+
+                    # Set new current base GPR offset
+                    gpr_cur_base_offset = next_gpr_offset
+                    cur_elem_id = i + 1
+        if isinstance(custom, Write):
+            custom.graph.erase_node(operator)
 
 
 def preprocess_nodes(
