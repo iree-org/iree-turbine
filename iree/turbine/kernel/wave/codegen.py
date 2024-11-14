@@ -1355,6 +1355,8 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
     vector = cast_vector(emitter, args[0])
     size = vector.type.shape[0] // num_partitions
     result_type = VectorType.get([size], vector.type.element_type)
+    # The offset should only be in [0, num_partitions - 1].
+    offset = offset % num_partitions
     slice = vector_d.extract_strided_slice(
         result_type,
         vector,

@@ -37,6 +37,7 @@ default_test_shapes = {}
 # Order of shapes: (B, M, N, K1, K2)
 default_test_shapes["test_attention"] = [
     (8, 128, 128, 64, 256),
+    (40, 1024, 64, 64, 1024),
 ]
 default_test_shapes["test_attention"] += [perf_test(x) for x in default_test_shapes]
 
@@ -385,8 +386,8 @@ def testAttention(
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
 
     if mfma_variant == MMAType.F32_16x16x16_F16:
         Mvec = 16
@@ -398,7 +399,7 @@ def testAttention(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
+            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: Mvec, N: Nvec},
         )
@@ -413,7 +414,7 @@ def testAttention(
 
     @tkw.wave(constraints)
     def base_attention(
-        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
+        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
@@ -462,9 +463,9 @@ def testAttention(
         LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
         STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_B: 1,
-        BLOCK_M: 64,
+        BLOCK_M: 128,
         BLOCK_N: 64,
-        BLOCK_K2: 32,
+        BLOCK_K2: 64,
         B: shape[0],
         M: shape[1],
         N: shape[2],
