@@ -13,6 +13,7 @@ from iree.turbine.kernel.wave.scheduling.modulo_scheduling import (
 )
 import torch.fx as fx
 import numpy as np
+import multiprocessing as mp
 from iree.turbine.kernel.wave.visualization import visualize_graph
 from iree.turbine.kernel.wave.scheduling.graph_utils import (
     find_strongly_connected_components,
@@ -180,7 +181,8 @@ class SchedulingTest(unittest.TestCase):
     def testAPLP(self):
         graph, weighted_edges, nodes = self.create_weighted_graph()
         T = 4
-        D3 = all_pairs_longest_paths(graph, weighted_edges, T)
+        pool = mp.get_context("fork").Pool(processes=mp.cpu_count())
+        D3 = all_pairs_longest_paths(graph, weighted_edges, T, pool)
         assert D3[(nodes["a"], nodes["b"])] == 2
         assert D3[(nodes["a"], nodes["c"])] == 3
         assert D3[(nodes["a"], nodes["d"])] == 4
