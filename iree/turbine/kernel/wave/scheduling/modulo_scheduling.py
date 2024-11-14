@@ -19,6 +19,7 @@ from .graph_utils import (
 from typing import Callable
 import numpy as np
 import math
+import multiprocessing as mp
 
 logger = get_logger("turbine.wave.modulo_scheduling")
 
@@ -110,10 +111,11 @@ class ModuloScheduler:
         # TODO: Come up with a better heuristic on an upper bound for the initiation interval.
         T_max_range = 3 * T0
         success = False
+        pool = mp.get_context("fork").Pool(processes=mp.cpu_count())
         for T in range(T0, T0 + T_max_range):
             logger.debug(f"Trying initiation interval: {T}.")
             self.RT = np.zeros((T, len(self.resources)))
-            self.e_star = all_pairs_longest_paths(self.graph, self.edges, T)
+            self.e_star = all_pairs_longest_paths(self.graph, self.edges, T, pool)
             logger.debug(f"All Pairs Longest Paths: {self.e_star}.")
             self.schedule: dict[fx.Node, int] = {}
             for _, scc in topological_sort(sccs).items():
@@ -148,6 +150,8 @@ class ModuloScheduler:
                 break
         else:
             raise Exception("Failed to schedule the graph.")
+        pool.close()
+        pool.join()
 
         self._initiation_interval = T
         return self.schedule, success

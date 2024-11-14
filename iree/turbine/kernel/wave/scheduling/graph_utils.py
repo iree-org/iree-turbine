@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import sympy
 import math
 from functools import partial
+from ..utils import safe_subs
 import multiprocessing as mp
 
 T = index_symbol("$INITIATION_INTERVAL")
@@ -202,9 +203,7 @@ def all_pairs_longest_paths_symbolic(
 
 
 def all_pairs_longest_paths(
-    graph: fx.Graph,
-    edges: list[Edge],
-    T: int,
+    graph: fx.Graph, edges: list[Edge], T: int, pool: mp.Pool
 ) -> dict[tuple[fx.Node, fx.Node], IndexExpr]:
     """
     For each node in the graph, compute the longest path to all other nodes.
@@ -228,14 +227,11 @@ def all_pairs_longest_paths(
         D[i, j] = edge.weight.delay - edge.weight.iteration_difference * T
 
     # Parallel implementation
-    pool = mp.get_context("fork").Pool(processes=mp.cpu_count())
     for k in range(N):
         func = partial(all_pairs_longest_path_parallel, N, D, k)
         results = pool.map(func, range(N))
         for result in results:
             D[result[0]] = result[1]
-    pool.close()
-    pool.join()
 
     # Convert from index to node based representation.
     G: dict[tuple[fx.Node, fx.Node], int] = {}
@@ -257,8 +253,7 @@ def evaluate_all_pairs_longest_paths(
     """
     D_static = dict(D)
     for key in D_static:
-        if isinstance(D_static[key], sympy.Expr):
-            D_static[key] = D_static[key].subs(T, initiation_interval)
+        D_static[key] = safe_subs(D_static[key], [(T, initiation_interval)])
     # Remove the negative infinity values and edges to self.
     for k in list(D_static.keys()):
         if math.isinf(D_static[k]) or k[0] == k[1]:
