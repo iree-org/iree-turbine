@@ -50,12 +50,13 @@ def construct_min_global_access_pattern(
     It takes a 1-D global offset and delinearizes it to a multi-dimensional offset
     and updates the access pattern accordingly.
     """
-    thread_ids = [THREAD_0, THREAD_1, THREAD_2]
+    thread_ids = [THREAD_0, THREAD_1, THREAD_2, GPR_NUM]
     new_index = {key: index[key].subs({t: 0 for t in thread_ids}) for key in index}
     nd_index = delinearize_index(thread_id, shape)
     for i, key in enumerate(index.keys()):
         new_index[key].start += nd_index[i]
         new_index[key].size = load_elems_per_thread if i == len(index.keys()) - 1 else 1
+        new_index[key].stride = 1
     return new_index
 
 
@@ -150,6 +151,7 @@ def add_optimized_nodes(
                         ).add_to_graph(custom.graph)
                         write.index = read.index
                         optimized_writes[custom_user.memory].append(write)
+                        write.vector_shapes = custom.vector_shapes
                         break
     return optimized_writes
 

@@ -85,7 +85,6 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             dim: simplify_index(custom.index.get(dim, custom.index[dim]))
             for dim in custom.index
         }
-
         shape = get_vector_shape(
             custom.vector_shapes, custom.register_type.symbolic_shape
         )
@@ -94,6 +93,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
             key=lambda item: item[1],
         )
+        ops_to_combine = []
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):
                 # Non-contiguous access patterns can have varying offsets. We
@@ -114,7 +114,10 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                     )
                     for j, dim in enumerate(custom.register_type.symbolic_shape)
                 }
+                ops_to_combine.append(write)
 
+        # Useful to handle write/read dependency
+        custom.replace_all_uses_with(ops_to_combine)
         custom.graph.erase_node(operator)
 
 
@@ -149,7 +152,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
     for operator in strided_operators:
         custom = get_custom(operator)
         simplified_index = {
-            dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
+            dim: simplify_index(custom.index.get(dim, custom.index[dim]))
             for dim in custom.index
         }
         elements_per_thread = subs_idxc(custom.elements_per_thread)
@@ -161,6 +164,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         gpr_cur_base_offset = gpr_offset_expr.subs({GPR_NUM: 0})
         cur_elem_id = 0
         with custom.graph.inserting_before(operator):
+            ops_to_combine = []
             for i in range(elements_per_thread):
                 # Break apart Reads/Writes that has non-contiguous GPR Read/Writes.
                 next_gpr_offset = gpr_offset_expr.subs({GPR_NUM: i + 1})
@@ -183,30 +187,62 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                     gpr_size = int(gpr_size)
 
                     # Generate new Read/Write that has contiguous VGPR elements.
-                    extract = ExtractSlice(
-                        custom.register_, [cur_elem_id], [gpr_size], [1]
-                    ).add_to_graph(custom.graph)
-                    write = Write(
-                        extract,
-                        custom.memory,
-                        mapping=custom.mapping,
-                        elements_per_thread=gpr_size,
-                    ).add_to_graph(custom.graph)
-                    write.index = {
-                        dim: IndexSequence(
-                            simplified_index[dim].start.subs({GPR_NUM: cur_elem_id}),
-                            gpr_size,
-                            simplified_index[dim].stride,
-                        )
-                        for dim in simplified_index
-                    }
-                    write.vector_shapes = custom.vector_shapes
+                    if isinstance(custom, Write):
+                        extract = ExtractSlice(
+                            custom.register_, [cur_elem_id], [gpr_size], [1]
+                        ).add_to_graph(custom.graph)
+                        write = Write(
+                            extract,
+                            custom.memory,
+                            mapping=custom.mapping,
+                            elements_per_thread=gpr_size,
+                        ).add_to_graph(custom.graph)
+                        write.index = {
+                            dim: IndexSequence(
+                                simplified_index[dim].start.subs(
+                                    {GPR_NUM: cur_elem_id}
+                                ),
+                                gpr_size,
+                                simplified_index[dim].stride,
+                            )
+                            for dim in simplified_index
+                        }
+                        write.vector_shapes = custom.vector_shapes
+                        ops_to_combine.append(write)
+                    elif isinstance(custom, Read):
+                        # TODO: Add support on how to handle strided reads.
+                        read = Read(
+                            custom.memory,
+                            elements_per_thread=gpr_size,
+                            mapping=custom.mapping,
+                            _write_dependency=custom._write_dependency,
+                        ).add_to_graph(custom.graph)
+                        read.index = {
+                            dim: IndexSequence(
+                                simplified_index[dim].start.subs(
+                                    {GPR_NUM: cur_elem_id}
+                                ),
+                                gpr_size,
+                                simplified_index[dim].stride,
+                            )
+                            for dim in simplified_index
+                        }
+                        read.vector_shapes = custom.vector_shapes
+                        ops_to_combine.append(read)
 
                     # Set new current base GPR offset
                     gpr_cur_base_offset = next_gpr_offset
                     cur_elem_id = i + 1
-        if isinstance(custom, Write):
-            custom.graph.erase_node(operator)
+            if isinstance(custom, Write):
+                # Useful to handle write/read dependency
+                custom.replace_all_uses_with(ops_to_combine)
+                custom.graph.erase_node(operator)
+            elif isinstance(custom, Read):
+                reshape = Reshape(ops_to_combine, custom.vector_shapes).add_to_graph(
+                    custom.graph
+                )
+                custom.replace_all_uses_with(reshape)
+                custom.graph.erase_node(custom.fx_node)
 
 
 def preprocess_nodes(
