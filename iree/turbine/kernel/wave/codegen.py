@@ -1122,7 +1122,7 @@ def handle_scheduling_barrier(emitter: WaveEmitter, node: fx.Node):
         mask |= get_scheduling_mask(operation)
 
     mask = arith_d.constant(IntegerType.get_signless(32), mask)
-    llvm_d.call_intrinsic(None, "llvm.amdgcn.sched.barrier", [mask])
+    llvm_d.call_intrinsic(None, "llvm.amdgcn.sched.barrier", [mask], [], [])
 
 
 @handle_op(scheduling_group_barrier)

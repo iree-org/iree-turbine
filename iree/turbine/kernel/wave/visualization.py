@@ -178,7 +178,11 @@ def visualize_mapped_graphs(
 
     # Draw edges between rotating registers for the same variable.
     for node in rotating_registers:
-        all_registers = [k for k, v in flat_inverse_map.items() if v == node]
+        all_registers = [
+            k
+            for k, v in flat_inverse_map.items()
+            if v == node and k in second_numbering
+        ]
         for second, first in zip(all_registers[:-1], all_registers[1:]):
             G.add_edge(
                 second_numbering[id(first)],

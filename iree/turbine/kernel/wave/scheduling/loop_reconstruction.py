@@ -9,6 +9,8 @@ from ...ops.wave_ops import (
     GetResult,
     get_custom,
     SchedulingGroupBarrier,
+    MMA,
+    NewRegister,
 )
 from .modulo_scheduling import ModuloScheduler
 from ..utils import (
@@ -76,16 +78,19 @@ def add_nodes_by_schedule(
             logger.debug(f"Node: {node}, Stage: {stage}, Iteration: {iteration}")
             custom_node = get_custom(node)
             logger.debug(f"Node args: {node.args}")
+            preferred_stage = (
+                stage if pipelining_stage == PipelineStage.KERNEL else None
+            )
             for arg in node.args:
                 if arg_context.contains_in_iteration(iteration, arg):
                     logger.debug(
-                        f"Found arg: {arg} at iteration {iteration} in partitioned argument map. Using {arg_context.get_from_iteration(iteration, arg)}."
+                        f"Found arg: {arg} at iteration {iteration} in partitioned argument map. Using {arg_context.get_from_iteration(iteration, arg, preferred_stage)}."
                     )
                     continue
             new_node = custom_node.copy(
                 new_graph=reduction_graph,
                 arg_transform=lambda x: (
-                    arg_context.get_from_iteration(iteration, x)
+                    arg_context.get_from_iteration(iteration, x, preferred_stage)
                     if arg_context.contains_in_iteration(iteration, x)
                     else x
                 ),
@@ -99,39 +104,71 @@ def add_nodes_by_schedule(
             # Set the index for the new node by substituting the induction variable
             # for the current iteration.
             new_node.index = node.index
-            for dim in new_node.index:
-                new_node.index[dim] = new_node.index[dim].subs(
-                    {induction_variable: current_induction_variables[iteration]}
-                )
+            if new_node.index:
+                for dim in new_node.index:
+                    new_node.index[dim] = new_node.index[dim].subs(
+                        {induction_variable: current_induction_variables[iteration]}
+                    )
+            if custom_node.expanded_dims:
+                new_node.expanded_dims = custom_node.expanded_dims
             # Add scheduling parameters for debugging.
             new_node.scheduling_parameters = node.scheduling_parameters
             # Update the rotating registers and argument context for the current node (if applicable).
+            old_node = None
             if node in rotating_registers:
                 rotating_registers[node].append(new_node.fx_node)
-                rotating_registers[node].popleft()
+                old_node = rotating_registers[node].popleft()
                 # If draining, then override the rotating registers and update the argument context.
                 if fill_or_drain:
                     for next_stage in range(stage + 1, len(stages)):
                         arg_context[(iteration, next_stage, node)] = new_node.fx_node
 
-            # Update the init args in the argument context whenever a result is computed.
+            # Update the iter and init args in the argument context whenever a result is computed.
             if node in arg_context.results:
+                iter_arg = arg_context.result_to_iter_arg[node]
+                logger.debug(
+                    f"Updating result: {node} -> {iter_arg} to {new_node.fx_node}."
+                )
+                arg_context.map_arg_all_after_iteration(
+                    iter_arg,
+                    new_node.fx_node,
+                    iteration,
+                )
+                # In situations where we have an iter_arg as a rotating register,
+                # we also have the output as a rotating register. So when we
+                # are updating the output, we update the iter_arg as well with the
+                # old value of the output rotating register. Consider this example:
+                # Say we have the following:
+                #
+                # Stage 0:
+                # iter_arg0
+                #
+                #
+                # output = compute(...) -> here we update iter_arg0 to have the output value
+                #                          for the next stage, so that it gets picked up in stage1.
+                #
+                # Stage 1:
+                # b = use(iter_arg0)
                 if (
                     pipelining_stage == PipelineStage.KERNEL
-                    or pipelining_stage == PipelineStage.EPILOGUE
+                    or pipelining_stage == PipelineStage.PROLOGUE
                 ):
-                    logger.debug(
-                        f"Updating result: {node} -> {arg_context.result_to_iter_arg[node]} to {new_node.fx_node}."
-                    )
-                    arg_context.map_arg_all(
-                        arg_context.result_to_iter_arg[node], new_node.fx_node
-                    )
+                    if iter_arg in rotating_registers and old_node:
+                        logger.debug(
+                            f"Updating rotating register iter arg {iter_arg} -> {old_node}."
+                        )
+                        rotating_registers[iter_arg].append(old_node)
+                        rotating_registers[iter_arg].popleft()
+                        for next_stage in range(stage + 1, len(stages)):
+                            arg_context[(iteration, next_stage, iter_arg)] = old_node
                 if pipelining_stage == PipelineStage.PROLOGUE:
                     logger.debug(
                         f"Updating result: {node} -> {arg_context.result_to_init_arg[node]} to {new_node.fx_node}."
                     )
-                    arg_context.map_arg_all(
-                        arg_context.result_to_init_arg[node], new_node.fx_node
+                    arg_context.map_arg_all_after_iteration(
+                        arg_context.result_to_init_arg[node],
+                        new_node.fx_node,
+                        iteration,
                     )
 
         if pipelining_stage == PipelineStage.KERNEL and use_scheduling_barriers:
@@ -152,6 +189,29 @@ def push_placeholders(
             root_node = [x for x in implicit_captures if x.name == node.name][0]
             assert root_node is not None
             arg_context.map_arg_all(node, root_node)
+
+
+def add_missing_registers(graph: fx.Graph):
+    """
+    This function goes through the graph and finds MMA operators whose accumulator
+    is undefined (not in the current graph). For those operators, it replaces the accumulator
+    with a new register of the same shape and type and with the same index.
+
+    This is necessary in situations where the register is defined inside the loop
+    but when we are trying to insert MMA operators outside the loop (such as for the
+    prologue and epilogue).
+    """
+    for node in graph.nodes:
+        custom = get_custom(node)
+        if isinstance(custom, MMA):
+            acc = get_custom(custom.acc)
+            if acc.graph != custom.graph:
+                with custom.graph.inserting_before(node):
+                    register = NewRegister(
+                        acc.shape, acc.dtype, acc.value
+                    ).add_to_graph(custom.graph)
+                    register.index = acc.index
+                    custom.update_arg("acc", register)
 
 
 def construct_prologue(
@@ -183,6 +243,7 @@ def construct_prologue(
     )
 
     # Map iter args to init args in the prologue.
+    original_init_args = list(reduction.init_args)
     for iter_arg, init_arg in zip(
         reduction.iter_args(reduction_subgraph), reduction.init_args
     ):
@@ -210,8 +271,23 @@ def construct_prologue(
         mapped_init_arg = arg_context.lookup(init_arg)
         if mapped_init_arg is None:
             mapped_init_arg = init_arg
+        logger.debug(f"Mapping init_arg {init_arg} -> {mapped_init_arg}.")
         new_init_args.append(mapped_init_arg)
     reduction.init_args = new_init_args
+
+    # We may also have some iter_args as rotating registers. These will need
+    # to be initialized to the original init args which we do here.
+    iter_args = reduction.iter_args(reduction_subgraph)
+    for node, registers in rotating_registers.items():
+        if node in iter_args:
+            if all(x is None for x in registers) and len(registers) == 1:
+                registers[0] = original_init_args[iter_args.index(node)]
+
+    # Add missing registers. Since registers are not present
+    # in the scheduling code, we could end up with a situation where
+    # we move mma ops outside the reduction that do not have a corresponding
+    # register. We remedy this in the function below.
+    add_missing_registers(reduction.graph)
 
 
 def flatten_dict_values(
@@ -269,7 +345,8 @@ def push_rotating_registers(
         custom = get_custom(node)
         stage = custom.scheduling_parameters["stage"]
         iteration = arg_context.get_kernel_iteration(stage)
-        arg_context[(iteration, stage, node)] = registers[-1]
+        if node not in arg_context.iter_args:
+            arg_context[(iteration, stage, node)] = registers[-1]
         for i, register in enumerate(registers):
             if create_new_nodes:
                 mapped_stage = stage + len(registers) - i
@@ -277,18 +354,16 @@ def push_rotating_registers(
                 iter_arg = IterArg(f"rotating_reg_{count}").add_to_graph(graph)
                 iter_arg.type = get_custom(node).type
                 iter_arg.index = get_custom(node).index
-                arg_context[(mapped_iteration, mapped_stage, node)] = iter_arg
                 new_registers.append(iter_arg)
-                logger.debug(
-                    f"Mapped orig: {node_map[node]} / mapped: {iter_arg} to stage {mapped_stage}."
-                )
+                mapped_value = iter_arg
             else:
                 mapped_stage = stage + len(registers) - i - 1
                 mapped_iteration = arg_context.get_kernel_iteration(mapped_stage)
-                arg_context[(mapped_iteration, mapped_stage, node)] = register
-                logger.debug(
-                    f"Mapped orig: {node_map[node]} / mapped: {register} to stage {mapped_stage} at iteration {mapped_iteration}."
-                )
+                mapped_value = register
+            arg_context[(mapped_iteration, mapped_stage, node)] = mapped_value
+            logger.debug(
+                f"Mapped orig: {node_map[node]} / mapped: {mapped_value} to stage {mapped_stage} at iteration {mapped_iteration}."
+            )
             count += 1
         if new_registers:
             new_rotating_registers[node] = new_registers
@@ -325,7 +400,7 @@ def construct_kernel(
             init_args=reduction.init_args + flatten_dict_values(rotating_registers),
             subgraph_name="pipelined_reduction",
             implicit_captures=reduction.implicit_captures,
-        ).add_to_graph(reduction.graph)
+        ).add_to_graph(reduction.graph, type=reduction.type)
         pipelined_reduction.index = reduction.index
         pipelined_reduction_graph = fx.Graph()
         reduction.graph.subgraphs["pipelined_reduction"] = pipelined_reduction_graph
@@ -386,6 +461,12 @@ def construct_kernel(
                 "kernel.png",
             )
 
+        # Add missing registers. Since registers are not present
+        # in the scheduling code, we could end up with a situation where
+        # we move mma ops outside the reduction that do not have a corresponding
+        # register. We remedy this in the function below.
+        add_missing_registers(pipelined_reduction_graph)
+
         return pipelined_reduction, pipelined_reduction_graph
 
 
@@ -422,16 +503,34 @@ def construct_epilogue(
         scheduler.num_stages,
     )
 
-    existing_get_results: list[GetResult] = sorted(
-        [x for x in pipelined_reduction.users if isinstance(x, GetResult)],
-        key=lambda x: x.res_idx,
-    )
-    existing_users = {x: x.users for x in existing_get_results}
+    existing_get_results: list[GetResult] = [
+        x for x in pipelined_reduction.users if isinstance(x, GetResult)
+    ]
+    existing_indices = [x.res_idx for x in existing_get_results]
 
     # Map the results from the kernel to the init args (for stages).
-    for iter_arg, get_result in zip(
-        reduction.iter_args(reduction_subgraph), existing_get_results
-    ):
+    # The number of iter args may not be the same as the number of get results
+    # and so we have to add additional get results for the missing iter args.
+    # This happens if some of the iter args have no uses outside the reduction
+    # (such as the max value in flash attention). While they may not have any
+    # uses in the original reduction, they will have uses in the pipelined
+    # reduction outside the reduction and so need to be added in the correct order.
+    iter_args = reduction.iter_args(reduction_subgraph)
+    for i in range(len(iter_args)):
+        if i in existing_indices:
+            continue
+        with pipelined_reduction.graph.inserting_before(
+            existing_get_results[0].fx_node.next
+        ):
+            result = GetResult(pipelined_reduction.fx_node, i).add_to_graph(
+                pipelined_reduction.graph, type=iter_args[i].type
+            )
+            existing_get_results.append(get_custom(result))
+
+    existing_get_results = sorted(existing_get_results, key=lambda x: x.res_idx)
+    existing_users = {x: x.users for x in existing_get_results}
+
+    for iter_arg, get_result in zip(iter_args, existing_get_results):
         arg_context.map_arg_all(iter_arg, get_result.fx_node)
 
     with pipelined_reduction.graph.inserting_before(
@@ -441,10 +540,12 @@ def construct_epilogue(
         # argument map with them.
         rotating_registers_get_results = []
         offset = len(existing_get_results)
-        for i in range(len(flatten_dict_values(rotating_registers))):
+        flattened_rotating_registers = flatten_dict_values(rotating_registers)
+        for i in range(len(flattened_rotating_registers)):
             rotating_registers_get_results.append(
                 GetResult(pipelined_reduction.fx_node, i + offset).add_to_graph(
-                    pipelined_reduction.graph
+                    pipelined_reduction.graph,
+                    type=flattened_rotating_registers[i].type,
                 )
             )
         rotating_registers = unflatten_dict_values(
@@ -474,6 +575,12 @@ def construct_epilogue(
         for i, get_result in enumerate(existing_get_results):
             replace_uses_in(existing_users, get_result, new_results[i])
 
+        # Add missing registers. Since registers are not present
+        # in the scheduling code, we could end up with a situation where
+        # we move mma ops outside the reduction that do not have a corresponding
+        # register. We remedy this in the function below.
+        add_missing_registers(pipelined_reduction.graph)
+
         if visualize:
             visualize_mapped_graphs(
                 pipelined_reduction.graph,
@@ -499,7 +606,7 @@ def construct_pipelined_loop(
     with a prologue, kernel and epilogue.
     """
     induction_variable = get_induction_variable(reduction, constraints)
-    num_rotating_registers = liveness_analysis(graph, constraints, scheduler)
+    num_rotating_registers = liveness_analysis(graph, reduction)
     rotating_registers: dict[fx.Node, deque[fx.Node]] = {
         k: deque([None for _ in range(v)]) for k, v in num_rotating_registers.items()
     }

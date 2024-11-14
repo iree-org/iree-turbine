@@ -143,9 +143,13 @@ def testGemm(
         READ_GLOBAL_DELAY: 2,
         WRITE_GLOBAL_DELAY: 2,
         MMA_DELAY: 1,
+        VALU_DELAY: 1,
+        SHUFFLE_DELAY: 1,
         SHARED_MEMORY_UNITS: 4,
         GLOBAL_MEMORY_UNITS: 4,
         MMA_UNITS: 4,
+        VALU_UNITS: 8,
+        SHUFFLE_UNITS: 8,
     }
     config = get_default_run_config()
     if run_bench:
@@ -262,9 +266,13 @@ def testF8Gemm(
         READ_GLOBAL_DELAY: 2,
         WRITE_GLOBAL_DELAY: 2,
         MMA_DELAY: 1,
+        VALU_DELAY: 1,
+        SHUFFLE_DELAY: 1,
         SHARED_MEMORY_UNITS: 4,
         GLOBAL_MEMORY_UNITS: 4,
         MMA_UNITS: 4,
+        VALU_UNITS: 8,
+        SHUFFLE_UNITS: 8,
     }
     config = get_default_run_config()
     if run_bench:
@@ -377,9 +385,13 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         READ_GLOBAL_DELAY: 2,
         WRITE_GLOBAL_DELAY: 2,
         MMA_DELAY: 1,
+        VALU_DELAY: 1,
+        SHUFFLE_DELAY: 1,
         SHARED_MEMORY_UNITS: 4,
         GLOBAL_MEMORY_UNITS: 4,
         MMA_UNITS: 4,
+        VALU_UNITS: 8,
+        SHUFFLE_UNITS: 8,
     }
     config = get_default_run_config()
     if run_bench:

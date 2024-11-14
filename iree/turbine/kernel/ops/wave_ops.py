@@ -751,9 +751,8 @@ class Placeholder(CustomOp):
     def indexing_dims(self) -> list[IndexSymbol]:
         return list(self._type.symbolic_shape) if self._type else []
 
-    @property
-    def type(self) -> "Memory":
-        return self._type
+    def infer_type(self):
+        self.fx_node.type = self._type
 
 
 @dataclass
@@ -854,9 +853,8 @@ class NewRegister(CustomOp):
     def indexing_dims(self) -> list[IndexSymbol]:
         return list(self.shape)
 
-    @property
-    def type(self) -> "Register":
-        return Register[*self.shape, self.dtype]
+    def infer_type(self):
+        self.type = Register[*self.shape, self.dtype]
 
 
 @define_op("mma")
@@ -1275,11 +1273,9 @@ class Broadcast(CustomOp, ABC):
     def indexing_dims(self) -> list[IndexSymbol]:
         return self.target_shape
 
-    @property
-    def type(self) -> Memory:
+    def infer_type(self):
         src_dtype = get_custom(self.arg).type.dtype
-        dst_type = Register[*self.target_shape, src_dtype]
-        return dst_type
+        self.type = Register[*self.target_shape, src_dtype]
 
 
 @define_interface_op("max")
@@ -1370,10 +1366,8 @@ class ShuffleOp(CustomOp):
     def indexing_dims(self) -> list[IndexSymbol]:
         return get_custom(self.arg).indexing_dims
 
-    @property
-    def type(self) -> Register:
-        src_type = get_custom(self.arg).type
-        return src_type
+    def infer_type(self):
+        self.type = get_custom(self.arg).type
 
 
 @define_op("cast")
@@ -1438,6 +1432,5 @@ class Reshape(CustomOp, ABC):
     def indexing_dims(self) -> list[IndexExpr]:
         return get_custom(_to_sequence(self.args)[0]).indexing_dims
 
-    @property
-    def type(self) -> Register:
-        return get_custom(_to_sequence(self.args)[0]).type
+    def infer_type(self):
+        self.type = get_custom(_to_sequence(self.args)[0]).type

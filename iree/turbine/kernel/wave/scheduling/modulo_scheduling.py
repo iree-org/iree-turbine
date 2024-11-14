@@ -106,9 +106,6 @@ class ModuloScheduler:
         # Initialize initiation interval.
         T0 = int(max(self.compute_resource_ii(), self.compute_recurrence_ii(sccs)))
 
-        # Compute symbolic all pairs longest path.
-        e_star_symbolic = all_pairs_longest_paths(self.graph, self.edges)
-
         # Generate the schedule.
         # TODO: Come up with a better heuristic on an upper bound for the initiation interval.
         T_max_range = 3 * T0
@@ -116,7 +113,7 @@ class ModuloScheduler:
         for T in range(T0, T0 + T_max_range):
             logger.debug(f"Trying initiation interval: {T}.")
             self.RT = np.zeros((T, len(self.resources)))
-            self.e_star = evaluate_all_pairs_longest_paths(e_star_symbolic, T)
+            self.e_star = all_pairs_longest_paths(self.graph, self.edges, T)
             logger.debug(f"All Pairs Longest Paths: {self.e_star}.")
             self.schedule: dict[fx.Node, int] = {}
             for _, scc in topological_sort(sccs).items():

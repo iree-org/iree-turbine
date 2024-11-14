@@ -12,6 +12,8 @@ from .resources import *
 from dataclasses import dataclass
 import sympy
 import math
+from functools import partial
+import multiprocessing as mp
 
 T = index_symbol("$INITIATION_INTERVAL")
 
@@ -157,7 +159,25 @@ def find_cycles_in_scc(scc: dict[fx.Node, list[fx.Node]]) -> list[list[fx.Node]]
     return circuits
 
 
-def all_pairs_longest_paths(
+def all_pairs_longest_paths_helper(
+    graph: fx.Graph, u: fx.Node, dist: dict[tuple[fx.Node, fx.Node], IndexExpr], i: int
+):
+    v = list(graph.nodes)[i]
+    for w in graph.nodes:
+        dist[(v, w)] = sympy.Max(dist[(v, w)], dist[(v, u)] + dist[(u, w)])
+    return v, dist
+
+
+def all_pairs_longest_path_parallel(N: int, D: np.array, k: int, i: int):
+    """
+    This function is called once for a different value of i.
+    """
+    for j in range(N):
+        D[i, j] = np.maximum(D[i, j], D[i, k] + D[k, j])
+    return i, D[i]
+
+
+def all_pairs_longest_paths_symbolic(
     graph: fx.Graph,
     edges: list[Edge],
 ) -> dict[tuple[fx.Node, fx.Node], IndexExpr]:
@@ -181,6 +201,53 @@ def all_pairs_longest_paths(
     return D
 
 
+def all_pairs_longest_paths(
+    graph: fx.Graph,
+    edges: list[Edge],
+    T: int,
+) -> dict[tuple[fx.Node, fx.Node], IndexExpr]:
+    """
+    For each node in the graph, compute the longest path to all other nodes.
+    Uses the Floyd-Warshall algorithm and assumes that the cycles don't
+    have positive weights. This function computes the distances in parallel
+    by parallelizing across the start nodes.
+
+    T is the initiation interval that is computed during modulo scheduling.
+    """
+    N = len(graph.nodes)
+    D = np.zeros((N, N), dtype=np.float32)
+    negative_inf = -np.inf
+    for i in range(N):
+        for j in range(N):
+            D[i, j] = negative_inf
+
+    all_nodes = list(graph.nodes)
+    for edge in edges:
+        i = all_nodes.index(edge._from)
+        j = all_nodes.index(edge._to)
+        D[i, j] = edge.weight.delay - edge.weight.iteration_difference * T
+
+    # Parallel implementation
+    pool = mp.get_context("fork").Pool(processes=mp.cpu_count())
+    for k in range(N):
+        func = partial(all_pairs_longest_path_parallel, N, D, k)
+        results = pool.map(func, range(N))
+        for result in results:
+            D[result[0]] = result[1]
+    pool.close()
+    pool.join()
+
+    # Convert from index to node based representation.
+    G: dict[tuple[fx.Node, fx.Node], int] = {}
+    for i, from_node in enumerate(graph.nodes):
+        for j, to_node in enumerate(graph.nodes):
+            if np.isinf(D[i, j]) or i == j:
+                continue
+            G[(from_node, to_node)] = int(D[i, j])
+
+    return G
+
+
 def evaluate_all_pairs_longest_paths(
     D: dict[tuple[fx.Node, fx.Node], IndexExpr], initiation_interval: int
 ) -> dict[tuple[fx.Node, fx.Node], int]:
@@ -190,7 +257,8 @@ def evaluate_all_pairs_longest_paths(
     """
     D_static = dict(D)
     for key in D_static:
-        D_static[key] = D_static[key].subs(T, initiation_interval)
+        if isinstance(D_static[key], sympy.Expr):
+            D_static[key] = D_static[key].subs(T, initiation_interval)
     # Remove the negative infinity values and edges to self.
     for k in list(D_static.keys()):
         if math.isinf(D_static[k]) or k[0] == k[1]:
@@ -244,8 +312,14 @@ def get_scheduling_weight(node: fx.Node) -> EdgeWeight:
             weight = EdgeWeight(0, delay_table[Operation.MMA])
         case IterArg():
             weight = EdgeWeight(1, 0)
-        case CastOp():
+        case CastOp() | Extract() | Permute() | Broadcast() | Reshape():
             weight = EdgeWeight(0, delay_table[Operation.NOOP])
+        case UnaryPyOp():
+            weight = EdgeWeight(0, delay_table[Operation.VALU])
+        case BinaryPyOp():
+            weight = EdgeWeight(0, delay_table[Operation.VALU])
+        case ShuffleOp():
+            weight = EdgeWeight(0, delay_table[Operation.SHUFFLE])
         case _:
             raise ValueError(f"Unsupported node type: {custom_node}")
     weight.delay = subs_idxc(weight.delay)

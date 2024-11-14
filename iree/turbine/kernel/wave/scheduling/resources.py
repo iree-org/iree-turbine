@@ -15,6 +15,13 @@ from ...ops.wave_ops import (
     get_custom,
     CustomOp,
     CastOp,
+    UnaryPyOp,
+    BinaryPyOp,
+    ShuffleOp,
+    Permute,
+    Extract,
+    Broadcast,
+    Reshape,
 )
 import torch.fx as fx
 from enum import Enum
@@ -23,7 +30,13 @@ import numpy as np
 
 # This table contains the number of functional units available for each operation.
 def get_available_resources() -> list[int]:
-    resources = [GLOBAL_MEMORY_UNITS, SHARED_MEMORY_UNITS, MMA_UNITS]
+    resources = [
+        GLOBAL_MEMORY_UNITS,
+        SHARED_MEMORY_UNITS,
+        MMA_UNITS,
+        VALU_UNITS,
+        SHUFFLE_UNITS,
+    ]
     return np.array([int(subs_idxc(x)) for x in resources])
 
 
@@ -37,7 +50,10 @@ class Operation(Enum):
     VALU = "valu"
     SALU = "salu"
     NOOP = "noop"
+    SHUFFLE = "shuffle"
 
+
+SCHEDULING_NOOPS = (IterArg, Permute, Extract, Broadcast, CastOp, Reshape)
 
 # This table contains the cycles required to execute each operation.
 delay_table = {
@@ -47,17 +63,21 @@ delay_table = {
     Operation.WRITE_GLOBAL: WRITE_GLOBAL_DELAY,
     Operation.MMA: MMA_DELAY,
     Operation.NOOP: 0,
+    Operation.VALU: VALU_DELAY,
+    Operation.SHUFFLE: SHUFFLE_DELAY,
 }
 
 # This table contains the resource usage for each operation.
 # Operations can use more than one resource for more than one cycle.
 resource_reservation_table = {
-    Operation.READ_SHARED: np.array([[0, 1, 0]]),
-    Operation.WRITE_SHARED: np.array([[0, 1, 0]]),
-    Operation.READ_GLOBAL: np.array([[1, 0, 0]]),
-    Operation.WRITE_GLOBAL: np.array([[1, 0, 0]]),
-    Operation.MMA: np.array([[0, 0, 1]]),
-    Operation.NOOP: np.array([[0, 0, 0]]),
+    Operation.READ_SHARED: np.array([[0, 1, 0, 0, 0]]),
+    Operation.WRITE_SHARED: np.array([[0, 1, 0, 0, 0]]),
+    Operation.READ_GLOBAL: np.array([[1, 0, 0, 0, 0]]),
+    Operation.WRITE_GLOBAL: np.array([[1, 0, 0, 0, 0]]),
+    Operation.MMA: np.array([[0, 0, 1, 0, 0]]),
+    Operation.NOOP: np.array([[0, 0, 0, 0, 0]]),
+    Operation.VALU: np.array([[0, 0, 0, 1, 0]]),
+    Operation.SHUFFLE: np.array([[0, 0, 0, 0, 1]]),
 }
 
 
@@ -76,10 +96,12 @@ def get_custom_operation_type(custom: CustomOp) -> Operation:
         )
     elif isinstance(custom, MMA):
         return Operation.MMA
-    elif isinstance(custom, IterArg):
+    elif isinstance(custom, SCHEDULING_NOOPS + (Output,)):
         return Operation.NOOP
-    elif isinstance(custom, Output):
-        return Operation.NOOP
+    elif isinstance(custom, (UnaryPyOp, BinaryPyOp)):
+        return Operation.VALU
+    elif isinstance(custom, ShuffleOp):
+        return Operation.SHUFFLE
     else:
         return None
 
@@ -106,8 +128,13 @@ def annotate_resource_usage(
             )
         elif isinstance(custom, MMA):
             custom.rrt = resource_reservation_table[Operation.MMA]
-        elif isinstance(custom, (IterArg, CastOp)):
-            iter_args.append(node)
+        elif isinstance(custom, ShuffleOp):
+            custom.rrt = resource_reservation_table[Operation.SHUFFLE]
+        elif isinstance(custom, (UnaryPyOp, BinaryPyOp)):
+            custom.rrt = resource_reservation_table[Operation.VALU]
+        elif isinstance(custom, SCHEDULING_NOOPS):
+            if isinstance(custom, IterArg):
+                iter_args.append(node)
             custom.rrt = resource_reservation_table[Operation.NOOP]
         elif isinstance(custom, Output):
             output = node
