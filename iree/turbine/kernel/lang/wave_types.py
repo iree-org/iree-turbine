@@ -167,9 +167,17 @@ class IndexMapping:
     input_mapping: SymbolsMap
     output_mapping: SymbolsMap
     iteration_shape: tuple[IndexExpr, ...]
+    dynamic_val_mappings: tuple[SymbolsMap, ...]
+    dynamic_vals: dict[IndexSymbol, int]
 
     def __init__(
-        self, num_iterators: int, inputs: SymbolsMap, outputs: SymbolsMap
+        self,
+        num_iterators: int,
+        inputs: SymbolsMap,
+        outputs: SymbolsMap,
+        dynamic_val_mappings: Optional[
+            SymbolsMap | list[SymbolsMap, ...] | tuple[SymbolsMap, ...]
+        ] = None,
     ) -> None:
         iters = {self.iterator(i): i for i in range(num_iterators)}
         iter_shape = [None] * num_iterators
@@ -191,6 +199,12 @@ class IndexMapping:
         self.iteration_shape = iter_shape
         self.input_mapping = inputs
         self.output_mapping = outputs
+        if not isinstance(dynamic_val_mappings, (list, tuple)):
+            dynamic_val_mappings = (dynamic_val_mappings,)
+
+        self.dynamic_val_mappings = tuple(dynamic_val_mappings)
+        num_dyn_vals = len(dynamic_val_mappings)
+        self.dynamic_vals = {self.dynamic_val(i): i for i in range(num_dyn_vals)}
 
     @property
     def num_iterators(self) -> int:
@@ -216,6 +230,10 @@ class IndexMapping:
     @staticmethod
     def iterator(index: int) -> IndexSymbol:
         return index_symbol(f"$index{index}")
+
+    @staticmethod
+    def dynamic_val(index: int) -> IndexSymbol:
+        return index_symbol(f"$dynamic_val{index}")
 
     def map_input_indices(
         self, symbols: Optional[tuple[IndexSymbol, ...]] = None
