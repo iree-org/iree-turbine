@@ -256,11 +256,6 @@ class LaunchableWave(Launchable):
         # Partition strided operators.
         partition_strided_operators(graph, self.constraints)
 
-        # Align sizes to WG/Tile sizes
-        # This pass changes indexing keys, which can interfere with other passes,
-        # so it should be called close to the end of pipeline.
-        align_index_sizes(graph, self.constraints)
-
         # Decompose reduce Ops.
         decompose_reduce_ops(graph, self.constraints, idxc.subs)
 
@@ -277,6 +272,11 @@ class LaunchableWave(Launchable):
         if kwargs.get("schedule", False):
             use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
             schedule_graph(graph, self.constraints, use_scheduling_barriers)
+
+        # Align sizes to WG/Tile sizes
+        # This pass changes indexing keys, which can interfere with other passes,
+        # so it should be called close to the end of pipeline.
+        align_index_sizes(graph, self.constraints)
 
         # Add shared memory barriers.
         add_shared_memory_barriers(graph)

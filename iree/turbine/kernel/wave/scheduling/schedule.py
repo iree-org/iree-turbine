@@ -15,7 +15,7 @@ from .loop_reconstruction import construct_pipelined_loop
 from ..utils import graph_copy, erase_graph, get_tiling_constraint, subs_idxc
 import torch.fx as fx
 from ....support.logging import get_logger
-import math
+import sympy
 
 logger = get_logger("turbine.wave.scheduling.schedule")
 
@@ -92,12 +92,18 @@ def schedule_reduction(
     # to have atleast N iterations of the loop where N > num_stages - 1 (because
     # we will be peeling off num_stages iterations from the loop).
     tiling_constraint = get_tiling_constraint(reduction, constraints)
-    max_induction_variable = int(
-        subs_idxc(tiling_constraint.dim) // subs_idxc(tiling_constraint.tile_size)
-    )
-    if max_induction_variable <= scheduler.num_stages - 1:
-        logger.warn("Not enough iterations to pipeline the loop. Skipping pipelining.")
-        return {}
+    max_induction_variable = subs_idxc(tiling_constraint.count)
+
+    ivar_is_number = max_induction_variable.is_number
+    if ivar_is_number:
+        # We can only do a compile-time check if the induction variable
+        # is not dynamic.
+        max_induction_variable = int(max_induction_variable)
+        if max_induction_variable <= scheduler.num_stages - 1:
+            logger.warn(
+                "Not enough iterations to pipeline the loop. Skipping pipelining."
+            )
+            return {}
 
     new_reduction = construct_pipelined_loop(
         trace,
@@ -112,7 +118,12 @@ def schedule_reduction(
     )
 
     # Update new reduction count.
-    new_reduction.count = max_induction_variable - (scheduler.num_stages - 1)
+    if ivar_is_number:
+        new_reduction.count = max_induction_variable - (scheduler.num_stages - 1)
+    else:
+        new_reduction.count = sympy.Max(
+            0, max_induction_variable - (scheduler.num_stages - 1)
+        )
 
 
 def schedule_graph(

@@ -272,6 +272,14 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
         if get_const_val(rhs) == 0:
             return lhs
 
+        if (rhs_val := get_const_val(rhs)) and rhs_val < 0:
+            # If rhs_val is negative, since it is of index type and we have
+            # overflow flags, we need to express it as a sub to get the
+            # correct result.
+            return arith_d.subi(
+                lhs, _get_const(-rhs_val), overflow_flags=overflow_flags
+            )
+
         return arith_d.addi(lhs, rhs, overflow_flags=overflow_flags)
 
     # `x + (a/b)` transformed into `(x*b + a) / b`
@@ -320,7 +328,18 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
 
     def _ceiling(value):
         if isinstance(value, _Rational):
-            value = arith_d.ceildivsi(*_broadcast(value.numerator, value.denominator))
+            # TODO: This is the expansion of ceildivui, but we should figure
+            # out how to run the arith-expand pass instead of doing this.
+            # ceildivui(x, y) = x == 0 ? 0 : ((x - 1) / y) + 1
+            one = _get_const(1)
+            zero = _get_const(0)
+            lhs_minus_one = arith_d.subi(*_broadcast(value.numerator, one))
+            div = arith_d.divui(*_broadcast(lhs_minus_one, value.denominator))
+            result = arith_d.addi(*_broadcast(div, one))
+            cmp = arith_d.cmpi(
+                arith_d.CmpIPredicate.eq, *_broadcast(value.numerator, zero)
+            )
+            value = arith_d.select(cmp, zero, result)
 
         return value
 
@@ -416,6 +435,16 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
                 res = arith_d.andi(*_broadcast(lhs, rhs))
+                stack.append(res)
+            case sympy.Max():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                _enforce_non_rational(rhs, term)
+                _enforce_non_rational(lhs, term)
+                if _is_integer_like_type(rhs.type):
+                    res = arith_d.maxsi(*_broadcast(lhs, rhs))
+                else:
+                    res = arith_d.maximumf(*_broadcast(lhs, rhs))
                 stack.append(res)
             case sympy.logic.boolalg.BooleanFalse():
                 res = arith_d.constant(IntegerType.get_signless(1), 0)
@@ -1062,7 +1091,10 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
 
     # For now, we assume that dimensions that have tiling constraints on them,
     # do not have any other constraints.
-    end = arith_d.constant(IndexType.get(), int(node.count))
+    if isinstance(node.count, sympy.Expr):
+        end = gen_sympy_index(add_emitter_subs(emitter), node.count)
+    else:
+        end = arith_d.constant(IndexType.get(), int(node.count))
 
     # Since we divide the end by the tile size, we need to make sure that the
     # step is 1.
