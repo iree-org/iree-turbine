@@ -178,7 +178,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                 next_gpr_offset = gpr_offset_expr.subs({GPR_NUM: i + 1})
                 cur_gpr_offset = gpr_offset_expr.subs({GPR_NUM: i})
                 gpr_offset_step = next_gpr_offset - cur_gpr_offset
-                if not isinstance(gpr_offset_step, sympy.Integer):
+                if not gpr_offset_step.is_number:
                     raise NotImplementedError(
                         "Only constant integer GPR offset steps supported."
                     )
@@ -189,9 +189,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                 if gpr_offset_step > 1 or i == elements_per_thread - 1:
                     # Get VGPR number of elements.
                     gpr_size = (cur_gpr_offset - gpr_cur_base_offset) + 1
-                    assert isinstance(
-                        gpr_size, sympy.Integer
-                    ), "Expected gpr_size to be int."
+                    assert gpr_size.is_number, "Expected gpr_size to be int."
                     gpr_size = int(gpr_size)
 
                     # Get updated index with VGPR offset.
