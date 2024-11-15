@@ -340,7 +340,7 @@ def test_offset_read(shape, request):
         res = tkw.read(
             a,
             mapping=mapping,
-            mapping_dynamic_vals=offset,
+            mapping_dynamic_vals=(offset,),
             elements_per_thread=ELEMS_PER_THREAD,
         )
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)

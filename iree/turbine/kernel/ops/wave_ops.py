@@ -69,7 +69,7 @@ def read(
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
     mapping: Optional[IndexMapping] = None,
-    mapping_dynamic_vals: Optional["Register" | tuple["Register", ...]] = None,
+    mapping_dynamic_vals: "Register" | tuple["Register", ...] = (),
 ) -> "Register":
     ...
 
@@ -93,7 +93,7 @@ def write(
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
     mapping: Optional[IndexMapping] = None,
-    mapping_dynamic_vals: Optional["Register" | tuple["Register", ...]] = None,
+    mapping_dynamic_vals: "Register" | tuple["Register", ...] = (),
 ):
     ...
 
@@ -948,7 +948,7 @@ class Read(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
-    mapping_dynamic_vals: tuple["Register", ...] = ((),)
+    mapping_dynamic_vals: tuple["Register", ...] = ()
     _write_dependency: Optional[list[fx.Node]] = None
 
     @property

@@ -175,9 +175,9 @@ class IndexMapping:
         num_iterators: int,
         inputs: SymbolsMap,
         outputs: SymbolsMap,
-        dynamic_val_mappings: Optional[
-            SymbolsMap | list[SymbolsMap, ...] | tuple[SymbolsMap, ...]
-        ] = None,
+        dynamic_val_mappings: SymbolsMap
+        | list[SymbolsMap, ...]
+        | tuple[SymbolsMap, ...] = (),
     ) -> None:
         iters = {self.iterator(i): i for i in range(num_iterators)}
         iter_shape = [None] * num_iterators
@@ -261,4 +261,7 @@ class IndexMapping:
         return self.is_input_identity() and self.is_output_identity()
 
     def __repr__(self) -> str:
-        return f"IndexMapping(iters={self.iters}, input_mapping={self.input_mapping}), output_mapping={self.output_mapping}"
+        return (
+            f"IndexMapping(iters={self.iters}, input_mapping={self.input_mapping}), "
+            f"output_mapping={self.output_mapping}, dynamic_val_mappings={self.dynamic_val_mappings}"
+        )
