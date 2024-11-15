@@ -123,11 +123,19 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
 
 def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Constraint]):
     """
-    This function analyzes the index sequence of operators in the graph
-    that are writes on 2d tensors. If the operator has an access pattern where
-    the strides are greater than one on a single dimension, this function splits the
-    operands into individual elements and constructs a write for
-    each individual element.
+    This function analyzes the index sequence of reads and writes in a graph.
+    If the reads or writes have incontiguous offsets based on GPR_NUM, we'd
+    need to split these reads/writes appropriately.
+
+    e.g a vector<16xf16> may be owned by lane 0, and lane 16 in this layout:
+    [0, 0, 0, 0, 16, 16, 16, 16, 0, 0, 0, 0, 16, 16, 16, 16].
+
+    With our current gloassary, this means we have 2 VGPR "chunks".
+    [0:4) and [8:12) for lane0, and [4:8) and [12:16) for lane16.
+    To the lane it should just look like vector<8xf16>.
+    Hence for this example, we'd need two reads of vector<4xf16> and a couple
+    insert_slices to combine them together into a single vector<8xf16>.
+
     """
 
     def has_gpr_offsets(node: fx.Node) -> bool:
@@ -186,63 +194,55 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                     ), "Expected gpr_size to be int."
                     gpr_size = int(gpr_size)
 
+                    # Get updated index with VGPR offset.
+                    updated_index_with_gpr_offset = {
+                        dim: IndexSequence(
+                            simplified_index[dim].start.subs({GPR_NUM: cur_elem_id}),
+                            gpr_size,
+                            simplified_index[dim].stride,
+                        )
+                        for dim in simplified_index
+                    }
+
                     # Generate new Read/Write that has contiguous VGPR elements.
                     if isinstance(custom, Write):
                         extract = ExtractSlice(
                             custom.register_, [cur_elem_id], [gpr_size], [1]
                         ).add_to_graph(custom.graph)
-                        write = Write(
+                        new_node = Write(
                             extract,
                             custom.memory,
                             mapping=custom.mapping,
                             elements_per_thread=gpr_size,
                         ).add_to_graph(custom.graph)
-                        write.index = {
-                            dim: IndexSequence(
-                                simplified_index[dim].start.subs(
-                                    {GPR_NUM: cur_elem_id}
-                                ),
-                                gpr_size,
-                                simplified_index[dim].stride,
-                            )
-                            for dim in simplified_index
-                        }
-                        write.vector_shapes = custom.vector_shapes
-                        ops_to_combine.append(write)
                     elif isinstance(custom, Read):
                         # TODO: Add support on how to handle strided reads.
-                        read = Read(
+                        new_node = Read(
                             custom.memory,
                             elements_per_thread=gpr_size,
                             mapping=custom.mapping,
                             _write_dependency=custom._write_dependency,
                         ).add_to_graph(custom.graph)
-                        read.index = {
-                            dim: IndexSequence(
-                                simplified_index[dim].start.subs(
-                                    {GPR_NUM: cur_elem_id}
-                                ),
-                                gpr_size,
-                                simplified_index[dim].stride,
-                            )
-                            for dim in simplified_index
-                        }
-                        read.vector_shapes = custom.vector_shapes
-                        ops_to_combine.append(read)
+
+                    # Update new_node information
+                    new_node.index = updated_index_with_gpr_offset
+                    new_node.vector_shapes = custom.vector_shapes
+                    ops_to_combine.append(new_node)
 
                     # Set new current base GPR offset
                     gpr_cur_base_offset = next_gpr_offset
                     cur_elem_id = i + 1
+
+            # Update users of original op.
             if isinstance(custom, Write):
                 # Useful to handle write/read dependency
                 custom.replace_all_uses_with(ops_to_combine)
-                custom.graph.erase_node(operator)
             elif isinstance(custom, Read):
                 reshape = Reshape(ops_to_combine, custom.vector_shapes).add_to_graph(
                     custom.graph
                 )
                 custom.replace_all_uses_with(reshape)
-                custom.graph.erase_node(custom.fx_node)
+            custom.graph.erase_node(custom.fx_node)
 
 
 def preprocess_nodes(
