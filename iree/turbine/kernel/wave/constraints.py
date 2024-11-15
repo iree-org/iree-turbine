@@ -121,10 +121,11 @@ class HardwareConstraint(Constraint):
             case _:
                 raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
 
-    @property
-    def mma_matrix_shapes(self) -> tuple[int]:
+    def mma_matrix_shapes(self, mma_type: Optional[MMAType]) -> tuple[int]:
         # TODO: Eventually the shapes and indices should be provided by a tool
-        match self.mma_type:
+        if mma_type == None:
+            mma_type = self.mma_type
+        match mma_type:
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 return (16, 16, 16)
             case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
@@ -179,13 +180,16 @@ class HardwareConstraint(Constraint):
         elements_per_thread: int | IndexSymbol,
         stride: int,
         is_mma_dim: bool,
+        mma_type: MMAType,
     ) -> IndexSequence:
         if not is_mma_dim:
             return self.compute_access_pattern_using_vector_shapes(
                 dim, constraint_index, elements_per_thread, stride
             )
         lane = self.linearized_thread_id % self.threads_per_wave
-        match self.mma_type:
+        if mma_type == None:
+            mma_type = self.mma_type
+        match mma_type:
             # (M x K, N x K) -> M x N
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 offset = [
@@ -248,7 +252,7 @@ class HardwareConstraint(Constraint):
                     1,  # N
                     1,  # K
                 ]
-                if self.mma_type == MMAType.F32_16x16x32_K4_F8:
+                if mma_type == MMAType.F32_16x16x32_K4_F8:
                     offset = [
                         Piecewise(
                             (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
@@ -282,7 +286,7 @@ class HardwareConstraint(Constraint):
                     1,  # N
                     1,  # K
                 ]
-                if self.mma_type == MMAType.F32_32x32x16_K4_F8:
+                if mma_type == MMAType.F32_32x32x16_K4_F8:
                     offset = [
                         Piecewise(
                             (lane % 32, ~MMA_ACC),

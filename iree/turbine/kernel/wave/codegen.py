@@ -888,7 +888,7 @@ def emit_mfma(
 @handle_op(mma)
 def handle_mma(emitter: WaveEmitter, node: fx.Node):
     try:
-        lhs, rhs, acc = node.args
+        lhs, rhs, acc, mma_type = node.args
         acc = cast_vector(emitter, acc)
         values = [cast_vector(emitter, val) for val in [lhs, rhs]]
     except ValueError as e:
@@ -904,7 +904,7 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     if not hardware_constraints:
         raise CodegenError("No hardware constraints found.")
 
-    m, n, k = hardware_constraints[0].mma_matrix_shapes
+    m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
     result = emit_mfma(m, n, k, vector_type, acc, values)
     emitter.bind_node_proxy(node, IRProxyValue(result))
 

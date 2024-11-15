@@ -439,8 +439,9 @@ def set_node_index(
                         # dependence in the dimensional index.
                         # TODO: Evaluate if this is a valid case.
                         continue
+                mma_type = anchor.mma_type if anchor else None
                 index_seq = constraint.apply(
-                    dim, *inputs, anchor and dim in mma_index[anchor]
+                    dim, *inputs, anchor and dim in mma_index[anchor], mma_type
                 )
                 if anchor and dim in mma_index[anchor]:
                     index_seq = specialize_index_sequence(

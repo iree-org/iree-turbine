@@ -215,18 +215,17 @@ def testChainedGemm(
 # the two chained GEMMs.
 @require_e2e
 @require_cdna3
-@pytest.mark.xfail
 @pytest.mark.parametrize("shape", get_test_shapes("test_attention"))
 @pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        MMAType.F32_16x16x32_F8,
-        MMAType.F32_32x32x16_F8,
+        (MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K4_F8),
+        (MMAType.F32_16x16x32_F8, MMAType.F32_16x16x32_K4_F8),
     ],
 )
 def testChainedGemm_f8(
-    shape: tuple[int], enable_scheduling: bool, mfma_variant: MMAType, request
+    shape: tuple[int], enable_scheduling: bool, mfma_variant: tuple[MMAType], request
 ):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
@@ -259,7 +258,7 @@ def testChainedGemm_f8(
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(2, 2, 1),
-            mma_type=mfma_variant,
+            mma_type=mfma_variant[0],
             vector_shapes={B: 0},
         )
     ]
@@ -294,7 +293,7 @@ def testChainedGemm_f8(
             qk_cast_reg = tkw.cast(qk_reg, tkl.f8e4m3fnuz)
             v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             v_reg = tkw.cast(v_reg, tkl.f8e4m3fnuz)
-            acc = tkw.mma(qk_cast_reg, v_reg, acc)
+            acc = tkw.mma(qk_cast_reg, v_reg, acc, mfma_variant[1])
             return acc
 
         # repeat represents the results of the loop
@@ -304,8 +303,8 @@ def testChainedGemm_f8(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
+        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant[0]),
+        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_B: 1,
         BLOCK_M: 64,
         BLOCK_N: 64,
