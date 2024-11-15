@@ -278,9 +278,9 @@ class HardwareConstraint(Constraint):
                         (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
                     ),  # M
                     lane % 16,  # N
-                    (
-                        (16 * floor(GPR_NUM / 4)) + 4 * floor(lane / 16) + (GPR_NUM % 4)
-                    ),  # K
+                    (16 * floor(GPR_NUM / 4))
+                    + 4 * floor(lane / 16)
+                    + (GPR_NUM % 4),  # K
                 ]
                 size = [
                     Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
