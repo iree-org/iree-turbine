@@ -939,13 +939,9 @@ def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
             return 4
         case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 4
-        case MMAType.F32_16x16x32_F8 | MMAType.I32_16x16x32_I8:
+        case MMAType.F32_16x16x32_F8 | MMAType.F32_16x16x32_K4_F8 | MMAType.I32_16x16x32_I8:
             return 8
-        case MMAType.F32_32x32x16_F8 | MMAType.I32_32x32x16_I8:
-            return 8
-        case MMAType.F32_16x16x32_K4_F8:
-            return 8
-        case MMAType.F32_32x32x16_K4_F8:
+        case MMAType.F32_32x32x16_F8 | MMAType.F32_32x32x16_K4_F8 | MMAType.I32_32x32x16_I8:
             return 8
 
 
@@ -955,13 +951,9 @@ def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
             return 4
         case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 16
-        case MMAType.F32_16x16x32_F8 | MMAType.I32_16x16x32_I8:
+        case MMAType.F32_16x16x32_F8 | MMAType.F32_16x16x32_K4_F8 | MMAType.I32_16x16x32_I8:
             return 4
-        case MMAType.F32_32x32x16_F8 | MMAType.I32_32x32x16_I8:
-            return 16
-        case MMAType.F32_16x16x32_K4_F8:
-            return 4
-        case MMAType.F32_32x32x16_K4_F8:
+        case MMAType.F32_32x32x16_F8 | MMAType.F32_32x32x16_K4_F8 | MMAType.I32_32x32x16_I8:
             return 16
 
 

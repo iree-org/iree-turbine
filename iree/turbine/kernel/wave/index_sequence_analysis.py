@@ -85,6 +85,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             dim: simplify_index(custom.index.get(dim, custom.index[dim]))
             for dim in custom.index
         }
+
         shape = get_vector_shape(
             custom.vector_shapes, custom.register_type.symbolic_shape
         )
@@ -130,7 +131,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
     e.g a vector<16xf16> may be owned by lane 0, and lane 16 in this layout:
     [0, 0, 0, 0, 16, 16, 16, 16, 0, 0, 0, 0, 16, 16, 16, 16].
 
-    With our current gloassary, this means we have 2 VGPR "chunks".
+    With our current glossary, this means we have 2 VGPR "chunks".
     [0:4) and [8:12) for lane0, and [4:8) and [12:16) for lane16.
     To the lane it should just look like vector<8xf16>.
     Hence for this example, we'd need two reads of vector<4xf16> and a couple
@@ -146,15 +147,14 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         custom = get_custom(node)
         if not isinstance(custom, (Read, Write)):
             return False
-        dims_with_gpr_offset = [
-            v.start for k, v in custom.index.items() if v.start.has(GPR_NUM)
-        ]
-        if not dims_with_gpr_offset:
+        num_dims_with_gpr = sum(
+            1 for v in custom.index.values() if v.start.has(GPR_NUM)
+        )
+        if num_dims_with_gpr == 1:
+            return True
+        elif num_dims_with_gpr == 0:
             return False
-        num_dims_with_gpr_offsets = len(dims_with_gpr_offset)
-        if num_dims_with_gpr_offsets > 1:
-            raise NotImplementedError("Currently only handle 1 dim with gpr offset.")
-        return True
+        raise NotImplementedError("Currently only handles 1 dim with GPR offset.")
 
     strided_operators = trace.walk(has_gpr_offsets)
     for operator in strided_operators:
@@ -165,7 +165,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         }
         elements_per_thread = subs_idxc(custom.elements_per_thread)
         gpr_offsets = [
-            v.start for k, v in simplified_index.items() if v.start.has(GPR_NUM)
+            v.start for v in simplified_index.values() if v.start.has(GPR_NUM)
         ]
         assert len(gpr_offsets) == 1, "Expected only 1-Dim has gpr offsets"
         gpr_offset_expr = gpr_offsets[0]

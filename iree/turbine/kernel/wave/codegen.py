@@ -1392,7 +1392,6 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     custom = get_custom(node)
-    innermost_dim = custom.type.symbolic_shape[-1]
 
     # Determine whether to extract or combine.
     if len(args) > 1:
@@ -1420,6 +1419,7 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
     # actual offset, we need to multiply by the size. The size is obtained by
     # computing the number of partitions using the source and target vector shapes
     # and dividing the incoming vector shape by the number of partitions.
+    innermost_dim = custom.type.symbolic_shape[-1]
     offset = custom.expanded_dims[innermost_dim]
     num_partitions = (
         target_vector_shapes[innermost_dim] // custom.vector_shapes[innermost_dim]
