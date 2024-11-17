@@ -475,7 +475,7 @@ def compile_and_invoke(
     config: dict[str, str],
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    kernel_dynamic_dims: list[int],
+    kernel_dynamic_dims: list[int] = [],
     run: bool = False,
     run_bench: bool = False,
     inplace: bool = False,
