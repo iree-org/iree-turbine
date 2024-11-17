@@ -528,8 +528,11 @@ def compile_and_invoke(
     dump_vmfb_file = config.get("dump_vmfb_file", None)
     if dump_vmfb_file is not None:
         _write_file(dump_vmfb_file, "wb", res)
-    device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
-    rt_config = rt.Config(f"{device}://GPU-{device_uuid}")
+    if inplace:
+        # Select device as the GPU, where input tensors are coming from.
+        device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
+        device = f"{device}://GPU-{device_uuid}"
+    rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
     mod = rt.VmModule.copy_buffer(vm_instance, res)
