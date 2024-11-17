@@ -130,11 +130,11 @@ class StreamExecutable:
         # Input bindings are always user specified.
         # Output bindings are the real outputs.
         # Dynamic dim bindings are the dynamic dims of the input and output tensors.
-        linear_bindings = kb_input_bindings + dynamic_dim_bindings + kb_output_bindings
+        linear_bindings = kb_input_bindings + kb_output_bindings + dynamic_dim_bindings
 
         dynamic_dim_indices = {
-            "begin": len(kb_input_bindings),
-            "end": len(linear_bindings) - len(kb_output_bindings),
+            "begin": len(kb_input_bindings) + len(kb_output_bindings),
+            "end": len(linear_bindings),
         }
 
         # TODO: This is sloppy. This assert will hit on some user errors for
@@ -165,7 +165,7 @@ class StreamExecutable:
                 def_func_args = list(def_func_block.arguments)
                 if workgroup_size is not None and subgroup_size is not None:
                     def_func_op.attributes["translation_info"] = Attribute.parse(
-                        f"#iree_codegen.translation_info<pipeline = None "
+                        f"#iree_codegen.translation_info<None "
                         f"workgroup_size=[{','.join(str(x) for x in workgroup_size)}]"
                         f"subgroup_size={subgroup_size}>"
                     )

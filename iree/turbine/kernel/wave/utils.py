@@ -454,12 +454,17 @@ def _print_bench_result(result, filename):
 
 
 def get_device_uuid(input_tensors: list[torch.Tensor]) -> tuple[int, str]:
+    """
+    Checks all torch.Tensor are on the same device, and get UUID from Torch device.
+    """
     device_list = [
         input.device for input in input_tensors if isinstance(input, torch.Tensor)
     ]
     if len(set(device_list)) != 1:
         raise ValueError(f"Found multiple device on input tensors:{set(device_list)}")
     device = device_list[0]
+    if device.type != "cuda":
+        raise ValueError("Expected all argument tensors to be in GPU.")
     uuid = str(torch.cuda.get_device_properties(device).uuid)
     return uuid
 
@@ -523,9 +528,7 @@ def compile_and_invoke(
     dump_vmfb_file = config.get("dump_vmfb_file", None)
     if dump_vmfb_file is not None:
         _write_file(dump_vmfb_file, "wb", res)
-    # Check all torch.Tensor has single device
-    # Get UUID from Torch CUDA device index
-    device_uuid = get_device_uuid(kernel_inputs)
+    device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
     rt_config = rt.Config(f"{device}://GPU-{device_uuid}")
     device = rt_config.device
     vm_instance = rt_config.vm_instance

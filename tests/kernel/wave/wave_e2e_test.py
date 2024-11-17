@@ -12,7 +12,7 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import get_default_run_config
 import torch
-from numpy.testing import assert_allclose, assert_equal
+from torch.testing import assert_allclose
 import pytest
 import sympy
 import os
@@ -95,8 +95,8 @@ def test_copy(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float16)
-    b = torch.zeros(shape, dtype=torch.float16)
+    a = torch.randn(shape, dtype=torch.float16).to("cuda")
+    b = torch.zeros(shape, dtype=torch.float16).to("cuda")
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -152,8 +152,8 @@ def test_dynamic_copy(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float16)
-    b = torch.zeros(shape, dtype=torch.float16)
+    a = torch.randn(shape, dtype=torch.float16).to("cuda")
+    b = torch.zeros(shape, dtype=torch.float16).to("cuda")
     with tk.gen.TestLaunchContext(
         {
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
@@ -211,8 +211,8 @@ def test_transpose_read(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float16)
-    b = torch.zeros(shape[::-1], dtype=torch.float16)
+    a = torch.randn(shape, dtype=torch.float16).to("cuda")
+    b = torch.zeros(shape[::-1], dtype=torch.float16).to("cuda")
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -269,8 +269,8 @@ def test_transpose_write(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float16)
-    b = torch.zeros(shape[::-1], dtype=torch.float16)
+    a = torch.randn(shape, dtype=torch.float16).to("cuda")
+    b = torch.zeros(shape[::-1], dtype=torch.float16).to("cuda")
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -325,9 +325,9 @@ def test_reduce_sum(shape, request):
     config = get_default_run_config()
 
     torch.manual_seed(1)
-    a = torch.randn(shape, dtype=torch.float16)
-    b = torch.randn(shape, dtype=torch.float16)
-    c = torch.zeros((shape[0],), dtype=torch.float16)
+    a = torch.randn(shape, dtype=torch.float16).to("cuda")
+    b = torch.randn(shape, dtype=torch.float16).to("cuda")
+    c = torch.zeros((shape[0],), dtype=torch.float16).to("cuda")
     ref = torch.sum((a * b), dim=-1)
     with tk.gen.TestLaunchContext(
         {
@@ -341,7 +341,7 @@ def test_reduce_sum(shape, request):
         run_config=config,
     ):
         test(a, b, c)
-        assert_allclose(ref, c, atol=0.1)
+        assert_allclose(ref, c, atol=0.1, rtol=1e-05)
 
 
 @require_e2e
@@ -397,9 +397,9 @@ def test_toy_online_softmax(shape):
     config = get_default_run_config()
 
     torch.manual_seed(1)
-    a = torch.randn(shape, dtype=torch.float32)
-    b = torch.randn(shape, dtype=torch.float32)
-    c = torch.zeros((shape[0],), dtype=torch.float32)
+    a = torch.randn(shape, dtype=torch.float32).to("cuda")
+    b = torch.randn(shape, dtype=torch.float32).to("cuda")
+    c = torch.zeros((shape[0],), dtype=torch.float32).to("cuda")
     ref_max = torch.max((a * b), dim=-1).values
     ref_sum = torch.sum((a * b), dim=-1)
     ref = ref_max / ref_sum
@@ -419,7 +419,7 @@ def test_toy_online_softmax(shape):
         # Assert equal does cast to boolean on torch.Tensor
         # which causes issues, hence we cast to numpy before
         # checking.
-        assert_allclose(ref, c, atol=0.015)
+        assert_allclose(ref, c)
 
 
 @require_e2e
@@ -498,8 +498,8 @@ def test_im2col(request):
     h_out = (h + 2 * padding - hf) // stride + 1
     w_out = (w + 2 * padding - wf) // stride + 1
     res_shape = (h_out * w_out * n, hf * wf * c)
-    a = torch.randn((n, c, h, w), dtype=torch.float16)
-    b = torch.zeros(res_shape, dtype=torch.float16)
+    a = torch.randn((n, c, h, w), dtype=torch.float16).to("cuda")
+    b = torch.zeros(res_shape, dtype=torch.float16).to("cuda")
 
     im2col = torch.nn.Unfold(kernel_size=(hf, wf), padding=padding, stride=stride)
     expected = im2col(a)[0, :, :].T
@@ -653,8 +653,11 @@ def test_im2col_mma(request):
         run_bench=run_bench,
         run_config=config,
     ):
+        x = x.to("cuda")
+        we = we.to("cuda")
+        out = out.to("cuda")
         gpu_func(x, we, out)
-        assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
+        assert_allclose(out.cpu(), out_ref, rtol=1e-05, atol=1e-05)
 
 
 _igemm_cases = [
@@ -732,12 +735,12 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     padding = 0  # TODO: only pad=0 is supported for now
 
     torch.manual_seed(1)
-    x = torch.randn(n, c, h, w, dtype=torch.float16)
-    we = torch.randn(nf, cf, hf, wf, dtype=torch.float16)
+    x = torch.randn(n, c, h, w, dtype=torch.float16).to("cuda")
+    we = torch.randn(nf, cf, hf, wf, dtype=torch.float16).to("cuda")
 
     convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
     convRef.weight = torch.nn.Parameter(we)
-    out_ref = convRef(x).detach()
+    out_ref = convRef(x).detach().to(torch.float32)
 
     sym = tkl.sym
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
@@ -942,8 +945,8 @@ def test_cast(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float32)
-    b = torch.zeros(shape, dtype=torch.float16)
+    a = torch.randn(shape, dtype=torch.float32).to("cuda")
+    b = torch.zeros(shape, dtype=torch.float16).to("cuda")
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
