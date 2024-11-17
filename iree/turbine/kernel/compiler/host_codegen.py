@@ -81,11 +81,11 @@ def isolated_test_call(
             entrypoints = ArrayAttr.get([dispatch])
 
             buffer_binding_count = len(sig.kernel_buffer_bindings)
-            offset_to_out_binding = len(sig.kernel_buffer_input_bindings)
+            input_binding_count = len(sig.kernel_buffer_input_bindings)
             tied_operands = ArrayAttr.get(
                 [
                     IntegerAttr.get(IndexType.get(), out_idx)
-                    for out_idx in range(offset_to_out_binding, buffer_binding_count)
+                    for out_idx in range(input_binding_count, buffer_binding_count)
                 ]
             )
             out = flow_d.DispatchOp(

@@ -354,9 +354,7 @@ class LaunchableWave(Launchable):
             dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
             kernel_dynamic_dims = []
             if dynamic_symbols:
-                kernel_dynamic_dims = [
-                    dynamic_symbols_map[sym] for sym in dynamic_symbols
-                ]
+                kernel_dynamic_dims = dynamic_symbols_map.values()
 
             config = kwargs.get("run_config", None)
             if not config:

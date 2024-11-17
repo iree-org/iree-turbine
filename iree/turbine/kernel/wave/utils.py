@@ -377,8 +377,8 @@ def align_index_vars(
     return {safe_subs(key, key_subs): index[key] for key in index}
 
 
-def _invoke(vm_context, device, entry_function, inputs, outputs):
-    arg_list = rt.VmVariantList(len(inputs))
+def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
+    arg_list = rt.VmVariantList(len(inputs) + len(dynamic_dims))
     ret_list = rt.VmVariantList(len(outputs))
 
     for input in inputs:
@@ -386,10 +386,14 @@ def _invoke(vm_context, device, entry_function, inputs, outputs):
             input_cpu = input.cpu().contiguous()
             device_array = rt.asdevicearray(device, input_cpu)
             arg_list.push_ref(device_array._buffer_view)
-        elif isinstance(input, int):
-            arg_list.push_int(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
+
+    for dynamic_dim in dynamic_dims:
+        if isinstance(dynamic_dim, int):
+            arg_list.push_int(dynamic_dim)
+        else:
+            raise ValueError(f"Unsupported dynamic dim type: {type(dynamic_dim)}")
 
     vm_context.invoke(entry_function, arg_list, ret_list)
 
@@ -558,7 +562,14 @@ def compile_and_invoke(
                 kernel_dynamic_dims,
             )
         else:
-            _invoke(ctx.vm_context, device, func, kernel_inputs, kernel_outputs)
+            _invoke(
+                ctx.vm_context,
+                device,
+                func,
+                kernel_inputs,
+                kernel_outputs,
+                kernel_dynamic_dims,
+            )
 
     if run_bench:
         bench_with_constant_weights = config.get("bench_with_constant_weights", False)

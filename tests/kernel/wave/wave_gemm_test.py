@@ -185,7 +185,7 @@ def testGemm(
                 )
         iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
         generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c.cpu(), iree_ref)
+        assert_close(c, iree_ref, check_device=False)
 
 
 @require_e2e
@@ -304,7 +304,7 @@ def testF8Gemm(
                 )
         iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
         generate_iree_ref("mmt_f8", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c.cpu(), iree_ref)
+        assert_close(c, iree_ref, check_device=False)
 
 
 @require_e2e
@@ -419,4 +419,4 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
                 )
         iree_ref = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         generate_iree_ref("bmmt", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c.cpu(), iree_ref)
+        assert_close(c, iree_ref, check_device=False)

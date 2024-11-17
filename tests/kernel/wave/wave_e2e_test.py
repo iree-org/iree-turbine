@@ -16,7 +16,7 @@ from iree.turbine.kernel.wave.utils import (
     device_zeros,
 )
 import torch
-from torch.testing import assert_allclose
+from torch.testing import assert_close
 import pytest
 import sympy
 import os
@@ -113,7 +113,7 @@ def test_copy(shape, request):
         run_config=config,
     ):
         test(a, b)
-        assert_allclose(a, b)
+        assert_close(a, b)
 
 
 @require_e2e
@@ -170,7 +170,7 @@ def test_dynamic_copy(shape, request):
         run_config=config,
     ):
         test(a, b)
-        assert_allclose(a, b)
+        assert_close(a, b)
 
 
 @require_e2e
@@ -229,7 +229,7 @@ def test_transpose_read(shape, request):
         run_config=config,
     ):
         test(a, b)
-        assert_allclose(a.T, b)
+        assert_close(a.T, b)
 
 
 @require_e2e
@@ -287,7 +287,7 @@ def test_transpose_write(shape, request):
         run_config=config,
     ):
         test(a, b)
-        assert_allclose(a.T, b)
+        assert_close(a.T, b)
 
 
 @require_e2e
@@ -345,7 +345,7 @@ def test_reduce_sum(shape, request):
         run_config=config,
     ):
         test(a, b, c)
-        assert_allclose(ref, c, atol=0.1, rtol=1e-05)
+        assert_close(ref, c, atol=0.1, rtol=1e-05)
 
 
 @require_e2e
@@ -423,7 +423,7 @@ def test_toy_online_softmax(shape):
         # Assert equal does cast to boolean on torch.Tensor
         # which causes issues, hence we cast to numpy before
         # checking.
-        assert_allclose(ref, c)
+        assert_close(ref, c)
 
 
 @require_e2e
@@ -526,7 +526,7 @@ def test_im2col(request):
         run_config=config,
     ):
         test(a, b)
-        assert_allclose(b, expected)
+        assert_close(b, expected)
 
 
 @require_e2e
@@ -661,7 +661,7 @@ def test_im2col_mma(request):
         we = we.to("cuda")
         out = out.to("cuda")
         gpu_func(x, we, out)
-        assert_allclose(out.cpu(), out_ref, rtol=1e-05, atol=1e-05)
+        assert_close(out, out_ref, rtol=1e-05, atol=1e-05, check_device=False)
 
 
 _igemm_cases = [
@@ -886,7 +886,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     ):
         out = torch.zeros_like(out_ref)
         conv(x, we, out)
-        assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
+        assert_close(out, out_ref, rtol=1e-03, atol=1e-03)
 
         if run_bench:
             if dump_perf is not None:
@@ -963,4 +963,4 @@ def test_cast(shape, request):
         run_config=config,
     ):
         test(a, b)
-        assert_allclose(a.to(dtype=torch.float16), b)
+        assert_close(a.to(dtype=torch.float16), b)

@@ -198,7 +198,7 @@ def testChainedGemm(
         generate_iree_ref(
             "chain_mmt", [q, k, v], [iree_ref], config, run_bench=run_bench
         )
-        assert_close(output.cpu(), iree_ref)
+        assert_close(output, iree_ref, check_device=False)
 
 
 # This test requires some more analysis on the index sequences between
@@ -347,7 +347,7 @@ def testChainedGemm_f8(
         generate_iree_ref(
             "chain_mmt_f8", [q, k, v], [iree_ref], config, run_bench=run_bench
         )
-        assert_close(output.cpu(), iree_ref)
+        assert_close(output, iree_ref, check_device=False)
 
 
 @require_e2e
