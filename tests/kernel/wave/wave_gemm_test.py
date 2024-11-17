@@ -166,9 +166,9 @@ def testGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        a = torch.randn(shape[0], shape[2], dtype=torch.float16)
-        b = torch.randn(shape[1], shape[2], dtype=torch.float16)
-        c = torch.zeros(shape[0], shape[1], dtype=torch.float32)
+        a = torch.randn(shape[0], shape[2], dtype=torch.float16).to("cuda")
+        b = torch.randn(shape[1], shape[2], dtype=torch.float16).to("cuda")
+        c = torch.zeros(shape[0], shape[1], dtype=torch.float32).to("cuda")
         mb = gemm(a, b, c)
 
         if test_dump_generated_mlir:
@@ -183,7 +183,7 @@ def testGemm(
                 )
         iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
         generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref)
+        assert_close(c.cpu(), iree_ref)
 
 
 @require_e2e
@@ -285,9 +285,9 @@ def testF8Gemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        a = torch.randn(shape[0], shape[2], dtype=torch.float16)
-        b = torch.randn(shape[1], shape[2], dtype=torch.float16)
-        c = torch.zeros(shape[0], shape[1], dtype=torch.float32)
+        a = torch.randn(shape[0], shape[2], dtype=torch.float16).to("cuda")
+        b = torch.randn(shape[1], shape[2], dtype=torch.float16).to("cuda")
+        c = torch.zeros(shape[0], shape[1], dtype=torch.float32).to("cuda")
         mb = gemm(a, b, c)
 
         if test_dump_generated_mlir:
@@ -302,7 +302,7 @@ def testF8Gemm(
                 )
         iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
         generate_iree_ref("mmt_f8", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref)
+        assert_close(c.cpu(), iree_ref)
 
 
 @require_e2e
@@ -400,9 +400,9 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        a = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-        b = torch.randn(shape[0], shape[2], shape[3], dtype=torch.float16)
-        c = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+        a = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16).to("cuda")
+        b = torch.randn(shape[0], shape[2], shape[3], dtype=torch.float16).to("cuda")
+        c = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32).to("cuda")
         mb = batched_gemm(a, b, c)
 
         if test_dump_generated_mlir:
@@ -417,4 +417,4 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
                 )
         iree_ref = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         generate_iree_ref("bmmt", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref)
+        assert_close(c.cpu(), iree_ref)

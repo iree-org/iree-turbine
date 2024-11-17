@@ -377,15 +377,17 @@ def align_index_vars(
     return {safe_subs(key, key_subs): index[key] for key in index}
 
 
-def _invoke(vm_context, device, entry_function, inputs, outputs):
+def _invoke(vm_context, device, entry_function, inputs, outputs, torch_device_idx):
     arg_list = rt.VmVariantList(len(inputs))
     ret_list = rt.VmVariantList(len(outputs))
 
     for input in inputs:
         if isinstance(input, torch.Tensor):
-            input_cpu = input.cpu().contiguous()
-            device_array = rt.asdevicearray(device, input_cpu)
-            arg_list.push_ref(device_array._buffer_view)
+            if not input.is_contiguous():
+                input = input.contiguous()
+            capsule = input.__dlpack__(None)
+            input_bv = device.from_dlpack_capsule(capsule)
+            arg_list.push_ref(input_bv)
         elif isinstance(input, int):
             arg_list.push_int(input)
         else:
@@ -395,13 +397,14 @@ def _invoke(vm_context, device, entry_function, inputs, outputs):
 
     for i, ret in enumerate(outputs):
         device_buffer_view = rt.HalBufferView.__iree_vm_cast__(ret_list.get_as_ref(i))
-        device_array = rt.DeviceArray(device, device_buffer_view)
-
-        # TODO: Make to_host accept out array/buffer, so we can avoid extra data copy.
-        host_array = device_array.to_host()
-
-        # Convert to torch tensor without actually importing torch.
-        ret[:] = type(ret)(host_array)
+        hip_device_type_code = 10
+        # Currently, we are creating new device tensor which is redundant.
+        # TODO: Modify codegen's kernel signature to modify input instead of creating new one.
+        ret[:] = torch.from_dlpack(
+            device.create_dlpack_capsule(
+                device_buffer_view, hip_device_type_code, torch_device_idx
+            )
+        )
 
 
 def _write_file(name, mode, data):
@@ -417,6 +420,18 @@ def _print_bench_result(result, filename):
         _write_file(filename, "w", res)
     else:
         print(res)
+
+
+def get_device_info(input_tensors: list[torch.Tensor]) -> tuple[int, str]:
+    device_list = [
+        input.device for input in input_tensors if isinstance(input, torch.Tensor)
+    ]
+    if len(set(device_list)) != 1:
+        raise ValueError(f"Found multiple device on input tensors:{set(device_list)}")
+    device = device_list[0]
+    uuid = str(torch.cuda.get_device_properties(device).uuid)
+    torch_device_idx = device.index
+    return torch_device_idx, uuid
 
 
 def compile_and_invoke(
@@ -476,8 +491,10 @@ def compile_and_invoke(
     dump_vmfb_file = config.get("dump_vmfb_file", None)
     if dump_vmfb_file is not None:
         _write_file(dump_vmfb_file, "wb", res)
-
-    rt_config = rt.Config(device)
+    # Check all torch.Tensor has single device
+    # Get UUID from Torch CUDA device index
+    torch_device_idx, uuid = get_device_info(kernel_inputs)
+    rt_config = rt.Config(f"{device}://GPU-{uuid}")
     device = rt_config.device
     vm_instance = rt_config.vm_instance
     mod = rt.VmModule.copy_buffer(vm_instance, res)
@@ -493,7 +510,14 @@ def compile_and_invoke(
 
     if run:
         func = mod.lookup_function(func_name)
-        _invoke(ctx.vm_context, device, func, kernel_inputs, kernel_outputs)
+        _invoke(
+            ctx.vm_context,
+            device,
+            func,
+            kernel_inputs,
+            kernel_outputs,
+            torch_device_idx,
+        )
 
     if run_bench:
         bench_with_constant_weights = config.get("bench_with_constant_weights", False)
