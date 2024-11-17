@@ -894,3 +894,11 @@ def all_equal(input_list: list[Any]) -> bool:
     if len(input_list) == 0:
         return True
     return all(elem == input_list[0] for elem in input_list)
+
+
+def device_randn(*args, **kwargs):
+    return torch.randn(*args, **kwargs).to("cuda")
+
+
+def device_zeros(*args, **kwargs):
+    return torch.zeros(*args, **kwargs).to("cuda")

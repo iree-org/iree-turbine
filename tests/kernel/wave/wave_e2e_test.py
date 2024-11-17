@@ -10,7 +10,11 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.wave_sim import wave_sim
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
-from iree.turbine.kernel.wave.utils import get_default_run_config
+from iree.turbine.kernel.wave.utils import (
+    get_default_run_config,
+    device_randn,
+    device_zeros,
+)
 import torch
 from torch.testing import assert_allclose
 import pytest
@@ -95,8 +99,8 @@ def test_copy(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float16).to("cuda")
-    b = torch.zeros(shape, dtype=torch.float16).to("cuda")
+    a = device_randn(shape, dtype=torch.float16)
+    b = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -152,8 +156,8 @@ def test_dynamic_copy(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float16).to("cuda")
-    b = torch.zeros(shape, dtype=torch.float16).to("cuda")
+    a = device_randn(shape, dtype=torch.float16)
+    b = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
@@ -211,8 +215,8 @@ def test_transpose_read(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float16).to("cuda")
-    b = torch.zeros(shape[::-1], dtype=torch.float16).to("cuda")
+    a = device_randn(shape, dtype=torch.float16)
+    b = device_zeros(shape[::-1], dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -269,8 +273,8 @@ def test_transpose_write(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float16).to("cuda")
-    b = torch.zeros(shape[::-1], dtype=torch.float16).to("cuda")
+    a = device_randn(shape, dtype=torch.float16)
+    b = device_zeros(shape[::-1], dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -325,9 +329,9 @@ def test_reduce_sum(shape, request):
     config = get_default_run_config()
 
     torch.manual_seed(1)
-    a = torch.randn(shape, dtype=torch.float16).to("cuda")
-    b = torch.randn(shape, dtype=torch.float16).to("cuda")
-    c = torch.zeros((shape[0],), dtype=torch.float16).to("cuda")
+    a = device_randn(shape, dtype=torch.float16)
+    b = device_randn(shape, dtype=torch.float16)
+    c = device_zeros((shape[0],), dtype=torch.float16)
     ref = torch.sum((a * b), dim=-1)
     with tk.gen.TestLaunchContext(
         {
@@ -397,9 +401,9 @@ def test_toy_online_softmax(shape):
     config = get_default_run_config()
 
     torch.manual_seed(1)
-    a = torch.randn(shape, dtype=torch.float32).to("cuda")
-    b = torch.randn(shape, dtype=torch.float32).to("cuda")
-    c = torch.zeros((shape[0],), dtype=torch.float32).to("cuda")
+    a = device_randn(shape, dtype=torch.float32)
+    b = device_randn(shape, dtype=torch.float32)
+    c = device_zeros((shape[0],), dtype=torch.float32)
     ref_max = torch.max((a * b), dim=-1).values
     ref_sum = torch.sum((a * b), dim=-1)
     ref = ref_max / ref_sum
@@ -498,8 +502,8 @@ def test_im2col(request):
     h_out = (h + 2 * padding - hf) // stride + 1
     w_out = (w + 2 * padding - wf) // stride + 1
     res_shape = (h_out * w_out * n, hf * wf * c)
-    a = torch.randn((n, c, h, w), dtype=torch.float16).to("cuda")
-    b = torch.zeros(res_shape, dtype=torch.float16).to("cuda")
+    a = device_randn((n, c, h, w), dtype=torch.float16)
+    b = device_zeros(res_shape, dtype=torch.float16)
 
     im2col = torch.nn.Unfold(kernel_size=(hf, wf), padding=padding, stride=stride)
     expected = im2col(a)[0, :, :].T
@@ -735,8 +739,8 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     padding = 0  # TODO: only pad=0 is supported for now
 
     torch.manual_seed(1)
-    x = torch.randn(n, c, h, w, dtype=torch.float16).to("cuda")
-    we = torch.randn(nf, cf, hf, wf, dtype=torch.float16).to("cuda")
+    x = device_randn(n, c, h, w, dtype=torch.float16)
+    we = device_randn(nf, cf, hf, wf, dtype=torch.float16)
 
     convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
     convRef.weight = torch.nn.Parameter(we)
@@ -945,8 +949,8 @@ def test_cast(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float32).to("cuda")
-    b = torch.zeros(shape, dtype=torch.float16).to("cuda")
+    a = device_randn(shape, dtype=torch.float32)
+    b = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],

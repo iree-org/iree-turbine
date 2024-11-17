@@ -17,6 +17,8 @@ from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
+    device_randn,
+    device_zeros,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
@@ -166,9 +168,9 @@ def testGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        a = torch.randn(shape[0], shape[2], dtype=torch.float16).to("cuda")
-        b = torch.randn(shape[1], shape[2], dtype=torch.float16).to("cuda")
-        c = torch.zeros(shape[0], shape[1], dtype=torch.float32).to("cuda")
+        a = device_randn(shape[0], shape[2], dtype=torch.float16)
+        b = device_randn(shape[1], shape[2], dtype=torch.float16)
+        c = device_zeros(shape[0], shape[1], dtype=torch.float32)
         mb = gemm(a, b, c)
 
         if test_dump_generated_mlir:
@@ -285,9 +287,9 @@ def testF8Gemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        a = torch.randn(shape[0], shape[2], dtype=torch.float16).to("cuda")
-        b = torch.randn(shape[1], shape[2], dtype=torch.float16).to("cuda")
-        c = torch.zeros(shape[0], shape[1], dtype=torch.float32).to("cuda")
+        a = device_randn(shape[0], shape[2], dtype=torch.float16)
+        b = device_randn(shape[1], shape[2], dtype=torch.float16)
+        c = device_zeros(shape[0], shape[1], dtype=torch.float32)
         mb = gemm(a, b, c)
 
         if test_dump_generated_mlir:
@@ -400,9 +402,9 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        a = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16).to("cuda")
-        b = torch.randn(shape[0], shape[2], shape[3], dtype=torch.float16).to("cuda")
-        c = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32).to("cuda")
+        a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
+        b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
+        c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         mb = batched_gemm(a, b, c)
 
         if test_dump_generated_mlir:

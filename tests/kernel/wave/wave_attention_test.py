@@ -18,6 +18,8 @@ from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
+    device_randn,
+    device_zeros,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
@@ -181,12 +183,10 @@ def testChainedGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16).to("cuda")
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16).to("cuda")
-        v = torch.randn(shape[0], shape[2], shape[4], dtype=torch.float16).to("cuda")
-        output = torch.zeros(shape[0], shape[2], shape[1], dtype=torch.float32).to(
-            "cuda"
-        )
+        q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
+        k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
+        v = device_randn(shape[0], shape[2], shape[4], dtype=torch.float16)
+        output = device_zeros(shape[0], shape[2], shape[1], dtype=torch.float32)
         mb = chained_gemm(q, k, v, output)
 
         if test_dump_generated_mlir:
@@ -332,12 +332,10 @@ def testChainedGemm_f8(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16).to("cuda")
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16).to("cuda")
-        v = torch.randn(shape[0], shape[2], shape[4], dtype=torch.float16).to("cuda")
-        output = torch.zeros(shape[0], shape[2], shape[1], dtype=torch.float32).to(
-            "cuda"
-        )
+        q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
+        k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
+        v = device_randn(shape[0], shape[2], shape[4], dtype=torch.float16)
+        output = device_zeros(shape[0], shape[2], shape[1], dtype=torch.float32)
         mb = chained_gemm_f8(q, k, v, output)
 
         if test_dump_generated_mlir:
@@ -503,12 +501,10 @@ def testAttention(
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
         torch.manual_seed(0)
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16).to("cuda")
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16).to("cuda")
-        v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16).to("cuda")
-        output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32).to(
-            "cuda"
-        )
+        q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
+        k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
+        v = device_randn(shape[0], shape[4], shape[2], dtype=torch.float16)
+        output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         log2e = 1.44269504089
         dk_sqrt = math.sqrt(1.0 / shape[3])
         # TODO: Add scaling of QK as part of kernel.
