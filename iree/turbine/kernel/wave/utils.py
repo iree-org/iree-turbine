@@ -406,6 +406,7 @@ def _invoke(vm_context, device, entry_function, inputs, outputs):
 
 def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
     linearized_arg_len = len(inputs) + len(outputs) + len(dynamic_dims)
+    # ret_list is 0 because we modify/write result in place.
     arg_list = rt.VmVariantList(linearized_arg_len)
     ret_list = rt.VmVariantList(0)
 
@@ -416,9 +417,8 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
         arg_list.push_ref(arg_tensor_bv)
 
-    # Linearize arguments, since we modify output buffer in place.
-    # In linearized arg_list, we first push in all inputs, and then
-    # we push in the outputs.
+    # Linearize arguments, In linearized arg_list, we first push in all inputs,
+    # then all the outputs, and lastly all the dynamic dims.
     for input in inputs:
         if isinstance(input, torch.Tensor):
             push_tensor_to_arg_list(input)
