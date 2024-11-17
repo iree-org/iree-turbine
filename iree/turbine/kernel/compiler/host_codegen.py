@@ -18,6 +18,7 @@ from .ir import (
     RankedTensorType,
     flow_d,
     func_d,
+    IntegerAttr,
 )
 
 from .._support.indexing import IndexSymbol
@@ -50,11 +51,9 @@ def isolated_test_call(
     dynamic_symbols: list[IndexSymbol] = [],
 ):
     with InsertionPoint(mb.body_block), Location.unknown():
-        input_types = [b.as_mlir_type() for b in sig.kernel_buffer_input_bindings]
+        input_types = [b.as_mlir_type() for b in sig.kernel_buffer_bindings]
         input_tensors = memref_to_tensor(input_types)
-        argument_dims = get_dynamic_dims(
-            sig.kernel_buffer_input_bindings, dynamic_symbols
-        )
+        argument_dims = get_dynamic_dims(sig.kernel_buffer_bindings, dynamic_symbols)
         input_tensors += [IndexType.get() for _ in argument_dims]
 
         output_types = [b.as_mlir_type() for b in sig.kernel_buffer_output_bindings]
@@ -67,10 +66,10 @@ def isolated_test_call(
         func_op = func_d.FuncOp("isolated_benchmark", ftype)
         arg_locs = [
             (Location.name(b.name) if b.name is not None else Location.unknown())
-            for b in sig.kernel_buffer_input_bindings + sig.dynamic_dim_bindings
+            for b in sig.kernel_buffer_bindings + sig.dynamic_dim_bindings
         ]
         entry_block = func_op.add_entry_block(arg_locs)
-        offset = len(sig.kernel_buffer_input_bindings)
+        offset = len(sig.kernel_buffer_bindings)
         dynamic_argument_map = {
             k: v for k, v in zip(dynamic_symbols, entry_block.arguments[offset:])
         }
@@ -80,6 +79,14 @@ def isolated_test_call(
             dispatch = SymbolRefAttr.get([exe.sym_name.value, entrypoint])
             entrypoints = ArrayAttr.get([dispatch])
 
+            buffer_binding_count = len(sig.kernel_buffer_bindings)
+            offset_to_out_binding = len(sig.kernel_buffer_input_bindings)
+            tied_operands = ArrayAttr.get(
+                [
+                    IntegerAttr.get(IndexType.get(), out_idx)
+                    for out_idx in range(offset_to_out_binding, buffer_binding_count)
+                ]
+            )
             out = flow_d.DispatchOp(
                 output_tensors,
                 [dynamic_argument_map[dim] for dim in dynamic_symbols],
@@ -87,6 +94,7 @@ def isolated_test_call(
                 entry_block.arguments,
                 [dynamic_argument_map[dim] for dim in argument_dims],
                 [dynamic_argument_map[dim] for dim in result_dims],
+                tied_operands=tied_operands,
             )
 
             func_d.ReturnOp(out)
