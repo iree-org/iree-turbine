@@ -72,7 +72,8 @@ def write_version_info(args):
     info_dict["package-version"] = package_version
 
     with open(VERSION_INFO_FILE, "wt") as f:
-        json.dump(info_dict, f)
+        json.dump(info_dict, f, indent=2)
+        f.write("\n")
 
     print(f"Updated version_info.json:\n{json.dumps(info_dict, indent=2)}")
 

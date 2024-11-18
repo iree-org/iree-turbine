@@ -6,6 +6,12 @@ https://pypi.org/project/iree-base-runtime/ packages. Releases can either be
 conducted independently, or they can be coordinated across projects by
 initiating a release here.
 
+## Start with a clean test directory
+
+```bash
+rm -rf wheelhouse/
+```
+
 ## Building Artifacts
 
 Build a pre-release:

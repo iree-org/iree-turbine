@@ -165,8 +165,8 @@ class StreamExecutable:
                 def_func_args = list(def_func_block.arguments)
                 if workgroup_size is not None and subgroup_size is not None:
                     def_func_op.attributes["translation_info"] = Attribute.parse(
-                        f"#iree_codegen.translation_info<None "
-                        f"workgroup_size=[{','.join(str(x) for x in workgroup_size)}]"
+                        f"#iree_codegen.translation_info<pipeline = None "
+                        f"workgroup_size=[{','.join(str(x) for x in workgroup_size)}] "
                         f"subgroup_size={subgroup_size}>"
                     )
 
