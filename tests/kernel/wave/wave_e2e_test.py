@@ -325,7 +325,7 @@ def test_offset_read(shape, request):
     k = tkw.IndexMapping.dynamic_val(0)
     mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={M: (i + k) % M, N: j},
+        inputs={M: k, N: j},
         outputs={M: i, N: j},
         dynamic_val_mappings={M: i, N: j},
     )
@@ -348,8 +348,8 @@ def test_offset_read(shape, request):
     config = get_default_run_config()
 
     a = torch.randn(shape, dtype=torch.float16)
-    off = torch.randint(10, shape, dtype=torch.int32)
-    b = torch.zeros(shape, dtype=torch.float16)
+    off = torch.randint(shape[0], shape, dtype=torch.int32)
+    out = torch.zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -361,10 +361,9 @@ def test_offset_read(shape, request):
         run_bench=run_bench,
         run_config=config,
     ):
-        test(a, off, b)
-        print(b)
-        # TODO: check
-        assert_allclose(a, b)
+        test(a, off, out)
+        out_ref = torch.take_along_dim(a, off.to(torch.long), dim=0)
+        assert_allclose(out, out_ref)
 
 
 @require_e2e
