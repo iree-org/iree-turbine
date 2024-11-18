@@ -409,7 +409,7 @@ def test_offset_read1(shape, request):
     @tkw.wave(constraints)
     def test(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        off: tkl.Memory[M // ELEMS_PER_THREAD, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
         offset = tkw.read(off, elements_per_thread=1)
