@@ -388,7 +388,7 @@ def test_offset_read1(shape, request):
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+            vector_shapes={M: BLOCK_M, N: BLOCK_N, M // ELEMS_PER_THREAD: 1},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
