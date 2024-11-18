@@ -4,8 +4,8 @@
 # forgiving on the exact version.
 
 # Uncomment to select a nightly version.
---find-links https://iree.dev/pip-release-links.html
---pre
+# --find-links https://iree.dev/pip-release-links.html
+# --pre
 
 # Uncomment to skip versions from PyPI (so _only_ nightly versions).
 # --no-index
