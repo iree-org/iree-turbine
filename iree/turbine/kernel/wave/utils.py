@@ -377,8 +377,8 @@ def align_index_vars(
     return {safe_subs(key, key_subs): index[key] for key in index}
 
 
-def _invoke(vm_context, device, entry_function, inputs, outputs):
-    arg_list = rt.VmVariantList(len(inputs))
+def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
+    arg_list = rt.VmVariantList(len(inputs) + len(dynamic_dims))
     ret_list = rt.VmVariantList(len(outputs))
 
     for input in inputs:
@@ -386,10 +386,14 @@ def _invoke(vm_context, device, entry_function, inputs, outputs):
             input_cpu = input.cpu().contiguous()
             device_array = rt.asdevicearray(device, input_cpu)
             arg_list.push_ref(device_array._buffer_view)
-        elif isinstance(input, int):
-            arg_list.push_int(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
+
+    for dynamic_dim in dynamic_dims:
+        if isinstance(dynamic_dim, int):
+            arg_list.push_int(dynamic_dim)
+        else:
+            raise ValueError(f"Unsupported dynamic dim type: {type(dynamic_dim)}")
 
     vm_context.invoke(entry_function, arg_list, ret_list)
 
@@ -402,6 +406,40 @@ def _invoke(vm_context, device, entry_function, inputs, outputs):
 
         # Convert to torch tensor without actually importing torch.
         ret[:] = type(ret)(host_array)
+
+
+def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
+    linearized_arg_len = len(inputs) + len(outputs) + len(dynamic_dims)
+    # ret_list is 0 because we modify/write result in place.
+    arg_list = rt.VmVariantList(linearized_arg_len)
+    ret_list = rt.VmVariantList(0)
+
+    def push_tensor_to_arg_list(arg_tensor: torch.Tensor):
+        if not arg_tensor.is_contiguous():
+            arg_tensor = arg_tensor.contiguous()
+        capsule = arg_tensor.__dlpack__(None)
+        arg_tensor_bv = device.from_dlpack_capsule(capsule)
+        arg_list.push_ref(arg_tensor_bv)
+
+    # Linearize arguments, In linearized arg_list, we first push in all inputs,
+    # then all the outputs, and lastly all the dynamic dims.
+    for input in inputs:
+        if isinstance(input, torch.Tensor):
+            push_tensor_to_arg_list(input)
+        else:
+            raise ValueError(f"Unsupported input type: {type(input)}")
+    for output in outputs:
+        if isinstance(input, torch.Tensor):
+            push_tensor_to_arg_list(output)
+        else:
+            raise ValueError(f"Unsupported output type: {type(output)}")
+    for dynamic_dim in dynamic_dims:
+        if isinstance(dynamic_dim, int):
+            arg_list.push_int(dynamic_dim)
+        else:
+            raise ValueError(f"Unsupported dynamic dim type: {type(dynamic_dim)}")
+
+    vm_context.invoke(entry_function, arg_list, ret_list)
 
 
 def _write_file(name, mode, data):
@@ -419,14 +457,32 @@ def _print_bench_result(result, filename):
         print(res)
 
 
+def get_device_uuid(input_tensors: list[torch.Tensor]) -> tuple[int, str]:
+    """
+    Checks all torch.Tensor are on the same device, and get UUID from Torch device.
+    """
+    device_list = [
+        input.device for input in input_tensors if isinstance(input, torch.Tensor)
+    ]
+    if len(set(device_list)) != 1:
+        raise ValueError(f"Found multiple device on input tensors:{set(device_list)}")
+    device = device_list[0]
+    if device.type != "cuda":
+        raise ValueError("Expected all argument tensors to be in GPU.")
+    uuid = str(torch.cuda.get_device_properties(device).uuid)
+    return uuid
+
+
 def compile_and_invoke(
     asm: str,
     func_name: str,
     config: dict[str, str],
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
+    kernel_dynamic_dims: list[int] = [],
     run: bool = False,
     run_bench: bool = False,
+    inplace: bool = False,
 ):
     backend = config["backend"]
     device = config["device"]
@@ -476,7 +532,10 @@ def compile_and_invoke(
     dump_vmfb_file = config.get("dump_vmfb_file", None)
     if dump_vmfb_file is not None:
         _write_file(dump_vmfb_file, "wb", res)
-
+    if inplace:
+        # Select device as the GPU, where input tensors are coming from.
+        device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
+        device = f"{device}://GPU-{device_uuid}"
     rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
@@ -493,7 +552,24 @@ def compile_and_invoke(
 
     if run:
         func = mod.lookup_function(func_name)
-        _invoke(ctx.vm_context, device, func, kernel_inputs, kernel_outputs)
+        if inplace:
+            _inplace_invoke(
+                ctx.vm_context,
+                device,
+                func,
+                kernel_inputs,
+                kernel_outputs,
+                kernel_dynamic_dims,
+            )
+        else:
+            _invoke(
+                ctx.vm_context,
+                device,
+                func,
+                kernel_inputs,
+                kernel_outputs,
+                kernel_dynamic_dims,
+            )
 
     if run_bench:
         bench_with_constant_weights = config.get("bench_with_constant_weights", False)
@@ -829,3 +905,11 @@ def all_equal(input_list: list[Any]) -> bool:
     if len(input_list) == 0:
         return True
     return all(elem == input_list[0] for elem in input_list)
+
+
+def device_randn(*args, **kwargs):
+    return torch.randn(*args, **kwargs).to("cuda")
+
+
+def device_zeros(*args, **kwargs):
+    return torch.zeros(*args, **kwargs).to("cuda")

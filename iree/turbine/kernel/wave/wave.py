@@ -352,8 +352,9 @@ class LaunchableWave(Launchable):
                     kernel_outputs.append(arg)
 
             dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
+            kernel_dynamic_dims = []
             if dynamic_symbols:
-                kernel_inputs += [dynamic_symbols_map[sym] for sym in dynamic_symbols]
+                kernel_dynamic_dims = dynamic_symbols_map.values()
 
             config = kwargs.get("run_config", None)
             if not config:
@@ -365,8 +366,10 @@ class LaunchableWave(Launchable):
                 config,
                 kernel_inputs,
                 kernel_outputs,
+                kernel_dynamic_dims,
                 run,
                 run_bench,
+                inplace=True,
             )
 
         return mb
