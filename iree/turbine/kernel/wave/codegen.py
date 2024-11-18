@@ -186,7 +186,9 @@ def get_type_or_element_type(operand_type: IrType):
         return operand_type
 
 
-def add_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
+def add_emitter_subs(
+    emitter: WaveEmitter, dynamic_values: dict[IndexExpr, Value] = {}
+) -> dict[IndexSymbol, Value]:
     induction_var_syms = []
     induction_vars = []
     if emitter.induction_vars:
@@ -207,6 +209,7 @@ def add_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
             all_symbols,
         )
     )
+    dynamics.update(dynamic_values)
     dynamics.update(emitter.dynamic_dims)
     return dynamics
 
@@ -214,7 +217,7 @@ def add_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
 
 
-def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpResult:
+def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpResult:
     stack: list[OpResult] = []
 
     def _get_ir_value(arg):
@@ -539,10 +542,12 @@ def _get_start_indices(
 
 
 def _build_start_indices(
-    emitter: WaveEmitter, src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+    emitter: WaveEmitter,
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
+    dynamic_values: dict[IndexExpr, Any] = {},
 ) -> list[OpResult]:
     return [
-        gen_sympy_index(add_emitter_subs(emitter), i)
+        gen_sympy_index(add_emitter_subs(emitter, dynamic_values), i)
         for i in _get_start_indices(src_indices)
     ]
 
@@ -604,6 +609,7 @@ def _construct_gather_scatter_indices(
     mapping: IndexMapping,
     elements_per_thread: int,
     is_read: bool,
+    dynamic_vals: tuple[Any, ...],
 ) -> tuple[OpResult, OpResult, OpResult]:
     # Apply symbolc_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
@@ -641,6 +647,15 @@ def _construct_gather_scatter_indices(
     start_indices_orig = _get_start_indices(index)
 
     need_dynamic_offsets = False
+    for val in dynamic_vals:
+        shape = val.type.shape
+        assert shape in (
+            [1],
+            [elements_per_thread],
+        ), f"Dynamic val shape must be {[1]} or {[elements_per_thread]} but got {shape}"
+        if shape[0] > 1:
+            need_dynamic_offsets = True
+
     start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
@@ -671,12 +686,22 @@ def _construct_gather_scatter_indices(
 
         offsets.append(IntegerAttr.get(IndexType.get(), offset))
 
+    def extract0(src):
+        static_pos = [0 for i in range(src.type.rank)]
+        return vector_d.extract(src, static_position=static_pos, dynamic_position=[])
+
+    dynamic_vals_map_start = {
+        sym: extract0(val)
+        for sym, val in zip(mapping.dynamic_vals.keys(), dynamic_vals)
+    }
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
     if need_dynamic_offsets:
         # In case we need dynamic `offsets_vec`, set all `start_indices` to 0
         # and encode entire index info in `offsets_vec`.
         result_index = {key: 0 for key in symbolc_shape}
-        start_indices = _build_start_indices(emitter, result_index)
+        start_indices = _build_start_indices(
+            emitter, result_index, dynamic_vals_map_start
+        )
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
         # Last item in `subs` corresponds to last item in `start_indices_orig`
         # which is fastest changing dim.
@@ -687,12 +712,18 @@ def _construct_gather_scatter_indices(
             subs[-1][0],
             start_indices_orig[-1] + idxc.iota(elements_per_thread),
         )
+        dynamic_vals_map = {
+            sym: val for sym, val in zip(mapping.dynamic_vals.keys(), dynamic_vals)
+        }
         indices = [i.subs(subs) for i in index_mapping]
         offsets_vec = gen_sympy_index(
-            add_emitter_subs(emitter), _compute_offset(indices, strides)
+            add_emitter_subs(emitter, dynamic_vals_map),
+            _compute_offset(indices, strides),
         )
     else:
-        start_indices = _build_start_indices(emitter, result_index)
+        start_indices = _build_start_indices(
+            emitter, result_index, dynamic_vals_map_start
+        )
         offsets_vec = arith_d.ConstantOp(
             offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
         )
@@ -715,13 +746,13 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    assert len(dyn_vals) == 0, "Dynamic vals are not implemented yet"
+    # assert len(dyn_vals) == 0, "Dynamic vals are not implemented yet"
 
     vector_shape = cast_py_literal(emitter, (elements_per_thread,))
     # memory has no IR node yet.
     kb_src, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
 
-    if not hasattr(node, "index"):
+    if not all(map(lambda n: hasattr(n, "index"), (node,) + dyn_vals)):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
@@ -745,6 +776,9 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
                 vector_type, kb_src, start_indices, mask, passthru
             )
     else:
+        dyn_vals = tuple(
+            cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
+        )
         start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
             emitter=emitter,
             symbolc_shape=input_shape,
@@ -752,6 +786,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             mapping=mapping,
             elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=True,
+            dynamic_vals=dyn_vals,
         )
 
         zero = get_constant_attr(0, element_type)
@@ -808,6 +843,9 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             input_shape == mapping.input_shape
         ), "non-identity input mapping is not supported yet"
 
+        dyn_vals = tuple(
+            cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
+        )
         start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
             emitter=emitter,
             symbolc_shape=output_shape,
@@ -815,6 +853,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             mapping=mapping,
             elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=False,
+            dynamic_vals=dyn_vals,
         )
 
         if elements_per_thread == 1:

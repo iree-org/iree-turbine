@@ -1123,7 +1123,7 @@ class Write(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any]
     mapping: Optional[IndexMapping] = None
-    mapping_dynamic_vals: tuple["Register", ...] = ((),)
+    mapping_dynamic_vals: tuple["Register", ...] = ()
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
