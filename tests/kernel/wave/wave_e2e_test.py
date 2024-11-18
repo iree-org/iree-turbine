@@ -361,7 +361,8 @@ def test_offset_read(shape, request):
         run_bench=run_bench,
         run_config=config,
     ):
-        test(a, b, off)
+        test(a, off, b)
+        print(b)
         # TODO: check
         assert_allclose(a, b)
 
