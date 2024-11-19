@@ -920,12 +920,18 @@ def all_equal(input_list: list[Any]) -> bool:
     return all(elem == input_list[0] for elem in input_list)
 
 
+def get_default_device():
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 def device_randn(*args, **kwargs):
-    return torch.randn(*args, **kwargs).to("cuda")
+    device = get_default_device()
+    return torch.randn(*args, **kwargs).to(device)
 
 
 def device_randint(*args, **kwargs):
-    return torch.randint(*args, **kwargs).to("cuda")
+    device = get_default_device()
+    return torch.randint(*args, **kwargs).to(device)
 
 
 def device_randperm(*args, **kwargs):
@@ -933,7 +939,8 @@ def device_randperm(*args, **kwargs):
 
 
 def device_zeros(*args, **kwargs):
-    return torch.zeros(*args, **kwargs).to("cuda")
+    device = get_default_device()
+    return torch.zeros(*args, **kwargs).to(device)
 
 
 def get_assumptions(constraints: list[Constraint]) -> list[Assumption]:
