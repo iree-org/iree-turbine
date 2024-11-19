@@ -7,12 +7,24 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
-from sympy import ceiling, Piecewise, floor
+from typing import Optional, Any
+from sympy import ceiling, Piecewise, floor, Basic
 
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from ..lang.global_symbols import *
+
+
+def _safe_subs(input: Any, subs: dict[tuple[IndexExpr, IndexExpr]]) -> Any:
+    """
+    Substitute input using provided `subs` list if input is sympy object.
+    Otherwise return input unchanged.
+    """
+    # TODO: cannot use utils.safe_subs due to circular deps
+    if isinstance(input, (Basic, IndexSequence)):
+        return input.subs(subs)
+
+    return input
 
 
 class MMAType(Enum):
@@ -40,7 +52,7 @@ class Constraint(ABC):
     """
 
     @abstractmethod
-    def apply(self) -> IndexSequence:
+    def apply(self, expr: IndexExpr, sym: IndexExpr) -> IndexSequence:
         """Apply the constraint and get the resulting index sequence."""
         ...
 
@@ -126,19 +138,23 @@ class HardwareConstraint(Constraint):
 
     def compute_access_pattern_using_vector_shapes(
         self,
-        dim: IndexSymbol,
+        expr: IndexExpr,
+        dim: IndexExpr,
         workgroup_dim: int,
         elements_per_thread: int | IndexSymbol,
         stride: int,
     ) -> IndexSequence:
         thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
         return IndexSequence(
-            thread_id * elements_per_thread, elements_per_thread, stride
+            _safe_subs(expr, {dim: thread_id}) * elements_per_thread,
+            elements_per_thread,
+            stride,
         )
 
     def apply(
         self,
-        dim: IndexSymbol,
+        expr: IndexExpr,
+        dim: IndexExpr,
         constraint_index: int | MMAOperand,
         elements_per_thread: int | IndexSymbol,
         stride: int,
@@ -146,7 +162,7 @@ class HardwareConstraint(Constraint):
     ) -> IndexSequence:
         if not is_mma_dim:
             return self.compute_access_pattern_using_vector_shapes(
-                dim, constraint_index, elements_per_thread, stride
+                expr, dim, constraint_index, elements_per_thread, stride
             )
         lane = self.linearized_thread_id % self.threads_per_wave
         match self.mma_type:
@@ -241,6 +257,7 @@ class HardwareConstraint(Constraint):
         assert isinstance(
             constraint_index, MMAOperand
         ), f"Invalid MMA operand {constraint_index}"
+        assert dim == expr, "Non-trivial mma index substitutions are not supported yet"
         return IndexSequence(
             offset[constraint_index.value],
             size[constraint_index.value],
@@ -269,7 +286,7 @@ class WorkgroupConstraint(Constraint):
         """
         return ceiling(self.dim / self.tile_size)
 
-    def apply(self) -> IndexSequence:
+    def apply(self, expr: IndexExpr, sym: IndexExpr) -> IndexSequence:
         match self.workgroup_dim:
             case 0:
                 wg_dim = WORKGROUP_0
@@ -279,7 +296,7 @@ class WorkgroupConstraint(Constraint):
                 wg_dim = WORKGROUP_2
             case _:
                 raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
-        return IndexSequence(wg_dim * self.tile_size, 1)
+        return IndexSequence(_safe_subs(expr, {sym: wg_dim}) * self.tile_size, 1)
 
 
 def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]:
@@ -317,12 +334,14 @@ class TilingConstraint(Constraint):
         """
         return ceiling(self.dim / self.tile_size)
 
-    def apply(self) -> IndexSequence:
+    def apply(self, expr: IndexExpr, sym: IndexExpr) -> IndexSequence:
         if self.induction_var is None:
             raise ValueError(
                 "Index is being computed without setting induction variable"
             )
-        return IndexSequence(self.induction_var * self.tile_size, 1)
+        return IndexSequence(
+            _safe_subs(expr, {sym: self.induction_var}) * self.tile_size, 1
+        )
 
 
 @dataclass
@@ -357,10 +376,10 @@ class WaveConstraint(Constraint):
     tile_size: IndexExpr
     wave_id: Optional[IndexExpr] = None
 
-    def apply(self) -> IndexSequence:
+    def apply(self, expr: IndexExpr, sym: IndexExpr) -> IndexSequence:
         if self.wave_id is None:
             raise ValueError("Index is being computed without setting wave id")
-        return IndexSequence(self.tile_size * self.wave_id, 1)
+        return IndexSequence(_safe_subs(expr, {sym: self.tile_size}) * self.wave_id, 1)
 
 
 def get_constrained_shape(

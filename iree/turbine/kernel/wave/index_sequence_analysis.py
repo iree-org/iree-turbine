@@ -32,7 +32,7 @@ from .utils import (
 import torch.fx as fx
 import numpy as np
 from functools import partial
-from typing import Sequence
+from typing import Sequence, Generator
 from ...support.logging import get_logger
 import sympy
 
@@ -179,6 +179,9 @@ def is_contiguous_dim(
     the dimension is the last one in the symbolic shape or all dimensions after it
     are unit dimensions.
     """
+    if dim not in symbolic_shape:
+        return False
+
     is_innermost_dim = dim == symbolic_shape[-1]
     dim_index = symbolic_shape.index(dim)
     static_shape = [vector_shapes[dim] for dim in symbolic_shape]
@@ -233,6 +236,18 @@ def set_vector_shapes(
             return
 
 
+def _enumerate_indexing_dims(
+    indexing_dims: list[IndexSymbol],
+) -> Generator[tuple[IndexSymbol, IndexSymbol], None, None]:
+    def _generate():
+        for expr in indexing_dims:
+            yield (expr, expr)
+            for sym in filter(lambda v: v != expr, expr.free_symbols):
+                yield (expr, sym)
+
+    return _generate()
+
+
 def set_node_index(
     constraints: Sequence[Constraint],
     mma_index: dict[MMA, dict[IndexSymbol, int]],
@@ -281,7 +296,7 @@ def set_node_index(
             if elements_per_thread:
                 break
 
-    for dim in custom.indexing_dims:
+    for expr, dim in _enumerate_indexing_dims(custom.indexing_dims):
         index_seq = None
         for constraint in sorted_constraints:
             if isinstance(constraint, HardwareConstraint):
@@ -318,7 +333,7 @@ def set_node_index(
                         # TODO: Evaluate if this is a valid case.
                         continue
                 index_seq = constraint.apply(
-                    dim, *inputs, anchor and dim in mma_index[anchor]
+                    expr, dim, *inputs, anchor and dim in mma_index[anchor]
                 )
                 if anchor and dim in mma_index[anchor]:
                     index_seq = specialize_index_sequence(
@@ -327,14 +342,14 @@ def set_node_index(
 
             elif constraint.dim == dim:
                 if index_seq is None:
-                    index_seq = constraint.apply()
+                    index_seq = constraint.apply(expr, dim)
                 else:
-                    index_seq.start += constraint.apply().start
+                    index_seq.start += constraint.apply(expr, dim).start
 
         if index_seq is not None:
-            index.update({dim: index_seq})
+            index.update({expr: index_seq})
         else:
-            index.update({dim: IndexSequence(0, 1, 1)})
+            index.update({expr: IndexSequence(0, 1, 1)})
 
     custom.index = index
 
