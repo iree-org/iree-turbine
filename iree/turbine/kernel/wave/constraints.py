@@ -52,6 +52,8 @@ class MMAType(Enum):
     # Intrinsics introduced in CDNA3
     F32_16x16x32_F8 = 0x1230
     F32_32x32x16_F8 = 0x1231
+    I32_16x16x32_I8 = 0x12C0
+    I32_32x32x16_I8 = 0x12C1
 
 
 class MMAOperand(Enum):
@@ -125,9 +127,9 @@ class HardwareConstraint(Constraint):
                 return (16, 16, 16)
             case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
                 return (32, 32, 8)
-            case MMAType.F32_16x16x32_F8:
+            case MMAType.F32_16x16x32_F8 | MMAType.I32_16x16x32_I8:
                 return (16, 16, 32)
-            case MMAType.F32_32x32x16_F8:
+            case MMAType.F32_32x32x16_F8 | MMAType.I32_32x32x16_I8:
                 return (32, 32, 16)
             case _:
                 return ()
@@ -226,7 +228,7 @@ class HardwareConstraint(Constraint):
                     1,  # N
                     1,  # K
                 ]
-            case MMAType.F32_16x16x32_F8:
+            case MMAType.F32_16x16x32_F8 | MMAType.I32_16x16x32_I8:
                 offset = [
                     Piecewise(
                         (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
@@ -244,7 +246,7 @@ class HardwareConstraint(Constraint):
                     1,  # N
                     1,  # K
                 ]
-            case MMAType.F32_32x32x16_F8:
+            case MMAType.F32_32x32x16_F8 | MMAType.I32_32x32x16_I8:
                 offset = [
                     Piecewise(
                         (lane % 32, ~MMA_ACC),

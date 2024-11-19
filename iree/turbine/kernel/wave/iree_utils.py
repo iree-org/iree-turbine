@@ -83,7 +83,6 @@ def get_mmt_asm(
     lhs_type: str,
     rhs_type: str,
     acc_type: str,
-    zero: str,
     batch: bool = False,
     cast_fp8: bool = False,
 ) -> str:
@@ -94,7 +93,7 @@ def get_mmt_asm(
     if not cast_fp8:
         matmul_function = f"""
         func.func @{func_name}(%lhs: tensor<{lhs_type}>, %rhs: tensor<{rhs_type}>) -> tensor<{acc_type}> {{
-          %c0 = arith.constant {zero} : {acc_dtype}
+          %c0 = arith.constant {"0.0" if acc_dtype.startswith("f") else "0"} : {acc_dtype}
           %init = tensor.empty() : tensor<{acc_type}>
           %inital_result = linalg.fill ins(%c0 : {acc_dtype}) outs(%init : tensor<{acc_type}>) -> tensor<{acc_type}>
           %result = linalg.{operator} ins(%lhs, %rhs: tensor<{lhs_type}>, tensor<{rhs_type}>)
@@ -166,12 +165,10 @@ def generate_iree_ref(
         lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
-        zero = "0.0" if kernel_outputs[0].dtype.is_floating_point else "0"
         asm = get_mmt_asm(
             lhs_type,
             rhs_type,
             acc_type,
-            zero,
             batch=False,
             cast_fp8=kernel_type == "mmt_f8",
         )
