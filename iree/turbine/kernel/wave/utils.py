@@ -35,6 +35,7 @@ from .constraints import (
     MMAType,
     MMAOperand,
 )
+from .assumptions import Assumption
 import torch.fx as fx
 import iree.turbine.kernel.lang as tkl
 
@@ -913,3 +914,25 @@ def device_randn(*args, **kwargs):
 
 def device_zeros(*args, **kwargs):
     return torch.zeros(*args, **kwargs).to("cuda")
+
+
+def get_assumptions(constraints: list[Constraint]) -> list[Assumption]:
+    assumptions: list[Assumption] = []
+    for constraint in constraints:
+        if isinstance(constraint, Assumption):
+            assumptions.append(constraint)
+    return assumptions
+
+
+def evaluate_with_assumptions(constraints: list[Constraint], expr: IndexExpr) -> bool:
+    """
+    Evalutes whether the expression is true given the assumptions.
+    To do this, we solve the assumptions and target expression and check
+    that the result is in the assumptions.
+    """
+    facts = [subs_idxc(x.expr) for x in get_assumptions(constraints)]
+    result = sympy.solve(facts + [expr])
+    # Solve returns a false if the inequalities are not consistent.
+    if isinstance(result, sympy.logic.boolalg.BooleanAtom):
+        return False
+    return True if any([result.equals(x) for x in facts]) else None

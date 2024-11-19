@@ -107,6 +107,11 @@ def testGemm(
         )
     ]
 
+    # With dynamic dimensions, we need to add an assumption on how big
+    # the reduction dimension is to determine whether we can schedule or not.
+    if dynamic_dims:
+        constraints += [tkw.Assumption(K > BLOCK_K * 4)]
+
     # Wave-level micro-kernel.
     # Since warps are not directly addressable, there is no
     # explicit notion of a warp id (like a workgroup or thread id).

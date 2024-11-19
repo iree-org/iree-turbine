@@ -17,6 +17,7 @@ from ..ops.wave_ops import (
     Reshape,
 )
 from .constraints import Constraint, HardwareConstraint, WorkgroupConstraint
+from .assumptions import Assumption
 from .._support.tracing import CapturedTrace, IndexingContext
 from .._support.indexing import IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
@@ -260,7 +261,7 @@ def set_node_index(
         c.dim: c for c in constraints if isinstance(c, WorkgroupConstraint)
     }
     other_constraints = [
-        c for c in constraints if not isinstance(c, HardwareConstraint)
+        c for c in constraints if not isinstance(c, (HardwareConstraint, Assumption))
     ]
     # Apply hardware constraint first since it dictates the stride and size.
     sorted_constraints = hardware_constraint + other_constraints

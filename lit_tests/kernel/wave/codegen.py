@@ -1194,6 +1194,8 @@ def test_dynamic_gemm_pipelined():
         )
     ]
 
+    constraints += [tkw.Assumption(K > 4 * BLOCK_K)]
+
     @tkw.wave(constraints)
     def dynamic_gemm_pipelined(
         a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
@@ -1237,10 +1239,10 @@ def test_dynamic_gemm_pipelined():
         schedule=True,
         use_scheduling_barriers=True,
         dynamic_symbols=(M, N, K),
-        dynamic_symbols_map={M: 64, N: 128, K: 32},
+        dynamic_symbols_map={M: 64, N: 128, K: 256},
     ):
-        a = torch.randn(64, 32, dtype=torch.float16)
-        b = torch.randn(128, 32, dtype=torch.float16)
+        a = torch.randn(64, 256, dtype=torch.float16)
+        b = torch.randn(128, 256, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
         print(dynamic_gemm_pipelined(a, b, c).module_op)
 
@@ -1254,7 +1256,6 @@ def test_dynamic_gemm_pipelined():
         # CHECK-COUNT-4:    amdgpu.mfma
         # CHECK-COUNT-1:    amdgpu.lds_barrier
         # CHECK-COUNT-2:    vector.store
-        # CHECK-COUNT-1:    arith.maxsi
         # CHECK-COUNT-1:    scf.for
         # CHECK-COUNT-4:    amdgpu.mfma
         # CHECK-COUNT-1:    amdgpu.lds_barrier

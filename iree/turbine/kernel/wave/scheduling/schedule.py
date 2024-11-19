@@ -12,10 +12,16 @@ from .graph_utils import create_scheduling_edges, Edge
 from .resources import get_available_resources, annotate_resource_usage
 from ..visualization import visualize_edges, visualize_graph, visualize_schedule
 from .loop_reconstruction import construct_pipelined_loop
-from ..utils import graph_copy, erase_graph, get_tiling_constraint, subs_idxc
+from ..utils import (
+    graph_copy,
+    erase_graph,
+    get_tiling_constraint,
+    subs_idxc,
+    get_assumptions,
+    evaluate_with_assumptions,
+)
 import torch.fx as fx
 from ....support.logging import get_logger
-import sympy
 
 logger = get_logger("turbine.wave.scheduling.schedule")
 
@@ -94,12 +100,28 @@ def schedule_reduction(
     tiling_constraint = get_tiling_constraint(reduction, constraints)
     max_induction_variable = subs_idxc(tiling_constraint.count)
 
-    ivar_is_number = max_induction_variable.is_number
-    if ivar_is_number:
+    if max_induction_variable.is_number:
         # We can only do a compile-time check if the induction variable
         # is not dynamic.
         max_induction_variable = int(max_induction_variable)
         if max_induction_variable <= scheduler.num_stages - 1:
+            logger.warn(
+                "Not enough iterations to pipeline the loop. Skipping pipelining."
+            )
+            return {}
+    else:
+        # Otherwise, we need to rely on assumptions provided by the author.
+        assumptions = get_assumptions(constraints)
+        if not assumptions:
+            logger.warn(
+                "No assumptions provided to determine if the loop can be pipelined. Skipping pipelining."
+            )
+            return {}
+
+        result = evaluate_with_assumptions(
+            constraints, max_induction_variable > scheduler.num_stages - 1
+        )
+        if not result:
             logger.warn(
                 "Not enough iterations to pipeline the loop. Skipping pipelining."
             )
@@ -118,12 +140,7 @@ def schedule_reduction(
     )
 
     # Update new reduction count.
-    if ivar_is_number:
-        new_reduction.count = max_induction_variable - (scheduler.num_stages - 1)
-    else:
-        new_reduction.count = sympy.Max(
-            0, max_induction_variable - (scheduler.num_stages - 1)
-        )
+    new_reduction.count = max_induction_variable - (scheduler.num_stages - 1)
 
 
 def schedule_graph(
