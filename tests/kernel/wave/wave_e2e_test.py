@@ -14,6 +14,7 @@ from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     device_randn,
     device_randint,
+    device_randperm,
     device_zeros,
 )
 import torch
@@ -426,7 +427,11 @@ def test_offset_write(shape, request):
     config = get_default_run_config()
 
     a = device_randn(shape, dtype=torch.float16)
-    off = device_randint(shape[0], shape, dtype=torch.int32)
+    off = (
+        device_randperm(shape[0], dtype=torch.int32)
+        .reshape((shape[0], 1))
+        .repeat(1, shape[1])
+    )
     out = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
@@ -440,7 +445,8 @@ def test_offset_write(shape, request):
         run_config=config,
     ):
         test(a, off, out)
-        out_ref = torch.take_along_dim(a, off.to(torch.long), dim=0)
+        out_ref = torch.zeros_like(out)
+        out_ref = out_ref.scatter(0, off.to(torch.long), a)
         assert_close(out, out_ref)
 
 

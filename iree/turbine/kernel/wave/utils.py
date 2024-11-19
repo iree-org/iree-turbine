@@ -916,6 +916,10 @@ def device_randint(*args, **kwargs):
     return torch.randint(*args, **kwargs).to("cuda")
 
 
+def device_randperm(*args, **kwargs):
+    return torch.randperm(*args, **kwargs).to("cuda")
+
+
 def device_zeros(*args, **kwargs):
     return torch.zeros(*args, **kwargs).to("cuda")
 
