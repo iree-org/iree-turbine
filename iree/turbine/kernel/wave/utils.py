@@ -102,6 +102,18 @@ def get_default_run_config() -> dict[Any, Any]:
     return {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
 
+def get_default_arch() -> str:
+    """Return default ROCM architecture"""
+    if not torch.cuda.is_available():
+        return "cpu"
+    device = torch.device("cuda")
+    gcnArch = torch.cuda.get_device_properties(device).gcnArchName
+    assert "gfx" in gcnArch, "Currently only support GFX/ROCm for get_default_arch."
+    # The gcnArchName comes back like gfx90a:sramecc+:xnack.
+    colon_pos = gcnArch.find(":")
+    return gcnArch[0:colon_pos]
+
+
 def print_trace(trace: CapturedTrace, custom_print: bool = True):
     """
     Prints all subgraphs of a trace starting with the root graph.
@@ -880,9 +892,9 @@ def ceildiv(a: int, b: int) -> int:
 
 def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
     match mfma_variant:
-        case MMAType.F32_16x16x16_F16:
+        case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
             return 4
-        case MMAType.F32_32x32x8_F16:
+        case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 4
         case MMAType.F32_16x16x32_F8:
             return 8
@@ -892,9 +904,9 @@ def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
 
 def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
     match mfma_variant:
-        case MMAType.F32_16x16x16_F16:
+        case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
             return 4
-        case MMAType.F32_32x32x8_F16:
+        case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 16
         case MMAType.F32_16x16x32_F8:
             return 4

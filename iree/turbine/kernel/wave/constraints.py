@@ -15,11 +15,43 @@ from .._support.dtype import DataType
 from ..lang.global_symbols import *
 
 
+"""
+Formatting for different target intrinsics:
+    <kind>_<elem-type-C>_<M>x<N>x<K>_<elem-type-A>[_<elem-type-B>]
+
+Values: 0xABCD where:
+* A = vendor:
+  * 1 = AMD
+  * 2 = NVIDIA
+* B = architecture. When an intrinsic exists in multiple architectures, this
+      should be the architecture it was introduced in, as long as it still
+      has the same semantics. If a new architecture breaks an existing
+      intrinsic's semantics, we can use that field for versioning.
+  * For AMD:
+    * 0 = CDNA1
+    * 1 = CDNA2
+    * 2 = CDNA3
+    * 8 = RDNA3
+* C = element type of A-matrix:
+  * 0 = 64-bit float (e.g. IEEE754 double precision)
+  * 1 = 32-bit float (e.g. IEEE754 single precision, and "xf32" fast variants)
+  * 2 = 16-bit float (incl. IREE754 half and bf16)
+  * 3 = 8-bit float (incl. f8E5M2, f8E4M3, and "FNUZ" variants)
+  * C = 8-bit integer (any signedness)
+* D enumerates intrinsics that share the same 0xABC* bits.
+"""
+
+
 class MMAType(Enum):
-    F32_16x16x16_F16 = 0
-    F32_32x32x8_F16 = 1
-    F32_16x16x32_F8 = 2
-    F32_32x32x16_F8 = 3
+    # Intrinsics introduced in CDNA1
+    F32_16x16x16_F16 = 0x1020
+    F32_32x32x8_F16 = 0x1021
+    I32_16x16x16_I8 = 0x10C0
+    I32_32x32x8_I8 = 0x10C1
+
+    # Intrinsics introduced in CDNA3
+    F32_16x16x32_F8 = 0x1230
+    F32_32x32x16_F8 = 0x1231
 
 
 class MMAOperand(Enum):
@@ -89,9 +121,9 @@ class HardwareConstraint(Constraint):
     def mma_matrix_shapes(self) -> tuple[int]:
         # TODO: Eventually the shapes and indices should be provided by a tool
         match self.mma_type:
-            case MMAType.F32_16x16x16_F16:
+            case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 return (16, 16, 16)
-            case MMAType.F32_32x32x8_F16:
+            case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
                 return (32, 32, 8)
             case MMAType.F32_16x16x32_F8:
                 return (16, 16, 32)
@@ -151,7 +183,7 @@ class HardwareConstraint(Constraint):
         lane = self.linearized_thread_id % self.threads_per_wave
         match self.mma_type:
             # (M x K, N x K) -> M x N
-            case MMAType.F32_16x16x16_F16:
+            case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 offset = [
                     Piecewise(
                         (lane % 16, ~MMA_ACC),
@@ -170,7 +202,7 @@ class HardwareConstraint(Constraint):
                     1,  # N
                     1,  # K
                 ]
-            case MMAType.F32_32x32x8_F16:
+            case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
                 offset = [
                     Piecewise(
                         (lane % 32, ~MMA_ACC),
