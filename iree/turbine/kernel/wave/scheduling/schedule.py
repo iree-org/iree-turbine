@@ -12,10 +12,16 @@ from .graph_utils import create_scheduling_edges, Edge
 from .resources import get_available_resources, annotate_resource_usage
 from ..visualization import visualize_edges, visualize_graph, visualize_schedule
 from .loop_reconstruction import construct_pipelined_loop
-from ..utils import graph_copy, erase_graph, get_tiling_constraint, subs_idxc
+from ..utils import (
+    graph_copy,
+    erase_graph,
+    get_tiling_constraint,
+    subs_idxc,
+    get_assumptions,
+    evaluate_with_assumptions,
+)
 import torch.fx as fx
 from ....support.logging import get_logger
-import math
 
 logger = get_logger("turbine.wave.scheduling.schedule")
 
@@ -92,12 +98,34 @@ def schedule_reduction(
     # to have atleast N iterations of the loop where N > num_stages - 1 (because
     # we will be peeling off num_stages iterations from the loop).
     tiling_constraint = get_tiling_constraint(reduction, constraints)
-    max_induction_variable = int(
-        subs_idxc(tiling_constraint.dim) // subs_idxc(tiling_constraint.tile_size)
-    )
-    if max_induction_variable <= scheduler.num_stages - 1:
-        logger.warn("Not enough iterations to pipeline the loop. Skipping pipelining.")
-        return {}
+    max_induction_variable = subs_idxc(tiling_constraint.count)
+
+    if max_induction_variable.is_number:
+        # We can only do a compile-time check if the induction variable
+        # is not dynamic.
+        max_induction_variable = int(max_induction_variable)
+        if max_induction_variable <= scheduler.num_stages - 1:
+            logger.warn(
+                "Not enough iterations to pipeline the loop. Skipping pipelining."
+            )
+            return {}
+    else:
+        # Otherwise, we need to rely on assumptions provided by the author.
+        assumptions = get_assumptions(constraints)
+        if not assumptions:
+            logger.warn(
+                "No assumptions provided to determine if the loop can be pipelined. Skipping pipelining."
+            )
+            return {}
+
+        result = evaluate_with_assumptions(
+            constraints, max_induction_variable > scheduler.num_stages - 1
+        )
+        if not result:
+            logger.warn(
+                "Not enough iterations to pipeline the loop. Skipping pipelining."
+            )
+            return {}
 
     new_reduction = construct_pipelined_loop(
         trace,

@@ -24,6 +24,7 @@ from iree.turbine.kernel.wave.constraints import MMAType
 import os
 import json
 from torch.testing import assert_close
+from enum import Enum
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
@@ -62,6 +63,7 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize("enable_scheduling", [False, True])
+@pytest.mark.parametrize("dynamic_dims", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -70,7 +72,11 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     ],
 )
 def testGemm(
-    shape: tuple[int], enable_scheduling: bool, mfma_variant: MMAType, request
+    shape: tuple[int],
+    enable_scheduling: bool,
+    dynamic_dims: bool,
+    mfma_variant: MMAType,
+    request,
 ):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
@@ -100,6 +106,11 @@ def testGemm(
             threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
         )
     ]
+
+    # With dynamic dimensions, we need to add an assumption on how big
+    # the reduction dimension is to determine whether we can schedule or not.
+    if dynamic_dims:
+        constraints += [tkw.Assumption(K > BLOCK_K * 4)]
 
     # Wave-level micro-kernel.
     # Since warps are not directly addressable, there is no
@@ -163,6 +174,19 @@ def testGemm(
             dump_perf, "tk_" + perf_filename
         )
 
+    dynamic_symbols = []
+    dynamic_symbols_map = {}
+    if dynamic_dims:
+        dynamic_symbols_map[M] = hyperparams[M]
+        dynamic_symbols_map[N] = hyperparams[N]
+        dynamic_symbols_map[K] = hyperparams[K]
+        dynamic_symbols.append(M)
+        dynamic_symbols.append(N)
+        dynamic_symbols.append(K)
+        del hyperparams[M]
+        del hyperparams[N]
+        del hyperparams[K]
+
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -171,6 +195,8 @@ def testGemm(
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
     ):
         a = device_randn(shape[0], shape[2], dtype=torch.float16)
         b = device_randn(shape[1], shape[2], dtype=torch.float16)
