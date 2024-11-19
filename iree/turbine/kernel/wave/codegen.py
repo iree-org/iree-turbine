@@ -750,7 +750,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     # memory has no IR node yet.
     kb_src, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
 
-    if not all(map(lambda n: hasattr(n, "index"), (node,) + dyn_vals)):
+    if not hasattr(node, "index"):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
@@ -817,8 +817,8 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         tuple(insert_type.shape) == vector_shape
     ), f"Shape doesn't match: {tuple(insert_type.shape)} and {(vector_shape)}"
 
-    if not all(map(lambda n: hasattr(n, "index"), (node,) + dyn_vals)):
-        raise ValidationError("codegen expected read to have index attr.")
+    if not hasattr(node, "index"):
+        raise ValidationError("codegen expected write to have index attr.")
 
     index = node.index
     input_shape = _get_symbolic_shape(register)
