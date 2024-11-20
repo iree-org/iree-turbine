@@ -1,4 +1,4 @@
-name: PERF on MI300
+name: PERF on MI250
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [nodai-amdgpu-mi300-x86-64]
+        os: [nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
     env:
       PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
