@@ -39,9 +39,10 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
         case Read(memory, elements_per_thread) if get_custom(
             memory
         ).type.address_space != allocate_node.address_space:
-            promoted_read = Read(
-                allocate_node.fx_node, elements_per_thread
-            ).add_to_graph(custom_node.graph)
+            with custom_node.graph.inserting_after(custom_node.fx_node):
+                promoted_read = Read(
+                    allocate_node.fx_node, elements_per_thread
+                ).add_to_graph(custom_node.graph)
             custom_node.replace_all_uses_with(promoted_read)
             with custom_node.graph.inserting_before(promoted_read):
                 promoted_write = Write(
@@ -64,7 +65,7 @@ def promote_node(
     """
 
     assert isinstance(node, Read) or isinstance(node, Write)
-    with node.graph.inserting_before(node.fx_node.next):
+    with node.graph.inserting_after(node.fx_node.prev):
         constrained_shape = get_constrained_shape(node.type.symbolic_shape, constraints)
         padded_shape = apply_padding(constrained_shape, node.type.dtype)
         allocate_node = Allocate(
@@ -74,7 +75,7 @@ def promote_node(
             address_space,
         )
         allocate_node.add_to_graph(node.graph)
-        apply_promotion_pattern(node, allocate_node)
+    apply_promotion_pattern(node, allocate_node)
 
 
 def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
