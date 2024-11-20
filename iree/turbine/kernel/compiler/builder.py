@@ -243,6 +243,9 @@ class _ScalarBuilder:
     def to_dtype_index_to_integer(self, value: Value, to_type: IrType) -> Value:
         return arith_d.index_cast(to_type, value)
 
+    def to_dtype_integer_to_index(self, value: Value, to_type: IrType) -> Value:
+        return arith_d.index_cast(to_type, value)
+
     def to_dtype_index_to_float(self, value: Value, to_type: IrType) -> Value:
         # Cast index to integer, and then ask for a integer to float cast.
         # TODO: I don't really know how to query the machine bitwidth here,

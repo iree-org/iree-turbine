@@ -69,6 +69,7 @@ def read(
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
     mapping: Optional[IndexMapping] = None,
+    mapping_dynamic_vals: "Register" | tuple["Register", ...] = (),
 ) -> "Register":
     ...
 
@@ -92,6 +93,7 @@ def write(
     memory: "Memory",
     elements_per_thread: Optional[IndexExpr | int] = None,
     mapping: Optional[IndexMapping] = None,
+    mapping_dynamic_vals: "Register" | tuple["Register", ...] = (),
 ):
     ...
 
@@ -946,6 +948,7 @@ class Read(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
+    mapping_dynamic_vals: tuple["Register", ...] = ()
     _write_dependency: Optional[list[fx.Node]] = None
 
     @property
@@ -1120,6 +1123,7 @@ class Write(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any]
     mapping: Optional[IndexMapping] = None
+    mapping_dynamic_vals: tuple["Register", ...] = ()
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

@@ -98,40 +98,40 @@ def test_read_write_equal_sizes():
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read_0_0
-        # CHECK-SAME: (%a, 4, None, None)
+        # CHECK-SAME: (%a, 4, None, (), None)
         # CHECK-NEXT: %read_1_1
-        # CHECK-SAME: (%a, 4, None, None)
+        # CHECK-SAME: (%a, 4, None, (), None)
         # CHECK-NEXT: %read_1_0
-        # CHECK-SAME: (%a, 4, None, None)
+        # CHECK-SAME: (%a, 4, None, (), None)
         # CHECK-NEXT: %read_0_1
-        # CHECK-SAME: (%a, 4, None, None)
+        # CHECK-SAME: (%a, 4, None, (), None)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %write_shared_0_0
-        # CHECK-SAME: (%read_0_0, %allocate, 4, None)
+        # CHECK-SAME: (%read_0_0, %allocate, 4, None, ())
         # CHECK-NEXT: %write_shared_1_1
-        # CHECK-SAME: (%read_1_1, %allocate, 4, None)
+        # CHECK-SAME: (%read_1_1, %allocate, 4, None, ())
         # CHECK-NEXT: %write_shared_1_0
-        # CHECK-SAME: (%read_1_0, %allocate, 4, None)
+        # CHECK-SAME: (%read_1_0, %allocate, 4, None, ())
         # CHECK-NEXT: %write_shared_0_1
-        # CHECK-SAME: (%read_0_1, %allocate, 4, None)
+        # CHECK-SAME: (%read_0_1, %allocate, 4, None, ())
         # CHECK-NEXT: %shared_memory_barrier
         # CHECK-NEXT: %read_shared_0_0
-        # CHECK-SAME: (%allocate, 4, None, [%write_shared_0_0]
+        # CHECK-SAME: (%allocate, 4, None, (), [%write_shared_0_0]
         # CHECK-NEXT: %read_shared_1_1
-        # CHECK-SAME: (%allocate, 4, None, [%write_shared_1_1]
+        # CHECK-SAME: (%allocate, 4, None, (), [%write_shared_1_1]
         # CHECK-NEXT: %read_shared_1_0
-        # CHECK-SAME: (%allocate, 4, None, [%write_shared_1_0]
+        # CHECK-SAME: (%allocate, 4, None, (), [%write_shared_1_0]
         # CHECK-NEXT: %read_shared_0_1
-        # CHECK-SAME: (%allocate, 4, None, [%write_shared_0_1]
+        # CHECK-SAME: (%allocate, 4, None, (), [%write_shared_0_1]
         # CHECK-NEXT: %write_0_0
-        # CHECK-SAME: (%read_shared_0_0, %c, 4, None)
+        # CHECK-SAME: (%read_shared_0_0, %c, 4, None, ())
         # CHECK-NEXT: %write_1_1
-        # CHECK-SAME: (%read_shared_1_1, %c, 4, None)
+        # CHECK-SAME: (%read_shared_1_1, %c, 4, None, ())
         # CHECK-NEXT: %write_1_0
-        # CHECK-SAME: (%read_shared_1_0, %c, 4, None)
+        # CHECK-SAME: (%read_shared_1_0, %c, 4, None, ())
         # CHECK-NEXT: %write_0_1
-        # CHECK-SAME: (%read_shared_0_1, %c, 4, None)
+        # CHECK-SAME: (%read_shared_0_1, %c, 4, None, ())
         # CHECK-NEXT: return None
 
         # CHECK: -----
@@ -207,13 +207,13 @@ def test_gemm():
         # CHECK-NEXT: %getresult_0_0_0
         # CHECK-SAME: (%reduction, 0)
         # CHECK-NEXT: %write_0_0_0
-        # CHECK-SAME: (%getresult_0_0_0, %c, 4, None)
+        # CHECK-SAME: (%getresult_0_0_0, %c, 4, None, ())
         # CHECK-NEXT: %write_1_1_0
-        # CHECK-SAME: (%getresult_1_1_0, %c, 4, None)
+        # CHECK-SAME: (%getresult_1_1_0, %c, 4, None, ())
         # CHECK-NEXT: %write_1_0_0
-        # CHECK-SAME: (%getresult_1_0_0, %c, 4, None)
+        # CHECK-SAME: (%getresult_1_0_0, %c, 4, None, ())
         # CHECK-NEXT: %write_0_1_0
-        # CHECK-SAME: (%getresult_0_1_0, %c, 4, None)
+        # CHECK-SAME: (%getresult_0_1_0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
         # Reduction subgraph:

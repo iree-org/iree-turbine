@@ -8,6 +8,7 @@ from typing import (
     Type,
     TypeAlias,
     TypeVar,
+    Sequence,
 )
 
 from .kernel_buffer import AddressSpace, KernelBufferMeta, KernelBufferUsage
@@ -167,9 +168,15 @@ class IndexMapping:
     input_mapping: SymbolsMap
     output_mapping: SymbolsMap
     iteration_shape: tuple[IndexExpr, ...]
+    dynamic_val_mappings: tuple[SymbolsMap, ...]
+    dynamic_val_indices: dict[IndexSymbol, int]
 
     def __init__(
-        self, num_iterators: int, inputs: SymbolsMap, outputs: SymbolsMap
+        self,
+        num_iterators: int,
+        inputs: SymbolsMap,
+        outputs: SymbolsMap,
+        dynamic_val_mappings: SymbolsMap | Sequence[SymbolsMap] = (),
     ) -> None:
         iters = {self.iterator(i): i for i in range(num_iterators)}
         iter_shape = [None] * num_iterators
@@ -191,10 +198,22 @@ class IndexMapping:
         self.iteration_shape = iter_shape
         self.input_mapping = inputs
         self.output_mapping = outputs
+        if not isinstance(dynamic_val_mappings, Sequence):
+            dynamic_val_mappings = (
+                (dynamic_val_mappings,) if dynamic_val_mappings else ()
+            )
+
+        self.dynamic_val_mappings = tuple(dynamic_val_mappings)
+        num_dyn_vals = len(dynamic_val_mappings)
+        self.dynamic_val_indices = {self.dynamic_val(i): i for i in range(num_dyn_vals)}
 
     @property
     def num_iterators(self) -> int:
         return len(self.iters)
+
+    @property
+    def num_dynamic_vals(self) -> int:
+        return len(self.dynamic_val_indices)
 
     def substitute(self, subs: Iterable[tuple[IndexExpr, IndexExpr]]) -> Self:
         new_inputs = {
@@ -217,6 +236,10 @@ class IndexMapping:
     def iterator(index: int) -> IndexSymbol:
         return index_symbol(f"$index{index}")
 
+    @staticmethod
+    def dynamic_val(index: int) -> IndexSymbol:
+        return index_symbol(f"$dynamic_val{index}")
+
     def map_input_indices(
         self, symbols: Optional[tuple[IndexSymbol, ...]] = None
     ) -> tuple[IndexExpr, ...]:
@@ -237,4 +260,7 @@ class IndexMapping:
         return self.is_input_identity() and self.is_output_identity()
 
     def __repr__(self) -> str:
-        return f"IndexMapping(iters={self.iters}, input_mapping={self.input_mapping}), output_mapping={self.output_mapping}"
+        return (
+            f"IndexMapping(iters={self.iters}, input_mapping={self.input_mapping}), "
+            f"output_mapping={self.output_mapping}, dynamic_val_mappings={self.dynamic_val_mappings}"
+        )
