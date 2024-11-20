@@ -55,8 +55,8 @@ jobs:
         pip install --no-cache-dir -r iree-requirements-ci.txt --upgrade
         pip install -r requirements.txt -e .
 
-    - name: Run e2e tests on MI300
-      if: "contains(matrix.os, 'mi300') && !cancelled()"
+    - name: Run e2e tests on MI250
+      if: "contains(matrix.os, 'mi250') && !cancelled()"
       run: |
         export WAVE_RUN_E2E_TESTS=1
         export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
