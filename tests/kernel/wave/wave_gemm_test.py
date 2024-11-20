@@ -333,7 +333,7 @@ def testCDNA2IntGemm(
         VALU_UNITS: 8,
         SHUFFLE_UNITS: 8,
     }
-    config = {"backend": "rocm", "device": "hip", "target": "gfx90a"}
+    config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3

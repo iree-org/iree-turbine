@@ -97,11 +97,6 @@ def run_test(func: Callable[[], None]) -> Callable[[], None]:
     return func
 
 
-def get_default_run_config() -> dict[Any, Any]:
-    """Return default config for testing."""
-    return {"backend": "rocm", "device": "hip", "target": "gfx942"}
-
-
 def get_default_arch() -> str:
     """Return default ROCM architecture"""
     if not torch.cuda.is_available():
@@ -112,6 +107,17 @@ def get_default_arch() -> str:
     # The gcnArchName comes back like gfx90a:sramecc+:xnack.
     colon_pos = gcnArch.find(":")
     return gcnArch[0:colon_pos]
+
+
+def get_default_run_config() -> dict[Any, Any]:
+    """Return default config for running."""
+    arch = get_default_arch()
+    return {"backend": "rocm", "device": "hip", "target": arch}
+
+
+def get_default_compile_config() -> dict[Any, Any]:
+    """Return default config for compilation."""
+    return {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
 
 def print_trace(trace: CapturedTrace, custom_print: bool = True):
