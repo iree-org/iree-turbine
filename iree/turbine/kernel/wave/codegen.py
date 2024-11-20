@@ -331,18 +331,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
 
     def _ceiling(value):
         if isinstance(value, _Rational):
-            # TODO: This is the expansion of ceildivui, but we should figure
-            # out how to run the arith-expand pass instead of doing this.
-            # ceildivui(x, y) = x == 0 ? 0 : ((x - 1) / y) + 1
-            one = _get_const(1)
-            zero = _get_const(0)
-            lhs_minus_one = arith_d.subi(*_broadcast(value.numerator, one))
-            div = arith_d.divui(*_broadcast(lhs_minus_one, value.denominator))
-            result = arith_d.addi(*_broadcast(div, one))
-            cmp = arith_d.cmpi(
-                arith_d.CmpIPredicate.eq, *_broadcast(value.numerator, zero)
-            )
-            value = arith_d.select(cmp, zero, result)
+            value = arith_d.ceildivsi(*_broadcast(value.numerator, value.denominator))
 
         return value
 
