@@ -8,6 +8,7 @@ from typing import (
     Type,
     TypeAlias,
     TypeVar,
+    Sequence,
 )
 
 from .kernel_buffer import AddressSpace, KernelBufferMeta, KernelBufferUsage
@@ -168,16 +169,14 @@ class IndexMapping:
     output_mapping: SymbolsMap
     iteration_shape: tuple[IndexExpr, ...]
     dynamic_val_mappings: tuple[SymbolsMap, ...]
-    dynamic_vals: dict[IndexSymbol, int]
+    dynamic_val_indices: dict[IndexSymbol, int]
 
     def __init__(
         self,
         num_iterators: int,
         inputs: SymbolsMap,
         outputs: SymbolsMap,
-        dynamic_val_mappings: SymbolsMap
-        | list[SymbolsMap, ...]
-        | tuple[SymbolsMap, ...] = (),
+        dynamic_val_mappings: SymbolsMap | Sequence[SymbolsMap] = (),
     ) -> None:
         iters = {self.iterator(i): i for i in range(num_iterators)}
         iter_shape = [None] * num_iterators
@@ -199,14 +198,14 @@ class IndexMapping:
         self.iteration_shape = iter_shape
         self.input_mapping = inputs
         self.output_mapping = outputs
-        if dynamic_val_mappings is None:
-            dynamic_val_mappings = ()
-        elif not isinstance(dynamic_val_mappings, (list, tuple)):
-            dynamic_val_mappings = (dynamic_val_mappings,)
+        if not isinstance(dynamic_val_mappings, Sequence):
+            dynamic_val_mappings = (
+                (dynamic_val_mappings,) if dynamic_val_mappings else ()
+            )
 
         self.dynamic_val_mappings = tuple(dynamic_val_mappings)
         num_dyn_vals = len(dynamic_val_mappings)
-        self.dynamic_vals = {self.dynamic_val(i): i for i in range(num_dyn_vals)}
+        self.dynamic_val_indices = {self.dynamic_val(i): i for i in range(num_dyn_vals)}
 
     @property
     def num_iterators(self) -> int:
@@ -214,7 +213,7 @@ class IndexMapping:
 
     @property
     def num_dynamic_vals(self) -> int:
-        return len(self.dynamic_vals)
+        return len(self.dynamic_val_indices)
 
     def substitute(self, subs: Iterable[tuple[IndexExpr, IndexExpr]]) -> Self:
         new_inputs = {

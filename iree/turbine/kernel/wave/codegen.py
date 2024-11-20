@@ -687,12 +687,12 @@ def _construct_gather_scatter_indices(
         offsets.append(IntegerAttr.get(IndexType.get(), offset))
 
     def extract0(src):
-        static_pos = [0 for i in range(src.type.rank)]
+        static_pos = [0] * src.type.rank
         return vector_d.extract(src, static_position=static_pos, dynamic_position=[])
 
     dynamic_vals_map_start = {
         sym: extract0(val)
-        for sym, val in zip(mapping.dynamic_vals.keys(), dynamic_vals)
+        for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
     }
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
     if need_dynamic_offsets:
@@ -713,7 +713,8 @@ def _construct_gather_scatter_indices(
             start_indices_orig[-1] + idxc.iota(elements_per_thread),
         )
         dynamic_vals_map = {
-            sym: val for sym, val in zip(mapping.dynamic_vals.keys(), dynamic_vals)
+            sym: val
+            for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
         }
         indices = [i.subs(subs) for i in index_mapping]
         offsets_vec = gen_sympy_index(
