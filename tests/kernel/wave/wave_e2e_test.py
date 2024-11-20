@@ -404,7 +404,7 @@ def test_offset_write(shape, request):
     mapping = tkw.IndexMapping(
         num_iterators=2,
         inputs={M: i, N: j},
-        outputs={M: k, N: j},
+        outputs={M: i, N: k},
         dynamic_val_mappings={M: i, N: j},
     )
 
@@ -428,9 +428,9 @@ def test_offset_write(shape, request):
 
     a = device_randn(shape, dtype=torch.float16)
     off = (
-        device_randperm(shape[0], dtype=torch.int32)
-        .reshape((shape[0], 1))
-        .repeat(1, shape[1])
+        device_randperm(shape[1], dtype=torch.int32)
+        .reshape((1, shape[1]))
+        .repeat(shape[0], 1)
     )
     out = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
@@ -446,7 +446,7 @@ def test_offset_write(shape, request):
     ):
         test(a, off, out)
         out_ref = torch.zeros_like(out)
-        out_ref = out_ref.scatter(0, off.to(torch.long), a)
+        out_ref = out_ref.scatter(1, off.to(torch.long), a)
         assert_close(out, out_ref)
 
 
