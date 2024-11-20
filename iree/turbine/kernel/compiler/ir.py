@@ -41,6 +41,7 @@ from iree.compiler.dialects import (
     flow as flow_d,
     func as func_d,
     gpu as gpu_d,
+    iree_codegen as iree_codegen_d,
     llvm as llvm_d,
     math as math_d,
     memref as memref_d,
