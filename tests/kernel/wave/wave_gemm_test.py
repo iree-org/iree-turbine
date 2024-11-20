@@ -287,8 +287,8 @@ def testCDNA2IntGemm(
     # These can be influenced by introducing constraints.
     @tkw.wave(constraints)
     def gemm(
-        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.i16],
-        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.i16],
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.i32],
     ):
         c_reg = tkl.Register[M, N, tkl.i32](0.0)
@@ -297,12 +297,10 @@ def testCDNA2IntGemm(
         # dimension were tiled, then we would need to materialize a loop.
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.i32]:
-            # a_reg: tkw.Register[M, K, tkl.i16]
+            # a_reg: tkw.Register[M, K, tkl.i8]
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            a_reg = tkw.cast(a_reg, tkl.i8)
-            # b_reg: tkw.Register[N, K, tkl.i16]
+            # b_reg: tkw.Register[N, K, tkl.i8]
             b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.cast(b_reg, tkl.i8)
             # acc: tkw.Register[M, N, tkl.i32]
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
@@ -368,8 +366,8 @@ def testCDNA2IntGemm(
         dynamic_symbols_map=dynamic_symbols_map,
     ):
         randint_hi = 4
-        a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int16)
-        b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int16)
+        a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
+        b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
         c = device_zeros(shape[0], shape[1], dtype=torch.int32)
         mb = gemm(a, b, c)
 
@@ -395,8 +393,8 @@ def testCDNA2IntGemm(
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        MMAType.F32_16x16x32_F8,
-        MMAType.F32_32x32x16_F8,
+        MMAType.I32_16x16x32_I8,
+        MMAType.I32_32x32x16_I8,
     ],
 )
 def testCDNA3IntGemm(
@@ -433,8 +431,8 @@ def testCDNA3IntGemm(
 
     @tkw.wave(constraints)
     def gemm(
-        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.i16],
-        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.i16],
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.i32],
     ):
         c_reg = tkl.Register[M, N, tkl.i32](0.0)
@@ -443,12 +441,10 @@ def testCDNA3IntGemm(
         # dimension were tiled, then we would need to materialize a loop.
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.i32]:
-            # a_reg: tkw.Register[M, K, tkl.i16]
+            # a_reg: tkw.Register[M, K, tkl.i8]
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            a_reg = tkw.cast(a_reg, tkl.i8)
-            # b_reg: tkw.Register[N, K, tkl.i16]
+            # b_reg: tkw.Register[N, K, tkl.i8]
             b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.cast(b_reg, tkl.i8)
             # acc: tkw.Register[M, N, tkl.i32]
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
@@ -498,8 +494,8 @@ def testCDNA3IntGemm(
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
         randint_hi = 4
-        a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int16)
-        b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int16)
+        a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
+        b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
         c = device_zeros(shape[0], shape[1], dtype=torch.int32)
         mb = gemm(a, b, c)
 
