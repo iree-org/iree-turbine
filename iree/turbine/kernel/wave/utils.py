@@ -925,13 +925,11 @@ def get_default_device():
 
 
 def device_randn(*args, **kwargs):
-    device = get_default_device()
-    return torch.randn(*args, **kwargs).to(device)
+    return torch.randn(*args, **kwargs).to(get_default_device())
 
 
 def device_randint(*args, **kwargs):
-    device = get_default_device()
-    return torch.randint(*args, **kwargs).to(device)
+    return torch.randint(*args, **kwargs).to(get_default_device())
 
 
 def device_randperm(*args, **kwargs):
@@ -939,8 +937,7 @@ def device_randperm(*args, **kwargs):
 
 
 def device_zeros(*args, **kwargs):
-    device = get_default_device()
-    return torch.zeros(*args, **kwargs).to(device)
+    return torch.zeros(*args, **kwargs).to(get_default_device())
 
 
 def get_assumptions(constraints: list[Constraint]) -> list[Assumption]:
