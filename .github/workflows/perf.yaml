@@ -1,4 +1,4 @@
-name: PERF on MI300
+name: PERF
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [nodai-amdgpu-mi300-x86-64]
+        os: [nodai-amdgpu-mi300-x86-64, nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
     env:
       PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
@@ -57,6 +57,13 @@ jobs:
 
     - name: Run e2e tests on MI300
       if: "contains(matrix.os, 'mi300') && !cancelled()"
+      run: |
+        export WAVE_RUN_E2E_TESTS=1
+        export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
+        pytest -n 1 --capture=tee-sys -vv ./tests/kernel/wave/
+
+    - name: Run e2e tests on MI250
+      if: "contains(matrix.os, 'mi250') && !cancelled()"
       run: |
         export WAVE_RUN_E2E_TESTS=1
         export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
