@@ -920,16 +920,20 @@ def all_equal(input_list: list[Any]) -> bool:
     return all(elem == input_list[0] for elem in input_list)
 
 
-def get_default_device():
+def get_default_device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def to_default_device(tensor: torch.Tensor) -> torch.Tensor:
+    return tensor.to(get_default_device())
+
+
 def device_randn(*args, **kwargs):
-    return torch.randn(*args, **kwargs).to(get_default_device())
+    return to_default_device(torch.randn(*args, **kwargs))
 
 
 def device_randint(*args, **kwargs):
-    return torch.randint(*args, **kwargs).to(get_default_device())
+    return to_default_device(torch.randint(*args, **kwargs))
 
 
 def device_randperm(*args, **kwargs):
@@ -937,7 +941,7 @@ def device_randperm(*args, **kwargs):
 
 
 def device_zeros(*args, **kwargs):
-    return torch.zeros(*args, **kwargs).to(get_default_device())
+    return to_default_device(torch.zeros(*args, **kwargs))
 
 
 def get_assumptions(constraints: list[Constraint]) -> list[Assumption]:
