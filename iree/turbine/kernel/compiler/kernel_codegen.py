@@ -20,6 +20,7 @@ from enum import Enum
 from dataclasses import dataclass
 
 import torch.fx as fx
+import sympy
 
 from .._support.indexing import (
     IndexingContext,
@@ -79,6 +80,10 @@ class BindingType(Enum):
     SYMBOL_VALUE = 2
 
 
+def _is_symbolic(value: list[sympy.Expr | int]) -> bool:
+    return any(isinstance(v, sympy.Expr) for v in value)
+
+
 @dataclass
 class BindingDesc:
     # The unique reference object that this is derived from. This will
@@ -120,7 +125,7 @@ class BindingDesc:
                 # Unranked. Not well supported, but for completeness.
                 spec_asm = element_type_asm
             strides = strides_from_symbolic_shape(idx_context, kb_t.symbolic_shape)
-            if strides is None:
+            if strides is None or _is_symbolic(strides):
                 memref_asm = f"memref<{spec_asm}>"
             else:
                 memref_asm = f"memref<{spec_asm}, strided<{strides}, offset: ?>>"

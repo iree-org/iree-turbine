@@ -74,7 +74,10 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     ],
 )
 def testChainedGemm(
-    shape: tuple[int], enable_scheduling: bool, mfma_variant: MMAType, request
+    shape: tuple[int],
+    enable_scheduling: bool,
+    mfma_variant: MMAType,
+    request,
 ):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
@@ -359,6 +362,7 @@ def testChainedGemm_f8(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_attention"))
 @pytest.mark.parametrize("enable_scheduling", [False, True])
+@pytest.mark.parametrize("dynamic_dims", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -367,7 +371,11 @@ def testChainedGemm_f8(
     ],
 )
 def testAttention(
-    shape: tuple[int], enable_scheduling: bool, mfma_variant: MMAType, request
+    shape: tuple[int],
+    enable_scheduling: bool,
+    dynamic_dims: bool,
+    mfma_variant: MMAType,
+    request,
 ):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
@@ -411,6 +419,9 @@ def testAttention(
             vector_shapes={B: 0, M: Mvec, N: Nvec},
         )
     ]
+
+    if dynamic_dims:
+        constraints += [tkw.Assumption(K2 > BLOCK_K2 * 4)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -501,6 +512,22 @@ def testAttention(
             dump_perf, "tk_" + perf_filename
         )
 
+    dynamic_symbols = []
+    dynamic_symbols_map = {}
+    if dynamic_dims:
+        dynamic_symbols_map[M] = hyperparams[M]
+        dynamic_symbols_map[N] = hyperparams[N]
+        dynamic_symbols_map[B] = hyperparams[B]
+        dynamic_symbols_map[K2] = hyperparams[K2]
+        dynamic_symbols.append(M)
+        dynamic_symbols.append(N)
+        dynamic_symbols.append(B)
+        dynamic_symbols.append(K2)
+        del hyperparams[M]
+        del hyperparams[N]
+        del hyperparams[B]
+        del hyperparams[K2]
+
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -509,6 +536,8 @@ def testAttention(
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
     ):
         torch.manual_seed(0)
         q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
