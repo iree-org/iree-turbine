@@ -97,8 +97,26 @@ def run_test(func: Callable[[], None]) -> Callable[[], None]:
     return func
 
 
+def get_default_arch() -> str:
+    """Return default ROCM architecture"""
+    if not torch.cuda.is_available():
+        return "cpu"
+    device = torch.device("cuda")
+    gcnArch = torch.cuda.get_device_properties(device).gcnArchName
+    assert "gfx" in gcnArch, "Currently only support GFX/ROCm for get_default_arch."
+    # The gcnArchName comes back like gfx90a:sramecc+:xnack.
+    colon_pos = gcnArch.find(":")
+    return gcnArch[0:colon_pos]
+
+
 def get_default_run_config() -> dict[Any, Any]:
-    """Return default config for testing."""
+    """Return default config for running."""
+    arch = get_default_arch()
+    return {"backend": "rocm", "device": "hip", "target": arch}
+
+
+def get_default_compile_config() -> dict[Any, Any]:
+    """Return default config for compilation."""
     return {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
 
@@ -880,25 +898,25 @@ def ceildiv(a: int, b: int) -> int:
 
 def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
     match mfma_variant:
-        case MMAType.F32_16x16x16_F16:
+        case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
             return 4
-        case MMAType.F32_32x32x8_F16:
+        case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 4
-        case MMAType.F32_16x16x32_F8:
+        case MMAType.F32_16x16x32_F8 | MMAType.I32_16x16x32_I8:
             return 8
-        case MMAType.F32_32x32x16_F8:
+        case MMAType.F32_32x32x16_F8 | MMAType.I32_32x32x16_I8:
             return 8
 
 
 def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
     match mfma_variant:
-        case MMAType.F32_16x16x16_F16:
+        case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
             return 4
-        case MMAType.F32_32x32x8_F16:
+        case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 16
-        case MMAType.F32_16x16x32_F8:
+        case MMAType.F32_16x16x32_F8 | MMAType.I32_16x16x32_I8:
             return 4
-        case MMAType.F32_32x32x16_F8:
+        case MMAType.F32_32x32x16_F8 | MMAType.I32_32x32x16_I8:
             return 16
 
 
@@ -908,20 +926,28 @@ def all_equal(input_list: list[Any]) -> bool:
     return all(elem == input_list[0] for elem in input_list)
 
 
+def get_default_device() -> str:
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def to_default_device(tensor: torch.Tensor) -> torch.Tensor:
+    return tensor.to(get_default_device())
+
+
 def device_randn(*args, **kwargs):
-    return torch.randn(*args, **kwargs).to("cuda")
+    return to_default_device(torch.randn(*args, **kwargs))
 
 
 def device_randint(*args, **kwargs):
-    return torch.randint(*args, **kwargs).to("cuda")
+    return to_default_device(torch.randint(*args, **kwargs))
 
 
 def device_randperm(*args, **kwargs):
-    return torch.randperm(*args, **kwargs).to("cuda")
+    return to_default_device(torch.randperm(*args, **kwargs))
 
 
 def device_zeros(*args, **kwargs):
-    return torch.zeros(*args, **kwargs).to("cuda")
+    return to_default_device(torch.zeros(*args, **kwargs))
 
 
 def get_assumptions(constraints: list[Constraint]) -> list[Assumption]:

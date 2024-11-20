@@ -11,6 +11,7 @@ from iree.turbine.kernel.wave.wave_sim import wave_sim
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
+    get_default_arch,
     get_default_run_config,
     device_randn,
     device_randint,
@@ -27,6 +28,9 @@ import json
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
+require_cdna3 = pytest.mark.skipif(
+    "gfx94" not in get_default_arch(), reason="Default device is not CDNA3"
+)
 default_test_shapes = [
     (1, 27),
     (111, 813),
@@ -689,6 +693,7 @@ def test_im2col(request):
         assert_close(b, expected)
 
 
+# TODO: Fix test for CDNA2. CDNA2 seem to have worse accuracy, atol=0.0094, rtol=10.2405
 @require_e2e
 def test_im2col_mma(request):
     run_bench = request.config.getoption("--runperf")
@@ -891,6 +896,7 @@ _layouts = [
 
 
 @require_e2e
+@require_cdna3
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
 @pytest.mark.parametrize("mem_space", _mem_spaces)
 @pytest.mark.parametrize("layout", _layouts)

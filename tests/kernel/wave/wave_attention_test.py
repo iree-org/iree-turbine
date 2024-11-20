@@ -16,6 +16,7 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
+    get_default_arch,
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
     device_randn,
@@ -28,6 +29,9 @@ from torch.testing import assert_close, assert_allclose
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
+require_cdna3 = pytest.mark.skipif(
+    "gfx94" not in get_default_arch(), reason="Default device is not CDNA3"
+)
 # Whether to dump the generated MLIR module.
 test_dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
 # Whether to use scheduling group barriers (needs LLVM fix).
@@ -205,6 +209,7 @@ def testChainedGemm(
 # This test requires some more analysis on the index sequences between
 # the two chained GEMMs.
 @require_e2e
+@require_cdna3
 @pytest.mark.xfail
 @pytest.mark.parametrize("shape", get_test_shapes("test_attention"))
 @pytest.mark.parametrize("enable_scheduling", [False])

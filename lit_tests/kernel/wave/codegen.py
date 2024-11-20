@@ -8,7 +8,7 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils import (
     run_test,
-    get_default_run_config,
+    get_default_compile_config,
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
@@ -654,6 +654,155 @@ def test_gemm():
         # CHECK:            vector.store %[[D37]], %[[D19]][%[[D38]], %[[D32]]] : memref<64x128xf32, strided<[128, 1], offset:
         # CHECK-SAME:         ?>>, vector<1xf32>
         # CHECK:            return
+
+
+@run_test
+def test_cdna2_int_gemm():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.I32_16x16x16_I8,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def cdna2_int_gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.i8],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.i32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.i32](0.0)
+
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 64,
+            N: 128,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 16,
+            LOAD_ELEMS_PER_THREAD: 4,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        a = torch.ones(64, 32, dtype=torch.int8)
+        b = torch.ones(128, 32, dtype=torch.int8)
+        c = torch.zeros(64, 128, dtype=torch.int32)
+        print(cdna2_int_gemm(a, b, c).module_op)
+
+        # CHECK:          func.func @cdna2_int_gemm(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
+        # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
+        # CHECK-DAG:        %[[C4:.+]] = arith.constant 4 : index
+        # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
+        # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0> : vector<4xi32>
+        # CHECK:            %[[ALLOC_0:.+]] = memref.alloc() : memref<32x24xi8, #gpu.address_space<workgroup>>
+        # CHECK:            %[[ALLOC_1:.+]] = memref.alloc() : memref<32x24xi8, #gpu.address_space<workgroup>>
+        # CHECK:            %[[GLOBAL_0:.+]] = stream.binding.subspan %[[ARG0]]
+        # CHECK:            %[[GLOBAL_1:.+]] = stream.binding.subspan %[[ARG1]]
+        # CHECK:            scf.for %[[IVAR:.+]] = %[[C0]] to %[[C4]] step %[[C1]] iter_args(%[[ACC:.+]] = %[[CST]]) -> (vector<4xi32>) {
+        # CHECK:                %[[REG_0:.+]] = vector.load %[[GLOBAL_0]]
+        # CHECK:                vector.store %[[REG_0]], %[[ALLOC_0]]
+        # CHECK:                %[[LHS:.+]] = vector.load %[[ALLOC]]{{.*}} : memref<32x24xi8, #gpu.address_space<workgroup>>, vector<4xi8>
+        # CHECK:                %[[REG_1:.+]] = vector.load %[[GLOBAL_1]]
+        # CHECK:                vector.store %[[REG_1]], %[[ALLOC_1]]
+        # CHECK:                %[[RHS:.+]] = vector.load %[[ALLOC_1]]{{.*}} : memref<32x24xi8, #gpu.address_space<workgroup>>, vector<4xi8>
+        # CHECK:                %[[MMA:.+]] = amdgpu.mfma %[[LHS]] * %[[RHS]] + %[[ACC]]  {blocks = 1 : i32, k = 16 : i32, m = 16 : i32, n = 16 : i32} blgp =  none : vector<4xi8>, vector<4xi8>, vector<4xi32>
+        # CHECK:                scf.yield %[[MMA]] : vector<4xi32>
+
+
+@run_test
+def test_cdna3_int_gemm():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    mma_variant = tkw.MMAType.I32_16x16x32_I8
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=mma_variant,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def cdna3_int_gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.i8],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.i32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.i32](0.0)
+
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 64,
+            N: 128,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 32,
+            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mma_variant),
+            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mma_variant),
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        a = torch.ones(64, 32, dtype=torch.int8)
+        b = torch.ones(128, 32, dtype=torch.int8)
+        c = torch.zeros(64, 128, dtype=torch.int32)
+        print(cdna3_int_gemm(a, b, c).module_op)
+
+        # CHECK:          func.func @cdna3_int_gemm(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
+        # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
+        # CHECK-DAG:        %[[C2:.+]] = arith.constant 2 : index
+        # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
+        # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0> : vector<4xi32>
+        # CHECK:            %[[ALLOC_0:.+]] = memref.alloc() : memref<32x40xi8, #gpu.address_space<workgroup>>
+        # CHECK:            %[[ALLOC_1:.+]] = memref.alloc() : memref<32x40xi8, #gpu.address_space<workgroup>>
+        # CHECK:            %[[GLOBAL_0:.+]] = stream.binding.subspan %[[ARG0]]
+        # CHECK:            %[[GLOBAL_1:.+]] = stream.binding.subspan %[[ARG1]]
+        # CHECK:            scf.for %[[IVAR:.+]] = %[[C0]] to %[[C2]] step %[[C1]] iter_args(%[[ACC:.+]] = %[[CST]]) -> (vector<4xi32>) {
+        # CHECK:                %[[REG_0:.+]] = vector.load %[[GLOBAL_0]]
+        # CHECK:                vector.store %[[REG_0]], %[[ALLOC_0]]
+        # CHECK:                %[[LHS:.+]] = vector.load %[[ALLOC]]{{.*}} : memref<32x40xi8, #gpu.address_space<workgroup>>, vector<8xi8>
+        # CHECK:                %[[REG_1:.+]] = vector.load %[[GLOBAL_1]]
+        # CHECK:                vector.store %[[REG_1]], %[[ALLOC_1]]
+        # CHECK:                %[[RHS:.+]] = vector.load %[[ALLOC_1]]{{.*}} : memref<32x40xi8, #gpu.address_space<workgroup>>, vector<8xi8>
+        # CHECK:                %[[MMA:.+]] = amdgpu.mfma %[[LHS]] * %[[RHS]] + %[[ACC]]  {blocks = 1 : i32, k = 32 : i32, m = 16 : i32, n = 16 : i32} blgp =  none : vector<8xi8>, vector<8xi8>, vector<4xi32>
+        # CHECK:                scf.yield %[[MMA]] : vector<4xi32>
 
 
 @run_test
@@ -1668,7 +1817,7 @@ def test_reduce_sum():
         res = tkw.sum(res, dim=N)
         tkw.write(res, c, elements_per_thread=1)
 
-    config = get_default_run_config()
+    config = get_default_compile_config()
 
     shape = (256, 128)
     a = torch.randn(shape, dtype=torch.float16)
@@ -1744,7 +1893,7 @@ def test_mutliple_local_reduce_sum():
         res = tkw.sum([lhs, rhs], dim=N)
         tkw.write(res, c, elements_per_thread=1)
 
-    config = get_default_run_config()
+    config = get_default_compile_config()
 
     shape = (256, 128)
     a = torch.randn(shape, dtype=torch.float16)
@@ -1816,7 +1965,7 @@ def test_reduction_and_elemwise():
         result = repeat + repeat
         tkw.write(result, c, elements_per_thread=1)
 
-    config = get_default_run_config()
+    config = get_default_compile_config()
 
     shape = (256, 512)
     a = torch.randn(shape, dtype=torch.float16)
@@ -1904,7 +2053,7 @@ def test_tiled_reduce_max():
 
         tkw.write(repeat, c, elements_per_thread=1)
 
-    config = get_default_run_config()
+    config = get_default_compile_config()
 
     shape = (256, 512)
     a = torch.randn(shape, dtype=torch.float16)
@@ -2003,7 +2152,7 @@ def test_multiple_reduction_iv():
         tkw.write(res_max, c, elements_per_thread=1)
         tkw.write(res_sum, d, elements_per_thread=1)
 
-    config = get_default_run_config()
+    config = get_default_compile_config()
 
     shape = (256, 512)
     a = torch.randn(shape, dtype=torch.float16)
@@ -2102,7 +2251,7 @@ def test_reduce_propagate_broadcast():
         res_max, res_sum = repeat
         tkw.write(res_sum, c, elements_per_thread=1)
 
-    config = get_default_run_config()
+    config = get_default_compile_config()
 
     shape = (256, 1024)
     a = torch.randn(shape, dtype=torch.float32)
@@ -2163,7 +2312,7 @@ def test_broadcast_add():
         res = lhs + rhs
         tkw.write(res, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
+    config = get_default_compile_config()
 
     shape = (256, 128)
     a = torch.ones(shape, dtype=torch.float16)
