@@ -65,9 +65,13 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         """
         custom = get_custom(node)
         if isinstance(custom, Write):
-            strides = [simplify_index(custom.index[dim]).stride for dim in custom.index]
+            strides = [
+                simplify_index(custom.register_index[dim]).stride
+                for dim in custom.register_index
+            ]
             elements_per_thread = [
-                simplify_index(custom.index[dim]).size for dim in custom.index
+                simplify_index(custom.register_index[dim]).size
+                for dim in custom.register_index
             ]
             strides = [x for x, y in zip(strides, elements_per_thread) if y > 1]
             num_strided_accesses = sum(1 for stride in strides if stride > 1)
@@ -83,7 +87,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
     for operator in strided_operators:
         custom = get_custom(operator)
         simplified_index = {
-            dim: simplify_index(custom.index.get(dim, custom.index[dim]))
+            dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
             for dim in custom.index
         }
 
@@ -212,6 +216,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                     extract = ExtractSlice(
                         custom.register_, [cur_gpr_start_id], [gpr_size], [1]
                     ).add_to_graph(custom.graph)
+                    extract.index = updated_index_with_gpr_offset
                     new_node = Write(
                         extract,
                         custom.memory,
