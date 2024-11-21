@@ -310,21 +310,21 @@ def test_gemm():
         # CHECK-SAME: (%b, 4, None, (), None)
 
         # CHECK-NEXT: %mma_0_0_0
-        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0)
+        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0, None)
         # CHECK-NEXT: %mma_0_0_1
-        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
+        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0, None)
         # CHECK-NEXT: %mma_1_1_0
-        # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_1_1_0)
+        # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_1_1_0, None)
         # CHECK-NEXT: %mma_1_1_1
-        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_1_1_0)
+        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_1_1_0, None)
         # CHECK-NEXT: %mma_1_0_0
-        # CHECK-SAME: (%read_1_0_0, %read_0_0_0, %acc_1_0_0)
+        # CHECK-SAME: (%read_1_0_0, %read_0_0_0, %acc_1_0_0, None)
         # CHECK-NEXT: %mma_1_0_1
-        # CHECK-SAME: (%read_1_0_1, %read_0_0_1, %mma_1_0_0)
+        # CHECK-SAME: (%read_1_0_1, %read_0_0_1, %mma_1_0_0, None)
         # CHECK-NEXT: %mma_0_1_0
-        # CHECK-SAME: (%read_0_0_0, %read_0_1_0, %acc_0_1_0)
+        # CHECK-SAME: (%read_0_0_0, %read_0_1_0, %acc_0_1_0, None)
         # CHECK-NEXT: %mma_0_1_1
-        # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0)
+        # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0, None)
         # CHECK-NEXT: return [mma_0_0_1, mma_0_1_1, mma_1_0_1, mma_1_1_1]
 
         # Custom format:
@@ -497,21 +497,21 @@ def test_batched_gemm():
         # CHECK-SAME: (%b, 4, None, (), None)
 
         # CHECK-NEXT: %mma_0_0_0
-        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0)
+        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0, None)
         # CHECK-NEXT: %mma_0_0_1
-        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
+        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0, None)
         # CHECK-NEXT: %mma_1_1_0
-        # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_1_1_0)
+        # CHECK-SAME: (%read_1_0_0, %read_0_1_0, %acc_1_1_0, None)
         # CHECK-NEXT: %mma_1_1_1
-        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_1_1_0)
+        # CHECK-SAME: (%read_1_0_1, %read_0_1_1, %mma_1_1_0, None)
         # CHECK-NEXT: %mma_1_0_0
-        # CHECK-SAME: (%read_1_0_0, %read_0_0_0, %acc_1_0_0)
+        # CHECK-SAME: (%read_1_0_0, %read_0_0_0, %acc_1_0_0, None)
         # CHECK-NEXT: %mma_1_0_1
-        # CHECK-SAME: (%read_1_0_1, %read_0_0_1, %mma_1_0_0)
+        # CHECK-SAME: (%read_1_0_1, %read_0_0_1, %mma_1_0_0, None)
         # CHECK-NEXT: %mma_0_1_0
-        # CHECK-SAME: (%read_0_0_0, %read_0_1_0, %acc_0_1_0)
+        # CHECK-SAME: (%read_0_0_0, %read_0_1_0, %acc_0_1_0, None)
         # CHECK-NEXT: %mma_0_1_1
-        # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0)
+        # CHECK-SAME: (%read_0_0_1, %read_0_1_1, %mma_0_1_0, None)
         # CHECK-NEXT: return [mma_0_0_1, mma_0_1_1, mma_1_0_1, mma_1_1_1]
 
         # Custom format:
@@ -610,21 +610,21 @@ def test_gemm_non_direct_acc():
         # CHECK: %add_0_1_0
         # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_0_0_0, %acc_0_1_0), kwargs = {})
         # CHECK: %mma_0_0_0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_0_0_0, %read_0_0_0, %add_0_0_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_0_0_0, %read_0_0_0, %add_0_0_0, None), kwargs = {})
         # CHECK: %mma_0_0_1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_0_0_1, %read_0_0_1, %mma_0_0_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_0_0_1, %read_0_0_1, %mma_0_0_0, None), kwargs = {})
         # CHECK: %mma_1_1_0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_1_0_0, %read_0_1_0, %add_1_1_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_1_0_0, %read_0_1_0, %add_1_1_0, None), kwargs = {})
         # CHECK: %mma_1_1_1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_1_0_1, %read_0_1_1, %mma_1_1_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_1_0_1, %read_0_1_1, %mma_1_1_0, None), kwargs = {})
         # CHECK: %mma_1_0_0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_1_0_0, %read_0_0_0, %add_1_0_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_1_0_0, %read_0_0_0, %add_1_0_0, None), kwargs = {})
         # CHECK: %mma_1_0_1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_1_0_1, %read_0_0_1, %mma_1_0_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_1_0_1, %read_0_0_1, %mma_1_0_0, None), kwargs = {})
         # CHECK: %mma_0_1_0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_0_0_0, %read_0_1_0, %add_0_1_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_0_0_0, %read_0_1_0, %add_0_1_0, None), kwargs = {})
         # CHECK: %mma_0_1_1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_0_0_1, %read_0_1_1, %mma_0_1_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_0_0_1, %read_0_1_1, %mma_0_1_0, None), kwargs = {})
 
 
 @tkw.wave_trace_only()
@@ -739,9 +739,9 @@ def test_gemm_reduction_expansion_only():
         # CHECK-SAME: (%b, 4, None, (), None)
 
         # CHECK-NEXT: %mma_0_0_0
-        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0)
+        # CHECK-SAME: (%read_0_0_0, %read_0_0_0, %acc_0_0_0, None)
         # CHECK-NEXT: %mma_0_0_1
-        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0)
+        # CHECK-SAME: (%read_0_0_1, %read_0_0_1, %mma_0_0_0, None)
 
         # CHECK-NEXT: return [mma_0_0_1]
 
@@ -932,13 +932,13 @@ def test_chained_gemm_32x32x8():
         # CHECK: %read_shared_0_0_3
         # CHECK-SAME: (args = (%k, 4, None, (), None)
         # CHECK: %mma_0_0_0
-        # CHECK-SAME: (args = (%read_shared_0_0_0, %read_0_0_0, %register)
+        # CHECK-SAME: (args = (%read_shared_0_0_0, %read_0_0_0, %register, None)
         # CHECK: %mma_0_0_1
-        # CHECK-SAME: (args = (%read_shared_0_0_1, %read_0_0_1, %mma_0_0_0)
+        # CHECK-SAME: (args = (%read_shared_0_0_1, %read_0_0_1, %mma_0_0_0, None)
         # CHECK: %mma_0_0_2
-        # CHECK-SAME: (args = (%read_shared_0_0_2, %read_0_0_2, %mma_0_0_1)
+        # CHECK-SAME: (args = (%read_shared_0_0_2, %read_0_0_2, %mma_0_0_1, None)
         # CHECK: %mma_0_0_3
-        # CHECK-SAME: (args = (%read_shared_0_0_3, %read_0_0_3, %mma_0_0_2)
+        # CHECK-SAME: (args = (%read_shared_0_0_3, %read_0_0_3, %mma_0_0_2, None)
         # CHECK: %permute_0_0
         # CHECK-SAME: (args = (%mma_0_0_3, [B, M, K2])
         # CHECK: %cast_0_0
@@ -961,13 +961,13 @@ def test_chained_gemm_32x32x8():
         # CHECK: %reshape_0_0_3
         # CHECK-SAME: (args = ([%cast_0_0], {K2: 32, M: 32, K1: 8, B: 0})
         # CHECK: %mma_0_0_0
-        # CHECK-SAME: (args = (%reshape_0_0_0, %read_shared_0_0_0, %acc_0_0_0)
+        # CHECK-SAME: (args = (%reshape_0_0_0, %read_shared_0_0_0, %acc_0_0_0, None)
         # CHECK: %mma_0_0_1
-        # CHECK-SAME: (args = (%reshape_0_0_1, %read_shared_0_0_1, %mma_0_0_0)
+        # CHECK-SAME: (args = (%reshape_0_0_1, %read_shared_0_0_1, %mma_0_0_0, None)
         # CHECK: %mma_0_0_2
-        # CHECK-SAME: (args = (%reshape_0_0_2, %read_shared_0_0_2, %mma_0_0_1)
+        # CHECK-SAME: (args = (%reshape_0_0_2, %read_shared_0_0_2, %mma_0_0_1, None)
         # CHECK: %mma_0_0_3
-        # CHECK-SAME: (args = (%reshape_0_0_3, %read_shared_0_0_3, %mma_0_0_2)
+        # CHECK-SAME: (args = (%reshape_0_0_3, %read_shared_0_0_3, %mma_0_0_2, None)
         # CHECK: return [mma_0_0_3]
 
 

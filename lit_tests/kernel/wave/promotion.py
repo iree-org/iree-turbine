@@ -207,7 +207,7 @@ def test_gemm():
         # CHECK-NEXT: %read_3
         # CHECK-SAME: (%allocate_1, 4, None, (), [%write_1])
         # CHECK-NEXT: %mma
-        # CHECK-SAME: (%read_2, %read_3, %acc)
+        # CHECK-SAME: (%read_2, %read_3, %acc, None)
 
 
 if __name__ == "__main__":

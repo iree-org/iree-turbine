@@ -120,7 +120,7 @@ def test_gemm_pipelined():
         # CHECK-NEXT: %rotating_reg_5
         # CHECK-NEXT: %rotating_reg_6
         # CHECK-NEXT: %mma_1_1_1
-        # CHECK-SAME: (%rotating_reg_1, %rotating_reg_4, %rotating_reg_6)
+        # CHECK-SAME: (%rotating_reg_1, %rotating_reg_4, %rotating_reg_6, None)
         # CHECK-NEXT: %read_shared_0_0_0
         # CHECK-NEXT: %read_shared_0_0_1
         # CHECK-NEXT: %read_4
@@ -130,29 +130,29 @@ def test_gemm_pipelined():
         # CHECK-NEXT: %read_shared_1_0_0
         # CHECK-NEXT: %read_shared_1_0_1
         # CHECK-NEXT: %mma_0_0_0
-        # CHECK-SAME: (%read_shared_0_0_0, %read_shared_0_0_1, %acc_0_0_0)
+        # CHECK-SAME: (%read_shared_0_0_0, %read_shared_0_0_1, %acc_0_0_0, None)
         # CHECK-NEXT: %mma_0_1_0
-        # CHECK-SAME: (%read_shared_0_0_0, %rotating_reg_3, %acc_0_1_0)
+        # CHECK-SAME: (%read_shared_0_0_0, %rotating_reg_3, %acc_0_1_0, None)
         # CHECK-NEXT: %scheduling_group_barrier
         # CHECK-SAME: ({Operation.READ_SHARED: 2, Operation.MMA: 2}, 0)
         # CHECK-NEXT: %mma_0_0_1
-        # CHECK-SAME: (%rotating_reg_0, %rotating_reg_2, %mma_0_0_0)
+        # CHECK-SAME: (%rotating_reg_0, %rotating_reg_2, %mma_0_0_0, None)
         # CHECK-NEXT: %mma_1_0_0
-        # CHECK-SAME: (%read_shared_1_0_0, %read_shared_0_0_1, %acc_1_0_0)
+        # CHECK-SAME: (%read_shared_1_0_0, %read_shared_0_0_1, %acc_1_0_0, None)
         # CHECK-NEXT: %write_2
         # CHECK-NEXT: %write_3
         # CHECK-NEXT: %scheduling_group_barrier
         # CHECK-SAME: ({Operation.MMA: 2, Operation.WRITE_SHARED: 2}, 0)
         # CHECK-NEXT: %mma_1_0_1
-        # CHECK-SAME: (%read_shared_1_0_1, %rotating_reg_2, %mma_1_0_0)
+        # CHECK-SAME: (%read_shared_1_0_1, %rotating_reg_2, %mma_1_0_0, None)
         # CHECK-NEXT: %mma_0_1_1
-        # CHECK-SAME: (%rotating_reg_0, %rotating_reg_5, %mma_0_1_0)
+        # CHECK-SAME: (%rotating_reg_0, %rotating_reg_5, %mma_0_1_0, None)
         # CHECK-NEXT: %read_shared_0_1_0
         # CHECK-NEXT: %read_shared_0_1_1
         # CHECK-NEXT: %scheduling_group_barrier
         # CHECK-SAME: ({Operation.MMA: 2, Operation.READ_SHARED: 2}, 0)
         # CHECK-NEXT: %mma_1_1_0
-        # CHECK-SAME: (%read_shared_1_0_0, %rotating_reg_3, %mma_1_1_1)
+        # CHECK-SAME: (%read_shared_1_0_0, %rotating_reg_3, %mma_1_1_1, None)
         # CHECK-NEXT: %read_shared_0_0_2
         # CHECK-NEXT: %read_shared_0_0_3
         # CHECK-NEXT: %scheduling_group_barrier
@@ -184,23 +184,23 @@ def test_gemm_pipelined():
         # CHECK-NEXT: %read_shared_1_0_0
         # CHECK-NEXT: %read_shared_1_0_1
         # CHECK-NEXT: %mma_0_0_0
-        # CHECK-SAME: (%read_shared_0_0_0, %read_shared_0_0_3, %register_0_0_0)
+        # CHECK-SAME: (%read_shared_0_0_0, %read_shared_0_0_3, %register_0_0_0, None)
         # CHECK-NEXT: %mma_0_1_0
-        # CHECK-SAME: (%read_shared_0_0_0, %read_shared_0_1_0, %register_0_1_0)
+        # CHECK-SAME: (%read_shared_0_0_0, %read_shared_0_1_0, %register_0_1_0, None)
         # CHECK-NEXT: %mma_0_0_1
-        # CHECK-SAME: (%read_shared_0_0_1, %read_shared_0_0_2, %mma_0_0_0)
+        # CHECK-SAME: (%read_shared_0_0_1, %read_shared_0_0_2, %mma_0_0_0, None)
         # CHECK-NEXT: %mma_1_0_0
-        # CHECK-SAME: (%read_shared_1_0_0, %read_shared_0_0_3, %register_1_0_0)
+        # CHECK-SAME: (%read_shared_1_0_0, %read_shared_0_0_3, %register_1_0_0, None)
         # CHECK-NEXT: %write_4
         # CHECK-NEXT: %write_5
         # CHECK-NEXT: %mma_1_0_1
-        # CHECK-SAME: (%read_shared_1_0_1, %read_shared_0_0_2, %mma_1_0_0)
+        # CHECK-SAME: (%read_shared_1_0_1, %read_shared_0_0_2, %mma_1_0_0, None)
         # CHECK-NEXT: %mma_0_1_1
-        # CHECK-SAME: (%read_shared_0_0_1, %read_shared_0_1_1, %mma_0_1_0)
+        # CHECK-SAME: (%read_shared_0_0_1, %read_shared_0_1_1, %mma_0_1_0, None)
         # CHECK-NEXT: %read_shared_0_1_2
         # CHECK-NEXT: %read_shared_0_1_3
         # CHECK-NEXT: %mma_1_1_0
-        # CHECK-SAME: (%read_shared_1_0_0, %read_shared_0_1_0, %register_1_1_0)
+        # CHECK-SAME: (%read_shared_1_0_0, %read_shared_0_1_0, %register_1_1_0, None)
         # CHECK-NEXT: %read_shared_0_0_4
         # CHECK-NEXT: %read_shared_0_0_5
         # CHECK-NEXT: %reduction_1
@@ -216,27 +216,27 @@ def test_gemm_pipelined():
         # CHECK-NEXT: %get_result_9
         # CHECK-NEXT: %get_result_10
         # CHECK-NEXT: %mma_1_1_1
-        # CHECK-SAME: (%get_result_5, %get_result_8, %get_result_10)
+        # CHECK-SAME: (%get_result_5, %get_result_8, %get_result_10, None)
         # CHECK-NEXT: %read_shared_0_0_6
         # CHECK-NEXT: %read_shared_0_0_7
         # CHECK-NEXT: %read_shared_1_0_2
         # CHECK-NEXT: %read_shared_1_0_3
         # CHECK-NEXT: %mma_0_0_2
-        # CHECK-SAME: (%read_shared_0_0_6, %read_shared_0_0_7, %getresult_0_0_0)
+        # CHECK-SAME: (%read_shared_0_0_6, %read_shared_0_0_7, %getresult_0_0_0, None)
         # CHECK-NEXT: %mma_0_1_2
-        # CHECK-SAME: (%read_shared_0_0_6, %get_result_7, %getresult_0_1_0)
+        # CHECK-SAME: (%read_shared_0_0_6, %get_result_7, %getresult_0_1_0, None)
         # CHECK-NEXT: %mma_0_0_3
-        # CHECK-SAME: (%get_result_4, %get_result_6, %mma_0_0_2)
+        # CHECK-SAME: (%get_result_4, %get_result_6, %mma_0_0_2, None)
         # CHECK-NEXT: %mma_1_0_2
-        # CHECK-SAME: (%read_shared_1_0_2, %read_shared_0_0_7, %getresult_1_0_0)
+        # CHECK-SAME: (%read_shared_1_0_2, %read_shared_0_0_7, %getresult_1_0_0, None)
         # CHECK-NEXT: %mma_1_0_3
-        # CHECK-SAME: (%read_shared_1_0_3, %get_result_6, %mma_1_0_2)
+        # CHECK-SAME: (%read_shared_1_0_3, %get_result_6, %mma_1_0_2, None)
         # CHECK-NEXT: %mma_0_1_3
-        # CHECK-SAME: (%get_result_4, %get_result_9, %mma_0_1_2)
+        # CHECK-SAME: (%get_result_4, %get_result_9, %mma_0_1_2, None)
         # CHECK-NEXT: %mma_1_1_2
-        # CHECK-SAME: (%read_shared_1_0_2, %get_result_7, %mma_1_1_1)
+        # CHECK-SAME: (%read_shared_1_0_2, %get_result_7, %mma_1_1_1, None)
         # CHECK-NEXT: %mma_1_1_3
-        # CHECK-SAME: (%read_shared_1_0_3, %get_result_9, %mma_1_1_2)
+        # CHECK-SAME: (%read_shared_1_0_3, %get_result_9, %mma_1_1_2, None)
         # CHECK-NEXT: %write_0_0_0
         # CHECK-NEXT: %write_1_1_0
         # CHECK-NEXT: %write_1_0_0
