@@ -6,7 +6,7 @@
 
 import itertools
 import torch.fx as fx
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, Sequence, Type, Callable
 from functools import partial
 
 from .constraints import (
@@ -15,8 +15,23 @@ from .constraints import (
     WorkgroupConstraint,
     TilingConstraint,
 )
-from ..ops.wave_ops import *
-from .._support.indexing import IndexingContext, IndexSequence
+from ..ops.wave_ops import (
+    Allocate,
+    CustomOp,
+    GetResult,
+    Getitem,
+    IterArg,
+    MMA,
+    Output,
+    Placeholder,
+    Read,
+    ReduceOp,
+    Reduction,
+    Reshape,
+    Write,
+    get_custom,
+)
+from .._support.indexing import IndexingContext, IndexSymbol
 from ...support.logging import get_logger
 from .._support.tracing import CapturedTrace
 from .utils import (
@@ -440,7 +455,7 @@ def _expand_mma_reduction(
     for dim in mma.indexing_dims:
         if dim not in dim_scaling and mma.vector_shapes[dim] > 0:
             tile_size = idxc.get_static_value(dim)
-            dim_scaling[dim] = tile_size // mma.vector_shapes[dim]
+            dim_scaling[dim] = max(tile_size // mma.vector_shapes[dim], 1)
 
     # Store the original mma node and accumulator value for expansion.
     # When we begin expansion, we have a single mma node with the correct accumulator.

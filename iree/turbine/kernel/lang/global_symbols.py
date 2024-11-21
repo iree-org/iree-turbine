@@ -10,6 +10,8 @@ SHARED_ADDRESS_SPACE = index_symbol("$SHARED_ADDRESS_SPACE")
 WORKGROUP_0 = index_symbol("$WG0")
 WORKGROUP_1 = index_symbol("$WG1")
 WORKGROUP_2 = index_symbol("$WG2")
+WORKGROUP_3 = index_symbol("$WG3")
+WORKGROUP_4 = index_symbol("$WG4")
 
 THREAD_0 = index_symbol("$T0")
 THREAD_1 = index_symbol("$T1")
