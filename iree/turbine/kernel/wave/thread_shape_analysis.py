@@ -25,17 +25,14 @@ class DimIndex:
 
     @property
     def size(self) -> IndexExpr:
-        if isinstance(self.seq, int):
-            return self.seq
-        return subs_idxc(self.seq).size
+        return self.seq.size
 
     def __hash__(self):
         return hash((self.dim, self.seq))
 
 
 def process_seq(seq):
-    return seq
-    return IndexSequence(seq.start, seq.size, 1)
+    return subs_idxc(seq)
 
 
 def get_dim_indices(indices: list[IndexSequence]):
