@@ -45,7 +45,9 @@ default_test_shapes["test_attention"] = [
     (8, 128, 128, 64, 256),
     (40, 1024, 64, 64, 1024),
 ]
-default_test_shapes["test_attention"] += [perf_test(x) for x in default_test_shapes]
+default_test_shapes["test_attention"] += [
+    perf_test(x) for x in default_test_shapes["test_attention"]
+]
 
 
 user_specified_test_shapes = ""
