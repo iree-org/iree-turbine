@@ -197,7 +197,7 @@ def determine_thread_shapes(trace: CapturedTrace):
                 bwd_slice = capture_backward_slice(custom.init, propagatable_op)
             reduce_dims = frozenset(
                 [
-                    DimIndex(dim, IndexSequence(seq.start, 1, 1))
+                    DimIndex(dim, process_seq(IndexSequence(seq.start, 1, 1)))
                     for dim, seq in custom.index.items()
                     if dim != custom.dim
                 ]
