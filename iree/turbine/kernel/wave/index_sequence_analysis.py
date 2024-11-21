@@ -37,6 +37,8 @@ from functools import partial
 from typing import Sequence
 from ...support.logging import get_logger
 import sympy
+from itertools import groupby
+from operator import itemgetter
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -177,24 +179,25 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         gpr_offsets = [
             gpr_offset_expr.subs({GPR_NUM: i}) for i in range(elements_per_thread)
         ]
-        gpr_steps = [x - y for x, y in zip(gpr_offsets[1:], gpr_offsets[:-1])]
 
-        # Compute size of chunks by detecting Reads/Writes that has non-contiguous GPR Read/Writes.
-        # This is done by finding the boundaries of contiguous reads.
-        gpr_chunk_boundaries = [
-            i for i, step_size in enumerate(gpr_steps) if step_size != 1
+        # Cluster contiguous indices of reads/writes
+        # e.g given indices  [0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27]
+        # Will cluster to:  [[0, 1, 2, 3], [8, 9, 10, 11], [16, 17, 18, 19], [24, 25, 26, 27]]
+        gpr_relative_offsets = [x - gpr_offsets[0] for x in gpr_offsets]
+        gpr_chunks = [
+            list(map(itemgetter(1), g))
+            for _, g in groupby(enumerate(gpr_relative_offsets), lambda x: x[0] - x[1])
         ]
-        gpr_chunk_boundaries.append(elements_per_thread - 1)
-        gpr_sizes = [
-            x - y for x, y in zip(gpr_chunk_boundaries[1:], gpr_chunk_boundaries[:-1])
-        ]
+
+        # Compute number of GPR chunks.
+        num_gpr_chunks = len(gpr_chunks)
+
+        # Compute size of each chunk and ensure they are the same size.
+        gpr_sizes = [len(gpr_chunk) for gpr_chunk in gpr_chunks]
         assert all_equal(
             gpr_sizes
         ), "Only support strided GPR offset with uniform sizes."
         gpr_size = gpr_sizes[0]
-
-        # Compute number of chunks by seeing number of contiguous boundaries.
-        num_gpr_chunks = len(gpr_chunk_boundaries)
 
         # Break apart Reads/Writes that has non-contiguous GPR Read/Writes.
         with custom.graph.inserting_before(operator):
