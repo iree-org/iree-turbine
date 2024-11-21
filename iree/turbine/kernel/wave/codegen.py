@@ -640,7 +640,7 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
 
-    strides = strides_from_symbolic_shape(idxc, symbolc_shape)
+    strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
     offsets = []
 
     start_indices = _get_start_indices(result_index)

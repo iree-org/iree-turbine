@@ -483,7 +483,7 @@ def test_dynamic_copy():
     # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
     # CHECK-DAG:        %[[THREAD_ID_X:.+]] = gpu.thread_id  x
     # CHECK-DAG:        %[[THREAD_ID_Y:.+]] = gpu.thread_id  y
-    # CHECK:            %[[D0]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<?x?xf16>{%[[ARG1]],
+    # CHECK:            %[[D0]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<?x?xf16, strided<[?, 1], offset: ?>>{%[[ARG1]],
     # CHECK-SAME:         %[[ARG2]]}
     # CHECK:            %[[D1]] = arith.muli %[[WORKGROUP_ID_0]], %[[C16]] overflow<nsw, nuw> : index
     # CHECK:            %[[D2:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
@@ -500,9 +500,9 @@ def test_dynamic_copy():
     # CHECK:            %[[D13:.+]] = arith.cmpi slt, %[[D5]], %[[ARG1]] : index
     # CHECK:            %[[D14:.+]] = vector.splat %[[D13]] : vector<16xi1>
     # CHECK:            %[[D15:.+]] = arith.andi %[[D12]], %[[D14]] : vector<16xi1>
-    # CHECK:            %[[D16:.+]] = vector.maskedload %[[D0]][%[[D5]], %[[D8]]], %[[D15]], %[[CST]] : memref<?x?xf16>,
+    # CHECK:            %[[D16:.+]] = vector.maskedload %[[D0]][%[[D5]], %[[D8]]], %[[D15]], %[[CST]] : memref<?x?xf16, strided<[?, 1], offset: ?>>,
     # CHECK-SAME:         vector<16xi1>, vector<16xf16> into vector<16xf16>
-    # CHECK:            vector.maskedstore %[[D0]][%[[D5]], %[[D8]]], %[[D15]], %[[D16]] : memref<?x?xf16>, vector<16xi1>,
+    # CHECK:            vector.maskedstore %[[D0]][%[[D5]], %[[D8]]], %[[D15]], %[[D16]] : memref<?x?xf16, strided<[?, 1], offset: ?>>, vector<16xi1>,
     # CHECK-SAME:         vector<16xf16>
     # CHECK:            return
 
