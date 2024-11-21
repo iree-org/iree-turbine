@@ -502,7 +502,6 @@ def compile_and_invoke(
     run: bool = False,
     run_bench: bool = False,
     inplace: bool = False,
-    pass_outputs_to_kernel: bool = True,
 ):
     backend = config["backend"]
     device = config["device"]
@@ -595,9 +594,7 @@ def compile_and_invoke(
         bench_with_constant_weights = config.get("bench_with_constant_weights", False)
         tempfiles = []
         inputs = []
-        all_inputs = (
-            kernel_inputs + kernel_outputs if pass_outputs_to_kernel else kernel_inputs
-        )
+        all_inputs = kernel_inputs + kernel_outputs if inplace else kernel_inputs
         if bench_with_constant_weights:
             for inp in all_inputs:
                 if isinstance(inp, torch.Tensor):
