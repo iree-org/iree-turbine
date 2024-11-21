@@ -594,20 +594,31 @@ def compile_and_invoke(
         bench_with_constant_weights = config.get("bench_with_constant_weights", False)
         tempfiles = []
         inputs = []
+        all_inputs = kernel_inputs + kernel_outputs if inplace else kernel_inputs
         if bench_with_constant_weights:
-            for inp in kernel_inputs:
-                inputs.append(
-                    "x".join(
-                        [str(x) for x in inp.shape]
-                        + [TORCH_DTYPE_TO_SIGNED_MLIR_TYPE_ASM[inp.dtype]]
+            for inp in all_inputs:
+                if isinstance(inp, torch.Tensor):
+                    inputs.append(
+                        "x".join(
+                            [str(x) for x in inp.shape]
+                            + [TORCH_DTYPE_TO_SIGNED_MLIR_TYPE_ASM[inp.dtype]]
+                        )
                     )
-                )
+                elif isinstance(inp, int):
+                    inputs.append(f"1xi32={inp}")
+                else:
+                    raise NotImplementedError("Unsupported input type.")
         else:
-            for inp in kernel_inputs:
-                tf = tempfile.NamedTemporaryFile(suffix=".npy")
-                numpy.save(tf, inp.numpy())
-                tempfiles.append(tf)
-                inputs.append("@" + tf.name)
+            for inp in all_inputs:
+                if isinstance(inp, torch.Tensor):
+                    tf = tempfile.NamedTemporaryFile(suffix=".npy")
+                    numpy.save(tf, inp.cpu().numpy())
+                    tempfiles.append(tf)
+                    inputs.append("@" + tf.name)
+                elif isinstance(inp, int):
+                    inputs.append(f"1xi32={inp}")
+                else:
+                    raise NotImplementedError("Unsupported input type.")
 
         benchmark_results = bench.benchmark_module(
             mod,

@@ -49,7 +49,9 @@ default_test_shapes["test_gemm"] = [
     (2048, 10240, 1280),
     (4096, 20480, 2560),
 ]
-default_test_shapes["test_gemm"] += [perf_test(x) for x in default_test_shapes]
+default_test_shapes["test_gemm"] += [
+    perf_test(x) for x in default_test_shapes["test_gemm"]
+]
 default_test_shapes["test_batched_gemm"] = [(8, 256, 128, 192), (32, 1024, 512, 768)]
 
 

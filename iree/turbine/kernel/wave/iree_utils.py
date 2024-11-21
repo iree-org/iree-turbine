@@ -208,4 +208,5 @@ def generate_iree_ref(
         kernel_outputs,
         run=True,
         run_bench=kwargs.get("run_bench", False),
+        inplace=False,
     )
