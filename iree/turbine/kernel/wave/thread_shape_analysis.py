@@ -19,26 +19,35 @@ logger = get_logger("turbine.wave.thread_shape_analysis")
 
 
 @dataclass(order=True)
-class DimSize:
+class DimIndex:
     dim: IndexSymbol
-    size: int
+    seq: IndexSequence
+
+    @property
+    def size(self) -> IndexExpr:
+        if isinstance(self.seq, int):
+            return self.seq
+        return subs_idxc(self.seq).size
 
     def __hash__(self):
-        return hash((self.dim, self.size))
+        return hash((self.dim, self.seq))
 
 
-def get_dim_sizes(indices: list[IndexSequence]):
-    dims = frozenset(
-        [DimSize(dim, subs_idxc(seq.size)) for dim, seq in indices.items()]
-    )
+def process_seq(seq):
+    return seq
+    return IndexSequence(seq.start, seq.size, 1)
+
+
+def get_dim_indices(indices: list[IndexSequence]):
+    dims = frozenset([DimIndex(dim, process_seq(seq)) for dim, seq in indices.items()])
     return dims
 
 
-def get_custom_dim_sizes(custom: CustomOp):
-    return get_dim_sizes(custom.index)
+def get_custom_dim_indices(custom: CustomOp):
+    return get_dim_indices(custom.index)
 
 
-def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
+def set_custom_index(custom: CustomOp, target_dim_sizes: list[DimIndex]):
     for target in target_dim_sizes:
         if target.dim not in custom.index:
             raise NotImplementedError(
@@ -145,7 +154,7 @@ def determine_thread_shapes(trace: CapturedTrace):
     thread_shape in it's indexSequence.
 
     `thread_shapes` is used to store thread_size at every dimension that the op
-    cares about. We use a frozenset[DimSize] to represent it, where  DimSize
+    cares about. We use a frozenset[DimIndex] to represent it, where  DimIndex
     is essentially a pair<dimension: IndexSymbol, thread_size: int>. we are using
     frozen_set since we do not care about the order of dims for the shape/size
     propagation.
@@ -171,10 +180,10 @@ def determine_thread_shapes(trace: CapturedTrace):
 
     """
     anchor_ops = trace.walk(is_anchor_op)
-    thread_size_to_ops: dict[frozenset[DimSize], set[CustomOp]] = {}
+    thread_size_to_ops: dict[frozenset[DimIndex], set[CustomOp]] = {}
     for anchor_op in anchor_ops:
         custom = get_custom(anchor_op)
-        index_sizes = get_custom_dim_sizes(custom)
+        index_sizes = get_custom_dim_indices(custom)
         if isinstance(custom, Read):
             fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
             thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
@@ -188,7 +197,11 @@ def determine_thread_shapes(trace: CapturedTrace):
             ):
                 bwd_slice = capture_backward_slice(custom.init, propagatable_op)
             reduce_dims = frozenset(
-                [DimSize(dim, 1) for dim in custom.index.keys() if dim != custom.dim]
+                [
+                    DimIndex(dim, seq)
+                    for dim, seq in custom.index.items()
+                    if dim != custom.dim
+                ]
             )
             thread_size_to_ops[reduce_dims] = (
                 thread_size_to_ops.get(reduce_dims, set([]))
@@ -212,9 +225,9 @@ def determine_thread_shapes(trace: CapturedTrace):
                 acc_slice = acc_slice.union(
                     capture_backward_slice(custom.acc, propagatable_op)
                 )
-            acc_index = get_dim_sizes(custom.acc_index)
-            lhs_index = get_dim_sizes(custom.lhs_index)
-            rhs_index = get_dim_sizes(custom.rhs_index)
+            acc_index = get_dim_indices(custom.acc_index)
+            lhs_index = get_dim_indices(custom.lhs_index)
+            rhs_index = get_dim_indices(custom.rhs_index)
             thread_size_to_ops[acc_index] = thread_size_to_ops.get(
                 acc_index, set([])
             ).union(acc_slice)
@@ -228,7 +241,7 @@ def determine_thread_shapes(trace: CapturedTrace):
             # The reshape op acts like a barrier for the MMA preventing
             # the mma from propagating the thread shapes of its reshaped
             # operands backwards.
-            bwd_size = get_dim_sizes(custom.args.index)
+            bwd_size = get_dim_indices(custom.args.index)
             bwd_slice = capture_backward_slice(custom.args, propagatable_op)
             thread_size_to_ops[bwd_size] = thread_size_to_ops.get(
                 bwd_size, set([])
@@ -241,10 +254,17 @@ def determine_thread_shapes(trace: CapturedTrace):
         if not cummulative_set.isdisjoint(target_ops):
             conflicted_ops = cummulative_set.intersection(target_ops)
             if handle_conflicts(conflicted_ops) == False:
-                raise NotImplementedError("Failed to handle conflicting thread shape.")
+                offenders = tuple(
+                    (ops, dim)
+                    for dim, ops in thread_size_to_ops.items()
+                    if not conflicted_ops.isdisjoint(ops)
+                )
+                raise NotImplementedError(
+                    f"Failed to handle conflicting thread shape: {conflicted_ops}, {offenders}"
+                )
             target_ops = target_ops.difference(conflicted_ops)
         cummulative_set = cummulative_set.union(target_ops)
         # Set target ops's indexSize to be the determined from analysis.
         for user in target_ops:
             custom_user = get_custom(user)
-            set_index_size(custom_user, target_index_size)
+            set_custom_index(custom_user, target_index_size)
