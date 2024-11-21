@@ -60,7 +60,7 @@ def set_custom_index(custom: CustomOp, target_dim_sizes: list[DimIndex]):
 # Anchor Indicies and Conflict resolution helpers
 #################################################################
 
-anchorOpTypes = (Read, Write, MMA, ReduceOp, Reshape)
+anchorOpTypes = (Read, Write, MMA, ReduceOp, Reshape, Permute)
 noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate)
 legalSubtypes = (IterArg,)
 nonPropagatableTypes = anchorOpTypes + noHandleTypes
@@ -181,14 +181,16 @@ def determine_thread_shapes(trace: CapturedTrace):
     """
     anchor_ops = trace.walk(is_anchor_op)
     thread_size_to_ops: dict[frozenset[DimIndex], set[CustomOp]] = {}
+
+    def update_dims(index: frozenset[DimIndex], ops: set[CustomOp]):
+        thread_size_to_ops[index] = thread_size_to_ops.get(index, set([])).union(ops)
+
     for anchor_op in anchor_ops:
         custom = get_custom(anchor_op)
         index_sizes = get_custom_dim_indices(custom)
         if isinstance(custom, Read):
             fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
-            thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
-                index_sizes, set([])
-            ).union(fwd_slice)
+            update_dims(index_sizes, fwd_slice)
         elif isinstance(custom, ReduceOp):
             fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
             bwd_slice = set()
@@ -198,21 +200,17 @@ def determine_thread_shapes(trace: CapturedTrace):
                 bwd_slice = capture_backward_slice(custom.init, propagatable_op)
             reduce_dims = frozenset(
                 [
-                    DimIndex(dim, seq)
+                    DimIndex(dim, IndexSequence(seq.start, 1, 1))
                     for dim, seq in custom.index.items()
                     if dim != custom.dim
                 ]
             )
-            thread_size_to_ops[reduce_dims] = (
-                thread_size_to_ops.get(reduce_dims, set([]))
-                .union(fwd_slice)
-                .union(bwd_slice)
-            )
+
+            update_dims(reduce_dims, fwd_slice)
+            update_dims(reduce_dims, bwd_slice)
         elif isinstance(custom, Write):
             bwd_slice = capture_backward_slice(custom.fx_node, propagatable_op)
-            thread_size_to_ops[index_sizes] = thread_size_to_ops.get(
-                index_sizes, set([])
-            ).union(bwd_slice)
+            update_dims(index_sizes, bwd_slice)
         elif isinstance(custom, MMA):
             lhs_bwd_slice = set([custom.lhs])
             if propagatable_op(custom.lhs):
@@ -228,24 +226,16 @@ def determine_thread_shapes(trace: CapturedTrace):
             acc_index = get_dim_indices(custom.acc_index)
             lhs_index = get_dim_indices(custom.lhs_index)
             rhs_index = get_dim_indices(custom.rhs_index)
-            thread_size_to_ops[acc_index] = thread_size_to_ops.get(
-                acc_index, set([])
-            ).union(acc_slice)
-            thread_size_to_ops[lhs_index] = thread_size_to_ops.get(
-                lhs_index, set([])
-            ).union(lhs_bwd_slice)
-            thread_size_to_ops[rhs_index] = thread_size_to_ops.get(
-                rhs_index, set([])
-            ).union(rhs_bwd_slice)
+            update_dims(acc_index, acc_slice)
+            update_dims(lhs_index, lhs_bwd_slice)
+            update_dims(rhs_index, rhs_bwd_slice)
         elif isinstance(custom, Reshape):
             # The reshape op acts like a barrier for the MMA preventing
             # the mma from propagating the thread shapes of its reshaped
             # operands backwards.
             bwd_size = get_dim_indices(custom.args.index)
             bwd_slice = capture_backward_slice(custom.args, propagatable_op)
-            thread_size_to_ops[bwd_size] = thread_size_to_ops.get(
-                bwd_size, set([])
-            ).union(bwd_slice)
+            update_dims(bwd_size, bwd_slice)
 
     # Go through each index-size buckets, and apply the index-size to ops in the bucket.
     cummulative_set = set()
