@@ -44,9 +44,9 @@ class ConstraintsTest(unittest.TestCase):
         # Checking invalid workgroup dimension
         with pytest.raises(
             ValueError,
-            match="Invalid workgroup dimension. Expected 0, 1 or 2.",
+            match="Invalid workgroup dimension. Expected 0, 1, 2, 3 or 4.",
         ):
-            WorkgroupConstraint(N, BLOCK_N, 3).apply()
+            WorkgroupConstraint(N, BLOCK_N, 100).apply()
 
     def testTilingConstraint(self):
         constraints: list[TilingConstraint] = [TilingConstraint(M, BLOCK_M)]

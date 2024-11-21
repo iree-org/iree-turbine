@@ -213,7 +213,9 @@ def remove_chained_extractslice(trace: CapturedTrace):
                 get_custom(node).graph.erase_node(src_extract.fx_node)
 
 
-def delinearize_index(index: IndexExpr, shape: list[int]) -> list[IndexExpr]:
+def delinearize_index(
+    index: IndexExpr, shape: list[int | IndexExpr]
+) -> list[IndexExpr]:
     """
     Delinearizes a 1D index into a multi-dimensional index
     based on the shapes provided. The returned array contains

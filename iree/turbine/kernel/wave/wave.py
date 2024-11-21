@@ -30,6 +30,7 @@ from .utils import (
     remove_chained_getresult,
     remove_chained_extractslice,
     subs_idxc,
+    delinearize_index,
 )
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
@@ -207,6 +208,23 @@ class LaunchableWave(Launchable):
                 if tiling_constraint.dim == get_custom(reduction).axis:
                     reduction.count = subs_idxc(tiling_constraint.count)
 
+    def initialize_workgroup_constraints(self, trace: CapturedTrace) -> None:
+        """
+        For kernels that distribute more than three dimensions among workgroups,
+        we need to update the workgroup constraints for dimensions >= 2
+        with the appropriate workgroup index.
+        """
+        workgroup_dims = {x.workgroup_dim: x for x in self.workgroup_constraints}
+        if all(x <= 2 for x in workgroup_dims.keys()):
+            return
+        shape = [
+            subs_idxc(workgroup_dims[i].count)
+            for i in range(2, max(workgroup_dims.keys()) + 1)
+        ]
+        new_workgroup_dims = delinearize_index(WORKGROUP_2, shape)
+        for i in range(2, max(workgroup_dims.keys()) + 1):
+            workgroup_dims[i].wg_dim = new_workgroup_dims[i - 2]
+
     def _trace_and_get_kernel_signature(
         self,
         args,
@@ -220,6 +238,7 @@ class LaunchableWave(Launchable):
         self.create_induction_vars(graph)
         self.initialize_wave_constraints(graph)
         self.initialize_reductions(graph)
+        self.initialize_workgroup_constraints(graph)
 
         idxc = IndexingContext.current()
         idxc.finalize()
@@ -287,10 +306,14 @@ class LaunchableWave(Launchable):
 
         # Determine grid shape.
         self.grid_type.dims = [1, 1, 1]
+        max_workgroup_dim = 2
         for constraint in self.workgroup_constraints:
-            self.grid_type.dims[constraint.workgroup_dim] = safe_subs(
-                constraint.count, idxc.subs
+            dim = (
+                constraint.workgroup_dim
+                if constraint.workgroup_dim < max_workgroup_dim
+                else max_workgroup_dim
             )
+            self.grid_type.dims[dim] *= safe_subs(constraint.count, idxc.subs)
         grid = self.grid_type
 
         root_graph = graph.get_root_graph()
