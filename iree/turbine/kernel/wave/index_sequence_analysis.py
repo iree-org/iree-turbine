@@ -23,6 +23,7 @@ from .._support.tracing import CapturedTrace, IndexingContext
 from .._support.indexing import IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 from .utils import (
+    all_equal,
     simplify_index,
     get_mma_dimensional_mapping,
     get_hardware_constraint,
@@ -169,67 +170,67 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         ]
         assert len(gpr_offsets) == 1, "Expected only 1-Dim has gpr offsets"
         gpr_offset_expr = gpr_offsets[0]
-        gpr_cur_base_offset = gpr_offset_expr.subs({GPR_NUM: 0})
-        cur_elem_id = 0
+        gpr_offsets = [
+            gpr_offset_expr.subs({GPR_NUM: i}) for i in range(elements_per_thread)
+        ]
+        gpr_steps = [x - y for x, y in zip(gpr_offsets[1:], gpr_offsets[:-1])]
+
+        # Compute size of chunks by detecting Reads/Writes that has non-contiguous GPR Read/Writes.
+        # This is done by finding the boundaries of contiguous reads.
+        gpr_chunk_boundaries = [
+            i for i, step_size in enumerate(gpr_steps) if step_size != 1
+        ]
+        gpr_chunk_boundaries.append(elements_per_thread - 1)
+        gpr_sizes = [
+            x - y for x, y in zip(gpr_chunk_boundaries[1:], gpr_chunk_boundaries[:-1])
+        ]
+        assert all_equal(
+            gpr_sizes
+        ), "Only support strided GPR offset with uniform sizes."
+        gpr_size = gpr_sizes[0]
+
+        # Compute number of chunks by seeing number of contiguous boundaries.
+        num_gpr_chunks = len(gpr_chunk_boundaries)
+
+        # Break apart Reads/Writes that has non-contiguous GPR Read/Writes.
         with custom.graph.inserting_before(operator):
             ops_to_combine = []
-            for i in range(elements_per_thread):
-                # Break apart Reads/Writes that has non-contiguous GPR Read/Writes.
-                next_gpr_offset = gpr_offset_expr.subs({GPR_NUM: i + 1})
-                cur_gpr_offset = gpr_offset_expr.subs({GPR_NUM: i})
-                gpr_offset_step = next_gpr_offset - cur_gpr_offset
-                if not gpr_offset_step.is_number:
-                    raise NotImplementedError(
-                        "Only constant integer GPR offset steps supported."
+            for chunk_id in range(num_gpr_chunks):
+                cur_gpr_start_id = chunk_id * gpr_size
+                # Get updated index with VGPR offset.
+                updated_index_with_gpr_offset = {
+                    dim: IndexSequence(
+                        simplified_index[dim].start.subs({GPR_NUM: cur_gpr_start_id}),
+                        gpr_size,
+                        simplified_index[dim].stride,
                     )
-                gpr_offset_step = int(gpr_offset_step)
+                    for dim in simplified_index
+                }
 
-                # Create new write when there is a jump in GPR offset
-                # or at the end of the loop.
-                if gpr_offset_step > 1 or i == elements_per_thread - 1:
-                    # Get VGPR number of elements.
-                    gpr_size = (cur_gpr_offset - gpr_cur_base_offset) + 1
-                    assert gpr_size.is_number, "Expected gpr_size to be int."
-                    gpr_size = int(gpr_size)
+                # Generate new Read/Write that has contiguous VGPR elements.
+                if isinstance(custom, Write):
+                    extract = ExtractSlice(
+                        custom.register_, [cur_gpr_start_id], [gpr_size], [1]
+                    ).add_to_graph(custom.graph)
+                    new_node = Write(
+                        extract,
+                        custom.memory,
+                        mapping=custom.mapping,
+                        elements_per_thread=gpr_size,
+                    ).add_to_graph(custom.graph)
+                elif isinstance(custom, Read):
+                    # TODO: Add support on how to handle strided reads.
+                    new_node = Read(
+                        custom.memory,
+                        elements_per_thread=gpr_size,
+                        mapping=custom.mapping,
+                        _write_dependency=custom._write_dependency,
+                    ).add_to_graph(custom.graph)
 
-                    # Get updated index with VGPR offset.
-                    updated_index_with_gpr_offset = {
-                        dim: IndexSequence(
-                            simplified_index[dim].start.subs({GPR_NUM: cur_elem_id}),
-                            gpr_size,
-                            simplified_index[dim].stride,
-                        )
-                        for dim in simplified_index
-                    }
-
-                    # Generate new Read/Write that has contiguous VGPR elements.
-                    if isinstance(custom, Write):
-                        extract = ExtractSlice(
-                            custom.register_, [cur_elem_id], [gpr_size], [1]
-                        ).add_to_graph(custom.graph)
-                        new_node = Write(
-                            extract,
-                            custom.memory,
-                            mapping=custom.mapping,
-                            elements_per_thread=gpr_size,
-                        ).add_to_graph(custom.graph)
-                    elif isinstance(custom, Read):
-                        # TODO: Add support on how to handle strided reads.
-                        new_node = Read(
-                            custom.memory,
-                            elements_per_thread=gpr_size,
-                            mapping=custom.mapping,
-                            _write_dependency=custom._write_dependency,
-                        ).add_to_graph(custom.graph)
-
-                    # Update new_node information
-                    new_node.index = updated_index_with_gpr_offset
-                    new_node.vector_shapes = custom.vector_shapes
-                    ops_to_combine.append(new_node)
-
-                    # Set new current base GPR offset
-                    gpr_cur_base_offset = next_gpr_offset
-                    cur_elem_id = i + 1
+                # Update new_node information
+                new_node.index = updated_index_with_gpr_offset
+                new_node.vector_shapes = custom.vector_shapes
+                ops_to_combine.append(new_node)
 
             # Update users of original op.
             if isinstance(custom, Write):
