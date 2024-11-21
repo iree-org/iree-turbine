@@ -1255,6 +1255,16 @@ class ExtractSlice(CustomOp):
     def type(self) -> "Register":
         return get_custom(self.register_).type
 
+    @property
+    def rank(self) -> int:
+        offset_rank = len(self.offset)
+        size_rank = len(self.size)
+        stride_rank = len(self.stride)
+        assert (
+            offset_rank == size_rank == stride_rank
+        ), "Expected offset, size, and stride to have same rank."
+        return size_rank
+
 
 @define_op("broadcast")
 @dataclass

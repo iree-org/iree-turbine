@@ -6,6 +6,7 @@
 
 from ..ops.wave_ops import (
     Allocate,
+    Read,
     Write,
     ExtractSlice,
     get_custom,
@@ -22,6 +23,7 @@ from .._support.tracing import CapturedTrace, IndexingContext
 from .._support.indexing import IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 from .utils import (
+    all_equal,
     simplify_index,
     get_mma_dimensional_mapping,
     get_hardware_constraint,
@@ -35,6 +37,8 @@ from functools import partial
 from typing import Sequence
 from ...support.logging import get_logger
 import sympy
+from itertools import groupby
+from operator import itemgetter
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -97,23 +101,15 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
             key=lambda item: item[1],
         )
+        ops_to_combine = []
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):
                 # Non-contiguous access patterns can have varying offsets. We
                 # handle that here.
-                gpr_offset = [
-                    expr
-                    for expr in simplified_index[max_stride_dim].start.args
-                    if expr.has(GPR_NUM)
-                ]
-                if not gpr_offset:
-                    gpr_offset = i
-                else:
-                    gpr_offset = sympy.Add(*gpr_offset).subs({GPR_NUM: i})
                 extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
                     custom.graph
                 )
-                offset = np.unravel_index(int(gpr_offset * max_stride), shape)
+                offset = np.unravel_index(int(i * max_stride), shape)
                 write = Write(
                     extract,
                     custom.memory,
@@ -126,8 +122,134 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                     )
                     for j, dim in enumerate(custom.register_type.symbolic_shape)
                 }
+                ops_to_combine.append(write)
 
+        # Useful to handle write/read dependency
+        custom.replace_all_uses_with(ops_to_combine)
         custom.graph.erase_node(operator)
+
+
+def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Constraint]):
+    """
+    This function analyzes the index sequence of reads and writes in a graph.
+    If the reads or writes have incontiguous offsets based on GPR_NUM, we'd
+    need to split these reads/writes appropriately.
+
+    e.g a vector<16xf16> may be owned by lane 0, and lane 16 in this layout:
+    [0, 0, 0, 0, 16, 16, 16, 16, 0, 0, 0, 0, 16, 16, 16, 16].
+
+    With our current glossary, this means we have 2 VGPR "chunks".
+    [0:4) and [8:12) for lane0, and [4:8) and [12:16) for lane16.
+    To the lane it should just look like vector<8xf16>.
+    Hence for this example, we'd need two reads of vector<4xf16> and a couple
+    insert_slices to combine them together into a single vector<8xf16>.
+
+    """
+
+    def has_gpr_offsets(node: fx.Node) -> bool:
+        """
+        Checks for writes on 2d tensors with strided access on a single dimension that
+        read more than a single element.
+        """
+        custom = get_custom(node)
+        if not isinstance(custom, (Read, Write)):
+            return False
+        num_dims_with_gpr = sum(
+            1 for v in custom.index.values() if v.start.has(GPR_NUM)
+        )
+        if num_dims_with_gpr == 1:
+            return True
+        elif num_dims_with_gpr == 0:
+            return False
+        raise NotImplementedError("Currently only handles 1 dim with GPR offset.")
+
+    strided_operators = trace.walk(has_gpr_offsets)
+    for operator in strided_operators:
+        custom = get_custom(operator)
+        simplified_index = {
+            dim: simplify_index(custom.index.get(dim, custom.index[dim]))
+            for dim in custom.index
+        }
+        elements_per_thread = subs_idxc(custom.elements_per_thread)
+        gpr_offsets = [
+            v.start for v in simplified_index.values() if v.start.has(GPR_NUM)
+        ]
+        assert len(gpr_offsets) == 1, "Expected only 1-Dim has gpr offsets"
+        gpr_offset_expr = gpr_offsets[0]
+        gpr_offsets = [
+            gpr_offset_expr.subs({GPR_NUM: i}) for i in range(elements_per_thread)
+        ]
+
+        # Cluster contiguous indices of reads/writes
+        # e.g given indices  [0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27]
+        # Will cluster to:  [[0, 1, 2, 3], [8, 9, 10, 11], [16, 17, 18, 19], [24, 25, 26, 27]]
+        gpr_relative_offsets = [x - gpr_offsets[0] for x in gpr_offsets]
+        gpr_chunks = [
+            list(map(itemgetter(1), g))
+            for _, g in groupby(enumerate(gpr_relative_offsets), lambda x: x[0] - x[1])
+        ]
+
+        # Compute number of GPR chunks.
+        num_gpr_chunks = len(gpr_chunks)
+
+        # Compute size of each chunk and ensure they are the same size.
+        gpr_sizes = [len(gpr_chunk) for gpr_chunk in gpr_chunks]
+        assert all_equal(
+            gpr_sizes
+        ), "Only support strided GPR offset with uniform sizes."
+        gpr_size = gpr_sizes[0]
+
+        # Break apart Reads/Writes that has non-contiguous GPR Read/Writes.
+        with custom.graph.inserting_before(operator):
+            ops_to_combine = []
+            for chunk_id in range(num_gpr_chunks):
+                cur_gpr_start_id = chunk_id * gpr_size
+                # Get updated index with VGPR offset.
+                updated_index_with_gpr_offset = {
+                    dim: IndexSequence(
+                        simplified_index[dim].start.subs({GPR_NUM: cur_gpr_start_id}),
+                        gpr_size,
+                        simplified_index[dim].stride,
+                    )
+                    for dim in simplified_index
+                }
+
+                # Generate new Read/Write that has contiguous VGPR elements.
+                if isinstance(custom, Write):
+                    extract = ExtractSlice(
+                        custom.register_, [cur_gpr_start_id], [gpr_size], [1]
+                    ).add_to_graph(custom.graph)
+                    extract.index = updated_index_with_gpr_offset
+                    new_node = Write(
+                        extract,
+                        custom.memory,
+                        mapping=custom.mapping,
+                        elements_per_thread=gpr_size,
+                    ).add_to_graph(custom.graph)
+                elif isinstance(custom, Read):
+                    # TODO: Add support on how to handle strided reads.
+                    new_node = Read(
+                        custom.memory,
+                        elements_per_thread=gpr_size,
+                        mapping=custom.mapping,
+                        _write_dependency=custom._write_dependency,
+                    ).add_to_graph(custom.graph)
+
+                # Update new_node information
+                new_node.index = updated_index_with_gpr_offset
+                new_node.vector_shapes = custom.vector_shapes
+                ops_to_combine.append(new_node)
+
+            # Update users of original op.
+            if isinstance(custom, Write):
+                # Useful to handle write/read dependency
+                custom.replace_all_uses_with(ops_to_combine)
+            elif isinstance(custom, Read):
+                reshape = Reshape(ops_to_combine, custom.vector_shapes).add_to_graph(
+                    custom.graph
+                )
+                custom.replace_all_uses_with(reshape)
+            custom.graph.erase_node(custom.fx_node)
 
 
 def preprocess_nodes(

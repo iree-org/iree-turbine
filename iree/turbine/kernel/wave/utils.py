@@ -24,6 +24,7 @@ from ..ops.wave_ops import (
     CustomOp,
     Reduction,
     GetResult,
+    ExtractSlice,
     IterArg,
     Reshape,
 )
@@ -185,6 +186,31 @@ def remove_chained_getresult(trace: CapturedTrace):
         for node in removable_nodes:
             get_custom(node).replace_all_uses_with(get_custom(node).value)
             get_custom(node).graph.erase_node(node)
+
+
+def remove_chained_extractslice(trace: CapturedTrace):
+    def is_chained_extractslice(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        if not isinstance(custom, ExtractSlice):
+            return False
+        register = get_custom(custom.register_)
+        if not isinstance(register, ExtractSlice):
+            return False
+        return custom.rank == register.rank
+
+    while removable_nodes := trace.walk(is_chained_extractslice):
+        for node in removable_nodes:
+            dst_extract = get_custom(node)
+            src_extract = get_custom(dst_extract.register_)
+            dst_extract.register_ = src_extract.register_
+            new_offset = [
+                dst_i + src_i
+                for dst_i, src_i in zip(dst_extract.offset, src_extract.offset)
+            ]
+            dst_extract.update_arg("register_", src_extract.register_)
+            dst_extract.update_arg("offset", new_offset)
+            if len(src_extract.fx_node.users) == 0:
+                get_custom(node).graph.erase_node(src_extract.fx_node)
 
 
 def delinearize_index(index: IndexExpr, shape: list[int]) -> list[IndexExpr]:
@@ -913,9 +939,9 @@ def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
             return 4
         case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 4
-        case MMAType.F32_16x16x32_F8 | MMAType.I32_16x16x32_I8:
+        case MMAType.F32_16x16x32_F8 | MMAType.F32_16x16x32_K4_F8 | MMAType.I32_16x16x32_I8:
             return 8
-        case MMAType.F32_32x32x16_F8 | MMAType.I32_32x32x16_I8:
+        case MMAType.F32_32x32x16_F8 | MMAType.F32_32x32x16_K4_F8 | MMAType.I32_32x32x16_I8:
             return 8
 
 
@@ -925,9 +951,9 @@ def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
             return 4
         case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 16
-        case MMAType.F32_16x16x32_F8 | MMAType.I32_16x16x32_I8:
+        case MMAType.F32_16x16x32_F8 | MMAType.F32_16x16x32_K4_F8 | MMAType.I32_16x16x32_I8:
             return 4
-        case MMAType.F32_32x32x16_F8 | MMAType.I32_32x32x16_I8:
+        case MMAType.F32_32x32x16_F8 | MMAType.F32_32x32x16_K4_F8 | MMAType.I32_32x32x16_I8:
             return 16
 
 

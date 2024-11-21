@@ -1488,6 +1488,91 @@ def test_dynamic_gemm_pipelined():
         # CHECK-COUNT-8:    amdgpu.mfma
 
 
+# This test that our stack is able to handle MMA layout with interleaved VGPR offsets/chunks
+
+# e.g a vector<16xf16> may be owned by lane 0, and lane 16 in this layout:
+# [0, 0, 0, 0, 16, 16, 16, 16, 0, 0, 0, 0, 16, 16, 16, 16].
+# To the lane it should just look like vector<8xf16>.
+# Hence for this example, we'd need two reads of vector<4xf16> and insert_slices to
+# combine it to a single vector<8xf16>.
+
+
+@run_test
+def test_gemm_with_gpr_offsets():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x32_K4_F8,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm_with_interleave_gpr(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.cast(a_reg, tkl.f8e4m3fnuz)
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.cast(b_reg, tkl.f8e4m3fnuz)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 64,
+            N: 64,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 32,
+            LOAD_ELEMS_PER_THREAD: 8,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        a = torch.randn(64, 64, dtype=torch.float16)
+        b = torch.randn(64, 64, dtype=torch.float16)
+        c = torch.zeros(64, 64, dtype=torch.float32)
+        print(gemm_with_interleave_gpr(a, b, c).module_op)
+
+        # CHECK:          func.func @gemm_with_interleave_gpr(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
+        # CHECK:            %[[LANE_ID:.+]] = arith.remsi %thread_id_x, %c64 : index
+        # CHECK:            %[[D0:.+]] = arith.divsi %[[LANE_ID]], %c16 : index
+        # CHECK:            %[[GPR_OFFSET_0:.+]] = arith.muli %[[D0]], %c4
+        # CHECK:            %[[GPR_OFFSET_1:.+]] = arith.addi %[[GPR_OFFSET_0]], %c16
+
+        # CHECK:            %[[LHS_0:.+]] = vector.load %alloc[%{{.*}}, %[[GPR_OFFSET_0]]] : memref<32x36xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK:            %[[LHS_1:.+]] = vector.load %alloc[%{{.*}}, %[[GPR_OFFSET_1]]] : memref<32x36xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK:            %[[LHS_INSERT_0:.+]] = vector.insert_strided_slice %[[LHS_0]], %cst {offsets = [0], strides = [1]} : vector<4xf16> into vector<8xf16>
+        # CHECK:            %[[LHS:.+]] = vector.insert_strided_slice %[[LHS_1]], %[[LHS_INSERT_0]] {offsets = [4], strides = [1]} : vector<4xf16> into vector<8xf16>
+        # CHECK:            %[[LHS_F8:.+]] = arith.truncf %[[LHS]] : vector<8xf16> to vector<8xf8E4M3FNUZ>
+
+        # CHECK:            %[[RHS_0:.+]] = vector.load %alloc_1[%{{.*}}, %[[GPR_OFFSET_0]]] : memref<32x36xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK:            %[[RHS_1:.+]] = vector.load %alloc_1[%{{.*}}, %[[GPR_OFFSET_1]]] : memref<32x36xf16, #gpu.address_space<workgroup>>, vector<4xf16>
+        # CHECK:            %[[RHS_INSERT_0:.+]] = vector.insert_strided_slice %[[RHS_0]], %cst {offsets = [0], strides = [1]} : vector<4xf16> into vector<8xf16>
+        # CHECK:            %[[RHS:.+]] = vector.insert_strided_slice %[[RHS_1]], %[[RHS_INSERT_0]] {offsets = [4], strides = [1]} : vector<4xf16> into vector<8xf16>
+        # CHECK:            %[[RHS_F8:.+]] = arith.truncf %[[RHS]] : vector<8xf16> to vector<8xf8E4M3FNUZ>
+        # CHECK:            amdgpu.mfma %[[LHS_F8]] * %[[RHS_F8]]
+
+
 # This test is used to check three things
 # 1. Reduction with multiple different types(MMA, ReduceOp) of iterArg works
 # 2. ReduceOp lowering works using constraints from MMA (not just vector_shape).

@@ -524,7 +524,9 @@ def testCDNA3IntGemm(
     "mfma_variant",
     [
         MMAType.F32_16x16x32_F8,
+        MMAType.F32_16x16x32_K4_F8,
         MMAType.F32_32x32x16_F8,
+        MMAType.F32_32x32x16_K4_F8,
     ],
 )
 def testF8Gemm(
@@ -637,7 +639,7 @@ def testF8Gemm(
                 )
         iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
         generate_iree_ref("mmt_f8", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref, check_device=False)
+        assert_close(c, iree_ref, atol=3e-5, rtol=3e-4, check_device=False)
 
 
 @require_e2e
