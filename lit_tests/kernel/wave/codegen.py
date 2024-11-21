@@ -1139,12 +1139,12 @@ def test_chained_gemm_32x32x16():
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    mfma_variant = tkw.MMAType.F32_32x32x16_F8
+    mfma_variant = [tkw.MMAType.F32_32x32x16_F8, tkw.MMAType.F32_32x32x16_K4_F8]
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(2, 2, 1),
-            mma_type=mfma_variant,
+            mma_type=mfma_variant[0],
             vector_shapes={B: 0},
         )
     ]
@@ -1172,7 +1172,7 @@ def test_chained_gemm_32x32x16():
             qk_cast_reg = tkw.cast(qk_reg, tkl.f8e4m3fnuz)
             v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             v_reg = tkw.cast(v_reg, tkl.f8e4m3fnuz)
-            acc = tkw.mma(qk_cast_reg, v_reg, acc)
+            acc = tkw.mma(qk_cast_reg, v_reg, acc, mfma_variant[1])
             return acc
 
         tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
@@ -1188,8 +1188,8 @@ def test_chained_gemm_32x32x16():
             BLOCK_N: 64,
             BLOCK_K2: 32,
             BLOCK_B: 1,
-            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
+            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant[0]),
+            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -1202,12 +1202,26 @@ def test_chained_gemm_32x32x16():
         print(chained_gemm_32x32x16(q, k, v, output).module_op)
 
         # CHECK:           func.func @chained_gemm_32x32x16(
+        # CHECK:             %[[V_SHARED:.+]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
         # CHECK:             {{.*}} = scf.for
+        # 1st MMA
+        # CHECK-COUNT-4:       {{.*}} = arith.truncf
         # CHECK-COUNT-2:       {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-3:       {{.*}} = arith.truncf
-        # CHECK:               {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [0], sizes = [8], strides = [1]}
-        # CHECK:               {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [8], sizes = [8], strides = [1]}
-        # CHECK-COUNT-2:       {{.*}} = amdgpu.mfma
+
+        # Loading V from shared memory with interleaved/k-width=4, then using insert slice to combine them together.
+        # This is to align V's layout with the layout of 1st MMA output.
+        # CHECK-COUNT-2:       vector.load %[[V_SHARED]]
+        # CHECK-COUNT-2:       %[[V_REG_0:.+]] = vector.insert_strided_slice {{.*}} : vector<4xf16> into vector<8xf16>
+        # CHECK-COUNT-2:       vector.load %[[V_SHARED]]
+        # CHECK-COUNT-2:       %[[V_REG_1:.+]] = vector.insert_strided_slice {{.*}} : vector<4xf16> into vector<8xf16>
+        # CHECK:               %[[V_REG_F8_0:.+]] = arith.truncf %[[V_REG_0]] : vector<8xf16> to vector<8xf8E4M3FNUZ>
+        # CHECK:               %[[V_REG_F8_1:.+]] = arith.truncf %[[V_REG_1]] : vector<8xf16> to vector<8xf8E4M3FNUZ>
+
+        # 2nd MMA
+        # CHECK:               %[[QK_REG_0:.+]] = vector.extract_strided_slice {{.*}} {offsets = [0], sizes = [8], strides = [1]}
+        # CHECK:               %[[QK_REG_1:.+]] = vector.extract_strided_slice {{.*}} {offsets = [8], sizes = [8], strides = [1]}
+        # CHECK:                amdgpu.mfma %[[QK_REG_0]] * %[[V_REG_F8_0]]{{.*}} {blocks = 1 : i32, k = 16 : i32, m = 32 : i32, n = 32 : i32} blgp =  none : vector<8xf8E4M3FNUZ>, vector<8xf8E4M3FNUZ>, vector<16xf32>
+        # CHECK:                amdgpu.mfma %[[QK_REG_1]] * %[[V_REG_F8_1]]{{.*}} {blocks = 1 : i32, k = 16 : i32, m = 32 : i32, n = 32 : i32} blgp =  none : vector<8xf8E4M3FNUZ>, vector<8xf8E4M3FNUZ>, vector<16xf32>
         # CHECK:             scf.yield
 
 
@@ -1224,12 +1238,12 @@ def test_chained_gemm_16x16x32():
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    mfma_variant = tkw.MMAType.F32_16x16x32_F8
+    mfma_variant = [tkw.MMAType.F32_16x16x32_F8, tkw.MMAType.F32_16x16x32_K4_F8]
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(2, 2, 1),
-            mma_type=mfma_variant,
+            mma_type=mfma_variant[0],
             vector_shapes={B: 0},
         )
     ]
@@ -1257,7 +1271,7 @@ def test_chained_gemm_16x16x32():
             qk_cast_reg = tkw.cast(qk_reg, tkl.f8e4m3fnuz)
             v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             v_reg = tkw.cast(v_reg, tkl.f8e4m3fnuz)
-            acc = tkw.mma(qk_cast_reg, v_reg, acc)
+            acc = tkw.mma(qk_cast_reg, v_reg, acc, mfma_variant[1])
             return acc
 
         tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
@@ -1273,8 +1287,8 @@ def test_chained_gemm_16x16x32():
             BLOCK_N: 64,
             BLOCK_K2: 32,
             BLOCK_B: 1,
-            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
+            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant[0]),
+            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -1287,9 +1301,21 @@ def test_chained_gemm_16x16x32():
         print(chained_gemm_16x16x32(q, k, v, output).module_op)
 
         # CHECK:           func.func @chained_gemm_16x16x32(
+        # CHECK:             %[[V_SHARED:.+]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
         # CHECK:             {{.*}} = scf.for
+        # 1st MMA
+        # CHECK-COUNT-4:       {{.*}} = arith.truncf
         # CHECK-COUNT-4:       {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-6:       {{.*}} = arith.truncf
+
+        # Loading V from shared memory with interleaved/k-width=4, then using insert slice to combine them together.
+        # This is to align V's layout with the layout of 1st MMA output.
+        # CHECK-COUNT-2:       vector.load %[[V_SHARED]]
+        # CHECK-COUNT-2:       vector.insert_strided_slice {{.*}} : vector<4xf16> into vector<8xf16>
+        # CHECK-COUNT-2:       vector.load %[[V_SHARED]]
+        # CHECK-COUNT-2:       vector.insert_strided_slice {{.*}} : vector<4xf16> into vector<8xf16>
+        # CHECK-COUNT-2:       arith.truncf {{.*}} : vector<8xf16> to vector<8xf8E4M3FNUZ>
+
+        # 2nd MMA
         # CHECK:               {{.*}} = vector.insert_strided_slice {{.*}} {offsets = [0], strides = [1]}
         # CHECK:               {{.*}} = vector.insert_strided_slice {{.*}} {offsets = [4], strides = [1]}
         # CHECK:               {{.*}} = vector.insert_strided_slice {{.*}} {offsets = [0], strides = [1]}
