@@ -68,6 +68,17 @@ def propagatable_op(node: fx.Node):
     )
 
 
+def propagate_resolutions(
+    custom_node: CustomOp, dst_op: CustomOp = None
+) -> list[fx.Node]:
+    propagated_resolutions = capture_forward_slice(custom_node.fx_node, propagatable_op)
+    if dst_op:
+        for node in propagated_resolutions:
+            get_custom(node).index = dst_op.index
+    resolved_resolutions = capture_backward_slice(custom_node.fx_node, propagatable_op)
+    return propagated_resolutions.union(resolved_resolutions)
+
+
 def handle_binaryop_conflict(custom_node: CustomOp) -> list[fx.Node]:
     """
     This function will attempt to resolve binaryOp conflicts
@@ -94,17 +105,8 @@ def handle_binaryop_conflict(custom_node: CustomOp) -> list[fx.Node]:
         )
         custom_broadcast = get_custom(broadcast)
         custom_broadcast.vector_shapes = broadcast_src.vector_shapes
-        custom_broadcast.anchor = broadcast_src.anchor
         custom_node.update_arg(broadcast_idx, custom_broadcast.fx_node)
-    propagated_resolutions = capture_forward_slice(
-        custom_broadcast.fx_node, propagatable_op
-    )
-    for node in propagated_resolutions:
-        get_custom(node).index = dst_op.index
-    resolved_resolutions = capture_backward_slice(
-        custom_broadcast.fx_node, propagatable_op
-    )
-    return propagated_resolutions.union(resolved_resolutions)
+    return propagate_resolutions(custom_broadcast, dst_op)
 
 
 # Returns True iff all conflicts are handled succesfully.

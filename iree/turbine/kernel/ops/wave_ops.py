@@ -539,20 +539,6 @@ class CustomOp(ABC):
         self.fx_node.expanded_dims = value
 
     @property
-    def anchor(self) -> fx.Node:
-        """
-        The anchor is a node that provides information to the node
-        such as vector_shapes, indexing information etc.
-        """
-        if hasattr(self.fx_node, "anchor"):
-            return self.fx_node.anchor
-        return None
-
-    @anchor.setter
-    def anchor(self, value: fx.Node):
-        self.fx_node.anchor = value
-
-    @property
     def vector_shapes(self) -> dict[IndexSymbol, int]:
         if hasattr(self.fx_node, "vector_shapes"):
             return self.fx_node.vector_shapes
@@ -589,6 +575,14 @@ class CustomOp(ABC):
         Default implementation does nothing.
         """
         pass
+
+    def transform_index(
+        self, index: dict[IndexSymbol, IndexSequence]
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node based on the provided mapping.
+        """
+        return index
 
 
 @define_py_op(operator.add)
@@ -1425,6 +1419,26 @@ class Permute(CustomOp, ABC):
             self.target_shape
         ), f"Target shape {self.target_shape} must be a permutation of source shape {src_type.symbolic_shape}"
         self.type = Register[*self.target_shape, src_type.dtype]
+
+    def transform_index(
+        self, index: dict[IndexSymbol, IndexSequence]
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        The permute operation swaps the strides of the permuted indices.
+        So say we have a permute operation that swaps [B, M, N] to
+        [M, N, B], then we swap the strides of the dimensions.
+        """
+        custom_src = get_custom(self.arg)
+        src_shape = custom_src.type.symbolic_shape
+        src_to_target = {
+            src: self.target_shape[src_shape.index(src)] for src in src_shape
+        }
+        permuted_index = {
+            k: IndexSequence(v.start, v.size, index[src_to_target[k]].stride)
+            for k, v in index.items()
+            if k in src_shape
+        }
+        return permuted_index
 
 
 def _to_sequence(input: Any | Sequence[Any]) -> Sequence[Any]:

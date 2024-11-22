@@ -766,6 +766,142 @@ def test_gemm_reduction_expansion_only():
 
 
 @tkw.wave_trace_only()
+def attention(
+    q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
+    k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
+    v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+    c: tkl.Memory[B, N, M, GLOBAL_ADDRESS_SPACE, tkl.f32],
+):
+    c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
+    init_sum = tkl.Register[B, M, tkl.f32](0.0)
+    init_max = tkl.Register[B, M, tkl.f32](-1e6)
+
+    # This microkernel encodes the fact that if the reduction
+    # dimension were tiled, then we would need to materialize a loop.
+    @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+    def repeat(
+        partial_max: tkl.Register[B, M, tkl.f32],
+        partial_sum: tkl.Register[B, M, tkl.f32],
+        acc: tkl.Register[B, N, M, tkl.f32],
+    ) -> (
+        tkl.Register[B, M, tkl.f32],
+        tkl.Register[B, M, tkl.f32],
+        tkl.Register[B, N, M, tkl.f32],
+    ):
+        imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
+        q_reg = tkw.read(q, elements_per_thread=4)
+        k_reg = tkw.read(k, elements_per_thread=4)
+        inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
+        x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
+        m_j = tkw.max(x_j, partial_max, dim=K2)
+        e_delta_max = tkw.exp2(partial_max - m_j)
+        e_delta = tkw.exp2(x_j - m_j)
+        e_init = partial_sum * e_delta_max
+        d_j = tkw.sum(e_delta, e_init, dim=K2)
+        imm_f16 = tkw.cast(e_delta, tkl.f16)
+        v_reg = tkw.read(v, elements_per_thread=4)
+        new_acc = acc * e_delta_max
+        acc = tkw.mma(v_reg, imm_f16, new_acc)
+        return m_j, d_j, acc
+
+    # repeat represents the results of the loop
+    res_max, res_sum, res_mm = repeat
+    res = res_mm / res_sum
+    tkw.write(res, c, elements_per_thread=4)
+
+
+@run_test
+def test_attention():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.TilingConstraint(K2, BLOCK_K2, ARGK)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, THREAD_1)]
+
+    mfma_variant = tkw.MMAType.F32_16x16x16_F16
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=mfma_variant,
+            vector_shapes={B: 0, M: 16, N: 16},
+        )
+    ]
+
+    with tk.gen.TestLaunchContext(
+        {
+            K1: 64,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
+            BLOCK_B: 1,
+            BLOCK_K2: 32,
+        }
+    ):
+        graph = attention()
+        IndexingContext.current().finalize()
+        infer_types(graph)
+        set_node_indices(graph, constraints)
+        expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
+        print_trace(graph)
+
+    # Root graph:
+    # CHECK: write(register_=truediv_0_0_0,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + 4*floor((Mod($T0, 64))/16) : 4 : 16, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16)})
+    # CHECK: write(register_=truediv_1_1_0,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16) + 16})
+    # CHECK: write(register_=truediv_1_0_0,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + 4*floor((Mod($T0, 64))/16) : 4 : 16, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16) + 16})
+    # CHECK: write(register_=truediv_0_1_0,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16)})
+
+    # Reduction graph:
+    # CHECK: read(memory=q,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16), K1: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+    # CHECK: read(memory=q,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16) + 16, K1: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+    # CHECK: read(memory=q,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16) + 16, K1: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+    # CHECK: read(memory=q,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16) + 16, K1: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+    # CHECK: read(memory=q,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16) + 16, K1: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
+    # CHECK: read(memory=q,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16), K1: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+    # CHECK: read(memory=q,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16), K1: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+    # CHECK: read(memory=q,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16), K1: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
+
+    # CHECK: read(memory=k,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, K2: ARGK*BLOCK_K2 + Mod($T0, 16), K1: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+    # CHECK: read(memory=k,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, K2: ARGK*BLOCK_K2 + Mod($T0, 16) + 16, K1: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+    # CHECK: read(memory=k,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, K2: ARGK*BLOCK_K2 + Mod($T0, 16) + 16, K1: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+    # CHECK: read(memory=k,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, K2: ARGK*BLOCK_K2 + Mod($T0, 16) + 16, K1: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+    # CHECK: read(memory=k,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, K2: ARGK*BLOCK_K2 + Mod($T0, 16) + 16, K1: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
+    # CHECK: read(memory=k,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, K2: ARGK*BLOCK_K2 + Mod($T0, 16), K1: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+    # CHECK: read(memory=k,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, K2: ARGK*BLOCK_K2 + Mod($T0, 16), K1: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+    # CHECK: read(memory=k,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, K2: ARGK*BLOCK_K2 + Mod($T0, 16), K1: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
+
+    # CHECK: read(memory=v,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16), K2: ARGK*BLOCK_K2 + 4*floor((Mod($T0, 64))/16) : 4 : 1})
+    # CHECK: read(memory=v,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16), K2: ARGK*BLOCK_K2 + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+    # CHECK: read(memory=v,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16, K2: ARGK*BLOCK_K2 + 4*floor((Mod($T0, 64))/16) : 4 : 1})
+    # CHECK: read(memory=v,
+    # CHECK-SAME: index={B: $WG2*BLOCK_B, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16, K2: ARGK*BLOCK_K2 + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+
+
+@tkw.wave_trace_only()
 def py_arithmetic_different_dims(
     a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     c: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f32],
