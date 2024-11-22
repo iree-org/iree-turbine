@@ -657,11 +657,11 @@ def testAttentionF8(
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
-            imm_f16 = tkw.cast(e_delta, tkl.f8e4m3fnuz)
+            imm_f8 = tkw.cast(e_delta, tkl.f8e4m3fnuz)
             v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             v_reg = tkw.cast(v_reg, tkl.f8e4m3fnuz)
             new_acc = acc * e_delta_max
-            acc = tkw.mma(v_reg, imm_f16, new_acc, mfma_variant[1])
+            acc = tkw.mma(v_reg, imm_f8, new_acc, mfma_variant[1])
             return m_j, d_j, acc
 
         # repeat represents the results of the loop
