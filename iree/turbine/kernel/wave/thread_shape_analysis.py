@@ -50,7 +50,7 @@ def set_custom_index(custom: CustomOp, target_dim_sizes: list[DimIndex]):
             raise NotImplementedError(
                 "NYI: Handle when source target index size is not found in target/user index."
             )
-        custom.index[target.dim].size = target.size
+        custom.index[target.dim] = target.seq
 
 
 #################################################################
