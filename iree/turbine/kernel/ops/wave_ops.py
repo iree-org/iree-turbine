@@ -1349,6 +1349,10 @@ class ReduceOp(CustomOp, ABC):
     def reduction_dim(self) -> IndexSymbol:
         return self.dim
 
+    # In `set_node_indices` there is a logic, which propagates `elements_per_thread`
+    # from previous ops is if wasn't for the current op, which causes ReduceOp to
+    # get wrong indices. This function will prevent this propagation.
+    # TODO: remove after index handling is fully switched to thread_shape_analysis.
     @property
     def elements_per_thread(self) -> int:
         return 1

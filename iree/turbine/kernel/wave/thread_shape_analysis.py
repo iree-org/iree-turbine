@@ -57,6 +57,9 @@ def set_custom_index(custom: CustomOp, target_dim_sizes: list[DimIndex]):
 # Anchor Indicies and Conflict resolution helpers
 #################################################################
 
+# TODO: Permute ops can have different indices on input and output.
+# Add it to the anchorOpTypes to stop index propagation during forward/backward
+# lookups.
 anchorOpTypes = (Read, Write, MMA, ReduceOp, Reshape, Permute)
 noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate)
 legalSubtypes = (IterArg,)
