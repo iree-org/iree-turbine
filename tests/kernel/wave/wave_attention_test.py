@@ -193,6 +193,8 @@ def testChainedGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
+        torch.cuda.empty_cache()
+        torch.manual_seed(0)
         q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
         k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = device_randn(shape[0], shape[2], shape[4], dtype=torch.float16)
@@ -342,6 +344,7 @@ def testChainedGemmF8(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
+        torch.cuda.empty_cache()
         torch.manual_seed(0)
         q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
         k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
@@ -541,6 +544,7 @@ def testAttention(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
+        torch.cuda.empty_cache()
         torch.manual_seed(0)
         q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
         k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
@@ -713,6 +717,7 @@ def testAttentionF8(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
+        torch.cuda.empty_cache()
         torch.manual_seed(0)
         q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
         k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
