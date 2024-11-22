@@ -297,7 +297,6 @@ def get_mma_dimensional_mapping(
         }
         if hardware_constraint.vector_shapes:
             custom.vector_shapes.update(hardware_constraint.vector_shapes)
-        custom.anchor = custom
         custom.reduction_dim = k
 
         # Since expansion proceeds bottom-up, we set the vector shapes
@@ -305,9 +304,6 @@ def get_mma_dimensional_mapping(
         if hasattr(custom.graph, "parent_op"):
             reduction = get_custom(custom.graph.parent_op)
             reduction.vector_shapes = custom.vector_shapes
-            reduction.anchor = custom
-
-    mma_slices = {get_custom(x): capture_mma_slices(get_custom(x)) for x in mma_nodes}
 
     # Determine if any reshapes are required. Reshapes are added for
     # chained matmuls when the vector shapes of the operands in one matmul
@@ -325,7 +321,6 @@ def get_mma_dimensional_mapping(
                 )
                 custom_reshape = get_custom(reshape)
                 custom_reshape.vector_shapes = custom.vector_shapes
-                custom_reshape.anchor = custom
                 custom.update_arg(arg_index, reshape)
 
     def find_mma_in_slice(node: CustomOp) -> Optional[MMA]:
@@ -351,7 +346,7 @@ def get_mma_dimensional_mapping(
         if prev_mma:
             add_reshape_if_needed(custom_mma, prev_mma, 1)
 
-    return mapping, mma_slices
+    return mapping
 
 
 def get_hardware_vector_size(
@@ -718,7 +713,8 @@ def get_users(
             # Map init arg to iter arg
             reduction = custom
             init_arg_idx = custom.init_args.index(node)
-            users.append(custom.iter_args[init_arg_idx])
+            graph = custom.get_root_graph().subgraphs[custom.subgraph_name]
+            users.append(custom.iter_args(graph)[init_arg_idx])
             continue
         if isinstance(custom, Output):
             # Map output to get result
@@ -939,9 +935,17 @@ def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
             return 4
         case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 4
-        case MMAType.F32_16x16x32_F8 | MMAType.F32_16x16x32_K4_F8 | MMAType.I32_16x16x32_I8:
+        case (
+            MMAType.F32_16x16x32_F8
+            | MMAType.F32_16x16x32_K4_F8
+            | MMAType.I32_16x16x32_I8
+        ):
             return 8
-        case MMAType.F32_32x32x16_F8 | MMAType.F32_32x32x16_K4_F8 | MMAType.I32_32x32x16_I8:
+        case (
+            MMAType.F32_32x32x16_F8
+            | MMAType.F32_32x32x16_K4_F8
+            | MMAType.I32_32x32x16_I8
+        ):
             return 8
 
 
@@ -951,9 +955,17 @@ def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
             return 4
         case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
             return 16
-        case MMAType.F32_16x16x32_F8 | MMAType.F32_16x16x32_K4_F8 | MMAType.I32_16x16x32_I8:
+        case (
+            MMAType.F32_16x16x32_F8
+            | MMAType.F32_16x16x32_K4_F8
+            | MMAType.I32_16x16x32_I8
+        ):
             return 4
-        case MMAType.F32_32x32x16_F8 | MMAType.F32_32x32x16_K4_F8 | MMAType.I32_32x32x16_I8:
+        case (
+            MMAType.F32_32x32x16_F8
+            | MMAType.F32_32x32x16_K4_F8
+            | MMAType.I32_32x32x16_I8
+        ):
             return 16
 
 

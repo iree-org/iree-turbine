@@ -94,7 +94,6 @@ def handle_binaryop_conflict(custom_node: CustomOp) -> list[fx.Node]:
         )
         custom_broadcast = get_custom(broadcast)
         custom_broadcast.vector_shapes = broadcast_src.vector_shapes
-        custom_broadcast.anchor = broadcast_src.anchor
         custom_node.update_arg(broadcast_idx, custom_broadcast.fx_node)
     propagated_resolutions = capture_forward_slice(
         custom_broadcast.fx_node, propagatable_op
