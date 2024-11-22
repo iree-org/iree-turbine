@@ -987,6 +987,11 @@ def device_zeros(*args, **kwargs):
     return to_default_device(torch.zeros(*args, **kwargs))
 
 
+def initialize_seed_and_cache(seed: Optional[int] = 0):
+    torch.cuda.empty_cache()
+    torch.manual_seed(seed)
+
+
 def get_assumptions(constraints: list[Constraint]) -> list[Assumption]:
     assumptions: list[Assumption] = []
     for constraint in constraints:

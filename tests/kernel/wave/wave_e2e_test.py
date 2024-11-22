@@ -9,7 +9,10 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.wave_sim import wave_sim
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
+from iree.turbine.kernel.wave.iree_utils import (
+    generate_iree_ref,
+    initialize_seed_and_cache,
+)
 from iree.turbine.kernel.wave.utils import (
     get_default_arch,
     get_default_run_config,
@@ -105,8 +108,7 @@ def test_copy(shape, request):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(0)
+    initialize_seed_and_cache(0)
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
@@ -164,8 +166,7 @@ def test_dynamic_copy(shape, request):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(0)
+    initialize_seed_and_cache(0)
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
@@ -225,8 +226,7 @@ def test_transpose_read(shape, request):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(0)
+    initialize_seed_and_cache(0)
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape[::-1], dtype=torch.float16)
     with tk.gen.TestLaunchContext(
@@ -285,8 +285,7 @@ def test_transpose_write(shape, request):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(0)
+    initialize_seed_and_cache(0)
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape[::-1], dtype=torch.float16)
     with tk.gen.TestLaunchContext(
@@ -361,8 +360,7 @@ def test_offset_read(shape, request):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(0)
+    initialize_seed_and_cache(0)
     a = device_randn(shape, dtype=torch.float16)
     off = device_randint(shape[0], shape, dtype=torch.int32)
     out = device_zeros(shape, dtype=torch.float16)
@@ -440,8 +438,7 @@ def test_offset_write(shape, request):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(0)
+    initialize_seed_and_cache(0)
     a = device_randn(shape, dtype=torch.float16)
     off = (
         device_randperm(shape[1], dtype=torch.int32)
@@ -504,8 +501,7 @@ def test_reduce_sum(shape, request):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(1)
+    initialize_seed_and_cache(1)
     a = device_randn(shape, dtype=torch.float16)
     b = device_randn(shape, dtype=torch.float16)
     c = device_zeros((shape[0],), dtype=torch.float16)
@@ -577,8 +573,7 @@ def test_toy_online_softmax(shape):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(1)
+    initialize_seed_and_cache(1)
     a = device_randn(shape, dtype=torch.float32)
     b = device_randn(shape, dtype=torch.float32)
     c = device_zeros((shape[0],), dtype=torch.float32)
@@ -677,8 +672,7 @@ def test_im2col(request):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(0)
+    initialize_seed_and_cache(0)
     h_out = (h + 2 * padding - hf) // stride + 1
     w_out = (w + 2 * padding - wf) // stride + 1
     res_shape = (h_out * w_out * n, hf * wf * c)
@@ -920,8 +914,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(1)
+    initialize_seed_and_cache(1)
     x = device_randn(n, c, h, w, dtype=torch.float16)
     we = device_randn(nf, cf, hf, wf, dtype=torch.float16)
 
@@ -1132,8 +1125,7 @@ def test_cast(shape, request):
 
     config = get_default_run_config()
 
-    torch.cuda.empty_cache()
-    torch.manual_seed(0)
+    initialize_seed_and_cache(0)
     a = device_randn(shape, dtype=torch.float32)
     b = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
