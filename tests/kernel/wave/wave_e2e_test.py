@@ -9,10 +9,7 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.wave_sim import wave_sim
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.iree_utils import (
-    generate_iree_ref,
-    initialize_seed_and_cache,
-)
+from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
     get_default_arch,
     get_default_run_config,
@@ -20,6 +17,7 @@ from iree.turbine.kernel.wave.utils import (
     device_randint,
     device_randperm,
     device_zeros,
+    initialize_seed_and_cache,
 )
 import torch
 from torch.testing import assert_close

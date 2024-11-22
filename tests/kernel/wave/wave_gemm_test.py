@@ -12,10 +12,7 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.iree_utils import (
-    generate_iree_ref,
-    initialize_seed_and_cache,
-)
+from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     get_default_arch,
@@ -24,6 +21,7 @@ from iree.turbine.kernel.wave.utils import (
     device_randn,
     device_randint,
     device_zeros,
+    initialize_seed_and_cache,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
@@ -211,7 +209,7 @@ def testGemm(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
-        initialize_seed_and_cache(0)
+        initialize_test(0)
         a = device_randn(shape[0], shape[2], dtype=torch.float16)
         b = device_randn(shape[1], shape[2], dtype=torch.float16)
         c = device_zeros(shape[0], shape[1], dtype=torch.float32)
@@ -371,7 +369,7 @@ def testCDNA2IntGemm(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
-        initialize_seed_and_cache(0)
+        initialize_test(0)
         randint_hi = 4
         a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
         b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
@@ -500,7 +498,7 @@ def testCDNA3IntGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        initialize_seed_and_cache(0)
+        initialize_test(0)
         randint_hi = 4
         a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
         b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
@@ -628,7 +626,7 @@ def testF8Gemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        initialize_seed_and_cache(0)
+        initialize_test(0)
         a = device_randn(shape[0], shape[2], dtype=torch.float16)
         b = device_randn(shape[1], shape[2], dtype=torch.float16)
         c = device_zeros(shape[0], shape[1], dtype=torch.float32)
@@ -748,7 +746,7 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        initialize_seed_and_cache(0)
+        initialize_test(0)
         a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
         b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
         c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
