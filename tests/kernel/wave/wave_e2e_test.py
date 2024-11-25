@@ -912,11 +912,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     convRef.weight = torch.nn.Parameter(we)
     out_ref = convRef(x).detach().to(torch.float32)
 
-    # h_out = (h + 2 * padding - hf) // stride + 1
-    # w_out = (w + 2 * padding - wf) // stride + 1
-    # res_shape = (n, nf, h_out, w_out)
-    # out_ref = torch.zeros(res_shape, dtype=torch.float32)
-
     sym = tkl.sym
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
     NF, HF, WF = sym.NF, sym.HF, sym.WF
@@ -1025,7 +1020,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
             repeat, out, mapping=out_mapping, elements_per_thread=ELEMS_PER_THREAD
         )
 
-    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+    config = get_default_run_config()
 
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
