@@ -69,7 +69,8 @@ def test_read():
         a = torch.randn(16, 16, dtype=torch.float16)
         print(test(a).module_op)
 
-        # CHECK:          func.func @test(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
+        # CHECK-LABEL:    func.func @test
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
         # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
         # CHECK:            %[[WORKGROUP_ID_2:.+]] = stream.dispatch.workgroup.id[2] : index
@@ -123,7 +124,8 @@ def test_read_mapped():
         a = torch.randn(16, 16, dtype=torch.float16)
         print(test(a).module_op)
 
-        # CHECK:          func.func @test(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
+        # CHECK-LABEL:    func.func @test
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
         # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
         # CHECK:            %[[WORKGROUP_ID_2:.+]] = stream.dispatch.workgroup.id[2] : index
@@ -182,7 +184,8 @@ def test_read_write():
         b = torch.zeros(16, 16, dtype=torch.float16)
         print(test(a, b).module_op)
 
-        # CHECK:          func.func @test(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
+        # CHECK-LABEL:    func.func @test
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
         # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
         # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
@@ -243,7 +246,8 @@ def test_read_write_masked():
         b = torch.zeros(4, 4, dtype=torch.float16)
         print(test(a, b).module_op)
 
-        # CHECK:          func.func @test(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
+        # CHECK-LABEL:    func.func @test
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<4xf16>
         # CHECK-DAG:        %[[CST_0:.*]] = arith.constant dense<3> : vector<4xindex>
         # CHECK-DAG:        %[[CST_1:.*]] = arith.constant dense<[0, 1, 2, 3]> : vector<4xindex>
@@ -315,6 +319,7 @@ def test_read_write_masked_shared():
         b = torch.zeros(4, 4, dtype=torch.float16)
         print(test(a, b).module_op)
 
+        # CHECK-LABEL:    func.func @test
         # Check shared mem load stores are non masked
         # CHECK:            %{{.*}} = vector.maskedload {{.*}} : memref<1x3xf16, strided<[3, 1], offset: ?>>, vector<4xi1>, vector<4xf16> into vector<4xf16>
         # CHECK:            vector.store {{.*}} : memref<4x8xf16, #gpu.address_space<workgroup>>, vector<4xf16>
@@ -353,7 +358,8 @@ def test_read_write_mapping():
         b = torch.zeros(16, 16, dtype=torch.float16)
         print(test(a, b).module_op)
 
-        # CHECK:          func.func @test(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
+        # CHECK-LABEL:    func.func @test
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK:            %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208,
         # CHECK-SAME:         224, 240]> : vector<16xindex>
         # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
@@ -426,7 +432,8 @@ def test_read_write_dynamic_mapping():
         b = torch.zeros(16, 16, dtype=torch.float16)
         print(test(a, off, b).module_op)
 
-        # CHECK:          func.func @test(%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
+        # CHECK-LABEL:    func.func @test
+        # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
         # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
         # CHECK-DAG:        %[[CST0:.*]] = arith.constant dense<16> : vector<16xindex>
         # CHECK-DAG:        %[[CST1:.*]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> : vector<16xindex>
@@ -468,8 +475,8 @@ def test_dynamic_copy():
         a = torch.randn(16, 16, dtype=torch.float16)
         print(test(a).module_op)
 
-    # CHECK:        stream.executable.export public @test workgroups(%[[ARG0:.*]]: index, %[[ARG1:.*]]:
-    # CHECK-SAME:       index) -> (index, index, index) {
+    # CHECK-LABEL:    stream.executable.export public @test workgroups
+    # CHECK-SAME:       (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index) -> (index, index, index) {
     # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
     # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
     # CHECK:            %[[D0:.+]] = arith.ceildivsi %[[ARG0]], %[[C16]] : index
@@ -566,7 +573,8 @@ def test_gemm():
         c = torch.zeros(64, 128, dtype=torch.float32)
         print(gemm(a, b, c).module_op)
 
-        # CHECK:          func.func @gemm(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-LABEL:    func.func @gemm
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
         # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
         # CHECK-DAG:        %[[C3:.+]] = arith.constant 3 : index
         # CHECK-DAG:        %[[C2:.+]] = arith.constant 2 : index
@@ -715,7 +723,8 @@ def test_cdna2_int_gemm():
         c = torch.zeros(64, 128, dtype=torch.int32)
         print(cdna2_int_gemm(a, b, c).module_op)
 
-        # CHECK:          func.func @cdna2_int_gemm(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-LABEL:    func.func @cdna2_int_gemm
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
         # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
         # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
         # CHECK-DAG:        %[[C4:.+]] = arith.constant 4 : index
@@ -790,7 +799,8 @@ def test_cdna3_int_gemm():
         c = torch.zeros(64, 128, dtype=torch.int32)
         print(cdna3_int_gemm(a, b, c).module_op)
 
-        # CHECK:          func.func @cdna3_int_gemm(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-LABEL:    func.func @cdna3_int_gemm
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
         # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
         # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
         # CHECK-DAG:        %[[C2:.+]] = arith.constant 2 : index
@@ -870,7 +880,8 @@ def test_batched_gemm():
         c = torch.zeros(12, 64, 128, dtype=torch.float32)
         print(batched_gemm(a, b, c).module_op)
 
-        # CHECK:          func.func @batched_gemm(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]:
+        # CHECK-LABEL:    func.func @batched_gemm
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]:
         # CHECK-SAME:       !stream.binding, %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info =
         # CHECK-SAME:       #[[TRANSLATION:.+]]} {
         # CHECK-DAG:        %[[C3:.+]] = arith.constant 3 : index
@@ -1040,7 +1051,7 @@ def test_chained_gemm():
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
         print(chained_gemm(q, k, v, output).module_op)
 
-        # CHECK:           func.func @chained_gemm(
+        # CHECK-LABEL:     func.func @chained_gemm(
         # CHECK:             {{.*}} = scf.for
         # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:       {{.*}} = arith.truncf
@@ -1120,7 +1131,7 @@ def test_chained_gemm_32x32x8():
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
         print(chained_gemm_32x32x8(q, k, v, output).module_op)
 
-        # CHECK:           func.func @chained_gemm_32x32x8(
+        # CHECK-LABEL:     func.func @chained_gemm_32x32x8(
         # CHECK:             {{.*}} = scf.for
         # CHECK-COUNT-4:       {{.*}} = amdgpu.mfma
         # CHECK-COUNT-1:       {{.*}} = arith.truncf
@@ -1207,7 +1218,7 @@ def test_chained_gemm_32x32x16():
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
         print(chained_gemm_32x32x16(q, k, v, output).module_op)
 
-        # CHECK:           func.func @chained_gemm_32x32x16(
+        # CHECK-LABEL:     func.func @chained_gemm_32x32x16(
         # CHECK:             %[[V_SHARED:.+]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
         # CHECK:             {{.*}} = scf.for
         # 1st MMA
@@ -1306,7 +1317,7 @@ def test_chained_gemm_16x16x32():
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
         print(chained_gemm_16x16x32(q, k, v, output).module_op)
 
-        # CHECK:           func.func @chained_gemm_16x16x32(
+        # CHECK-LABEL:     func.func @chained_gemm_16x16x32(
         # CHECK:             %[[V_SHARED:.+]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
         # CHECK:             {{.*}} = scf.for
         # 1st MMA
@@ -1397,7 +1408,7 @@ def test_gemm_pipelined():
         c = torch.zeros(64, 128, dtype=torch.float32)
         print(gemm_pipelined(a, b, c).module_op)
 
-        # CHECK:          func.func @gemm_pipelined
+        # CHECK-LABEL:    func.func @gemm_pipelined
         # CHECK-COUNT-2:    vector.load
         # CHECK-COUNT-2:    vector.store
         # CHECK-COUNT-1:    amdgpu.lds_barrier
@@ -1491,7 +1502,7 @@ def test_dynamic_gemm_pipelined():
         c = torch.zeros(64, 128, dtype=torch.float32)
         print(dynamic_gemm_pipelined(a, b, c).module_op)
 
-        # CHECK:          func.func @dynamic_gemm_pipelined
+        # CHECK-LABEL:    func.func @dynamic_gemm_pipelined
         # CHECK-COUNT-2:    vector.maskedload
         # CHECK-COUNT-2:    vector.store
         # CHECK-COUNT-1:    amdgpu.lds_barrier
@@ -1584,7 +1595,8 @@ def test_gemm_with_gpr_offsets():
         c = torch.zeros(64, 64, dtype=torch.float32)
         print(gemm_with_interleave_gpr(a, b, c).module_op)
 
-        # CHECK:          func.func @gemm_with_interleave_gpr(%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-LABEL:    func.func @gemm_with_interleave_gpr
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
         # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
         # CHECK:            %[[LANE_ID:.+]] = arith.remsi %thread_id_x, %c64 : index
         # CHECK:            %[[D0:.+]] = arith.divsi %[[LANE_ID]], %c16 : index
@@ -1668,6 +1680,7 @@ def test_gemm_and_reduce():
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
         print(gemm(a, b, c).module_op)
+        # CHECK-LABEL: func.func @gemm
         # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
         # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
         # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
@@ -1818,7 +1831,7 @@ def test_igemm():
         canonicalize=True,
     ):
         print(conv(x, we, out).module_op)
-        #      CHECK: func @conv
+        # CHECK-LABEL: func @conv
         #  CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
 
         # Check we are setting gather start indices to 0
@@ -1846,7 +1859,7 @@ def test_add_float():
     with codegen_test_context():
         a = torch.randn(16, 16, dtype=torch.float16)
         print(test(a).module_op)
-        # CHECK: func @test
+        # CHECK-LABEL: func @test
         # CHECK: %[[SLICE:.+]] = vector.load
         # CHECK: arith.addf %[[SLICE]], %[[SLICE]] : vector<16xf16>
 
@@ -1871,6 +1884,7 @@ def test_add_integer():
     with codegen_test_context():
         a = torch.ones(16, 16, dtype=torch.int32)
         print(test(a).module_op)
+        # CHECK-LABEL: func @test
         # CHECK: %[[SLICE:.+]] = vector.load
         # CHECK: arith.addi %[[SLICE]], %[[SLICE]] : vector<16xi32>
 
@@ -1897,6 +1911,7 @@ def test_unary_lowerings():
     a = torch.randn(16, 16, dtype=torch.float16)
     with codegen_test_context():
         print(test(a).module_op)
+        # CHECK-LABEL: func @test
         # CHECK: %[[NEG:.+]] = arith.negf
         # CHECK: math.exp2 %[[NEG]]
 
@@ -1952,6 +1967,7 @@ def test_reduce_sum():
         canonicalize=True,
     ):
         print(test(a, b, c).module_op)
+        # CHECK-LABEL: func @test
         # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i32
         # CHECK-DAG: %[[C2:.+]] = arith.constant 2 : i32
         # CHECK-DAG: %[[C4:.+]] = arith.constant 4 : i32
@@ -2028,6 +2044,7 @@ def test_mutliple_local_reduce_sum():
         canonicalize=True,
     ):
         print(test(a, b, c).module_op)
+        # CHECK-LABEL: func @test
         # CHECK: %[[LHS:.+]] = vector.load {{.*}} : memref<256x128xf16
         # CHECK: %[[RHS:.+]] = vector.load {{.*}} : memref<256x128xf16
         # Reduce all sources locally.
@@ -2099,6 +2116,7 @@ def test_reduction_and_elemwise():
         canonicalize=True,
     ):
         print(test(a, c).module_op)
+        # CHECK-LABEL: func @test
         # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
         # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
         # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
@@ -2188,6 +2206,7 @@ def test_tiled_reduce_max():
         canonicalize=True,
     ):
         print(test(a, b, c).module_op)
+        # CHECK-LABEL: func @test
         # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i32
         # CHECK-DAG: %[[C2:.+]] = arith.constant 2 : i32
         # CHECK-DAG: %[[C4:.+]] = arith.constant 4 : i32
@@ -2287,6 +2306,7 @@ def test_multiple_reduction_iv():
         canonicalize=True,
     ):
         print(test(a, c).module_op)
+        # CHECK-LABEL: func @test
         # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
         # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
         # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
@@ -2387,6 +2407,7 @@ def test_reduce_propagate_broadcast():
         run_config=config,
     ):
         print(test(a, c).module_op)
+        # CHECK-LABEL: func @test
         # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
         # CHECK-DAG: %[[C8:.+]] = arith.constant 8 : index
         # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
@@ -2450,7 +2471,8 @@ def test_broadcast_add():
         run_config=config,
     ):
         print(test(a, b, c).module_op)
-        # CHECK: func.func @test(%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
+        # CHECK-LABEL: func.func @test
+        # CHECK-SAME: (%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
         # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
         # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
 
@@ -2506,6 +2528,7 @@ def test_binary_lowerings():
     b = torch.randn(16, 16, dtype=torch.float16)
     with codegen_test_context():
         print(test(a, b).module_op)
+        # CHECK-LABEL: func @test
         # CHECK: %[[SUB:.+]] = arith.subf
         # CHECK: %[[MUL:.+]] = arith.mulf %[[SUB]]
         # CHECK: %[[DIV:.+]] = arith.divf %[[MUL]]
