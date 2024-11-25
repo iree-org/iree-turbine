@@ -926,6 +926,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
 
+    # Align C dim reading pattern to be contiguous for nhwc_hwcf pattern.
     x_mapping = tkw.IndexMapping(
         num_iterators=2,
         inputs={
