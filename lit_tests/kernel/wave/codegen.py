@@ -1051,7 +1051,11 @@ def test_chained_gemm():
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
         print(chained_gemm(q, k, v, output).module_op)
 
-        # CHECK-LABEL:     func.func @chained_gemm(
+        # CHECK-LABEL:     func.func @chained_gemm
+        # CHECK-SAME:        (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding
+        # CHECK:             %[[GLOBAL_0:.+]] = stream.binding.subspan %[[ARG0]]
+        # CHECK:             %[[GLOBAL_READ_0:.+]] = vector.load %[[GLOBAL_0]]
+        # CHECK:             vector.store %[[GLOBAL_READ_0]], %alloc
         # CHECK:             {{.*}} = scf.for
         # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:       {{.*}} = arith.truncf
@@ -1131,7 +1135,10 @@ def test_chained_gemm_32x32x8():
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
         print(chained_gemm_32x32x8(q, k, v, output).module_op)
 
-        # CHECK-LABEL:     func.func @chained_gemm_32x32x8(
+        # CHECK-LABEL:     func.func @chained_gemm_32x32x8
+        # CHECK-SAME:        (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding
+        # CHECK:             %[[GLOBAL_0:.+]] = stream.binding.subspan %[[ARG0]]
+        # CHECK:             %[[GLOBAL_READ_0:.+]] = vector.load %[[GLOBAL_0]]
         # CHECK:             {{.*}} = scf.for
         # CHECK-COUNT-4:       {{.*}} = amdgpu.mfma
         # CHECK-COUNT-1:       {{.*}} = arith.truncf

@@ -22,7 +22,7 @@ from .constraints import (
 from .codegen import WaveEmitter
 from .expansion import expand_graph
 from .promotion import promote_placeholders
-from .hoisting import hoist_allocs
+from .hoisting import hoist_loop_invariant_ops
 from .utils import (
     canonicalize_module,
     compile_and_invoke,
@@ -232,7 +232,6 @@ class LaunchableWave(Launchable):
 
         # Promote the placeholders to the appropriate address space.
         promote_placeholders(graph, self.constraints)
-        hoist_allocs(graph)
 
         # Set indices.
         set_node_indices(graph, self.constraints)
@@ -250,6 +249,7 @@ class LaunchableWave(Launchable):
         remove_chained_getresult(graph)
 
         # Optimizations.
+        hoist_loop_invariant_ops(graph, self.constraints)
         minimize_global_loads(graph, self.constraints)
 
         # Apply shared memory indexing corrections.

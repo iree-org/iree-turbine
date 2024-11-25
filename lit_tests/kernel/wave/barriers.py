@@ -12,7 +12,7 @@ from iree.turbine.kernel.wave.index_sequence_analysis import (
 )
 from iree.turbine.kernel.wave.promotion import promote_node, promote_placeholders
 from iree.turbine.kernel.wave.barriers import add_shared_memory_barriers
-from iree.turbine.kernel.wave.hoisting import hoist_allocs
+from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
 from iree.turbine.kernel.wave.expansion import expand_graph
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.lang.global_symbols import *
@@ -177,11 +177,11 @@ def test_gemm():
         read_nodes = get_read_nodes(graph)
         for read_node in read_nodes:
             promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
-        hoist_allocs(trace)
         set_node_indices(trace, constraints)
         expand_graph(trace, constraints)
         set_post_expansion_indices(trace, constraints)
         tweak_index(graph)
+        hoist_loop_invariant_ops(trace, constraints)
         add_shared_memory_barriers(trace)
         print_trace(trace, False)
         # Root graph:
