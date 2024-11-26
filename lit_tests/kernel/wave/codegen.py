@@ -1004,7 +1004,7 @@ def test_chained_gemm():
 
     @tkw.wave(constraints)
     def chained_gemm(
-        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
+        q: tkl.Memory[B, M, K1, ADDRESS_SPACE_0, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[B, M, N, ADDRESS_SPACE_0, tkl.f32],
@@ -1054,9 +1054,9 @@ def test_chained_gemm():
         # CHECK-LABEL:     func.func @chained_gemm
         # CHECK-SAME:        (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding
         # CHECK:             %[[GLOBAL_0:.+]] = stream.binding.subspan %[[ARG0]]
-        # CHECK:             %[[GLOBAL_READ_0:.+]] = vector.load %[[GLOBAL_0]]
-        # CHECK:             vector.store %[[GLOBAL_READ_0]], %alloc
+        # CHECK-COUNT-4:     vector.load %[[GLOBAL_0]]
         # CHECK:             {{.*}} = scf.for
+        # CHECK-COUNT-4:       {{.*}} = vector.load %alloc
         # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:       {{.*}} = arith.truncf
         # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
