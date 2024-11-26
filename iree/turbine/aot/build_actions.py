@@ -4,10 +4,10 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from typing import Callable
+
 from abc import abstractmethod, ABC
-import functools
 from pathlib import Path
-import os
 import typing
 import types
 
@@ -22,7 +22,7 @@ __all__ = [
 
 
 def turbine_generate(
-    generator: callable,
+    generator: Callable,
     *args,
     name: str,
     out_of_process: bool = True,
@@ -118,7 +118,7 @@ class ExportOutputReturnMarshaller(ReturnMarshaller):
         result.save_mlir(path)
 
 
-RETURN_MARSHALLERS_BY_TYPE = {
+RETURN_MARSHALLERS_BY_TYPE: dict[type, ReturnMarshaller] = {
     ExportOutput: ExportOutputReturnMarshaller(),
 }
 EXPLICIT_MARSHALLER_TYPES = list(RETURN_MARSHALLERS_BY_TYPE.keys())
@@ -143,10 +143,13 @@ def get_return_marshaller(t: type) -> ReturnMarshaller:
 
 
 def unwrap_return_annotation(annot) -> list[ReturnMarshaller]:
-    if (
-        isinstance(annot, (types.GenericAlias, typing._GenericAlias))
-        and annot.__origin__ is tuple
-    ):
+    # typing._GenericAlias is used to unwrap old-style (i.e. `List`) collection
+    # aliases. We special case this and it can be removed eventually.
+    _GenericAlias = getattr(typing, "_GenericAlias", None)
+    is_generic_alias = isinstance(annot, (types.GenericAlias)) or (
+        _GenericAlias and isinstance(annot, _GenericAlias)
+    )
+    if is_generic_alias and annot.__origin__ is tuple:
         unpacked = annot.__args__
     else:
         unpacked = [annot]

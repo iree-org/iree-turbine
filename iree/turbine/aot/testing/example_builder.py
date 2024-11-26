@@ -13,7 +13,7 @@ tests tree.
 
 import os
 
-from iree.build import *
+from iree.build import compile, entrypoint, iree_build_main
 from iree.turbine.aot.build_actions import *
 from iree.turbine.aot import (
     ExportOutput,
