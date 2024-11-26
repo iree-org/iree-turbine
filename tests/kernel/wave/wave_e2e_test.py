@@ -897,7 +897,7 @@ _layouts = [
 
 
 @require_e2e
-# @require_cdna3
+@require_cdna3
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
 @pytest.mark.parametrize("mem_space", _mem_spaces)
 @pytest.mark.parametrize("layout", _layouts)
