@@ -22,7 +22,7 @@ def get_igemm_conv2d(
     nf: int,
     stride: int,
     mem_space: tkl.IndexSymbol = SHARED_ADDRESS_SPACE,
-) -> tuple["LaunchableWave", dict[Any, Any]]:
+) -> tuple["LaunchableWave", dict[tkl.IndexSymbol, Any]]:
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
 
@@ -85,7 +85,7 @@ def get_igemm_conv2d(
         we_type = tkl.Memory[HF, WF, C, NF, ADDRESS_SPACE, tkl.f16]
         out_type = tkl.Memory[N, H_OUT, W_OUT, NF, GLOBAL_ADDRESS_SPACE, tkl.f32]
     else:
-        raise ValueError(f"Invalid layout: {layout}")
+        raise ValueError(f"Unsupported layout: {layout}")
 
     ratio_m = 2
     ratio_n = 2

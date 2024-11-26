@@ -8,7 +8,7 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.wave_sim import wave_sim
-from iree.turbine.kernel.kernels import get_igemm_conv2d
+from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
