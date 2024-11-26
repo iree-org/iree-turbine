@@ -28,7 +28,7 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.wave.promotion import promote_placeholders
-from iree.turbine.kernel.wave.hoisting import hoist_allocs
+from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
 from iree.turbine.kernel.wave.expansion import expand_graph
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
@@ -285,7 +285,7 @@ class SchedulingTest(unittest.TestCase):
             IndexingContext.current().finalize()
             infer_types(trace)
             promote_placeholders(trace, constraints)
-            hoist_allocs(trace)
+            hoist_loop_invariant_ops(trace, constraints)
             set_node_indices(trace, constraints)
             expand_graph(trace, constraints)
             set_post_expansion_indices(trace, constraints)
