@@ -14,6 +14,7 @@ from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
     get_default_arch,
     get_default_run_config,
+    get_default_scheduling_params,
     device_randn,
     device_randint,
     device_randperm,
@@ -922,7 +923,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     else:
         raise ValueError(f"Invalid layout: {layout}")
 
-    conv, symbols = get_igemm_conv2d(
+    conv, hyperparams = get_igemm_conv2d(
         layout=layout,
         n=n,
         h=h,
@@ -934,6 +935,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         stride=stride,
         mem_space=mem_space,
     )
+    hyperparams.update(get_default_scheduling_params())
 
     config = get_default_run_config()
 
@@ -951,7 +953,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         )
 
     with tk.gen.TestLaunchContext(
-        symbols,
+        hyperparams,
         canonicalize=True,
         run=True,
         run_bench=run_bench,

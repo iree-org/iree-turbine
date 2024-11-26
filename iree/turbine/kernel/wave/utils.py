@@ -121,6 +121,24 @@ def get_default_compile_config() -> dict[Any, Any]:
     return {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
 
+def get_default_scheduling_params() -> dict[IndexSymbol, Any]:
+    # TODO: get values based get_default_arch()
+    return {
+        READ_SHARED_DELAY: 1,
+        WRITE_SHARED_DELAY: 1,
+        READ_GLOBAL_DELAY: 2,
+        WRITE_GLOBAL_DELAY: 2,
+        MMA_DELAY: 1,
+        VALU_DELAY: 1,
+        SHUFFLE_DELAY: 1,
+        SHARED_MEMORY_UNITS: 4,
+        GLOBAL_MEMORY_UNITS: 4,
+        MMA_UNITS: 4,
+        VALU_UNITS: 2,
+        SHUFFLE_UNITS: 2,
+    }
+
+
 def print_trace(trace: CapturedTrace, custom_print: bool = True):
     """
     Prints all subgraphs of a trace starting with the root graph.
