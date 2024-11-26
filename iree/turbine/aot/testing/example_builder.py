@@ -11,12 +11,19 @@ across process boundaries, this builder must live in the source tree vs the
 tests tree.
 """
 
+import os
+
 from iree.build import *
 from iree.turbine.aot.build_actions import *
-from iree.turbine.aot import FxProgramsBuilder
+from iree.turbine.aot import (
+    ExportOutput,
+    FxProgramsBuilder,
+    export,
+    externalize_module_parameters,
+)
 
 
-def export_simple_model(batch_size: int | None = None) -> FxProgramsBuilder:
+def export_simple_model(batch_size: int | None = None) -> ExportOutput:
     import torch
 
     class M(torch.nn.Module):
@@ -45,24 +52,28 @@ def export_simple_model(batch_size: int | None = None) -> FxProgramsBuilder:
     else:
         dynamic_shapes = {}
 
-    fxb = FxProgramsBuilder(M())
-    print("Compiling with dynamic shapes:", dynamic_shapes)
+    module = M()
+    externalize_module_parameters(module)
+    fxb = FxProgramsBuilder(module)
+    print(f"  [{os.getpid()}] Compiling with dynamic shapes: {dynamic_shapes}")
 
     @fxb.export_program(args=example_args, dynamic_shapes=dynamic_shapes)
     def dynamic_batch(module: M, x1, x2):
         return module.forward(x1, x2)
 
-    return fxb
+    return export(fxb)
 
 
 @entrypoint(description="Builds an awesome pipeline")
 def pipe():
+    print(f"Main pid: {os.getpid()}")
     results = []
     for i in range(3):
         turbine_generate(
             export_simple_model,
             batch_size=None if i == 0 else i * 10,
             name=f"import_stage{i}",
+            out_of_process=i > 0,
         )
         results.extend(
             compile(

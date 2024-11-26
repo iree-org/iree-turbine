@@ -38,4 +38,5 @@ def test_example_builder(tmp_path):
     ]:
         gen_path = tmp_path / gen_name
         contents = gen_path.read_text()
+        print(contents)
         assert contains_str in contents

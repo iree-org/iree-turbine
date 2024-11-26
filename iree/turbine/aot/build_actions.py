@@ -14,11 +14,67 @@ import types
 import inspect
 
 from iree.build.executor import ActionConcurrency, BuildAction, BuildContext, BuildFile
-from iree.turbine.aot.fx_programs import FxPrograms
+from iree.turbine.aot.exporter import ExportOutput
 
 __all__ = [
     "turbine_generate",
 ]
+
+
+def turbine_generate(
+    generator: callable,
+    *args,
+    name: str,
+    out_of_process: bool = True,
+    **kwargs,
+):
+    """Invokes a user-defined generator callable as an action, performing turbine
+    import and storing the resulting artifacts as outputs.
+
+    Because torch-based generation is usually quite slow and a bottleneck, this
+    action takes pains to use the out of process action pool, allowing multiple
+    generation activities to take place concurrently. Since this requires interacting
+    with the pickle infrastructure, it puts some constraints on usage:
+
+    * generator must be a pickleable callable. In practice, this means that it must
+      be a named function at module scope (without decorator) or a named class at
+      module scope with a `__call__` method.
+    * args and kwargs must be pickleable. In practice, this means primitive values.
+
+    Arguments to the generator are taken from the positional and unmatched keyword
+    arguments passed to `turbine_generate`.
+
+    The generator makes artifacts available as outputs by returning corresponding
+    Python instances (which must be declared as typing parameters for the remoting
+    to work):
+
+    * `ExportOutput`: The result of calling `aot.export(...)` will result in
+      `save_mlir()` being called on it while still in the subprocess to write to
+      a file names `{name}.mlir` if there is one return or `{name}_{n}.mlir` if
+      multiple.
+
+    By default, import is run in a subprocess pool. It can be run in the main
+    process by passing `out_of_process=False`.
+
+    See testing/example_builder.py for an example.
+    """
+    sig = inspect.signature(generator, eval_str=True)
+    return_marshallers = unwrap_return_annotation(sig.return_annotation)
+
+    context = BuildContext.current()
+    action = TurbineBuilderAction(
+        generator,
+        args,
+        kwargs,
+        desc=f"Export turbine model {name}",
+        executor=context.executor,
+        concurrency=(
+            ActionConcurrency.PROCESS if out_of_process else ActionConcurrency.THREAD
+        ),
+    )
+    for rm in return_marshallers:
+        rm.prepare_action(context, name, action, len(return_marshallers))
+    return [r[1] for r in action.returns]
 
 
 class ReturnMarshaller(ABC):
@@ -37,7 +93,7 @@ class ReturnMarshaller(ABC):
         ...
 
 
-class FxProgramsReturnMarshaller(ReturnMarshaller):
+class ExportOutputReturnMarshaller(ReturnMarshaller):
     def prepare_action(
         self,
         context: BuildContext,
@@ -54,19 +110,16 @@ class FxProgramsReturnMarshaller(ReturnMarshaller):
         output_file.deps.add(action)
 
     def save_remote_result(self, result, path: Path):
-        if not isinstance(result, FxPrograms):
+        if not isinstance(result, ExportOutput):
             raise RuntimeError(
-                "Turbine generator was declared to return an FxPrograms instance, "
+                "Turbine generator was declared to return an ExportOutput instance, "
                 f"but it returned {type(result)}"
             )
-        import iree.turbine.aot as turbine_aot
-
-        output = turbine_aot.export(result)
-        output.save_mlir(path)
+        result.save_mlir(path)
 
 
 RETURN_MARSHALLERS_BY_TYPE = {
-    FxPrograms: FxProgramsReturnMarshaller(),
+    ExportOutput: ExportOutputReturnMarshaller(),
 }
 EXPLICIT_MARSHALLER_TYPES = list(RETURN_MARSHALLERS_BY_TYPE.keys())
 
@@ -83,9 +136,9 @@ def get_return_marshaller(t: type) -> ReturnMarshaller:
             RETURN_MARSHALLERS_BY_TYPE[t] = m
             return m
     raise ValueError(
-        f"In order to wrap a function with @turbine_builder it must be annotated with "
-        f"specific return types. Found '{t}' but only {EXPLICIT_MARSHALLER_TYPES} "
-        f"are supported"
+        f"In order to use a callable as a generator in turbine_generate, it must be "
+        f" annotated with specific return types. Found '{t}' but only "
+        f"{EXPLICIT_MARSHALLER_TYPES} are supported"
     )
 
 
@@ -98,23 +151,6 @@ def unwrap_return_annotation(annot) -> list[ReturnMarshaller]:
     else:
         unpacked = [annot]
     return [get_return_marshaller(it) for it in unpacked]
-
-
-def turbine_generate(generator: callable, *args, name: str, **kwargs):
-    sig = inspect.signature(generator, eval_str=True)
-    return_marshallers = unwrap_return_annotation(sig.return_annotation)
-
-    context = BuildContext.current()
-    action = TurbineBuilderAction(
-        generator,
-        args,
-        kwargs,
-        desc=f"Export turbine model {name}",
-        executor=context.executor,
-    )
-    for rm in return_marshallers:
-        rm.prepare_action(context, name, action, len(return_marshallers))
-    return [r[1] for r in action.returns]
 
 
 class RemoteGenerator:
@@ -149,7 +185,7 @@ class TurbineBuilderAction(BuildAction):
         thunk,
         thunk_args,
         thunk_kwargs,
-        concurrency=ActionConcurrency.PROCESS,
+        concurrency,
         **kwargs,
     ):
         super().__init__(concurrency=concurrency, **kwargs)
