@@ -196,10 +196,9 @@ def test_evoformer():
 
         # CHECK:            func.func @evoformer
         # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-1:            {{.*}} = vector.gather
+        # CHECK-COUNT-1:            {{.*}} = vector.load
         # CHECK-COUNT-1:            vector.store {{.*}}
-        # CHECK-COUNT-4:            {{.*}} = vector.load
-        # CHECK-COUNT-1:            {{.*}} = vector.gather
+        # CHECK-COUNT-5:            {{.*}} = vector.load
         # CHECK-COUNT-1:            vector.store {{.*}}
         # CHECK-COUNT-4:            {{.*}} = vector.load
         # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
