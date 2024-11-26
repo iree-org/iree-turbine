@@ -7,7 +7,7 @@
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
-from typing import Any
+from typing import Any, Optional
 from iree.turbine.kernel.lang.global_symbols import *
 
 
@@ -22,6 +22,11 @@ def get_igemm_conv2d(
     nf: int,
     stride: int,
     mem_space: tkl.IndexSymbol = SHARED_ADDRESS_SPACE,
+    block_m: Optional[int] = None,
+    block_n: Optional[int] = None,
+    block_k: Optional[int] = None,
+    ratio_m: Optional[int] = None,
+    ratio_n: Optional[int] = None,
 ) -> tuple["LaunchableWave", dict[tkl.IndexSymbol, Any]]:
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
@@ -87,8 +92,20 @@ def get_igemm_conv2d(
     else:
         raise ValueError(f"Unsupported layout: {layout}")
 
-    ratio_m = 2
-    ratio_n = 2
+    if block_m is None:
+        block_m = 64
+
+    if block_n is None:
+        block_n = 128
+
+    if block_k is None:
+        block_k = 32
+
+    if ratio_m is None:
+        ratio_m = 2
+
+    if ratio_n is None:
+        ratio_n = 2
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = []
@@ -140,19 +157,11 @@ def get_igemm_conv2d(
         NF: nf,
         WF: wf,
         HF: hf,
-        BLOCK_M: 64,
-        BLOCK_N: 128,
-        BLOCK_K: 32,
+        BLOCK_M: block_m,
+        BLOCK_N: block_n,
+        BLOCK_K: block_k,
         ELEMS_PER_THREAD: 4,
         ADDRESS_SPACE: mem_space,
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
     }
 
     return conv, symbols
