@@ -656,6 +656,13 @@ def _construct_gather_scatter_indices(
         if shape[0] > 1:
             need_dynamic_offsets = True
 
+    mask = _build_mask(emitter, index, elements_per_thread)
+    if mask is None:
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+
     start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
@@ -684,7 +691,7 @@ def _construct_gather_scatter_indices(
             need_dynamic_offsets = True
             break
 
-        offsets.append(IntegerAttr.get(IndexType.get(), offset))
+        offsets.append(offset)
 
     def extract0(src):
         static_pos = [0] * src.type.rank
@@ -725,16 +732,13 @@ def _construct_gather_scatter_indices(
         start_indices = _build_start_indices(
             emitter, result_index, dynamic_vals_map_start
         )
+        if offsets == list(range(elements_per_thread)):
+            return start_indices, None, mask
+
+        offsets = [IntegerAttr.get(IndexType.get(), off) for off in offsets]
         offsets_vec = arith_d.ConstantOp(
             offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
         )
-
-    mask = _build_mask(emitter, index, elements_per_thread)
-    if mask is None:
-        mask_vec_type = VectorType.get(
-            [elements_per_thread], IntegerType.get_signless(1)
-        )
-        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
 
     return start_indices, offsets_vec, mask
 
@@ -792,9 +796,14 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         zero = arith_d.ConstantOp(vector_type.element_type, zero)
         passthru = vector_d.splat(vector_type, zero)
 
-        result = vector_d.gather(
-            vector_type, kb_src, start_indices, offsets_vec, mask, passthru
-        )
+        if offsets_vec is None:
+            result = vector_d.maskedload(
+                vector_type, kb_src, start_indices, mask, passthru
+            )
+        else:
+            result = vector_d.gather(
+                vector_type, kb_src, start_indices, offsets_vec, mask, passthru
+            )
 
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
@@ -853,7 +862,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             dynamic_vals=dyn_vals,
         )
 
-        if elements_per_thread == 1:
+        if offsets_vec is None:
             vector_d.maskedstore(kb_dest, start_indices, mask, insert_vector)
         else:
             vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
