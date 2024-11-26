@@ -1052,11 +1052,12 @@ def test_chained_gemm():
         print(chained_gemm(q, k, v, output).module_op)
 
         # CHECK-LABEL:     func.func @chained_gemm
-        # CHECK-SAME:        (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding
+        # CHECK-SAME:        (%[[ARG0:.*]]: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding)
+        # CHECK:             %[[ALLOC:.+]] = memref.alloc() : memref<1x32x36xf16, #gpu.address_space<workgroup>>
         # CHECK:             %[[GLOBAL_0:.+]] = stream.binding.subspan %[[ARG0]]
         # CHECK-COUNT-4:     vector.load %[[GLOBAL_0]]
         # CHECK:             {{.*}} = scf.for
-        # CHECK-COUNT-4:       {{.*}} = vector.load %alloc
+        # CHECK-COUNT-4:       {{.*}} = vector.load %[[ALLOC]]
         # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:       {{.*}} = arith.truncf
         # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
@@ -1136,7 +1137,7 @@ def test_chained_gemm_32x32x8():
         print(chained_gemm_32x32x8(q, k, v, output).module_op)
 
         # CHECK-LABEL:     func.func @chained_gemm_32x32x8
-        # CHECK-SAME:        (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding
+        # CHECK-SAME:        (%[[ARG0:.*]]: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding)
         # CHECK:             %[[GLOBAL_0:.+]] = stream.binding.subspan %[[ARG0]]
         # CHECK:             %[[GLOBAL_READ_0:.+]] = vector.load %[[GLOBAL_0]]
         # CHECK:             {{.*}} = scf.for
