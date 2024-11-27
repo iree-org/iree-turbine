@@ -57,12 +57,19 @@ jobs:
       run: |
         pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
 
-    - name: Run e2e tests on AMD GPU
-      if: "contains(matrix.os, 'amdgpu') && !cancelled()"
+    - name: Run e2e tests on AMD GPU MI300
+      if: "contains(matrix.os, 'mi300') && !cancelled()"
       run: |
         pip install --no-compile -r pytorch-rocm-requirements.txt
         export WAVE_RUN_E2E_TESTS=1
         pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
+
+    - name: Run e2e tests on AMD GPU MI250
+      if: "contains(matrix.os, 'mi250') && !cancelled()"
+      run: |
+        pip install --no-compile -r pytorch-rocm-requirements.txt
+        export WAVE_RUN_E2E_TESTS=1
+        pytest -n 2 --capture=tee-sys -vv ./tests/kernel/wave/
 
     - name: Run LIT tests
       if: ${{ !cancelled() }}
