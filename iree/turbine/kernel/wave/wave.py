@@ -336,7 +336,8 @@ class LaunchableWave(Launchable):
 
         run = kwargs.get("run", False)
         run_bench = kwargs.get("run_bench", False)
-        if run or run_bench:
+        dry_run = kwargs.get("dry_run", False)
+        if run or run_bench or dry_run:
             # TODO: cache compiled code
             dynamic_symbols = kwargs.get("dynamic_symbols", [])
             host_codegen.isolated_test_call(
