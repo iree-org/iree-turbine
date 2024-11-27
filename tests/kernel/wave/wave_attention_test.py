@@ -673,19 +673,8 @@ def testAttentionBias(
         N: shape[2],
         K1: shape[3],
         K2: shape[4],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 2,
-        SHUFFLE_UNITS: 2,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
