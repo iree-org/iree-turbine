@@ -43,13 +43,15 @@ def get_hoistable_ops(
                 continue
             # Only handle case where we are not writing to the same memory.
             # Counterproof: we may expect different read if we write to same memory.
-            for memory_user in custom_node.memory.users:
-                if isinstance(get_custom(memory_user), Write):
-                    continue
+            if any(
+                isinstance(get_custom(mem_user), Write)
+                for mem_user in custom_node.memory.users
+            ):
+                continue
             # Only hoist Read that is loop invariant.
-            dims_indexing = [ind.start for ind in custom_node.index.values()]
-            dim_depends_on_ivar = [ind.has(induction_variable) for ind in dims_indexing]
-            if any(dim_depends_on_ivar):
+            if any(
+                ind.start.has(induction_variable) for ind in custom_node.index.values()
+            ):
                 continue
             hoistable_ops.append(custom_node)
         else:
