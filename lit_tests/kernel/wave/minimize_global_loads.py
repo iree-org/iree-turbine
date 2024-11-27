@@ -7,7 +7,7 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.promotion import promote_placeholders
-from iree.turbine.kernel.wave.hoisting import hoist_allocs
+from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
 from iree.turbine.kernel.wave.barriers import add_shared_memory_barriers
 from iree.turbine.kernel.wave.expansion import expand_graph
 from iree.turbine.kernel.wave.type_inference import infer_types
@@ -90,12 +90,12 @@ def test_gemm():
         IndexingContext.current().finalize()
         infer_types(trace)
         promote_placeholders(trace, constraints)
-        hoist_allocs(trace)
         set_node_indices(trace, constraints)
         expand_graph(trace, constraints)
         set_post_expansion_indices(trace, constraints)
         if visualize:
             visualize_graph(trace.get_subgraph("region_0"), "before.png")
+        hoist_loop_invariant_ops(trace, constraints)
         minimize_global_loads(trace, constraints)
         apply_shared_memory_indexing_corrections(trace, constraints)
         if visualize:

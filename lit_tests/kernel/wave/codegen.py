@@ -1004,7 +1004,7 @@ def test_chained_gemm():
 
     @tkw.wave(constraints)
     def chained_gemm(
-        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
+        q: tkl.Memory[B, M, K1, ADDRESS_SPACE_0, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[B, M, N, ADDRESS_SPACE_0, tkl.f32],
@@ -1051,8 +1051,13 @@ def test_chained_gemm():
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
         print(chained_gemm(q, k, v, output).module_op)
 
-        # CHECK-LABEL:     func.func @chained_gemm(
+        # CHECK-LABEL:     func.func @chained_gemm
+        # CHECK-SAME:        (%[[ARG0:.*]]: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding)
+        # CHECK:             %[[ALLOC:.+]] = memref.alloc() : memref<1x32x36xf16, #gpu.address_space<workgroup>>
+        # CHECK:             %[[GLOBAL_0:.+]] = stream.binding.subspan %[[ARG0]]
+        # CHECK-COUNT-4:     vector.load %[[GLOBAL_0]]
         # CHECK:             {{.*}} = scf.for
+        # CHECK-COUNT-4:       {{.*}} = vector.load %[[ALLOC]]
         # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:       {{.*}} = arith.truncf
         # CHECK-COUNT-8:       {{.*}} = amdgpu.mfma
@@ -1131,7 +1136,10 @@ def test_chained_gemm_32x32x8():
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
         print(chained_gemm_32x32x8(q, k, v, output).module_op)
 
-        # CHECK-LABEL:     func.func @chained_gemm_32x32x8(
+        # CHECK-LABEL:     func.func @chained_gemm_32x32x8
+        # CHECK-SAME:        (%[[ARG0:.*]]: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding)
+        # CHECK:             %[[GLOBAL_0:.+]] = stream.binding.subspan %[[ARG0]]
+        # CHECK:             %[[GLOBAL_READ_0:.+]] = vector.load %[[GLOBAL_0]]
         # CHECK:             {{.*}} = scf.for
         # CHECK-COUNT-4:       {{.*}} = amdgpu.mfma
         # CHECK-COUNT-1:       {{.*}} = arith.truncf

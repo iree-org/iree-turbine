@@ -435,7 +435,7 @@ def testAttention(
 
     @tkw.wave(constraints)
     def base_attention(
-        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
+        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
@@ -840,7 +840,7 @@ def testAttentionF8(
 
     @tkw.wave(constraints)
     def base_attention(
-        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
+        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],

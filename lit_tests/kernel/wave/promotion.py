@@ -6,7 +6,7 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.promotion import promote_node, promote_placeholders
-from iree.turbine.kernel.wave.hoisting import hoist_allocs
+from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
@@ -34,6 +34,9 @@ BLOCK_K = tkl.sym.BLOCK_K
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 ADDRESS_SPACE_1 = tkl.sym.ADDRESS_SPACE_1
+
+# Induction variable for dimension K
+ARGK = tkl.sym.ARGK
 
 
 @tkw.wave_trace_only()
@@ -160,6 +163,7 @@ def test_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
     constraints += [
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
     ]
@@ -177,7 +181,7 @@ def test_gemm():
         infer_types(trace)
         for read_node in read_nodes:
             promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
-        hoist_allocs(trace)
+        hoist_loop_invariant_ops(trace, constraints)
         print_trace(trace, False)
         # Root graph:
         # CHECK: %a

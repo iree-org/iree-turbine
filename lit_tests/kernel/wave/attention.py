@@ -154,15 +154,15 @@ def test_dynamic_attention_pipelined():
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         print(dynamic_attention_pipelined(q, k, v, output).module_op)
 
-        # CHECK:            func.func @dynamic_attention_pipelined
-        # CHECK-COUNT-4:        {{.*}} = vector.maskedload {{.*}}
+        # CHECK-LABEL:       func.func @dynamic_attention_pipelined
+        # CHECK-COUNT-6:        {{.*}} = vector.maskedload {{.*}}
         # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-4:            {{.*}} = vector.maskedload {{.*}}
-        # CHECK-COUNT-13:           {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-3:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-2:            {{.*}} = vector.maskedload {{.*}}
+        # CHECK-COUNT-14:           {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-7:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:            {{.*}} = gpu.shuffle xor {{.*}}
         # CHECK-COUNT-16:       vector.maskedstore {{.*}}
 
@@ -281,13 +281,13 @@ def test_attention_pipelined():
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         print(base_attention_pipelined(q, k, v, output).module_op)
 
-        # CHECK:            func.func @base_attention_pipelined
+        # CHECK-LABEL:       func.func @base_attention_pipelined
         # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-13:           {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-14:           {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-7:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-3:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:            {{.*}} = gpu.shuffle xor {{.*}}
 
 
@@ -401,7 +401,7 @@ def test_attention_32x32x8():
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         print(base_attention_32x32x8(q, k, v, output).module_op)
 
-        # CHECK:            func.func @base_attention_32x32x8
+        # CHECK-LABEL:      func.func @base_attention_32x32x8
         # CHECK:                {{.*}} = scf.for
         # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
         # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
@@ -524,7 +524,7 @@ def test_attention():
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         print(base_attention(q, k, v, output).module_op)
 
-        # CHECK:            func.func @base_attention
+        # CHECK-LABEL:       func.func @base_attention
         # CHECK:                {{.*}} = scf.for
         # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
         # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
