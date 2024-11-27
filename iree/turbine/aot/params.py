@@ -302,6 +302,8 @@ def _yield_saveable_tensors(
     """
     memo: Set[str] = set()
     for sub_name, sub_module in module.named_modules(prefix=prefix):
+        if "vae." in sub_name:
+            sub_name = sub_name.replace("vae.", "")
         state_dict = sub_module.state_dict()
         for param_name, param in sub_module.named_parameters(recurse=False):
             full_param_name = f"{sub_name}.{param_name}" if sub_name else param_name
