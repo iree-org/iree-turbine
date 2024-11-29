@@ -758,6 +758,9 @@ def _construct_gather_scatter_indices(
         {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
     )
     for i in range(1, elements_per_thread, 1):
+        if mapping.num_dynamic_vals != 0:
+            is_contiguous = False
+            break
         subs[-1] = (subs[-1][0], subs[-1][1] + 1)
         next_result_index = {
             key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)
