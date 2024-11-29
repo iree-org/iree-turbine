@@ -777,8 +777,18 @@ def _construct_gather_scatter_indices(
         )
         mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
 
+    def extract0(src):
+        static_pos = [0] * src.type.rank
+        return vector_d.extract(src, static_position=static_pos, dynamic_position=[])
+
+    dynamic_vals_map_start = {
+        sym: extract0(val)
+        for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
+    }
     if is_contiguous:
-        start_indices = _build_start_indices(emitter, result_index)
+        start_indices = _build_start_indices(
+            emitter, result_index, dynamic_vals_map_start
+        )
         return start_indices, None, mask
 
     start_indices_orig = _get_start_indices(index)
@@ -792,13 +802,6 @@ def _construct_gather_scatter_indices(
         ), f"Dynamic val shape must be {[1]} or {[elements_per_thread]} but got {shape}"
         if shape[0] > 1:
             need_dynamic_offsets = True
-
-    mask = _build_mask(emitter, index, elements_per_thread)
-    if mask is None:
-        mask_vec_type = VectorType.get(
-            [elements_per_thread], IntegerType.get_signless(1)
-        )
-        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
 
     start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
@@ -830,14 +833,6 @@ def _construct_gather_scatter_indices(
 
         offsets.append(offset)
 
-    def extract0(src):
-        static_pos = [0] * src.type.rank
-        return vector_d.extract(src, static_position=static_pos, dynamic_position=[])
-
-    dynamic_vals_map_start = {
-        sym: extract0(val)
-        for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
-    }
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
     if need_dynamic_offsets:
         # In case we need dynamic `offsets_vec`, set all `start_indices` to 0
