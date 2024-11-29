@@ -406,7 +406,7 @@ def test_read_write_dynamic_mapping():
     k = tkw.IndexMapping.dynamic_val(0)
     mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={M: k, N: j},
+        inputs={M: i, N: k},
         outputs={M: i, N: j},
         dynamic_val_mappings={M: i, N: j},
     )
@@ -435,23 +435,26 @@ def test_read_write_dynamic_mapping():
         # CHECK-LABEL:    func.func @test
         # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
         # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
-        # CHECK-DAG:        %[[CST0:.*]] = arith.constant dense<16> : vector<16xindex>
-        # CHECK-DAG:        %[[CST1:.*]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> : vector<16xindex>
-        # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
+        # CHECK-DAG:        %[[D0:.*]] = arith.constant 0 : index
+        # CHECK-DAG:        %[[C16:.*]] = arith.constant 16 : index
+        # CHECK-DAG:        %[[C32:.*]] = arith.constant 32 : index
+        # CHECK-DAG:        %[[C64:.*]] = arith.constant 64 : index
+        # CHECK-DAG:        %[[C256:.*]] = arith.constant 256 : index
         # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
         # CHECK:            %[[D9:.*]] = vector.load %[[D0]][%[[D5:.*]], %[[D8:.*]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>, vector<16xi32>
         # CHECK:            %[[D10:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
         # CHECK:            %[[D11:.*]] = arith.index_cast %[[D9]] : vector<16xi32> to vector<16xindex>
-        # CHECK-DAG:        %[[D18:.*]] = vector.constant_mask [16] : vector<16xi1>
-        # CHECK:            %[[D12:.*]] = arith.muli %[[D11]], %[[CST0]] overflow<nsw, nuw> : vector<16xindex>
-        # CHECK:            %[[D13:.*]] = vector.splat %{{.*}} : vector<16xindex>
-        # CHECK:            %[[D14:.*]] = arith.addi %[[D13]], %[[D12]] overflow<nsw, nuw> : vector<16xindex>
-        # CHECK:            %[[D15:.*]] = vector.splat %{{.*}} : vector<16xindex>
-        # CHECK:            %[[D16:.*]] = arith.addi %[[D14]], %[[D15]] overflow<nsw, nuw> : vector<16xindex>
-        # CHECK:            %[[D17:.*]] = arith.addi %[[D16]], %[[CST1]] overflow<nsw, nuw> : vector<16xindex>
-        # CHECK:            %[[D19:.*]] = vector.gather %[[D10]][%[[C0]], %[[C0]]] [%[[D17]]], %[[D18]], %[[CST]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16> into vector<16xf16>
-        # CHECK:            %[[D20:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-        # CHECK:            vector.store %[[D19]], %[[D20]][%[[D5]], %[[D8]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+        # CHECK-DAG:        %[[D12:.*]] = vector.constant_mask [16] : vector<16xi1>
+        # CHECK:            %[[D13:.*]] = arith.muli %{{.*}}, %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D14:.*]] = arith.muli %{{.*}}, %[[C256]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D15:.*]] = arith.muli %{{.*}}, %[[C256]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D16:.*]] = arith.addi %[[D15]], %[[D14]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D17:.*]] = arith.addi %[[D16]], %[[D13]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D18:.*]] = vector.splat %[[D17]] : vector<16xindex>
+        # CHECK:            %[[D19:.*]] = arith.addi %[[D18]], %[[D11]] overflow<nsw, nuw> : vector<16xindex>
+        # CHECK:            %[[D20:.*]] = vector.gather %[[D10]][%[[C0]], %[[C0]]] [%[[D19]]], %[[D12]], %[[CST]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16> into vector<16xf16>
+        # CHECK:            %[[D21:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
+        # CHECK:            vector.store %[[D20]], %[[D21]][%[[D5]], %[[D8]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
 @run_test
