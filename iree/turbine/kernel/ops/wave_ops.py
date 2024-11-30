@@ -976,6 +976,35 @@ class Read(CustomOp):
         if is_shared_mem_access(self):
             self.index = align_index_vars(self.index, constraints)
 
+    def has_identity_mapping(self) -> bool:
+        mapping = self.mapping
+        if mapping is None:
+            return True
+
+        mem_shape = self.memory.type.symbolic_shape
+        if mapping.is_identity() and mapping.input_shape == mem_shape:
+            return True
+
+        return False
+
+    def is_contiguous_vec(self) -> bool:
+        if self.has_identity_mapping():
+            return True
+
+        mapping = self.mapping
+
+        mem_shape = self.memory.type.symbolic_shape
+
+        from ..wave.utils import check_is_mapping_contiguous
+
+        return check_is_mapping_contiguous(
+            mapping=mapping,
+            symbolc_shape=mem_shape,
+            index=self.index,
+            elements_per_thread=self.elements_per_thread,
+            is_read=True,
+        )
+
 
 @define_op("reduction")
 @dataclass
@@ -1151,6 +1180,34 @@ class Write(CustomOp):
 
         if is_shared_mem_access(self):
             self.index = align_index_vars(self.index, constraints)
+
+    def has_identity_mapping(self) -> bool:
+        mapping = self.mapping
+        if mapping is None:
+            return True
+
+        mem_shape = self.memory.type.symbolic_shape
+        if mapping.is_identity() and mapping.output_shape == mem_shape:
+            return True
+
+        return False
+
+    def is_contiguous_vec(self) -> bool:
+        if self.has_identity_mapping():
+            return True
+        mapping = self.mapping
+
+        mem_shape = self.memory.type.symbolic_shape
+
+        from ..wave.utils import check_is_mapping_contiguous
+
+        return check_is_mapping_contiguous(
+            mapping=mapping,
+            symbolc_shape=mem_shape,
+            index=self.index,
+            elements_per_thread=self.elements_per_thread,
+            is_read=False,
+        )
 
 
 @define_py_op(operator.getitem)

@@ -554,23 +554,6 @@ def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
     return get_custom(node).type.symbolic_shape
 
 
-def _is_identity_mapping(
-    mapping: IndexMapping,
-    input_shape: Optional[tuple[IndexExpr]] = None,
-    output_shape: Optional[tuple[IndexExpr]] = None,
-) -> bool:
-    if not mapping.is_identity():
-        return False
-
-    if input_shape is not None and mapping.input_shape != input_shape:
-        return False
-
-    if output_shape is not None and mapping.output_shape != output_shape:
-        return False
-
-    return True
-
-
 def _build_mask(
     emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
 ) -> Optional[OpResult]:
@@ -596,117 +579,6 @@ def _build_mask(
     return mask
 
 
-def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
-    def check_mul(mul):
-        ret = None
-        for arg in mul.args:
-            if arg.is_number:
-                if ret is not None:
-                    return None
-
-                ret = arg
-                continue
-
-            if not isinstance(arg, (sympy.floor, sympy.Mod)):
-                return None
-
-        return ret
-
-    def transform_mod(expr):
-        if not isinstance(expr, sympy.Mod):
-            return None
-
-        p, q = expr.args
-        if not q.is_number:
-            return None
-
-        if not isinstance(p, sympy.Add):
-            return None
-
-        c = None
-        terms = []
-        mult = None
-        for arg in p.args:
-            if arg.is_number:
-                if c is not None:
-                    return None
-
-                c = arg
-                continue
-
-            if not isinstance(arg, sympy.Mul):
-                return None
-
-            m = check_mul(arg)
-            if (m is None) or (q % m != 0):
-                return None
-
-            mult = m if (mult is None) or (m < mult) else mult
-            terms.append(arg)
-
-        if c >= mult:
-            return None
-
-        return (sum(terms) % q) + c
-
-    def check_mul_rational(mul):
-        ret = None
-        for arg in mul.args:
-            if isinstance(arg, sympy.Rational):
-                if ret is not None:
-                    return None
-
-                ret = arg
-                continue
-
-            if not isinstance(arg, (sympy.floor, sympy.Mod)):
-                return None
-
-        return ret
-
-    def transform_floor(expr):
-        if not isinstance(expr, sympy.floor):
-            return None
-
-        expr = expr.args[0]
-        if not isinstance(expr, sympy.Add):
-            return None
-
-        c = None
-        for arg in expr.args:
-            if isinstance(arg, sympy.Rational):
-                if c is not None:
-                    return None
-
-                c = arg
-
-        if c is None:
-            return None
-
-        terms = []
-        for arg in expr.args:
-            if isinstance(arg, sympy.Rational):
-                continue
-
-            if not isinstance(arg, sympy.Mul):
-                return None
-
-            r = check_mul_rational(arg)
-            if r is None:
-                return None
-
-            if r < c:
-                return None
-
-            terms.append(arg)
-
-        return sympy.floor(sum(terms))
-
-    expr = expr.replace(lambda e: transform_mod(e) is not None, transform_mod)
-    expr = expr.replace(lambda e: transform_floor(e) is not None, transform_floor)
-    return sympy.simplify(expr)
-
-
 def _construct_gather_scatter_indices(
     emitter: WaveEmitter,
     symbolc_shape: tuple[IndexExpr],
@@ -715,6 +587,7 @@ def _construct_gather_scatter_indices(
     elements_per_thread: int,
     is_read: bool,
     dynamic_vals: tuple[Any, ...],
+    is_contiguous: bool,
 ) -> tuple[OpResult, OpResult, OpResult]:
     # Apply symbolc_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
@@ -745,34 +618,6 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
 
-    strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
-    offsets = []
-
-    start_indices = _get_start_indices(result_index)
-
-    expected_diff = [0] * len(start_indices)
-    expected_diff[-1] = 1
-    is_contiguous = True
-    subs[-1] = (subs[-1][0], (subs[-1][1] // elements_per_thread) * elements_per_thread)
-    prev_indices = _get_start_indices(
-        {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
-    )
-    for i in range(1, elements_per_thread, 1):
-        if mapping.num_dynamic_vals != 0:
-            is_contiguous = False
-            break
-        subs[-1] = (subs[-1][0], subs[-1][1] + 1)
-        next_result_index = {
-            key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)
-        }
-        next_indices = _get_start_indices(next_result_index)
-        diff = [_simplify_sympy_expr(a - b) for a, b in zip(next_indices, prev_indices)]
-        if diff != expected_diff:
-            is_contiguous = False
-            break
-
-        prev_indices = next_indices
-
     mask = _build_mask(emitter, index, elements_per_thread)
     if mask is None:
         mask_vec_type = VectorType.get(
@@ -794,6 +639,7 @@ def _construct_gather_scatter_indices(
         )
         return start_indices, None, mask
 
+    start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
 
     need_dynamic_offsets = False
@@ -806,6 +652,8 @@ def _construct_gather_scatter_indices(
         if shape[0] > 1:
             need_dynamic_offsets = True
 
+    offsets = []
+    strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
     start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
@@ -898,7 +746,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
-    if mapping is None or _is_identity_mapping(mapping, input_shape=input_shape):
+    if get_custom(node).has_identity_mapping():
         start_indices = _build_start_indices(emitter, index)
         mask = _build_mask(
             emitter, index, cast_py_literal(emitter, elements_per_thread)
@@ -925,6 +773,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=True,
             dynamic_vals=dyn_vals,
+            is_contiguous=get_custom(node).is_contiguous_vec(),
         )
 
         zero = get_constant_attr(0, element_type)
@@ -968,9 +817,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     index = node.index
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
-    if mapping is None or _is_identity_mapping(
-        mapping, input_shape=input_shape, output_shape=output_shape
-    ):
+    if get_custom(node).has_identity_mapping():
         start_indices = _build_start_indices(emitter, index)
         mask = _build_mask(
             emitter, index, cast_py_literal(emitter, elements_per_thread)
@@ -995,6 +842,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=False,
             dynamic_vals=dyn_vals,
+            is_contiguous=get_custom(node).is_contiguous_vec(),
         )
 
         if offsets_vec is None:
