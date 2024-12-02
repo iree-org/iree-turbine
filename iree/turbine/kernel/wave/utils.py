@@ -1206,6 +1206,7 @@ def check_is_mapping_contiguous(
     elements_per_thread: int | IndexExpr,
     is_read: bool,
 ) -> bool:
+    """Check if mapping can be lowered to contiguous vector ops instead of gathers/scatters"""
     elements_per_thread = subs_idxc(elements_per_thread)
     if elements_per_thread == 1:
         return True
@@ -1233,19 +1234,27 @@ def check_is_mapping_contiguous(
 
     result_index = {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
 
+    # Iterate over elements_per_thread end check if every subsequent read have
+    # diff 1 in fastest changing dim and 0s in every other.
     expected_diff = [0] * len(index_mapping)
     expected_diff[-1] = 1
     is_contiguous = True
+
+    # Assume fastest changing dim increments in elements_per_thread between individual ops,
+    # This is needed for sympy simplifications.
     subs[-1] = (subs[-1][0], (subs[-1][1] // elements_per_thread) * elements_per_thread)
     prev_indices = _get_start_indices(
         {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
     )
     for i in range(1, elements_per_thread, 1):
+        # Increment fastests changing dim in unmapped index by one and apply mapping.
         subs[-1] = (subs[-1][0], subs[-1][1] + 1)
         next_result_index = {
             key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)
         }
         next_indices = _get_start_indices(next_result_index)
+
+        # Compute diff for every mapped dim.
         diff = [_simplify_sympy_expr(a - b) for a, b in zip(next_indices, prev_indices)]
         if diff != expected_diff:
             return False
