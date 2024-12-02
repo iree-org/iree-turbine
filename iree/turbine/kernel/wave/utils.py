@@ -1077,6 +1077,8 @@ def _get_start_indices(
 
 
 def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
+    """Apply custom sympy simplifications"""
+
     def check_mul(mul):
         ret = None
         for arg in mul.args:
@@ -1093,6 +1095,11 @@ def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
         return ret
 
     def transform_mod(expr):
+        """Move constant outside of Mod expr
+
+        Example:
+        (floor(a) * 4 + 3) % 16 -> (floor(a) * 4) % 16 + 3
+        """
         if not isinstance(expr, sympy.Mod):
             return None
 
@@ -1145,6 +1152,11 @@ def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
         return ret
 
     def transform_floor(expr):
+        """Simplify rational addition inside floor expr
+
+        Example:
+        floor(floor(a)/3 + 1/6) -> floor(floor(a)/3)
+        """
         if not isinstance(expr, sympy.floor):
             return None
 
