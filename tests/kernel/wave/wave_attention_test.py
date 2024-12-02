@@ -18,6 +18,7 @@ from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     get_default_arch,
+    get_default_scheduling_params,
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
     device_randn,
@@ -166,15 +167,8 @@ def testChainedGemm(
         N: shape[2],
         K1: shape[3],
         K2: shape[4],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
@@ -315,15 +309,8 @@ def testChainedGemmF8(
         N: shape[2],
         K1: shape[3],
         K2: shape[4],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
@@ -492,19 +479,8 @@ def testAttention(
         N: shape[2],
         K1: shape[3],
         K2: shape[4],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 2,
-        SHUFFLE_UNITS: 2,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
@@ -697,19 +673,8 @@ def testAttentionBias(
         N: shape[2],
         K1: shape[3],
         K2: shape[4],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 2,
-        SHUFFLE_UNITS: 2,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
@@ -898,19 +863,8 @@ def testAttentionF8(
         N: shape[2],
         K1: shape[3],
         K2: shape[4],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 2,
-        SHUFFLE_UNITS: 2,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
