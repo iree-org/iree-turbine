@@ -123,7 +123,7 @@ def get_default_compile_config() -> dict[Any, Any]:
 
 def get_default_scheduling_params() -> dict[IndexSymbol, Any]:
     """Return default scheduling params."""
-    # TODO: get values based get_default_arch()
+    # TODO: get values based on get_default_arch()
     return {
         READ_SHARED_DELAY: 1,
         WRITE_SHARED_DELAY: 1,

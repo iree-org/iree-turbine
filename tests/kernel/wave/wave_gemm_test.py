@@ -16,6 +16,7 @@ from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     get_default_arch,
+    get_default_scheduling_params,
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
     device_randn,
@@ -161,19 +162,8 @@ def testGemm(
         M: shape[0],
         N: shape[1],
         K: shape[2],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 8,
-        SHUFFLE_UNITS: 8,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
@@ -320,19 +310,8 @@ def testCDNA2IntGemm(
         M: shape[0],
         N: shape[1],
         K: shape[2],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 8,
-        SHUFFLE_UNITS: 8,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
@@ -463,19 +442,8 @@ def testCDNA3IntGemm(
         M: shape[0],
         N: shape[1],
         K: shape[2],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 8,
-        SHUFFLE_UNITS: 8,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
@@ -590,19 +558,8 @@ def testF8Gemm(
         M: shape[0],
         N: shape[1],
         K: shape[2],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 8,
-        SHUFFLE_UNITS: 8,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
@@ -709,19 +666,8 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         M: shape[1],
         N: shape[2],
         K: shape[3],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 8,
-        SHUFFLE_UNITS: 8,
     }
+    hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
