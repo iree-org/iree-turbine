@@ -933,6 +933,8 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         wf=wf,
         nf=nf,
         stride=stride,
+        input_dtype=tkl.f16,
+        output_dtype=tkl.f32,
         mem_space=mem_space,
     )
     hyperparams.update(get_default_scheduling_params())

@@ -7,6 +7,7 @@
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
+from iree.turbine.kernel._support.dtype import DataType
 from typing import Any, Optional
 from iree.turbine.kernel.lang.global_symbols import *
 
@@ -21,6 +22,8 @@ def get_igemm_conv2d(
     wf: int,
     nf: int,
     stride: int,
+    input_dtype: DataType,
+    output_dtype: DataType,
     mem_space: tkl.IndexSymbol = SHARED_ADDRESS_SPACE,
     block_m: Optional[int] = None,
     block_n: Optional[int] = None,
@@ -28,6 +31,8 @@ def get_igemm_conv2d(
     ratio_m: Optional[int] = None,
     ratio_n: Optional[int] = None,
 ) -> tuple["LaunchableWave", dict[tkl.IndexSymbol, Any]]:
+    assert input_dtype == tkl.f16, f"Unsupported input dtype: {input_dtype}"
+    assert output_dtype == tkl.f32, f"Unsupported input dtype: {output_dtype}"
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
 
@@ -82,13 +87,13 @@ def get_igemm_conv2d(
     ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
 
     if layout == "nchw_fchw":
-        x_type = tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16]
-        we_type = tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, tkl.f16]
-        out_type = tkl.Memory[N, NF, H_OUT, W_OUT, GLOBAL_ADDRESS_SPACE, tkl.f32]
+        x_type = tkl.Memory[N, C, H, W, ADDRESS_SPACE, input_dtype]
+        we_type = tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, input_dtype]
+        out_type = tkl.Memory[N, NF, H_OUT, W_OUT, GLOBAL_ADDRESS_SPACE, output_dtype]
     elif layout == "nhwc_hwcf":
-        x_type = tkl.Memory[N, H, W, C, ADDRESS_SPACE, tkl.f16]
-        we_type = tkl.Memory[HF, WF, C, NF, ADDRESS_SPACE, tkl.f16]
-        out_type = tkl.Memory[N, H_OUT, W_OUT, NF, GLOBAL_ADDRESS_SPACE, tkl.f32]
+        x_type = tkl.Memory[N, H, W, C, ADDRESS_SPACE, input_dtype]
+        we_type = tkl.Memory[HF, WF, C, NF, ADDRESS_SPACE, input_dtype]
+        out_type = tkl.Memory[N, H_OUT, W_OUT, NF, GLOBAL_ADDRESS_SPACE, output_dtype]
     else:
         raise ValueError(f"Unsupported layout: {layout}")
 
@@ -128,10 +133,12 @@ def get_igemm_conv2d(
         we: we_type,
         out: out_type,
     ):
-        c_reg = tkl.Register[M, NF, tkl.f32](0.0)
+        c_reg = tkl.Register[M, NF, output_dtype](0.0)
 
         @tkw.reduction(K, init_args=[c_reg])
-        def repeat(acc: tkl.Register[M, NF, tkl.f32]) -> tkl.Register[M, NF, tkl.f32]:
+        def repeat(
+            acc: tkl.Register[M, NF, output_dtype]
+        ) -> tkl.Register[M, NF, output_dtype]:
             a_reg = tkw.read(
                 x,
                 mapping=x_mapping,
