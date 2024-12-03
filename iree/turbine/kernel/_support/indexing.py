@@ -430,3 +430,6 @@ class IndexSequence:
         if isinstance(self.size, int) and self.size <= 1:
             return f"{self.start}"
         return f"{self.start} : {self.size} : {self.stride}"
+
+    def __hash__(self):
+        return hash((self.start, self.size, self.stride))
