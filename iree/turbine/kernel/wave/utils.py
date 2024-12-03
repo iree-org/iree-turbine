@@ -39,6 +39,7 @@ from .constraints import (
 from .assumptions import Assumption
 import torch.fx as fx
 import iree.turbine.kernel.lang as tkl
+from pathlib import Path
 
 
 import tempfile
@@ -541,6 +542,7 @@ def compile_and_invoke(
     kernel_dynamic_dims: list[int] = [],
     run: bool = False,
     run_bench: bool = False,
+    create_vmfb_file: Optional[Path] = None,
     inplace: bool = False,
 ):
     backend = config["backend"]
@@ -588,9 +590,12 @@ def compile_and_invoke(
 
     res = compile_str(asm, target_backends=[backend], extra_args=flags)
 
-    dump_vmfb_file = config.get("dump_vmfb_file", None)
-    if dump_vmfb_file is not None:
-        _write_file(dump_vmfb_file, "wb", res)
+    if create_vmfb_file is not None:
+        _write_file(create_vmfb_file, "wb", res)
+
+    if not (run or run_bench):
+        return
+
     if inplace:
         # Select device as the GPU, where input tensors are coming from.
         device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)

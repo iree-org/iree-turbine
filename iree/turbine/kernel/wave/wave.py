@@ -336,7 +336,8 @@ class LaunchableWave(Launchable):
 
         run = kwargs.get("run", False)
         run_bench = kwargs.get("run_bench", False)
-        if run or run_bench:
+        create_vmfb_file = kwargs.get("create_vmfb_file", None)
+        if run or run_bench or create_vmfb_file:
             # TODO: cache compiled code
             dynamic_symbols = kwargs.get("dynamic_symbols", [])
             host_codegen.isolated_test_call(
@@ -372,6 +373,7 @@ class LaunchableWave(Launchable):
                 kernel_dynamic_dims,
                 run,
                 run_bench,
+                create_vmfb_file=create_vmfb_file,
                 inplace=True,
             )
 
