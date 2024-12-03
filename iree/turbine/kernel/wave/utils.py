@@ -1211,6 +1211,10 @@ def check_is_mapping_contiguous(
     if elements_per_thread == 1:
         return True
 
+    # TODO: Better dyn vals analysis.
+    if mapping.num_dynamic_vals != 0:
+        return False
+
     if is_read:
         assert (
             mapping.is_output_identity()
@@ -1221,10 +1225,6 @@ def check_is_mapping_contiguous(
             mapping.is_input_identity()
         ), "non-identity input mapping is not supported yet"
         index_mapping = mapping.map_output_indices(symbolc_shape)
-
-    # TODO: Better dyn vals analysis.
-    if mapping.num_dynamic_vals != 0:
-        return False
 
     index_mapping = tuple(subs_idxc(i) for i in index_mapping)
 
@@ -1238,7 +1238,6 @@ def check_is_mapping_contiguous(
     # diff 1 in fastest changing dim and 0s in every other.
     expected_diff = [0] * len(index_mapping)
     expected_diff[-1] = 1
-    is_contiguous = True
 
     # Assume fastest changing dim increments in elements_per_thread between individual ops,
     # This is needed for sympy simplifications.
