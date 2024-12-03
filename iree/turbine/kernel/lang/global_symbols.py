@@ -1,4 +1,5 @@
 from .._support.indexing import index_symbol
+import sys
 
 # Global symbols used throughout the code.
 
@@ -6,12 +7,31 @@ from .._support.indexing import index_symbol
 GLOBAL_ADDRESS_SPACE = index_symbol("$GLOBAL_ADDRESS_SPACE")
 SHARED_ADDRESS_SPACE = index_symbol("$SHARED_ADDRESS_SPACE")
 
+
 # Distribution symbols.
 WORKGROUP_0 = index_symbol("$WG0")
 WORKGROUP_1 = index_symbol("$WG1")
 WORKGROUP_2 = index_symbol("$WG2")
-WORKGROUP_3 = index_symbol("$WG3")
-WORKGROUP_4 = index_symbol("$WG4")
+
+
+def create_additional_workgroup_symbols():
+    """
+    Since we can have a large number of workgroups, we create
+    symbols for them dynamically. However, only WORKGROUP_0,
+    WORKGROUP_1, and WORKGROUP_2 will persist during code generation,
+    so we generate those symbols statically.
+    """
+    max_workgroups = 5
+    for i in range(3, max_workgroups):
+        globals()[f"WORKGROUP_{i}"] = index_symbol(f"$WG{i}")
+
+
+def get_workgroup_symbol(i: int):
+    assert i >= 0, "Workgroup index must be non-negative."
+    return index_symbol(f"$WG{i}")
+
+
+create_additional_workgroup_symbols()
 
 THREAD_0 = index_symbol("$T0")
 THREAD_1 = index_symbol("$T1")

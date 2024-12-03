@@ -190,18 +190,6 @@ def get_evoformer_kernel(
         BLOCK_M: q_seq_len[TILE_SIZE],
         BLOCK_N: v_dim[TILE_SIZE],
         BLOCK_K2: kv_seq_len[TILE_SIZE],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        VALU_DELAY: 1,
-        SHUFFLE_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-        VALU_UNITS: 2,
-        SHUFFLE_UNITS: 2,
     }
 
     return evoformer_fwd, symbols

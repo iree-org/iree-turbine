@@ -18,6 +18,7 @@ from iree.turbine.kernel.wave.utils import (
     device_randn,
     device_zeros,
     device_randint,
+    get_default_scheduling_params,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.evoformer import get_evoformer_kernel
@@ -92,6 +93,8 @@ def testEvoformerAttentionForward(
     evoformer_fwd, symbols = get_evoformer_kernel(
         *shapes_and_tile_sizes, mfma_variant, dtype
     )
+
+    symbols.update(get_default_scheduling_params())
 
     config = get_default_run_config()
     if run_bench:
