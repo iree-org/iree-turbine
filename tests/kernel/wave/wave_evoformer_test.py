@@ -41,7 +41,7 @@ default_test_shapes = []
 # Order of shapes: (B, BN, K2, H, K1, M, N)
 default_test_shapes = [(1, 256, 256, 4, 32, 256, 32), (1, 512, 256, 8, 8, 256, 8)]
 default_test_shapes += [perf_test(x) for x in default_test_shapes]
-default_tile_sizes = [(1, 1, 32, 1, None, 64, 64)]
+default_tile_sizes = [(1, 1, 32, 1, None, 64, 32)]
 
 
 # From: https://github.com/microsoft/DeepSpeed/blob/master/tests/unit/ops/deepspeed4science/test_DS4Sci_EvoformerAttention.py

@@ -50,14 +50,16 @@ def get_evoformer_kernel(
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
+    ratio_m = 2
+    ratio_n = 1
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.WorkgroupConstraint(BN, BLOCK_BN, 3)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 4)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / ratio_m)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / ratio_n)]
 
     if mfma_variant == MMAType.F32_16x16x16_F16:
         Mvec = 16
@@ -69,7 +71,7 @@ def get_evoformer_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
+            waves_per_block=(ratio_m, ratio_n, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, BN: 0, H: 0, M: Mvec, N: Nvec},
         )
@@ -107,7 +109,7 @@ def get_evoformer_kernel(
 
     @tkw.wave(constraints)
     def evoformer_fwd(
-        q: tkl.Memory[B, BN, M, H, K1, ADDRESS_SPACE, datatype],
+        q: tkl.Memory[B, BN, M, H, K1, GLOBAL_ADDRESS_SPACE, datatype],
         k: tkl.Memory[B, BN, K2, H, K1, ADDRESS_SPACE, datatype],
         v: tkl.Memory[B, BN, N, H, K2, ADDRESS_SPACE, datatype],
         mask: tkl.Memory[B, BN, K2, GLOBAL_ADDRESS_SPACE, datatype],
