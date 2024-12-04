@@ -610,9 +610,9 @@ def _construct_gather_scatter_indices(
 
     # As we only support identity input/output mapping for now, we can directly
     # substitute iterators with corresponding expanded index.
-    subs = list(idxc.subs.items()) + [
+    subs = [
         (sym, expr.start) for sym, expr in zip(iters.keys(), index.values())
-    ]
+    ] + list(idxc.subs.items())
 
     # Contruct input/output index, substituting iterators in input mapping with
     # expanded index.
