@@ -165,7 +165,9 @@ class LaunchableWave(Launchable):
         reduction_nodes = trace.walk(is_reduction)
         for node in reduction_nodes:
             custom = get_custom(node)
-            self.induction_vars[custom] = tkl.IndexSymbol("$ARG" + str(custom.axis))
+            self.induction_vars[custom] = tkl.IndexSymbol(
+                "$ARG" + str(custom.axis), integer=True, nonnegative=True
+            )
             for tiling_constraint in self.tiling_constraints:
                 if tiling_constraint.dim == custom.axis:
                     tiling_constraint.induction_var = self.induction_vars[custom]

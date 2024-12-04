@@ -177,6 +177,20 @@ class WaveEmitter:
         )
         self._node_values[node] = proxies
 
+    def get_induction_vars_and_syms(self) -> tuple[list[OpResult], list[IndexExpr]]:
+        induction_var_syms = []
+        induction_vars = []
+        if self.induction_vars:
+            for constraint in self.constraints:
+                if isinstance(constraint, TilingConstraint):
+                    assert (
+                        constraint.dim in self.induction_vars
+                    ), f"Could not find induction var for {constraint.dim} dimension"
+                    induction_var_syms.append(constraint.induction_var)
+                    induction_vars.append(self.induction_vars[constraint.dim])
+
+        return induction_vars, induction_var_syms
+
 
 def get_type_or_element_type(operand_type: IrType):
     assert isinstance(operand_type, IrType)
@@ -189,16 +203,7 @@ def get_type_or_element_type(operand_type: IrType):
 def add_emitter_subs(
     emitter: WaveEmitter, dynamic_values: dict[IndexExpr, Value] = {}
 ) -> dict[IndexSymbol, Value]:
-    induction_var_syms = []
-    induction_vars = []
-    if emitter.induction_vars:
-        for constraint in emitter.constraints:
-            if isinstance(constraint, TilingConstraint):
-                assert (
-                    constraint.dim in emitter.induction_vars
-                ), f"Could not find induction var for {constraint.dim} dimension"
-                induction_var_syms.append(constraint.induction_var)
-                induction_vars.append(emitter.induction_vars[constraint.dim])
+    induction_vars, induction_var_syms = emitter.get_induction_vars_and_syms()
 
     # TODO: factor this out
     all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars
@@ -549,23 +554,6 @@ def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
     return get_custom(node).type.symbolic_shape
 
 
-def _is_identity_mapping(
-    mapping: IndexMapping,
-    input_shape: Optional[tuple[IndexExpr]] = None,
-    output_shape: Optional[tuple[IndexExpr]] = None,
-) -> bool:
-    if not mapping.is_identity():
-        return False
-
-    if input_shape is not None and mapping.input_shape != input_shape:
-        return False
-
-    if output_shape is not None and mapping.output_shape != output_shape:
-        return False
-
-    return True
-
-
 def _build_mask(
     emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
 ) -> Optional[OpResult]:
@@ -599,6 +587,7 @@ def _construct_gather_scatter_indices(
     elements_per_thread: int,
     is_read: bool,
     dynamic_vals: tuple[Any, ...],
+    is_contiguous: bool,
 ) -> tuple[OpResult, OpResult, OpResult]:
     # Apply symbolc_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
@@ -629,8 +618,26 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
 
-    strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
-    offsets = []
+    mask = _build_mask(emitter, index, elements_per_thread)
+    if mask is None:
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+
+    def extract0(src):
+        static_pos = [0] * src.type.rank
+        return vector_d.extract(src, static_position=static_pos, dynamic_position=[])
+
+    dynamic_vals_map_start = {
+        sym: extract0(val)
+        for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
+    }
+    if is_contiguous:
+        start_indices = _build_start_indices(
+            emitter, result_index, dynamic_vals_map_start
+        )
+        return start_indices, None, mask
 
     start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
@@ -645,13 +652,8 @@ def _construct_gather_scatter_indices(
         if shape[0] > 1:
             need_dynamic_offsets = True
 
-    mask = _build_mask(emitter, index, elements_per_thread)
-    if mask is None:
-        mask_vec_type = VectorType.get(
-            [elements_per_thread], IntegerType.get_signless(1)
-        )
-        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
-
+    offsets = []
+    strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
     start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
         # Update most-minor dim, i.e. in case of identity mapping it will
@@ -682,14 +684,6 @@ def _construct_gather_scatter_indices(
 
         offsets.append(offset)
 
-    def extract0(src):
-        static_pos = [0] * src.type.rank
-        return vector_d.extract(src, static_position=static_pos, dynamic_position=[])
-
-    dynamic_vals_map_start = {
-        sym: extract0(val)
-        for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
-    }
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
     if need_dynamic_offsets:
         # In case we need dynamic `offsets_vec`, set all `start_indices` to 0
@@ -752,7 +746,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
-    if mapping is None or _is_identity_mapping(mapping, input_shape=input_shape):
+    if get_custom(node).has_identity_mapping():
         start_indices = _build_start_indices(emitter, index)
         mask = _build_mask(
             emitter, index, cast_py_literal(emitter, elements_per_thread)
@@ -779,6 +773,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=True,
             dynamic_vals=dyn_vals,
+            is_contiguous=get_custom(node).is_contiguous_vec(),
         )
 
         zero = get_constant_attr(0, element_type)
@@ -822,9 +817,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     index = node.index
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
-    if mapping is None or _is_identity_mapping(
-        mapping, input_shape=input_shape, output_shape=output_shape
-    ):
+    if get_custom(node).has_identity_mapping():
         start_indices = _build_start_indices(emitter, index)
         mask = _build_mask(
             emitter, index, cast_py_literal(emitter, elements_per_thread)
@@ -849,6 +842,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=False,
             dynamic_vals=dyn_vals,
+            is_contiguous=get_custom(node).is_contiguous_vec(),
         )
 
         if offsets_vec is None:
