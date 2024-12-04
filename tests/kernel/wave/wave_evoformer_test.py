@@ -22,7 +22,7 @@ from iree.turbine.kernel.wave.utils import (
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.evoformer import get_evoformer_kernel
-from iree.turbine.kernel._support.dtype import DataType
+from iree.turbine.kernel.lang import DataType
 import os
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
@@ -151,7 +151,6 @@ def testEvoformerAttentionForward(
                 f.write(mb.module_op.get_asm())
 
         eps = 1e-2 if output.dtype == torch.float16 else 5e-2
-        print(f"Max diff: {torch.max(torch.abs(torch_ref - output)).item()}")
         assert (
             torch.max(torch.abs(torch_ref - output)).item() < eps
         ), f"out eps: {torch.max(torch.abs(torch_ref - output))}"
