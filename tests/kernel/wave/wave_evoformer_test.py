@@ -97,6 +97,7 @@ def testEvoformerAttentionForward(
     symbols.update(get_default_scheduling_params())
 
     config = get_default_run_config()
+    config["waves_per_eu"] = 2
     if run_bench:
         config["benchmark_batch_size"] = 1000
         config["benchmark_repetitions"] = 3
