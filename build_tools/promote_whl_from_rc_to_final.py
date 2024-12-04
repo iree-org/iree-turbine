@@ -6,12 +6,12 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 # This scripts takes a file like
-# 'iree_base_runtime-2.9.0rc20241107-cp311-cp311-manylinux_2_28_x86_64.whl'
-# with embedded version '2.9.0rc20241107' as input and then drops the
+# 'iree_turbine-3.1.0rc20241204-py3-none-any.whl'
+# with embedded version '3.1.0rc20241204' as input and then drops the
 # 'rcYYYYMMDD' suffix from both the embedded version and file name.
 #
 # Typical usage:
-#   pip install -r pypi_deploy_requirements.txt
+#   pip install -r requirements-packaging.txt
 #   ./promote_whl_from_rc_to_final.py /path/to/file.whl --delete-old-wheel
 
 import argparse

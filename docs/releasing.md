@@ -6,13 +6,35 @@ https://pypi.org/project/iree-base-runtime/ packages. Releases can either be
 conducted independently, or they can be coordinated across projects by
 initiating a release here.
 
-## Start with a clean test directory
+Promoting a nightly release allows for a consistent process across multiple
+projects while building locally lets release engineers take more explicit
+control over the process, while risking human error.
+
+## Promoting a nightly release
+
+To promote a nightly release:
+
+```bash
+cd build_tools/
+python -m venv .venv
+source .venv/bin/activate
+pip install -r ./requirements-packaging.txt
+
+# NOTE: choose the nightly version to promote here!
+./pypi_deploy.sh 3.1.0rc20241204
+```
+
+## Building locally
+
+To build locally:
+
+### Start with a clean test directory
 
 ```bash
 rm -rf wheelhouse/
 ```
 
-## Building Artifacts
+### Building Artifacts
 
 Build a dev release (e.g. `3.1.0.dev+6879a433eecc1e0b2cdf6c6dbcad901c77d97ac8`):
 
@@ -46,7 +68,7 @@ python3.11 ./build_tools/build_release.py --no-download
 # Note that the test scripts referenced below won't work with this.
 ```
 
-## Testing
+### Testing
 
 ```bash
 ./build_tools/post_build_release_test.sh
@@ -58,7 +80,7 @@ This will
 2. Install wheels from the `wheelhouse/` directory
 3. Run `pytest` tests
 
-## Push
+### Push
 
 From the testing venv, verify that everything is sane:
 
@@ -78,7 +100,7 @@ Push built wheels:
 twine upload wheelhouse/iree_turbine-*
 ```
 
-## Install from PyPI and Sanity Check
+### Install from PyPI and Sanity Check
 
 From the testing venv:
 

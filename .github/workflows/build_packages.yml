@@ -1,0 +1,49 @@
+name: Build packages
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs at 11:00 AM UTC, which is 3:00 AM PST (UTC-8)
+    - cron: '0 11 * * *'
+
+jobs:
+  build_packages:
+    if: ${{ github.repository_owner == 'iree-org' || github.event_name != 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: "Setting up Python"
+      uses: actions/setup-python@v3
+      with:
+        python-version: 3.11
+
+    - name: Install dependencies
+      run: pip install -r ./build_tools/requirements-packaging.txt
+
+    - name: Build iree-turbine release candidate
+      run: |
+        ./build_tools/compute_local_version.py -rc --write-json
+        ./build_tools/build_release.py --no-download
+
+    - name: Upload python wheels
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+      with:
+        if-no-files-found: error
+        name: snapshot
+        path: wheelhouse
+
+    - name: Release python wheels
+      uses: ncipollo/release-action@2c591bcc8ecdcd2db72b97d6147f871fcd833ba5 # v1.14.0
+      with:
+        artifacts: wheelhouse/*.whl
+        tag: "dev-wheels"
+        name: "dev-wheels"
+        body: "Automatic snapshot release of iree-turbine python wheels."
+        removeArtifacts: false
+        allowUpdates: true
+        replacesArtifacts: true
+        makeLatest: false
