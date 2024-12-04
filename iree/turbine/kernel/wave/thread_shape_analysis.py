@@ -71,13 +71,10 @@ def propagatable_op(node: fx.Node):
     )
 
 
-def propagate_resolutions(
-    custom_node: CustomOp, dst_op: CustomOp = None
-) -> list[fx.Node]:
+def propagate_resolutions(custom_node: CustomOp, dst_op: CustomOp) -> list[fx.Node]:
     propagated_resolutions = capture_forward_slice(custom_node.fx_node, propagatable_op)
-    if dst_op:
-        for node in propagated_resolutions:
-            get_custom(node).index = dst_op.index
+    for node in propagated_resolutions:
+        get_custom(node).index = dst_op.index
     resolved_resolutions = capture_backward_slice(custom_node.fx_node, propagatable_op)
     return propagated_resolutions.union(resolved_resolutions)
 

@@ -469,6 +469,11 @@ def combine_indices(
     thread_independent_index: dict[IndexSymbol, IndexSequence],
     thread_dependent_index: dict[IndexSymbol, IndexSequence],
 ) -> dict[IndexSymbol, IndexSequence]:
+    """
+    The thread dependent index is obtained from "anchor" nodes like MMA, Read, Write
+    which make the index sequence (access pattern) thread specific. These are
+    added to the thread independent index which is obtained from the constraints.
+    """
     combined_index = {k: v for k, v in thread_independent_index.items()}
     for k in combined_index:
         if k in thread_dependent_index:
