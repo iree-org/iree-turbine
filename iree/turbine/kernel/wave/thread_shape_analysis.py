@@ -129,7 +129,7 @@ def need_conflict_resolution(
     op_to_thread_sizes: dict[CustomOp, set[frozenset[DimSize]]],
     conflicted_ops: set[CustomOp],
     target_index_size: frozenset[DimSize],
-):
+) -> bool:
     """
     Determine if we need to resolve conflicts. We need to resolve conflicts
     only if the sizes along non-unit dims are not identical.
