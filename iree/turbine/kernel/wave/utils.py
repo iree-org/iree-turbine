@@ -1250,13 +1250,19 @@ def check_is_mapping_contiguous(
     expected_diff[-1] = 1
 
     # Assume fastest changing dim increments in elements_per_thread between individual ops,
-    # This is needed for sympy simplifications.
+    # This is tranform exressions floor(x/a + 1/b) into floor(floor(x/ept)*ept/a + 1/b)
+    # which is required for further sympy simplifications.
     subs[-1] = (subs[-1][0], (subs[-1][1] // elements_per_thread) * elements_per_thread)
+
+    # Construct indices for vector element 0
     prev_indices = _get_start_indices(
         {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
     )
+
+    # Construct indices for vector elements [1, 2, ..., elements_per_thread - 1]
+    # and compare with previous ones.
     for i in range(1, elements_per_thread, 1):
-        # Increment fastests changing dim in unmapped index by one and apply mapping.
+        # Increment fastest changing dim in unmapped index by one and apply mapping.
         subs[-1] = (subs[-1][0], subs[-1][1] + 1)
         next_result_index = {
             key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)
