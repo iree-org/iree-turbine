@@ -1244,8 +1244,6 @@ def check_is_mapping_contiguous(
 
     subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
 
-    result_index = {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
-
     # Iterate over elements_per_thread end check if every subsequent read have
     # diff 1 in fastest changing dim and 0s in every other.
     expected_diff = [0] * len(index_mapping)

@@ -977,6 +977,7 @@ class Read(CustomOp):
             self.index = align_index_vars(self.index, constraints)
 
     def has_identity_mapping(self) -> bool:
+        """Check if mapping between input memory and output register is identity."""
         mapping = self.mapping
         if mapping is None:
             return True
@@ -988,6 +989,9 @@ class Read(CustomOp):
         return False
 
     def is_contiguous_vec(self) -> bool:
+        """Check if op can be lowered to contiguous vector ops
+
+        If False we will have to lower it to gather"""
         if self.has_identity_mapping():
             return True
 
@@ -1182,6 +1186,7 @@ class Write(CustomOp):
             self.index = align_index_vars(self.index, constraints)
 
     def has_identity_mapping(self) -> bool:
+        """Check if mapping between input register and output memory is identity."""
         mapping = self.mapping
         if mapping is None:
             return True
@@ -1193,6 +1198,9 @@ class Write(CustomOp):
         return False
 
     def is_contiguous_vec(self) -> bool:
+        """Check if op can be lowered to contiguous vector ops
+
+        If False we will have to lower it to gather"""
         if self.has_identity_mapping():
             return True
         mapping = self.mapping
