@@ -59,6 +59,7 @@ import iree.runtime.benchmark as bench
 
 # TODO: Monkey-patching f16 support, need to fix in iree.
 import numpy
+import ml_dtypes
 
 bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
@@ -654,7 +655,16 @@ def compile_and_invoke(
             for inp in all_inputs:
                 if isinstance(inp, torch.Tensor):
                     tf = tempfile.NamedTemporaryFile(suffix=".npy")
-                    numpy.save(tf, inp.cpu().numpy())
+                    inp = inp.cpu()
+                    if inp.dtype == torch.bfloat16:
+                        inp = (
+                            inp.view(dtype=torch.uint16)
+                            .numpy()
+                            .view(dtype=ml_dtypes.bfloat16)
+                        )
+                    else:
+                        inp = inp.numpy()
+                    numpy.save(tf, inp)
                     tempfiles.append(tf)
                     inputs.append("@" + tf.name)
                 elif isinstance(inp, int):
