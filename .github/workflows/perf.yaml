@@ -1,13 +1,6 @@
 name: PERF
 
-on:
-  workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-    - main
-  schedule:
-  - cron: '30 5 * * *'
+on: []
 
 concurrency:
   # A PR number if a pull request and otherwise the commit hash. This cancels
