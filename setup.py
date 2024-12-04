@@ -1,4 +1,5 @@
 # Copyright 2023 Advanced Micro Devices, Inc.
+# Copyright 2024 The IREE Authors
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
@@ -12,28 +13,28 @@ from pathlib import Path
 from setuptools import find_namespace_packages, setup
 
 THIS_DIR = os.path.realpath(os.path.dirname(__file__))
-REPO_DIR = THIS_DIR
-VERSION_INFO_FILE = os.path.join(REPO_DIR, "version_info.json")
+REPO_ROOT = THIS_DIR
 
-TURBINE_PACKAGE_NAME = "iree-turbine"
-
-with open(
-    os.path.join(
-        REPO_DIR,
-        "README.md",
-    ),
-    "rt",
-) as f:
-    README = f.read()
+VERSION_FILE = os.path.join(REPO_ROOT, "version.json")
+VERSION_FILE_LOCAL = os.path.join(REPO_ROOT, "version_local.json")
 
 
-def load_version_info():
-    with open(VERSION_INFO_FILE, "rt") as f:
+def load_version_info(version_file):
+    with open(version_file, "rt") as f:
         return json.load(f)
 
 
-version_info = load_version_info()
+try:
+    version_info = load_version_info(VERSION_FILE_LOCAL)
+except FileNotFoundError:
+    print("version_local.json not found. Default to dev build")
+    version_info = load_version_info(VERSION_FILE)
+
 PACKAGE_VERSION = version_info["package-version"]
+print(f"Using PACKAGE_VERSION: '{PACKAGE_VERSION}'")
+
+with open(os.path.join(REPO_ROOT, "README.md"), "rt") as f:
+    README = f.read()
 
 packages = find_namespace_packages(
     include=[
@@ -78,7 +79,7 @@ class BuildCommand(distutils.command.build.build):
 
 
 setup(
-    name=f"{TURBINE_PACKAGE_NAME}",
+    name="iree-turbine",
     version=f"{PACKAGE_VERSION}",
     author="IREE Authors",
     author_email="iree-technical-discussion@lists.lfaidata.foundation",

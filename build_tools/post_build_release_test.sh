@@ -12,7 +12,7 @@ REPO_ROOT="$(cd ${THIS_DIR?}/.. && pwd)"
 WHEELHOUSE_DIR="${REPO_ROOT?}/wheelhouse"
 
 # Set up environment.
-python -m venv "${WHEELHOUSE_DIR}"/test.venv
+python3.11 -m venv "${WHEELHOUSE_DIR}"/test.venv
 source "${WHEELHOUSE_DIR}"/test.venv/bin/activate
 
 # Install wheels

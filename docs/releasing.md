@@ -14,21 +14,37 @@ rm -rf wheelhouse/
 
 ## Building Artifacts
 
-Build a pre-release:
+Build a dev release (e.g. `3.1.0.dev+6879a433eecc1e0b2cdf6c6dbcad901c77d97ac8`):
 
 ```bash
-./build_tools/build_release.py --package-version 2.5.0 --package-pre-version=rcYYYYMMDD
+python3.11 ./build_tools/compute_local_version.py -dev --write-json
+python3.11 ./build_tools/build_release.py
 ```
 
-Build an official release:
+Build a release candidate (e.g. `3.1.0rc20241204`):
 
 ```bash
-./build_tools/build_release.py --package-version 2.5.0
+python3.11 ./build_tools/compute_local_version.py -rc --write-json
+python3.11 ./build_tools/build_release.py
+```
+
+Build an official release (e.g. `3.1.0`):
+
+```bash
+python3.11 ./build_tools/compute_local_version.py -stable --write-json
+python3.11 ./build_tools/build_release.py
 ```
 
 This will download all deps, including wheels for all supported platforms and
 Python versions for iree-base-compiler and iree-base-runtime. All wheels will
 be placed in the `wheelhouse/` directory.
+
+If you just want to build without downloading wheels, run
+
+```bash
+python3.11 ./build_tools/build_release.py --no-download
+# Note that the test scripts referenced below won't work with this.
+```
 
 ## Testing
 

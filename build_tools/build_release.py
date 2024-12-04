@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # Copyright 2024 Advanced Micro Devices, Inc.
+# Copyright 2024 The IREE Authors
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
@@ -10,17 +11,15 @@
 See docs/releasing.md for usage.
 """
 
-import argparse
-from datetime import date
-import json
-import os
 from pathlib import Path
+import argparse
+import os
 import shlex
 import subprocess
+import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-VERSION_INFO_FILE = REPO_ROOT / "version_info.json"
 WHEEL_DIR = REPO_ROOT / "wheelhouse"
 
 # The platform flags that we will download IREE wheels for. This must match
@@ -54,30 +53,6 @@ IREE_PLATFORM_ARGS = [
 ]
 
 
-def eval_version(version_spec: str):
-    date_stamp = date.today().strftime("%Y%m%d")
-    return version_spec.replace("YYYYMMDD", date_stamp)
-
-
-def write_version_info(args):
-    with open(VERSION_INFO_FILE, "rt") as f:
-        info_dict = json.load(f)
-
-    # Compute package-version.
-    package_version = eval_version(args.package_version)
-    if args.package_pre_version:
-        package_version += eval_version(args.package_pre_version)
-    if args.package_post_version:
-        package_version += f".{eval_version(args.package_post_version)}"
-    info_dict["package-version"] = package_version
-
-    with open(VERSION_INFO_FILE, "wt") as f:
-        json.dump(info_dict, f, indent=2)
-        f.write("\n")
-
-    print(f"Updated version_info.json:\n{json.dumps(info_dict, indent=2)}")
-
-
 def exec(args, env=None):
     args = [str(s) for s in args]
     print(f": Exec: {shlex.join(args)}")
@@ -91,6 +66,8 @@ def exec(args, env=None):
 
 def download_requirements(requirements_file, platforms=()):
     args = [
+        sys.executable,
+        "-m",
         "pip",
         "download",
         "-d",
@@ -113,6 +90,8 @@ def download_iree_binaries():
     for platform_args in IREE_PLATFORM_ARGS:
         print("Downloading for platform:", platform_args)
         args = [
+            sys.executable,
+            "-m",
             "pip",
             "download",
             "-d",
@@ -135,31 +114,33 @@ def download_iree_binaries():
         exec(args)
 
 
-def build_wheel(path, env=None):
-    exec(
-        ["pip", "wheel", "--no-index", "-f", WHEEL_DIR, "-w", WHEEL_DIR, path], env=env
-    )
+def build_wheel(args, path):
+    build_args = [
+        sys.executable,
+        "-m",
+        "pip",
+        "wheel",
+        "-f",
+        WHEEL_DIR,
+        "-w",
+        WHEEL_DIR,
+        path,
+    ]
+    if args.no_download:
+        build_args.extend(["--disable-pip-version-check", "--no-deps"])
+    else:
+        build_args.extend(["--no-index"])
+
+    exec(build_args, env=None)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--package-version", help="Version to use", required=True)
-    parser.add_argument(
-        "--package-pre-version",
-        help="Pre-release version segment or (YYYYMMDD)",
-        default="",
-    )
-    parser.add_argument(
-        "--package-post-version",
-        help="Post-release version segment or (YYYYMMDD)",
-        default="",
-    )
     parser.add_argument(
         "--no-download", help="Disable dep download", action="store_true"
     )
     args = parser.parse_args()
 
-    write_version_info(args)
     WHEEL_DIR.mkdir(parents=True, exist_ok=True)
 
     if not args.no_download:
@@ -171,7 +152,7 @@ def main():
         download_requirements(REPO_ROOT / "requirements.txt")
 
     print("Building iree-turbine")
-    build_wheel(REPO_ROOT)
+    build_wheel(args, REPO_ROOT)
 
 
 if __name__ == "__main__":

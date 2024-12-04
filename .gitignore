@@ -25,7 +25,10 @@ wheelhouse
 *.whl
 *.venv
 
-#Model artifacts
+# Local-only config options
+version_local.json
+
+# Model artifacts
 *.pt
 *.safetensors
 *.gguf

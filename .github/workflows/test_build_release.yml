@@ -1,4 +1,4 @@
-name: Build Release
+name: Test Build Release
 
 on:
   workflow_dispatch:
@@ -25,17 +25,20 @@ jobs:
         os: [ubuntu-latest]
     runs-on: ${{matrix.os}}
     steps:
+      - uses: actions/checkout@v3
+
       - name: "Setting up Python"
-        id: setup_python
         uses: actions/setup-python@v3
         with:
-          python-version: ${{matrix.version}}
+          python-version: ${{ matrix.version }}
 
-      - name: "Checkout Code"
-        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: pip install -r ./build_tools/requirements-packaging.txt
 
       - name: Build Release Wheels
-        run: ./build_tools/build_release.py --package-version 2.5.0.dev
+        run: |
+          ./build_tools/compute_local_version.py -dev --write-json
+          ./build_tools/build_release.py
 
       - name: Validate Release Build
         if: ${{ !cancelled() }}
