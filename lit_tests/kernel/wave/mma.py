@@ -148,21 +148,13 @@ def test_mma_32x32x8():
         print(mma_32x32x8(a, b, c).module_op)
 
         # CHECK:          func.func @mma_32x32x8
-        # CHECK-DAG:        %[[C27:.+]] = arith.constant 27 : index
-        # CHECK-DAG:        %[[C26:.+]] = arith.constant 26 : index
-        # CHECK-DAG:        %[[C25:.+]] = arith.constant 25 : index
         # CHECK-DAG:        %[[C24:.+]] = arith.constant 24 : index
-        # CHECK-DAG:        %[[C19:.+]] = arith.constant 19 : index
-        # CHECK-DAG:        %[[C18:.+]] = arith.constant 18 : index
-        # CHECK-DAG:        %[[C17:.+]] = arith.constant 17 : index
         # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
-        # CHECK-DAG:        %[[C11:.+]] = arith.constant 11 : index
-        # CHECK-DAG:        %[[C10:.+]] = arith.constant 10 : index
-        # CHECK-DAG:        %[[C9:.+]] = arith.constant 9 : index
         # CHECK-DAG:        %[[C8:.+]] = arith.constant 8 : index
-        # CHECK-DAG:        %[[C3:.+]] = arith.constant 3 : index
-        # CHECK-DAG:        %[[C2:.+]] = arith.constant 2 : index
-        # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
+        # CHECK-DAG:        %[[C4:.+]] = arith.constant 4 : index
+        # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
+        # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
+        # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
 
         # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<16xf32>
         # CHECK-DAG:        %[[ALLOC:.+]] = memref.alloc() : memref<64x12xf16,
@@ -171,88 +163,28 @@ def test_mma_32x32x8():
         # CHECK:            %[[D20:.+]] = vector.load %[[ALLOC_0]]{{.*}} : memref<64x12xf16,
         # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D12]] * %[[D20]] + %[[CST]] {blocks = 1 : i32, k = 8 : i32, m = 32 :
         # CHECK-SAME:         i32, n = 32 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<16xf32>
-        # CHECK:            %[[D22:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [0], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
+        # CHECK:            %[[D22:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [0], sizes = [4], strides = [1]} :
+        # CHECK-SAME:         vector<16xf32> to vector<4xf32>
         # CHECK:            %[[D23:.+]] = stream.binding.subspan {{.*}} : !stream.binding -> memref<128x128xf32,
         # CHECK-SAME:         strided<[128, 1], offset: ?>>
 
         # CHECK-DAG:        vector.store %[[D22]], %[[D23]][{{.*}}, {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D26:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [1], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D27:.+]] = arith.addi {{.*}}, %[[C1]]
+        # CHECK-SAME:         ?>>, vector<4xf32>
+        # CHECK:            %[[D26:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [4], sizes = [4], strides = [1]} :
+        # CHECK-SAME:         vector<16xf32> to vector<4xf32>
+        # CHECK:            %[[D27:.+]] = arith.addi {{.*}}, %[[C8]]
         # CHECK:            vector.store %[[D26]], %[[D23]][%[[D27]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D28:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [2], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D29:.+]] = arith.addi {{.*}}, %[[C2]]
+        # CHECK-SAME:         ?>>, vector<4xf32>
+        # CHECK:            %[[D28:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [8], sizes = [4], strides = [1]} :
+        # CHECK-SAME:         vector<16xf32> to vector<4xf32>
+        # CHECK:            %[[D29:.+]] = arith.addi {{.*}}, %[[C16]]
         # CHECK:            vector.store %[[D28]], %[[D23]][%[[D29]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D30:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [3], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D31:.+]] = arith.addi {{.*}}, %[[C3]]
+        # CHECK-SAME:         ?>>, vector<4xf32>
+        # CHECK:            %[[D30:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [12], sizes = [4], strides = [1]} :
+        # CHECK-SAME:         vector<16xf32> to vector<4xf32>
+        # CHECK:            %[[D31:.+]] = arith.addi {{.*}}, %[[C24]]
         # CHECK:            vector.store %[[D30]], %[[D23]][%[[D31]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D32:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [4], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D33:.+]] = arith.addi {{.*}}, %[[C8]]
-        # CHECK:            vector.store %[[D32]], %[[D23]][%[[D33]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D34:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [5], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D35:.+]] = arith.addi {{.*}}, %[[C9]]
-        # CHECK:            vector.store %[[D34]], %[[D23]][%[[D35]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D36:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [6], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D37:.+]] = arith.addi {{.*}}, %[[C10]]
-        # CHECK:            vector.store %[[D36]], %[[D23]][%[[D37]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D38:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [7], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D39:.+]] = arith.addi {{.*}}, %[[C11]]
-        # CHECK:            vector.store %[[D38]], %[[D23]][%[[D39]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D40:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [8], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D41:.+]] = arith.addi {{.*}}, %[[C16]]
-        # CHECK:            vector.store %[[D40]], %[[D23]][%[[D41]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D42:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [9], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D43:.+]] = arith.addi {{.*}}, %[[C17]]
-        # CHECK:            vector.store %[[D42]], %[[D23]][%[[D43]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D44:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [10], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D45:.+]] = arith.addi {{.*}}, %[[C18]]
-        # CHECK:            vector.store %[[D44]], %[[D23]][%[[D45]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D46:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [11], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D47:.+]] = arith.addi {{.*}}, %[[C19]]
-        # CHECK:            vector.store %[[D46]], %[[D23]][%[[D47]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D48:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [12], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D49:.+]] = arith.addi {{.*}}, %[[C24]]
-        # CHECK:            vector.store %[[D48]], %[[D23]][%[[D49]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D50:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [13], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D51:.+]] = arith.addi {{.*}}, %[[C25]]
-        # CHECK:            vector.store %[[D50]], %[[D23]][%[[D51]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D52:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [14], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D53:.+]] = arith.addi {{.*}}, %[[C26]]
-        # CHECK:            vector.store %[[D52]], %[[D23]][%[[D53]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D54:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [15], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D55:.+]] = arith.addi {{.*}}, %[[C27]]
-        # CHECK:            vector.store %[[D54]], %[[D23]][%[[D55]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
+        # CHECK-SAME:         ?>>, vector<4xf32>
 
 
 @run_test
@@ -302,21 +234,13 @@ def test_mma_32x32x16():
         print(mma_32x32x16(a, b, c).module_op)
 
         # CHECK:          func.func @mma_32x32x16
-        # CHECK-DAG:        %[[C27:.+]] = arith.constant 27 : index
-        # CHECK-DAG:        %[[C26:.+]] = arith.constant 26 : index
-        # CHECK-DAG:        %[[C25:.+]] = arith.constant 25 : index
         # CHECK-DAG:        %[[C24:.+]] = arith.constant 24 : index
-        # CHECK-DAG:        %[[C19:.+]] = arith.constant 19 : index
-        # CHECK-DAG:        %[[C18:.+]] = arith.constant 18 : index
-        # CHECK-DAG:        %[[C17:.+]] = arith.constant 17 : index
         # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
-        # CHECK-DAG:        %[[C11:.+]] = arith.constant 11 : index
-        # CHECK-DAG:        %[[C10:.+]] = arith.constant 10 : index
-        # CHECK-DAG:        %[[C9:.+]] = arith.constant 9 : index
+        # CHECK-DAG:        %[[C4:.+]] = arith.constant 4 : index
         # CHECK-DAG:        %[[C8:.+]] = arith.constant 8 : index
-        # CHECK-DAG:        %[[C3:.+]] = arith.constant 3 : index
-        # CHECK-DAG:        %[[C2:.+]] = arith.constant 2 : index
-        # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
+        # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
+        # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
+        # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
 
         # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<16xf32>
         # CHECK-DAG:        %[[ALLOC:.+]] = memref.alloc() : memref<64x24xf8E4M3FNUZ,
@@ -325,88 +249,28 @@ def test_mma_32x32x16():
         # CHECK:            %[[D20:.+]] = vector.load %[[ALLOC_0]]{{.*}} : memref<64x24xf8E4M3FNUZ,
         # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D12]] * %[[D20]] + %[[CST]] {blocks = 1 : i32, k = 16 : i32, m = 32 :
         # CHECK-SAME:         i32, n = 32 : i32} blgp =  none : vector<8xf8E4M3FNUZ>, vector<8xf8E4M3FNUZ>, vector<16xf32>
-        # CHECK:            %[[D22:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [0], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
+        # CHECK:            %[[D22:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [0], sizes = [4], strides = [1]} :
+        # CHECK-SAME:         vector<16xf32> to vector<4xf32>
         # CHECK:            %[[D23:.+]] = stream.binding.subspan {{.*}} : !stream.binding -> memref<128x128xf32,
         # CHECK-SAME:         strided<[128, 1], offset: ?>>
 
         # CHECK-DAG:        vector.store %[[D22]], %[[D23]][{{.*}}, {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D26:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [1], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D27:.+]] = arith.addi {{.*}}, %[[C1]]
-        # CHECK:            vector.store %[[D26]], %[[D23]][%[[D27]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D28:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [2], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D29:.+]] = arith.addi {{.*}}, %[[C2]]
-        # CHECK:            vector.store %[[D28]], %[[D23]][%[[D29]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D30:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [3], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D31:.+]] = arith.addi {{.*}}, %[[C3]]
-        # CHECK:            vector.store %[[D30]], %[[D23]][%[[D31]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D32:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [4], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D33:.+]] = arith.addi {{.*}}, %[[C8]]
-        # CHECK:            vector.store %[[D32]], %[[D23]][%[[D33]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D34:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [5], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D35:.+]] = arith.addi {{.*}}, %[[C9]]
-        # CHECK:            vector.store %[[D34]], %[[D23]][%[[D35]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D36:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [6], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D37:.+]] = arith.addi {{.*}}, %[[C10]]
-        # CHECK:            vector.store %[[D36]], %[[D23]][%[[D37]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D38:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [7], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D39:.+]] = arith.addi {{.*}}, %[[C11]]
-        # CHECK:            vector.store %[[D38]], %[[D23]][%[[D39]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D40:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [8], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D41:.+]] = arith.addi {{.*}}, %[[C16]]
-        # CHECK:            vector.store %[[D40]], %[[D23]][%[[D41]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D42:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [9], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D43:.+]] = arith.addi {{.*}}, %[[C17]]
-        # CHECK:            vector.store %[[D42]], %[[D23]][%[[D43]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D44:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [10], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D45:.+]] = arith.addi {{.*}}, %[[C18]]
-        # CHECK:            vector.store %[[D44]], %[[D23]][%[[D45]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D46:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [11], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D47:.+]] = arith.addi {{.*}}, %[[C19]]
-        # CHECK:            vector.store %[[D46]], %[[D23]][%[[D47]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D48:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [12], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D49:.+]] = arith.addi {{.*}}, %[[C24]]
-        # CHECK:            vector.store %[[D48]], %[[D23]][%[[D49]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D50:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [13], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D51:.+]] = arith.addi {{.*}}, %[[C25]]
-        # CHECK:            vector.store %[[D50]], %[[D23]][%[[D51]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D52:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [14], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D53:.+]] = arith.addi {{.*}}, %[[C26]]
-        # CHECK:            vector.store %[[D52]], %[[D23]][%[[D53]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
-        # CHECK:            %[[D54:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [15], sizes = [1], strides = [1]} :
-        # CHECK-SAME:         vector<16xf32> to vector<1xf32>
-        # CHECK:            %[[D55:.+]] = arith.addi {{.*}}, %[[C27]]
-        # CHECK:            vector.store %[[D54]], %[[D23]][%[[D55]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
-        # CHECK-SAME:         ?>>, vector<1xf32>
+        # CHECK-SAME:         ?>>, vector<4xf32>
+        # CHECK:            %[[D27:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [4], sizes = [4], strides = [1]} :
+        # CHECK-SAME:         vector<16xf32> to vector<4xf32>
+        # CHECK:            %[[D28:.+]] = arith.addi {{.*}}, %[[C8]]
+        # CHECK:            vector.store %[[D27]], %[[D23]][%[[D28]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
+        # CHECK-SAME:         ?>>, vector<4xf32>
+        # CHECK:            %[[D29:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [8], sizes = [4], strides = [1]} :
+        # CHECK-SAME:         vector<16xf32> to vector<4xf32>
+        # CHECK:            %[[D30:.+]] = arith.addi {{.*}}, %[[C16]]
+        # CHECK:            vector.store %[[D29]], %[[D23]][%[[D30]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
+        # CHECK-SAME:         ?>>, vector<4xf32>
+        # CHECK:            %[[D31:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [12], sizes = [4], strides = [1]} :
+        # CHECK-SAME:         vector<16xf32> to vector<4xf32>
+        # CHECK:            %[[D32:.+]] = arith.addi {{.*}}, %[[C24]]
+        # CHECK:            vector.store %[[D31]], %[[D23]][%[[D32]], {{.*}}] : memref<128x128xf32, strided<[128, 1], offset:
+        # CHECK-SAME:         ?>>, vector<4xf32>
 
 
 @run_test
