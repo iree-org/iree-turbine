@@ -1083,13 +1083,19 @@ def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
         ret = None
         for arg in mul.args:
             if arg.is_number:
+                if arg < 0:
+                    return None
+
                 if ret is not None:
                     return None
 
                 ret = arg
                 continue
 
-            if not isinstance(arg, (sympy.floor, sympy.Mod)):
+            if not (isinstance(arg, (sympy.floor, sympy.Mod)) or arg.is_integer):
+                return None
+
+            if not arg.is_nonnegative:
                 return None
 
         return ret
@@ -1104,7 +1110,7 @@ def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
             return None
 
         p, q = expr.args
-        if not q.is_number:
+        if not q.is_number or q < 0:
             return None
 
         if not isinstance(p, sympy.Add):
@@ -1143,10 +1149,16 @@ def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
                 if ret is not None:
                     return None
 
+                if arg.p < 0 or arg.q < 0:
+                    return None
+
                 ret = arg
                 continue
 
-            if not isinstance(arg, (sympy.floor, sympy.Mod)):
+            if not (isinstance(arg, (sympy.floor, sympy.Mod)) or arg.is_integer):
+                return None
+
+            if not arg.is_nonnegative:
                 return None
 
         return ret
@@ -1184,10 +1196,10 @@ def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
                 return None
 
             r = check_mul_rational(arg)
-            if r is None:
+            if r is None or r.p != 1:
                 return None
 
-            if r < c:
+            if r <= c:
                 return None
 
             terms.append(arg)
