@@ -587,6 +587,8 @@ def test_attention_32x32x8():
         # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [8], sizes = [4], strides = [1]}
         # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [12], sizes = [4], strides = [1]}
         # CHECK-COUNT-4:            {{.*}} = amdgpu.mfma
+        # CHECK:                    scf.yield
+        # CHECK-COUNT-4:            vector.store {{.*}}: memref<8x128x128xf32{{.*}}>, vector<4xf32>
 
 
 @run_test

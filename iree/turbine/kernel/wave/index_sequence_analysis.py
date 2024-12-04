@@ -39,6 +39,7 @@ from ...support.logging import get_logger
 import sympy
 from itertools import groupby
 from operator import itemgetter
+from copy import copy
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -171,11 +172,11 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
             for dim in custom.index
         }
         elements_per_thread = subs_idxc(custom.elements_per_thread)
-        gpr_offsets = [
-            v.start for v in simplified_index.values() if v.start.has(GPR_NUM)
+        dim_with_gpr_offsets = [
+            (k, v.start) for k, v in simplified_index.items() if v.start.has(GPR_NUM)
         ]
-        assert len(gpr_offsets) == 1, "Expected only 1-Dim has gpr offsets"
-        gpr_offset_expr = gpr_offsets[0]
+        assert len(dim_with_gpr_offsets) == 1, "Expected only 1-Dim has gpr offsets"
+        gpr_offset_dim, gpr_offset_expr = dim_with_gpr_offsets[0]
         gpr_offsets = [
             gpr_offset_expr.subs({GPR_NUM: i}) for i in range(elements_per_thread)
         ]
@@ -205,14 +206,17 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
             for chunk_id in range(num_gpr_chunks):
                 cur_gpr_start_id = chunk_id * gpr_size
                 # Get updated index with VGPR offset.
-                updated_index_with_gpr_offset = {
-                    dim: IndexSequence(
-                        simplified_index[dim].start.subs({GPR_NUM: cur_gpr_start_id}),
-                        gpr_size,
-                        simplified_index[dim].stride,
-                    )
-                    for dim in simplified_index
-                }
+                updated_index_with_gpr_offset = copy(simplified_index)
+                updated_dim_with_gpr_offset = IndexSequence(
+                    updated_index_with_gpr_offset[gpr_offset_dim].start.subs(
+                        {GPR_NUM: cur_gpr_start_id}
+                    ),
+                    gpr_size,
+                    1,
+                )
+                updated_index_with_gpr_offset[
+                    gpr_offset_dim
+                ] = updated_dim_with_gpr_offset
 
                 # Generate new Read/Write that has contiguous VGPR elements.
                 if isinstance(custom, Write):
