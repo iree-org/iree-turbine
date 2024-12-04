@@ -60,6 +60,7 @@ import iree.runtime.benchmark as bench
 
 # TODO: Monkey-patching f16 support, need to fix in iree.
 import numpy
+import ml_dtypes
 
 bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
@@ -233,7 +234,9 @@ def remove_chained_extractslice(trace: CapturedTrace):
                 get_custom(node).graph.erase_node(src_extract.fx_node)
 
 
-def delinearize_index(index: IndexExpr, shape: list[int]) -> list[IndexExpr]:
+def delinearize_index(
+    index: IndexExpr, shape: list[int | IndexExpr]
+) -> list[IndexExpr]:
     """
     Delinearizes a 1D index into a multi-dimensional index
     based on the shapes provided. The returned array contains
@@ -657,7 +660,16 @@ def compile_and_invoke(
             for inp in all_inputs:
                 if isinstance(inp, torch.Tensor):
                     tf = tempfile.NamedTemporaryFile(suffix=".npy")
-                    numpy.save(tf, inp.cpu().numpy())
+                    inp = inp.cpu()
+                    if inp.dtype == torch.bfloat16:
+                        inp = (
+                            inp.view(dtype=torch.uint16)
+                            .numpy()
+                            .view(dtype=ml_dtypes.bfloat16)
+                        )
+                    else:
+                        inp = inp.numpy()
+                    numpy.save(tf, inp)
                     tempfiles.append(tf)
                     inputs.append("@" + tf.name)
                 elif isinstance(inp, int):

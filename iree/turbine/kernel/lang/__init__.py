@@ -13,6 +13,8 @@ from .._support.indexing import (
 )
 
 from .._support.dtype import (
+    DataType,
+    bf16,
     bool,
     i4,
     i8,

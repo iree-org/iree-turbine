@@ -41,6 +41,9 @@ def get_custom_dim_sizes(custom: CustomOp):
 def set_index_size(custom: CustomOp, target_dim_sizes: list[DimSize]):
     for target in target_dim_sizes:
         if target.dim not in custom.index:
+            # Allow target dimensions to be missing in the source index only if they are unit dims.
+            if target.size == 1:
+                continue
             raise NotImplementedError(
                 "NYI: Handle when source target index size is not found in target/user index."
             )
@@ -123,6 +126,26 @@ def handle_conflicts(conflicted_ops: set[CustomOp]):
     # such as broadcast.
     all_conflicts_resolved = cummulative_resolved.issuperset(conflicted_ops)
     return all_conflicts_resolved
+
+
+def need_conflict_resolution(
+    op_to_thread_sizes: dict[CustomOp, set[frozenset[DimSize]]],
+    conflicted_ops: set[CustomOp],
+    target_index_size: frozenset[DimSize],
+):
+    """
+    Determine if we need to resolve conflicts. We need to resolve conflicts
+    only if the sizes along non-unit dims are not identical.
+    """
+    for op in conflicted_ops:
+        if op not in op_to_thread_sizes:
+            continue
+        different_shapes = op_to_thread_sizes[op].symmetric_difference(
+            target_index_size
+        )
+        if any([dim.size != 1 for dim in different_shapes]):
+            return True
+    return False
 
 
 ###############################################################################
@@ -238,11 +261,18 @@ def determine_thread_shapes(trace: CapturedTrace):
 
     # Go through each index-size buckets, and apply the index-size to ops in the bucket.
     cummulative_set = set()
+    # Maintains the last thread size that was set for an op.
+    ops_to_thread_sizes: dict[CustomOp, frozenset[DimSize]] = {}
     for target_index_size, target_ops in thread_size_to_ops.items():
         # Try to handle conflicts and remove from target set if successfully handled.
         if not cummulative_set.isdisjoint(target_ops):
             conflicted_ops = cummulative_set.intersection(target_ops)
-            if handle_conflicts(conflicted_ops) == False:
+            if (
+                need_conflict_resolution(
+                    ops_to_thread_sizes, conflicted_ops, target_index_size
+                )
+                and handle_conflicts(conflicted_ops) == False
+            ):
                 raise NotImplementedError("Failed to handle conflicting thread shape.")
             target_ops = target_ops.difference(conflicted_ops)
         cummulative_set = cummulative_set.union(target_ops)
@@ -250,3 +280,4 @@ def determine_thread_shapes(trace: CapturedTrace):
         for user in target_ops:
             custom_user = get_custom(user)
             set_index_size(custom_user, target_index_size)
+            ops_to_thread_sizes[user] = target_index_size

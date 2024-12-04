@@ -6,10 +6,20 @@ from .._support.indexing import index_symbol
 GLOBAL_ADDRESS_SPACE = index_symbol("$GLOBAL_ADDRESS_SPACE")
 SHARED_ADDRESS_SPACE = index_symbol("$SHARED_ADDRESS_SPACE")
 
+
 # Distribution symbols.
 WORKGROUP_0 = index_symbol("$WG0")
 WORKGROUP_1 = index_symbol("$WG1")
 WORKGROUP_2 = index_symbol("$WG2")
+
+
+def get_workgroup_symbol(i: int):
+    assert i >= 0, "Workgroup index must be non-negative."
+    symbol_name = f"WORKGROUP_{i}"
+    if symbol_name not in globals():
+        globals()[symbol_name] = index_symbol(f"$WG{i}")
+    return index_symbol(f"$WG{i}")
+
 
 THREAD_0 = index_symbol("$T0")
 THREAD_1 = index_symbol("$T1")

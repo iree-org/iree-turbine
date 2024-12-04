@@ -1,5 +1,6 @@
 __all__ = [
     "DataType",
+    "bf16",
     "bool",
     "i4",
     "i8",
@@ -17,7 +18,16 @@ __all__ = [
 ]
 
 _INT_TYPES = ["i1", "i4", "i8", "i16", "i32", "i64"]
-_FLOAT_TYPES = ["f16", "f32", "f64", "f8E5M2", "f8E5M2FNUZ", "f8E4M3FN", "f8E4M3FNUZ"]
+_FLOAT_TYPES = [
+    "bf16",
+    "f16",
+    "f32",
+    "f64",
+    "f8E5M2",
+    "f8E5M2FNUZ",
+    "f8E4M3FN",
+    "f8E4M3FNUZ",
+]
 _INDEX_TYPES = ["index"]
 
 
@@ -55,9 +65,12 @@ class DataType:
             return 64
         if "f8" in self._name:
             return 8
+        if "bf16" in self._name:
+            return 16
         return int(self._name[1:])
 
 
+bf16 = DataType("bf16")
 bool = DataType("bool", "i1")
 i4 = DataType("i4")
 i8 = DataType("i8")

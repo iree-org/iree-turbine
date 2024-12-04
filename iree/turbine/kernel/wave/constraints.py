@@ -130,9 +130,17 @@ class HardwareConstraint(Constraint):
                 return (16, 16, 16)
             case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
                 return (32, 32, 8)
-            case MMAType.F32_16x16x32_F8 | MMAType.F32_16x16x32_K4_F8 | MMAType.I32_16x16x32_I8:
+            case (
+                MMAType.F32_16x16x32_F8
+                | MMAType.F32_16x16x32_K4_F8
+                | MMAType.I32_16x16x32_I8
+            ):
                 return (16, 16, 32)
-            case MMAType.F32_32x32x16_F8 | MMAType.F32_32x32x16_K4_F8 | MMAType.I32_32x32x16_I8:
+            case (
+                MMAType.F32_32x32x16_F8
+                | MMAType.F32_32x32x16_K4_F8
+                | MMAType.I32_32x32x16_I8
+            ):
                 return (32, 32, 16)
             case _:
                 return ()
@@ -234,7 +242,11 @@ class HardwareConstraint(Constraint):
                     1,  # N
                     1,  # K
                 ]
-            case MMAType.F32_16x16x32_F8 | MMAType.F32_16x16x32_K4_F8 | MMAType.I32_16x16x32_I8:
+            case (
+                MMAType.F32_16x16x32_F8
+                | MMAType.F32_16x16x32_K4_F8
+                | MMAType.I32_16x16x32_I8
+            ):
                 offset = [
                     Piecewise(
                         (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
@@ -262,7 +274,11 @@ class HardwareConstraint(Constraint):
                         + 4 * floor(lane / 16)
                         + (GPR_NUM % 4),  # K
                     ]
-            case MMAType.F32_32x32x16_F8 | MMAType.F32_32x32x16_K4_F8 | MMAType.I32_32x32x16_I8:
+            case (
+                MMAType.F32_32x32x16_F8
+                | MMAType.F32_32x32x16_K4_F8
+                | MMAType.I32_32x32x16_I8
+            ):
                 offset = [
                     Piecewise(
                         (lane % 32, ~MMA_ACC),
@@ -328,6 +344,16 @@ class WorkgroupConstraint(Constraint):
     tile_size: IndexExpr
     workgroup_dim: int
 
+    def __post_init__(self):
+        self.wg_dim = None
+        match self.workgroup_dim:
+            case 0 | 1 | 2 | 3 | 4:
+                self.wg_dim = get_workgroup_symbol(self.workgroup_dim)
+            case _:
+                raise ValueError(
+                    "Invalid workgroup dimension. Expected 0, 1, 2, 3 or 4."
+                )
+
     @property
     def count(self) -> IndexExpr:
         """
@@ -336,16 +362,7 @@ class WorkgroupConstraint(Constraint):
         return ceiling(self.dim / self.tile_size)
 
     def apply(self) -> IndexSequence:
-        match self.workgroup_dim:
-            case 0:
-                wg_dim = WORKGROUP_0
-            case 1:
-                wg_dim = WORKGROUP_1
-            case 2:
-                wg_dim = WORKGROUP_2
-            case _:
-                raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
-        return IndexSequence(wg_dim * self.tile_size, 1)
+        return IndexSequence(self.wg_dim * self.tile_size, 1)
 
 
 def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]:
