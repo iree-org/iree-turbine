@@ -482,6 +482,7 @@ def testAttention(
     }
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
+    config["denorm_fp_math_f32"] = "preserve-sign"
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3
