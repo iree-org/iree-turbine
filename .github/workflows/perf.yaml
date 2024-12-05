@@ -5,9 +5,9 @@ on:
   pull_request:
   push:
     branches:
-    - main
+      - main
   schedule:
-  - cron: '30 5 * * *'
+    - cron: "30 5 * * *"
 
 concurrency:
   # A PR number if a pull request and otherwise the commit hash. This cancels
@@ -29,35 +29,35 @@ jobs:
     env:
       PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
     steps:
-    - name: "Setting up Python"
-      id: setup_python
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{matrix.version}}
+      - name: "Setting up Python"
+        id: setup_python
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{matrix.version}}
 
-    - name: "Checkout Code"
-      uses: actions/checkout@v3
+      - name: "Checkout Code"
+        uses: actions/checkout@v3
 
-    - name: Cache Pip Packages
-      uses: actions/cache@v4
-      id: cache-pip
-      with:
-        path: ${{ env.PIP_CACHE_DIR }}
-        key: pip-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('*requirements.txt') }}
+      - name: Cache Pip Packages
+        uses: actions/cache@v4
+        id: cache-pip
+        with:
+          path: ${{ env.PIP_CACHE_DIR }}
+          key: pip-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('*requirements.txt') }}
 
-    - name: Install pip deps
-      run: |
-        python -m pip install --no-compile --upgrade pip
-        # Note: We install in three steps in order to satisfy requirements
-        # from non default locations first. Installing the PyTorch CPU
-        # wheels saves multiple minutes and a lot of bandwidth on runner setup.
-        pip install --no-compile -r pytorch-rocm-requirements.txt
-        pip install --no-cache-dir -r iree-requirements-ci.txt --upgrade
-        pip install -r requirements.txt -e .
+      - name: Install pip deps
+        run: |
+          python -m pip install --no-compile --upgrade pip
+          # Note: We install in three steps in order to satisfy requirements
+          # from non default locations first. Installing the PyTorch CPU
+          # wheels saves multiple minutes and a lot of bandwidth on runner setup.
+          pip install --no-compile -r pytorch-rocm-requirements.txt
+          pip install --no-cache-dir -r iree-requirements-ci.txt --upgrade
+          pip install -r requirements.txt -e .
 
-    - name: Run e2e tests on MI300
-      if: "contains(matrix.os, 'mi300') && !cancelled()"
-      run: |
-        export WAVE_RUN_E2E_TESTS=1
-        export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
-        pytest -n 1 --capture=tee-sys -vv ./tests/kernel/wave/
+      - name: Run e2e tests on MI300
+        if: "contains(matrix.os, 'mi300') && !cancelled()"
+        run: |
+          export WAVE_RUN_E2E_TESTS=1
+          export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
+          pytest -n 1 --capture=tee-sys -vv ./tests/kernel/wave/

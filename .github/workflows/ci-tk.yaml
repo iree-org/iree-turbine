@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
     branches:
-    - main
+      - main
 
 concurrency:
   # A PR number if a pull request and otherwise the commit hash. This cancels
@@ -21,62 +21,63 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [ubuntu-latest, nodai-amdgpu-mi300-x86-64, nodai-amdgpu-mi250-x86-64]
+        os:
+          [ubuntu-latest, nodai-amdgpu-mi300-x86-64, nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
     env:
       PIP_CACHE_DIR: "${{ github.workspace }}/.pip-cache"
     steps:
-    - name: "Setting up Python"
-      id: setup_python
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{matrix.version}}
+      - name: "Setting up Python"
+        id: setup_python
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{matrix.version}}
 
-    - name: "Checkout Code"
-      uses: actions/checkout@v3
+      - name: "Checkout Code"
+        uses: actions/checkout@v3
 
-    - name: Cache Pip Packages
-      uses: actions/cache@v4
-      id: cache-pip
-      with:
-        path: ${{ env.PIP_CACHE_DIR }}
-        key: pip-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('*requirements.txt') }}
+      - name: Cache Pip Packages
+        uses: actions/cache@v4
+        id: cache-pip
+        with:
+          path: ${{ env.PIP_CACHE_DIR }}
+          key: pip-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('*requirements.txt') }}
 
-    - name: Install pip deps
-      run: |
-        python -m pip install --no-compile --upgrade pip
-        # Note: We install in three steps in order to satisfy requirements
-        # from non default locations first. Installing the PyTorch CPU
-        # wheels saves multiple minutes and a lot of bandwidth on runner setup.
-        pip install --no-compile -r pytorch-cpu-requirements.txt
-        pip install --no-cache-dir -r iree-requirements-ci.txt --upgrade
-        pip install -r requirements.txt -e .
+      - name: Install pip deps
+        run: |
+          python -m pip install --no-compile --upgrade pip
+          # Note: We install in three steps in order to satisfy requirements
+          # from non default locations first. Installing the PyTorch CPU
+          # wheels saves multiple minutes and a lot of bandwidth on runner setup.
+          pip install --no-compile -r pytorch-cpu-requirements.txt
+          pip install --no-cache-dir -r iree-requirements-ci.txt --upgrade
+          pip install -r requirements.txt -e .
 
-    - name: Run unit tests
-      if: ${{ !cancelled() }}
-      run: |
-        pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
+      - name: Run unit tests
+        if: ${{ !cancelled() }}
+        run: |
+          pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
 
-    - name: Run e2e tests on AMD GPU MI300
-      if: "contains(matrix.os, 'mi300') && !cancelled()"
-      run: |
-        pip install --no-compile -r pytorch-rocm-requirements.txt
-        export WAVE_RUN_E2E_TESTS=1
-        pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
+      - name: Run e2e tests on AMD GPU MI300
+        if: "contains(matrix.os, 'mi300') && !cancelled()"
+        run: |
+          pip install --no-compile -r pytorch-rocm-requirements.txt
+          export WAVE_RUN_E2E_TESTS=1
+          pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
 
-    - name: Run e2e tests on AMD GPU MI250
-      if: "contains(matrix.os, 'mi250') && !cancelled()"
-      run: |
-        pip install --no-compile -r pytorch-rocm-requirements.txt
-        export WAVE_RUN_E2E_TESTS=1
-        pytest -n 2 --capture=tee-sys -vv ./tests/kernel/wave/
+      - name: Run e2e tests on AMD GPU MI250
+        if: "contains(matrix.os, 'mi250') && !cancelled()"
+        run: |
+          pip install --no-compile -r pytorch-rocm-requirements.txt
+          export WAVE_RUN_E2E_TESTS=1
+          pytest -n 2 --capture=tee-sys -vv ./tests/kernel/wave/
 
-    - name: Run LIT tests
-      if: ${{ !cancelled() }}
-      run: |
-        lit lit_tests/ -v
+      - name: Run LIT tests
+        if: ${{ !cancelled() }}
+        run: |
+          lit lit_tests/ -v
 
-    - name: MyPy Type Checking
-      if: ${{ !cancelled() }}
-      run: |
-        mypy
+      - name: MyPy Type Checking
+        if: ${{ !cancelled() }}
+        run: |
+          mypy
