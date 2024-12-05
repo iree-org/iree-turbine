@@ -206,13 +206,21 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
             for chunk_id in range(num_gpr_chunks):
                 cur_gpr_start_id = chunk_id * gpr_size
                 # Get updated index with VGPR offset.
+                output_mapping = list(custom.index.keys())
+                if custom.mapping is not None:
+                    output_mapping = list(custom.mapping.output_mapping.keys())
+                # Modify stride to 1 S.T we can have vectorized read/write
+                # iff gpr_offset_dim is or will be (after mapping) fastest dim.
+                updated_gpr_stride = simplified_index[gpr_offset_dim].stride
+                if output_mapping[-1] is gpr_offset_dim:
+                    updated_gpr_stride = 1
                 updated_index_with_gpr_offset = copy(simplified_index)
                 updated_dim_with_gpr_offset = IndexSequence(
                     updated_index_with_gpr_offset[gpr_offset_dim].start.subs(
                         {GPR_NUM: cur_gpr_start_id}
                     ),
                     gpr_size,
-                    1,
+                    updated_gpr_stride,
                 )
                 updated_index_with_gpr_offset[
                     gpr_offset_dim
