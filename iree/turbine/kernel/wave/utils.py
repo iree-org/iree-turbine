@@ -28,6 +28,7 @@ from ..ops.wave_ops import (
     IterArg,
     Reshape,
 )
+from ..lang.wave_types import IndexMapping
 from .constraints import (
     Constraint,
     WorkgroupConstraint,
@@ -1058,3 +1059,224 @@ def evaluate_with_assumptions(constraints: list[Constraint], expr: IndexExpr) ->
     if isinstance(result, sympy.logic.boolalg.BooleanAtom):
         return False
     return True if any([result.equals(x) for x in facts]) else None
+
+
+def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
+    if isinstance(i, IndexSequence):
+        i = i.start
+
+    return i
+
+
+def _get_start_indices(
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+) -> list[IndexExpr]:
+    start_indices = []
+    for dim_indexing in src_indices:
+        i = _get_start_index(src_indices[dim_indexing])
+        start_indices.append(i)
+
+    return start_indices
+
+
+def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
+    """Apply custom sympy simplifications"""
+
+    def check_mul(mul):
+        ret = None
+        for arg in mul.args:
+            if arg.is_number:
+                if arg < 0:
+                    return None
+
+                if ret is not None:
+                    return None
+
+                ret = arg
+                continue
+
+            if not (isinstance(arg, (sympy.floor, sympy.Mod)) or arg.is_integer):
+                return None
+
+            if not arg.is_nonnegative:
+                return None
+
+        return ret
+
+    def transform_mod(expr):
+        """Move constant outside of Mod expr
+
+        Example:
+        (floor(a) * 4 + 3) % 16 -> (floor(a) * 4) % 16 + 3
+        """
+        if not isinstance(expr, sympy.Mod):
+            return None
+
+        p, q = expr.args
+        if not q.is_number or q < 0:
+            return None
+
+        if not isinstance(p, sympy.Add):
+            return None
+
+        c = None
+        terms = []
+        mult = None
+        for arg in p.args:
+            if arg.is_number:
+                if c is not None:
+                    return None
+
+                c = arg
+                continue
+
+            if not isinstance(arg, sympy.Mul):
+                return None
+
+            m = check_mul(arg)
+            if (m is None) or (q % m != 0):
+                return None
+
+            mult = m if (mult is None) or (m < mult) else mult
+            terms.append(arg)
+
+        if c >= mult:
+            return None
+
+        return (sum(terms) % q) + c
+
+    def check_mul_rational(mul):
+        ret = None
+        for arg in mul.args:
+            if isinstance(arg, sympy.Rational):
+                if ret is not None:
+                    return None
+
+                if arg.p < 0 or arg.q < 0:
+                    return None
+
+                ret = arg
+                continue
+
+            if not (isinstance(arg, (sympy.floor, sympy.Mod)) or arg.is_integer):
+                return None
+
+            if not arg.is_nonnegative:
+                return None
+
+        return ret
+
+    def transform_floor(expr):
+        """Simplify rational addition inside floor expr
+
+        Example:
+        floor(floor(a)/3 + 1/6) -> floor(floor(a)/3)
+        """
+        if not isinstance(expr, sympy.floor):
+            return None
+
+        expr = expr.args[0]
+        if not isinstance(expr, sympy.Add):
+            return None
+
+        c = None
+        for arg in expr.args:
+            if isinstance(arg, sympy.Rational):
+                if c is not None:
+                    return None
+
+                c = arg
+
+        if c is None:
+            return None
+
+        terms = []
+        for arg in expr.args:
+            if isinstance(arg, sympy.Rational):
+                continue
+
+            if not isinstance(arg, sympy.Mul):
+                return None
+
+            r = check_mul_rational(arg)
+            if r is None or r.p != 1:
+                return None
+
+            if r <= c:
+                return None
+
+            terms.append(arg)
+
+        return sympy.floor(sum(terms))
+
+    expr = expr.replace(lambda e: transform_mod(e) is not None, transform_mod)
+    expr = expr.replace(lambda e: transform_floor(e) is not None, transform_floor)
+    return sympy.simplify(expr)
+
+
+def check_is_mapping_contiguous(
+    mapping: IndexMapping,
+    symbolc_shape: tuple[IndexExpr, ...],
+    index: tuple[IndexExpr, ...],
+    elements_per_thread: int | IndexExpr,
+    is_read: bool,
+) -> bool:
+    """Check if mapping can be lowered to contiguous vector ops instead of gathers/scatters"""
+    elements_per_thread = subs_idxc(elements_per_thread)
+    if elements_per_thread == 1:
+        return True
+
+    # TODO: Better dyn vals analysis.
+    if mapping.num_dynamic_vals != 0:
+        return False
+
+    if is_read:
+        assert (
+            mapping.is_output_identity()
+        ), "non-identity output mapping is not supported yet"
+        index_mapping = mapping.map_input_indices(symbolc_shape)
+    else:
+        assert (
+            mapping.is_input_identity()
+        ), "non-identity input mapping is not supported yet"
+        index_mapping = mapping.map_output_indices(symbolc_shape)
+
+    index_mapping = tuple(subs_idxc(i) for i in index_mapping)
+
+    iters = mapping.iters
+
+    subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
+
+    # Iterate over elements_per_thread end check if every subsequent read have
+    # diff 1 in fastest changing dim and 0s in every other.
+    expected_diff = [0] * len(index_mapping)
+    expected_diff[-1] = 1
+
+    # Assume fastest changing dim increments in elements_per_thread between individual ops,
+    # This is tranform exressions floor(x/a + 1/b) into floor(floor(x/ept)*ept/a + 1/b)
+    # which is required for further sympy simplifications.
+    subs[-1] = (subs[-1][0], (subs[-1][1] // elements_per_thread) * elements_per_thread)
+
+    # Construct indices for vector element 0
+    prev_indices = _get_start_indices(
+        {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
+    )
+
+    # Construct indices for vector elements [1, 2, ..., elements_per_thread - 1]
+    # and compare with previous ones.
+    for i in range(1, elements_per_thread, 1):
+        # Increment fastest changing dim in unmapped index by one and apply mapping.
+        subs[-1] = (subs[-1][0], subs[-1][1] + 1)
+        next_result_index = {
+            key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)
+        }
+        next_indices = _get_start_indices(next_result_index)
+
+        # Compute diff for every mapped dim.
+        diff = [_simplify_sympy_expr(a - b) for a, b in zip(next_indices, prev_indices)]
+        if diff != expected_diff:
+            return False
+
+        prev_indices = next_indices
+
+    return True
