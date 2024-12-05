@@ -1925,14 +1925,22 @@ def test_unary_lowerings():
         a_reg = tkw.read(a, elements_per_thread=4)
         res = -a_reg
         res = tkw.exp2(res)
+        res = tkw.reciprocal(res)
         tkw.write(res, a, elements_per_thread=4)
 
     a = torch.randn(16, 16, dtype=torch.float16)
     with codegen_test_context():
         print(test(a).module_op)
         # CHECK-LABEL: func @test
+        # Testing Negate
         # CHECK: %[[NEG:.+]] = arith.negf
-        # CHECK: math.exp2 %[[NEG]]
+
+        # Testing exp2
+        # CHECK: %[[EXP2:.+]] = math.exp2 %[[NEG]]
+
+        # Testing reciprocal
+        # %[[ONES:.+]] = arith.constant dense<1.000000e+00> : vector<4xf16>
+        # %[[RECIPROCAL:.+]] = arith.divf %[[ONES]], %[[EXP2]] : vector<4xf16>
 
 
 @run_test

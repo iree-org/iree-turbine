@@ -55,6 +55,7 @@ from ..ops.wave_ops import (
     read,
     reduction,
     exp2,
+    reciprocal,
     maximum,
     get_custom,
     get_result,
@@ -1101,6 +1102,22 @@ def handle_exp2(source: Value) -> OpResult:
     else:
         raise ValidationError(f"Found unhandled operand type for exp2: {element_type}")
     return result
+
+
+@handle_unary_op(reciprocal)
+def handle_reciprocal(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        splat_ones = DenseElementsAttr.get_splat(
+            source.type, get_constant_attr(1.0, element_type)
+        )
+        ones = arith_d.ConstantOp(source.type, splat_ones)
+        reciprocal = arith_d.divf(ones, source)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for reciprocal: {element_type}"
+        )
+    return reciprocal
 
 
 ###############################################################################
