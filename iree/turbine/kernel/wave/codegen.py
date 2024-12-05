@@ -576,7 +576,8 @@ def _build_mask(
         return None
 
     idxc = IndexingContext.current()
-    last_dim = tuple(index.keys())[-1]
+    fastest_dim = _get_fastest_index(index)
+    last_dim = tuple(index.keys())[fastest_dim]
     new_index = {k: _get_start_index(v) for k, v in index.items()}
 
     new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
