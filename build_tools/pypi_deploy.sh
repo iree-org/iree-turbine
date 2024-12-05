@@ -11,8 +11,6 @@
 # Prerequisites:
 #   * For deploying to PyPI, you will need to have credentials set up. See
 #     https://packaging.python.org/en/latest/tutorials/packaging-projects/#uploading-the-distribution-archives
-#     (Googlers can also access the shared releasing account "google-iree-pypi-deploy"
-#     at http://go/iree-pypi-password)
 #   * Install requirements, e.g. in a Python virtual environment (venv):
 #     `pip install -r requirements-packaging.txt`
 #   * Choose a release candidate to promote from
