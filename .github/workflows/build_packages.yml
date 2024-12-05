@@ -1,0 +1,55 @@
+# Copyright 2024 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: Build packages
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs at 11:00 AM UTC, which is 3:00 AM PST (UTC-8)
+    - cron: '0 11 * * *'
+
+jobs:
+  build_packages:
+    if: ${{ github.repository_owner == 'iree-org' || github.event_name != 'schedule' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Setting up Python"
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: pip install -r ./build_tools/requirements-packaging.txt
+
+      - name: Build iree-turbine release candidate
+        run: |
+          ./build_tools/compute_local_version.py -rc --write-json
+          ./build_tools/build_release.py --no-download
+
+      - name: Upload python wheels
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          if-no-files-found: error
+          name: snapshot
+          path: wheelhouse
+
+      - name: Release python wheels
+        uses: ncipollo/release-action@2c591bcc8ecdcd2db72b97d6147f871fcd833ba5 # v1.14.0
+        with:
+          artifacts: wheelhouse/*.whl
+          tag: "dev-wheels"
+          name: "dev-wheels"
+          body: "Automatic snapshot release of iree-turbine python wheels."
+          removeArtifacts: false
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: false

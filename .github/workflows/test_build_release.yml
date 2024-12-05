@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-name: Build Release
+name: Test Build Release
 
 on:
   workflow_dispatch:
@@ -37,10 +37,15 @@ jobs:
         id: setup_python
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
-          python-version: ${{matrix.version}}
+          python-version: ${{ matrix.version }}
+
+      - name: Install dependencies
+        run: pip install -r ./build_tools/requirements-packaging.txt
 
       - name: Build Release Wheels
-        run: ./build_tools/build_release.py --package-version 2.5.0.dev
+        run: |
+          ./build_tools/compute_local_version.py -dev --write-json
+          ./build_tools/build_release.py
 
       - name: Validate Release Build
         if: ${{ !cancelled() }}
