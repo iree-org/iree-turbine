@@ -563,13 +563,13 @@ def test_attention_32x32x8():
         MMA_UNITS: 4,
     }
 
-    config = {"denorm_fp_math_f32": "preserve-sign"}
+    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
         run=False,
         run_bench=False,
-        run_config=config,
+        compile_config=compile_config,
         schedule=False,
         use_scheduling_barriers=False,
     ):
@@ -581,7 +581,7 @@ def test_attention_32x32x8():
         print(base_attention_32x32x8(q, k, v, output).module_op)
 
         # CHECK-DAG:        #iree_codegen.translation_info
-        # CHECK-SAME:       {llvm_func_attrs = {denorm_fp_math_f32 = "preserve-sign"}
+        # CHECK-SAME:       {llvm_func_attrs = {"amdgpu-waves-per-eu" = "2", "denormal-fp-math-f32" = "preserve-sign"}
         # CHECK-LABEL:      func.func @base_attention_32x32x8
         # CHECK:                {{.*}} = scf.for
         # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma

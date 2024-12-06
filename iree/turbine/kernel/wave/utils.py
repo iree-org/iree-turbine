@@ -558,9 +558,6 @@ def compile_and_invoke(
         "--iree-vm-target-truncate-unsupported-floats",
     ]
 
-    if config.get("waves_per_eu", None) is not None:
-        flags.append(f"--iree-hip-waves-per-eu={config['waves_per_eu']}")
-
     # TODO: More targets/backends support.
     if backend == "rocm":
         target = config["target"]
