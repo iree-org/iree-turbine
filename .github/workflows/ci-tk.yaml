@@ -62,11 +62,20 @@ jobs:
         run: |
           pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
 
+      # - name: Test Wave Kernel Cacher
+      #   if: "contains(matrix.os, 'mi300') && !cancelled()"
+      #   run: |
+      #     pip install --no-compile -r pytorch-rocm-requirements.txt
+      #     export WAVE_RUN_E2E_TESTS=1
+      #     export WAVE_CACHE_ON=0
+      #     pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
+
       - name: Run e2e tests on AMD GPU MI300
         if: "contains(matrix.os, 'mi300') && !cancelled()"
         run: |
           pip install --no-compile -r pytorch-rocm-requirements.txt
           export WAVE_RUN_E2E_TESTS=1
+          export WAVE_CACHE_ON=0
           pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
 
       - name: Run e2e tests on AMD GPU MI250
@@ -74,6 +83,7 @@ jobs:
         run: |
           pip install --no-compile -r pytorch-rocm-requirements.txt
           export WAVE_RUN_E2E_TESTS=1
+          export WAVE_CACHE_ON=0
           pytest -n 2 --capture=tee-sys -vv ./tests/kernel/wave/
 
       - name: Run LIT tests

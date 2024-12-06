@@ -25,7 +25,8 @@ from .promotion import promote_placeholders
 from .hoisting import hoist_loop_invariant_ops
 from .utils import (
     canonicalize_module,
-    compile_and_invoke,
+    compile_to_vmfb,
+    invoke_vmfb,
     safe_subs,
     remove_chained_getresult,
     remove_chained_extractslice,
@@ -60,6 +61,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
+from .cache import get_cache_manager, invoke_cached_kernel
 
 import sympy
 
@@ -364,6 +366,41 @@ class LaunchableWave(Launchable):
         return mb, graph, exe, kernel_sig, entrypoint_name
 
     def test_execute(self, args, kwargs):
+        run = kwargs.get("run", False)
+        run_bench = kwargs.get("run_bench", False)
+        create_vmfb_file = kwargs.get("create_vmfb_file", None)
+        dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
+        dynamic_symbols = kwargs.get("dynamic_symbols", [])
+        config = kwargs.get("run_config", None)
+        use_scheduling = kwargs.get("schedule", False)
+        use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
+
+        # Get cached kernel when available.
+        cache_manager = get_cache_manager()
+        kernel_hash = cache_manager.get_hash(
+            self.constraints,
+            self._f,
+            IndexingContext.current().subs,
+            dynamic_symbols,
+            config,
+            use_scheduling=use_scheduling,
+            use_scheduling_barriers=use_scheduling_barriers,
+            run_bench=run_bench,
+        )
+        cached_kernel = cache_manager.load_kernel(kernel_hash)
+        if cached_kernel and (run or run_bench):
+            invoke_cached_kernel(
+                cached_kernel,
+                args,
+                config,
+                dynamic_symbols,
+                dynamic_symbols_map,
+                run,
+                run_bench,
+            )
+            return cached_kernel
+
+        # Recompile from kernel scratch if not found in cache.
         (
             mb,
             graph,
@@ -372,12 +409,7 @@ class LaunchableWave(Launchable):
             entrypoint_name,
         ) = self._trace_and_get_kernel_signature(args, kwargs)
 
-        run = kwargs.get("run", False)
-        run_bench = kwargs.get("run_bench", False)
-        create_vmfb_file = kwargs.get("create_vmfb_file", None)
         if run or run_bench or create_vmfb_file:
-            # TODO: cache compiled code
-            dynamic_symbols = kwargs.get("dynamic_symbols", [])
             host_codegen.isolated_test_call(
                 mb, exe, kernel_sig, entrypoint_name, dynamic_symbols
             )
@@ -398,12 +430,19 @@ class LaunchableWave(Launchable):
             if dynamic_symbols:
                 kernel_dynamic_dims = dynamic_symbols_map.values()
 
-            config = kwargs.get("run_config", None)
             if not config:
                 raise ValueError("no config provided")
 
-            compile_and_invoke(
-                asm,
+            compiled_wave_vmfb = compile_to_vmfb(asm, config, run_bench)
+            kernel_usages = [
+                binding.kernel_buffer_type.usage
+                for binding in kernel_sig.kernel_buffer_bindings
+            ]
+            cache_manager.store_kernel(
+                compiled_wave_vmfb, kernel_usages, mb.module_op.get_asm(), kernel_hash
+            )
+            invoke_vmfb(
+                compiled_wave_vmfb,
                 "isolated_benchmark",
                 config,
                 kernel_inputs,
@@ -411,7 +450,6 @@ class LaunchableWave(Launchable):
                 kernel_dynamic_dims,
                 run,
                 run_bench,
-                create_vmfb_file=create_vmfb_file,
                 inplace=True,
             )
 

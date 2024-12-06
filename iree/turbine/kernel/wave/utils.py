@@ -506,6 +506,12 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     vm_context.invoke(entry_function, arg_list, ret_list)
 
 
+def _read_file(name, mode):
+    with open(name, mode) as file:
+        data = file.read()
+    return data
+
+
 def _write_file(name, mode, data):
     with open(name, mode) as file:
         file.write(data)
@@ -537,20 +543,13 @@ def get_device_uuid(input_tensors: list[torch.Tensor]) -> tuple[int, str]:
     return uuid
 
 
-def compile_and_invoke(
+def compile_to_vmfb(
     asm: str,
-    func_name: str,
     config: dict[str, str],
-    kernel_inputs: list[torch.Tensor],
-    kernel_outputs: list[torch.Tensor],
-    kernel_dynamic_dims: list[int] = [],
-    run: bool = False,
     run_bench: bool = False,
-    create_vmfb_file: Optional[Path] = None,
-    inplace: bool = False,
 ):
+
     backend = config["backend"]
-    device = config["device"]
     flags = [
         f"--iree-hal-target-backends={backend}",
         "--iree-vm-bytecode-module-strip-source-map=true",
@@ -578,24 +577,40 @@ def compile_and_invoke(
 
     if run_bench:
         bench_batch_size = config.get("benchmark_batch_size", None)
+        if bench_batch_size is not None:
+            flags.append(
+                f"--iree-hal-benchmark-dispatch-repeat-count={bench_batch_size}"
+            )
+
+    res = compile_str(asm, target_backends=[backend], extra_args=flags)
+    return res
+
+
+def invoke_vmfb(
+    vmfb: bytes,
+    func_name: str,
+    config: dict[str, str],
+    kernel_inputs: list[torch.Tensor],
+    kernel_outputs: list[torch.Tensor],
+    kernel_dynamic_dims: list[int] = [],
+    run: bool = False,
+    run_bench: bool = False,
+    inplace: bool = False,
+):
+
+    device = config["device"]
+    if run_bench:
+        bench_batch_size = config.get("benchmark_batch_size", None)
         bench_repetitions = config.get("benchmark_repetitions", None)
         bench_file = config.get("benchmark_results_file", None)
 
         benchmark_flags = {}
 
         if bench_batch_size is not None:
-            flags.append(
-                f"--iree-hal-benchmark-dispatch-repeat-count={bench_batch_size}"
-            )
             benchmark_flags["batch_size"] = int(bench_batch_size)
 
         if bench_repetitions is not None:
             benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
-
-    res = compile_str(asm, target_backends=[backend], extra_args=flags)
-
-    if create_vmfb_file is not None:
-        _write_file(create_vmfb_file, "wb", res)
 
     if not (run or run_bench):
         return
@@ -607,7 +622,7 @@ def compile_and_invoke(
     rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
-    mod = rt.VmModule.copy_buffer(vm_instance, res)
+    mod = rt.VmModule.copy_buffer(vm_instance, vmfb)
 
     vm_modules = [
         mod,
@@ -686,6 +701,31 @@ def compile_and_invoke(
             **benchmark_flags,
         )
         _print_bench_result(benchmark_results, bench_file)
+
+
+def compile_and_invoke(
+    asm: str,
+    func_name: str,
+    config: dict[str, str],
+    kernel_inputs: list[torch.Tensor],
+    kernel_outputs: list[torch.Tensor],
+    kernel_dynamic_dims: list[int] = [],
+    run: bool = False,
+    run_bench: bool = False,
+    inplace: bool = False,
+):
+    compiled_wave_vmfb = compile_to_vmfb(asm, config, run_bench)
+    invoke_vmfb(
+        compiled_wave_vmfb,
+        func_name,
+        config,
+        kernel_inputs,
+        kernel_outputs,
+        kernel_dynamic_dims,
+        run,
+        run_bench,
+        inplace,
+    )
 
 
 def safe_subs(input: Any, subs: List[Tuple[IndexExpr, IndexExpr]]) -> Any:
