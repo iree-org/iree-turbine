@@ -411,17 +411,22 @@ class IndexSequence:
     stride: Optional[IndexExpr | int] = 1
 
     def _subs(
-        self, value: int | IndexExpr, map: dict[IndexSymbol, int]
+        self, value: int | IndexExpr, map: dict[IndexExpr, IndexExpr]
     ) -> int | IndexExpr:
-        new_value = value
-        if isinstance(value, IndexExpr):
-            new_value = value.subs(map)
-        return new_value
+        if isinstance(value, (sympy.Basic, IndexSequence)):
+            return value.subs(map)
+        return value
 
-    def subs(self, map: dict[IndexSymbol, int]):
+    def subs(self, map: dict[IndexExpr, IndexExpr]):
         start = self._subs(self.start, map)
         size = self._subs(self.size, map)
         stride = self._subs(self.stride, map)
+        return IndexSequence(start, size, stride)
+
+    def apply_expr(self, symbol: IndexExpr, expr: IndexExpr):
+        start = self._subs(expr, {symbol: self.start})
+        size = self._subs(expr, {symbol: self.size})
+        stride = self._subs(expr, {symbol: self.stride})
         return IndexSequence(start, size, stride)
 
     def __repr__(self):
