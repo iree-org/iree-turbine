@@ -76,10 +76,10 @@ def test_read_write_equal_sizes():
         print_trace(trace, False)
         # CHECK: %a
         # CHECK-NEXT: %c
-        # CHECK-NEXT: %read
-        # CHECK-SAME: (%a, 4, None, (), None)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-NEXT: %read
+        # CHECK-SAME: (%a, 4, None, (), None)
         # CHECK-NEXT: %write_1
         # CHECK-SAME: (%read, %allocate, 4, None, ())
         # CHECK-NEXT: %read_1
@@ -126,10 +126,10 @@ def test_read_write_equal_sizes_different_address_spaces():
         print_trace(trace, False)
         # CHECK: %a
         # CHECK-NEXT: %c
-        # CHECK-NEXT: %read
-        # CHECK-SAME: (%a, 4, None, (), None)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-NEXT: %read
+        # CHECK-SAME: (%a, 4, None, (), None)
         # CHECK-NEXT: %write_1
         # CHECK-SAME: (%read, %allocate, 4, None, ())
         # CHECK-NEXT: %read_1
