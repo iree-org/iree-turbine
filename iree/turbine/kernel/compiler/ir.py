@@ -10,6 +10,7 @@ from iree.compiler.ir import (
     ArrayAttr,
     Block,
     Context,
+    DictAttr,
     DenseElementsAttr,
     F16Type,
     F32Type,

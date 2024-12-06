@@ -97,7 +97,6 @@ def testEvoformerAttentionForward(
     symbols.update(get_default_scheduling_params())
 
     config = get_default_run_config()
-    config["waves_per_eu"] = 2
     if run_bench:
         config["benchmark_batch_size"] = 1000
         config["benchmark_repetitions"] = 3
@@ -106,6 +105,7 @@ def testEvoformerAttentionForward(
         config["benchmark_results_file"] = os.path.join(
             dump_perf, "tk_" + perf_filename
         )
+    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
 
     with tk.gen.TestLaunchContext(
         symbols,
@@ -113,6 +113,7 @@ def testEvoformerAttentionForward(
         run=True,
         run_bench=run_bench,
         run_config=config,
+        compile_config=compile_config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):

@@ -330,6 +330,18 @@ class LaunchableWave(Launchable):
         exe = dispatch_codegen.StreamExecutable(mb, name=entrypoint_name)
         workgroup_size = self.hardware_constraints[0].threads_per_block
         subgroup_size = self.hardware_constraints[0].threads_per_wave
+
+        # Setup LLVM func compilation configs.
+        compile_config = kwargs.get("compile_config", {})
+        llvm_func_config = {}
+        denorm_fp_math_f32 = compile_config.get("denorm_fp_math_f32", None)
+        if denorm_fp_math_f32 != None:
+            llvm_func_config["denormal-fp-math-f32"] = denorm_fp_math_f32
+
+        waves_per_eu = compile_config.get("waves_per_eu", None)
+        if waves_per_eu != None:
+            llvm_func_config["amdgpu-waves-per-eu"] = waves_per_eu
+
         dispatch_entrypoint = exe.define_entrypoint(
             entrypoint_name,
             kernel_sig,
@@ -337,6 +349,7 @@ class LaunchableWave(Launchable):
             workgroup_size,
             subgroup_size,
             dynamic_symbols,
+            llvm_func_config,
         )
 
         emitter = WaveEmitter(

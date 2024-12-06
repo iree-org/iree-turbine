@@ -21,6 +21,7 @@ from .builder import (
 from .ir import (
     Attribute,
     Block,
+    DictAttr,
     FunctionType,
     IndexType,
     InsertionPoint,
@@ -99,6 +100,7 @@ class StreamExecutable:
         workgroup_size: list[int] = None,
         subgroup_size: int = None,
         dynamic_symbols: list[IndexSymbol] = [],
+        llvm_configs: dict[str, str] = {},
     ) -> "DispatchEntrypoint":
         """Defines a dispatch function with a signature like:
 
@@ -168,10 +170,23 @@ class StreamExecutable:
                     pipeline_attr = iree_codegen_d.DispatchLoweringPassPipelineAttr.get(
                         iree_codegen_d.DispatchLoweringPassPipeline.None_
                     )
+                    translation_config = None
+                    if llvm_configs:
+                        # Add llvm_func_attrs to translation config if any is specified.
+                        llvm_func_attrs = DictAttr.get(
+                            {k: StringAttr.get(str(v)) for k, v in llvm_configs.items()}
+                        )
+                        translation_config = DictAttr.get(
+                            {"llvm_func_attrs": llvm_func_attrs}
+                        )
                     def_func_op.attributes[
                         "translation_info"
                     ] = iree_codegen_d.TranslationInfoAttr.get(
-                        pipeline_attr, None, workgroup_size, subgroup_size
+                        pipeline_attr,
+                        None,
+                        workgroup_size,
+                        subgroup_size,
+                        configuration=translation_config,
                     )
 
             # Define the export.
