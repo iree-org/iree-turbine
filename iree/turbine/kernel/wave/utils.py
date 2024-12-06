@@ -1211,19 +1211,19 @@ def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
     return sympy.simplify(expr)
 
 
-def approximate_difference(expr: IndexExpr, vars: list[IndexSymbol]) -> bool:
+def approximate_difference(
+    expr: IndexExpr, vars: list[IndexSymbol], elements_per_thread: int
+) -> bool:
     """
     During the contiguity check, we take a unit step in the fastest changing
     dimension (j -> j + 1) and we compute f(j + 1) - f(j) to see if it is 1.
     In general, we will end up with expressions of the form
-    g(x + eps) - g(x) where x = h(j) and eps is a constant.
+    g(x + eps) - g(x) where x = h(j) and eps is a rational of the form 1/q.
+    We can use q to determine if the mapping is contiguous as follows
 
-    The value of eps can be used to obtain an approximate estimate of
-    g(x + eps) - g(x), as follows
-
-    Case 1: eps < threshold => g(x + eps) = g(x), so g(x + eps) - g(x) = 0
-    Case 2: eps >= threshold => g(x + eps) - g(x) != 0
-    Case 3: eps = 1 => g(x + eps) - g(x) = 1
+    if q is divisible by elements_per_thread (dimensions where we have not applied the unit step), or
+    if eps is 1 (corresponds to the dimension where we have applied the unit step)
+    then the mapping is contiguous.
 
     The mapping function f(j) will be non-linear in general, and so the difference
     of 1 will be transformed to different constant values based on the function.
@@ -1238,16 +1238,17 @@ def approximate_difference(expr: IndexExpr, vars: list[IndexSymbol]) -> bool:
     new_vars, new_exprs = sympy.cse(expr)
     new_expr = new_exprs[0] if new_vars else expr
     new_vars = [x[0] for x in new_vars] if new_vars else vars
-    threshold = 0.01
     for arg in sympy.preorder_traversal(new_expr):
         if isinstance(arg, sympy.Add):
             if all([x in arg.args for x in new_vars]):
-                constant = float([x for x in arg.args if x not in new_vars][0])
-                if constant < threshold:
-                    return 0
-                if constant == 1:
+                constant = [x for x in arg.args if x not in new_vars][0]
+                if not isinstance(constant, sympy.Rational):
+                    return expr
+                if constant.p != 1:
+                    return expr
+                if constant.q == 1:
                     return 1
-                return expr
+                return 0 if constant.q % elements_per_thread == 0 else expr
     return expr
 
 
@@ -1284,17 +1285,14 @@ def check_is_mapping_contiguous(
     subs = [(sym, sym + int(i == len(iters) - 1)) for i, sym in enumerate(iters)]
     diff = [
         approximate_difference(
-            index_mapping[i].subs(subs) - index_mapping[i], list(iters.keys())[-1:]
+            index_mapping[i].subs(subs) - index_mapping[i],
+            list(iters.keys())[-1:],
+            elements_per_thread,
         )
         for i in range(len(index_mapping))
     ]
 
-    # Iterate over elements_per_thread end check if every subsequent read have
-    # diff 1 in fastest changing dim and 0s in every other.
     expected_diff = [0] * len(index_mapping)
     expected_diff[-1] = 1
 
-    if diff != expected_diff:
-        return False
-
-    return True
+    return diff == expected_diff
