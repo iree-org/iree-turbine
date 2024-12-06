@@ -425,8 +425,4 @@ class IndexSequence:
         return IndexSequence(start, size, stride)
 
     def __repr__(self):
-        if isinstance(self.size, sympy.Integer):
-            self.size = int(self.size)
-        if isinstance(self.size, int) and self.size <= 1:
-            return f"{self.start}"
         return f"{self.start} : {self.size} : {self.stride}"
