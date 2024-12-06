@@ -1211,16 +1211,6 @@ def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
     return sympy.simplify(expr)
 
 
-def replace_mod_with_floor(expr: IndexExpr) -> Optional[IndexExpr]:
-    """
-    (x % y) -> x - y * floor(x/y)
-    """
-    if not isinstance(expr, sympy.Mod):
-        return None
-    p, q = expr.args
-    return p - q * sympy.floor(p / q)
-
-
 def approximate_difference(expr: IndexExpr, vars: list[IndexSymbol]) -> bool:
     """
     During the contiguity check, we take a unit step in the fastest changing
@@ -1241,18 +1231,13 @@ def approximate_difference(expr: IndexExpr, vars: list[IndexSymbol]) -> bool:
     the difference.
 
     In this function we do a pre-order traversal of the expression to obtain
-    the value of the constant eps. If the constant is less than a threshold,
-    we assume that the symbols can be assumed to be integral.
+    the value of the constant eps.
     """
     if expr.is_number:
         return expr
     new_vars, new_exprs = sympy.cse(expr)
-    new_expr = new_exprs[0]
-    if not new_vars:
-        new_vars = vars
-        new_expr = expr
-    else:
-        new_vars = [x[0] for x in new_vars]
+    new_expr = new_exprs[0] if new_vars else expr
+    new_vars = [x[0] for x in new_vars] if new_vars else vars
     threshold = 0.01
     for arg in sympy.preorder_traversal(new_expr):
         if isinstance(arg, sympy.Add):
@@ -1296,10 +1281,7 @@ def check_is_mapping_contiguous(
     index_mapping = tuple(subs_idxc(i) for i in index_mapping)
     iters = mapping.iters
 
-    subs = [
-        (sym, sym + 1) if i == len(iters.keys()) - 1 else (sym, sym)
-        for i, sym in enumerate(iters.keys())
-    ]
+    subs = [(sym, sym + int(i == len(iters) - 1)) for i, sym in enumerate(iters)]
     diff = [
         approximate_difference(
             index_mapping[i].subs(subs) - index_mapping[i], list(iters.keys())[-1:]
@@ -1314,34 +1296,5 @@ def check_is_mapping_contiguous(
 
     if diff != expected_diff:
         return False
-
-    # subs = [(sym, expr.start) for sym, expr in zip(iters.keys(), index.values())]
-    ## Assume fastest changing dim increments in elements_per_thread between individual ops,
-    ## This is tranform exressions floor(x/a + 1/b) into floor(floor(x/ept)*ept/a + 1/b)
-    ## which is required for further sympy simplifications.
-    # subs[-1] = (subs[-1][0], (subs[-1][1] // elements_per_thread) * elements_per_thread)
-
-    ## Construct indices for vector element 0
-    # prev_indices = _get_start_indices(
-    #    {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
-    # )
-
-    ## Construct indices for vector elements [1, 2, ..., elements_per_thread - 1]
-    ## and compare with previous ones.
-    # for i in range(1, elements_per_thread, 1):
-    #    # Increment fastest changing dim in unmapped index by one and apply mapping.
-    #    subs[-1] = (subs[-1][0], subs[-1][1] + 1)
-    #    next_result_index = {
-    #        key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)
-    #    }
-    #    next_indices = _get_start_indices(next_result_index)
-
-    #    # Compute diff for every mapped dim.
-    #    diff = [_simplify_sympy_expr(a - b) for a, b in zip(next_indices, prev_indices)]
-    #    print(diff, diff2)
-    #    if diff != expected_diff:
-    #        return False
-
-    #    prev_indices = next_indices
 
     return True
