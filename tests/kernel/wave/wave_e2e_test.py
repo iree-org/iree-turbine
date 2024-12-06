@@ -615,9 +615,10 @@ def test_offset_write_one(shape, request):
         run_config=config,
     ):
         test(a, off, out)
-        out_ref = torch.zeros_like(out)
-        off_expanded = off.repeat_interleave(count, dim=1)[:, : shape[1]].to(torch.long)
-        out_ref = out_ref.scatter(1, off_expanded.to(torch.long), a)
+        out_ref = device_zeros(off.shape, dtype=out.dtype)
+        out_ref = out_ref.scatter(1, off.to(torch.long), a)
+        out_ref = out_ref.repeat_interleave(count, dim=1)[:, : shape[1]]
+
         assert_close(out, out_ref)
 
 
