@@ -16,6 +16,7 @@ from iree.turbine.kernel.wave.utils import (
     get_default_arch,
     get_default_run_config,
     get_default_scheduling_params,
+    to_default_device,
     device_randn,
     device_randint,
     device_randperm,
@@ -600,7 +601,10 @@ def test_offset_write_one(shape, request):
     a = device_randn(shape, dtype=torch.float16)
     count = int(ELEMS_PER_THREAD)
     n1 = ceildiv(shape[1], count)
-    off = device_randperm(n1, dtype=torch.int32).reshape((1, n1)).repeat(shape[0], 1)
+    off = (
+        device_randperm(n1, dtype=torch.int32).reshape((1, n1)).repeat(shape[0], 1)
+        * count
+    )
     out = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
@@ -615,9 +619,13 @@ def test_offset_write_one(shape, request):
         run_config=config,
     ):
         test(a, off, out)
-        out_ref = device_zeros(off.shape, dtype=out.dtype)
-        out_ref = out_ref.scatter(1, off.to(torch.long), a)
-        out_ref = out_ref.repeat_interleave(count, dim=1)[:, : shape[1]]
+        out_ref = torch.zeros_like(out)
+        off_expanded = off.repeat_interleave(count, dim=1)
+        off_expanded = off_expanded + to_default_device(
+            torch.arange(count, dtype=torch.int32)
+        ).reshape((1, count)).repeat(shape[0], n1)
+        off_expanded = off_expanded[:, : shape[1]].to(torch.long)
+        out_ref = out_ref.scatter(1, off_expanded.to(torch.long), a)
 
         assert_close(out, out_ref)
 
