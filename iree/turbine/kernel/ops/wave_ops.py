@@ -1220,6 +1220,28 @@ class Write(CustomOp):
         if is_shared_mem_access(self):
             self.index = align_index_vars(self.index, constraints)
 
+    def transform_index_backwards(
+        self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
+    ) -> dict[IndexSymbol, IndexSequence]:
+        if arg in self.mapping_dynamic_vals:
+            assert self.mapping.is_input_identity()
+            i = self.mapping_dynamic_vals.index(arg)
+            iters = self.mapping.iters
+            mapping = self.mapping.dynamic_val_mappings[i]
+            subs = {v: k for k, v in zip(iters, mapping.keys())}
+            return {k: v.apply_expr(subs[k], mapping[k]) for k, v in index.items()}
+
+        return index
+
+    def get_derived_indices(
+        self,
+    ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
+        def transform_idx(arg):
+            new_index = self.transform_index_backwards(self.index, arg)
+            return {k: v for k, v in zip(arg.type.symbolic_shape, new_index.values())}
+
+        return [(arg, transform_idx(arg)) for arg in self.mapping_dynamic_vals]
+
     def has_identity_mapping(self) -> bool:
         """Check if mapping between input register and output memory is identity."""
         mapping = self.mapping

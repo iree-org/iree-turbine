@@ -288,7 +288,7 @@ def combine_derived_index(
 
 
 def set_derived_index(trace):
-    sources = trace.walk(lambda node: isinstance(get_custom(node), (Read,)))
+    sources = trace.walk(lambda node: isinstance(get_custom(node), (Read, Write)))
 
     worklist = []
     for source in sources:
