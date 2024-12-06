@@ -546,6 +546,20 @@ def _build_start_indices(
     ]
 
 
+def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
+    """
+    This function takes in indices of a Node, extract their sizes
+    into a list, and then try do an argmax on it. In the case where
+    there are multipled max_vals we pick the fastest/most minor one.
+    """
+
+    index_sizes = [i.size for i in indices.values()]
+    # Find the maximum value
+    max_size = max(index_sizes)
+    # Find the fastest/most minor index of the maximum value.
+    return max(i for i, size in enumerate(index_sizes) if size == max_size)
+
+
 def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> IndexExpr:
     return sum(i * s for i, s in zip(indices, strides))
 
@@ -562,7 +576,8 @@ def _build_mask(
         return None
 
     idxc = IndexingContext.current()
-    last_dim = tuple(index.keys())[-1]
+    fastest_dim = _get_fastest_index(index)
+    last_dim = list(index)[fastest_dim]
     new_index = {k: _get_start_index(v) for k, v in index.items()}
 
     new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
@@ -641,7 +656,7 @@ def _construct_gather_scatter_indices(
 
     start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
-
+    fastest_dim = _get_fastest_index(index)
     need_dynamic_offsets = False
     for val in dynamic_vals:
         shape = val.type.shape
@@ -656,10 +671,10 @@ def _construct_gather_scatter_indices(
     strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
     start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
-        # Update most-minor dim, i.e. in case of identity mapping it will
+        # Update fastest dim, i.e. in case of identity mapping it will
         # be equivalent to just vector.load
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
-        subs[-1] = (subs[-1][0], start_indices_orig[-1] + i)
+        subs[fastest_dim] = (subs[fastest_dim][0], start_indices_orig[fastest_dim] + i)
         indices = [i.subs(subs) for i in index_mapping]
 
         # First, we build indices as if resulting gather/scatter `start_indices`
