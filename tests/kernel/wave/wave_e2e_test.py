@@ -585,7 +585,7 @@ def test_offset_write_one(shape, request):
         off: tkl.Memory[M, N1, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
+        offset = tkw.read(off, elements_per_thread=1)
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(
             res,
