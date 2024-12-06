@@ -575,7 +575,7 @@ def test_offset_write_one(shape, request):
     mapping = tkw.IndexMapping(
         num_iterators=2,
         inputs={M: i, N: j},
-        outputs={M: i, N: k},
+        outputs={M: i, N: k + j % ELEMS_PER_THREAD},
         dynamic_val_mappings={M: i, N: j // ELEMS_PER_THREAD},
     )
 
