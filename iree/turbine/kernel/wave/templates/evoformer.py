@@ -166,7 +166,8 @@ def get_evoformer_kernel(
 
         # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
-        res = res_mm / res_sum
+        reciprocal_sum = tkw.reciprocal(res_sum)
+        res = res_mm * reciprocal_sum
         casted = tkw.cast(res, datatype)
         tkw.write(
             casted, c, mapping=o_mapping, elements_per_thread=STORE_ELEMS_PER_THREAD

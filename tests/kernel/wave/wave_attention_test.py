@@ -463,7 +463,8 @@ def testAttention(
 
         # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
-        res = res_mm / res_sum
+        reciprocal_sum = tkw.reciprocal(res_sum)
+        res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     hyperparams = {
@@ -657,7 +658,8 @@ def testAttentionBias(
 
         # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
-        res = res_mm / res_sum
+        reciprocal_sum = tkw.reciprocal(res_sum)
+        res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     hyperparams = {
@@ -847,7 +849,8 @@ def testAttentionF8(
 
         # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
-        res = res_mm / res_sum
+        reciprocal_sum = tkw.reciprocal(res_sum)
+        res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     hyperparams = {
