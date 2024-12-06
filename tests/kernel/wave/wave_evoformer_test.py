@@ -98,6 +98,7 @@ def testEvoformerAttentionForward(
 
     config = get_default_run_config()
     config["waves_per_eu"] = 2
+    config["denorm_fp_math_f32"] = "preserve-sign"
     if run_bench:
         config["benchmark_batch_size"] = 1000
         config["benchmark_repetitions"] = 3

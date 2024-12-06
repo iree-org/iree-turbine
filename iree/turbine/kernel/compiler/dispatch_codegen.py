@@ -171,7 +171,7 @@ class StreamExecutable:
                         iree_codegen_d.DispatchLoweringPassPipeline.None_
                     )
                     translation_config = None
-                    if len(llvm_configs) > 0:
+                    if llvm_configs:
                         # Add llvm_func_attrs to translation config if any is specified.
                         llvm_func_attrs = DictAttr.get(
                             {k: StringAttr.get(str(v)) for k, v in llvm_configs.items()}
