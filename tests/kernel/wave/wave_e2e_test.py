@@ -561,7 +561,7 @@ def test_offset_write_one(shape, request):
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+            vector_shapes={M: BLOCK_M, N: BLOCK_N, N1: 1},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -582,7 +582,7 @@ def test_offset_write_one(shape, request):
     @tkw.wave(constraints)
     def test(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        off: tkl.Memory[M, N1, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
         offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
