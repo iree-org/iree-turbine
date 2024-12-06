@@ -555,9 +555,9 @@ def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
 
     index_sizes = [i.size for i in indices.values()]
     # Find the maximum value
-    max_val = max(index_sizes)
+    max_size = max(index_sizes)
     # Find the fastest/most minor index of the maximum value.
-    return len(index_sizes) - 1 - index_sizes[::-1].index(max_val)
+    return max(i for i, size in enumerate(index_sizes) if size == max_size)
 
 
 def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> IndexExpr:
@@ -577,7 +577,7 @@ def _build_mask(
 
     idxc = IndexingContext.current()
     fastest_dim = _get_fastest_index(index)
-    last_dim = tuple(index.keys())[fastest_dim]
+    last_dim = list(index)[fastest_dim]
     new_index = {k: _get_start_index(v) for k, v in index.items()}
 
     new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
