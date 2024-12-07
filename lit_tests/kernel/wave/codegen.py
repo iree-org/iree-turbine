@@ -1926,6 +1926,7 @@ def test_unary_lowerings():
         res = -a_reg
         res = tkw.exp2(res)
         res = tkw.reciprocal(res)
+        res = tkw.abs(res)
         tkw.write(res, a, elements_per_thread=4)
 
     a = torch.randn(16, 16, dtype=torch.float16)
@@ -1941,6 +1942,9 @@ def test_unary_lowerings():
         # Testing reciprocal
         # %[[ONES:.+]] = arith.constant dense<1.000000e+00> : vector<4xf16>
         # %[[RECIPROCAL:.+]] = arith.divf %[[ONES]], %[[EXP2]] : vector<4xf16>
+        
+        # Testing abs
+        # %[[ABS:.+]] = math.absf %[[RECIPROCAL]]
 
 
 @run_test

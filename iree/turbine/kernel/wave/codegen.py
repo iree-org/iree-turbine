@@ -56,6 +56,7 @@ from ..ops.wave_ops import (
     reduction,
     exp2,
     reciprocal,
+    abs,
     maximum,
     get_custom,
     get_result,
@@ -1133,6 +1134,17 @@ def handle_reciprocal(source: Value) -> OpResult:
             f"Found unhandled operand type for reciprocal: {element_type}"
         )
     return reciprocal
+
+@handle_unary_op(abs)
+def handle_abs(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        abs = math_d.absf(source)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for abs: {element_type}"
+        )
+    return abs
 
 
 ###############################################################################
