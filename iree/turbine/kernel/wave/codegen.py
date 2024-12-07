@@ -1140,6 +1140,8 @@ def handle_abs(source: Value) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
         abs = math_d.absf(source)
+    elif _is_integer_like_type(element_type):
+        abs = math_d.absi(source)
     else:
         raise ValidationError(
             f"Found unhandled operand type for abs: {element_type}"

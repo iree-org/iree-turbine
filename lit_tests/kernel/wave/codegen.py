@@ -1921,17 +1921,24 @@ def test_unary_lowerings():
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
-    def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+    ):
         a_reg = tkw.read(a, elements_per_thread=4)
+        b_reg = tkw.read(b, elements_per_thread=4)
         res = -a_reg
         res = tkw.exp2(res)
         res = tkw.reciprocal(res)
         res = tkw.abs(res)
+        res_b = tkw.abs(b_reg)
         tkw.write(res, a, elements_per_thread=4)
+        tkw.write(res_b, b, elements_per_thread=4)
 
     a = torch.randn(16, 16, dtype=torch.float16)
+    b = torch.ones(16, 16, dtype=torch.int32)
     with codegen_test_context():
-        print(test(a).module_op)
+        print(test(a, b).module_op)
         # CHECK-LABEL: func @test
         # Testing Negate
         # CHECK: %[[NEG:.+]] = arith.negf
@@ -1945,6 +1952,7 @@ def test_unary_lowerings():
         
         # Testing abs
         # %[[ABS:.+]] = math.absf %[[RECIPROCAL]]
+        # %[[ABS:.+]] = math.absi
 
 
 @run_test
