@@ -217,9 +217,11 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         {GPR_NUM: cur_gpr_start_id}
                     ),
                     gpr_size,
-                    1
-                    if output_mapping[-1] == gpr_offset_dim
-                    else simplified_index[gpr_offset_dim].stride,
+                    (
+                        1
+                        if output_mapping[-1] == gpr_offset_dim
+                        else simplified_index[gpr_offset_dim].stride
+                    ),
                 )
                 updated_index_with_gpr_offset[
                     gpr_offset_dim
@@ -274,7 +276,8 @@ def combine_derived_index(
 
     new_index = copy(src_index)
     for dim, new_idx in dst_index.items():
-        assert dim in src_index, f"Dim {dim} not in index {src_index}"
+        if dim not in src_index:
+            continue
         old_idx = src_index[dim]
         if old_idx == new_idx:
             continue

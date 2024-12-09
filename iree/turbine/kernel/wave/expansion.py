@@ -283,7 +283,7 @@ def _expand_node(
     for i, arg in node.node_args.items():
         arg_list = arg
         unpack = lambda x: x
-        if isinstance(arg, list):
+        if isinstance(arg, Sequence):
             if not all(is_expandable(a) for a in arg):
                 continue
         else:

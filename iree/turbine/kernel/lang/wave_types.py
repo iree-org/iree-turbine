@@ -14,7 +14,7 @@ from .kernel_buffer import AddressSpace, KernelBufferMeta, KernelBufferUsage
 from .._support.dtype import DataType
 from .._support.indexing import IndexExpr, IndexSymbol, index_symbol
 
-from sympy import Symbol
+from sympy import Symbol, Integer
 from sympy.core.expr import Expr
 from typing_extensions import Self
 
@@ -41,6 +41,7 @@ class Memory(metaclass=KernelBufferMeta):
     symbolic_shape: ClassVar[tuple[IndexExpr, ...]]
     rank: ClassVar[int]
     dtype: ClassVar[DataType]
+    physical_layout: ClassVar[Optional[dict[str, IndexExpr]]]
     usage: ClassVar[Optional[KernelBufferUsage]]
 
     def __init__(self) -> None:
@@ -55,9 +56,15 @@ class Memory(metaclass=KernelBufferMeta):
 
         shift = 0
         usage = KernelBufferUsage.NONE
-        if isinstance(shape_and_dtype[-1], KernelBufferUsage):
-            shift = 1
-            usage = shape_and_dtype[-1]
+        last_dim = -1
+        if isinstance(shape_and_dtype[last_dim], KernelBufferUsage):
+            shift += 1
+            usage = shape_and_dtype[last_dim]
+            last_dim -= 1
+        physical_layout = None
+        if isinstance(shape_and_dtype[last_dim], dict):
+            shift += 1
+            physical_layout = shape_and_dtype[last_dim]
         shape = shape_and_dtype[: -2 - shift]
         addressSpace = shape_and_dtype[-2 - shift]
         dtype = shape_and_dtype[-1 - shift]
@@ -85,6 +92,7 @@ class Memory(metaclass=KernelBufferMeta):
             address_space=addressSpace,
             symbolic_shape=shape,
             dtype=dtype,
+            physical_layout=physical_layout,
             usage=usage,
         )
 
