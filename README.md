@@ -11,8 +11,9 @@ Turbine provides a collection of tools:
 
 * *AOT Export*: For compiling one or more `nn.Module`s to compiled, deployment
   ready artifacts. This operates via both a simple one-shot export API (Already upstreamed to [torch-mlir](https://github.com/llvm/torch-mlir/blob/main/python/torch_mlir/extras/fx_importer.py))
-  for simple models and an underlying [advanced API](iree/turbine/aot/compiled_module.py) for complicated models
-  and accessing the full features of the runtime.
+  for simple models and an underlying
+  [advanced API](https://github.com/iree-org/iree-turbine/blob/main/iree/turbine/aot/compiled_module.py)
+  for complicated models and accessing the full features of the runtime.
 * *Eager Execution*: A `torch.compile` backend is provided and a Turbine Tensor/Device
   is available for more native, interactive use within a PyTorch session.
 * *Custom Ops*: Integration for defining custom PyTorch ops and implementing them in
@@ -50,11 +51,11 @@ Discord server).
 
     (or follow the "Developers" instructions below)
 
-2. Try one of the [examples](./examples/):
+2. Try one of the [examples](https://github.com/iree-org/iree-turbine/blob/main/examples/):
 
-    * [AOT MLP With Static Shapes](examples/aot_mlp/mlp_export_simple.py)
-    * [Eager MNIST with `torch.compile`](examples/eager_mlp/mlp_eager_simple.py)
-    * [Dynamic AOT resnet-18](examples/resnet-18/)
+    * [AOT MLP With Static Shapes](https://github.com/iree-org/iree-turbine/blob/main/examples/aot_mlp/mlp_export_simple.py)
+    * [Eager MNIST with `torch.compile`](https://github.com/iree-org/iree-turbine/blob/main/examples/eager_mlp/mlp_eager_simple.py)
+    * [Dynamic AOT resnet-18](https://github.com/iree-org/iree-turbine/blob/main/examples/resnet-18/)
 
     Generally, we use Turbine to produce valid, dynamic shaped Torch IR (from the
     [torch-mlir `torch` dialect](https://github.com/llvm/torch-mlir/tree/main/include/torch-mlir/Dialect/Torch/IR)
@@ -89,13 +90,13 @@ variant by doing so explicitly first, either by following the
 [official instructions](https://pytorch.org/get-started/locally/) or by using
 one of our `requirements.txt` files:
 
-* *CPU: [`pytorch-cpu-requirements.txt`](./pytorch-cpu-requirements.txt)*
+* *CPU: [`pytorch-cpu-requirements.txt`](https://github.com/iree-org/iree-turbine/blob/main/pytorch-cpu-requirements.txt)*
 
   ```bash
   pip install -r pytorch-cpu-requirements.txt
   ```
 
-* *ROCM: [`pytorch-rocm-requirements.txt`](./pytorch-rocm-requirements.txt)*
+* *ROCM: [`pytorch-rocm-requirements.txt`](https://github.com/iree-org/iree-turbine/blob/main/pytorch-rocm-requirements.txt)*
 
   ```bash
   pip install -r pytorch-rocm-requirements.txt
