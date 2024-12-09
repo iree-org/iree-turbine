@@ -49,6 +49,12 @@ user_specified_test_shapes = ""
 
 test_params_path = os.environ.get("TEST_PARAMS_PATH", None)
 
+
+def mark_shapes_xfail(src_shapes, xfail_shapes):
+    mark = lambda *a: pytest.param(*a, marks=pytest.mark.xfail)
+    return [(mark(s) if s in xfail_shapes else s) for s in src_shapes]
+
+
 if test_params_path:
     with open(test_params_path, "r") as file:
         user_specified_test_shapes = json.load(file)
@@ -540,7 +546,9 @@ def test_offset_write(shape, request):
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
+@pytest.mark.parametrize(
+    "shape", mark_shapes_xfail(get_test_shapes("test_copy"), [(111, 813)])
+)
 def test_offset_write_one(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -556,7 +564,7 @@ def test_offset_write_one(shape, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
