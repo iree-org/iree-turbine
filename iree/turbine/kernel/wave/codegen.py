@@ -55,8 +55,6 @@ from ..ops.wave_ops import (
     read,
     reduction,
     exp2,
-    reciprocal,
-    abs,
     maximum,
     get_custom,
     get_result,
@@ -179,20 +177,6 @@ class WaveEmitter:
         )
         self._node_values[node] = proxies
 
-    def get_induction_vars_and_syms(self) -> tuple[list[OpResult], list[IndexExpr]]:
-        induction_var_syms = []
-        induction_vars = []
-        if self.induction_vars:
-            for constraint in self.constraints:
-                if isinstance(constraint, TilingConstraint):
-                    assert (
-                        constraint.dim in self.induction_vars
-                    ), f"Could not find induction var for {constraint.dim} dimension"
-                    induction_var_syms.append(constraint.induction_var)
-                    induction_vars.append(self.induction_vars[constraint.dim])
-
-        return induction_vars, induction_var_syms
-
 
 def get_type_or_element_type(operand_type: IrType):
     assert isinstance(operand_type, IrType)
@@ -205,7 +189,16 @@ def get_type_or_element_type(operand_type: IrType):
 def add_emitter_subs(
     emitter: WaveEmitter, dynamic_values: dict[IndexExpr, Value] = {}
 ) -> dict[IndexSymbol, Value]:
-    induction_vars, induction_var_syms = emitter.get_induction_vars_and_syms()
+    induction_var_syms = []
+    induction_vars = []
+    if emitter.induction_vars:
+        for constraint in emitter.constraints:
+            if isinstance(constraint, TilingConstraint):
+                assert (
+                    constraint.dim in emitter.induction_vars
+                ), f"Could not find induction var for {constraint.dim} dimension"
+                induction_var_syms.append(constraint.induction_var)
+                induction_vars.append(emitter.induction_vars[constraint.dim])
 
     # TODO: factor this out
     all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars
@@ -548,26 +541,29 @@ def _build_start_indices(
     ]
 
 
-def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
-    """
-    This function takes in indices of a Node, extract their sizes
-    into a list, and then try do an argmax on it. In the case where
-    there are multipled max_vals we pick the fastest/most minor one.
-    """
-
-    index_sizes = [i.size for i in indices.values()]
-    # Find the maximum value
-    max_size = max(index_sizes)
-    # Find the fastest/most minor index of the maximum value.
-    return max(i for i, size in enumerate(index_sizes) if size == max_size)
-
-
 def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> IndexExpr:
     return sum(i * s for i, s in zip(indices, strides))
 
 
 def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
     return get_custom(node).type.symbolic_shape
+
+
+def _is_identity_mapping(
+    mapping: IndexMapping,
+    input_shape: Optional[tuple[IndexExpr]] = None,
+    output_shape: Optional[tuple[IndexExpr]] = None,
+) -> bool:
+    if not mapping.is_identity():
+        return False
+
+    if input_shape is not None and mapping.input_shape != input_shape:
+        return False
+
+    if output_shape is not None and mapping.output_shape != output_shape:
+        return False
+
+    return True
 
 
 def _build_mask(
@@ -578,8 +574,7 @@ def _build_mask(
         return None
 
     idxc = IndexingContext.current()
-    fastest_dim = _get_fastest_index(index)
-    last_dim = list(index)[fastest_dim]
+    last_dim = tuple(index.keys())[-1]
     new_index = {k: _get_start_index(v) for k, v in index.items()}
 
     new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
@@ -604,7 +599,6 @@ def _construct_gather_scatter_indices(
     elements_per_thread: int,
     is_read: bool,
     dynamic_vals: tuple[Any, ...],
-    is_contiguous: bool,
 ) -> tuple[OpResult, OpResult, OpResult]:
     # Apply symbolc_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
@@ -635,30 +629,12 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
 
-    mask = _build_mask(emitter, index, elements_per_thread)
-    if mask is None:
-        mask_vec_type = VectorType.get(
-            [elements_per_thread], IntegerType.get_signless(1)
-        )
-        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
-
-    def extract0(src):
-        static_pos = [0] * src.type.rank
-        return vector_d.extract(src, static_position=static_pos, dynamic_position=[])
-
-    dynamic_vals_map_start = {
-        sym: extract0(val)
-        for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
-    }
-    if is_contiguous:
-        start_indices = _build_start_indices(
-            emitter, result_index, dynamic_vals_map_start
-        )
-        return start_indices, None, mask
+    strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
+    offsets = []
 
     start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
-    fastest_dim = _get_fastest_index(index)
+
     need_dynamic_offsets = False
     for val in dynamic_vals:
         shape = val.type.shape
@@ -669,14 +645,19 @@ def _construct_gather_scatter_indices(
         if shape[0] > 1:
             need_dynamic_offsets = True
 
-    offsets = []
-    strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
+    mask = _build_mask(emitter, index, elements_per_thread)
+    if mask is None:
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+
     start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
-        # Update fastest dim, i.e. in case of identity mapping it will
+        # Update most-minor dim, i.e. in case of identity mapping it will
         # be equivalent to just vector.load
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
-        subs[fastest_dim] = (subs[fastest_dim][0], start_indices_orig[fastest_dim] + i)
+        subs[-1] = (subs[-1][0], start_indices_orig[-1] + i)
         indices = [i.subs(subs) for i in index_mapping]
 
         # First, we build indices as if resulting gather/scatter `start_indices`
@@ -701,6 +682,14 @@ def _construct_gather_scatter_indices(
 
         offsets.append(offset)
 
+    def extract0(src):
+        static_pos = [0] * src.type.rank
+        return vector_d.extract(src, static_position=static_pos, dynamic_position=[])
+
+    dynamic_vals_map_start = {
+        sym: extract0(val)
+        for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
+    }
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
     if need_dynamic_offsets:
         # In case we need dynamic `offsets_vec`, set all `start_indices` to 0
@@ -763,7 +752,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
-    if get_custom(node).has_identity_mapping():
+    if mapping is None or _is_identity_mapping(mapping, input_shape=input_shape):
         start_indices = _build_start_indices(emitter, index)
         mask = _build_mask(
             emitter, index, cast_py_literal(emitter, elements_per_thread)
@@ -790,7 +779,6 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=True,
             dynamic_vals=dyn_vals,
-            is_contiguous=get_custom(node).is_contiguous_vec(),
         )
 
         zero = get_constant_attr(0, element_type)
@@ -834,7 +822,9 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     index = node.index
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
-    if get_custom(node).has_identity_mapping():
+    if mapping is None or _is_identity_mapping(
+        mapping, input_shape=input_shape, output_shape=output_shape
+    ):
         start_indices = _build_start_indices(emitter, index)
         mask = _build_mask(
             emitter, index, cast_py_literal(emitter, elements_per_thread)
@@ -859,7 +849,6 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             elements_per_thread=cast_py_literal(emitter, elements_per_thread),
             is_read=False,
             dynamic_vals=dyn_vals,
-            is_contiguous=get_custom(node).is_contiguous_vec(),
         )
 
         if offsets_vec is None:
@@ -1118,34 +1107,6 @@ def handle_exp2(source: Value) -> OpResult:
     else:
         raise ValidationError(f"Found unhandled operand type for exp2: {element_type}")
     return result
-
-
-@handle_unary_op(reciprocal)
-def handle_reciprocal(source: Value) -> OpResult:
-    element_type = get_type_or_element_type(source.type)
-    if _is_float_type(element_type):
-        splat_ones = DenseElementsAttr.get_splat(
-            source.type, get_constant_attr(1.0, element_type)
-        )
-        ones = arith_d.ConstantOp(source.type, splat_ones)
-        reciprocal = arith_d.divf(ones, source)
-    else:
-        raise ValidationError(
-            f"Found unhandled operand type for reciprocal: {element_type}"
-        )
-    return reciprocal
-
-
-@handle_unary_op(abs)
-def handle_abs(source: Value) -> OpResult:
-    element_type = get_type_or_element_type(source.type)
-    if _is_float_type(element_type):
-        abs = math_d.absf(source)
-    elif _is_integer_like_type(element_type):
-        abs = math_d.absi(source)
-    else:
-        raise ValidationError(f"Found unhandled operand type for abs: {element_type}")
-    return abs
 
 
 ###############################################################################
