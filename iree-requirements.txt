@@ -1,2 +1,14 @@
-iree-base-compiler
-iree-base-runtime
+# Requirements for CI jobs.
+#
+# Developer may want to install from iree-requirements.txt where we are more
+# forgiving on the exact version.
+
+# Uncomment to select a nightly version.
+--find-links https://iree.dev/pip-release-links.html
+--pre
+
+# Uncomment to skip versions from PyPI (so _only_ nightly versions).
+# --no-index
+
+iree-base-compiler==3.1.0rc20241209
+iree-base-runtime==3.1.0rc20241209
