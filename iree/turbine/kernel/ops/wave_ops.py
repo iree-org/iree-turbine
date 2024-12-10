@@ -9,12 +9,12 @@ from typing import (
     Any,
     Callable,
     Optional,
-    Self,
     Sequence,
     Type,
     TypeVar,
     final,
 )
+from typing_extensions import Self
 import torch.fx as fx
 
 from ..lang.wave_types import Memory, Register, IndexMapping
