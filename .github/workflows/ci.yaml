@@ -26,7 +26,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ["3.10", "3.11", "3.12", "3.13"]
+        version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+
+          # Support for Python 3.13 depends on https://github.com/pytorch/pytorch/issues/130249
+          # - "3.13"
         os: [ubuntu-22.04]
     runs-on: ${{matrix.os}}
     env:
