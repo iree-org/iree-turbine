@@ -1,7 +1,6 @@
 # RUN: python %s | FileCheck %s
 
 import logging
-import unittest
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
@@ -1109,14 +1108,3 @@ def test_chained_gemm_32x32x8():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
-
-    # HACK: Take control over the exit behavior ourselves.
-    # No tests are "run", resulting in exit code 5 (as of Python 3.12):
-    # https://docs.python.org/3/library/unittest.html#unittest.main
-    #
-    # TODO: don't abuse unittest like this
-    test_results = unittest.main(exit=False).result
-    if test_results.errors or test_results.failures:
-        import sys
-
-        sys.exit(1)
