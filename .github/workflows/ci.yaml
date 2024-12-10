@@ -68,9 +68,8 @@ jobs:
         run: |
           pytest -n 4 --capture=tee-sys -vv .
 
-      # TODO: enable lit tests on 3.12 when they work (failing with "Exit Code: 5")
       - name: Run LIT tests
-        if: ${{ !cancelled() && matrix.version != '3.12' }}
+        if: ${{ !cancelled() }}
         run: |
           lit lit_tests/ -v
 

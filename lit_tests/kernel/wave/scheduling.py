@@ -246,4 +246,14 @@ def test_gemm_pipelined():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
-    unittest.main()
+
+    # HACK: Take control over the exit behavior ourselves.
+    # No tests are "run", resulting in exit code 5 (as of Python 3.12):
+    # https://docs.python.org/3/library/unittest.html#unittest.main
+    #
+    # TODO: don't abuse unittest like this
+    test_results = unittest.main(exit=False).result
+    if test_results.errors or test_results.failures:
+        import sys
+
+        sys.exit(1)
