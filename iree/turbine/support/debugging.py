@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import logging
 import re
 import os
+import sys
 import torch
 import numpy as np
 
@@ -63,8 +64,8 @@ class DebugFlags:
         else:
             logical_sense = m.group(1) != "-"
 
-        if name == "log_level":
-            log_level_mapping = logging.getLevelNamesMapping()
+        if name == "log_level" and sys.version_info >= (3, 11):
+            log_level_mapping = logging.getLevelNamesMapping()  # Added in 3.11
             try:
                 self.log_level = log_level_mapping[value.upper()]
             except KeyError:
