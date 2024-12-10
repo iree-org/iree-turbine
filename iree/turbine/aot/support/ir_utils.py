@@ -290,9 +290,16 @@ class ModuleBuilder:
             if attrs.mutable:
                 ir_attrs["is_mutable"] = UnitAttr.get()
             if device:
-                ir_attrs["stream.affinity"] = Attribute.parse(
-                    f"#hal.device.promise<@__device_{device.ordinal}>"
-                )
+                if device.queues is None:
+                    ir_attrs["stream.affinity"] = Attribute.parse(
+                        f"#hal.device.promise<@__device_{device.ordinal}>"
+                    )
+                else:
+                    queues = ", ".join(device.queues)
+                    ir_attrs["stream.affinity"] = Attribute.parse(
+                        f"#hal.device.promise<@__device_{device.ordinal}, [{queues}]>"
+                    )
+
             if external:
                 # Emit named external reference.
                 external_scope_attr = StringAttr.get(external_scope or "model")
@@ -503,9 +510,15 @@ def attributes_from_argument_device_affinities(
     if affinities is None:
         return [{} for _ in range(arguments_count)]
     return [
-        {"iree.abi.affinity": _attribute_from_device_affinity(affinities[i], context)}
-        if i in affinities
-        else {}
+        (
+            {
+                "iree.abi.affinity": _attribute_from_device_affinity(
+                    affinities[i], context
+                )
+            }
+            if i in affinities
+            else {}
+        )
         for i in range(arguments_count)
     ]
 
