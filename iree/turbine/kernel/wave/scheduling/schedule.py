@@ -105,7 +105,7 @@ def schedule_reduction(
         # is not dynamic.
         max_induction_variable = int(max_induction_variable)
         if max_induction_variable <= scheduler.num_stages - 1:
-            logger.warn(
+            logger.warning(
                 "Not enough iterations to pipeline the loop. Skipping pipelining."
             )
             return {}
@@ -113,7 +113,7 @@ def schedule_reduction(
         # Otherwise, we need to rely on assumptions provided by the author.
         assumptions = get_assumptions(constraints)
         if not assumptions:
-            logger.warn(
+            logger.warning(
                 "No assumptions provided to determine if the loop can be pipelined. Skipping pipelining."
             )
             return {}
@@ -122,7 +122,7 @@ def schedule_reduction(
             constraints, max_induction_variable > scheduler.num_stages - 1
         )
         if not result:
-            logger.warn(
+            logger.warning(
                 "Not enough iterations to pipeline the loop. Skipping pipelining."
             )
             return {}

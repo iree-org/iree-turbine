@@ -55,7 +55,7 @@ class DebugFlags:
     def set(self, part: str):
         m = re.match(SETTING_PART_PATTERN, part)
         if not m:
-            logger.warn("Syntax error in %s flag: '%s'", FLAGS_ENV_NAME, part)
+            logger.warning("Syntax error in %s flag: '%s'", FLAGS_ENV_NAME, part)
             return
         name = m.group(2)
         value = m.group(4)
@@ -69,7 +69,7 @@ class DebugFlags:
             try:
                 self.log_level = log_level_mapping[value.upper()]
             except KeyError:
-                logger.warn("Log level '%s' unknown (ignored)", value)
+                logger.warning("Log level '%s' unknown (ignored)", value)
         elif name == "asserts":
             self.asserts = logical_sense
             global NDEBUG
@@ -77,7 +77,7 @@ class DebugFlags:
         elif name == "runtime_trace_dir":
             self.runtime_trace_dir = value
         else:
-            logger.warn("Unrecognized %s flag: '%s'", FLAGS_ENV_NAME, name)
+            logger.warning("Unrecognized %s flag: '%s'", FLAGS_ENV_NAME, name)
 
     @staticmethod
     def parse(settings: str) -> "DebugFlags":
