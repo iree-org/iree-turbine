@@ -72,3 +72,23 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           mypy
+
+  # Depends on all other jobs to provide an aggregate job status.
+  ci_summary:
+    if: always()
+    runs-on: ubuntu-20.04
+    needs:
+      - test
+    steps:
+      - name: Getting failed jobs
+        run: |
+          echo '${{ toJson(needs) }}'
+          FAILED_JOBS="$(echo '${{ toJson(needs) }}' \
+            | jq --raw-output \
+            'map_values(select(.result!="success" and .result!="skipped")) | keys | join(",")' \
+          )"
+          echo "failed-jobs=${FAILED_JOBS}" >> $GITHUB_OUTPUT
+          if [[ "${FAILED_JOBS}" != "" ]]; then
+            echo "The following jobs failed: ${FAILED_JOBS}"
+            exit 1
+          fi
