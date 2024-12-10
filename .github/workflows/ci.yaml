@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   test:
-    name: "${{ matrix.os }} :: ${{ matrix.version }} :: Unit Tests and Type Checking "
+    name: "${{ matrix.os }} :: ${{ matrix.version }} :: Unit Tests and Type Checking"
     strategy:
       fail-fast: false
       matrix:
