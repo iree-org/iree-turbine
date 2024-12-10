@@ -64,12 +64,15 @@ class DebugFlags:
         else:
             logical_sense = m.group(1) != "-"
 
-        if name == "log_level" and sys.version_info >= (3, 11):
-            log_level_mapping = logging.getLevelNamesMapping()  # Added in 3.11
-            try:
-                self.log_level = log_level_mapping[value.upper()]
-            except KeyError:
-                logger.warning("Log level '%s' unknown (ignored)", value)
+        if name == "log_level":
+            if sys.version_info >= (3, 11):
+                log_level_mapping = logging.getLevelNamesMapping()  # Added in 3.11
+                try:
+                    self.log_level = log_level_mapping[value.upper()]
+                except KeyError:
+                    logger.warning("Log level '%s' unknown (ignored)", value)
+            else:
+                logger.warning("'log_level' flag requires Python >= 3.11")
         elif name == "asserts":
             self.asserts = logical_sense
             global NDEBUG
