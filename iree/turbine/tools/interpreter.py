@@ -151,7 +151,7 @@ class Interpreter:
                     offset = [0 for _ in range(len(load_indices))]
                     for i in range(*result_shape):
                         ind = [int(x) + y for x, y in zip(load_indices, offset)]
-                        value[i] = memref[*ind]
+                        value[i] = memref[(*ind,)]
                         offset[-1] += 1
                 case vector_d.ExtractStridedSliceOp:
                     vector = self.symbol_table[op.vector]
@@ -168,7 +168,7 @@ class Interpreter:
                     offset = [0 for _ in range(len(store_indices))]
                     for i in range(*result_shape):
                         memref[
-                            *[int(x) + y for x, y in zip(store_indices, offset)]
+                            (*[int(x) + y for x, y in zip(store_indices, offset)],)
                         ] = vector[i]
                         offset[-1] += 1
                 case vector_d.MaskedStoreOp:
@@ -185,7 +185,7 @@ class Interpreter:
                     for i in range(*result_shape):
                         if mask[i]:
                             ind = [int(x) + y for x, y in zip(store_indices, offset)]
-                            memref[*ind] = vector[i]
+                            memref[(*ind,)] = vector[i]
 
                         offset[-1] += 1
                 case vector_d.ConstantMaskOp:
@@ -313,7 +313,7 @@ class Interpreter:
     ):
         for wg in np.ndindex(*workgroup_count):
             for t in np.ndindex(*workgroup_size):
-                Interpreter([*wg], [*t]).interpret(asm)
+                Interpreter([(*wg,)], [(*t,)]).interpret(asm)
 
 
 if __name__ == "__main__":
