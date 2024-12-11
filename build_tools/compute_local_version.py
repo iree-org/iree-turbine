@@ -24,7 +24,7 @@ release_type = parser.add_mutually_exclusive_group(required=True)
 release_type.add_argument("-stable", "--stable-release", action="store_true")
 release_type.add_argument("-rc", "--nightly-release", action="store_true")
 release_type.add_argument("-dev", "--development-release", action="store_true")
-release_type.add_argument("--custom-string", action="store", type=str)
+release_type.add_argument("--version-suffix", action="store", type=str)
 
 args = parser.parse_args()
 
@@ -52,11 +52,11 @@ if args.nightly_release:
     current_version += "rc" + datetime.today().strftime("%Y%m%d")
 elif args.development_release:
     current_version += (
-        ".dev+"
+        ".dev0+"
         + subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("ascii").strip()
     )
-elif args.custom_string:
-    current_version += args.custom_string
+elif args.version_suffix:
+    current_version += args.version_suffix
 
 if args.write_json:
     write_version_to_file(VERSION_LOCAL_FILE_PATH, current_version)
