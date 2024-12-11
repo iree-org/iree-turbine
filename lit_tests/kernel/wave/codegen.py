@@ -18,6 +18,7 @@ M = tkl.sym.M
 N = tkl.sym.N
 K = tkl.sym.K
 B = tkl.sym.B
+ONE = tkl.sym.ONE
 BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_K = tkl.sym.BLOCK_K
@@ -36,6 +37,7 @@ def codegen_test_context(canonicalize: bool = False, dynamic_symbols=[]):
         BLOCK_M: 16,
         BLOCK_N: 16,
         BLOCK_K: 16,
+        ONE: 1,
         ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
     }
 
@@ -455,6 +457,59 @@ def test_read_write_dynamic_mapping():
         # CHECK:            %[[D20:.*]] = vector.gather %[[D10]][%[[C0]], %[[C0]]] [%[[D19]]], %[[D12]], %[[CST]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16> into vector<16xf16>
         # CHECK:            %[[D21:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
         # CHECK:            vector.store %[[D20]], %[[D21]][%[[D5]], %[[D8]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+
+
+@run_test
+def test_read_write_dynamic_mapping_broadcast():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 16, N: 16, ONE: 1},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    k = tkw.IndexMapping.dynamic_val(0)
+    mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={M: i, N: k + j % 16},
+        outputs={M: i, N: j},
+        dynamic_val_mappings={M: i, N: j // 16},
+    )
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        off: tkl.Memory[M, ONE, ADDRESS_SPACE, tkl.i32],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        offset = tkw.read(off, elements_per_thread=1)
+        res = tkw.read(
+            a,
+            mapping=mapping,
+            mapping_dynamic_vals=(offset,),
+            elements_per_thread=16,
+        )
+        tkw.write(res, b, elements_per_thread=16)
+
+    with codegen_test_context(canonicalize=True):
+        a = torch.randn(16, 16, dtype=torch.float16)
+        off = torch.randint(16, (16, 1), dtype=torch.int32)
+        b = torch.zeros(16, 16, dtype=torch.float16)
+        print(test(a, off, b).module_op)
+
+        # CHECK-LABEL:    func.func @test
+        # CHECK:            %[[OFF:.*]] = vector.load %{{.*}}[%[[M:.*]], %{{.*}}] : memref<16x1xi32, strided<[1, 1], offset: ?>>, vector<1xi32>
+        # CHECK:            %[[IDX:.*]] = arith.index_cast %[[OFF]] : vector<1xi32> to vector<1xindex>
+        # CHECK:            %[[IDX1:.*]] = vector.extract %[[IDX]][0] : index from vector<1xindex>
+        # CHECK:            %[[RES:.*]] = vector.load %{{.*}}[%[[M]], %[[IDX1]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+        # CHECK:            vector.store %[[RES]], %{{.*}}[%[[M]], %{{.*}}] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
 @run_test
