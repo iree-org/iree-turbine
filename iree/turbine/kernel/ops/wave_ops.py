@@ -106,6 +106,10 @@ def reciprocal(src: "Register") -> "Register":
     ...
 
 
+def abs(src: "Register") -> "Register":
+    ...
+
+
 def maximum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
@@ -651,6 +655,7 @@ class BinaryPyOp(CustomOp, ABC):
 
 @define_interface_op("exp2")
 @define_interface_op("reciprocal")
+@define_interface_op("abs")
 @define_py_op(operator.neg)
 @dataclass
 class UnaryPyOp(CustomOp, ABC):
