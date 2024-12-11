@@ -4,7 +4,6 @@ from typing import (
     ClassVar,
     Iterable,
     Optional,
-    Self,
     Type,
     TypeAlias,
     TypeVar,
@@ -17,6 +16,7 @@ from .._support.indexing import IndexExpr, IndexSymbol, index_symbol
 
 from sympy import Symbol
 from sympy.core.expr import Expr
+from typing_extensions import Self
 
 from itertools import chain
 

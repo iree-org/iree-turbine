@@ -1,7 +1,6 @@
 # RUN: python %s | FileCheck %s
 
 import logging
-import unittest
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
@@ -216,4 +215,3 @@ def test_gemm():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
-    unittest.main()

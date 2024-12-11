@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import logging
 import re
 import os
+import sys
 import torch
 import numpy as np
 
@@ -54,7 +55,7 @@ class DebugFlags:
     def set(self, part: str):
         m = re.match(SETTING_PART_PATTERN, part)
         if not m:
-            logger.warn("Syntax error in %s flag: '%s'", FLAGS_ENV_NAME, part)
+            logger.warning("Syntax error in %s flag: '%s'", FLAGS_ENV_NAME, part)
             return
         name = m.group(2)
         value = m.group(4)
@@ -64,11 +65,14 @@ class DebugFlags:
             logical_sense = m.group(1) != "-"
 
         if name == "log_level":
-            log_level_mapping = logging.getLevelNamesMapping()
-            try:
-                self.log_level = log_level_mapping[value.upper()]
-            except KeyError:
-                logger.warn("Log level '%s' unknown (ignored)", value)
+            if sys.version_info >= (3, 11):
+                log_level_mapping = logging.getLevelNamesMapping()  # Added in 3.11
+                try:
+                    self.log_level = log_level_mapping[value.upper()]
+                except KeyError:
+                    logger.warning("Log level '%s' unknown (ignored)", value)
+            else:
+                logger.warning("'log_level' flag requires Python >= 3.11")
         elif name == "asserts":
             self.asserts = logical_sense
             global NDEBUG
@@ -76,7 +80,7 @@ class DebugFlags:
         elif name == "runtime_trace_dir":
             self.runtime_trace_dir = value
         else:
-            logger.warn("Unrecognized %s flag: '%s'", FLAGS_ENV_NAME, name)
+            logger.warning("Unrecognized %s flag: '%s'", FLAGS_ENV_NAME, name)
 
     @staticmethod
     def parse(settings: str) -> "DebugFlags":

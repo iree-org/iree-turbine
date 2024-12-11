@@ -279,10 +279,12 @@ class KernelSignature:
             # Create new Memory type with the correct usage
             memory_type = self.bindings[index].kernel_buffer_type
             self.bindings[index].kernel_buffer_type = Memory[
-                *memory_type.symbolic_shape,
-                memory_type.address_space,
-                memory_type.dtype,
-                usage,
+                (
+                    *memory_type.symbolic_shape,
+                    memory_type.address_space,
+                    memory_type.dtype,
+                    usage,
+                )
             ]
         return
 

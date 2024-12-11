@@ -22,11 +22,12 @@ concurrency:
 
 jobs:
   test:
-    name: "Unit Tests and Type Checking"
+    name: "${{ matrix.os }} :: ${{ matrix.version }} :: Unit Tests and Type Checking"
     strategy:
       fail-fast: false
       matrix:
-        version: [3.11]
+        # Support for Python 3.13 depends on https://github.com/pytorch/pytorch/issues/130249
+        version: ["3.10", "3.11", "3.12"]
         os: [ubuntu-22.04]
     runs-on: ${{matrix.os}}
     env:
@@ -71,3 +72,23 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           mypy
+
+  # Depends on all other jobs to provide an aggregate job status.
+  ci_summary:
+    if: always()
+    runs-on: ubuntu-20.04
+    needs:
+      - test
+    steps:
+      - name: Getting failed jobs
+        run: |
+          echo '${{ toJson(needs) }}'
+          FAILED_JOBS="$(echo '${{ toJson(needs) }}' \
+            | jq --raw-output \
+            'map_values(select(.result!="success" and .result!="skipped")) | keys | join(",")' \
+          )"
+          echo "failed-jobs=${FAILED_JOBS}" >> $GITHUB_OUTPUT
+          if [[ "${FAILED_JOBS}" != "" ]]; then
+            echo "The following jobs failed: ${FAILED_JOBS}"
+            exit 1
+          fi
