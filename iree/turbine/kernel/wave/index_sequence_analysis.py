@@ -34,12 +34,12 @@ from .utils import (
 import torch.fx as fx
 import numpy as np
 from functools import partial
-from typing import Sequence, Callable
+from typing import Sequence, Callable, Optional
 from ...support.logging import get_logger
 import sympy
 from itertools import groupby
 from operator import itemgetter
-from copy import deepcopy
+from copy import deepcopy, copy
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -156,7 +156,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         if not isinstance(custom, (Read, Write)):
             return False
         num_dims_with_gpr = sum(
-            1 for v in custom.index.values() if v.start.has(GPR_NUM)
+            1 for v in custom.index.values() if sympy.sympify(v.start).has(GPR_NUM)
         )
         if num_dims_with_gpr == 1:
             return True
@@ -265,10 +265,48 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
             custom.graph.erase_node(custom.fx_node)
 
 
+def combine_derived_index(
+    src_index: Optional[dict[IndexSymbol, IndexSequence]],
+    dst_index: dict[IndexSymbol, IndexSequence],
+) -> dict[IndexSymbol, IndexSequence]:
+    if src_index is None:
+        return dst_index
+
+    new_index = copy(src_index)
+    for dim, new_idx in dst_index.items():
+        assert dim in src_index, f"Dim {dim} not in index {src_index}"
+        old_idx = src_index[dim]
+        if old_idx == new_idx:
+            continue
+
+        assert (
+            old_idx.start == 0 or old_idx.start == old_idx.start
+        ), f"Index conflict: {old_idx} and {new_idx}"
+        new_index[dim] = new_idx
+
+    return new_index
+
+
+def set_derived_index(trace):
+    sources = trace.walk(lambda node: isinstance(get_custom(node), (Read, Write)))
+
+    worklist = []
+    for source in sources:
+        worklist += get_custom(source).get_derived_indices()
+
+    while len(worklist) > 0:
+        current, index = worklist.pop()
+        custom = get_custom(current)
+        custom.index = combine_derived_index(custom.index, index)
+        for inp in get_inputs(current)[0]:
+            worklist.append((inp, index))
+
+
 def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
     mma_index = get_mma_dimensional_mapping(trace, get_hardware_constraint(constraints))
     trace.walk(partial(set_thread_independent_index, constraints))
     set_thread_dependent_index(constraints, mma_index, trace)
+    set_derived_index(trace)
 
 
 def compute_stride(

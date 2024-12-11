@@ -489,7 +489,7 @@ class CustomOp(ABC):
         if isinstance(value, dict):
             assert all(
                 isinstance(v, IndexSequence) for v in value.values()
-            ), f"Index must be a dict with values of type IndexSequence"
+            ), f"Index must be a dict with values of type IndexSequence but got {value}"
             self.fx_node.index = {}
             for dim, key in value.items():
                 self.fx_node.index[dim] = key
@@ -579,6 +579,15 @@ class CustomOp(ABC):
         Default implementation does nothing.
         """
         pass
+
+    def transform_index_backwards(
+        self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node when propagating index backwards, i.e.
+        from node to its arguments.
+        """
+        return index
 
     def transform_index(
         self, index: dict[IndexSymbol, IndexSequence]
@@ -948,7 +957,7 @@ class Read(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
-    mapping_dynamic_vals: tuple["Register", ...] = ()
+    mapping_dynamic_vals: tuple[fx.Node, ...] = ()
     _write_dependency: Optional[list[fx.Node]] = None
 
     @property
@@ -980,6 +989,37 @@ class Read(CustomOp):
 
         if is_shared_mem_access(self):
             self.index = align_index_vars(self.index, constraints)
+
+    def transform_index_backwards(
+        self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Propagate index backwards.
+
+        Dynamic values potentially can have non-identity mapping, so we need
+        to update index when walking from the node to dyn val arguments.
+
+        E.g. if `index` is $idx and dynamic_val_mappings={N: j // ELEMS_PER_THREAD}
+        resulted arg index will be $idx // ELEMS_PER_THREAD.
+        """
+        if arg in self.mapping_dynamic_vals:
+            assert self.mapping.is_output_identity()
+            i = self.mapping_dynamic_vals.index(arg)
+            iters = self.mapping.iters
+            mapping = self.mapping.dynamic_val_mappings[i]
+            subs = {v: k for k, v in zip(iters, mapping.keys())}
+            return {k: v.apply_expr(subs[k], mapping[k]) for k, v in index.items()}
+
+        return index
+
+    def get_derived_indices(
+        self,
+    ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
+        def transform_idx(arg):
+            new_index = self.transform_index_backwards(self.index, arg)
+            return {k: v for k, v in zip(arg.type.symbolic_shape, new_index.values())}
+
+        return [(arg, transform_idx(arg)) for arg in self.mapping_dynamic_vals]
 
     def has_identity_mapping(self) -> bool:
         """Check if mapping between input memory and output register is identity."""
@@ -1156,7 +1196,7 @@ class Write(CustomOp):
     memory: fx.Proxy
     elements_per_thread: Optional[Any]
     mapping: Optional[IndexMapping] = None
-    mapping_dynamic_vals: tuple["Register", ...] = ()
+    mapping_dynamic_vals: tuple[fx.Node, ...] = ()
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -1189,6 +1229,37 @@ class Write(CustomOp):
 
         if is_shared_mem_access(self):
             self.index = align_index_vars(self.index, constraints)
+
+    def transform_index_backwards(
+        self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Propagate index backwards.
+
+        Dynamic values potentially can have non-identity mapping, so we need
+        to update index when walking from the node to dyn val arguments.
+
+        E.g. if `index` is $idx and dynamic_val_mappings={N: j // ELEMS_PER_THREAD}
+        resulted arg index will be $idx // ELEMS_PER_THREAD.
+        """
+        if arg in self.mapping_dynamic_vals:
+            assert self.mapping.is_input_identity()
+            i = self.mapping_dynamic_vals.index(arg)
+            iters = self.mapping.iters
+            mapping = self.mapping.dynamic_val_mappings[i]
+            subs = {v: k for k, v in zip(iters, mapping.keys())}
+            return {k: v.apply_expr(subs[k], mapping[k]) for k, v in index.items()}
+
+        return index
+
+    def get_derived_indices(
+        self,
+    ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
+        def transform_idx(arg):
+            new_index = self.transform_index_backwards(self.index, arg)
+            return {k: v for k, v in zip(arg.type.symbolic_shape, new_index.values())}
+
+        return [(arg, transform_idx(arg)) for arg in self.mapping_dynamic_vals]
 
     def has_identity_mapping(self) -> bool:
         """Check if mapping between input register and output memory is identity."""
