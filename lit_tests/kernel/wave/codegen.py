@@ -1951,8 +1951,8 @@ def test_unary_lowerings():
         # %[[RECIPROCAL:.+]] = arith.divf %[[ONES]], %[[EXP2]] : vector<4xf16>
         
         # Testing abs
-        # %[[ABS:.+]] = math.absf %[[RECIPROCAL]]
-        # %[[ABS:.+]] = math.absi
+        # %[[ABSF:.+]] = math.absf %[[RECIPROCAL]]
+        # %[[ABSI:.+]] = math.absi
 
 
 @run_test
