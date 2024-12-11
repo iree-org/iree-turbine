@@ -584,7 +584,8 @@ class CustomOp(ABC):
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
     ) -> dict[IndexSymbol, IndexSequence]:
         """
-        Transform the index of the node based on the provided mapping.
+        Transform the index of the node when propagating index backwards, i.e.
+        from node to its arguments.
         """
         return index
 
@@ -992,6 +993,15 @@ class Read(CustomOp):
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
     ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Propagate index backwards.
+
+        Dynamic values potentially can have non-identity mapping, so we need
+        to update index when walking from the node to dyn val arguments.
+
+        E.g. if `index` is $idx and dynamic_val_mappings={N: j // ELEMS_PER_THREAD}
+        resulted arg index will be $idx // ELEMS_PER_THREAD.
+        """
         if arg in self.mapping_dynamic_vals:
             assert self.mapping.is_output_identity()
             i = self.mapping_dynamic_vals.index(arg)
@@ -1223,6 +1233,15 @@ class Write(CustomOp):
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
     ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Propagate index backwards.
+
+        Dynamic values potentially can have non-identity mapping, so we need
+        to update index when walking from the node to dyn val arguments.
+
+        E.g. if `index` is $idx and dynamic_val_mappings={N: j // ELEMS_PER_THREAD}
+        resulted arg index will be $idx // ELEMS_PER_THREAD.
+        """
         if arg in self.mapping_dynamic_vals:
             assert self.mapping.is_input_identity()
             i = self.mapping_dynamic_vals.index(arg)
