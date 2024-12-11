@@ -1949,7 +1949,7 @@ def test_unary_lowerings():
         # Testing reciprocal
         # %[[ONES:.+]] = arith.constant dense<1.000000e+00> : vector<4xf16>
         # %[[RECIPROCAL:.+]] = arith.divf %[[ONES]], %[[EXP2]] : vector<4xf16>
-        
+
         # Testing abs
         # %[[ABSF:.+]] = math.absf %[[RECIPROCAL]]
         # %[[ABSI:.+]] = math.absi

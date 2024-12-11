@@ -1135,6 +1135,7 @@ def handle_reciprocal(source: Value) -> OpResult:
         )
     return reciprocal
 
+
 @handle_unary_op(abs)
 def handle_abs(source: Value) -> OpResult:
     element_type = get_type_or_element_type(source.type)
@@ -1143,9 +1144,7 @@ def handle_abs(source: Value) -> OpResult:
     elif _is_integer_like_type(element_type):
         abs = math_d.absi(source)
     else:
-        raise ValidationError(
-            f"Found unhandled operand type for abs: {element_type}"
-        )
+        raise ValidationError(f"Found unhandled operand type for abs: {element_type}")
     return abs
 
 
