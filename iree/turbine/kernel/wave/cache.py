@@ -23,7 +23,7 @@ from ..compiler.kernel_codegen import KernelBufferUsage
 from .._support.indexing import IndexExpr
 from .utils import invoke_vmfb, _read_file, _write_file
 
-default_cache_base_dir = f"{str(Path.home())}/.wave"
+default_cache_base_dir = str(Path.home() / ".wave")
 CACHE_BASE_DIR = str(os.environ.get("WAVE_CACHE_DIR", default_cache_base_dir))
 WAVE_ALWAYS_COMPILE = int(os.environ.get("WAVE_ALWAYS_COMPILE", 0))
 WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 1))
@@ -44,8 +44,6 @@ class WaveCache:
     @property
     def module_op(self):
         filepath = f"{CACHE_BASE_DIR}/{self.cache_id}/{self.cache_id}.mlir"
-        if not os.path.exists(filepath):
-            raise ValueError("Failed to find module op MLIR for cached kernel.")
         with open(filepath, "r") as f:
             module_str = f.read()
         return module_str
@@ -95,7 +93,7 @@ class WaveCacheManager(object):
     def get_hash(
         self,
         constraints: list[Constraint],
-        kernel_body: Callable,
+        kernel_fn: Callable,
         hyperparams: dict[IndexExpr, Any],
         dynamic_symbols: list[IndexExpr, Any],
         config: dict[str, str],
@@ -106,9 +104,16 @@ class WaveCacheManager(object):
         """
         Get a unique identifier for a given kernel.
         """
+        try:
+            kernel_src = inspect.getsource(kernel_fn)
+        except:
+            # sets kernel_hash as None if fail to inspect source.
+            # We also taught load_kernel and store_kernel to skip
+            # if kernel_hash is None.
+            return None
         processed_constraints = annonyimize_constraints(constraints)
         key = [
-            inspect.getsource(kernel_body),
+            kernel_src,
             processed_constraints,
             hyperparams,
             dynamic_symbols,
@@ -199,7 +204,7 @@ class WaveCacheManager(object):
         """
         Save given kernel(vmfb, kernel_sig, and MLIR) into session_cache and file/offline cache.
         """
-        if not WAVE_CACHE_ON:
+        if not WAVE_CACHE_ON or not kernel_hash:
             return
         self.store_kernel_to_file(kernel_hash, vmfb, kernel_sig, module_str)
         self.store_kernel_to_session(
@@ -213,7 +218,7 @@ class WaveCacheManager(object):
         into session_cache.If it does not exist in session cache nor offline/file cache, then we return "None"
         and ask compiler to compile from scratch.
         """
-        if WAVE_ALWAYS_COMPILE or not WAVE_CACHE_ON:
+        if WAVE_ALWAYS_COMPILE or not kernel_hash or not WAVE_CACHE_ON:
             return None
         if kernel_hash in self.session_cache:
             self.session_cache.move_to_end(kernel_hash)
