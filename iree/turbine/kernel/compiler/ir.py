@@ -46,6 +46,7 @@ from iree.compiler.dialects import (
     llvm as llvm_d,
     math as math_d,
     memref as memref_d,
+    rocdl as rocld_d,
     stream as stream_d,
     scf as scf_d,
     transform as transform_d,
