@@ -50,9 +50,9 @@ class WaveCache:
         return module_str
 
 
-def annonyimize_constraints(input_constraints: list[Constraint]):
+def anonymize_constraints(input_constraints: list[Constraint]):
     """
-    Helper function to annonymize constraint S.T we can have the same generate
+    Helper function to anonymize constraint S.T we can have the same generate
     hash before and after initializing constraints and induction variables.
 
     This is crucial to enable kernels being called under same LaunchableWave have
@@ -113,7 +113,7 @@ class WaveCacheManager(object):
             # We also taught load_kernel and store_kernel to skip
             # if kernel_hash is None.
             return None
-        processed_constraints = annonyimize_constraints(constraints)
+        processed_constraints = anonymize_constraints(constraints)
         key = [
             kernel_src,
             processed_constraints,
@@ -210,9 +210,11 @@ class WaveCacheManager(object):
             return
         with self.lock:
             self.store_kernel_to_file(kernel_hash, vmfb, kernel_sig, module_str)
-            self.store_kernel_to_session(
-                kernel_hash, WaveCache(kernel_hash, kernel_sig, vmfb)
-            )
+            if not WAVE_ALWAYS_COMPILE:
+                # Do not store in session cache if always compile to save memory.
+                self.store_kernel_to_session(
+                    kernel_hash, WaveCache(kernel_hash, kernel_sig, vmfb)
+                )
 
     def load_kernel(self, kernel_hash: str):
         """

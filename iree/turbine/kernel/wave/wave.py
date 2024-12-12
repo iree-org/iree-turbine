@@ -377,6 +377,7 @@ class LaunchableWave(Launchable):
 
         # Get cached kernel when available.
         cache_manager = get_cache_manager()
+        # TODO: Move use_scheduling, use_scheduling_barriers, etc. into the config so everything is contained there.
         kernel_hash = cache_manager.get_hash(
             self.constraints,
             self._f,
