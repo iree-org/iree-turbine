@@ -455,10 +455,7 @@ def _expand_mma_reduction(
     for dim in mma.indexing_dims:
         if dim not in dim_scaling and mma.vector_shapes[dim] > 0:
             tile_size = idxc.get_static_value(dim)
-            try:
-                dim_scaling[dim] = max(tile_size // mma.vector_shapes[dim], 1)
-            except:
-                breakpoint()
+            dim_scaling[dim] = max(tile_size // mma.vector_shapes[dim], 1)
 
     # Store the original mma node and accumulator value for expansion.
     # When we begin expansion, we have a single mma node with the correct accumulator.

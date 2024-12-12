@@ -104,7 +104,6 @@ class IndexingContext:
         "dyn_dims",
         "frozen_subs",
         "unbacked_symbols",
-        "finalized",
     ]
 
     __tk_context_idname__ = "IndexingContext"
@@ -117,7 +116,6 @@ class IndexingContext:
         self.dyn_dims: list[IndexSymbol] = []
         self.frozen_subs: list[tuple[IndexSymbol, int]] = []
         self.unbacked_symbols: list[IndexSymbol] = []
-        self.finalized = False
 
     def next_dyn_dim(self) -> IndexSymbol:
         s = index_symbol(f"D{len(self.dyn_dims)}")
@@ -159,9 +157,6 @@ class IndexingContext:
         self.subs[symbol] = value
 
     def finalize(self):
-        # Early exit if we have finalized indexing context before.
-        if self.finalized:
-            return
         assert len(self.frozen_subs) == 0
         # Go over everything we know and bind all free symbols.
         for _sb in self.shaped_bindings.values():
@@ -222,7 +217,6 @@ class IndexingContext:
         if errors:
             joined = "\n".join(errors)
             raise ValueError(f"Indexing mismatches were encountered:\n{joined}")
-        self.finalized = True
 
     def eval_dim(self, instance: Any, shaped_type: ShapedType, pos: int) -> IndexExpr:
         # TODO: Could see if shaped_type is in self.shaped_bindings: it has some
