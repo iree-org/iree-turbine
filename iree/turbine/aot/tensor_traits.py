@@ -20,7 +20,7 @@ __all__ = [
 class DeviceAffinity:
     """This is used to provide device affinities to exported function arguments."""
 
-    def __init__(self, ordinal: int, queues: list = None):
+    def __init__(self, ordinal: int, queues: Optional[list] = None):
         self.ordinal = ordinal
         self.queues = queues
 
