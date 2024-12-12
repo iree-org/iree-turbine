@@ -60,6 +60,11 @@ def extract_mappings(kernel_fn: Callable):
     ]
 
 
+def extract_arg_types(kernel_fn: Callable):
+    """Look for arg types used in the kernel by iterating over arg signature."""
+    return [arg.annotation for arg in inspect.signature(kernel_fn).parameters.values()]
+
+
 def anonymize_constraints(input_constraints: list[Constraint]):
     """
     Helper function to anonymize constraint S.T we can have the same generate
@@ -119,6 +124,7 @@ class WaveCacheManager(object):
         try:
             kernel_src = inspect.getsource(kernel_fn)
             index_mappings = extract_mappings(kernel_fn)
+            arg_dtypes = extract_arg_types(kernel_fn)
         except:
             # sets kernel_hash as None if fail to inspect source.
             # We also taught load_kernel and store_kernel to skip
@@ -133,6 +139,7 @@ class WaveCacheManager(object):
             use_scheduling,
             use_scheduling_barriers,
             index_mappings,
+            arg_dtypes,
         ]
 
         # Benchmark related hash
