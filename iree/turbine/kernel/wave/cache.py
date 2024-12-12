@@ -24,8 +24,8 @@ from ..compiler.kernel_codegen import KernelBufferUsage
 from .._support.indexing import IndexExpr
 from .utils import invoke_vmfb, _read_file, _write_file
 
-default_cache_base_dir = str(Path.home() / ".wave")
-CACHE_BASE_DIR = str(os.environ.get("WAVE_CACHE_DIR", default_cache_base_dir))
+default_cache_base_dir = Path.home() / ".wave"
+CACHE_BASE_DIR = Path(os.environ.get("WAVE_CACHE_DIR", default_cache_base_dir))
 WAVE_ALWAYS_COMPILE = int(os.environ.get("WAVE_ALWAYS_COMPILE", 0))
 WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 1))
 WAVE_CACHE_LIMIT = int(os.environ.get("WAVE_CACHE_LIMIT", 16))
@@ -44,7 +44,7 @@ class WaveCache:
 
     @property
     def module_op(self):
-        filepath = f"{CACHE_BASE_DIR}/{self.cache_id}/{self.cache_id}.mlir"
+        filepath = (CACHE_BASE_DIR / self.cache_id / self.cache_id).with_suffix(".mlir")
         with open(filepath, "r") as f:
             module_str = f.read()
         return module_str
@@ -155,12 +155,13 @@ class WaveCacheManager(object):
         Stores/save compiled kernels into CACHE_BASE_DIR/kernel_hash
         including it's MLIR, VMFB, and kernel signature.
         """
-        cur_cache_dir = f"{CACHE_BASE_DIR}/{kernel_hash}"
+        cur_cache_dir = CACHE_BASE_DIR / kernel_hash
         if not os.path.exists(cur_cache_dir):
             os.makedirs(cur_cache_dir)
-        cur_vmfb_path = f"{cur_cache_dir}/{kernel_hash}.vmfb"
-        cur_module_path = f"{cur_cache_dir}/{kernel_hash}.mlir"
-        cur_kernelsig_path = f"{cur_cache_dir}/{kernel_hash}.json"
+        cur_cache_basefile = cur_cache_dir / kernel_hash
+        cur_vmfb_path = cur_cache_basefile.with_suffix(".vmfb")
+        cur_module_path = cur_cache_basefile.with_suffix(".mlir")
+        cur_kernelsig_path = cur_cache_basefile.with_suffix(".json")
         _write_file(cur_vmfb_path, "wb", vmfb)
         _write_file(cur_module_path, "w", module_str)
         kernel_sig_str = json.dumps([usage.name for usage in kernel_sig])
@@ -171,13 +172,14 @@ class WaveCacheManager(object):
         Loads the queried kernel(including VMFB, and kernel signature)
         from local cache file/directory.
         """
-        cur_cache_dir = f"{CACHE_BASE_DIR}/{kernel_hash}"
+        cur_cache_dir = CACHE_BASE_DIR / kernel_hash
         vmfb = None
         kernel_sig_str = None
         if not os.path.exists(cur_cache_dir):
             raise ValueError("Failed to find queried cached kernel.")
-        cur_vmfb_path = f"{cur_cache_dir}/{kernel_hash}.vmfb"
-        cur_kernelsig_path = f"{cur_cache_dir}/{kernel_hash}.json"
+        cur_cache_basefile = cur_cache_dir / kernel_hash
+        cur_vmfb_path = cur_cache_basefile.with_suffix(".vmfb")
+        cur_kernelsig_path = cur_cache_basefile.with_suffix(".json")
         vmfb = _read_file(cur_vmfb_path, "rb")
         kernel_sig_str = json.loads(_read_file(cur_kernelsig_path, "r"))
         kernel_sig = [KernelBufferUsage[usage] for usage in kernel_sig_str]
