@@ -30,7 +30,9 @@ class DeviceAffinity:
         return self.ordinal == other.ordinal and self.queues == other.queues
 
     def __repr__(self) -> str:
-        return f"DeviceAffinity({self.ordinal}, [{", ".join(self.queues)}])"
+        if self.queues is None:
+            return f"DeviceAffinity({self.ordinal})"
+        return f"DeviceAffinity({self.ordinal}, [{', '.join(self.queues)}])"
 
 
 @dataclass
