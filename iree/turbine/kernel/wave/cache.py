@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
+from ..lang.wave_types import IndexMapping
 from .._support.indexing import IndexExpr
 from .utils import invoke_vmfb, _read_file, _write_file
 
@@ -48,6 +49,15 @@ class WaveCache:
         with open(filepath, "r") as f:
             module_str = f.read()
         return module_str
+
+
+def extract_mappings(kernel_fn: Callable):
+    """Look for IndexMapping used in the kernel by iterating over freevars."""
+    return [
+        freevar.cell_contents
+        for freevar in kernel_fn.__closure__
+        if isinstance(freevar.cell_contents, IndexMapping)
+    ]
 
 
 def anonymize_constraints(input_constraints: list[Constraint]):
@@ -108,6 +118,7 @@ class WaveCacheManager(object):
         """
         try:
             kernel_src = inspect.getsource(kernel_fn)
+            index_mappings = extract_mappings(kernel_fn)
         except:
             # sets kernel_hash as None if fail to inspect source.
             # We also taught load_kernel and store_kernel to skip
@@ -121,6 +132,7 @@ class WaveCacheManager(object):
             dynamic_symbols,
             use_scheduling,
             use_scheduling_barriers,
+            index_mappings,
         ]
 
         # Benchmark related hash
