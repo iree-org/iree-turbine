@@ -114,7 +114,6 @@ def test_dump_vmfb(shape, tmp_path, request):
 
     config = get_default_run_config()
 
-    tmp_path.mkdir()
     vmfb_file = tmp_path / "test.vmfb"
     with tk.gen.TestLaunchContext(
         {
