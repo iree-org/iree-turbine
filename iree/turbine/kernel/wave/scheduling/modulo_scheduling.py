@@ -111,7 +111,16 @@ class ModuloScheduler:
         # TODO: Come up with a better heuristic on an upper bound for the initiation interval.
         T_max_range = 3 * T0
         success = False
-        pool = mp.get_context("fork").Pool(processes=mp.cpu_count())
+
+        # We cannot create create child processes when running in daemon process
+        # so just run sequentially.
+        # TODO: Find a way to reuse processes from the outside pool if we are
+        # already running inside.
+        if mp.current_process().daemon:
+            pool = None
+        else:
+            pool = mp.get_context("fork").Pool(processes=mp.cpu_count())
+
         for T in range(T0, T0 + T_max_range):
             logger.debug(f"Trying initiation interval: {T}.")
             self.RT = np.zeros((T, len(self.resources)))
@@ -150,8 +159,10 @@ class ModuloScheduler:
                 break
         else:
             raise Exception("Failed to schedule the graph.")
-        pool.close()
-        pool.join()
+
+        if pool is not None:
+            pool.close()
+            pool.join()
 
         self._initiation_interval = T
         return self.schedule, success

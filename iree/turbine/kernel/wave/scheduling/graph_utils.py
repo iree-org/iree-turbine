@@ -15,6 +15,7 @@ import math
 from functools import partial
 from ..utils import safe_subs
 import multiprocessing as mp
+from typing import Optional
 
 T = index_symbol("$INITIATION_INTERVAL")
 
@@ -203,7 +204,7 @@ def all_pairs_longest_paths_symbolic(
 
 
 def all_pairs_longest_paths(
-    graph: fx.Graph, edges: list[Edge], T: int, pool: mp.Pool
+    graph: fx.Graph, edges: list[Edge], T: int, pool: Optional[mp.Pool]
 ) -> dict[tuple[fx.Node, fx.Node], IndexExpr]:
     """
     For each node in the graph, compute the longest path to all other nodes.
@@ -229,7 +230,11 @@ def all_pairs_longest_paths(
     # Parallel implementation
     for k in range(N):
         func = partial(all_pairs_longest_path_parallel, N, D, k)
-        results = pool.map(func, range(N))
+        if pool is not None:
+            results = pool.map(func, range(N))
+        else:
+            results = map(func, range(N))
+
         for result in results:
             D[result[0]] = result[1]
 
