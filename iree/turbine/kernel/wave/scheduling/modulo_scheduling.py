@@ -154,8 +154,10 @@ class ModuloScheduler:
                 break
         else:
             raise Exception("Failed to schedule the graph.")
-        pool.close()
-        pool.join()
+
+        if pool is not None:
+            pool.close()
+            pool.join()
 
         self._initiation_interval = T
         return self.schedule, success
