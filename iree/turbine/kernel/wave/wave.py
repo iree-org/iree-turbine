@@ -32,6 +32,7 @@ from .utils import (
     remove_chained_extractslice,
     subs_idxc,
     delinearize_index,
+    _write_file,
 )
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
@@ -435,6 +436,9 @@ class LaunchableWave(Launchable):
                 raise ValueError("no config provided")
 
             compiled_wave_vmfb = compile_to_vmfb(asm, config, run_bench)
+            if create_vmfb_file is not None:
+                _write_file(create_vmfb_file, "wb", compiled_wave_vmfb)
+
             kernel_usages = [
                 binding.kernel_buffer_type.usage
                 for binding in kernel_sig.kernel_buffer_bindings

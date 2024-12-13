@@ -76,6 +76,62 @@ def xfail_unaligned(func):
 
 
 @require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("test_copy")[:1])
+def test_dump_vmfb(shape, tmp_path, request):
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Each workgroup works on single row of input data, and rows are further
+    # split into blocks of size up to 256. We have single wave per WG,
+    # and with default wave size of 64, each thread is operating on up to 4
+    # elements.
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+    ELEMS_PER_THREAD = BLOCK_N / wave_size
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+
+    config = get_default_run_config()
+
+    tmp_path.mkdir()
+    vmfb_file = tmp_path / "test.vmfb"
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        create_vmfb_file=vmfb_file,
+        run_config=config,
+    ):
+        assert not os.path.exists(vmfb_file)
+        test()
+        assert os.path.exists(vmfb_file)
+
+
+@require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
 def test_copy(shape, request):
     run_bench = request.config.getoption("--runperf")
