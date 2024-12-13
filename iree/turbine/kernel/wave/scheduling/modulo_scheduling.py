@@ -111,6 +111,11 @@ class ModuloScheduler:
         # TODO: Come up with a better heuristic on an upper bound for the initiation interval.
         T_max_range = 3 * T0
         success = False
+
+        # We cannot create create child processes when running in daemon process
+        # so just run sequentially.
+        # TODO: Find a way to reuse processes from the outside pool if we are
+        # already running inside.
         if mp.current_process().daemon:
             pool = None
         else:
