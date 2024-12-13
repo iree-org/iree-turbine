@@ -111,7 +111,11 @@ class ModuloScheduler:
         # TODO: Come up with a better heuristic on an upper bound for the initiation interval.
         T_max_range = 3 * T0
         success = False
-        pool = mp.get_context("fork").Pool(processes=mp.cpu_count())
+        if mp.current_process().daemon:
+            pool = None
+        else:
+            pool = mp.get_context("fork").Pool(processes=mp.cpu_count())
+
         for T in range(T0, T0 + T_max_range):
             logger.debug(f"Trying initiation interval: {T}.")
             self.RT = np.zeros((T, len(self.resources)))
