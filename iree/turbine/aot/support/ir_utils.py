@@ -290,7 +290,7 @@ class ModuleBuilder:
             if attrs.mutable:
                 ir_attrs["is_mutable"] = UnitAttr.get()
             if device:
-                ir_attrs["iree.abi.affinity"] = Attribute.parse(
+                ir_attrs["stream.affinity"] = Attribute.parse(
                     f"#hal.device.promise<@__device_{device.ordinal}>"
                 )
             if external:
