@@ -25,6 +25,9 @@ from iree.turbine.kernel.wave.utils import (
     device_zeros,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
+from iree.turbine.kernel.wave.templates.decode_attention import (
+    get_decode_attention_kernels,
+)
 import os
 import json
 from torch.testing import assert_close, assert_allclose
@@ -930,136 +933,11 @@ def testFlashDecoding(
 ):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
-    # Input sizes
-    B = tkl.sym.B
-    M = tkl.sym.M
-    N = tkl.sym.N
-    K1 = tkl.sym.K1
-    K2 = tkl.sym.K2
-    # Workgroup tile sizes
-    BLOCK_B = tkl.sym.BLOCK_B
-    BLOCK_M = tkl.sym.BLOCK_M
-    BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K2 = tkl.sym.BLOCK_K2
-    # Address space (for GPU, shared(1) or global(0))
-    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
-
-    class Phase(Enum):
-        QK = (0,)
-        SOFTMAX_V = (1,)
-
-    def get_constraints(phase: Phase) -> list[tkw.Constraint]:
-        if mfma_variant == MMAType.F32_16x16x16_F16:
-            Mvec = 16
-            Nvec = 16
-        if mfma_variant == MMAType.F32_32x32x8_F16:
-            Mvec = 32
-            Nvec = 32
-        ratio_m = 2
-        ratio_n = 2
-        constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-        constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
-        constraints += [tkw.WaveConstraint(M, BLOCK_M / ratio_m)]
-        if phase == Phase.QK:
-            constraints += [tkw.WorkgroupConstraint(K2, BLOCK_K2, 1)]
-            constraints += [tkw.WaveConstraint(K2, BLOCK_K2 / ratio_n)]
-            vector_shapes = {B: 0, M: Mvec, K2: Nvec}
-        else:
-            constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-            constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-            constraints += [tkw.WaveConstraint(N, BLOCK_N / ratio_n)]
-            vector_shapes = {B: 0, M: Mvec, N: Nvec}
-        constraints += [
-            tkw.HardwareConstraint(
-                threads_per_wave=64,
-                waves_per_block=(ratio_m, ratio_n, 1),
-                mma_type=mfma_variant,
-                vector_shapes=vector_shapes,
-            )
-        ]
-        if dynamic_dims:
-            constraints += [tkw.Assumption(K2 > BLOCK_K2 * 4)]
-        return constraints
-
-    i = tkw.IndexMapping.iterator(0)
-    j = tkw.IndexMapping.iterator(1)
-    k = tkw.IndexMapping.iterator(2)
-    mapping = tkw.IndexMapping(
-        num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
+    phase_0, phase_1, hyperparams_0, hyperparams_1 = get_decode_attention_kernels(
+        shape, mfma_variant
     )
-
-    # The first kernel computes K @ Q.T.
-    @tkw.wave(get_constraints(Phase.QK))
-    def qk_kernel(
-        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[B, M, K2, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    ):
-        c_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-        q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-        k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-        acc = tkw.mma(k_reg, q_reg, c_reg)
-        x_j = tkw.permute(acc, target_shape=[B, M, K2])
-        tkw.write(x_j, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
-
-    # The second kernel computes the softmax and V @ softmax(K @ Q.T).
-    @tkw.wave(get_constraints(Phase.SOFTMAX_V))
-    def softmax_v_kernel(
-        qk: tkl.Memory[B, M, K2, ADDRESS_SPACE, tkl.f32],
-        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    ):
-        c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
-        init_sum = tkl.Register[B, M, tkl.f32](0.0)
-        init_max = tkl.Register[B, M, tkl.f32](-1e6)
-
-        # This microkernel encodes the fact that if the reduction
-        # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
-        def repeat(
-            partial_max: tkl.Register[B, M, tkl.f32],
-            partial_sum: tkl.Register[B, M, tkl.f32],
-            acc: tkl.Register[B, N, M, tkl.f32],
-        ) -> (
-            tkl.Register[B, M, tkl.f32],
-            tkl.Register[B, M, tkl.f32],
-            tkl.Register[B, N, M, tkl.f32],
-        ):
-            x_j = tkw.read(qk, elements_per_thread=STORE_ELEMS_PER_THREAD)
-            m_j = tkw.max(x_j, partial_max, dim=K2)
-            e_delta_max = tkw.exp2(partial_max - m_j)
-            e_delta = tkw.exp2(x_j - m_j)
-            e_init = partial_sum * e_delta_max
-            d_j = tkw.sum(e_delta, e_init, dim=K2)
-            imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            new_acc = acc * e_delta_max
-            acc = tkw.mma(v_reg, imm_f16, new_acc)
-            return m_j, d_j, acc
-
-        # repeat represents the results of the loop
-        res_max, res_sum, res_mm = repeat
-        res = res_mm / res_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
-
-    hyperparams = {
-        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
-        BLOCK_B: 1,
-        BLOCK_M: 64,
-        BLOCK_N: 64,
-        BLOCK_K2: 64,
-        B: shape[0],
-        M: shape[1],
-        N: shape[2],
-        K1: shape[3],
-        K2: shape[4],
-    }
-    hyperparams.update(get_default_scheduling_params())
+    hyperparams_0.update(get_default_scheduling_params())
+    hyperparams_1.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
         config["benchmark_batch_size"] = 10
@@ -1070,68 +948,57 @@ def testFlashDecoding(
             dump_perf, "tk_" + perf_filename
         )
 
-    dynamic_symbols = []
-    dynamic_symbols_map = {}
-    if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[B] = hyperparams[B]
-        dynamic_symbols_map[K2] = hyperparams[K2]
-        dynamic_symbols.append(M)
-        dynamic_symbols.append(N)
-        dynamic_symbols.append(B)
-        dynamic_symbols.append(K2)
-        del hyperparams[M]
-        del hyperparams[N]
-        del hyperparams[B]
-        del hyperparams[K2]
-
     torch.manual_seed(0)
-    q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-    k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-    qk = device_zeros(shape[0], shape[1], shape[4], dtype=torch.float32)
-    v = device_randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-    output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+    B, M, N, K1, K2 = shape
+    U = hyperparams_0[index_symbol("U")]
+    q = device_randn(B, M, K1, dtype=torch.float16)
+    k = device_randn(B, K2, K1, dtype=torch.float16)
+    v = device_randn(B, K2, N, dtype=torch.float16)
+    phase_0_output = device_zeros(U, B, N, M, dtype=torch.float32)
+    phase_0_output_max = device_zeros(U, B, M, dtype=torch.float32)
+    output = device_zeros(B, M, N, dtype=torch.float32)
     log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape[3])
+    dk_sqrt = math.sqrt(1.0 / K1)
 
     with tk.gen.TestLaunchContext(
-        hyperparams,
+        hyperparams_0,
         canonicalize=True,
         run=True,
         run_bench=run_bench,
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
     ):
         # TODO: Add scaling of QK as part of kernel.
-        mb_qk = qk_kernel(q * dk_sqrt * log2e, k, qk)
+        mb_qk = phase_0(
+            q * dk_sqrt * log2e,
+            k,
+            v.permute([0, 2, 1]),
+            phase_0_output,
+            phase_0_output_max,
+        )
 
     with tk.gen.TestLaunchContext(
-        hyperparams,
+        hyperparams_1,
         canonicalize=True,
         run=True,
         run_bench=run_bench,
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
     ):
         # TODO: Add variant of non-transposed V attention kernel.
-        mb_sv = softmax_v_kernel(qk, v.permute([0, 2, 1]), output)
+        mb_sv = phase_1(phase_0_output, phase_0_output_max, output)
 
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q, k, v, attn_mask=None
     )
 
     if test_dump_generated_mlir:
-        filename = f"wave_qk_kernel_{'x'.join(map(str, shape))}.mlir"
+        filename = f"wave_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
             f.write(mb_qk.module_op.get_asm())
-        filename = f"wave_softmax_v_kernel_{'x'.join(map(str, shape))}.mlir"
+        filename = f"wave_phase_1_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
             f.write(mb_sv.module_op.get_asm())
 
