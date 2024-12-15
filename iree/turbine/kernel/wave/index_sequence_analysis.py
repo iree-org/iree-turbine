@@ -717,48 +717,39 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         rhs = get_custom(custom.rhs)
         lhs_dim, lhs_size = get_largest_index_and_size(lhs.index)
         rhs_dim, rhs_size = get_largest_index_and_size(rhs.index)
-        if lhs_size > rhs_size:
-            to_broadcast = rhs
-            broadcast_dim = lhs_dim
-            broadcast_size = lhs_size
-            target = lhs
-        else:
-            to_broadcast = lhs
-            broadcast_dim = rhs_dim
-            broadcast_size = rhs_size
-            target = rhs
+
         # If they are equal we are done.
         if lhs_dim == rhs_dim and lhs_size == rhs_size:
             continue
         # If all are unit dims, there is nothing to do.
         if lhs_size == 1 and rhs_size == 1:
             continue
-        if lhs_dim != rhs_dim:
-            # If the dimensions don't agree, we can still do this broadcast only if
-            # this has a reduce op in its backward slice along the broadcasting dimension,
-            # or is read from placeholder that doesnt have the broadcasting dimension.
-            bwd_slice = capture_backward_slice(to_broadcast.fx_node)
-            reduce_ops = [
-                get_custom(x) for x in bwd_slice if isinstance(get_custom(x), ReduceOp)
-            ]
-            reduce_criteria = reduce_ops and any(
-                reduce_op.dim == broadcast_dim for reduce_op in reduce_ops
-            )
-            read_ops = [
-                get_custom(x) for x in bwd_slice if isinstance(get_custom(x), Read)
-            ]
-            read_criteria = read_ops and all(
-                broadcast_dim not in read_op.indexing_dims for read_op in read_ops
-            )
-            if not reduce_criteria and not read_criteria:
-                raise NotImplementedError(
-                    "Currently only support resolving discrepancies along the same dimension."
-                )
-
         # Cannot handle discrepancies when both shapes are > 1.
         if lhs_size > 1 and rhs_size > 1:
             raise NotImplementedError(
                 "Currently only support resolving discrepancies when one of the shapes is 1."
             )
+
+        broadcast_rhs = lhs_size > rhs_size
+        to_broadcast = rhs if broadcast_rhs else lhs
+        broadcast_dim = lhs_dim if broadcast_rhs else rhs_dim
+        broadcast_size = lhs_size if broadcast_rhs else rhs_size
+        target = lhs if broadcast_rhs else rhs
+
+        if lhs_dim != rhs_dim:
+            # If the dimensions don't agree, we can still do this broadcast only if
+            # the two nodes differ in shape along the broadcasting dimension and the
+            # broadcasting dimension is the innermost dimension.
+            missing_dims = set(target.indexing_dims).difference(
+                set(to_broadcast.indexing_dims)
+            )
+            is_only_missing_dim = missing_dims == {broadcast_dim}
+            is_innermost_dim = broadcast_dim == target.indexing_dims[-1]
+
+            if not is_only_missing_dim and not is_innermost_dim:
+                raise NotImplementedError(
+                    "Currently only support resolving discrepancies when the broadcasting dimension is the innermost dimension."
+                )
+
         # Broadcast
         create_broadcast(custom, to_broadcast, broadcast_dim, broadcast_size, target)
