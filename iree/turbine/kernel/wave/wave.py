@@ -51,7 +51,6 @@ from .shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
     align_index_sizes,
 )
-from .thread_shape_analysis import determine_thread_shapes
 from .scheduling.schedule import schedule_graph
 from .._support.indexing import IndexingContext, IndexExpr
 from .type_inference import infer_types
@@ -259,9 +258,6 @@ class LaunchableWave(Launchable):
 
         # Set indices.
         set_node_indices(graph, self.constraints)
-
-        # Analyze Thread Shapes per Op.
-        determine_thread_shapes(graph)
 
         # Expansion
         expand_graph(graph, self.constraints)
