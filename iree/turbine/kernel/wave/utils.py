@@ -1336,3 +1336,20 @@ def check_is_mapping_contiguous(
     expected_diff[-1] = 1
 
     return diff == expected_diff
+
+
+def get_largest_index_and_size(indices: dict[IndexExpr, IndexSequence]):
+    """
+    This function takes in indices of a Node, extract their sizes
+    into a list, and then returns the dimension with the largest size.
+    In case of ties, it picks the fastest changing dimension.
+    """
+
+    sorted_values = sorted(
+        [
+            (i, dim, subs_idxc(index.size))
+            for i, (dim, index) in enumerate(indices.items())
+        ],
+        key=lambda x: (-x[2], -x[0]),
+    )
+    return sorted_values[0][1:]

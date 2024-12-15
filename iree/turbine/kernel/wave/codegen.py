@@ -555,7 +555,7 @@ def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
     there are multipled max_vals we pick the fastest/most minor one.
     """
 
-    index_sizes = [i.size for i in indices.values()]
+    index_sizes = [subs_idxc(i.size) for i in indices.values()]
     # Find the maximum value
     max_size = max(index_sizes)
     # Find the fastest/most minor index of the maximum value.

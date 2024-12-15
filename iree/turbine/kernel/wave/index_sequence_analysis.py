@@ -6,11 +6,14 @@
 
 from ..ops.wave_ops import (
     Allocate,
+    BinaryPyOp,
+    Broadcast,
     Read,
     Write,
     ExtractSlice,
     get_custom,
     Reduction,
+    ReduceOp,
     MMA,
     Placeholder,
     IterArg,
@@ -30,6 +33,8 @@ from .utils import (
     subs_idxc,
     get_inputs,
     get_users,
+    get_largest_index_and_size,
+    capture_backward_slice,
 )
 import torch.fx as fx
 import numpy as np
@@ -217,9 +222,11 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         {GPR_NUM: cur_gpr_start_id}
                     ),
                     gpr_size,
-                    1
-                    if output_mapping[-1] == gpr_offset_dim
-                    else simplified_index[gpr_offset_dim].stride,
+                    (
+                        1
+                        if output_mapping[-1] == gpr_offset_dim
+                        else simplified_index[gpr_offset_dim].stride
+                    ),
                 )
                 updated_index_with_gpr_offset[
                     gpr_offset_dim
@@ -307,6 +314,7 @@ def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
     trace.walk(partial(set_thread_independent_index, constraints))
     set_thread_dependent_index(constraints, mma_index, trace)
     set_derived_index(trace)
+    resolve_thread_shapes(trace, constraints)
 
 
 def compute_stride(
@@ -668,3 +676,89 @@ def set_post_expansion_indices(trace: CapturedTrace, constraints: list[Constrain
         return False
 
     trace.walk(apply_offset)
+
+
+def create_broadcast(
+    binary_op: BinaryPyOp,
+    to_broadcast: CustomOp,
+    broadcast_dim: IndexSymbol,
+    broadcast_size: int,
+    target_node: CustomOp,
+):
+    """
+    Create a broadcast node for the given binary operator.
+    """
+    with binary_op.graph.inserting_before(binary_op.fx_node):
+        broadcasted = Broadcast(to_broadcast.fx_node, target_node.type).add_to_graph(
+            binary_op.graph
+        )
+        custom = get_custom(broadcasted)
+        custom.vector_shapes = to_broadcast.vector_shapes
+        custom.index = deepcopy(target_node.index)
+        custom.index[broadcast_dim].size = broadcast_size
+        broadcast_idx = list(binary_op.node_args.values()).index(to_broadcast)
+        binary_op.update_arg(broadcast_idx, custom.fx_node)
+
+
+def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
+    """
+    This function walks through all the binary operators in the graph and
+    if there is a discrepancy between the thread shapes of the operators
+    along the same dimension it resolves the discrepancy.
+
+    Currently, the only mismatches that can be resolved are when one of
+    the shapes is 1 and the other is > 1.
+    """
+    binary_ops = trace.walk(lambda node: isinstance(get_custom(node), BinaryPyOp))
+    for binary_op in binary_ops:
+        custom = get_custom(binary_op)
+        # Get the largest dim and shape from the lhs and rhs.
+        lhs = get_custom(custom.lhs)
+        rhs = get_custom(custom.rhs)
+        lhs_dim, lhs_size = get_largest_index_and_size(lhs.index)
+        rhs_dim, rhs_size = get_largest_index_and_size(rhs.index)
+        if lhs_size > rhs_size:
+            to_broadcast = rhs
+            broadcast_dim = lhs_dim
+            broadcast_size = lhs_size
+            target = lhs
+        else:
+            to_broadcast = lhs
+            broadcast_dim = rhs_dim
+            broadcast_size = rhs_size
+            target = rhs
+        # If they are equal we are done.
+        if lhs_dim == rhs_dim and lhs_size == rhs_size:
+            continue
+        # If all are unit dims, there is nothing to do.
+        if lhs_size == 1 and rhs_size == 1:
+            continue
+        if lhs_dim != rhs_dim:
+            # If the dimensions don't agree, we can still do this broadcast only if
+            # this has a reduce op in its backward slice along the broadcasting dimension,
+            # or is read from placeholder that doesnt have the broadcasting dimension.
+            bwd_slice = capture_backward_slice(to_broadcast.fx_node)
+            reduce_ops = [
+                get_custom(x) for x in bwd_slice if isinstance(get_custom(x), ReduceOp)
+            ]
+            reduce_criteria = reduce_ops and any(
+                reduce_op.dim == broadcast_dim for reduce_op in reduce_ops
+            )
+            read_ops = [
+                get_custom(x) for x in bwd_slice if isinstance(get_custom(x), Read)
+            ]
+            read_criteria = read_ops and all(
+                broadcast_dim not in read_op.indexing_dims for read_op in read_ops
+            )
+            if not reduce_criteria and not read_criteria:
+                raise NotImplementedError(
+                    "Currently only support resolving discrepancies along the same dimension."
+                )
+
+        # Cannot handle discrepancies when both shapes are > 1.
+        if lhs_size > 1 and rhs_size > 1:
+            raise NotImplementedError(
+                "Currently only support resolving discrepancies when one of the shapes is 1."
+            )
+        # Broadcast
+        create_broadcast(custom, to_broadcast, broadcast_dim, broadcast_size, target)

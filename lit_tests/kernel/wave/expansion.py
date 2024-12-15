@@ -561,6 +561,7 @@ def test_batched_gemm():
 def gemm_non_direct_acc(
     a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
     b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+    bias: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
@@ -569,7 +570,8 @@ def gemm_non_direct_acc(
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
-        new_acc = tkw.exp2(a_reg) + acc
+        bias_reg = tkw.read(bias, elements_per_thread=4)
+        new_acc = tkw.exp2(bias_reg) + acc
         acc = tkw.mma(a_reg, b_reg, new_acc)
         return acc
 
@@ -603,11 +605,11 @@ def test_gemm_non_direct_acc():
         # CHECK: %add_0_0_0
         # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_0_0_0, %acc_0_0_0), kwargs = {})
         # CHECK: %add_1_1_0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_1_0_0, %acc_1_1_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_1_1_0, %acc_1_1_0), kwargs = {})
         # CHECK: %add_1_0_0
         # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_1_0_0, %acc_1_0_0), kwargs = {})
         # CHECK: %add_0_1_0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_0_0_0, %acc_0_1_0), kwargs = {})
+        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_0_1_0, %acc_0_1_0), kwargs = {})
         # CHECK: %mma_0_0_0
         # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_0_0_0, %read_0_0_0, %add_0_0_0, None), kwargs = {})
         # CHECK: %mma_0_0_1
