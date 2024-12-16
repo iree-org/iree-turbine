@@ -107,7 +107,6 @@ setup(
         f"numpy{get_version_spec('numpy')}",
         f"iree-base-compiler{get_version_spec('iree-base-compiler')}",
         f"iree-base-runtime{get_version_spec('iree-base-runtime')}",
-        "torch>=2.3.0",
         f"Jinja2{get_version_spec('Jinja2')}",
         f"ml_dtypes{get_version_spec('ml_dtypes')}",
         f"typing_extensions{get_version_spec('typing_extensions')}",

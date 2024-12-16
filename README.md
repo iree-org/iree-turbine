@@ -32,21 +32,22 @@ Discord server).
 
 1. Install from PyPI:
 
+    Install a torch version that fulfills your needs:
+
+    ```bash
+    # Fast installation of torch with just CPU support.
+    # See other options at https://pytorch.org/get-started/locally/
+    pip install torch --index-url https://download.pytorch.org/whl/test/cpu
+    ```
+
+    Then install iree-turbine:
+
     ```bash
     # Stable releases
     pip install iree-turbine
 
     # Nightly releases
     pip install --find-links https://iree.dev/pip-release-links.html --upgrade --pre iree-turbine
-    ```
-
-    The above does install some CUDA/cuDNN packages which are unnecessary for most
-    usage. To avoid this you can
-    [install just pytorch-cpu](https://pytorch.org/get-started/locally/) via:
-
-    ```bash
-    pip install -r pytorch-cpu-requirements.txt
-    pip install iree-turbine
     ```
 
     (or follow the "Developers" instructions below)
@@ -84,9 +85,8 @@ source .venv/bin/activate
 
 ### Install PyTorch for your system
 
-If no explicit action is taken, the default PyTorch version will be installed.
-On Linux this may give you a current CUDA-based version. Install a different
-variant by doing so explicitly first, either by following the
+You need to explicit install a PyTorch version that fulfills your needs.
+On Linux, install a variant by either following the
 [official instructions](https://pytorch.org/get-started/locally/) or by using
 one of our `requirements.txt` files:
 
