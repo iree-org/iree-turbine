@@ -20,16 +20,19 @@ __all__ = [
 class DeviceAffinity:
     """This is used to provide device affinities to exported function arguments."""
 
-    def __init__(self, ordinal: int):
+    def __init__(self, ordinal: int, queues: Optional[list] = None):
         self.ordinal = ordinal
+        self.queues = queues
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, DeviceAffinity):
             return False
-        return self.ordinal == other.ordinal
+        return self.ordinal == other.ordinal and self.queues == other.queues
 
     def __repr__(self) -> str:
-        return f"DeviceAffinity({self.ordinal})"
+        if self.queues is None:
+            return f"DeviceAffinity({self.ordinal})"
+        return f"DeviceAffinity({self.ordinal}, [{', '.join(self.queues)}])"
 
 
 @dataclass
@@ -39,6 +42,7 @@ class DeviceTensorTrait:
     """
 
     ordinal: int
+    queues: Optional[list] = None
 
     @staticmethod
     def get(from_tensor: torch.Tensor) -> Optional["DeviceTensorTrait"]:
