@@ -333,15 +333,16 @@ def test_dynamic_attention_pipelined():
         print(dynamic_attention_pipelined(q, k, v, output).module_op)
 
         # CHECK-LABEL:       func.func @dynamic_attention_pipelined
-        # CHECK-COUNT-6:        {{.*}} = vector.maskedload {{.*}}
+        # CHECK-COUNT-4:        {{.*}} = vector.maskedload {{.*}}
         # CHECK:                {{.*}} = scf.for
         # CHECK-COUNT-2:            {{.*}} = vector.maskedload {{.*}}
-        # CHECK-COUNT-14:           {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-4:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-7:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-4:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-10:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-16:       vector.maskedstore {{.*}}
 
 
@@ -461,12 +462,17 @@ def test_attention_pipelined():
 
         # CHECK-LABEL:       func.func @base_attention_pipelined
         # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-14:           {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-7:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-4:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
         # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-4:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-4:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-10:           {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
 
 
 @run_test
@@ -760,7 +766,17 @@ def test_attention_32x32x8():
         # CHECK-LABEL:      func.func @base_attention_32x32x8
         # CHECK:                {{.*}} = scf.for
         # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
+
+        # Test for reduction decomposition related to softmax.
+        # CHECK-NOT:                arith.maximumf {{.*}}, {{.*}} : vector<16xf32>
+        # CHECK-COUNT-30:           arith.maximumf {{.*}}, {{.*}} : vector<1xf32>
+        # CHECK:                    {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-2:            arith.maximumf {{.*}}, {{.*}} : vector<1xf32>
+        # CHECK:                    arith.addf {{.*}}, {{.*}} : vector<16xf32>
+        # CHECK-COUNT-14:           arith.addf {{.*}}, {{.*}} : vector<1xf32>
+        # CHECK:                    {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-2:            arith.addf {{.*}}, {{.*}} : vector<1xf32>
+
         # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [0], sizes = [4], strides = [1]}
         # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [4], sizes = [4], strides = [1]}
         # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [8], sizes = [4], strides = [1]}

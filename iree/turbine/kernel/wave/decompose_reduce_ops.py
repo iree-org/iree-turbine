@@ -86,6 +86,9 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph):
 def emit_sources_reduction(
     binary_fn: Callable, src: list[fx.Node], graph: fx.Graph
 ) -> fx.Node:
+    """
+    Does reduction over a list of fx.Node variables by applying binary_fn on them.
+    """
     init = src[0]
     for i in range(1, len(src)):
         init = get_graph_node(binary_fn(init, src[i]), graph)
@@ -93,14 +96,65 @@ def emit_sources_reduction(
     return init
 
 
-def emit_local_reduction(
+def emit_variable_reduction(
     binary_fn: Callable, src: fx.Node, graph: fx.Graph, local_reduction_size: int
 ) -> fx.Node:
+    """
+    Does reduction over a singular fx.Node variable.
+    """
     init = get_graph_node(Extract(src, [0]), graph)
     for i in range(1, local_reduction_size):
         cur_slice = get_graph_node(Extract(src, [i]), graph)
         init = get_graph_node(binary_fn(init, cur_slice), graph)
     return init
+
+
+def emit_local_reduction(
+    binary_fn: Callable,
+    reduction_src: list[fx.Node],
+    graph: fx.Graph,
+    local_reduction_size,
+):
+    """
+    Does reduction over all the element carried along by ReductionOp at local
+    thread/SIMT level. This is done by reducing expanded sources combining them
+    into single variable, and then reducing that variable into a scalar.
+    """
+    src_reduction = emit_sources_reduction(binary_fn, reduction_src, graph)
+    local_reduction = emit_variable_reduction(
+        binary_fn, src_reduction, graph, local_reduction_size
+    )
+    return local_reduction
+
+
+def emit_scalarized_local_reduction(
+    binary_fn: Callable,
+    reduction_src: list[fx.Node],
+    graph: fx.Graph,
+    local_reduction_size,
+):
+    """
+    Special case of local reduction wher we try to scalarize/get rid of most vector ops.
+    this is useful for maximum, to expose more opportunities for v_max3_f32,
+    We do this by first reducing the sources(scalar/iterative manner), and then
+    reducing all the "reduced" args/source.
+    e.g we transform from:
+
+    %source_reduce = arith.maximumf %lhs, %rhs : vector<16xf32>
+    %local_reduce = vector.reduction<maximumf>, %src_reduce : f32 from vector<16xf32>
+
+    into:
+
+    %local_lhs_reduce = vector.reduction<maximumf>, %lhs : f32 from vector<16xf32>
+    %local_rhs_reduce = vector.reduction<maximumf>, %rhs : f32 from vector<16xf32>
+    %local_src_reduce = arith.maximumf %local_lhs_reduce, %local_rhs_reduce : f32
+    """
+    locally_reduced_sources = [
+        emit_variable_reduction(binary_fn, arg, graph, local_reduction_size)
+        for arg in reduction_src
+    ]
+    local_reduction = emit_sources_reduction(binary_fn, locally_reduced_sources, graph)
+    return local_reduction
 
 
 def emit_global_reduction(
@@ -111,6 +165,9 @@ def emit_global_reduction(
     cluster_size: int,
     cluster_stride: int,
 ) -> fx.Node:
+    """
+    Reduce data across threads in a warp by doing butterfly shuffle.
+    """
     init = src
     num_steps = int(math.log2(float(cluster_size)))
     for _ in range(num_steps):
@@ -189,12 +246,14 @@ def decompose_reduce_ops(
                 raise NotImplementedError(
                     "NYI: Expect all reduce_src to have same local reduce size."
                 )
-            src_reduction = emit_sources_reduction(
-                binary_fn, reduction_src, custom.graph
-            )
-            local_reduction = emit_local_reduction(
-                binary_fn, src_reduction, custom.graph, local_reduce_sizes[0]
-            )
+            if binary_fn == Maximum:
+                local_reduction = emit_scalarized_local_reduction(
+                    binary_fn, reduction_src, custom.graph, local_reduce_sizes[0]
+                )
+            else:
+                local_reduction = emit_local_reduction(
+                    binary_fn, reduction_src, custom.graph, local_reduce_sizes[0]
+                )
 
             # Global Reduce
             cluster_size, cluster_stride = determine_shuffle_config(
