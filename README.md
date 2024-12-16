@@ -40,6 +40,8 @@ Discord server).
     pip install torch --index-url https://download.pytorch.org/whl/test/cpu
     ```
 
+    Then install iree-turbine:
+
     ```bash
     # Stable releases
     pip install iree-turbine
