@@ -941,17 +941,15 @@ def _create_vec_read(
                 offset = vector_d.extract(
                     offsets_vec, static_position=[i], dynamic_position=[]
                 )
-                idx = get_constant_attr(i, IndexType.get())
-                idx = arith_d.ConstantOp(IndexType.get(), idx)
                 if mask is None:
-                    elem = vector_d.load(vec1_type, data, [idx])
+                    elem = vector_d.load(vec1_type, data, [offset])
                 else:
                     mask_elem = vector_d.extract(
                         mask, static_position=[i], dynamic_position=[]
                     )
                     mask_elem = vector_d.splat(mask1_type, mask_elem)
                     elem = vector_d.maskedload(
-                        vec1_type, data, [idx], mask_elem, passthru
+                        vec1_type, data, [offset], mask_elem, passthru
                     )
 
                 elem = vector_d.extract(elem, static_position=[0], dynamic_position=[])
