@@ -865,6 +865,57 @@ def _construct_gather_scatter_indices(
     return start_indices, offsets_vec, mask
 
 
+def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
+    memref_type = mem.type
+    rank = memref_type.rank
+    results = memref_d.extract_strided_metadata(mem)
+    base = results[0]
+    offset = results[1]
+    results = results[2:]
+    sizes = results[:rank]
+    strides = results[rank:]
+    size = arith_d.constant(IndexType.get(), 1)
+    overflow_flags = arith_d.IntegerOverflowFlags.nsw | arith_d.IntegerOverflowFlags.nuw
+    for ind, size, stride in zip(indices, sizes, strides):
+        if isinstance(ind, int):
+            if ind == 0:
+                continue
+
+            ind = arith_d.constant(IndexType.get(), ind)
+
+        offset = arith_d.addi(
+            offset,
+            arith_d.muli(ind, stride, overflow_flags=overflow_flags),
+            overflow_flags=overflow_flags,
+        )
+        size = arith_d.muli(
+            size,
+            arith_d.subi(size, ind, overflow_flags=overflow_flags),
+            overflow_flags=overflow_flags,
+        )
+
+    dyn_val = ShapedType.get_dynamic_size()
+    res_shape = [dyn_val]
+    element_type = memref_type.element_type
+    memory_space = memref_type.memory_space
+    resut_type = MemRefType.get(
+        res_shape,
+        element_type,
+        layout=Attribute.parse("strided<[1], offset: ?>"),
+        memory_space=memory_space,
+    )
+    return memref_d.reinterpret_cast(
+        resut_type,
+        base,
+        offsets=[offset],
+        sizes=[size],
+        strides=[],
+        static_offsets=[dyn_val],
+        static_sizes=[dyn_val],
+        static_strides=[1],
+    )
+
+
 def _create_vec_read(
     mem: Value,
     vector_type: IrType,
@@ -874,20 +925,53 @@ def _create_vec_read(
     offsets_vec: Optional[Value],
 ) -> Value:
     element_type = vector_type.element_type
+    unroll = True
     if offsets_vec is not None:
         zero = get_constant_attr(0, element_type)
         zero = arith_d.ConstantOp(element_type, zero)
-        passthru = vector_d.splat(vector_type, zero)
 
-        if mask is None:
-            mask_vec_type = VectorType.get(
-                [elements_per_thread], IntegerType.get_signless(1)
+        if unroll:
+            result = vector_d.splat(vector_type, zero)
+
+            data = _linearize_memref(mem, start_indices)
+            vec1_type = VectorType.get([1], element_type)
+            passthru = vector_d.splat(vec1_type, zero)
+            mask1_type = VectorType.get([1], IntegerType.get_signless(1))
+            for i in range(elements_per_thread):
+                offset = vector_d.extract(
+                    offsets_vec, static_position=[i], dynamic_position=[]
+                )
+                idx = get_constant_attr(i, IndexType.get())
+                idx = arith_d.ConstantOp(IndexType.get(), idx)
+                if mask is None:
+                    elem = vector_d.load(vec1_type, data, [idx])
+                else:
+                    mask_elem = vector_d.extract(
+                        mask, static_position=[i], dynamic_position=[]
+                    )
+                    mask_elem = vector_d.splat(mask1_type, mask_elem)
+                    elem = vector_d.maskedload(
+                        vec1_type, data, [idx], mask_elem, passthru
+                    )
+
+                elem = vector_d.extract(elem, static_position=[0], dynamic_position=[])
+                result = vector_d.insert(
+                    elem, result, static_position=[i], dynamic_position=[]
+                )
+
+            return result
+
+        else:
+            passthru = vector_d.splat(vector_type, zero)
+
+            if mask is None:
+                mask_vec_type = VectorType.get(
+                    [elements_per_thread], IntegerType.get_signless(1)
+                )
+                mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+            return vector_d.gather(
+                vector_type, mem, start_indices, offsets_vec, mask, passthru
             )
-            mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
-
-        return vector_d.gather(
-            vector_type, mem, start_indices, offsets_vec, mask, passthru
-        )
     elif mask is not None:
         zero = get_constant_attr(0, element_type)
         zero = arith_d.ConstantOp(element_type, zero)
