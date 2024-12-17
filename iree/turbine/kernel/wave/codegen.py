@@ -865,6 +865,39 @@ def _construct_gather_scatter_indices(
     return start_indices, offsets_vec, mask
 
 
+def _create_vec_read(
+    mem: Value,
+    vector_type: IrType,
+    start_indices: tuple[Value],
+    elements_per_thread: int,
+    mask: Optional[Value],
+    offsets_vec: Optional[Value],
+) -> Value:
+    element_type = vector_type.element_type
+    if offsets_vec is not None:
+        zero = get_constant_attr(0, element_type)
+        zero = arith_d.ConstantOp(element_type, zero)
+        passthru = vector_d.splat(vector_type, zero)
+
+        if mask is None:
+            mask_vec_type = VectorType.get(
+                [elements_per_thread], IntegerType.get_signless(1)
+            )
+            mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+
+        return vector_d.gather(
+            vector_type, mem, start_indices, offsets_vec, mask, passthru
+        )
+    elif mask is not None:
+        zero = get_constant_attr(0, element_type)
+        zero = arith_d.ConstantOp(element_type, zero)
+        passthru = vector_d.splat(vector_type, zero)
+
+        return vector_d.maskedload(vector_type, mem, start_indices, mask, passthru)
+    else:  # offsets_vec is None and mask is None
+        return vector_d.load(vector_type, mem, start_indices)
+
+
 @handle_op(read)
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
@@ -885,21 +918,22 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
+    elements_per_thread = cast_py_literal(emitter, elements_per_thread)
     if get_custom(node).has_identity_mapping():
         start_indices = _build_start_indices(emitter, index)
         mask = _build_mask(
-            emitter, index, cast_py_literal(emitter, elements_per_thread)
+            emitter,
+            index,
+            elements_per_thread,
         )
-        if mask is None:
-            result = vector_d.load(vector_type, kb_src, start_indices)
-        else:
-            zero = get_constant_attr(0, element_type)
-            zero = arith_d.ConstantOp(vector_type.element_type, zero)
-            passthru = vector_d.splat(vector_type, zero)
-
-            result = vector_d.maskedload(
-                vector_type, kb_src, start_indices, mask, passthru
-            )
+        result = _create_vec_read(
+            kb_src,
+            vector_type,
+            start_indices,
+            elements_per_thread,
+            mask,
+            offsets_vec=None,
+        )
     else:
         dyn_vals = tuple(
             cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
@@ -909,24 +943,14 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             symbolc_shape=input_shape,
             index=index,
             mapping=mapping,
-            elements_per_thread=cast_py_literal(emitter, elements_per_thread),
+            elements_per_thread=elements_per_thread,
             is_read=True,
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
         )
-
-        zero = get_constant_attr(0, element_type)
-        zero = arith_d.ConstantOp(vector_type.element_type, zero)
-        passthru = vector_d.splat(vector_type, zero)
-
-        if offsets_vec is None:
-            result = vector_d.maskedload(
-                vector_type, kb_src, start_indices, mask, passthru
-            )
-        else:
-            result = vector_d.gather(
-                vector_type, kb_src, start_indices, offsets_vec, mask, passthru
-            )
+        result = _create_vec_read(
+            kb_src, vector_type, start_indices, elements_per_thread, mask, offsets_vec
+        )
 
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
