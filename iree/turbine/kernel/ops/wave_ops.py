@@ -136,6 +136,10 @@ def maximum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
+def minimum(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
 def broadcast(
     arg: "Register", target_shape: Optional[Sequence[IndexExpr | int]] = None
 ) -> "Register":
@@ -681,6 +685,7 @@ class CustomOp(ABC):
 @define_py_op(operator.mul)
 @define_py_op(operator.truediv)
 @define_interface_op("maximum")
+@define_interface_op("minimum")
 @dataclass
 class BinaryPyOp(CustomOp, ABC):
     """
