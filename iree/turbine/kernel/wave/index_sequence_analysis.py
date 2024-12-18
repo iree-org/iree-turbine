@@ -19,9 +19,15 @@ from ..ops.wave_ops import (
     IterArg,
     CustomOp,
     Reshape,
+    Output,
 )
-from .constraints import Constraint, HardwareConstraint, WorkgroupConstraint
+from .constraints import (
+    Constraint,
+    HardwareConstraint,
+    WorkgroupConstraint,
+)
 from .assumptions import Assumption
+from .symbolic_constraints import SymbolicAlias
 from .._support.tracing import CapturedTrace, IndexingContext
 from .._support.indexing import IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
@@ -34,7 +40,6 @@ from .utils import (
     get_inputs,
     get_users,
     get_largest_index_and_size,
-    capture_backward_slice,
 )
 import torch.fx as fx
 import numpy as np
@@ -55,6 +60,26 @@ def get_vector_shape(
 ) -> list[int]:
     vector_shapes = [max(vector_shapes[dim], 1) for dim in symbolic_shape]
     return vector_shapes
+
+
+def _get_symbolic_shape_and_vector_shapes(
+    custom: CustomOp,
+    aliases: dict[IndexSymbol, SymbolicAlias],
+    hw_constraint: HardwareConstraint,
+):
+    # When the memory type has symbolic aliases, use the memory type
+    # as it includes the aliased variables. Also, add the aliased variables
+    # vector shapes.
+    symbolic_shape = custom.register_type.symbolic_shape
+    vector_shapes = custom.vector_shapes
+    if any([x in custom.memory_type.symbolic_shape for x in aliases]):
+        symbolic_shape = custom.memory_type.symbolic_shape
+        for dim in symbolic_shape:
+            if dim in aliases and aliases[dim].target in vector_shapes:
+                vector_shapes[dim] = aliases[dim].apply(
+                    vector_shapes[aliases[dim].target]
+                )
+    return symbolic_shape, vector_shapes
 
 
 def partition_strided_operators(trace: CapturedTrace, constraints: list[Constraint]):
@@ -92,6 +117,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
 
     strided_operators = trace.walk(has_strided_access)
     hw_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)][0]
+    aliases = {c.source: c for c in constraints if isinstance(c, SymbolicAlias)}
     for operator in strided_operators:
         custom = get_custom(operator)
         simplified_index = {
@@ -99,9 +125,11 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             for dim in custom.index
         }
 
-        shape = get_vector_shape(
-            custom.vector_shapes, custom.register_type.symbolic_shape
+        symbolic_shape, vector_shapes = _get_symbolic_shape_and_vector_shapes(
+            custom, aliases, hw_constraint
         )
+
+        shape = get_vector_shape(vector_shapes, symbolic_shape)
         elements_per_thread = subs_idxc(custom.elements_per_thread)
         max_stride_dim, max_stride = max(
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
@@ -126,7 +154,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                     dim: IndexSequence(
                         simplified_index[dim].start.subs({GPR_NUM: 0}) + offset[j], 1, 1
                     )
-                    for j, dim in enumerate(custom.register_type.symbolic_shape)
+                    for j, dim in enumerate(symbolic_shape)
                 }
                 ops_to_combine.append(write)
 
@@ -309,12 +337,30 @@ def set_derived_index(trace):
             worklist.append((inp, index))
 
 
+def verify_nodes(trace: CapturedTrace):
+    """
+    Verify that all the valid nodes have their index and vector shapes set.
+    """
+    nodes = trace.walk(lambda x: x)
+    for node in nodes:
+        custom = get_custom(node)
+        if isinstance(custom, (Placeholder, Allocate)) and not isinstance(
+            custom, IterArg
+        ):
+            continue
+        if isinstance(custom, (Output, Reduction)):
+            continue
+        assert custom.index, f"Index not set for node {custom.fx_node}"
+        assert custom.vector_shapes, f"Vector shapes not set for node {custom.fx_node}"
+
+
 def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
     mma_index = get_mma_dimensional_mapping(trace, get_hardware_constraint(constraints))
     trace.walk(partial(set_thread_independent_index, constraints))
     set_thread_dependent_index(constraints, mma_index, trace)
     set_derived_index(trace)
     resolve_thread_shapes(trace, constraints)
+    verify_nodes(trace)
 
 
 def compute_stride(
@@ -414,8 +460,11 @@ def set_thread_independent_index(
     if isinstance(custom, (Reduction, Placeholder)) and not isinstance(custom, IterArg):
         return
 
+    hw_cons = get_hardware_constraint(constraints)
     constraints = [
-        c for c in constraints if not isinstance(c, (HardwareConstraint, Assumption))
+        c
+        for c in constraints
+        if not isinstance(c, (HardwareConstraint, Assumption, SymbolicAlias))
     ]
 
     index = {}
@@ -574,11 +623,21 @@ def should_update_index(
     source: CustomOp,
     source_index: dict[IndexSymbol, IndexSequence],
     source_vector_shapes: dict[IndexSymbol, int],
+    symbolic_constraints: list[SymbolicAlias],
 ):
+    # Get symbolic shape without any aliased variables.
+    aliased_dims = [x.source for x in symbolic_constraints]
+    symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
+
+    # If all the source indexing dimensions are not present in source vector shapes,
+    # we should not update the index.
+    if not set(symbolic_shape).issubset(set(source_vector_shapes.keys())):
+        return False
+
     # Determine if we should update the idx based on the source.
     # We update the source only if the source index provides
     # information about all the non-batch dimensions of the source.
-    non_batch_dims = [x for x in source.indexing_dims if source_vector_shapes[x] > 1]
+    non_batch_dims = [x for x in symbolic_shape if source_vector_shapes[x] > 1]
 
     # If the source index is smaller than the non-batch dims, check if the
     # source index is a subset of the non-batch dims.
@@ -598,6 +657,7 @@ def propagate_index(
     workgroup_constraints: list[WorkgroupConstraint],
     mma_index: dict[MMA, dict[IndexSymbol, int]],
     visited: set[CustomOp],
+    symbolic_constraints: list[SymbolicAlias],
 ):
     """
     Propagate the index and vector shapes through the graph
@@ -616,7 +676,9 @@ def propagate_index(
         if source in visited:
             continue
         if not isinstance(source, (Reduction, MMA)):
-            if not should_update_index(source, source_index, source_vector_shapes):
+            if not should_update_index(
+                source, source_index, source_vector_shapes, symbolic_constraints
+            ):
                 continue
             source_index = source.transform_index(source_index)
             source.index = combine_indices(source.index, source_index)
@@ -653,11 +715,17 @@ def set_thread_dependent_index(
     workgroup_constraints = [
         c for c in constraints if isinstance(c, WorkgroupConstraint)
     ]
+    symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)
         visited = propagate_index(
-            source, hardware_constraint, workgroup_constraints, mma_index, visited
+            source,
+            hardware_constraint,
+            workgroup_constraints,
+            mma_index,
+            visited,
+            symbolic_constraints,
         )
 
 
@@ -709,14 +777,21 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
     Currently, the only mismatches that can be resolved are when one of
     the shapes is 1 and the other is > 1.
     """
+
+    def get_index(custom: CustomOp):
+        if isinstance(custom, MMA):
+            return custom.acc.index
+        return custom.index
+
     binary_ops = trace.walk(lambda node: isinstance(get_custom(node), BinaryPyOp))
     for binary_op in binary_ops:
         custom = get_custom(binary_op)
         # Get the largest dim and shape from the lhs and rhs.
         lhs = get_custom(custom.lhs)
         rhs = get_custom(custom.rhs)
-        lhs_dim, lhs_size = get_largest_index_and_size(lhs.index)
-        rhs_dim, rhs_size = get_largest_index_and_size(rhs.index)
+
+        lhs_dim, lhs_size = get_largest_index_and_size(get_index(lhs))
+        rhs_dim, rhs_size = get_largest_index_and_size(get_index(rhs))
 
         # If they are equal we are done.
         if lhs_dim == rhs_dim and lhs_size == rhs_size:
@@ -734,17 +809,17 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         to_broadcast = rhs if broadcast_rhs else lhs
         broadcast_dim = lhs_dim if broadcast_rhs else rhs_dim
         broadcast_size = lhs_size if broadcast_rhs else rhs_size
-        target = lhs if broadcast_rhs else rhs
+        broadcasted = lhs if broadcast_rhs else rhs
 
         if lhs_dim != rhs_dim:
             # If the dimensions don't agree, we can still do this broadcast only if
             # the two nodes differ in shape along the broadcasting dimension and the
             # broadcasting dimension is the innermost dimension.
-            missing_dims = set(target.indexing_dims).difference(
-                set(to_broadcast.indexing_dims)
+            missing_dims = set(broadcasted.type.symbolic_shape).difference(
+                set(to_broadcast.type.symbolic_shape)
             )
             is_only_missing_dim = missing_dims == {broadcast_dim}
-            is_innermost_dim = broadcast_dim == target.indexing_dims[-1]
+            is_innermost_dim = broadcast_dim == broadcasted.type.symbolic_shape[-1]
 
             if not is_only_missing_dim and not is_innermost_dim:
                 raise NotImplementedError(
@@ -752,4 +827,6 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
                 )
 
         # Broadcast
-        create_broadcast(custom, to_broadcast, broadcast_dim, broadcast_size, target)
+        create_broadcast(
+            custom, to_broadcast, broadcast_dim, broadcast_size, broadcasted
+        )
