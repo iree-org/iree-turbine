@@ -134,6 +134,14 @@ class LaunchableWave(Launchable):
             if isinstance(constraint, HardwareConstraint)
         ]
 
+    @property
+    def symbolic_constraints(self) -> list[HardwareConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, SymbolicAlias)
+        ]
+
     def _trace(self) -> CapturedTrace:
         region_graph = KernelRegionGraph()
         with CompiledContext(region_graph, grid_type=self.grid_type) as context:
@@ -262,64 +270,22 @@ class LaunchableWave(Launchable):
             workgroup_dims[i].wg_dim = new_workgroup_dims[i - 2]
         self.update_aliased_workgroup_constraints(workgroup_dims)
 
-    def create_new_constraints(
-        self,
-        symbolic_constraints: list[SymbolicAlias],
-        constraints: list[Constraint],
-    ) -> list[Constraint]:
-        """
-        Creates new constraints for the given constraints with the appropriate
-        substitution of the indexing context.
-
-        """
-        new_constraints = []
-        if not constraints:
-            return new_constraints
-        match constraints[0]:
-            case WorkgroupConstraint():
-                build_constraint = lambda x, y, z: WorkgroupConstraint(x, y, z)
-                id_fn = lambda x: x.workgroup_dim
-            case WaveConstraint():
-                build_constraint = lambda x, y, z: WaveConstraint(x, y, z)
-                id_fn = lambda x: x.wave_id
-            case TilingConstraint():
-                build_constraint = lambda x, y, z: TilingConstraint(x, y, z)
-                id_fn = lambda x: x.induction_var
-        for symbolic_constraint in symbolic_constraints:
-            for constraint in constraints:
-                if symbolic_constraint.target == constraint.dim:
-                    tile_size = subs_idxc(
-                        symbolic_constraint.source_to_target(constraint.tile_size)
-                    )
-                    if tile_size.is_number and tile_size == 0:
-                        continue
-                    new_constraints.append(
-                        build_constraint(
-                            symbolic_constraint.source,
-                            symbolic_constraint.source_to_target(constraint.tile_size),
-                            id_fn(constraint),
-                        )
-                    )
-        return new_constraints
-
     def initialize_symbolic_constraints(self, trace: CapturedTrace) -> None:
         """
         For each symbolic constraint, create new constraints for the
         related symbolic values with appropriate substitutions.
         """
-        symbolic_constraints = [
-            x for x in self.constraints if isinstance(x, SymbolicAlias)
-        ]
         new_wg_constraints, new_wave_constraints, new_tiling_constraints = [], [], []
-        new_wg_constraints += self.create_new_constraints(
-            symbolic_constraints, self.workgroup_constraints
-        )
-        new_wave_constraints += self.create_new_constraints(
-            symbolic_constraints, self.wave_constraints
-        )
-        new_tiling_constraints += self.create_new_constraints(
-            symbolic_constraints, self.tiling_constraints
-        )
+        for symbolic_constraint in self.symbolic_constraints:
+            new_wg_constraints += symbolic_constraint.create_new_constraints(
+                self.workgroup_constraints
+            )
+            new_wave_constraints += symbolic_constraint.create_new_constraints(
+                self.wave_constraints
+            )
+            new_tiling_constraints += symbolic_constraint.create_new_constraints(
+                self.tiling_constraints
+            )
         # Remove wave constraints with same tile size as workgroup constraints
         for wave_constraint in new_wave_constraints:
             for workgroup_constraint in new_wg_constraints:
@@ -332,16 +298,11 @@ class LaunchableWave(Launchable):
             new_wg_constraints + new_wave_constraints + new_tiling_constraints
         )
         idxc = IndexingContext.current()
-        vector_shapes = self.hardware_constraints[0].vector_shapes
-        for constraint in symbolic_constraints:
+        for constraint in self.symbolic_constraints:
             if subs_idxc(constraint.target).is_number:
                 idxc._bind_symbol(
                     constraint.source,
                     subs_idxc(constraint.source_to_target(constraint.target)),
-                )
-            if constraint.target in vector_shapes:
-                vector_shapes[constraint.source] = subs_idxc(
-                    constraint.source_to_target(vector_shapes[constraint.target])
                 )
 
     def _trace_and_get_kernel_signature(

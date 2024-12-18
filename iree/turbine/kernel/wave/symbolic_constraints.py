@@ -7,6 +7,13 @@
 from iree.turbine.kernel._support.indexing import IndexExpr, IndexSymbol
 from dataclasses import dataclass
 from typing import Callable
+from .utils import subs_idxc
+from .constraints import (
+    Constraint,
+    WorkgroupConstraint,
+    WaveConstraint,
+    TilingConstraint,
+)
 
 
 @dataclass
@@ -25,3 +32,39 @@ class SymbolicAlias:
     source: IndexSymbol | IndexExpr
     target: IndexSymbol | IndexExpr
     source_to_target: Callable[[IndexSymbol | IndexExpr], IndexSymbol | IndexExpr]
+
+    def apply(self, target: IndexSymbol | IndexExpr) -> IndexSymbol | IndexExpr:
+        return subs_idxc(self.source_to_target(target))
+
+    def create_new_constraints(self, constraints: list[Constraint]) -> list[Constraint]:
+        """
+        Creates new constraints for the given constraints with the appropriate
+        substitution of the indexing context.
+
+        """
+        new_constraints = []
+        if not constraints:
+            return new_constraints
+        match constraints[0]:
+            case WorkgroupConstraint():
+                build_constraint = lambda x, y, z: WorkgroupConstraint(x, y, z)
+                id_fn = lambda x: x.workgroup_dim
+            case WaveConstraint():
+                build_constraint = lambda x, y, z: WaveConstraint(x, y, z)
+                id_fn = lambda x: x.wave_id
+            case TilingConstraint():
+                build_constraint = lambda x, y, z: TilingConstraint(x, y, z)
+                id_fn = lambda x: x.induction_var
+        for constraint in constraints:
+            if self.target == constraint.dim:
+                tile_size = self.apply(constraint.tile_size)
+                if tile_size.is_number and tile_size == 0:
+                    continue
+                new_constraints.append(
+                    build_constraint(
+                        self.source,
+                        self.apply(constraint.tile_size),
+                        id_fn(constraint),
+                    )
+                )
+        return new_constraints

@@ -19,6 +19,7 @@ from ..ops.wave_ops import (
     IterArg,
     CustomOp,
     Reshape,
+    Output,
 )
 from .constraints import (
     Constraint,
@@ -61,6 +62,26 @@ def get_vector_shape(
     return vector_shapes
 
 
+def _get_symbolic_shape_and_vector_shapes(
+    custom: CustomOp,
+    aliases: dict[IndexSymbol, SymbolicAlias],
+    hw_constraint: HardwareConstraint,
+):
+    # When the memory type has symbolic aliases, use the memory type
+    # as it includes the aliased variables. Also, add the aliased variables
+    # vector shapes.
+    symbolic_shape = custom.register_type.symbolic_shape
+    vector_shapes = custom.vector_shapes
+    if any([x in custom.memory_type.symbolic_shape for x in aliases]):
+        symbolic_shape = custom.memory_type.symbolic_shape
+        for dim in symbolic_shape:
+            if dim in aliases and aliases[dim].target in vector_shapes:
+                vector_shapes[dim] = aliases[dim].apply(
+                    vector_shapes[aliases[dim].target]
+                )
+    return symbolic_shape, vector_shapes
+
+
 def partition_strided_operators(trace: CapturedTrace, constraints: list[Constraint]):
     """
     This function analyzes the index sequence of operators in the graph
@@ -96,7 +117,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
 
     strided_operators = trace.walk(has_strided_access)
     hw_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)][0]
-    aliased_variables = [c.source for c in constraints if isinstance(c, SymbolicAlias)]
+    aliases = {c.source: c for c in constraints if isinstance(c, SymbolicAlias)}
     for operator in strided_operators:
         custom = get_custom(operator)
         simplified_index = {
@@ -104,13 +125,11 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             for dim in custom.index
         }
 
-        # When the memory type has symbolic aliases, use the memory type
-        # as it includes the aliased variables.
-        symbolic_shape = custom.register_type.symbolic_shape
-        if any([x in custom.memory_type.symbolic_shape for x in aliased_variables]):
-            symbolic_shape = custom.memory_type.symbolic_shape
+        symbolic_shape, vector_shapes = _get_symbolic_shape_and_vector_shapes(
+            custom, aliases, hw_constraint
+        )
 
-        shape = get_vector_shape(custom.vector_shapes, symbolic_shape)
+        shape = get_vector_shape(vector_shapes, symbolic_shape)
         elements_per_thread = subs_idxc(custom.elements_per_thread)
         max_stride_dim, max_stride = max(
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
@@ -318,12 +337,30 @@ def set_derived_index(trace):
             worklist.append((inp, index))
 
 
+def verify_nodes(trace: CapturedTrace):
+    """
+    Verify that all the valid nodes have their index and vector shapes set.
+    """
+    nodes = trace.walk(lambda x: x)
+    for node in nodes:
+        custom = get_custom(node)
+        if isinstance(custom, (Placeholder, Allocate)) and not isinstance(
+            custom, IterArg
+        ):
+            continue
+        if isinstance(custom, (Output, Reduction)):
+            continue
+        assert custom.index, f"Index not set for node {custom.fx_node}"
+        assert custom.vector_shapes, f"Vector shapes not set for node {custom.fx_node}"
+
+
 def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
     mma_index = get_mma_dimensional_mapping(trace, get_hardware_constraint(constraints))
     trace.walk(partial(set_thread_independent_index, constraints))
     set_thread_dependent_index(constraints, mma_index, trace)
     set_derived_index(trace)
     resolve_thread_shapes(trace, constraints)
+    verify_nodes(trace)
 
 
 def compute_stride(
@@ -423,6 +460,7 @@ def set_thread_independent_index(
     if isinstance(custom, (Reduction, Placeholder)) and not isinstance(custom, IterArg):
         return
 
+    hw_cons = get_hardware_constraint(constraints)
     constraints = [
         c
         for c in constraints
@@ -587,7 +625,10 @@ def should_update_index(
     source_vector_shapes: dict[IndexSymbol, int],
     symbolic_constraints: list[SymbolicAlias],
 ):
-    symbolic_shape = source.type.symbolic_shape
+    # Get symbolic shape without any aliased variables.
+    aliased_dims = [x.source for x in symbolic_constraints]
+    symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
+
     # If all the source indexing dimensions are not present in source vector shapes,
     # we should not update the index.
     if not set(symbolic_shape).issubset(set(source_vector_shapes.keys())):
