@@ -1014,8 +1014,8 @@ class Read(CustomOp):
             mapping = self.mapping.dynamic_val_mappings[i]
             subs = {v: k for k, v in zip(iters, mapping.keys())}
             return {
-                k: v.apply_expr(subs[k2], mapping[k2])
-                for k, (k2, v) in zip(arg.type.symbolic_shape, index.items())
+                k: v.apply_expr(subs[k], mapping[k])
+                for k, v in zip(arg.type.symbolic_shape, index.values())
             }
 
         return index
@@ -1260,8 +1260,8 @@ class Write(CustomOp):
             mapping = self.mapping.dynamic_val_mappings[i]
             subs = {v: k for k, v in zip(iters, mapping.keys())}
             return {
-                k: v.apply_expr(subs[k2], mapping[k2])
-                for k, (k2, v) in zip(arg.type.symbolic_shape, index.items())
+                k: v.apply_expr(subs[k], mapping[k])
+                for k, v in zip(arg.type.symbolic_shape, index.values())
             }
 
         return index

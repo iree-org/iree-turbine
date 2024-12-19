@@ -482,7 +482,7 @@ def test_read_write_dynamic_mapping_broadcast():
         num_iterators=2,
         inputs={M: i, N: k + j % 16},
         outputs={M: i, N: j},
-        dynamic_val_mappings={M: i, N: j // 16},
+        dynamic_val_mappings={M: i, ONE: j // 16},
     )
 
     @tkw.wave(constraints)
@@ -537,13 +537,13 @@ def test_read_write_dynamic_mapping_chain():
         num_iterators=2,
         inputs={M: i, SIZE2: k},
         outputs={M: i, SIZE2: j},
-        dynamic_val_mappings={M: i, SIZE2: j // 2},
+        dynamic_val_mappings={M: i, SIZE1: j // 2},
     )
     mapping2 = tkw.IndexMapping(
         num_iterators=2,
         inputs={M: i, N: k + j % 4},
         outputs={M: i, N: j},
-        dynamic_val_mappings={M: i, N: j // 4},
+        dynamic_val_mappings={M: i, SIZE2: j // 4},
     )
 
     @tkw.wave(constraints)
