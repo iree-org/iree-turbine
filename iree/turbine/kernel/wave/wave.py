@@ -61,7 +61,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
-from .cache import get_cache_manager, invoke_cached_kernel
+from .cache import is_cache_enabled, get_cache_manager, invoke_cached_kernel
 
 import sympy
 
@@ -373,30 +373,32 @@ class LaunchableWave(Launchable):
         use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
 
         # Get cached kernel when available.
-        cache_manager = get_cache_manager()
-        # TODO: Move use_scheduling, use_scheduling_barriers, etc. into the config so everything is contained there.
-        kernel_hash = cache_manager.get_hash(
-            self.constraints,
-            self._f,
-            IndexingContext.current().subs,
-            dynamic_symbols,
-            config,
-            use_scheduling=use_scheduling,
-            use_scheduling_barriers=use_scheduling_barriers,
-            run_bench=run_bench,
-        )
-        cached_kernel = cache_manager.load_kernel(kernel_hash)
-        if cached_kernel and (run or run_bench):
-            invoke_cached_kernel(
-                cached_kernel,
-                args,
-                config,
+        cache_enabled = is_cache_enabled()
+        if cache_enabled:
+            cache_manager = get_cache_manager()
+            # TODO: Move use_scheduling, use_scheduling_barriers, etc. into the config so everything is contained there.
+            kernel_hash = cache_manager.get_hash(
+                self.constraints,
+                self._f,
+                IndexingContext.current().subs,
                 dynamic_symbols,
-                dynamic_symbols_map,
-                run,
-                run_bench,
+                config,
+                use_scheduling=use_scheduling,
+                use_scheduling_barriers=use_scheduling_barriers,
+                run_bench=run_bench,
             )
-            return cached_kernel
+            cached_kernel = cache_manager.load_kernel(kernel_hash)
+            if cached_kernel and (run or run_bench):
+                invoke_cached_kernel(
+                    cached_kernel,
+                    args,
+                    config,
+                    dynamic_symbols,
+                    dynamic_symbols_map,
+                    run,
+                    run_bench,
+                )
+                return cached_kernel
 
         # Recompile from kernel scratch if not found in cache.
         (
@@ -439,9 +441,15 @@ class LaunchableWave(Launchable):
                 binding.kernel_buffer_type.usage
                 for binding in kernel_sig.kernel_buffer_bindings
             ]
-            cache_manager.store_kernel(
-                compiled_wave_vmfb, kernel_usages, mb.module_op.get_asm(), kernel_hash
-            )
+
+            if cache_enabled:
+                cache_manager.store_kernel(
+                    compiled_wave_vmfb,
+                    kernel_usages,
+                    mb.module_op.get_asm(),
+                    kernel_hash,
+                )
+
             invoke_vmfb(
                 compiled_wave_vmfb,
                 "isolated_benchmark",

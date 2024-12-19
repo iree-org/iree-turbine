@@ -20,6 +20,7 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 
 from iree.turbine.kernel.wave.cache import (
+    is_cache_enabled,
     get_cache_manager,
     reset_cache_manager,
     WaveCache,
@@ -40,6 +41,10 @@ import os
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
+
+require_cache = pytest.mark.skipif(
+    not is_cache_enabled(), reason="filesystem cache is disabled"
+)
 
 
 def generate_attention_kernel(constraints: list[Constraint]):
@@ -114,6 +119,7 @@ def generate_attention_kernel(constraints: list[Constraint]):
 
 
 @require_e2e
+@require_cache
 def testSameConfig(request):
     reset_cache_manager()
     shape = (8, 128, 128, 64, 256)
@@ -221,6 +227,7 @@ def testSameConfig(request):
 
 
 @require_e2e
+@require_cache
 def testDifferentDynamicSameBlock(request):
     reset_cache_manager()
     # Input sizes
@@ -382,6 +389,7 @@ def testDifferentDynamicSameBlock(request):
 
 
 @require_e2e
+@require_cache
 def testSameSizeDifferentBlock(request):
     reset_cache_manager()
     shape = (8, 128, 128, 64, 256)
