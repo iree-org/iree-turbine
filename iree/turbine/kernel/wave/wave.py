@@ -8,6 +8,8 @@ from typing import Any, Callable, Optional
 import torch.fx as fx
 import inspect
 
+from .symbolic_constraints import SymbolicAlias
+
 from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
 from ..compiler.ir import Context, Operation
 from .codegen import WaveEmitter
@@ -132,6 +134,14 @@ class LaunchableWave(Launchable):
             if isinstance(constraint, HardwareConstraint)
         ]
 
+    @property
+    def symbolic_constraints(self) -> list[HardwareConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, SymbolicAlias)
+        ]
+
     def _trace(self) -> CapturedTrace:
         region_graph = KernelRegionGraph()
         with CompiledContext(region_graph, grid_type=self.grid_type) as context:
@@ -212,13 +222,43 @@ class LaunchableWave(Launchable):
                 if tiling_constraint.dim == get_custom(reduction).axis:
                     reduction.count = subs_idxc(tiling_constraint.count)
 
+    def get_workgroup_dims(self) -> list[int]:
+        """
+        Returns the workgroup dimensions that are not aliased.
+        """
+        # Ignore aliased variables. They will be handled separately.
+        aliased_dims = [
+            x.source for x in self.constraints if isinstance(x, SymbolicAlias)
+        ]
+        workgroup_dims = {
+            x.workgroup_dim: x
+            for x in self.workgroup_constraints
+            if x.dim not in aliased_dims
+        }
+        return workgroup_dims
+
+    def update_aliased_workgroup_constraints(
+        self, workgroup_dims: dict[int, int]
+    ) -> None:
+        """
+        This function updates the wg_dim for aliased workgroup constraints.
+        """
+        aliased_dims = [
+            x.source for x in self.constraints if isinstance(x, SymbolicAlias)
+        ]
+        # Update the workgroup constraints for aliases sources.
+        for constraint in self.workgroup_constraints:
+            if constraint.dim in aliased_dims:
+                constraint.wg_dim = workgroup_dims[constraint.workgroup_dim].wg_dim
+
     def initialize_workgroup_constraints(self, trace: CapturedTrace) -> None:
         """
         For kernels that distribute more than three dimensions among workgroups,
         we need to update the workgroup constraints for dimensions >= 2
         with the appropriate workgroup index.
         """
-        workgroup_dims = {x.workgroup_dim: x for x in self.workgroup_constraints}
+
+        workgroup_dims = self.get_workgroup_dims()
         if all(x <= 2 for x in workgroup_dims.keys()):
             return
         shape = [
@@ -228,6 +268,42 @@ class LaunchableWave(Launchable):
         new_workgroup_dims = delinearize_index(WORKGROUP_2, shape)
         for i in range(2, max(workgroup_dims.keys()) + 1):
             workgroup_dims[i].wg_dim = new_workgroup_dims[i - 2]
+        self.update_aliased_workgroup_constraints(workgroup_dims)
+
+    def initialize_symbolic_constraints(self, trace: CapturedTrace) -> None:
+        """
+        For each symbolic constraint, create new constraints for the
+        related symbolic values with appropriate substitutions.
+        """
+        new_wg_constraints, new_wave_constraints, new_tiling_constraints = [], [], []
+        for symbolic_constraint in self.symbolic_constraints:
+            new_wg_constraints += symbolic_constraint.create_new_constraints(
+                self.workgroup_constraints
+            )
+            new_wave_constraints += symbolic_constraint.create_new_constraints(
+                self.wave_constraints
+            )
+            new_tiling_constraints += symbolic_constraint.create_new_constraints(
+                self.tiling_constraints
+            )
+        # Remove wave constraints with same tile size as workgroup constraints
+        for wave_constraint in new_wave_constraints:
+            for workgroup_constraint in new_wg_constraints:
+                if (
+                    wave_constraint.dim == workgroup_constraint.dim
+                    and wave_constraint.tile_size == workgroup_constraint.tile_size
+                ):
+                    new_wave_constraints.remove(wave_constraint)
+        self.constraints += (
+            new_wg_constraints + new_wave_constraints + new_tiling_constraints
+        )
+        idxc = IndexingContext.current()
+        for constraint in self.symbolic_constraints:
+            if subs_idxc(constraint.target).is_number:
+                idxc._bind_symbol(
+                    constraint.source,
+                    subs_idxc(constraint.source_to_target(constraint.target)),
+                )
 
     def _trace_and_get_kernel_signature(
         self,
@@ -242,6 +318,7 @@ class LaunchableWave(Launchable):
         self.create_induction_vars(graph)
         self.initialize_wave_constraints(graph)
         self.initialize_reductions(graph)
+        self.initialize_symbolic_constraints(graph)
         self.initialize_workgroup_constraints(graph)
 
         idxc = IndexingContext.current()
@@ -307,7 +384,10 @@ class LaunchableWave(Launchable):
         # Determine grid shape.
         self.grid_type.dims = [1, 1, 1]
         max_workgroup_dim = 2
+        aliases = [x.source for x in self.constraints if isinstance(x, SymbolicAlias)]
         for constraint in self.workgroup_constraints:
+            if constraint.dim in aliases:
+                continue
             dim = (
                 constraint.workgroup_dim
                 if constraint.workgroup_dim < max_workgroup_dim

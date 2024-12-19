@@ -871,7 +871,8 @@ def bfs(
 
 
 def capture_forward_slice(
-    node: fx.Node, filter_fn: Callable[[fx.node], bool] = lambda x: True
+    node: fx.Node,
+    filter_fn: Callable[[fx.node], bool] = lambda x: True,
 ) -> set[fx.Node]:
     """
     Run BFS on the graph to capture the forward slice of a node.

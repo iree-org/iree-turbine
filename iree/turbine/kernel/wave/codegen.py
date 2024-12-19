@@ -14,6 +14,8 @@ import torch.fx as fx
 import torch.utils._pytree as pytree
 from collections import namedtuple
 
+from .symbolic_constraints import SymbolicAlias
+
 from ..compiler.ir import (
     Attribute,
     DenseElementsAttr,
@@ -55,6 +57,7 @@ from ..ops.wave_ops import (
     read,
     reduction,
     exp2,
+    log2,
     reciprocal,
     abs,
     maximum,
@@ -491,7 +494,7 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
         shape, dtype, value = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
-    get_thread_shape = lambda index: max(x.size for x in index.values())
+    get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
     shape = [get_thread_shape(get_custom(node).index)]
     vector_shape = cast_py_literal(emitter, shape)
     element_type = IrType.parse(dtype.ir_type_asm())
@@ -1120,6 +1123,16 @@ def handle_exp2(source: Value) -> OpResult:
     return result
 
 
+@handle_unary_op(log2)
+def handle_log2(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        result = math_d.log2(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for exp2: {element_type}")
+    return result
+
+
 @handle_unary_op(reciprocal)
 def handle_reciprocal(source: Value) -> OpResult:
     element_type = get_type_or_element_type(source.type)
@@ -1351,6 +1364,8 @@ def handle_get_result(emitter: WaveEmitter, node: fx.Node):
 
 @handle_op(operator.getitem)
 def handle_getitem(emitter: WaveEmitter, node: fx.Node):
+    if not node.users:
+        return
     raise NotImplementedError("getitem: Currently only stub implementation")
 
 

@@ -102,6 +102,10 @@ def exp2(src: "Register") -> "Register":
     ...
 
 
+def log2(src: "Register") -> "Register":
+    ...
+
+
 def reciprocal(src: "Register") -> "Register":
     ...
 
@@ -653,6 +657,7 @@ class BinaryPyOp(CustomOp, ABC):
         self.type = broadcasted_type
 
 
+@define_interface_op("log2")
 @define_interface_op("exp2")
 @define_interface_op("reciprocal")
 @define_interface_op("abs")
