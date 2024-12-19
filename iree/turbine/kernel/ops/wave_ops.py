@@ -1013,7 +1013,10 @@ class Read(CustomOp):
             iters = self.mapping.iters
             mapping = self.mapping.dynamic_val_mappings[i]
             subs = {v: k for k, v in zip(iters, mapping.keys())}
-            return {k: v.apply_expr(subs[k], mapping[k]) for k, v in index.items()}
+            return {
+                k: v.apply_expr(subs[k2], mapping[k2])
+                for k, (k2, v) in zip(arg.type.symbolic_shape, index.items())
+            }
 
         return index
 
@@ -1021,8 +1024,11 @@ class Read(CustomOp):
         self,
     ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
         def transform_idx(arg):
-            new_index = self.transform_index_backwards(self.index, arg)
-            return {k: v for k, v in zip(arg.type.symbolic_shape, new_index.values())}
+            return {
+                k: v
+                for k, v in self.transform_index_backwards(self.index, arg).items()
+                if v.start != 0
+            }
 
         return [(arg, transform_idx(arg)) for arg in self.mapping_dynamic_vals]
 
@@ -1253,7 +1259,10 @@ class Write(CustomOp):
             iters = self.mapping.iters
             mapping = self.mapping.dynamic_val_mappings[i]
             subs = {v: k for k, v in zip(iters, mapping.keys())}
-            return {k: v.apply_expr(subs[k], mapping[k]) for k, v in index.items()}
+            return {
+                k: v.apply_expr(subs[k2], mapping[k2])
+                for k, (k2, v) in zip(arg.type.symbolic_shape, index.items())
+            }
 
         return index
 
@@ -1261,8 +1270,11 @@ class Write(CustomOp):
         self,
     ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
         def transform_idx(arg):
-            new_index = self.transform_index_backwards(self.index, arg)
-            return {k: v for k, v in zip(arg.type.symbolic_shape, new_index.values())}
+            return {
+                k: v
+                for k, v in self.transform_index_backwards(self.index, arg).items()
+                if v.start != 0
+            }
 
         return [(arg, transform_idx(arg)) for arg in self.mapping_dynamic_vals]
 
