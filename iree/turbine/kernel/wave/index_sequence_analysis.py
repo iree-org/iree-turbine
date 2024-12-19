@@ -281,7 +281,9 @@ def combine_derived_index(
 
     new_index = copy(src_index)
     for dim, new_idx in dst_index.items():
-        assert dim in src_index, f"Dim {dim} not in index {src_index}"
+        if dim not in src_index:
+            continue
+
         old_idx = src_index[dim]
         if old_idx == new_idx:
             continue
@@ -306,7 +308,8 @@ def set_derived_index(trace):
         custom = get_custom(current)
         custom.index = combine_derived_index(custom.index, index)
         for inp in get_inputs(current)[0]:
-            worklist.append((inp, index))
+            new_index = custom.transform_index_backwards(custom.index, inp)
+            worklist.append((inp, new_index))
 
 
 def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
