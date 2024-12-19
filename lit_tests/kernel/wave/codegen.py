@@ -1281,6 +1281,7 @@ def test_binary_lowerings():
         res = a_reg - b_reg
         res = res * a_reg
         res = res / b_reg
+        res = tkw.minimum(a_reg, b_reg)
         tkw.write(res, a, elements_per_thread=4)
 
     a = torch.randn(16, 16, dtype=torch.float16)
@@ -1291,6 +1292,7 @@ def test_binary_lowerings():
         # CHECK: %[[SUB:.+]] = arith.subf
         # CHECK: %[[MUL:.+]] = arith.mulf %[[SUB]]
         # CHECK: %[[DIV:.+]] = arith.divf %[[MUL]]
+        # CHECK: %[[MINIMUM:.+]] = arith.minimumf
 
 
 # TODO: Something is broken in codegen and we are getting int in place of fx.Node
