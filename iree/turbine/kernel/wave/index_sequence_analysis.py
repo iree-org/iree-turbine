@@ -68,17 +68,11 @@ def _get_symbolic_shape_and_vector_shapes(
     hw_constraint: HardwareConstraint,
 ):
     # When the memory type has symbolic aliases, use the memory type
-    # as it includes the aliased variables. Also, add the aliased variables
-    # vector shapes.
+    # as it includes the aliased variables.
     symbolic_shape = custom.register_type.symbolic_shape
     vector_shapes = custom.vector_shapes
     if any([x in custom.memory_type.symbolic_shape for x in aliases]):
         symbolic_shape = custom.memory_type.symbolic_shape
-        for dim in symbolic_shape:
-            if dim in aliases and aliases[dim].target in vector_shapes:
-                vector_shapes[dim] = aliases[dim].apply(
-                    vector_shapes[aliases[dim].target]
-                )
     return symbolic_shape, vector_shapes
 
 
@@ -651,6 +645,21 @@ def should_update_index(
     return True
 
 
+def append_aliased_shapes(source: CustomOp, symbolic_constraints: list[SymbolicAlias]):
+    """
+    Append the aliased shapes to the vector shapes of the source, if they
+    are present in the source index.
+    """
+    for constraint in symbolic_constraints:
+        if (
+            constraint.target in source.vector_shapes
+            and constraint.source in source.index
+        ):
+            source.vector_shapes[constraint.source] = constraint.apply(
+                source.vector_shapes[constraint.target]
+            )
+
+
 def propagate_index(
     node: CustomOp,
     hardware_constraint: HardwareConstraint,
@@ -683,6 +692,7 @@ def propagate_index(
             source_index = source.transform_index(source_index)
             source.index = combine_indices(source.index, source_index)
             source.vector_shapes = source_vector_shapes
+            append_aliased_shapes(source, symbolic_constraints)
         visited.add(source)
         for func in [get_inputs, get_users]:
             sources, reduction = add_nodes_to_sources(
@@ -761,7 +771,7 @@ def create_broadcast(
             binary_op.graph
         )
         custom = get_custom(broadcasted)
-        custom.vector_shapes = to_broadcast.vector_shapes
+        custom.vector_shapes = binary_op.vector_shapes
         custom.index = deepcopy(target_node.index)
         custom.index[broadcast_dim].size = broadcast_size
         broadcast_idx = list(binary_op.node_args.values()).index(to_broadcast)

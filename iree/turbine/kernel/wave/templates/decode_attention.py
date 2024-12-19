@@ -65,12 +65,7 @@ def get_decode_attention_kernels(
         constraints += [
             SymbolicAlias(U, K2, lambda x: sympy.ceiling(x / (BLOCK_K2 / K_WAVES)))
         ]
-        if mfma_variant == MMAType.F32_16x16x16_F16:
-            vector_shapes = {B: 0, M: 16, N: 16}
-        elif mfma_variant == MMAType.F32_32x32x8_F16:
-            vector_shapes = {B: 0, M: 32, N: 32}
-        else:
-            raise NotImplementedError(f"Unsupported mfma_variant: {mfma_variant}")
+        vector_shapes = {B: 0}
         waves_per_block = (M_WAVES, N_WAVES, K_WAVES)
         constraints += [
             tkw.HardwareConstraint(
@@ -147,8 +142,8 @@ def get_decode_attention_kernels(
         acc = tkw.mma(v_reg, imm_f16, new_acc)
         res = acc / d_j
         dm_j = m_j + tkw.log2(d_j)
-        tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
         tkw.write(dm_j, output_max, elements_per_thread=1)
+        tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(
