@@ -1053,8 +1053,18 @@ def all_equal(input_list: list[Any]) -> bool:
     return all(elem == input_list[0] for elem in input_list)
 
 
+DEFAULT_GPU_DEVICE = None
+
+
+def get_default_gpu_device_name() -> str:
+    if DEFAULT_GPU_DEVICE is None:
+        return "cuda"
+
+    return f"cuda:{DEFAULT_GPU_DEVICE}"
+
+
 def get_default_device() -> str:
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    return get_default_gpu_device_name() if torch.cuda.is_available() else "cpu"
 
 
 def to_default_device(tensor: torch.Tensor) -> torch.Tensor:
