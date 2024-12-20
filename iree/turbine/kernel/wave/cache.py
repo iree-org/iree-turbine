@@ -32,6 +32,10 @@ WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 1))
 WAVE_CACHE_LIMIT = int(os.environ.get("WAVE_CACHE_LIMIT", 16))
 
 
+def is_cache_enabled() -> bool:
+    return bool(WAVE_CACHE_ON)
+
+
 @dataclass
 class WaveCache:
     """
