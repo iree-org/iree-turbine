@@ -9,6 +9,8 @@ import torch.fx as fx
 from typing import Any, TypeAlias, Sequence, Type, Callable
 from functools import partial
 
+from .symbolic_constraints import SymbolicAlias
+
 from .constraints import (
     Constraint,
     HardwareConstraint,
@@ -17,6 +19,7 @@ from .constraints import (
 )
 from ..ops.wave_ops import (
     Allocate,
+    BinaryPyOp,
     CustomOp,
     GetResult,
     Getitem,
@@ -647,11 +650,19 @@ def get_dim_scaling(
     if len(hardware_constraints) != 1:
         raise ValueError("Exactly one hardware constraint must be provided")
 
+    aliased_dims: list[IndexSymbol] = [
+        constraint.source
+        for constraint in constraints
+        if isinstance(constraint, SymbolicAlias)
+    ]
+
     idxc = IndexingContext.current()
     for constraint in constraints:
         if isinstance(constraint, WorkgroupConstraint) or isinstance(
             constraint, TilingConstraint
         ):
+            if constraint.dim in aliased_dims:
+                continue
             hw_cons = hardware_constraints[0]
             tile_size = idxc.get_static_value(constraint.tile_size)
             if constraint.dim not in node.vector_shapes:
@@ -740,7 +751,6 @@ def _handle_reduction_dim(
 ):
     # Rediscover iter args
     # TODO: Register iter args with the reduction initially so accessing them is easier
-    iter_args: list[CustomOp] = []
     reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
 
     # TODO: Handle case where MMAs/ReduceOps do not have Output as direct consumer.
