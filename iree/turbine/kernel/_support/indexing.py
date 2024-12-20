@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Optional, Type, TypeVar, Union, Self
+from typing import Any, ClassVar, Optional, Type, TypeVar, Union
 
 from abc import ABC
 from dataclasses import dataclass
@@ -418,14 +418,14 @@ class IndexSequence:
             return value.subs(map)
         return value
 
-    def subs(self, map: dict[IndexExpr, IndexExpr]) -> Self:
+    def subs(self, map: dict[IndexExpr, IndexExpr]):
         start = self._subs(self.start, map)
         size = self._subs(self.size, map)
         stride = self._subs(self.stride, map)
         return IndexSequence(start, size, stride)
 
     @staticmethod
-    def from_expr(expr: IndexExpr, subs: dict[IndexExpr, Self]) -> Self:
+    def from_expr(expr: IndexExpr, subs: dict[IndexExpr, Any]):
         start_subs = {k: v.start for k, v in subs.items()}
         size_subs = {k: v.size for k, v in subs.items()}
         stride_subs = {k: v.stride for k, v in subs.items()}
