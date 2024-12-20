@@ -1012,8 +1012,15 @@ class Read(CustomOp):
             i = self.mapping_dynamic_vals.index(arg)
             iters = self.mapping.iters
             mapping = self.mapping.dynamic_val_mappings[i]
-            subs = {v: k for k, v in zip(iters, mapping.keys())}
-            return {k: v.apply_expr(subs[k], mapping[k]) for k, v in index.items()}
+
+            # This logic relies on fact out mapping is identity.
+            subs = {
+                k: index[v] for k, v in zip(iters, self.mapping.output_mapping.keys())
+            }
+            return {
+                k: IndexSequence.from_expr(mapping[k], subs)
+                for k in arg.type.symbolic_shape
+            }
 
         return index
 
@@ -1021,8 +1028,16 @@ class Read(CustomOp):
         self,
     ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
         def transform_idx(arg):
-            new_index = self.transform_index_backwards(self.index, arg)
-            return {k: v for k, v in zip(arg.type.symbolic_shape, new_index.values())}
+            # Treat zero index as 'not-set' and does't propagate it.
+            # TODO: `set_thread_independent_index` currently blindly sets zero
+            # index to all dims which are not participating in constraints, we
+            # need to refactor `index_sequence_analysis` into proper dataflow
+            # analysis.
+            return {
+                k: v
+                for k, v in self.transform_index_backwards(self.index, arg).items()
+                if v.start != 0
+            }
 
         return [(arg, transform_idx(arg)) for arg in self.mapping_dynamic_vals]
 
@@ -1252,8 +1267,15 @@ class Write(CustomOp):
             i = self.mapping_dynamic_vals.index(arg)
             iters = self.mapping.iters
             mapping = self.mapping.dynamic_val_mappings[i]
-            subs = {v: k for k, v in zip(iters, mapping.keys())}
-            return {k: v.apply_expr(subs[k], mapping[k]) for k, v in index.items()}
+
+            # This logic relies on fact in mapping is identity.
+            subs = {
+                k: index[v] for k, v in zip(iters, self.mapping.input_mapping.keys())
+            }
+            return {
+                k: IndexSequence.from_expr(mapping[k], subs)
+                for k in arg.type.symbolic_shape
+            }
 
         return index
 
@@ -1261,8 +1283,11 @@ class Write(CustomOp):
         self,
     ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
         def transform_idx(arg):
-            new_index = self.transform_index_backwards(self.index, arg)
-            return {k: v for k, v in zip(arg.type.symbolic_shape, new_index.values())}
+            return {
+                k: v
+                for k, v in self.transform_index_backwards(self.index, arg).items()
+                if v.start != 0
+            }
 
         return [(arg, transform_idx(arg)) for arg in self.mapping_dynamic_vals]
 
