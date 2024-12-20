@@ -39,11 +39,11 @@ def _set_default_device(config):
     if not hasattr(config, "workerinput"):
         return
 
-    workerinput = config.workerinput
-    if not workerinput.startswith("gw"):
+    worker_id = config.workerinput["workerid"]
+    if not worker_id.startswith("gw"):
         return
 
-    device_id = int(workerinput[2:]) % int(DISTRIBUTE_GPU_TESTS)
+    device_id = int(worker_id[2:]) % int(DISTRIBUTE_GPU_TESTS)
 
     import iree.turbine.kernel.wave.utils as utils
 
