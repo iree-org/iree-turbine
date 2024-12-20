@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import pytest
+import os
 
 
 def pytest_addoption(parser):
@@ -28,11 +29,33 @@ def pytest_configure(config):
     )
 
 
+DISTRIBUTE_GPU_TESTS = os.environ.get("WAVE_DISTRIBUTE_GPU_TESTS", None)
+
+
+def _set_default_device(config):
+    if DISTRIBUTE_GPU_TESTS is None:
+        return
+
+    if not hasattr(config, "workerinput"):
+        return
+
+    workerinput = config.workerinput
+    if not workerinput.startswith("gw"):
+        return
+
+    device_id = int(workerinput[2:]) % int(DISTRIBUTE_GPU_TESTS)
+
+    import iree.turbine.kernel.wave.utils as utils
+
+    utils.DEFAULT_GPU_DEVICE = device_id
+
+
 def _has_marker(item, marker):
     return next(item.iter_markers(marker), None) is not None
 
 
 def pytest_collection_modifyitems(config, items):
+    _set_default_device(config)
     run_perf = config.getoption("--runperf")
     for item in items:
         is_validate_only = _has_marker(item, "validate_only")
