@@ -156,6 +156,10 @@ def reshape(inputs: Sequence["Register"]) -> "Register":
     ...
 
 
+def round_even(src: "Register") -> "Register":
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -704,6 +708,7 @@ class BinaryPyOp(CustomOp, ABC):
 @define_interface_op("exp2")
 @define_interface_op("reciprocal")
 @define_interface_op("abs")
+@define_interface_op("round_even")
 @define_py_op(operator.neg)
 @dataclass
 class UnaryPyOp(CustomOp, ABC):

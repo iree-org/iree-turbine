@@ -725,6 +725,7 @@ def test_unary_lowerings():
         res = tkw.reciprocal(res)
         res = tkw.abs(res)
         res_b = tkw.abs(b_reg)
+        res = tkw.round_even(res)
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_b, b, elements_per_thread=4)
 
@@ -740,12 +741,15 @@ def test_unary_lowerings():
         # CHECK: %[[EXP2:.+]] = math.exp2 %[[NEG]]
 
         # Testing reciprocal
-        # %[[ONES:.+]] = arith.constant dense<1.000000e+00> : vector<4xf16>
-        # %[[RECIPROCAL:.+]] = arith.divf %[[ONES]], %[[EXP2]] : vector<4xf16>
+        # CHECK: %[[ONES:.+]] = arith.constant dense<1.000000e+00> : vector<4xf16>
+        # CHECK: %[[RECIPROCAL:.+]] = arith.divf %[[ONES]], %[[EXP2]] : vector<4xf16>
 
         # Testing abs
-        # %[[ABSF:.+]] = math.absf %[[RECIPROCAL]]
-        # %[[ABSI:.+]] = math.absi
+        # CHECK: %[[ABSF:.+]] = math.absf %[[RECIPROCAL]]
+        # CHECK: %[[ABSI:.+]] = math.absi
+
+        # Testing round_even
+        # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[ABSF]]
 
 
 @run_test
