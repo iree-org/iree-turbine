@@ -1147,7 +1147,7 @@ def test_multiple_reduction_iv():
 
         # Tile Reduction Loop
         # CHECK: %[[TILED:.+]]:4 = scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
-        # CHECK-SAME: iter_args(%[[ACC0:.+]] = %[[INIT_MAX]], %[[ACC1:.+]] = %[[INIT_SUM]], %[[ACC2:.+]] = %[[INIT_MAX]], %[[ACC3:.+]] = %[[INIT_SUM]])
+        # CHECK-SAME: iter_args(%[[ACC0:.+]] = %[[INIT_MAX]], %[[ACC1:.+]] = %[[INIT_MAX]], %[[ACC2:.+]] = %[[INIT_SUM]], %[[ACC3:.+]] = %[[INIT_SUM]])
         # CHECK-SAME: -> (vector<1xf16>, vector<1xf16>, vector<1xf16>, vector<1xf16>) {
         # 1st Expanded Local Max Reduction
         # CHECK: arith.maximumf {{.*}} : vector<1xf16>
@@ -1161,14 +1161,14 @@ def test_multiple_reduction_iv():
         # 2nd Expanded Global Max Reduction
         # CHECK-COUNT-6: gpu.shuffle  xor
         # 2nd Expanded Accumulator Max Reduction
-        # CHECK: %[[ACC_MAX_1:.+]] = arith.maximumf %[[ACC2]], %{{.*}}
+        # CHECK: %[[ACC_MAX_1:.+]] = arith.maximumf %[[ACC1]], %{{.*}}
 
         # 1st Expanded Local Sum Reduction
         # CHECK: arith.addf {{.*}} : vector<1xf16>
         # 1st Expanded Global Sum Reduction
         # CHECK-COUNT-6: gpu.shuffle  xor
         # 1st Expanded Accumulator Sum Reduction
-        # CHECK: %[[ACC_SUM_0:.+]] = arith.addf %[[ACC1]], %{{.*}}
+        # CHECK: %[[ACC_SUM_0:.+]] = arith.addf %[[ACC2]], %{{.*}}
 
         # 2nd Expanded Local Sum Reduction
         # CHECK: arith.addf {{.*}} : vector<1xf16>
@@ -1177,7 +1177,7 @@ def test_multiple_reduction_iv():
         # 2nd Expanded Accumulator Sum Reduction
         # CHECK: %[[ACC_SUM_1:.+]] = arith.addf %[[ACC3]], %{{.*}}
 
-        # CHECK: scf.yield %[[ACC_MAX_0]], %[[ACC_SUM_0]], %[[ACC_MAX_1]], %[[ACC_SUM_1]]
+        # CHECK: scf.yield %[[ACC_MAX_0]], %[[ACC_MAX_1]], %[[ACC_SUM_0]], %[[ACC_SUM_1]]
 
 
 # This test is used to ensure:

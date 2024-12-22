@@ -22,7 +22,7 @@ from .constraints import (
     get_grid_shape,
 )
 from .codegen import WaveEmitter
-from .expansion import expand_graph
+from .expansion.expansion import expand_graph
 from .promotion import promote_placeholders
 from .hoisting import hoist_loop_invariant_ops
 from .utils import (
@@ -35,6 +35,7 @@ from .utils import (
     subs_idxc,
     delinearize_index,
     _write_file,
+    initialize_iter_args,
 )
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
@@ -42,7 +43,7 @@ from .barriers import add_shared_memory_barriers
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
-from ..ops.wave_ops import Reduction, CustomOp, get_custom
+from ..ops.wave_ops import Reduction, CustomOp, get_custom, IterArg
 from .index_sequence_analysis import (
     partition_ops_with_gpr_offsets,
     partition_strided_operators,
@@ -315,6 +316,7 @@ class LaunchableWave(Launchable):
         # Trace the function.
         graph = self._trace()
 
+        initialize_iter_args(graph)
         self.create_induction_vars(graph)
         self.initialize_wave_constraints(graph)
         self.initialize_reductions(graph)

@@ -828,14 +828,21 @@ def get_inputs(
         local_reduction = reduction
         if reduction is None:
             local_reduction = custom.parent_op()
-        iter_arg_idx = custom.get_iter_idx()
+        iter_arg_idx = custom.iter_idx
         inputs.append(local_reduction.init_args[iter_arg_idx])
     elif isinstance(custom, GetResult):
         reduction = get_custom(custom.value)
         assert isinstance(reduction, Reduction), "GetResult must be used by a Reduction"
         # Map get result to output
         reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
-        inputs.append(reduction.outputs(reduction_subgraph)[custom.res_idx])
+        if len(reduction.init_args) == 1:
+            outputs = reduction.outputs(reduction_subgraph)
+            if isinstance(outputs, Sequence):
+                inputs += outputs
+            else:
+                inputs.append(outputs)
+        else:
+            inputs.append(reduction.outputs(reduction_subgraph)[custom.res_idx])
     elif isinstance(custom, Reduction):
         reduction_subgraph = custom.get_root_graph().subgraphs[custom.subgraph_name]
         inputs.append(custom.outputs(reduction_subgraph))
@@ -1368,3 +1375,34 @@ def get_largest_index_and_size(indices: dict[IndexExpr, IndexSequence]):
         key=lambda x: (-x[2], -x[0]),
     )
     return sorted_values[0][1:]
+
+
+def print_graph(graph: fx.Graph):
+    """
+    Pretty-print the graph containing this node.
+    """
+    graph_str = str(graph)
+    graph_str = graph_str.replace(
+        "iree.turbine.kernel.lang.kernel_buffer.KernelBufferMeta.new_subtype.<locals>.SubType",
+        "",
+    )
+    graph_str = graph_str.replace("target=iree.turbine.kernel.ops.wave_ops.", "")
+    graph_str = graph_str.replace("call_function", "")
+    print(graph_str)
+
+
+def initialize_iter_args(trace: CapturedTrace) -> None:
+    """
+    Initializes the IterArgs in each reduction with an index
+    based on their location in the graph.
+
+    """
+    reductions = trace.walk(lambda node: isinstance(get_custom(node), Reduction))
+    for reduction in reductions:
+        reduction_graph = trace.get_subgraph(get_custom(reduction).subgraph_name)
+        count = 0
+        for node in reduction_graph.nodes:
+            custom = get_custom(node)
+            if isinstance(custom, IterArg):
+                custom.iter_idx = count
+                count += 1
