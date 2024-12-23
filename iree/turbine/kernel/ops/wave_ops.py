@@ -84,6 +84,10 @@ def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Re
     ...
 
 
+def arange(size: IndexExpr, dtype: DataType) -> "Register":
+    ...
+
+
 def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
     ...
 
@@ -860,6 +864,26 @@ class SchedulingGroupBarrier(CustomOp):
 
     instructions: dict[Operation, int]
     sync_id: int
+
+
+@define_op("arange")
+@dataclass
+class Arange(CustomOp):
+    """
+    Return evenly spaced values
+
+    TODO: Do we need separate begin/end/step
+    """
+
+    size: IndexExpr
+    dtype: DataType
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return [self.size]
+
+    def infer_type(self):
+        self.type = Register[(self.size, self.dtype)]
 
 
 @define_op("register")

@@ -49,30 +49,31 @@ from iree.turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_t
 # TK infrastructure imports.
 from iree.turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import (
-    write,
-    broadcast,
-    register,
-    mma,
-    shuffle,
-    read,
-    reduction,
-    exp2,
-    log2,
-    reciprocal,
+    CustomOp,
     abs,
-    maximum,
-    get_custom,
-    get_result,
     allocate,
-    shared_memory_barrier,
+    arange,
+    broadcast,
+    cast,
+    exp2,
     extract,
     extract_slice,
-    CustomOp,
+    get_custom,
+    get_result,
+    log2,
+    maximum,
+    mma,
+    permute,
+    read,
+    reciprocal,
+    reduction,
+    register,
+    reshape,
     scheduling_barrier,
     scheduling_group_barrier,
-    cast,
-    permute,
-    reshape,
+    shared_memory_barrier,
+    shuffle,
+    write,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
@@ -506,6 +507,35 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
         ),
     ).result
     emitter.bind_node_proxy(node, IRProxyValue(register))
+
+
+@handle_op(arange)
+def handle_arange(emitter: WaveEmitter, node: fx.Node):
+    try:
+        size, dtype = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    index = get_custom(node).index
+    assert len(index) == 1, f"Arange must be 1D, but got {len(index)}D"
+    print(get_custom(node).elements_per_thread)
+
+    index = next(iter(index.values()))
+    shape = [index.size]
+    element_type = IrType.parse(dtype.ir_type_asm())
+
+    index = index.start + IndexingContext.current().iota(index.size)
+    value = gen_sympy_index(add_emitter_subs(emitter), index)
+
+    if _is_integer_like_type(element_type):
+        value = arith_d.index_cast(element_type, value)
+    elif _is_float_type(element_type):
+        value = arith_d.index_cast(IntegerType.get_signless(64), value)
+        value = arith_d.sitofp(element_type, value)
+    else:
+        assert False, f"Unsupported dtype: f{element_type}"
+
+    emitter.bind_node_proxy(node, IRProxyValue(value))
 
 
 @handle_op(allocate)
