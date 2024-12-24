@@ -536,7 +536,7 @@ def handle_arange(emitter: WaveEmitter, node: fx.Node):
         value = arith_d.index_cast(int_vector_type, value)
         value = arith_d.sitofp(vector_type, value)
     else:
-        assert False, f"Unsupported dtype: f{element_type}"
+        assert False, f"Unsupported dtype: {element_type}"
 
     emitter.bind_node_proxy(node, IRProxyValue(value))
 
