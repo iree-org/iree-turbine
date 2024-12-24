@@ -263,7 +263,7 @@ def test_arange_indirect(shape, request):
         num_iterators=2,
         inputs={M: i, N: k},
         outputs={M: i, N: j},
-        dynamic_val_mappings={M: i, N: j},
+        dynamic_val_mappings={N: j},
     )
 
     constraints: list[tkw.Constraint] = [
