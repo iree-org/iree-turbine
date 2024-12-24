@@ -234,7 +234,7 @@ def test_arange(shape, request):
         run_config=config,
     ):
         test(b)
-        a = torch.arange(shape[1]).to(b.dtype)
+        a = to_default_device(torch.arange(shape[1]).to(b.dtype))
         assert_close(a, b)
 
 
