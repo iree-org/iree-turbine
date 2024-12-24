@@ -518,20 +518,23 @@ def handle_arange(emitter: WaveEmitter, node: fx.Node):
 
     index = get_custom(node).index
     assert len(index) == 1, f"Arange must be 1D, but got {len(index)}D"
-    print(get_custom(node).elements_per_thread)
 
     index = next(iter(index.values()))
-    shape = [index.size]
-    element_type = IrType.parse(dtype.ir_type_asm())
+    elements_per_thread = index.size
 
-    index = index.start + IndexingContext.current().iota(index.size)
+    shape = [elements_per_thread]
+    element_type = IrType.parse(dtype.ir_type_asm())
+    vector_type = VectorType.get(shape, element_type)
+
+    index = index.start + IndexingContext.current().iota(elements_per_thread)
     value = gen_sympy_index(add_emitter_subs(emitter), index)
 
     if _is_integer_like_type(element_type):
-        value = arith_d.index_cast(element_type, value)
+        value = arith_d.index_cast(vector_type, value)
     elif _is_float_type(element_type):
-        value = arith_d.index_cast(IntegerType.get_signless(64), value)
-        value = arith_d.sitofp(element_type, value)
+        int_vector_type = VectorType.get(shape, IntegerType.get_signless(64))
+        value = arith_d.index_cast(int_vector_type, value)
+        value = arith_d.sitofp(vector_type, value)
     else:
         assert False, f"Unsupported dtype: f{element_type}"
 
