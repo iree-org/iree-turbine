@@ -493,7 +493,7 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
     for output in outputs:
-        if isinstance(input, torch.Tensor):
+        if isinstance(output, torch.Tensor):
             push_tensor_to_arg_list(output)
         else:
             raise ValueError(f"Unsupported output type: {type(output)}")
