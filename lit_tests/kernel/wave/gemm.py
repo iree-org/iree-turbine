@@ -1235,3 +1235,173 @@ def test_gemm_and_reduce():
         # CHECK: %[[BCAST_SRC:.+]] = vector.extract %[[MAX_EXT]][0] : f32 from vector<1xf32>
         # CHECK: %[[BROADCAST:.+]] = vector.splat %19 : vector<4xf32>
         # CHECK: arith.divf %[[LOOP]]#1, %[[BROADCAST]] : vector<4xf32>
+
+
+# This test that our stack is able to handle VMMA layout with maximized width read in the K-dimension.
+# Things of significance to look out here is for:
+# 1. Reads from shared to register are in 8xf16 instead of 4xf16 (typical of native MMA layout).
+# 2. We use extract_strided_slice to break "coalesced loads" into 2 reads.
+# 3. We generate 2 MFMA that takes in each of the "broken apart" reads, and 1st MMA feed into 2nd MMA.
+# 4. The actual MMA uses the native MMA size the VMMA is based on (F16_32x32x8_F16 for this case).
+
+
+@run_test
+def test_gemm_with_maximized_shared_read_32x32x16():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_32x32x16_K8_F16,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm_with_maximized_shared_read_32x32x16(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        # This microkernel encodes the fact that if the reduction
+        # dimension were tiled, then we would need to materialize a loop.
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            # a_reg: tkw.Register[M, K, tkl.f16]
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            # b_reg: tkw.Register[N, K, tkl.f16]
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            # acc: tkw.Register[M, N, tkl.f32]
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        # repeat represents the results of the loop
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 128,
+            N: 128,
+            K: 64,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
+            BLOCK_K: 16,
+            LOAD_ELEMS_PER_THREAD: 8,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        a = torch.randn(128, 64, dtype=torch.float16)
+        b = torch.randn(128, 64, dtype=torch.float16)
+        c = torch.zeros(128, 128, dtype=torch.float32)
+        print(gemm_with_maximized_shared_read_32x32x16(a, b, c).module_op)
+
+        # CHECK-LABEL:    func.func @gemm_with_maximized_shared_read_32x32x16
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
+        # CHECK:            %[[ALLOC:.+]] = memref.alloc() : memref<64x20xf16, #gpu.address_space<workgroup>>
+        # CHECK:            %[[ALLOC_0:.+]] = memref.alloc() : memref<64x20xf16, #gpu.address_space<workgroup>>
+
+        # CHECK:            %[[LHS_SHARED_READ:.+]] = vector.load %[[ALLOC]][{{.+}}] : memref<64x20xf16, #gpu.address_space<workgroup>>, vector<8xf16>
+        # CHECK:            %[[RHS_SHARED_READ:.+]] = vector.load %[[ALLOC_0]][{{.+}}] : memref<64x20xf16, #gpu.address_space<workgroup>>, vector<8xf16>
+        # CHECK:            %[[LHS_SLICE_0:.+]] = vector.extract_strided_slice %[[LHS_SHARED_READ]] {offsets = [0], sizes = [4], strides = [1]} : vector<8xf16> to vector<4xf16>
+        # CHECK:            %[[RHS_SLICE_0:.+]] = vector.extract_strided_slice %[[RHS_SHARED_READ]] {offsets = [0], sizes = [4], strides = [1]} : vector<8xf16> to vector<4xf16>
+        # CHECK:            %[[MMA_SLICE_0:.+]] = amdgpu.mfma %[[LHS_SLICE_0]] * %[[RHS_SLICE_0]] + %{{..+}} {blocks = 1 : i32, k = 8 : i32, m = 32 : i32, n = 32 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<16xf32>
+
+        # CHECK:            %[[LHS_SLICE_1:.+]] = vector.extract_strided_slice %[[LHS_SHARED_READ]] {offsets = [4], sizes = [4], strides = [1]} : vector<8xf16> to vector<4xf16>
+        # CHECK:            %[[RHS_SLICE_1:.+]] = vector.extract_strided_slice %[[RHS_SHARED_READ]] {offsets = [4], sizes = [4], strides = [1]} : vector<8xf16> to vector<4xf16>
+        # CHECK:            %[[MMA_SLICE_1:.+]] = amdgpu.mfma %[[LHS_SLICE_1]] * %[[RHS_SLICE_1]] + %[[MMA_SLICE_0]] {blocks = 1 : i32, k = 8 : i32, m = 32 : i32, n = 32 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<16xf32>
+        # CHECK:            scf.yield %[[MMA_SLICE_1]] : vector<16xf32>
+
+
+# This test that our stack is able to handle VMMA layout with maximized width read in the K-dimension.
+# Things of significance to look out here is for:
+# 1. Reads from shared to register are in 8xf16 instead of 4xf16 (typical of native MMA layout).
+# 2. We use extract_strided_slice to break "coalesced loads" into 2 reads.
+# 3. We generate 2 MFMA that takes in each of the "broken apart" reads, and 1st MMA feed into 2nd MMA.
+# 4. The actual MMA uses the native MMA size the VMMA is based on (F16_16x16x16_F16 for this case).
+
+
+@run_test
+def test_gemm_with_maximized_shared_read_16x16x32():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x32_K8_F16,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm_with_maximized_shared_read_16x16x32(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        # This microkernel encodes the fact that if the reduction
+        # dimension were tiled, then we would need to materialize a loop.
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            # a_reg: tkw.Register[M, K, tkl.f16]
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            # b_reg: tkw.Register[N, K, tkl.f16]
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            # acc: tkw.Register[M, N, tkl.f32]
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        # repeat represents the results of the loop
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 64,
+            N: 64,
+            K: 128,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 32,
+            LOAD_ELEMS_PER_THREAD: 8,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        a = torch.randn(64, 128, dtype=torch.float16)
+        b = torch.randn(64, 128, dtype=torch.float16)
+        c = torch.zeros(64, 64, dtype=torch.float32)
+        print(gemm_with_maximized_shared_read_16x16x32(a, b, c).module_op)
+
+        # CHECK-LABEL:    func.func @gemm_with_maximized_shared_read_16x16x32
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
+        # CHECK:            %[[ALLOC:.+]] = memref.alloc() : memref<32x36xf16, #gpu.address_space<workgroup>>
+        # CHECK:            %[[ALLOC_0:.+]] = memref.alloc() : memref<32x36xf16, #gpu.address_space<workgroup>>
+
+        # CHECK:            %[[LHS_SHARED_READ:.+]] = vector.load %[[ALLOC]][{{.+}}] : memref<32x36xf16, #gpu.address_space<workgroup>>, vector<8xf16>
+        # CHECK:            %[[RHS_SHARED_READ:.+]] = vector.load %[[ALLOC_0]][{{.+}}] : memref<32x36xf16, #gpu.address_space<workgroup>>, vector<8xf16>
+        # CHECK:            %[[LHS_SLICE_0:.+]] = vector.extract_strided_slice %[[LHS_SHARED_READ]] {offsets = [0], sizes = [4], strides = [1]} : vector<8xf16> to vector<4xf16>
+        # CHECK:            %[[RHS_SLICE_0:.+]] = vector.extract_strided_slice %[[RHS_SHARED_READ]] {offsets = [0], sizes = [4], strides = [1]} : vector<8xf16> to vector<4xf16>
+        # CHECK:            %[[MMA_SLICE_0:.+]] = amdgpu.mfma %[[LHS_SLICE_0]] * %[[RHS_SLICE_0]] + %{{..+}} {blocks = 1 : i32, k = 16 : i32, m = 16 : i32, n = 16 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<4xf32>
+
+        # CHECK:            %[[LHS_SLICE_1:.+]] = vector.extract_strided_slice %[[LHS_SHARED_READ]] {offsets = [4], sizes = [4], strides = [1]} : vector<8xf16> to vector<4xf16>
+        # CHECK:            %[[RHS_SLICE_1:.+]] = vector.extract_strided_slice %[[RHS_SHARED_READ]] {offsets = [4], sizes = [4], strides = [1]} : vector<8xf16> to vector<4xf16>
+        # CHECK:            %[[MMA_SLICE_1:.+]] = amdgpu.mfma %[[LHS_SLICE_1]] * %[[RHS_SLICE_1]] + %[[MMA_SLICE_0]] {blocks = 1 : i32, k = 16 : i32, m = 16 : i32, n = 16 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<4xf32>
+        # CHECK:            scf.yield %[[MMA_SLICE_1]] : vector<4xf32>
