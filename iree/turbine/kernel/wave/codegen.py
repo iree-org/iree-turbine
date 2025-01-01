@@ -1161,6 +1161,7 @@ def handle_abs(source: Value) -> OpResult:
         raise ValidationError(f"Found unhandled operand type for abs: {element_type}")
     return abs
 
+
 @handle_unary_op(tanh)
 def handle_abs(source: Value) -> OpResult:
     element_type = get_type_or_element_type(source.type)
