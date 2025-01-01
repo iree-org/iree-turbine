@@ -125,8 +125,10 @@ def reciprocal(src: "Register") -> "Register":
 def abs(src: "Register") -> "Register":
     ...
 
+
 def tanh(src: "Register") -> "Register":
     ...
+
 
 def maximum(lhs: "Register", rhs: "Register") -> "Register":
     ...
