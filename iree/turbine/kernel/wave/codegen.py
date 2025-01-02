@@ -14,6 +14,8 @@ import torch.fx as fx
 import torch.utils._pytree as pytree
 from collections import namedtuple
 
+from .symbolic_constraints import SymbolicAlias
+
 from ..compiler.ir import (
     Attribute,
     DenseElementsAttr,
@@ -55,6 +57,7 @@ from ..ops.wave_ops import (
     read,
     reduction,
     exp2,
+    log2,
     reciprocal,
     abs,
     maximum,
@@ -221,6 +224,8 @@ def add_emitter_subs(
     return dynamics
 
 
+_emulate_ceildiv = True
+
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
 
 
@@ -338,7 +343,21 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
 
     def _ceiling(value):
         if isinstance(value, _Rational):
-            value = arith_d.ceildivsi(*_broadcast(value.numerator, value.denominator))
+            if _emulate_ceildiv:
+                # ceildivui(x, y) = x == 0 ? 0 : ((x - 1) / y) + 1
+                one = _get_const(1)
+                zero = _get_const(0)
+                lhs_minus_one = arith_d.subi(*_broadcast(value.numerator, one))
+                div = arith_d.divui(*_broadcast(lhs_minus_one, value.denominator))
+                result = arith_d.addi(*_broadcast(div, one))
+                cmp = arith_d.cmpi(
+                    arith_d.CmpIPredicate.eq, *_broadcast(value.numerator, zero)
+                )
+                value = arith_d.select(cmp, zero, result)
+            else:
+                value = arith_d.ceildivsi(
+                    *_broadcast(value.numerator, value.denominator)
+                )
 
         return value
 
@@ -491,7 +510,7 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
         shape, dtype, value = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
-    get_thread_shape = lambda index: max(x.size for x in index.values())
+    get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
     shape = [get_thread_shape(get_custom(node).index)]
     vector_shape = cast_py_literal(emitter, shape)
     element_type = IrType.parse(dtype.ir_type_asm())
@@ -1120,6 +1139,16 @@ def handle_exp2(source: Value) -> OpResult:
     return result
 
 
+@handle_unary_op(log2)
+def handle_log2(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        result = math_d.log2(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for exp2: {element_type}")
+    return result
+
+
 @handle_unary_op(reciprocal)
 def handle_reciprocal(source: Value) -> OpResult:
     element_type = get_type_or_element_type(source.type)
@@ -1351,6 +1380,8 @@ def handle_get_result(emitter: WaveEmitter, node: fx.Node):
 
 @handle_op(operator.getitem)
 def handle_getitem(emitter: WaveEmitter, node: fx.Node):
+    if not node.users:
+        return
     raise NotImplementedError("getitem: Currently only stub implementation")
 
 
