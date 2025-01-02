@@ -340,6 +340,7 @@ def push_rotating_registers(
     """
     new_rotating_registers: dict[fx.Node, deque[fx.Node]] = {}
     count = 0
+    iter_arg_count = len(arg_context.iter_args)
     for node, registers in rotating_registers.items():
         new_registers: deque[fx.Node] = deque()
         custom = get_custom(node)
@@ -354,6 +355,8 @@ def push_rotating_registers(
                 iter_arg = IterArg(f"rotating_reg_{count}").add_to_graph(graph)
                 iter_arg.type = get_custom(node).type
                 iter_arg.index = get_custom(node).index
+                iter_arg.iter_idx = iter_arg_count
+                iter_arg_count += 1
                 new_registers.append(iter_arg)
                 mapped_value = iter_arg
             else:
@@ -421,6 +424,7 @@ def construct_kernel(
             iter_arg = IterArg(node.name).add_to_graph(pipelined_reduction_graph)
             iter_arg.type = get_custom(node).type
             iter_arg.index = get_custom(node).index
+            iter_arg.iter_idx = get_custom(node).iter_idx
             arg_context.map_arg_all(node, iter_arg)
 
         # Push the rotating registers into the argument context.
@@ -516,16 +520,18 @@ def construct_epilogue(
     # uses in the original reduction, they will have uses in the pipelined
     # reduction outside the reduction and so need to be added in the correct order.
     iter_args = reduction.iter_args(reduction_subgraph)
+    last_get_result = existing_get_results[-1].fx_node
     for i in range(len(iter_args)):
         if i in existing_indices:
             continue
         with pipelined_reduction.graph.inserting_before(
-            existing_get_results[0].fx_node.next
+            existing_get_results[-1].fx_node.next
         ):
             result = GetResult(pipelined_reduction.fx_node, i).add_to_graph(
                 pipelined_reduction.graph, type=iter_args[i].type
             )
             existing_get_results.append(get_custom(result))
+            last_get_result = result
 
     existing_get_results = sorted(existing_get_results, key=lambda x: x.res_idx)
     existing_users = {x: x.users for x in existing_get_results}
@@ -533,9 +539,7 @@ def construct_epilogue(
     for iter_arg, get_result in zip(iter_args, existing_get_results):
         arg_context.map_arg_all(iter_arg, get_result.fx_node)
 
-    with pipelined_reduction.graph.inserting_before(
-        existing_get_results[0].fx_node.next
-    ):
+    with pipelined_reduction.graph.inserting_before(last_get_result.next):
         # Add get result nodes for the rotating registers and update the
         # argument map with them.
         rotating_registers_get_results = []
