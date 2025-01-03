@@ -28,13 +28,6 @@ WHEEL_DIR = REPO_ROOT / "wheelhouse"
 # indicates "fetch me a wheel that will install on this combo" vs "fetch me
 # a specific wheel".
 IREE_PLATFORM_ARGS = [
-    # Linux aarch64
-    # ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.9"],
-    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.10"],
-    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.11"],
-    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.12"],
-    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13"],
-    # ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13t"],
     # Linux x86_64
     # ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.9"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.10"],
@@ -42,6 +35,18 @@ IREE_PLATFORM_ARGS = [
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.12"],
     ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.13"],
     # ["--platform", "manylinux_2_28_x86_64", "--python-version", "3.13t"],
+]
+
+# Same as above, but experimental platforms. See the `experimental` setting in
+# https://github.com/iree-org/iree/blob/main/.github/workflows/build_package.yml.
+IREE_EXPERIMENTAL_PLATFORM_ARGS = [
+    # Linux aarch64
+    # ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.9"],
+    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.10"],
+    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.11"],
+    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.12"],
+    ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13"],
+    # ["--platform", "manylinux_2_28_aarch64", "--python-version", "3.13t"],
     # MacOS
     ["--platform", "macosx_13_0_universal2", "--python-version", "3.11"],
     ["--platform", "macosx_13_0_universal2", "--python-version", "3.12"],
@@ -86,32 +91,52 @@ def download_requirements(requirements_file, platforms=()):
     exec(args)
 
 
-def download_iree_binaries():
-    for platform_args in IREE_PLATFORM_ARGS:
-        print("Downloading for platform:", platform_args)
-        args = [
-            sys.executable,
-            "-m",
-            "pip",
-            "download",
-            "-d",
-            WHEEL_DIR,
-            "--no-deps",
-        ]
-        args.extend(platform_args)
-        args += [
-            # Uncomment to allow nightly releases (if not pinned in the file)
-            # "-f",
-            # "https://iree.dev/pip-release-links.html",
-            "-f",
-            WHEEL_DIR,
-            # Note: could also drop `-ci` here, if coordinating a release
-            # across projects and new stable versions of the IREE packages
-            # haven't yet been pushed.
-            "-r",
-            REPO_ROOT / "iree-requirements-ci.txt",
-        ]
-        exec(args)
+def _download_iree_binaries_for_platform_args(
+    platform_args_list, is_experimental, strict_download_checks
+):
+    for platform_args in platform_args_list:
+        try:
+            print("Downloading for platform:", platform_args)
+            args = [
+                sys.executable,
+                "-m",
+                "pip",
+                "download",
+                "-d",
+                WHEEL_DIR,
+                "--no-deps",
+            ]
+            args.extend(platform_args)
+            args += [
+                # Uncomment to allow nightly releases (if not pinned in the file)
+                # "-f",
+                # "https://iree.dev/pip-release-links.html",
+                "-f",
+                WHEEL_DIR,
+                # Note: could also drop `-ci` here, if coordinating a release
+                # across projects and new stable versions of the IREE packages
+                # haven't yet been pushed.
+                "-r",
+                REPO_ROOT / "iree-requirements-ci.txt",
+            ]
+            exec(args)
+        except:
+            if not is_experimental or strict_download_checks:
+                raise
+            print("Fetching for experimental platform failed, continuing")
+
+
+def download_iree_binaries(strict_download_checks):
+    _download_iree_binaries_for_platform_args(
+        IREE_PLATFORM_ARGS,
+        is_experimental=False,
+        strict_download_checks=strict_download_checks,
+    )
+    _download_iree_binaries_for_platform_args(
+        IREE_EXPERIMENTAL_PLATFORM_ARGS,
+        is_experimental=True,
+        strict_download_checks=strict_download_checks,
+    )
 
 
 def build_wheel(args, path):
@@ -137,7 +162,12 @@ def build_wheel(args, path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--no-download", help="Disable dep download", action="store_true"
+        "--no-download", help="Disable all downloads", action="store_true"
+    )
+    parser.add_argument(
+        "--strict-download-checks",
+        help="Require that all downloads succeed, even for experimental platforms",
+        action="store_true",
     )
     args = parser.parse_args()
 
@@ -145,7 +175,7 @@ def main():
 
     if not args.no_download:
         print("Prefetching all IREE binaries")
-        download_iree_binaries()
+        download_iree_binaries(args.strict_download_checks)
         print("Prefetching torch CPU")
         download_requirements(REPO_ROOT / "pytorch-cpu-requirements.txt")
         print("Downloading remaining requirements")

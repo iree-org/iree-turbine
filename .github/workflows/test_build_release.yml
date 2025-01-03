@@ -45,7 +45,7 @@ jobs:
       - name: Build Release Wheels
         run: |
           ./build_tools/compute_local_version.py -dev --write-json
-          ./build_tools/build_release.py --no-download
+          ./build_tools/build_release.py
 
       - name: Validate Release Build
         if: ${{ !cancelled() }}
