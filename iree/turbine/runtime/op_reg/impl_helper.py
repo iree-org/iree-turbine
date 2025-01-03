@@ -169,7 +169,7 @@ class JinjaTemplateLoader(TemplateLoader):
 def call_function(target_function: Operation, *operands: Value) -> Sequence[Value]:
     """Emits a util.call for a util.func target function operation."""
     target_symbol = FlatSymbolRefAttr.get(
-        StringAttr(target_function.attributes["sym_name"]).value_bytes
+        StringAttr(target_function.attributes["sym_name"]).value
     )
     ftype = FunctionType(TypeAttr(target_function.attributes["function_type"]).value)
     return Operation.create(
