@@ -38,6 +38,7 @@ from .utils import (
 )
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
+from .decompose_vmma_ops import decompose_vmma_ops
 from .barriers import add_shared_memory_barriers
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
@@ -346,6 +347,7 @@ class LaunchableWave(Launchable):
         remove_chained_getresult(graph)
 
         # Optimizations.
+        decompose_vmma_ops(graph, self.constraints)
         hoist_loop_invariant_ops(graph, self.constraints)
         minimize_global_loads(graph, self.constraints)
 
