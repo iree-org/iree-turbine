@@ -453,6 +453,10 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
                 res = arith_d.andi(*_broadcast(lhs, rhs))
+                for _ in range(len(term.args) - 2):
+                    operand = stack.pop()
+                    _enforce_non_rational(operand, term)
+                    res = arith_d.andi(*_broadcast(res, operand))
                 stack.append(res)
             case sympy.Max():
                 rhs = stack.pop()
@@ -470,6 +474,22 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
             case sympy.logic.boolalg.BooleanTrue():
                 res = arith_d.constant(IntegerType.get_signless(1), 1)
                 stack.append(res)
+            case sympy.Pow():
+                _, power = term.args
+                exponent = stack.pop()
+                base = stack.pop()
+                # Only support integer powers for now.
+                if not isinstance(power, sympy.Integer):
+                    raise CodegenError(f"Expected integer power, got {power}")
+                if power == 0:
+                    stack.append(_get_const(1))
+                    continue
+                for _ in range(sympy.Abs(power) - 1):
+                    base = arith_d.muli(base, base)
+                if power < 0:
+                    stack.append(_Rational(_get_const(1), base))
+                else:
+                    stack.append(base)
             case sympy.UnevaluatedExpr():
                 continue
             case _:
