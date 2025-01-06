@@ -76,8 +76,7 @@ jobs:
         run: |
           pip install --no-compile -r pytorch-rocm-requirements.txt
           export WAVE_RUN_E2E_TESTS=1
-          export WAVE_DISTRIBUTE_GPU_TESTS=8
-          WAVE_CACHE_ON=0 pytest -n 8 --capture=tee-sys -vv ./tests/kernel/wave/
+          WAVE_CACHE_ON=0 pytest -n 8 --capture=tee-sys -vv --gpu-distribute 8 ./tests/kernel/wave/
 
       - name: Run e2e tests on AMD GPU MI250
         if: "contains(matrix.os, 'mi250') && !cancelled()"

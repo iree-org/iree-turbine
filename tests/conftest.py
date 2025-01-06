@@ -18,6 +18,12 @@ def pytest_addoption(parser):
         default=None,
         help="save performance info into provided directory, filename based on current test name",
     )
+    parser.addoption(
+        "--gpu-distribute",
+        type=int,
+        default=0,
+        help="Distribute over N gpu devices when running with pytest-xdist",
+    )
 
 
 def pytest_configure(config):
@@ -29,11 +35,9 @@ def pytest_configure(config):
     )
 
 
-DISTRIBUTE_GPU_TESTS = os.environ.get("WAVE_DISTRIBUTE_GPU_TESTS", None)
-
-
 def _set_default_device(config):
-    if DISTRIBUTE_GPU_TESTS is None:
+    distribute = int(config.getoption("--gpu-distribute"))
+    if distribute < 1:
         return
 
     if not hasattr(config, "workerinput"):
@@ -43,7 +47,7 @@ def _set_default_device(config):
     if not worker_id.startswith("gw"):
         return
 
-    device_id = int(worker_id[2:]) % int(DISTRIBUTE_GPU_TESTS)
+    device_id = int(worker_id[2:]) % int(distribute)
 
     import iree.turbine.kernel.wave.utils as utils
 
