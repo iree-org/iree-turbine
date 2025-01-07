@@ -232,16 +232,16 @@ def remove_original_nodes(leaf_nodes: list[CustomOp]):
     """
     Remove the original nodes from the graph.
     """
-    stack = leaf_nodes
-    while stack:
-        node = stack.pop(0)
-        inputs, _ = get_inputs(node.fx_node, None)
+    queue = leaf_nodes
+    while queue:
+        custom = queue.pop(0)
+        if custom.fx_node._erased:
+            continue
+        inputs, _ = get_inputs(custom.fx_node, None)
         for input in inputs:
-            stack.append(get_custom(input))
-        if not node.users:
-            if node.fx_node._erased:
-                continue
-            node.graph.erase_node(node.fx_node)
+            queue.append(get_custom(input))
+        if not custom.users:
+            custom.graph.erase_node(custom.fx_node)
 
 
 def remove_unused_registers(trace: CapturedTrace):
