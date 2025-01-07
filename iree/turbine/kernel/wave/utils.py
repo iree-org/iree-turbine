@@ -1078,8 +1078,16 @@ def to_default_device(tensor: torch.Tensor) -> torch.Tensor:
     return tensor.to(get_default_device())
 
 
+def device_arange(*args, **kwargs):
+    return to_default_device(torch.arange(*args, **kwargs))
+
+
 def device_randn(*args, **kwargs):
     return to_default_device(torch.randn(*args, **kwargs))
+
+
+def device_randn_like(*args, **kwargs):
+    return to_default_device(torch.randn_like(*args, **kwargs))
 
 
 def device_randint(*args, **kwargs):

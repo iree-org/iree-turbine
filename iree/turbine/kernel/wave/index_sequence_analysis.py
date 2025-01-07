@@ -142,6 +142,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                     extract,
                     custom.memory,
                     mapping=custom.mapping,
+                    mapping_dynamic_vals=custom.mapping_dynamic_vals,
                     elements_per_thread=1,
                 ).add_to_graph(custom.graph)
                 write.index = {

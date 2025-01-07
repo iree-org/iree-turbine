@@ -125,9 +125,12 @@ def add_optimized_nodes(
         access_pattern: dict[IndexSymbol, IndexSequence] = custom.index
         for i in range(expected_number_of_loads):
             with custom.graph.inserting_before(custom.fx_node):
-                read = Read(memory, load_elems_per_thread, custom.mapping).add_to_graph(
-                    custom.graph
-                )
+                read = Read(
+                    memory,
+                    load_elems_per_thread,
+                    custom.mapping,
+                    custom.mapping_dynamic_vals,
+                ).add_to_graph(custom.graph)
                 global_offset = (
                     hardware_constraint.linearized_thread_id * load_elems_per_thread
                     + i * max_elements_per_load

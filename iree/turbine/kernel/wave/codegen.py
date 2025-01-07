@@ -8,7 +8,7 @@ import functools
 import operator
 import sympy
 import math
-from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
+from typing import Any, Callable, ClassVar, Optional, List, Sequence, Dict
 from dataclasses import dataclass
 import torch.fx as fx
 import torch.utils._pytree as pytree
@@ -848,6 +848,26 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
+def _shapes_are_compatible(
+    shape0: Sequence[IndexExpr],
+    shape1: Sequence[IndexExpr],
+    constraints: list[Constraint],
+) -> bool:
+    """
+    Shapes are compatible if they are either
+    a) identical, or
+    b) identical except for symbolic aliases.
+    """
+    if shape0 == shape1:
+        return True
+    alias_sources = {
+        alias.source for alias in constraints if isinstance(alias, SymbolicAlias)
+    }
+    fshape0 = [dim for dim in shape0 if dim not in alias_sources]
+    fshape1 = [dim for dim in shape1 if dim not in alias_sources]
+    return fshape0 == fshape1
+
+
 @handle_op(write)
 def handle_write(emitter: WaveEmitter, node: fx.Node):
     try:
@@ -883,8 +903,8 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         else:
             vector_d.maskedstore(kb_dest, start_indices, mask, insert_vector)
     else:
-        assert (
-            input_shape == mapping.input_shape
+        assert _shapes_are_compatible(
+            input_shape, mapping.input_shape, emitter.constraints
         ), "non-identity input mapping is not supported yet"
 
         dyn_vals = tuple(
