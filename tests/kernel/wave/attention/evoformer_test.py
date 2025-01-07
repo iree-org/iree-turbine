@@ -14,7 +14,6 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
-    get_default_arch,
     device_randn,
     device_zeros,
     device_randint,
@@ -24,22 +23,14 @@ from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.evoformer import get_evoformer_kernel
 from iree.turbine.kernel.lang import DataType
 import os
-
-require_e2e = pytest.mark.require_e2e
-require_cdna3 = pytest.mark.skipif(
-    "gfx94" not in get_default_arch(), reason="Default device is not CDNA3"
+from ..common.utils import (
+    require_e2e,
+    enable_scheduling_barriers,
+    dump_generated_mlir,
 )
-# Whether to dump the generated MLIR module.
-test_dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
-# Whether to use scheduling group barriers (needs LLVM fix).
-enable_scheduling_barriers = int(os.environ.get("WAVE_USE_SCHED_BARRIERS", 0))
+from ..common.shapes import get_test_shapes
 
-# Add test shapes for validation and performance testing.
-perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
-default_test_shapes = []
-# Order of shapes: (B, BN, K2, H, K1, M, N)
-default_test_shapes = [(1, 256, 256, 4, 32, 256, 32), (1, 512, 256, 8, 8, 256, 8)]
-default_test_shapes += [perf_test(x) for x in default_test_shapes]
+
 default_tile_sizes = [(1, 1, 32, 1, None, 64, 32)]
 
 
@@ -68,7 +59,7 @@ def attention_reference(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", default_test_shapes)
+@pytest.mark.parametrize("shape", get_test_shapes("evoformer"))
 @pytest.mark.parametrize("tile_sizes", default_tile_sizes)
 @pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize(
@@ -146,7 +137,7 @@ def testEvoformerAttentionForward(
         bias = bias.view([batch, 1, heads, q_seq_len, kv_seq_len])
         torch_ref = attention_reference(q, k, v, [mask_bias, bias], dk_sqrt)
 
-        if test_dump_generated_mlir:
+        if dump_generated_mlir:
             filename = f"wave_evoformer_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
