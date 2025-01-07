@@ -17,6 +17,12 @@ def pytest_addoption(parser):
         default=None,
         help="save performance info into provided directory, filename based on current test name",
     )
+    parser.addoption(
+        "--gpu-distribute",
+        type=int,
+        default=0,
+        help="Distribute over N gpu devices when running with pytest-xdist",
+    )
 
 
 def pytest_configure(config):
@@ -28,11 +34,31 @@ def pytest_configure(config):
     )
 
 
+def _set_default_device(config):
+    distribute = int(config.getoption("--gpu-distribute"))
+    if distribute < 1:
+        return
+
+    if not hasattr(config, "workerinput"):
+        return
+
+    worker_id = config.workerinput["workerid"]
+    if not worker_id.startswith("gw"):
+        return
+
+    device_id = int(worker_id[2:]) % int(distribute)
+
+    import iree.turbine.kernel.wave.utils as utils
+
+    utils.DEFAULT_GPU_DEVICE = device_id
+
+
 def _has_marker(item, marker):
     return next(item.iter_markers(marker), None) is not None
 
 
 def pytest_collection_modifyitems(config, items):
+    _set_default_device(config)
     run_perf = config.getoption("--runperf")
     for item in items:
         is_validate_only = _has_marker(item, "validate_only")
