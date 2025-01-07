@@ -30,7 +30,7 @@ from iree.turbine.kernel.wave.templates.decode_attention import (
 )
 import os
 import json
-from torch.testing import assert_close, assert_allclose
+from torch.testing import assert_close
 from enum import Enum
 
 
@@ -544,7 +544,7 @@ def testAttention(
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
 
-        assert_allclose(output, torch_ref)
+        assert_close(output, torch_ref)
 
 
 @require_e2e
@@ -745,10 +745,10 @@ def testAttentionBias(
                 f.write(mb.module_op.get_asm())
 
         if "gfx94" in config["target"]:
-            assert_allclose(output, torch_ref, atol=2e-3, rtol=5e-3)
+            assert_close(output, torch_ref, atol=2e-3, rtol=5e-3)
         else:
             # TODO: Determine why the error is higher on gfx90.
-            assert_allclose(output, torch_ref, atol=3e-3, rtol=8e-1)
+            assert_close(output, torch_ref, atol=3e-3, rtol=8e-1)
 
 
 @require_e2e
@@ -1001,4 +1001,4 @@ def testFlashDecoding(
         with open(filename, "w") as f:
             f.write(mb_sv.module_op.get_asm())
 
-    assert_allclose(output, torch_ref)
+    assert_close(output, torch_ref)
