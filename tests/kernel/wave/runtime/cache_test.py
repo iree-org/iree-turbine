@@ -203,7 +203,7 @@ def testSameConfig(request):
         # First run/call to kernel, this should compile from scratch.
         output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
-        assert_close(output, torch_ref)
+        assert_close(output.to(torch_ref.dtype), torch_ref)
         assert isinstance(
             mb, tk.compiler.builder.ModuleBuilder
         ), "Expected first call to not be cached."
@@ -216,7 +216,7 @@ def testSameConfig(request):
         cached_kernel = base_attention(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
-        assert_close(output, torch_ref)
+        assert_close(output.to(torch_ref.dtype), torch_ref)
         assert (
             len(cache_manager.session_cache) == 1
         ), "Expected to keep size of cache because we reuse same kernel."
@@ -327,7 +327,7 @@ def testDifferentDynamicSameBlock(request):
             v_shape_0.permute([0, 2, 1]),
             output_shape_0,
         )
-        assert_close(output_shape_0, torch_ref_shape_0)
+        assert_close(output_shape_0.to(torch_ref_shape_0.dtype), torch_ref_shape_0)
         assert isinstance(
             mb, tk.compiler.builder.ModuleBuilder
         ), "Expected first call to not be cached."
@@ -378,7 +378,7 @@ def testDifferentDynamicSameBlock(request):
             v_shape_1.permute([0, 2, 1]),
             output_shape_1,
         )
-        assert_close(output_shape_1, torch_ref_shape_1)
+        assert_close(output_shape_1.to(torch_ref_shape_1.dtype), torch_ref_shape_1)
         assert (
             len(cache_manager.session_cache) == 1
         ), "Expected to keep size of cache because we reuse same kernel."
@@ -475,7 +475,7 @@ def testSameSizeDifferentBlock(request):
         mb_config_0 = base_attention(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
-        assert_close(output, torch_ref)
+        assert_close(output.to(torch_ref.dtype), torch_ref)
         assert isinstance(
             mb_config_0, tk.compiler.builder.ModuleBuilder
         ), "Expected first call to not be cached."
@@ -499,7 +499,7 @@ def testSameSizeDifferentBlock(request):
         mb_config_1 = base_attention(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
-        assert_close(output, torch_ref)
+        assert_close(output.to(torch_ref.dtype), torch_ref)
         assert (
             len(cache_manager.session_cache) == 2
         ), "Expected cache size to increment, because we use different block size/config."
