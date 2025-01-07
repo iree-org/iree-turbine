@@ -39,8 +39,7 @@ from iree.turbine.kernel.wave.utils import (
 from iree.turbine.kernel.wave.constraints import Constraint, MMAType
 import os
 
-_run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
-require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
+require_e2e = pytest.mark.require_e2e
 
 require_cache = pytest.mark.skipif(
     not is_cache_enabled(), reason="filesystem cache is disabled"
