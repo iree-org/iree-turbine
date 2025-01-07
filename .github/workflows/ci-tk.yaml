@@ -67,23 +67,21 @@ jobs:
         if: "contains(matrix.os, 'amdgpu') && !cancelled()"
         run: |
           pip install --no-compile -r pytorch-rocm-requirements.txt
-          export WAVE_RUN_E2E_TESTS=1 && export WAVE_CACHE_DIR=$PWD/.wave
+          export export WAVE_CACHE_DIR=$PWD/.wave
           rm -rf ./.wave
-          WAVE_CACHE_ON=1 pytest --capture=tee-sys -vv ./tests/kernel/wave/runtime
+          WAVE_CACHE_ON=1 pytest --capture=tee-sys -vv --run-e2e ./tests/kernel/wave/runtime
 
       - name: Run e2e tests on AMD GPU MI300
         if: "contains(matrix.os, 'mi300') && !cancelled()"
         run: |
           pip install --no-compile -r pytorch-rocm-requirements.txt
-          export WAVE_RUN_E2E_TESTS=1
-          WAVE_CACHE_ON=0 pytest -n 8 --capture=tee-sys -vv --gpu-distribute 8 ./tests/kernel/wave/
+          WAVE_CACHE_ON=0 pytest -n 8 --capture=tee-sys -vv --run-e2e --gpu-distribute 8 ./tests/kernel/wave/
 
       - name: Run e2e tests on AMD GPU MI250
         if: "contains(matrix.os, 'mi250') && !cancelled()"
         run: |
           pip install --no-compile -r pytorch-rocm-requirements.txt
-          export WAVE_RUN_E2E_TESTS=1
-          WAVE_CACHE_ON=0 pytest -n 2 --capture=tee-sys -vv ./tests/kernel/wave/
+          WAVE_CACHE_ON=0 pytest -n 2 --capture=tee-sys --run-e2e -vv ./tests/kernel/wave/
 
       - name: Run LIT tests
         if: ${{ !cancelled() }}

@@ -29,8 +29,7 @@ import json
 from torch.testing import assert_close
 from enum import Enum
 
-_run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
-require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
+require_e2e = pytest.mark.require_e2e
 require_cdna2 = pytest.mark.skipif(
     "gfx90" not in get_default_arch(), reason="Default device is not CDNA2"
 )

@@ -25,8 +25,7 @@ from iree.turbine.kernel.wave.templates.evoformer import get_evoformer_kernel
 from iree.turbine.kernel.lang import DataType
 import os
 
-_run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
-require_e2e = pytest.mark.skipif(not _run_e2e, reason="e2e tests are disabled")
+require_e2e = pytest.mark.require_e2e
 require_cdna3 = pytest.mark.skipif(
     "gfx94" not in get_default_arch(), reason="Default device is not CDNA3"
 )
