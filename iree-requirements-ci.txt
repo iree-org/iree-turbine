@@ -10,5 +10,5 @@
 # Uncomment to skip versions from PyPI (so _only_ nightly versions).
 # --no-index
 
-iree-base-compiler==3.1.0rc20250103
-iree-base-runtime==3.1.0rc20250103
+iree-base-compiler==3.1.0rc20250107
+iree-base-runtime==3.1.0rc20250107
