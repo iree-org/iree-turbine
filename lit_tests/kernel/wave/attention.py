@@ -6,7 +6,6 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.symbolic_constraints import SymbolicAlias
 from iree.turbine.kernel.wave.utils import (
     run_test,
     get_mfma_load_elems_per_thread,
@@ -487,9 +486,17 @@ def test_attention_pipelined():
 def test_flash_decoding():
     shape = (8, 128, 128, 64, 256)
     mfma_variant = tkw.MMAType.F32_16x16x16_F16
-    phase_0, phase_1, hyperparams_0, hyperparams_1 = get_decode_attention_kernels(
-        shape, mfma_variant
-    )
+    use_dynamic_dims = True
+    (
+        phase_0,
+        phase_1,
+        hyperparams_0,
+        hyperparams_1,
+        dynamic_symbols_0,
+        dynamic_symbols_map_0,
+        dynamic_symbols_1,
+        dynamic_symbols_map_1,
+    ) = get_decode_attention_kernels(shape, mfma_variant, use_dynamic_dims)
 
     torch.manual_seed(0)
     q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
@@ -506,12 +513,14 @@ def test_flash_decoding():
         run_bench=False,
         schedule=False,
         use_scheduling_barriers=False,
+        dynamic_symbols=dynamic_symbols_0,
+        dynamic_symbols_map=dynamic_symbols_map_0,
     ):
         print(phase_0(q, k, v, logits, logits_max).module_op)
 
     # CHECK:            func.func @phase_0
     # CHECK-NOT:               {{.*}} = scf.for
-    # CHECK-COUNT-9:           {{.*}} = vector.load
+    # CHECK-COUNT-9:           {{.*}} = vector.maskedload
     # CHECK-COUNT-1:           vector.store
     # CHECK-COUNT-4:           {{.*}} = vector.load
     # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
@@ -524,7 +533,7 @@ def test_flash_decoding():
     # CHECK-COUNT-2:           {{.*}} = amdgpu.mfma
     # CHECK-COUNT-2:           {{.*}} = arith.divf
     # CHECK-COUNT-2:           {{.*}} = math.log2
-    # CHECK-COUNT-18:          vector.store
+    # CHECK-COUNT-18:          vector.maskedstore
 
     with tk.gen.TestLaunchContext(
         hyperparams_1,
@@ -533,12 +542,14 @@ def test_flash_decoding():
         run_bench=False,
         schedule=False,
         use_scheduling_barriers=False,
+        dynamic_symbols=dynamic_symbols_1,
+        dynamic_symbols_map=dynamic_symbols_map_1,
     ):
         print(phase_1(logits, logits_max, output).module_op)
 
     # CHECK:            func.func @phase_1
     # CHECK:               {{.*}} = scf.for
-    # CHECK-COUNT-2:           {{.*}} = vector.load
+    # CHECK-COUNT-2:           {{.*}} = vector.maskedload
     # CHECK-COUNT-1:           {{.*}} = arith.maximumf
     # CHECK-COUNT-1:           {{.*}} = arith.subf
     # CHECK-COUNT-1:           {{.*}} = math.exp2

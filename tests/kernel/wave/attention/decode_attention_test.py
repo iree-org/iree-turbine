@@ -32,11 +32,12 @@ from ..common.shapes import get_test_shapes
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("decode_attention"))
 @pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("dynamic_dims", [False])
+@pytest.mark.parametrize("dynamic_dims", [True, False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
         MMAType.F32_16x16x16_F16,
+        MMAType.F32_32x32x8_F16,
     ],
 )
 def testFlashDecoding(
@@ -48,9 +49,16 @@ def testFlashDecoding(
 ):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
-    phase_0, phase_1, hyperparams_0, hyperparams_1 = get_decode_attention_kernels(
-        shape, mfma_variant
-    )
+    (
+        phase_0,
+        phase_1,
+        hyperparams_0,
+        hyperparams_1,
+        dynamic_symbols_0,
+        dynamic_symbols_map_0,
+        dynamic_symbols_1,
+        dynamic_symbols_map_1,
+    ) = get_decode_attention_kernels(shape, mfma_variant, dynamic_dims)
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
     config = get_default_run_config()
@@ -65,7 +73,11 @@ def testFlashDecoding(
 
     torch.manual_seed(0)
     B, M, N, K1, K2 = shape
-    U = hyperparams_0[index_symbol("U")]
+    sym_U = index_symbol("U")
+    if sym_U in hyperparams_0:
+        U = hyperparams_0[sym_U]
+    else:
+        U = dynamic_symbols_map_0[sym_U]
     q = device_randn(B, M, K1, dtype=torch.float16)
     k = device_randn(B, K2, K1, dtype=torch.float16)
     v = device_randn(B, K2, N, dtype=torch.float16)
@@ -83,6 +95,8 @@ def testFlashDecoding(
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols_0,
+        dynamic_symbols_map=dynamic_symbols_map_0,
     ):
         # TODO: Add scaling of QK as part of kernel.
         mb_qk = phase_0(
@@ -101,6 +115,8 @@ def testFlashDecoding(
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols_1,
+        dynamic_symbols_map=dynamic_symbols_map_1,
     ):
         # TODO: Add variant of non-transposed V attention kernel.
         mb_sv = phase_1(phase_0_output, phase_0_output_max, output)
