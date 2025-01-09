@@ -276,7 +276,7 @@ def get_paged_decode_attention_kernels(
     dynamic_symbols_map_0 = {}
     dynamic_symbols_map_1 = {}
     if use_dynamic_dims:
-        dynamic_symbols_0 = [B, M, N, K2, U]
+        dynamic_symbols_0 = [M, N, K2, U]
         for symbol in dynamic_symbols_0:
             dynamic_symbols_map_0[symbol] = symbols_0[symbol]
             del symbols_0[symbol]
