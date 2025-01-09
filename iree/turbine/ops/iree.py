@@ -108,6 +108,31 @@ class transfer_to_logical_device(CustomOp):
         kb.yield_results(result)
 
 
+@CustomOp.register(library=IREE_LIBRARY)
+class barrier_on_logical_device(CustomOp):
+    signature = "barrier_on_logical_device(str moniker, Tensor tensor) -> Tensor"
+
+    def select(self, ksel: KernelSelection):
+        ksel.attr_str(0)
+        ta = ksel.arg_tensor(1)
+        spec = [i for i, s in enumerate(ta.t.shape) if isinstance(s, int)]
+
+        ta.specialize_dims(*spec)
+        ksel.return_tensor(ta.t).specialize_dims(*spec)
+
+    def eager_execute(self, device_moniker, tensor):
+        return tensor
+
+    def generate(self, ksel: KernelSelection, kb: KernelBuilder):
+        moniker = cast(AttrArg, ksel.arg_descs[0]).v
+        t = kb.arg_bindings[1]
+        dynamic_dims: list[Value] = []
+        _append_dynamic_dims(kb, dynamic_dims, t)
+        target = Attribute.parse(f'#hal.device.promise<@"__device_{moniker}">')
+        result = flow_d.TensorBarrierOp(t, dynamic_dims, target).result
+        kb.yield_results(result)
+
+
 ################################################################################
 # Emission utilities
 ################################################################################
