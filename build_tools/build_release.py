@@ -117,7 +117,7 @@ def _download_iree_binaries_for_platform_args(
                 # across projects and new stable versions of the IREE packages
                 # haven't yet been pushed.
                 "-r",
-                REPO_ROOT / "iree-requirements-ci.txt",
+                REPO_ROOT / "requirements-iree-pinned.txt",
             ]
             exec(args)
         except:

@@ -1,9 +1,6 @@
-# Requirements for CI jobs.
-#
-# Developer may want to install from iree-requirements.txt where we are more
-# forgiving on the exact version.
+# Pinned versions of IREE dependencies.
 
-# Uncomment to select a nightly version.
+# Allow downloading prerelease versions from nightly IREE releases.
 --find-links https://iree.dev/pip-release-links.html
 --pre
 

@@ -1,0 +1,11 @@
+# Unpinned versions of IREE dependencies.
+
+# Allow downloading prerelease versions from nightly IREE releases.
+--find-links https://iree.dev/pip-release-links.html
+--pre
+
+# Uncomment to skip versions from PyPI (so _only_ nightly versions).
+# --no-index
+
+iree-base-compiler
+iree-base-runtime
