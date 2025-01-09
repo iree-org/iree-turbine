@@ -247,7 +247,9 @@ def testPagedFlashDecoding(
         dynamic_symbols_map_0,
         dynamic_symbols_1,
         dynamic_symbols_map_1,
-    ) = get_paged_decode_attention_kernels(shape, mfma_variant, True)
+    ) = get_paged_decode_attention_kernels(
+        shape, num_blocks * block_size, mfma_variant, True
+    )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
     config = get_default_run_config()

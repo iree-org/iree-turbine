@@ -21,6 +21,7 @@ import math
 
 def get_paged_decode_attention_kernels(
     shape: tuple[int],
+    max_tokens: int,
     mfma_variant: MMAType,
     use_dynamic_dims: bool = False,
 ):
@@ -154,11 +155,14 @@ def get_paged_decode_attention_kernels(
         dynamic_val_mappings={B: j},
     )
 
+    k_layout = tkl.MemoryLayout(strides=[K2 * K1, K1, 1], shape=[max_tokens, K2, K1])
+    v_layout = tkl.MemoryLayout(strides=[N * K2, K2, 1], shape=[max_tokens, N, K2])
+
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
         q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16, k_layout],
+        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16, v_layout],
         request_indices: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.i32],
         block_table: tkl.Memory[B, K2, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[U, B, N, M, GLOBAL_ADDRESS_SPACE, tkl.f32],

@@ -570,6 +570,7 @@ def test_flash_decoding():
 @run_test
 def test_paged_flash_decoding():
     shape = (8, 128, 128, 64, 256)
+    max_tokens = 2048
     mfma_variant = tkw.MMAType.F32_16x16x16_F16
     use_dynamic_dims = True
     (
@@ -581,7 +582,9 @@ def test_paged_flash_decoding():
         dynamic_symbols_map_0,
         dynamic_symbols_1,
         dynamic_symbols_map_1,
-    ) = get_paged_decode_attention_kernels(shape, mfma_variant, use_dynamic_dims)
+    ) = get_paged_decode_attention_kernels(
+        shape, max_tokens, mfma_variant, use_dynamic_dims
+    )
 
     torch.manual_seed(0)
     q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
