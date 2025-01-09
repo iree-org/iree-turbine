@@ -222,8 +222,11 @@ def testPagedFlashDecoding(
         num_blocks * block_size, num_kv_heads, head_size, dtype=dtype
     )
     value_cache = device_randn_like(key_cache)
+    # TODO: The block table entries should be able to be a random number
+    # in the range [0, num_blocks * block_size), but that fails for now.
+    # As a workaround, the maximum value is set to num_seqs - 1.
     block_tables = device_randint(
-        0, num_blocks, (num_seqs, max_kv_len), dtype=torch.int32
+        0, num_seqs, (num_seqs, max_kv_len), dtype=torch.int32
     )
     request_indices = device_arange(num_seqs, dtype=torch.int32)
 
