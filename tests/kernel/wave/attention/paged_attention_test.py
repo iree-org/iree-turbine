@@ -236,7 +236,7 @@ def testPagedFlashDecoding(
     K1 = head_size
     K2 = max_kv_len
     M = num_query_heads
-    N = num_kv_heads
+    N = head_size
     shape = (B, M, N, K1, K2)
     (
         phase_0,
