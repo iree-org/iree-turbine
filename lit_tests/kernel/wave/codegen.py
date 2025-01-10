@@ -911,7 +911,6 @@ def test_reduction_and_elemwise():
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -998,7 +997,6 @@ def test_tiled_reduce_max():
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1095,7 +1093,6 @@ def test_multiple_reduction_iv():
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1196,7 +1193,6 @@ def test_reduce_propagate_broadcast():
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(

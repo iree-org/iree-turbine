@@ -773,7 +773,6 @@ def test_toy_online_softmax(shape):
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(

@@ -13,6 +13,7 @@ from iree.turbine.kernel.wave.utils import (
 )
 from iree.turbine.kernel.wave.templates.decode_attention import (
     get_decode_attention_kernels,
+    get_blocked_decode_attention_kernels,
 )
 import torch
 import sympy
@@ -523,6 +524,87 @@ def test_flash_decoding():
     # CHECK-COUNT-9:           {{.*}} = vector.maskedload
     # CHECK-COUNT-1:           vector.store
     # CHECK-COUNT-4:           {{.*}} = vector.load
+    # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-4:           {{.*}} = gpu.shuffle
+    # CHECK-COUNT-2:           {{.*}} = arith.subf
+    # CHECK-COUNT-2:           {{.*}} = math.exp2
+    # CHECK-COUNT-2:           {{.*}} = arith.subf
+    # CHECK-COUNT-2:           {{.*}} = math.exp2
+    # CHECK-COUNT-4:           {{.*}} = gpu.shuffle
+    # CHECK-COUNT-2:           {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-2:           {{.*}} = arith.divf
+    # CHECK-COUNT-2:           {{.*}} = math.log2
+    # CHECK-COUNT-18:          vector.maskedstore
+
+    with tk.gen.TestLaunchContext(
+        hyperparams_1,
+        canonicalize=True,
+        run=False,
+        run_bench=False,
+        schedule=False,
+        use_scheduling_barriers=False,
+        dynamic_symbols=dynamic_symbols_1,
+        dynamic_symbols_map=dynamic_symbols_map_1,
+    ):
+        print(phase_1(logits, logits_max, output).module_op)
+
+    # CHECK:            func.func @phase_1
+    # CHECK:               {{.*}} = scf.for
+    # CHECK-COUNT-2:           {{.*}} = vector.maskedload
+    # CHECK-COUNT-1:           {{.*}} = arith.maximumf
+    # CHECK-COUNT-1:           {{.*}} = arith.subf
+    # CHECK-COUNT-1:           {{.*}} = math.exp2
+    # CHECK-COUNT-1:           {{.*}} = arith.subf
+    # CHECK-COUNT-1:           {{.*}} = math.exp2
+    # CHECK-COUNT-1:           {{.*}} = arith.mulf
+    # CHECK-COUNT-1:           {{.*}} = arith.addf
+    # CHECK-COUNT-2:           {{.*}} = arith.mulf
+    # CHECK-COUNT-1:           {{.*}} = arith.addf
+    # CHECK-COUNT-1:      {{.*}} = arith.divf
+    # TODO: Remove vector.scatter when optimizing for performance
+    # CHECK-COUNT-1:      vector.scatter
+
+
+@run_test
+def test_blocked_flash_decoding():
+    shape = (8, 128, 128, 64, 256)
+    mfma_variant = tkw.MMAType.F32_16x16x16_F16
+    use_dynamic_dims = True
+    (
+        phase_0,
+        phase_1,
+        hyperparams_0,
+        hyperparams_1,
+        dynamic_symbols_0,
+        dynamic_symbols_map_0,
+        dynamic_symbols_1,
+        dynamic_symbols_map_1,
+    ) = get_blocked_decode_attention_kernels(shape, mfma_variant, use_dynamic_dims)
+
+    torch.manual_seed(0)
+    q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
+    k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
+    v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
+    logits = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+    logits_max = torch.zeros(shape[0], shape[1], dtype=torch.float32)
+    output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+
+    with tk.gen.TestLaunchContext(
+        hyperparams_0,
+        canonicalize=True,
+        run=False,
+        run_bench=False,
+        schedule=False,
+        use_scheduling_barriers=False,
+        dynamic_symbols=dynamic_symbols_0,
+        dynamic_symbols_map=dynamic_symbols_map_0,
+    ):
+        print(phase_0(q, k, v, logits, logits_max).module_op)
+
+    # CHECK:            func.func @phase_0
+    # CHECK-COUNT-8:           {{.*}} = vector.maskedload
+    # CHECK:               {{.*}} = scf.for
+    # CHECK-COUNT-1:           {{.*}} = vector.maskedload
     # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
     # CHECK-COUNT-4:           {{.*}} = gpu.shuffle
     # CHECK-COUNT-2:           {{.*}} = arith.subf
