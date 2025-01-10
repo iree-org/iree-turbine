@@ -31,7 +31,7 @@ jobs:
         os: [ubuntu-22.04, nodai-amdgpu-mi300-x86-64, nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
     env:
-      VENV_DIR: ${{ github.workspace }}/.venv
+      VENV_DIR: ${{ github.workspace }}/.turbine-venv
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
