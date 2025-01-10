@@ -89,6 +89,14 @@ def identify_optimizable_loads(
         custom = get_custom(read_node)
         if custom.memory in processed_memories:
             continue
+
+        # Bail out if we have dynamic values dependensies with elements_per_thread != 1
+        if any(
+            (getattr(get_custom(v), "elements_per_thread", None) != 1)
+            for v in custom.mapping_dynamic_vals
+        ):
+            continue
+
         processed_memories.add(custom.memory)
         materialized_shape = materialize_shape(
             constraint_tile_size, custom.type.symbolic_shape
@@ -125,9 +133,12 @@ def add_optimized_nodes(
         access_pattern: dict[IndexSymbol, IndexSequence] = custom.index
         for i in range(expected_number_of_loads):
             with custom.graph.inserting_before(custom.fx_node):
-                read = Read(memory, load_elems_per_thread, custom.mapping).add_to_graph(
-                    custom.graph
-                )
+                read = Read(
+                    memory,
+                    load_elems_per_thread,
+                    custom.mapping,
+                    custom.mapping_dynamic_vals,
+                ).add_to_graph(custom.graph)
                 global_offset = (
                     hardware_constraint.linearized_thread_id * load_elems_per_thread
                     + i * max_elements_per_load
