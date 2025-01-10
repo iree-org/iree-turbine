@@ -46,7 +46,7 @@ jobs:
         id: cache-pip
         with:
           path: ${{ env.PIP_CACHE_DIR }}
-          key: pip-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('*requirements.txt') }}
+          key: pip-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('*requirements*.txt') }}
 
       - name: Install pip deps
         run: |
