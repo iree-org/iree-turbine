@@ -108,12 +108,9 @@ def _download_iree_binaries_for_platform_args(
             ]
             args.extend(platform_args)
             args += [
-                # Uncomment to allow nightly releases (if not pinned in the file)
-                # "-f",
-                # "https://iree.dev/pip-release-links.html",
                 "-f",
                 WHEEL_DIR,
-                # Note: could also drop `-ci` here, if coordinating a release
+                # Note: could also switch to unpinned if coordinating a release
                 # across projects and new stable versions of the IREE packages
                 # haven't yet been pushed.
                 "-r",
