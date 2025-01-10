@@ -89,9 +89,7 @@ def decompose_vmma_ops(
     )
     for node in mma_nodes:
         mma_op = get_custom(node)
-        mma_type = mma_op.mma_type
-        if mma_type == None:
-            mma_type = hardware_constraint.mma_type
+        mma_type = mma_op.mma_type or hardware_constraint.mma_type
         # Only process VirtualMMAOps.
         if mma_type not in VMMA_TO_NATIVE_MAP:
             continue
@@ -105,12 +103,7 @@ def decompose_vmma_ops(
             )
         }
 
-        innermost_lhs_dim = mma_op.lhs.type.symbolic_shape[-1]
-        innermost_rhs_dim = mma_op.rhs.type.symbolic_shape[-1]
-        assert (
-            innermost_lhs_dim == innermost_rhs_dim
-        ), "Only support lhs and rhs have same innermost dim."
-        innermost_dim = innermost_lhs_dim
+        innermost_dim = mma_op.reduction_dim
 
         unrollKFactor = (
             virtual_vector_shapes[innermost_dim] // native_vector_shapes[innermost_dim]
@@ -128,7 +121,7 @@ def decompose_vmma_ops(
                     mma_op.graph
                 )
 
-            # Setting vector_shapes for num_paritions
+            # Setting vector_shapes for num_partitions
             slice_lhs.vector_shapes = native_vector_shapes
             slice_rhs.vector_shapes = native_vector_shapes
 
