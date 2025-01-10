@@ -1,2 +1,0 @@
-iree-base-compiler
-iree-base-runtime

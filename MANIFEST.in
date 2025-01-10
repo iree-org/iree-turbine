@@ -1,5 +1,0 @@
-include README.md
-include requirements.txt
-include pytorch-cpu-requirements.txt
-include version_info.json
-include iree/turbine/ops/templates/*.mlir

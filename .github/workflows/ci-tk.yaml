@@ -46,7 +46,7 @@ jobs:
         id: cache-pip
         with:
           path: ${{ env.PIP_CACHE_DIR }}
-          key: pip-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('*requirements.txt') }}
+          key: pip-${{ steps.setup_python.outputs.python-version }}-${{ hashFiles('*requirements*.txt') }}
 
       - name: Install pip deps
         run: |
@@ -55,7 +55,7 @@ jobs:
           # from non default locations first. Installing the PyTorch CPU
           # wheels saves multiple minutes and a lot of bandwidth on runner setup.
           pip install --no-compile -r pytorch-cpu-requirements.txt
-          pip install --no-cache-dir -r iree-requirements-ci.txt --upgrade
+          pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
           pip install -r requirements.txt -e .
 
       - name: Run unit tests
