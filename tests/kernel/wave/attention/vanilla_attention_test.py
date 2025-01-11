@@ -39,15 +39,17 @@ from ..common.shapes import get_test_shapes
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        MMAType.F32_16x16x16_F16,
-        MMAType.F32_32x32x8_F16,
+        (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+        (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
     ],
 )
 def testAttention(
     shape: tuple[int],
     enable_scheduling: bool,
     dynamic_dims: bool,
-    mfma_variant: MMAType,
+    mfma_variant: tuple[MMAType],
     request,
 ):
     run_bench = request.config.getoption("--runperf")
@@ -66,7 +68,8 @@ def testAttention(
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+    LOAD_ELEMS_PER_THREAD_QK = index_symbol("LOAD_ELEMS_PER_THREAD_QK")
+    LOAD_ELEMS_PER_THREAD_PV = index_symbol("LOAD_ELEMS_PER_THREAD_PV")
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
@@ -77,10 +80,10 @@ def testAttention(
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
 
-    if mfma_variant == MMAType.F32_16x16x16_F16:
+    if mfma_variant[1] == MMAType.F32_16x16x16_F16:
         Mvec = 16
         Nvec = 16
-    if mfma_variant == MMAType.F32_32x32x8_F16:
+    if mfma_variant[1] == MMAType.F32_32x32x8_F16:
         Mvec = 32
         Nvec = 32
 
@@ -88,7 +91,7 @@ def testAttention(
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(4, 1, 1),
-            mma_type=mfma_variant,
+            mma_type=mfma_variant[1],
             vector_shapes={B: 0, M: Mvec, N: Nvec},
         )
     ]
@@ -127,11 +130,11 @@ def testAttention(
             tkl.Register[B, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             # b_reg: tkw.Register[B, N, K, tkl.f16]
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             # acc: tkw.Register[B, N, M, tkl.f32]
-            inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
+            inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
@@ -139,7 +142,7 @@ def testAttention(
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
@@ -152,8 +155,9 @@ def testAttention(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
+        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
+        LOAD_ELEMS_PER_THREAD_PV: get_mfma_load_elems_per_thread(mfma_variant[1]),
+        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_B: 1,
         BLOCK_M: 128,
         BLOCK_N: 64,

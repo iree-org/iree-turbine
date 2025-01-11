@@ -46,6 +46,8 @@ class MMAType(Enum):
     # Intrinsics introduced in CDNA1
     F32_16x16x16_F16 = 0x1020
     F32_32x32x8_F16 = 0x1021
+    F32_16x16x32_K8_F16 = 0x1022
+    F32_32x32x16_K8_F16 = 0x1023
     I32_16x16x16_I8 = 0x10C0
     I32_32x32x8_I8 = 0x10C1
 
@@ -132,18 +134,111 @@ class HardwareConstraint(Constraint):
                 return (32, 32, 8)
             case (
                 MMAType.F32_16x16x32_F8
+                | MMAType.F32_16x16x32_K8_F16
                 | MMAType.F32_16x16x32_K4_F8
                 | MMAType.I32_16x16x32_I8
             ):
                 return (16, 16, 32)
             case (
                 MMAType.F32_32x32x16_F8
+                | MMAType.F32_32x32x16_K8_F16
                 | MMAType.F32_32x32x16_K4_F8
                 | MMAType.I32_32x32x16_I8
             ):
                 return (32, 32, 16)
             case _:
                 return ()
+
+    def mma_index_offset(self, mma_type: Optional[MMAType]):
+        lane = self.linearized_thread_id % self.threads_per_wave
+        if mma_type == None:
+            mma_type = self.mma_type
+        match mma_type:
+            # (M x K, N x K) -> M x N
+            case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
+                offset = [
+                    Piecewise(
+                        (lane % 16, ~MMA_ACC),
+                        (4 * floor(lane / 16), MMA_ACC),
+                    ),  # M
+                    lane % 16,  # N
+                    4 * floor(lane / 16),  # K
+                ]
+            case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
+                offset = [
+                    Piecewise(
+                        (lane % 32, ~MMA_ACC),
+                        (
+                            (8 * floor(GPR_NUM / 4) % 32)
+                            + 4 * floor(lane / 32)
+                            + (GPR_NUM % 4),
+                            MMA_ACC,
+                        ),
+                    ),  # M
+                    lane % 32,  # N
+                    4 * floor(lane / 32),  # K
+                ]
+            case (
+                MMAType.F32_16x16x32_F8
+                | MMAType.F32_16x16x32_K8_F16
+                | MMAType.F32_16x16x32_K4_F8
+                | MMAType.I32_16x16x32_I8
+            ):
+                offset = [
+                    Piecewise(
+                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
+                    ),  # M
+                    lane % 16,  # N
+                    8 * floor(lane / 16),  # K
+                ]
+                if mma_type == MMAType.F32_16x16x32_K4_F8:
+                    offset = [
+                        Piecewise(
+                            (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
+                        ),  # M
+                        lane % 16,  # N
+                        (16 * floor(GPR_NUM / 4))
+                        + 4 * floor(lane / 16)
+                        + (GPR_NUM % 4),  # K
+                    ]
+            case (
+                MMAType.F32_32x32x16_F8
+                | MMAType.F32_32x32x16_K8_F16
+                | MMAType.F32_32x32x16_K4_F8
+                | MMAType.I32_32x32x16_I8
+            ):
+                offset = [
+                    Piecewise(
+                        (lane % 32, ~MMA_ACC),
+                        (
+                            (8 * floor(GPR_NUM / 4) % 32)
+                            + 4 * floor(lane / 32)
+                            + (GPR_NUM % 4),
+                            MMA_ACC,
+                        ),
+                    ),  # M
+                    lane % 32,  # N
+                    8 * floor(lane / 32),  # K
+                ]
+                if mma_type == MMAType.F32_32x32x16_K4_F8:
+                    offset = [
+                        Piecewise(
+                            (lane % 32, ~MMA_ACC),
+                            (
+                                (8 * floor(GPR_NUM / 4) % 32)
+                                + 4 * floor(lane / 32)
+                                + (GPR_NUM % 4),
+                                MMA_ACC,
+                            ),
+                        ),  # M
+                        lane % 32,  # N
+                        (8 * floor(GPR_NUM / 4))
+                        + 4 * floor(lane / 32)
+                        + (GPR_NUM % 4),  # K
+                    ]
+            case _:
+                raise ValueError("Unsupported MMA type")
+        return offset
 
     @property
     def threads_per_block(self) -> tuple[int]:
@@ -197,17 +292,10 @@ class HardwareConstraint(Constraint):
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
+        offset = self.mma_index_offset(mma_type)
         match mma_type:
             # (M x K, N x K) -> M x N
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
-                offset = [
-                    Piecewise(
-                        (lane % 16, ~MMA_ACC),
-                        (4 * floor(lane / 16), MMA_ACC),
-                    ),  # M
-                    lane % 16,  # N
-                    4 * floor(lane / 16),  # K
-                ]
                 size = [
                     Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
                     1,  # N
@@ -219,19 +307,6 @@ class HardwareConstraint(Constraint):
                     1,  # K
                 ]
             case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
-                offset = [
-                    Piecewise(
-                        (lane % 32, ~MMA_ACC),
-                        (
-                            (8 * floor(GPR_NUM / 4) % 32)
-                            + 4 * floor(lane / 32)
-                            + (GPR_NUM % 4),
-                            MMA_ACC,
-                        ),
-                    ),  # M
-                    lane % 32,  # N
-                    4 * floor(lane / 32),  # K
-                ]
                 size = [
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
                     1,  # N
@@ -244,16 +319,10 @@ class HardwareConstraint(Constraint):
                 ]
             case (
                 MMAType.F32_16x16x32_F8
+                | MMAType.F32_16x16x32_K8_F16
                 | MMAType.F32_16x16x32_K4_F8
                 | MMAType.I32_16x16x32_I8
             ):
-                offset = [
-                    Piecewise(
-                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
-                    ),  # M
-                    lane % 16,  # N
-                    8 * floor(lane / 16),  # K
-                ]
                 size = [
                     Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
                     1,  # N
@@ -264,34 +333,12 @@ class HardwareConstraint(Constraint):
                     1,  # N
                     1,  # K
                 ]
-                if mma_type == MMAType.F32_16x16x32_K4_F8:
-                    offset = [
-                        Piecewise(
-                            (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
-                        ),  # M
-                        lane % 16,  # N
-                        (16 * floor(GPR_NUM / 4))
-                        + 4 * floor(lane / 16)
-                        + (GPR_NUM % 4),  # K
-                    ]
             case (
                 MMAType.F32_32x32x16_F8
+                | MMAType.F32_32x32x16_K8_F16
                 | MMAType.F32_32x32x16_K4_F8
                 | MMAType.I32_32x32x16_I8
             ):
-                offset = [
-                    Piecewise(
-                        (lane % 32, ~MMA_ACC),
-                        (
-                            (8 * floor(GPR_NUM / 4) % 32)
-                            + 4 * floor(lane / 32)
-                            + (GPR_NUM % 4),
-                            MMA_ACC,
-                        ),
-                    ),  # M
-                    lane % 32,  # N
-                    8 * floor(lane / 32),  # K
-                ]
                 size = [
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
                     1,  # N
@@ -302,22 +349,6 @@ class HardwareConstraint(Constraint):
                     1,  # N
                     1,  # K
                 ]
-                if mma_type == MMAType.F32_32x32x16_K4_F8:
-                    offset = [
-                        Piecewise(
-                            (lane % 32, ~MMA_ACC),
-                            (
-                                (8 * floor(GPR_NUM / 4) % 32)
-                                + 4 * floor(lane / 32)
-                                + (GPR_NUM % 4),
-                                MMA_ACC,
-                            ),
-                        ),  # M
-                        lane % 32,  # N
-                        (8 * floor(GPR_NUM / 4))
-                        + 4 * floor(lane / 32)
-                        + (GPR_NUM % 4),  # K
-                    ]
             case _:
                 raise ValueError("Unsupported MMA type")
         assert isinstance(
