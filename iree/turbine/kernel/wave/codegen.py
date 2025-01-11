@@ -49,30 +49,31 @@ from iree.turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_t
 # TK infrastructure imports.
 from iree.turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import (
-    write,
-    broadcast,
-    register,
-    mma,
-    shuffle,
-    read,
-    reduction,
-    exp2,
-    log2,
-    reciprocal,
+    CustomOp,
     abs,
-    maximum,
-    get_custom,
-    get_result,
     allocate,
-    shared_memory_barrier,
+    broadcast,
+    cast,
+    exp2,
     extract,
     extract_slice,
-    CustomOp,
+    get_custom,
+    get_result,
+    log2,
+    maximum,
+    mma,
+    permute,
+    read,
+    reciprocal,
+    reduction,
+    register,
+    reshape,
     scheduling_barrier,
     scheduling_group_barrier,
-    cast,
-    permute,
-    reshape,
+    set_symbol,
+    shared_memory_barrier,
+    shuffle,
+    write,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
@@ -905,6 +906,21 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             vector_d.maskedstore(kb_dest, start_indices, mask, insert_vector)
         else:
             vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
+
+
+@handle_op(set_symbol)
+def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
+    try:
+        symbol, register = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    register = cast_vector(emitter, register, element_type=IndexType.get())
+    assert (
+        register.type.rank == 1
+    ), f"Only rank 1 vectors are supported: got {register.type}"
+    register = vector_d.extract(register, static_position=[0], dynamic_position=[])
+    emitter.dynamic_dims[symbol] = register
 
 
 ###############################################################################

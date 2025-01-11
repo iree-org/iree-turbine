@@ -98,6 +98,10 @@ def write(
     ...
 
 
+def set_symbol(symbol: IndexExpr, value: "Register"):
+    ...
+
+
 def exp2(src: "Register") -> "Register":
     ...
 
@@ -1378,6 +1382,25 @@ class Write(CustomOp):
             elements_per_thread=self.elements_per_thread,
             is_read=False,
         )
+
+
+@define_op("set_symbol")
+@dataclass
+class SetSymbol(CustomOp):
+    symbol: IndexExpr
+    register_: fx.Proxy
+
+    @property
+    def type(self) -> "Register":
+        return get_custom(self.register_).type
+
+    @property
+    def index(self) -> Optional[dict[IndexSymbol, IndexSequence]]:
+        return get_custom(self.register_).index
+
+    @index.setter
+    def index(self, value: dict[IndexSymbol, IndexSequence]):
+        pass  # noop
 
 
 @define_py_op(operator.getitem)
