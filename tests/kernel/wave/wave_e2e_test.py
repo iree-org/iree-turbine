@@ -537,7 +537,7 @@ def test_set_symbol(shape, request):
     # TODO: Only ELEMS_PER_THREAD == 1
     # BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
     BLOCK_N = wave_size
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -557,7 +557,6 @@ def test_set_symbol(shape, request):
         num_iterators=2,
         inputs={S: S, N: j},
         outputs={S: i, N: j},
-        dynamic_val_mappings={M: i, N: j},
     )
 
     dynamic_symbols = []
