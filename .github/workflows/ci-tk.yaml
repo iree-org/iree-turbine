@@ -47,7 +47,7 @@ jobs:
           python -m venv ${VENV_DIR}
           source ${VENV_DIR}/bin/activate
           env
-          echo PATH=$PATH >> $GITHUB_ENV
+          echo "${VENV_DIR}/bin" >> $GITHUB_PATH
 
       - name: Install pip deps
         run: |
