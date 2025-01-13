@@ -89,6 +89,11 @@ def identify_optimizable_loads(
         custom = get_custom(read_node)
         if custom.memory in processed_memories:
             continue
+
+        # TODO: We need to properly update index/elements_per_thread on dependent reads.
+        if len(custom.mapping_dynamic_vals) > 0:
+            continue
+
         processed_memories.add(custom.memory)
         materialized_shape = materialize_shape(
             constraint_tile_size, custom.type.symbolic_shape
