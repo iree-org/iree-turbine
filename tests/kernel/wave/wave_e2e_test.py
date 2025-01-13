@@ -533,7 +533,10 @@ def test_set_symbol(shape, request):
     wave_size = 64
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
-    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+
+    # TODO: Only ELEMS_PER_THREAD == 1
+    # BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+    BLOCK_N = wave_size
     ELEMS_PER_THREAD = BLOCK_N / wave_size
 
     constraints: list[tkw.Constraint] = [
@@ -567,9 +570,9 @@ def test_set_symbol(shape, request):
     def test(
         a: tkl.Memory[S, N, ADDRESS_SPACE, tkl.f16],
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
-        b: tkl.Memory[S, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=1)
+        offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
         tkw.set_symbol(S, offset)
         res = tkw.read(
             a,
