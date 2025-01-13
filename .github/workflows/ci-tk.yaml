@@ -43,15 +43,12 @@ jobs:
 
       - name: Create Python venv
         run: |
-          env
           python -m venv ${VENV_DIR}
           source ${VENV_DIR}/bin/activate
-          env
-          echo "${VENV_DIR}/bin" >> $GITHUB_PATH
+          echo "$VENV_DIR/bin" >> $GITHUB_PATH
 
       - name: Install pip deps
         run: |
-          env
           python -m pip install --no-compile --upgrade pip
           # Note: We install in three steps in order to satisfy requirements
           # from non default locations first. Installing the PyTorch CPU
