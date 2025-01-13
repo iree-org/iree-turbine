@@ -540,7 +540,7 @@ def test_set_symbol(shape, request):
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+            vector_shapes={M: BLOCK_M, N: BLOCK_N, S: BLOCK_M},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -552,8 +552,8 @@ def test_set_symbol(shape, request):
     j = tkw.IndexMapping.iterator(1)
     mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={M: S, N: j},
-        outputs={M: i, N: j},
+        inputs={S: S, N: j},
+        outputs={S: i, N: j},
         dynamic_val_mappings={M: i, N: j},
     )
 
@@ -565,11 +565,11 @@ def test_set_symbol(shape, request):
 
     @tkw.wave(constraints)
     def test(
-        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[S, N, ADDRESS_SPACE, tkl.f16],
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
-        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[S, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
+        offset = tkw.read(off, elements_per_thread=1)
         tkw.set_symbol(S, offset)
         res = tkw.read(
             a,

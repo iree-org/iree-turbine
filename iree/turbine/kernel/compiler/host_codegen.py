@@ -35,13 +35,12 @@ def memref_to_tensor(memrefs: list[IrType]):
 
 
 def get_dynamic_dims(bindings: list[BindingDesc], dynamic_symbols: list[IndexSymbol]):
-    return dynamic_symbols
-    # dynamic_dims: list[IndexSymbol] = []
-    # for b in bindings:
-    #     for dim in b.kernel_buffer_type.symbolic_shape:
-    #         if dim in dynamic_symbols:
-    #             dynamic_dims.append(dim)
-    # return dynamic_dims
+    dynamic_dims: list[IndexSymbol] = []
+    for b in bindings:
+        for dim in b.kernel_buffer_type.symbolic_shape:
+            if dim in dynamic_symbols:
+                dynamic_dims.append(dim)
+    return dynamic_dims
 
 
 def isolated_test_call(

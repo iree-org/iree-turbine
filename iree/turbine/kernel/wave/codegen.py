@@ -917,8 +917,8 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 
     register = cast_vector(emitter, register, element_type=IndexType.get())
     assert (
-        register.type.rank == 1
-    ), f"Only rank 1 vectors are supported: got {register.type}"
+        register.type.rank == 1 and register.type.shape[0] == 1
+    ), f"Only size 1 vectors are supported: got {register.type}"
     register = vector_d.extract(register, static_position=[0], dynamic_position=[])
     emitter.dynamic_dims[symbol] = register
 
