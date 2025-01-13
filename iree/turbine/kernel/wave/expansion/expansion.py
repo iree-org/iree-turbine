@@ -21,6 +21,9 @@ from ...ops.wave_ops import (
     Reshape,
     GetResult,
     MMA,
+    SetSymbol,
+    ApplyExpr,
+    Broadcast,
 )
 from ..._support.indexing import IndexingContext, IndexSymbol
 import itertools
@@ -453,7 +456,7 @@ def populate_inputs(
                         mma_metadata.last_mma_node = True
                     new_nodes_to_expand.append((arg, mma_metadata))
                 continue
-            case Allocate():
+            case Allocate() | SetSymbol() | ApplyExpr():
                 alloc_metadata = deepcopy(metadata)
                 alloc_metadata.do_not_expand = True
                 new_nodes_to_expand.append((arg, alloc_metadata))
@@ -462,6 +465,7 @@ def populate_inputs(
         new_nodes_to_expand.append((arg, metadata))
 
     nodes_to_expand.extend(new_nodes_to_expand)
+
     return nodes_to_expand
 
 
@@ -519,7 +523,9 @@ def expand_node(
     )
 
     # Check if the node has already been expanded, if so return early.
-    key = ExpansionInfo(node, get_indexed_dims(expanded_dims, node))
+    indexed_dims = get_indexed_dims(expanded_dims, node)
+
+    key = ExpansionInfo(node, indexed_dims)
     if key in expansion_context:
         update_users(node, expansion_context[key], metadata, expansion_context)
         return nodes_to_expand
@@ -614,7 +620,33 @@ def fixup_mma_nodes(trace: CapturedTrace, expansion_context: ExpansionContext):
         first.replace_all_uses_with_except(second, [exclude])
 
 
-def fixup_reduction_nodes(trace: CapturedTrace, expansion_context: ExpansionContext):
+def get_mma_indexed_dims(
+    mma: MMA,
+    original_indexed_dims: tuple[tuple[IndexSymbol, int]],
+    expansion_context: ExpansionContext,
+):
+    dim = mma.reduction_dim
+    indexed_dims = None
+    max_reduction_dim = -1
+    original_indexed_dims_dict = dict(original_indexed_dims)
+    for key in expansion_context.expansion_context.keys():
+        indexed_dims_dict = dict(key.indexed_dims)
+        if any(
+            dim not in indexed_dims_dict
+            or indexed_dims_dict[dim] != original_indexed_dims_dict[dim]
+            for dim in original_indexed_dims_dict
+        ):
+            continue
+        if key.node == mma and indexed_dims_dict[dim] > max_reduction_dim:
+            indexed_dims = key.indexed_dims
+            max_reduction_dim = indexed_dims_dict[dim]
+    return indexed_dims
+
+
+def fixup_reduction_nodes(
+    trace: CapturedTrace,
+    expansion_context: ExpansionContext,
+):
     reduction_context = expansion_context.reduction_context
     for reduction in trace.walk(lambda x: isinstance(get_custom(x), Reduction)):
         reduction = get_custom(reduction)
@@ -629,6 +661,12 @@ def fixup_reduction_nodes(trace: CapturedTrace, expansion_context: ExpansionCont
         sorted_keys = dict(sorted(reduction_info.outputs.items(), key=lambda x: x[0]))
         new_outputs = []
         for key in sorted_keys.values():
+            if key not in expansion_context and isinstance(key.node, MMA):
+                key = ExpansionInfo(
+                    key.node,
+                    get_mma_indexed_dims(key.node, key.indexed_dims, expansion_context),
+                )
+                assert key in expansion_context, f"Key not found: {key}"
             new_outputs.append(expansion_context[key].fx_node)
         output.update_arg("return_vals", new_outputs)
 

@@ -392,6 +392,8 @@ class LaunchableWave(Launchable):
         for constraint in self.workgroup_constraints:
             if constraint.dim in aliases:
                 continue
+            if not constraint.primary:
+                continue
             dim = (
                 constraint.workgroup_dim
                 if constraint.workgroup_dim < max_workgroup_dim

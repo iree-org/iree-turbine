@@ -354,6 +354,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 cmp = arith_d.cmpi(
                     arith_d.CmpIPredicate.eq, *_broadcast(value.numerator, zero)
                 )
+                zero, result = _broadcast(zero, result)
                 value = arith_d.select(cmp, zero, result)
             else:
                 value = arith_d.ceildivsi(
@@ -464,10 +465,22 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
-                if _is_integer_like_type(rhs.type):
+                type = get_type_or_element_type(rhs.type)
+                if _is_integer_like_type(type):
                     res = arith_d.maxsi(*_broadcast(lhs, rhs))
                 else:
                     res = arith_d.maximumf(*_broadcast(lhs, rhs))
+                stack.append(res)
+            case sympy.Min():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                _enforce_non_rational(rhs, term)
+                _enforce_non_rational(lhs, term)
+                type = get_type_or_element_type(rhs.type)
+                if _is_integer_like_type(type):
+                    res = arith_d.minsi(*_broadcast(lhs, rhs))
+                else:
+                    res = arith_d.minimumf(*_broadcast(lhs, rhs))
                 stack.append(res)
             case sympy.logic.boolalg.BooleanFalse():
                 res = arith_d.constant(IntegerType.get_signless(1), 0)

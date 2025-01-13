@@ -23,6 +23,8 @@ from ...ops.wave_ops import (
     Write,
     Reshape,
     NewRegister,
+    ReduceOp,
+    MMA,
 )
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
 import itertools
@@ -45,7 +47,7 @@ class ExpansionMetadata:
 
 
 def get_dim_scaling(
-    constraints: Sequence[Constraint], node: fx.Node
+    constraints: Sequence[Constraint], node: CustomOp
 ) -> dict[IndexSymbol, int]:
     """Get the number of expansions for the dimensions based on the constraints for a specific node."""
     dim_scaling: dict[IndexSymbol, int] = {}
@@ -91,6 +93,25 @@ def get_dim_scaling(
                     f"tile_size={tile_size}, wave_count={wave_count}, vector_size={vector_size}"
                 )
             dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
+
+    # Also include dimensions that have no constraints on them and are known.
+    idxc = IndexingContext.current()
+    is_static_dim = lambda dim: dim in idxc.subs
+    is_non_batch = lambda dim: node.vector_shapes[dim] > 0
+    not_computed = lambda dim: dim not in dim_scaling
+
+    for dim in node.indexing_dims:
+        if not_computed(dim) and is_static_dim(dim) and is_non_batch(dim):
+            dim_scaling[dim] = idxc.get_static_value(dim) // node.vector_shapes[dim]
+
+    # For reduce ops, also include the reduction dimension.
+    if isinstance(node, ReduceOp):
+        reduction_dim = node.reduction_dim
+        if not_computed(reduction_dim) and is_static_dim(reduction_dim):
+            dim_scaling[reduction_dim] = (
+                idxc.get_static_value(reduction_dim)
+                // node.vector_shapes[reduction_dim]
+            )
 
     return dim_scaling
 
