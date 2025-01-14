@@ -1395,12 +1395,8 @@ class SetSymbol(CustomOp):
         return get_custom(self.register_).type
 
     @property
-    def index(self) -> Optional[dict[IndexSymbol, IndexSequence]]:
-        return get_custom(self.register_).index
-
-    @index.setter
-    def index(self, value: dict[IndexSymbol, IndexSequence]):
-        pass  # noop
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.register_).indexing_dims
 
 
 @define_py_op(operator.getitem)
