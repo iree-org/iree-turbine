@@ -98,7 +98,7 @@ def write(
     ...
 
 
-def apply_expr(value: "Register", expr: IndexExpr) -> "Register":
+def apply_expr(value: "Register", expr: Callable) -> "Register":
     ...
 
 
@@ -1392,7 +1392,7 @@ class Write(CustomOp):
 @dataclass
 class AppplyExpr(CustomOp):
     register_: fx.Proxy
-    expr: IndexExpr
+    expr: Callable
 
     @property
     def type(self) -> "Register":
