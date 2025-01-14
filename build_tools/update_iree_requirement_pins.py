@@ -103,11 +103,20 @@ def main():
     print(f"  iree-base-runtime=={latest_runtime_version}")
 
     # Write to GitHub Actions environment variables for future steps to use if they want.
-    with open(os.environ["GITHUB_ENV"], "a") as fh:
-        print(f"CURRENT_IREE_BASE_COMPILER_VERSION={current_compiler_version}", file=fh)
-        print(f"CURRENT_IREE_BASE_RUNTIME_VERSION={current_runtime_version}", file=fh)
-        print(f"LATEST_IREE_BASE_COMPILER_VERSION={latest_compiler_version}", file=fh)
-        print(f"LATEST_IREE_BASE_RUNTIME_VERSION={latest_runtime_version}", file=fh)
+    github_env = os.getenv("GITHUB_ENV")
+    if github_env:
+        with open(github_env, "a") as fh:
+            print(
+                f"CURRENT_IREE_BASE_COMPILER_VERSION={current_compiler_version}",
+                file=fh,
+            )
+            print(
+                f"CURRENT_IREE_BASE_RUNTIME_VERSION={current_runtime_version}", file=fh
+            )
+            print(
+                f"LATEST_IREE_BASE_COMPILER_VERSION={latest_compiler_version}", file=fh
+            )
+            print(f"LATEST_IREE_BASE_RUNTIME_VERSION={latest_runtime_version}", file=fh)
 
     if (
         current_compiler_version == latest_compiler_version
