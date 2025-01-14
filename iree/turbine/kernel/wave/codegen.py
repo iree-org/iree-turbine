@@ -920,16 +920,10 @@ def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
     expr = expr(APPLY_EXPR_ARG)
 
     register = cast_vector(emitter, register, element_type=IndexType.get())
-    src_type = register.type
-    assert (
-        src_type.rank == 1 and src_type.shape[0] == 1
-    ), f"Only size 1 vectors are supported: got {register.type}"
-    register = vector_d.extract(register, static_position=[0], dynamic_position=[])
 
     subs = add_emitter_subs(emitter)
     subs[APPLY_EXPR_ARG] = register
     result = gen_sympy_index(subs, expr)
-    result = vector_d.splat(src_type, result)
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
