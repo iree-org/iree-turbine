@@ -55,9 +55,9 @@ jobs:
           # Note: We install in three steps in order to satisfy requirements
           # from non default locations first. Installing the PyTorch CPU
           # wheels saves multiple minutes and a lot of bandwidth on runner setup.
-          pip install -vvv --no-compile -r pytorch-cpu-requirements.txt
-          pip install -vvv --no-cache-dir -r requirements-iree-pinned.txt --upgrade
-          pip install -vvv -r requirements.txt -e .
+          pip install --no-compile -r pytorch-cpu-requirements.txt
+          pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
+          pip install -r requirements.txt -e .
 
       - name: Install GPU pip deps
         if: "contains(matrix.os, 'amdgpu') && !cancelled()"
@@ -66,9 +66,9 @@ jobs:
           # Note: We install in three steps in order to satisfy requirements
           # from non default locations first. Installing the PyTorch CPU
           # wheels saves multiple minutes and a lot of bandwidth on runner setup.
-          pip install -vvv --no-compile -r pytorch-rocm-requirements.txt
-          pip install -vvv --no-cache-dir -r requirements-iree-pinned.txt --upgrade
-          pip install -vvv -r requirements.txt -e .
+          pip install --no-compile -r pytorch-rocm-requirements.txt
+          pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
+          pip install -r requirements.txt -e .
 
       - name: Run unit tests
         if: ${{ !cancelled() }}
