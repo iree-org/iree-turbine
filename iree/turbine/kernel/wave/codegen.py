@@ -73,6 +73,7 @@ from ..ops.wave_ops import (
     cast,
     permute,
     reshape,
+    round_even,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
@@ -1195,6 +1196,16 @@ def handle_abs(source: Value) -> OpResult:
     else:
         raise ValidationError(f"Found unhandled operand type for abs: {element_type}")
     return abs
+
+
+@handle_unary_op(round_even)
+def handle_round_even(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        round_even = math_d.roundeven(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for abs: {element_type}")
+    return round_even
 
 
 ###############################################################################
