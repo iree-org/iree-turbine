@@ -61,35 +61,42 @@ def get_dim_scaling(
         raise ValueError("Exactly one hardware constraint must be provided")
 
     idxc = IndexingContext.current()
-    for constraint in constraints:
-        if isinstance(constraint, WorkgroupConstraint) or isinstance(
-            constraint, TilingConstraint
+
+    filtered_constraints = [
+        c for c in constraints if isinstance(c, (WorkgroupConstraint, TilingConstraint))
+    ]
+    for constraint in filtered_constraints:
+        hw_cons = hardware_constraints[0]
+        tile_size = idxc.get_static_value(constraint.tile_size)
+        if constraint.dim not in node.vector_shapes:
+            continue
+        vector_size = node.vector_shapes[constraint.dim]
+
+        # No dim scaling for dims with 0 vector size.
+        if vector_size == 0:
+            continue
+
+        wave_count = 1
+        if isinstance(constraint, WorkgroupConstraint):
+            wave_count = hw_cons.waves_per_block[constraint.workgroup_dim]
+        if tile_size is None or wave_count is None or vector_size is None:
+            raise ValueError(
+                "Tile size, wave count and vector size must be statically known"
+            )
+        if tile_size % wave_count != 0 or (tile_size / wave_count) % vector_size != 0:
+            raise ValueError(
+                "Tile size must be divisible by wave count and vector size"
+            )
+
+        # For now we assume that there will be only one workgroup and tiling
+        # constraint on a given dimension. In this case, if there a dim_scaling
+        # is being overwritten by the workgroup constraint, we skip that and
+        # keep the tiling constraint dim_scaling.
+        if constraint.dim in dim_scaling and isinstance(
+            constraint, WorkgroupConstraint
         ):
-            hw_cons = hardware_constraints[0]
-            tile_size = idxc.get_static_value(constraint.tile_size)
-            if constraint.dim not in node.vector_shapes:
-                continue
-            vector_size = node.vector_shapes[constraint.dim]
-
-            # No dim scaling for dims with 0 vector size.
-            if vector_size == 0:
-                continue
-
-            wave_count = 1
-            if isinstance(constraint, WorkgroupConstraint):
-                wave_count = hw_cons.waves_per_block[constraint.workgroup_dim]
-            if tile_size is None or wave_count is None or vector_size is None:
-                raise ValueError(
-                    "Tile size, wave count and vector size must be statically known"
-                )
-            if (
-                tile_size % wave_count != 0
-                or (tile_size / wave_count) % vector_size != 0
-            ):
-                raise ValueError(
-                    "Tile size must be divisible by wave count and vector size"
-                )
-            dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
+            continue
+        dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
 
     return dim_scaling
 

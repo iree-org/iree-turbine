@@ -91,6 +91,7 @@ from .constraints import (
     HardwareConstraint,
     MMAType,
     WorkgroupConstraint,
+    WaveConstraint,
     TilingConstraint,
 )
 from .utils import subs_idxc, find_index_bounds, get_hardware_vector_map
@@ -186,8 +187,13 @@ class WaveEmitter:
         induction_var_syms = []
         induction_vars = []
         if self.induction_vars:
+            aliased_vars = [
+                x.source for x in self.constraints if isinstance(x, SymbolicAlias)
+            ]
             for constraint in self.constraints:
                 if isinstance(constraint, TilingConstraint):
+                    if constraint.dim in aliased_vars:
+                        continue
                     assert (
                         constraint.dim in self.induction_vars
                     ), f"Could not find induction var for {constraint.dim} dimension"
@@ -1202,6 +1208,29 @@ def handle_abs(source: Value) -> OpResult:
 ###############################################################################
 
 
+def determine_loop_count(
+    count: int, axis: IndexExpr, constraints: list[Constraint]
+) -> int | IndexExpr:
+    # Check if there are workgroup and or wave constraints on the reduction dim.
+    # If so, the count is determined by the workgroup or wave constraint tile size /
+    # tiling constraint tile size.
+    conflicting_constraints = [
+        x for x in constraints if isinstance(x, WaveConstraint) and x.dim == axis
+    ]
+    if not conflicting_constraints:
+        conflicting_constraints = [
+            x
+            for x in constraints
+            if isinstance(x, WorkgroupConstraint) and x.dim == axis
+        ]
+    tiling_constraints = [
+        x for x in constraints if isinstance(x, TilingConstraint) and x.dim == axis
+    ]
+    if conflicting_constraints:
+        count = conflicting_constraints[0].tile_size / tiling_constraints[0].tile_size
+    return count
+
+
 @handle_op(reduction)
 def handle_reduction(emitter: WaveEmitter, node: fx.Node):
     try:
@@ -1215,12 +1244,11 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
 
     start = arith_d.constant(IndexType.get(), int(0))
 
-    # For now, we assume that dimensions that have tiling constraints on them,
-    # do not have any other constraints.
-    if isinstance(node.count, sympy.Expr):
-        end = gen_sympy_index(add_emitter_subs(emitter), node.count)
+    count = determine_loop_count(node.count, axis, emitter.constraints)
+    if isinstance(count, sympy.Expr):
+        end = gen_sympy_index(add_emitter_subs(emitter), count)
     else:
-        end = arith_d.constant(IndexType.get(), int(node.count))
+        end = arith_d.constant(IndexType.get(), int(count))
 
     # Since we divide the end by the tile size, we need to make sure that the
     # step is 1.

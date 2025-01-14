@@ -482,14 +482,49 @@ def get_constrained_shape(
 ) -> tuple[IndexExpr]:
     """
     Given a shape, workgroup and tiling constraints, returns the shape
-    of the distributed and tiled tensor.
+    of the distributed and tiled tensor. The shape is determined using the following
+    criteria:
+    0. If no workgroup or tiling constraints are provided, the original shape is used.
+    1. If only workgroup constraints are provided, the shape is determined by the
+       tile size of the workgroup constraints.
+    2. If only tiling constraints are provided, the shape is determined by the
+       tile size of the tiling constraints.
+    3. If both workgroup and tiling constraints are provided, the shape is determined
+       from the tiling constraints*.
+
+    * By choosing tiling constraints, the shared memory used will be less but we will
+      not be able to coalesce global memory accesses (minimize_global_loads). If instead
+      we choose workgroup constraints, we will be able to coalesce global memory accesses
+      but will use more shared memory.
+
+      We choose tiling constraints over workgroup constraints because workgroup constraints
+      and tiling constraints will only be used when we cannot coalesce global memory
+      accesses because of constraints like dynamic read indices for block tables in
+      paged attention.
+
+      To enable workgroup constraints instead, we will additionally need to remove induction
+      variables from the global read and shared write indices and ensure that they get
+      hoisted out of the loop.
     """
     constrained_shape = list(shape)
+    all_same_type = lambda x, type: all(
+        isinstance(constraint, type) for constraint in x
+    )
     for i, dim in enumerate(shape):
-        for constraint in constraints:
-            if isinstance(constraint, WorkgroupConstraint) or isinstance(
-                constraint, TilingConstraint
-            ):
-                if dim == constraint.dim:
-                    constrained_shape[i] = constraint.tile_size
+        dim_constraints = [
+            constraint
+            for constraint in constraints
+            if isinstance(constraint, (WorkgroupConstraint, TilingConstraint))
+            and dim == constraint.dim
+        ]
+        if not dim_constraints:
+            continue
+        if all_same_type(dim_constraints, WorkgroupConstraint) or all_same_type(
+            dim_constraints, TilingConstraint
+        ):
+            constrained_shape[i] = dim_constraints[0].tile_size
+            continue
+        constrained_shape[i] = [
+            x.tile_size for x in dim_constraints if isinstance(x, TilingConstraint)
+        ][0]
     return tuple(constrained_shape)
