@@ -688,7 +688,7 @@ def test_apply_expr(shape, request):
         dynamic_symbols_map=dynamic_symbols_map,
     ):
         test(a, off, out)
-        out_ref = torch.take_along_dim(a, (shape[1] - off - 1).to(torch.long), dim=0)
+        out_ref = torch.take_along_dim(a, (shape[0] - off - 1).to(torch.long), dim=0)
         assert_close(out, out_ref)
 
 
