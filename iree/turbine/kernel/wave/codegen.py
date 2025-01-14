@@ -49,9 +49,11 @@ from iree.turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_t
 # TK infrastructure imports.
 from iree.turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import (
+    APPLY_EXPR_ARG,
     CustomOp,
     abs,
     allocate,
+    apply_expr,
     broadcast,
     cast,
     exp2,
@@ -872,6 +874,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected write to have index attr.")
 
     index = node.index
+
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
     if get_custom(node).has_identity_mapping():
@@ -908,6 +911,27 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
 
 
+@handle_op(apply_expr)
+def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, expr = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    register = cast_vector(emitter, register, element_type=IndexType.get())
+    src_type = register.type
+    assert (
+        src_type.rank == 1 and src_type.shape[0] == 1
+    ), f"Only size 1 vectors are supported: got {register.type}"
+    register = vector_d.extract(register, static_position=[0], dynamic_position=[])
+
+    subs = add_emitter_subs(emitter)
+    subs[APPLY_EXPR_ARG] = register
+    result = gen_sympy_index(subs, expr)
+    result = vector_d.splat(src_type, result)
+    emitter.bind_node_proxy(node, IRProxyValue(result))
+
+
 @handle_op(set_symbol)
 def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
     try:
@@ -916,8 +940,9 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
 
     register = cast_vector(emitter, register, element_type=IndexType.get())
+    src_type = register.type
     assert (
-        register.type.rank == 1 and register.type.shape[0] == 1
+        src_type.rank == 1 and src_type.shape[0] == 1
     ), f"Only size 1 vectors are supported: got {register.type}"
     register = vector_d.extract(register, static_position=[0], dynamic_position=[])
     emitter.dynamic_dims[symbol] = register

@@ -605,6 +605,95 @@ def test_set_symbol(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
+def test_apply_expr(shape, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    S = tkl.sym.S
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Each workgroup works on single row of input data, and rows are further
+    # split into blocks of size up to 256. We have single wave per WG,
+    # and with default wave size of 64, each thread is operating on up to 4
+    # elements.
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+
+    # TODO: Only ELEMS_PER_THREAD == 1
+    # BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+    BLOCK_N = wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N, S: BLOCK_M},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={S: S, N: j},
+        outputs={S: i, N: j},
+    )
+
+    A = tkw.APPLY_EXPR_ARG
+
+    dynamic_symbols = []
+    dynamic_symbols_map = {}
+
+    dynamic_symbols.append(S)
+    dynamic_symbols_map[S] = 0
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[S, N, ADDRESS_SPACE, tkl.f16],
+        off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
+        offset = tkw.apply_expr(offset, M - A - 1)
+        tkw.set_symbol(S, offset)
+        res = tkw.read(
+            a,
+            mapping=mapping,
+            elements_per_thread=ELEMS_PER_THREAD,
+        )
+        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+
+    config = get_default_run_config()
+
+    a = device_randn(shape, dtype=torch.float16)
+    off = device_randint(shape[0], shape, dtype=torch.int32)
+    out = device_zeros(shape, dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run=True,
+        run_bench=run_bench,
+        run_config=config,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+    ):
+        test(a, off, out)
+        out_ref = torch.take_along_dim(a, (shape[1] - off - 1).to(torch.long), dim=0)
+        assert_close(out, out_ref)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
 def test_offset_write(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
