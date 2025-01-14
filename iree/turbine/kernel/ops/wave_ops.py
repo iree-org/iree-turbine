@@ -19,7 +19,7 @@ import torch.fx as fx
 
 from ..lang.wave_types import Memory, Register, IndexMapping
 from ..lang.global_symbols import *
-from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence, index_symbol
+from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
@@ -96,9 +96,6 @@ def write(
     mapping_dynamic_vals: "Register" | tuple["Register", ...] = (),
 ):
     ...
-
-
-APPLY_EXPR_ARG = index_symbol("$APPLY_EXPR_ARG")
 
 
 def apply_expr(value: "Register", expr: IndexExpr) -> "Register":

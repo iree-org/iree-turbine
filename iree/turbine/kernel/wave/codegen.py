@@ -15,7 +15,6 @@ import torch.utils._pytree as pytree
 from collections import namedtuple
 
 from .symbolic_constraints import SymbolicAlias
-
 from ..compiler.ir import (
     Attribute,
     DenseElementsAttr,
@@ -49,7 +48,6 @@ from iree.turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_t
 # TK infrastructure imports.
 from iree.turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import (
-    APPLY_EXPR_ARG,
     CustomOp,
     abs,
     allocate,
@@ -99,7 +97,7 @@ from .constraints import (
 from .utils import subs_idxc, find_index_bounds, get_hardware_vector_map
 
 # Indexing imports.
-from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
+from .._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from .scheduling.resources import get_scheduling_mask
 
 
@@ -917,6 +915,9 @@ def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
         register, expr = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
+
+    APPLY_EXPR_ARG = index_symbol("$APPLY_EXPR_ARG")
+    expr = expr(APPLY_EXPR_ARG)
 
     register = cast_vector(emitter, register, element_type=IndexType.get())
     src_type = register.type

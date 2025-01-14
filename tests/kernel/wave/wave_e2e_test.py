@@ -645,8 +645,6 @@ def test_apply_expr(shape, request):
         outputs={S: i, N: j},
     )
 
-    A = tkw.APPLY_EXPR_ARG
-
     dynamic_symbols = []
     dynamic_symbols_map = {}
 
@@ -660,7 +658,7 @@ def test_apply_expr(shape, request):
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
         offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
-        offset = tkw.apply_expr(offset, M - A - 1)
+        offset = tkw.apply_expr(offset, lambda a: M - a - 1)
         tkw.set_symbol(S, offset)
         res = tkw.read(
             a,

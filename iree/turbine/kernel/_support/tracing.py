@@ -8,6 +8,7 @@ from typing import (
     Dict,
     Tuple,
 )
+from types import FunctionType
 
 from ..compiler.ir import Operation
 
@@ -113,6 +114,8 @@ class KernelTracer(SubgraphTracer):
         if isinstance(a, DataType):
             return a
         if isinstance(a, IndexMapping):
+            return a
+        if isinstance(a, FunctionType):
             return a
         return super().create_arg(a)
 
