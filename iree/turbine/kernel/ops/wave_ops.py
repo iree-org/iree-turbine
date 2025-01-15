@@ -98,6 +98,14 @@ def write(
     ...
 
 
+def apply_expr(value: "Register", expr: Callable) -> "Register":
+    ...
+
+
+def set_symbol(symbol: IndexExpr, value: "Register"):
+    ...
+
+
 def exp2(src: "Register") -> "Register":
     ...
 
@@ -1378,6 +1386,36 @@ class Write(CustomOp):
             elements_per_thread=self.elements_per_thread,
             is_read=False,
         )
+
+
+@define_op("apply_expr")
+@dataclass
+class ApplyExpr(CustomOp):
+    register_: fx.Proxy
+    expr: Callable
+
+    @property
+    def type(self) -> "Register":
+        return get_custom(self.register_).type
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.register_).indexing_dims
+
+
+@define_op("set_symbol")
+@dataclass
+class SetSymbol(CustomOp):
+    symbol: IndexExpr
+    register_: fx.Proxy
+
+    @property
+    def type(self) -> "Register":
+        return get_custom(self.register_).type
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.register_).indexing_dims
 
 
 @define_py_op(operator.getitem)

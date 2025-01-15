@@ -15,7 +15,6 @@ import torch.utils._pytree as pytree
 from collections import namedtuple
 
 from .symbolic_constraints import SymbolicAlias
-
 from ..compiler.ir import (
     Attribute,
     DenseElementsAttr,
@@ -49,30 +48,32 @@ from iree.turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_t
 # TK infrastructure imports.
 from iree.turbine.kernel.lang.global_symbols import *
 from ..ops.wave_ops import (
-    write,
-    broadcast,
-    register,
-    mma,
-    shuffle,
-    read,
-    reduction,
-    exp2,
-    log2,
-    reciprocal,
+    CustomOp,
     abs,
-    maximum,
-    get_custom,
-    get_result,
     allocate,
-    shared_memory_barrier,
+    apply_expr,
+    broadcast,
+    cast,
+    exp2,
     extract,
     extract_slice,
-    CustomOp,
+    get_custom,
+    get_result,
+    log2,
+    maximum,
+    mma,
+    permute,
+    read,
+    reciprocal,
+    reduction,
+    register,
+    reshape,
     scheduling_barrier,
     scheduling_group_barrier,
-    cast,
-    permute,
-    reshape,
+    set_symbol,
+    shared_memory_barrier,
+    shuffle,
+    write,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
 from ..compiler.base import CodegenError, ValidationError, NDEBUG
@@ -96,7 +97,7 @@ from .constraints import (
 from .utils import subs_idxc, find_index_bounds, get_hardware_vector_map
 
 # Indexing imports.
-from .._support.indexing import IndexingContext, IndexExpr, IndexSequence
+from .._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from .scheduling.resources import get_scheduling_mask
 
 
@@ -871,6 +872,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected write to have index attr.")
 
     index = node.index
+
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
     if get_custom(node).has_identity_mapping():
@@ -905,6 +907,40 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             vector_d.maskedstore(kb_dest, start_indices, mask, insert_vector)
         else:
             vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
+
+
+@handle_op(apply_expr)
+def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, expr = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    APPLY_EXPR_ARG = index_symbol("$APPLY_EXPR_ARG")
+    expr = expr(APPLY_EXPR_ARG)
+
+    register = cast_vector(emitter, register, element_type=IndexType.get())
+
+    subs = add_emitter_subs(emitter)
+    subs[APPLY_EXPR_ARG] = register
+    result = gen_sympy_index(subs, expr)
+    emitter.bind_node_proxy(node, IRProxyValue(result))
+
+
+@handle_op(set_symbol)
+def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
+    try:
+        symbol, register = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    register = cast_vector(emitter, register, element_type=IndexType.get())
+    src_type = register.type
+    assert (
+        src_type.rank == 1 and src_type.shape[0] == 1
+    ), f"Only size 1 vectors are supported: got {register.type}"
+    register = vector_d.extract(register, static_position=[0], dynamic_position=[])
+    emitter.dynamic_dims[symbol] = register
 
 
 ###############################################################################
