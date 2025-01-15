@@ -1390,7 +1390,7 @@ class Write(CustomOp):
 
 @define_op("apply_expr")
 @dataclass
-class AppplyExpr(CustomOp):
+class ApplyExpr(CustomOp):
     register_: fx.Proxy
     expr: Callable
 
