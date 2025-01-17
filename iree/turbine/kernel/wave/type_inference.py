@@ -13,9 +13,17 @@ logger = get_logger("turbine.wave.type_inference")
 
 
 def infer_types(trace: CapturedTrace | fx.Graph):
+    if isinstance(trace, fx.Graph):
+        all_nodes = trace.nodes
+    else:
+        all_nodes = trace.get_root_graph().nodes
     # Infer and set the types for all nodes in the graph.
-    for subgraph in trace.region_graph.subgraphs.values():
-        for node in subgraph.nodes:
-            custom = get_custom(node)
-            custom.infer_type()
-            logger.debug(f"Setting type for {custom.fx_node} = {custom.type}")
+    for node in all_nodes:
+        custom = get_custom(node)
+        if isinstance(custom, Reduction):
+            infer_types(trace.region_graph.subgraphs[custom.subgraph_name])
+        custom.infer_type()
+        # For implicit captures, get type from variables in root graph.
+        if "lifted" in custom.fx_node.meta:
+            custom.type = custom.fx_node.meta["lifted"].type
+        logger.debug(f"Setting type for {custom.fx_node} = {custom.type}")

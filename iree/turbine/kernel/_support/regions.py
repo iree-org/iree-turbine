@@ -94,10 +94,10 @@ class SubgraphTracer(fx.Tracer):
         subgraph_name = self.region_graph.add_subgraph("region", traced, inner_freevars)
         return subgraph_name, implicit_capture
 
-    def _create_graph_input(self, name: str, type_expr=None) -> fx.Proxy:
+    def _create_graph_input(self, node: fx.Node, name: str, type_expr=None) -> fx.Proxy:
         proxy = self.create_proxy("placeholder", name, (), {}, type_expr=type_expr)
         # Can use this to check where the freevar has been lifted from.
-        proxy.node.meta["lifted"] = None
+        proxy.node.meta["lifted"] = node
         return proxy
 
     def _lift_tracked_freevar_to_input(self, proxy: fx.Proxy):
@@ -109,7 +109,9 @@ class SubgraphTracer(fx.Tracer):
             return self.lifted_freevars[proxy]
 
         # Otherwise, create a new input and store it.
-        new_proxy = self._create_graph_input(proxy.node.name, proxy.node.type)
+        new_proxy = self._create_graph_input(
+            proxy.node, proxy.node.name, proxy.node.type
+        )
         self.lifted_freevars[proxy] = new_proxy
 
         # Propagate freevar usage upwards.
