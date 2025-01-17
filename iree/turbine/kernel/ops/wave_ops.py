@@ -74,6 +74,10 @@ def read(
     ...
 
 
+def conditional(condition: "Register") -> Callable[[Callable[[], None]], None]:
+    ...
+
+
 def reduction(
     axis: IndexExpr, init_args: Sequence["Register"]
 ) -> Callable[[Callable[[AccT], AccT]], AccT]:
@@ -822,8 +826,31 @@ class Placeholder(CustomOp):
     def indexing_dims(self) -> list[IndexSymbol]:
         return list(self._type.symbolic_shape) if self._type else []
 
+    def get_captured_var(self) -> Optional[fx.Node]:
+        parent_op = getattr(self.graph, "parent_op", None)
+        if parent_op is None:
+            return None
+
+        parent_op = get_custom(parent_op)
+        nodes = {node.name: node for node in parent_op.implicit_captures}
+        return nodes[self.name]
+
     def infer_type(self):
         self.fx_node.type = self._type
+
+    @property
+    def index(self) -> list[dict[IndexSymbol, IndexSequence]]:
+        var = self.get_captured_var()
+        return None if var is None else var.index
+
+    @index.setter
+    def index(self, value: Any):
+        raise ValueError("Cannot set index on placeholder")
+
+    @property
+    def type(self) -> "Memory":
+        var = self.get_captured_var()
+        return self.fx_node.type if var is None else var.type
 
 
 @dataclass
@@ -1138,9 +1165,54 @@ class Read(CustomOp):
         )
 
 
+class NestedRegionOp(CustomOp):
+    def captured_vars(self, graph: fx.Graph) -> list[fx.Node]:
+        """
+        Nodes that are placeholders and are not iter args are captured vars.
+        """
+        captured_vars = []
+        for nested_node in graph.nodes:
+            custom = get_custom(nested_node)
+            if isinstance(custom, Placeholder) and not isinstance(custom, IterArg):
+                captured_vars.append(nested_node)
+        return captured_vars
+
+
+@define_op("conditional")
+@dataclass
+class Conditional(NestedRegionOp):
+    condition: fx.Proxy
+    subgraph_name: str
+    implicit_captures: Sequence[fx.Proxy]
+
+    @classmethod
+    def handle(cls, graph, *args, **kwargs):
+        def wrapper(f):
+            with graph.subtracer() as subtracer:
+                subgraph_name, implicit_captures = subtracer.trace(f)
+            node = Conditional(
+                *args,
+                **kwargs,
+                subgraph_name=subgraph_name,
+                implicit_captures=implicit_captures,
+            )
+
+            node._add_proxy_to_graph(graph)
+            node.fx_node.node.tkw_op = cls
+            node.fx_node.node.tkw_op_name = cls.tkw_op_name
+            graph.subgraphs[subgraph_name].parent_op = node.fx_node.node
+            return node.fx_node
+
+        return wrapper
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.condition).indexing_dims
+
+
 @define_op("reduction")
 @dataclass
-class Reduction(CustomOp):
+class Reduction(NestedRegionOp):
     axis: IndexSymbol
     init_args: Sequence[Any]
     subgraph_name: str
@@ -1218,17 +1290,6 @@ class Reduction(CustomOp):
         # Sort by iter_idx.
         iter_args = sorted(iter_args, key=lambda x: get_custom(x).iter_idx)
         return iter_args
-
-    def captured_vars(self, graph: fx.Graph) -> list[fx.Node]:
-        """
-        Nodes that are placeholders and are not iter args are captured vars.
-        """
-        captured_vars = []
-        for nested_node in graph.nodes:
-            custom = get_custom(nested_node)
-            if isinstance(custom, Placeholder) and not isinstance(custom, IterArg):
-                captured_vars.append(nested_node)
-        return captured_vars
 
     def infer_type(self):
         res_types = [get_custom(x).type for x in self.init_args]
