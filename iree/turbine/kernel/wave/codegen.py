@@ -10,6 +10,9 @@ import sympy
 import math
 from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
 from dataclasses import dataclass
+import sympy.functions
+import sympy.functions.elementary
+import sympy.functions.elementary.piecewise
 import torch.fx as fx
 import torch.utils._pytree as pytree
 from collections import namedtuple
@@ -409,6 +412,9 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
     expr = expr.subs(idxc.subs)
     # Why affine, for now simply create indexing expressions.
     # This can easily be adapted to affine expressions later.
+    select_stack = []
+    if isinstance(expr, sympy.Piecewise):
+        assert len(expr.args) == 2 and expr.args[1][1], f"Unsupported piecewise {expr}"
     for term in sympy.postorder_traversal(expr):
         match term:
             case sympy.Symbol():
@@ -506,6 +512,19 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                     stack.append(base)
             case sympy.UnevaluatedExpr():
                 continue
+            case sympy.functions.elementary.piecewise.ExprCondPair():
+                cond = stack.pop()
+                expr = stack.pop()
+                select_stack.append(cond)
+                select_stack.append(expr)
+                continue
+            case sympy.Piecewise():
+                expr = select_stack.pop()
+                cond = select_stack.pop()
+                last_expr = select_stack.pop()
+                last_cond = select_stack.pop()
+                res = arith_d.select(last_cond, last_expr, expr)
+                stack.append(res)
             case _:
                 raise CodegenError(f"Can not handle {type(term)} : {term}")
 

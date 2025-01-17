@@ -74,17 +74,17 @@ def get_paged_decode_attention_kernels(
 
         # T represents the indices of the sequence tokens.
         # T is dynamic and is distributed across workgroups and is tiled.
-        #
-        # Each workgroup will process:
-        # T = min(BLOCK, max(SEQ_LEN - WG_IDX[U] * BLOCK, 0)) tokens
-        # where BLOCK = ceil(SEQ_LEN / U)
-        #
-        # While T and U are related to one another, since we do not know SEQ_LEN
-        # we define them as symbolic aliases with different workgroup tile sizes.
-        # The tile size for T is set to BLOCK_T = ceil(SEQ_LEN / U) and will also
-        # be defined within the kernel.
-        constraints += [tkw.WorkgroupConstraint(T, BLOCK_T, 0, primary=False)]
-        constraints += [tkw.TilingConstraint(T, 1)]
+        count = sympy.Piecewise(
+            (sympy.ceiling(T / U), WORKGROUP_0 < sympy.Mod(T, U)),
+            (sympy.floor(T / U), True),
+        )
+        wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
+        constraints += [
+            tkw.WorkgroupConstraint(
+                T, BLOCK_T, 0, apply_fn=lambda wg: wg_func(wg), primary=False
+            )
+        ]
+        constraints += [tkw.TilingConstraint(T, 1, iters=count)]
 
         # BH is the kv-head index and is distributed across workgroups.
         # B is the query index and is distributed like BH but with a different
@@ -206,16 +206,7 @@ def get_paged_decode_attention_kernels(
         # The request index is used to load the appropriate entries from the block table.
         req_index = tkw.read(request_indices, elements_per_thread=1)
         # The sequence length is used to control the bounds of the loop over T.
-        orig_seq_length = tkw.read(sequence_lengths, elements_per_thread=1)
-
-        # The dimension T and its workgroup tile size BLOCK_T are both dynamic
-        # and set below.
-        tile_size = tkw.apply_expr(orig_seq_length, lambda x: sympy.ceiling(x / U))
-        tkw.set_symbol(BLOCK_T, tile_size)
-        seq_length = tkw.apply_expr(
-            orig_seq_length,
-            lambda x: sympy.Min(BLOCK_T, sympy.Max(0, x - WORKGROUP_0 * BLOCK_T)),
-        )
+        seq_length = tkw.read(sequence_lengths, elements_per_thread=1)
         tkw.set_symbol(T, seq_length)
 
         # TODO: Add if statement here in cases where T is 0 to avoid writing nans for the output.
@@ -229,7 +220,6 @@ def get_paged_decode_attention_kernels(
             acc: tkl.Register[S, N, B, tkl.f32],
         ):
             q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            tkw.set_symbol(T, orig_seq_length)
             block_indices = tkw.read(
                 block_table,
                 elements_per_thread=1,
@@ -325,7 +315,7 @@ def get_paged_decode_attention_kernels(
 
     dynamic_symbols_0 = [T]
     dynamic_symbols_1 = []
-    dynamic_symbols_map_0 = {T: 1}
+    dynamic_symbols_map_0 = {T: shape[7]}
     dynamic_symbols_map_1 = {}
 
     return (

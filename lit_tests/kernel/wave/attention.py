@@ -1088,7 +1088,7 @@ def test_attention_bias():
 @run_test
 def test_paged_flash_decoding():
     # (B, M, N, K1, K2, BH, S)
-    shape = (128, 1, 32, 32, 64, 4, 8)
+    shape = (128, 1, 32, 32, 64, 4, 8, 128)
     max_tokens = 2048
     num_kv_splits = 8
     mfma_variant = tkw.MMAType.F32_16x16x16_F16
@@ -1127,8 +1127,6 @@ def test_paged_flash_decoding():
 
     # CHECK:                func.func @phase_0
     # CHECK-COUNT-2:           vector.load
-    # CHECK:                   arith.maxsi
-    # CHECK:                   arith.minsi
     # CHECK-COUNT-2:           vector.load
     # CHECK:                   scf.for
     # CHECK-COUNT-9:                vector.maskedload

@@ -7,7 +7,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Optional, Callable
 from sympy import ceiling, Piecewise, floor
 
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
@@ -374,6 +374,7 @@ class WorkgroupConstraint(Constraint):
     dim: IndexExpr
     tile_size: IndexExpr
     workgroup_dim: int
+    apply_fn: Optional[Callable] = None
     primary: Optional[bool] = True
 
     def __post_init__(self):
@@ -394,6 +395,8 @@ class WorkgroupConstraint(Constraint):
         return ceiling(self.dim / self.tile_size)
 
     def apply(self) -> IndexSequence:
+        if self.apply_fn:
+            return IndexSequence(self.apply_fn(self.wg_dim), 1)
         return IndexSequence(self.wg_dim * self.tile_size, 1)
 
 
@@ -409,7 +412,7 @@ def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]
         raise ValueError(
             "Multiple constraints in the same workgroup dimension are currently not supported."
         )
-    grid: list[IndexExpr] = [constraint.count for constraint in wg_constraints]
+    grid: list[IndexExpr] = [constraint.count for constraint in sorted_constraints]
     return grid
 
 
@@ -426,12 +429,15 @@ class TilingConstraint(Constraint):
     dim: IndexExpr
     tile_size: IndexExpr
     induction_var: Optional[IndexExpr] = None
+    iters: Optional[IndexExpr] = None
 
     @property
     def count(self) -> IndexExpr:
         """
         Returns an expression for the number of iterations in the loop.
         """
+        if self.iters:
+            return self.iters
         return ceiling(self.dim / self.tile_size)
 
     def apply(self) -> IndexSequence:

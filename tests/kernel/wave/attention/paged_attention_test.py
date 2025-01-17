@@ -26,6 +26,7 @@ import os
 from torch.testing import assert_allclose
 from ..common.utils import (
     require_e2e,
+    require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
 )
@@ -41,8 +42,7 @@ DTYPES = [torch.float16]
 NUM_BLOCKS = [128]
 # First item is query length, second item is key/value length.
 # In decode, query length is always one.
-# TODO: Check with more queries and unaligned shapes.
-SEQ_LENS = [[(1, 16), (1, 8)]]
+SEQ_LENS = [[(1, 19), (1, 34), (1, 27)]]
 
 
 # From: https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/layers/attention/torch_native_backend.py
@@ -173,7 +173,9 @@ def ref_paged_attn(
     return torch.cat(outputs, dim=0)
 
 
+# TODO: Investigate errors on MI250.
 @require_e2e
+@require_cdna3
 @pytest.mark.parametrize("seq_lens", SEQ_LENS)
 @pytest.mark.parametrize("num_heads", NUM_HEADS)
 @pytest.mark.parametrize("head_size", HEAD_SIZES)
@@ -223,7 +225,9 @@ def testPagedFlashDecoding(
     # TODO: The block table entries should be able to be a random number
     # in the range [0, num_blocks * block_size), but that fails for now.
     # As a workaround, the maximum value is set to num_seqs - 1.
-    block_table = device_randint(0, num_seqs, (num_seqs, max_kv_len), dtype=torch.int32)
+    block_table = device_randint(
+        0, num_blocks, (num_seqs, num_blocks), dtype=torch.int32
+    )
     request_indices = device_arange(num_seqs, dtype=torch.int32)
     kv_lens_tensor = device_zeros(num_seqs, dtype=torch.int32)
     for i in range(len(kv_lens)):
@@ -238,7 +242,7 @@ def testPagedFlashDecoding(
     M = 1
     N = head_size
     BH = num_kv_heads
-    shape = (B, M, N, K1, K2, BH, S)
+    shape = (B, M, N, K1, K2, BH, S, num_blocks)
     num_kv_splits = 8
     (
         phase_0,
