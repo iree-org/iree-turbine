@@ -15,7 +15,6 @@ from iree.turbine.kernel.wave.utils import (
     device_arange,
     device_randn,
     device_randint,
-    device_randn_like,
     device_zeros,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
@@ -221,7 +220,7 @@ def testPagedFlashDecoding(
     key_cache = device_randn(
         num_blocks, block_size, num_kv_heads, head_size, dtype=dtype
     )
-    value_cache = device_randn_like(key_cache)
+    value_cache = torch.randn_like(key_cache)
     # TODO: The block table entries should be able to be a random number
     # in the range [0, num_blocks * block_size), but that fails for now.
     # As a workaround, the maximum value is set to num_seqs - 1.

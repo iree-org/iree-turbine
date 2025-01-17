@@ -1075,7 +1075,7 @@ class Read(CustomOp):
             iters = self.mapping.iters
             mapping = self.mapping.dynamic_val_mappings[i]
 
-            # This logic relies on fact our mapping is identity.
+            # This logic assumes that the output mapping is identity.
             subs = {
                 k: index[v] for k, v in zip(iters, self.mapping.output_mapping.keys())
             }
@@ -1333,13 +1333,14 @@ class Write(CustomOp):
             iters = self.mapping.iters
             mapping = self.mapping.dynamic_val_mappings[i]
 
-            # This logic relies on fact in mapping is identity.
+            # This logic assumes that the input mapping is identity.
             subs = {
                 k: index[v] for k, v in zip(iters, self.mapping.input_mapping.keys())
             }
             return {
                 k: IndexSequence.from_expr(mapping[k], subs)
                 for k in arg.type.symbolic_shape
+                if k in mapping
             }
 
         return index
