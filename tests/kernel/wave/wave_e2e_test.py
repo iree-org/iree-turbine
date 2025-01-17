@@ -704,9 +704,10 @@ def test_conditional(shape, request):
     # elements.
     wave_size = 64
     BLOCK_M = 1
-    # Tile size cannot be dynamic, so we use a fixed value here.
-    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    # TODO: Only ELEMS_PER_THREAD == 1
+    # BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+    BLOCK_N = wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
