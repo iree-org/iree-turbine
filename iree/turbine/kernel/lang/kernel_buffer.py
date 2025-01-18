@@ -1,6 +1,7 @@
 from typing import Type, TypeVar, cast, ClassVar
 
 from enum import Enum
+from dataclasses import dataclass
 
 import torch
 
@@ -13,6 +14,7 @@ __all__ = [
     "AddressSpace",
     "KernelBuffer",
     "InputBuffer",
+    "MemoryLayout",
     "OutputBuffer",
     "TemporaryBuffer",
     "is_kernel_buffer_meta_derived",
@@ -54,6 +56,16 @@ class KernelBufferUsage(Enum):
             raise AssertionError(f"uncovered KernelBufferUsage enum ({v})")
 
 
+@dataclass
+class MemoryLayout:
+    """
+    Specifies the physical layout of a memory buffer in terms of
+    its physical shape.
+    """
+
+    shape: tuple[int | IndexExpr]
+
+
 class KernelBufferMeta(ShapedDataType):
     usage: KernelBufferUsage = KernelBufferUsage.NONE
 
@@ -64,6 +76,7 @@ class KernelBufferMeta(ShapedDataType):
         address_space: AddressSpace | NotSetType = NotSet,
         symbolic_shape: tuple[IndexExpr, ...] | NotSetType = NotSet,
         dtype: DataType | NotSetType = NotSet,
+        physical_layout: MemoryLayout | NotSetType = NotSet,
         usage: KernelBufferUsage | NotSetType = NotSet,
     ) -> Type[SubtypeT]:
         init_address_space = (
@@ -71,6 +84,7 @@ class KernelBufferMeta(ShapedDataType):
         )
         init_symbolic_shape = symbolic_shape if symbolic_shape is not NotSet else cls.symbolic_shape  # type: ignore
         init_dtype = dtype if dtype is not NotSet else cls.dtype  # type: ignore
+        init_physical_layout = physical_layout if physical_layout else None  # type: ignore
         init_usage = usage if usage is not NotSet else cls.usage  # type: ignore
 
         class SubType(cls):
@@ -78,6 +92,7 @@ class KernelBufferMeta(ShapedDataType):
             symbolic_shape = init_symbolic_shape
             rank = len(init_symbolic_shape)  # type: ignore
             dtype = init_dtype
+            physical_layout = init_physical_layout
             usage = init_usage
 
         if name is not NotSet:
