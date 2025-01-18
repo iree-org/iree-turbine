@@ -42,8 +42,11 @@ from ..utils import (
     get_users,
     get_inputs,
 )
+from ....support.logging import get_logger
 from copy import deepcopy
 import math
+
+logger = get_logger("turbine.wave.expansion")
 
 
 @dataclass(frozen=True)
@@ -88,25 +91,6 @@ class ExpansionContext:
 
     def __setitem__(self, key: ExpansionInfo, value: CustomOp):
         self.expansion_context[key] = value
-
-
-def get_leaf_node_types(
-    trace: CapturedTrace, all_nodes_reversed: list[fx.Node]
-) -> list[Type[CustomOp]]:
-    """
-    Get the types of leaf nodes of the trace. These are of type write.
-    If there are no write nodes, then the type of the last node in the trace is
-    used.
-    """
-    leaf_nodes: list[Type[CustomOp]] = [Write]
-    if not leaf_nodes:
-        for node in (get_custom(node) for node in all_nodes_reversed):
-            if isinstance(node, Output):
-                continue
-            leaf_nodes.append(node.__class__)
-            break
-
-    return leaf_nodes
 
 
 def get_dim_combinations(
@@ -650,6 +634,13 @@ def fixup_reduction_nodes(trace: CapturedTrace, expansion_context: ExpansionCont
         remove_original_nodes(return_vals)
 
 
+def is_leaf_node(node):
+    custom = get_custom(node)
+    return isinstance(custom, Write) or (
+        isinstance(custom, GetResult) and not custom.users
+    )
+
+
 def expand_graph(
     trace: CapturedTrace,
     constraints: Sequence[Constraint],
@@ -663,17 +654,15 @@ def expand_graph(
 
     add_get_results(trace)
 
-    all_nodes_reversed = list(reversed(trace.get_root_graph().nodes))
-    leaf_node_types = get_leaf_node_types(trace, all_nodes_reversed)
-    leaf_nodes = []
+    leaf_ops = [get_custom(node) for node in reversed(trace.walk(is_leaf_node))]
+    if not leaf_ops:
+        final_op = get_custom(next(reversed(trace.get_root_graph().nodes)))
+        leaf_ops.append(final_op)
+        logger.warning(
+            f"No leaf operations found in kernel. Using final operation {final_op}"
+        )
     expansion_context = ExpansionContext()
-    for node in all_nodes_reversed:
-        custom = get_custom(node)
-        type_check = custom.__class__ in leaf_node_types
-        unused_reduction_result = isinstance(custom, GetResult) and not custom.users
-        if not (type_check or unused_reduction_result):
-            continue
-        leaf_nodes.append(custom)
+    for custom in leaf_ops:
         for dim_combination in get_dim_combinations(custom, constraints):
             dfs(
                 custom,
@@ -687,5 +676,5 @@ def expand_graph(
     # Fixup all mma nodes.
     fixup_mma_nodes(trace, expansion_context)
     # Remove original nodes in root graph.
-    remove_original_nodes(leaf_nodes)
+    remove_original_nodes(leaf_ops)
     remove_unused_registers(trace)
