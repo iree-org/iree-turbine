@@ -78,7 +78,6 @@ jobs:
           token: ${{ steps.generate-token.outputs.token || secrets.GITHUB_TOKEN }}
           base: main
           branch: ${{ env.GIT_BRANCH_NAME }}
-          delete-branch: true
           author: iree-pr-automator[bot] <iree-github-actions-bot@google.com>
           signoff: true
           title: "Bump IREE requirement pins to their latest versions."
