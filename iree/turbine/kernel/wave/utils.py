@@ -229,6 +229,21 @@ def DCE(trace: CapturedTrace):
             get_custom(node).erase()
 
 
+def move_node_after(src_node: fx.Node, anchor: fx.Node):
+    """
+    Moves src_node into a location after a given anchor node.
+    This function will invalidate "src_node" and return the
+    newly copied/"moved" node.
+    """
+    custom_src = get_custom(src_node)
+    moved_src = custom_src.copy(anchor=(anchor)).fx_node
+    custom_src.replace_all_uses_with(moved_src)
+    src_name = src_node.name
+    src_node.graph.erase_node(src_node)
+    moved_src.name = src_name
+    return moved_src
+
+
 def remove_chained_getresult(trace: CapturedTrace):
     def is_chained_getresult(node: fx.Node) -> bool:
         custom = get_custom(node)

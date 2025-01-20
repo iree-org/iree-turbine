@@ -10,7 +10,7 @@ from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 from .constraints import Constraint, get_constrained_shape
-from .utils import subs_idxc
+from .utils import subs_idxc, move_node_after
 
 logger = get_logger("turbine.wave.promotion")
 
@@ -39,6 +39,12 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
         case Read(memory, elements_per_thread) if get_custom(
             memory
         ).type.address_space != allocate_node.address_space:
+            move_node_after(custom_node.memory, allocate_node.fx_node)
+            if hasattr(apply_promotion_pattern, "last_shared_write"):
+                moved_src = move_node_after(
+                    custom_node.fx_node, apply_promotion_pattern.last_shared_write
+                )
+                custom_node = get_custom(moved_src)
             with custom_node.graph.inserting_after(custom_node.fx_node):
                 promoted_read = Read(
                     allocate_node.fx_node, elements_per_thread
@@ -51,6 +57,7 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
                 custom_read = get_custom(promoted_read)
                 custom_read.write_dependency = [promoted_write]
             custom_node.memory_type.address_space = GLOBAL_ADDRESS_SPACE
+            apply_promotion_pattern.last_shared_write = promoted_write
 
 
 def promote_node(
@@ -65,7 +72,7 @@ def promote_node(
     """
 
     assert isinstance(node, Read) or isinstance(node, Write)
-    with node.graph.inserting_after(node.fx_node.prev):
+    with node.graph.inserting_after(node.graph._root):
         constrained_shape = get_constrained_shape(node.type.symbolic_shape, constraints)
         padded_shape = apply_padding(constrained_shape, node.type.dtype)
         allocate_node = Allocate(

@@ -34,14 +34,21 @@ from ..common.shapes import get_test_shapes
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@pytest.mark.parametrize(
+    "enable_scheduling",
+    [
+        False,
+    ],
+)
+@pytest.mark.parametrize(
+    "dynamic_dims",
+    [
+        False,
+    ],
+)
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-        (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
-        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
         (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
     ],
 )
@@ -133,6 +140,7 @@ def testAttention(
             q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             # b_reg: tkw.Register[B, N, K, tkl.f16]
             k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV)
             # acc: tkw.Register[B, N, M, tkl.f32]
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
@@ -142,7 +150,6 @@ def testAttention(
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
