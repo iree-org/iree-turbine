@@ -1098,8 +1098,8 @@ def test_paged_flash_decoding():
         kv_lens=100,
     )
     num_kv_splits = 8
-    k_shape = (shape.num_seqs, shape.num_kv_heads, shape.kv_lens, shape.head_size)
-    v_shape = (shape.num_seqs, shape.num_kv_heads, shape.head_size_kv, shape.kv_lens)
+    k_shape = (shape.num_seqs, shape.kv_lens, shape.num_kv_heads, shape.head_size)
+    v_shape = (shape.num_seqs, shape.kv_lens, shape.num_kv_heads, shape.head_size_kv)
     q_shape = (shape.num_seqs, shape.num_query_heads, shape.head_size)
     o_shape = (shape.num_seqs, shape.num_query_heads, shape.head_size_kv)
     logits_shape = (num_kv_splits, shape.num_seqs, shape.head_size_kv, shape.kv_lens)

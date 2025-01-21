@@ -314,6 +314,7 @@ def get_mma_dimensional_mapping(
         rhs_shape = custom.rhs_type.symbolic_shape
         acc_shape = custom.acc_type.symbolic_shape
         k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
+
         if custom not in mapping:
             mapping[custom] = {}
         mapping[custom][m] = MMAOperand.M
