@@ -826,22 +826,22 @@ class Placeholder(CustomOp):
     def indexing_dims(self) -> list[IndexSymbol]:
         return list(self._type.symbolic_shape) if self._type else []
 
-    def get_captured_var(self) -> Optional[fx.Node]:
+    def get_captured_fx_node(self) -> Optional[fx.Node]:
         parent_op = getattr(self.graph, "parent_op", None)
         if parent_op is None:
             return None
 
         parent_op = get_custom(parent_op)
         nodes = {node.name: node for node in parent_op.implicit_captures}
-        return get_custom(nodes[self.name])
+        return nodes[self.name]
 
     def infer_type(self):
         self.fx_node.type = self._type
 
     @property
     def index(self) -> list[dict[IndexSymbol, IndexSequence]]:
-        var = self.get_captured_var()
-        return None if var is None else var.index
+        var = self.get_captured_fx_node()
+        return None if var is None else get_custom(var).index
 
     @index.setter
     def index(self, value: Any):
