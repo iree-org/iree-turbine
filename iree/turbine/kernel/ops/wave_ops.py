@@ -833,7 +833,7 @@ class Placeholder(CustomOp):
 
         parent_op = get_custom(parent_op)
         nodes = {node.name: node for node in parent_op.implicit_captures}
-        return nodes[self.name]
+        return nodes.get(self.name, None)
 
     def infer_type(self):
         self.fx_node.type = self._type
@@ -841,11 +841,22 @@ class Placeholder(CustomOp):
     @property
     def index(self) -> list[dict[IndexSymbol, IndexSequence]]:
         var = self.get_captured_fx_node()
-        return None if var is None else get_custom(var).index
+        if var is not None:
+            return get_custom(var).index
+
+        if hasattr(self.fx_node, "index"):
+            return self.fx_node.index
+
+        return None
 
     @index.setter
     def index(self, value: Any):
-        raise ValueError("Cannot set index on placeholder")
+        var = self.get_captured_fx_node()
+        if var is None:
+            CustomOp.index.fset(self, value)
+            return
+
+        get_custom(var).index = value
 
 
 @dataclass
