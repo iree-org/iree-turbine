@@ -9,8 +9,12 @@ name: Build packages
 on:
   workflow_dispatch:
   schedule:
-    # Runs at 11:00 AM UTC, which is 3:00 AM PST (UTC-8)
-    - cron: '0 11 * * *'
+    # Runs at 05:00 AM UTC, which is 9:00 PM PST (UTC-8) / 10:00 PM PDT (UTC-7)
+    # This lines up with https://github.com/iree-org/iree/blob/main/.github/workflows/schedule_candidate_release.yml
+    # Downstream projects using nightly releases should expect IREE and
+    # iree-turbine packages to all be available around the same time. This
+    # build is much faster than the IREE build though.
+    - cron: '0 5 * * *'
 
 jobs:
   build_packages:
