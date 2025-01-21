@@ -833,7 +833,7 @@ class Placeholder(CustomOp):
 
         parent_op = get_custom(parent_op)
         nodes = {node.name: node for node in parent_op.implicit_captures}
-        return nodes[self.name]
+        return get_custom(nodes[self.name])
 
     def infer_type(self):
         self.fx_node.type = self._type
@@ -846,11 +846,6 @@ class Placeholder(CustomOp):
     @index.setter
     def index(self, value: Any):
         raise ValueError("Cannot set index on placeholder")
-
-    @property
-    def type(self) -> "Memory":
-        var = self.get_captured_var()
-        return self.fx_node.type if var is None else var.type
 
 
 @dataclass

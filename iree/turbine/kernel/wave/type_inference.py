@@ -20,7 +20,7 @@ def infer_types(trace: CapturedTrace | fx.Graph):
     # Infer and set the types for all nodes in the graph.
     for node in all_nodes:
         custom = get_custom(node)
-        if isinstance(custom, Reduction):
+        if isinstance(custom, NestedRegionOp):
             infer_types(trace.region_graph.subgraphs[custom.subgraph_name])
         custom.infer_type()
         # For implicit captures, get type from variables in root graph.
