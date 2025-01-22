@@ -456,6 +456,13 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 _enforce_non_rational(lhs, term)
                 res = arith_d.cmpi(arith_d.CmpIPredicate.slt, *_broadcast(lhs, rhs))
                 stack.append(res)
+            case sympy.StrictGreaterThan():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                _enforce_non_rational(rhs, term)
+                _enforce_non_rational(lhs, term)
+                res = arith_d.cmpi(arith_d.CmpIPredicate.sgt, *_broadcast(lhs, rhs))
+                stack.append(res)
             case sympy.And():
                 rhs = stack.pop()
                 lhs = stack.pop()
@@ -472,8 +479,8 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
-                type = get_type_or_element_type(rhs.type)
-                if _is_integer_like_type(type):
+                elem_type = get_type_or_element_type(rhs.type)
+                if _is_integer_like_type(elem_type):
                     res = arith_d.maxsi(*_broadcast(lhs, rhs))
                 else:
                     res = arith_d.maximumf(*_broadcast(lhs, rhs))
@@ -483,8 +490,8 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
-                type = get_type_or_element_type(rhs.type)
-                if _is_integer_like_type(type):
+                elem_type = get_type_or_element_type(rhs.type)
+                if _is_integer_like_type(elem_type):
                     res = arith_d.minsi(*_broadcast(lhs, rhs))
                 else:
                     res = arith_d.minimumf(*_broadcast(lhs, rhs))
