@@ -827,13 +827,7 @@ class Placeholder(CustomOp):
         return list(self._type.symbolic_shape) if self._type else []
 
     def get_captured_fx_node(self) -> Optional[fx.Node]:
-        parent_op = getattr(self.graph, "parent_op", None)
-        if parent_op is None:
-            return None
-
-        parent_op = get_custom(parent_op)
-        nodes = {node.name: node for node in parent_op.implicit_captures}
-        return nodes.get(self.name, None)
+        return self.fx_node.meta.get("lifted", None)
 
     def infer_type(self):
         self.fx_node.type = self._type
