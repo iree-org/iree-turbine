@@ -1098,6 +1098,10 @@ def device_arange(*args, **kwargs):
     return to_default_device(torch.arange(*args, **kwargs))
 
 
+def device_full(*args, **kwargs):
+    return to_default_device(torch.full(*args, **kwargs))
+
+
 def device_randn(*args, **kwargs):
     return to_default_device(torch.randn(*args, **kwargs))
 

@@ -16,6 +16,7 @@ from iree.turbine.kernel.wave.templates.decode_attention import (
 )
 from iree.turbine.kernel.wave.templates.paged_decode_attention import (
     get_paged_decode_attention_kernels,
+    paged_decode_attention_shape,
 )
 import torch
 import sympy
@@ -1087,31 +1088,40 @@ def test_attention_bias():
 
 @run_test
 def test_paged_flash_decoding():
-    # (B, M, N, K1, K2, BH, S)
-    shape = (128, 1, 32, 32, 64, 4, 8, 128)
-    max_tokens = 2048
+    shape = paged_decode_attention_shape(
+        num_query_heads=128,
+        num_kv_heads=4,
+        head_size=32,
+        head_size_kv=32,
+        block_size=64,
+        num_seqs=8,
+        kv_lens=100,
+    )
     num_kv_splits = 8
+    k_shape = (shape.num_seqs, shape.num_kv_heads, shape.kv_lens, shape.head_size)
+    v_shape = (shape.num_seqs, shape.num_kv_heads, shape.head_size_kv, shape.kv_lens)
+    q_shape = (shape.num_seqs, shape.num_query_heads, shape.head_size)
+    o_shape = (shape.num_seqs, shape.num_query_heads, shape.head_size_kv)
+    logits_shape = (num_kv_splits, shape.num_seqs, shape.head_size_kv, shape.kv_lens)
+    logits_max_shape = (num_kv_splits, shape.num_seqs, shape.head_size_kv)
+    block_table_shape = (shape.num_seqs, shape.kv_lens)
     mfma_variant = tkw.MMAType.F32_16x16x16_F16
     (
         phase_0,
         phase_1,
         hyperparams_0,
         hyperparams_1,
-        dynamic_symbols_0,
-        dynamic_symbols_map_0,
-        dynamic_symbols_1,
-        dynamic_symbols_map_1,
     ) = get_paged_decode_attention_kernels(
-        shape, max_tokens, mfma_variant, num_kv_splits
+        shape, mfma_variant, num_kv_splits, k_shape, v_shape, block_table_shape
     )
 
     torch.manual_seed(0)
-    q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-    k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-    v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-    logits = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-    logits_max = torch.zeros(shape[0], shape[1], dtype=torch.float32)
-    output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+    q = torch.randn(q_shape, dtype=torch.float16)
+    k = torch.randn(k_shape, dtype=torch.float16)
+    v = torch.randn(v_shape, dtype=torch.float16)
+    logits = torch.zeros(logits_shape, dtype=torch.float32)
+    logits_max = torch.zeros(logits_max_shape, dtype=torch.float32)
+    output = torch.zeros(o_shape, dtype=torch.float32)
 
     with tk.gen.TestLaunchContext(
         hyperparams_0,
@@ -1120,32 +1130,30 @@ def test_paged_flash_decoding():
         run_bench=False,
         schedule=False,
         use_scheduling_barriers=False,
-        dynamic_symbols=dynamic_symbols_0,
-        dynamic_symbols_map=dynamic_symbols_map_0,
     ):
         print(phase_0(q, k, v, logits, logits_max).module_op)
 
     # CHECK:                func.func @phase_0
-    # CHECK-COUNT-2:           vector.load
-    # CHECK-COUNT-2:           vector.load
+    # CHECK-COUNT-4:           vector.load
     # CHECK:                   scf.for
-    # CHECK-COUNT-9:                vector.maskedload
+    # CHECK-COUNT-3:                vector.maskedload
     # CHECK-COUNT-8:                vector.store
     # CHECK-COUNT-8:                vector.load
-    # CHECK-COUNT-8:                amdgpu.mfma
-    # CHECK-COUNT-2:                gpu.shuffle
-    # CHECK-COUNT-1:                arith.subf
-    # CHECK-COUNT-1:                math.exp2
-    # CHECK-COUNT-4:                arith.subf
-    # CHECK-COUNT-4:                math.exp2
-    # CHECK-COUNT-2:                gpu.shuffle
-    # CHECK-COUNT-8:                vector.maskedload
+    # CHECK-COUNT-16:               amdgpu.mfma
+    # CHECK-COUNT-4:                gpu.shuffle
+    # CHECK-COUNT-2:                arith.subf
+    # CHECK-COUNT-2:                math.exp2
+    # CHECK-COUNT-8:                arith.subf
+    # CHECK-COUNT-8:                math.exp2
+    # CHECK-COUNT-4:                gpu.shuffle
+    # TODO: Remove gathers for performance
+    # CHECK-COUNT-2:                vector.gather
     # CHECK-COUNT-8:                vector.store
     # CHECK-COUNT-8:                vector.load
-    # CHECK-COUNT-2:                amdgpu.mfma
-    # CHECK-COUNT-1:          arith.divf
-    # CHECK-COUNT-1:          math.log2
-    # CHECK-COUNT-9:          vector.store
+    # CHECK-COUNT-16:                amdgpu.mfma
+    # CHECK-COUNT-2:          arith.divf
+    # CHECK-COUNT-2:          math.log2
+    # CHECK-COUNT-18:         vector.store
 
     with tk.gen.TestLaunchContext(
         hyperparams_1,
@@ -1154,8 +1162,6 @@ def test_paged_flash_decoding():
         run_bench=False,
         schedule=False,
         use_scheduling_barriers=False,
-        dynamic_symbols=dynamic_symbols_1,
-        dynamic_symbols_map=dynamic_symbols_map_1,
     ):
         print(phase_1(logits, logits_max, output).module_op)
 
