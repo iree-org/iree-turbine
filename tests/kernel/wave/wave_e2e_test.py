@@ -692,6 +692,70 @@ def test_apply_expr(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
+def test_conditional(shape, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Each workgroup works on single row of input data, and rows are further
+    # split into blocks of size up to 256. We have single wave per WG,
+    # and with default wave size of 64, each thread is operating on up to 4
+    # elements.
+    wave_size = 64
+    BLOCK_M = 1
+    # TODO: Only ELEMS_PER_THREAD == 1
+    # BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+    BLOCK_N = wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        mask: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        cond = tkw.read(mask, elements_per_thread=ELEMS_PER_THREAD)
+
+        @tkw.conditional(cond)
+        def then():
+            tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+
+    config = get_default_run_config()
+
+    a = device_randn(shape, dtype=torch.float16)
+    mask = device_randint(2, shape, dtype=torch.int32)
+    b = device_zeros(shape, dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run=True,
+        run_bench=run_bench,
+        run_config=config,
+    ):
+        test(a, mask, b)
+        assert_close(a * mask, b)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
 def test_offset_write(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M

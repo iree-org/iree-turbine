@@ -57,6 +57,7 @@ from ..ops.wave_ops import (
     apply_expr,
     broadcast,
     cast,
+    conditional,
     exp2,
     extract,
     extract_slice,
@@ -455,6 +456,13 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 _enforce_non_rational(lhs, term)
                 res = arith_d.cmpi(arith_d.CmpIPredicate.slt, *_broadcast(lhs, rhs))
                 stack.append(res)
+            case sympy.StrictGreaterThan():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                _enforce_non_rational(rhs, term)
+                _enforce_non_rational(lhs, term)
+                res = arith_d.cmpi(arith_d.CmpIPredicate.sgt, *_broadcast(lhs, rhs))
+                stack.append(res)
             case sympy.And():
                 rhs = stack.pop()
                 lhs = stack.pop()
@@ -471,8 +479,8 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
-                type = get_type_or_element_type(rhs.type)
-                if _is_integer_like_type(type):
+                elem_type = get_type_or_element_type(rhs.type)
+                if _is_integer_like_type(elem_type):
                     res = arith_d.maxsi(*_broadcast(lhs, rhs))
                 else:
                     res = arith_d.maximumf(*_broadcast(lhs, rhs))
@@ -482,8 +490,8 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
-                type = get_type_or_element_type(rhs.type)
-                if _is_integer_like_type(type):
+                elem_type = get_type_or_element_type(rhs.type)
+                if _is_integer_like_type(elem_type):
                     res = arith_d.minsi(*_broadcast(lhs, rhs))
                 else:
                     res = arith_d.minimumf(*_broadcast(lhs, rhs))
@@ -959,6 +967,17 @@ def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
+def _to_scalar(val: Value) -> Value:
+    src_type = val.type
+    if VectorType.isinstance(src_type):
+        assert (
+            src_type.rank == 1 and src_type.shape[0] == 1
+        ), f"Only size 1 vectors are supported: got {src_type}"
+        val = vector_d.extract(val, static_position=[0], dynamic_position=[])
+
+    return val
+
+
 @handle_op(set_symbol)
 def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
     try:
@@ -967,12 +986,7 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
 
     register = cast_vector(emitter, register, element_type=IndexType.get())
-    src_type = register.type
-    assert (
-        src_type.rank == 1 and src_type.shape[0] == 1
-    ), f"Only size 1 vectors are supported: got {register.type}"
-    register = vector_d.extract(register, static_position=[0], dynamic_position=[])
-    emitter.dynamic_dims[symbol] = register
+    emitter.dynamic_dims[symbol] = _to_scalar(register)
 
 
 ###############################################################################
@@ -1268,6 +1282,36 @@ def handle_abs(source: Value) -> OpResult:
 ###############################################################################
 # Control Flow ops
 ###############################################################################
+
+
+@handle_op(conditional)
+def handle_conditional(emitter: WaveEmitter, node: fx.Node):
+    try:
+        condition, subgraph, implicit_capture = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    condition = cast_vector(emitter, condition)
+    condition = _to_scalar(condition)
+
+    cond_type = condition.type
+    assert IntegerType.isinstance(
+        cond_type
+    ), f"Condition must me integer, got {cond_type}"
+
+    zero = arith_d.constant(cond_type, 0)
+    condition = arith_d.cmpi(arith_d.CmpIPredicate.ne, condition, zero)
+
+    if_op = scf_d.IfOp(condition)
+    with InsertionPoint(if_op.then_block) as ip:
+        subgraph: fx.Graph = emitter.trace.get_subgraph(subgraph)
+
+        captured_vars: list[fx.Node] = get_custom(node).captured_vars(subgraph)
+        for root_v, subgraph_v in zip(implicit_capture, captured_vars):
+            emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)
+        # Emit the subgraph.
+        emitter._emit_graph(subgraph)
+        scf_d.YieldOp([])
 
 
 @handle_op(reduction)

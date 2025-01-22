@@ -34,7 +34,7 @@ from ..lang.kernel_buffer import (
 )
 from ..lang.wave_types import Memory
 from ..lang.grid import Grid
-from ..ops.wave_ops import get_custom, Placeholder, Read, Write
+from ..ops.wave_ops import get_custom, Placeholder, NestedRegionOp, Read, Write
 
 from .base import (
     CodegenError,
@@ -259,13 +259,34 @@ class KernelSignature:
         # Extract all placeholder nodes.
         placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
+        def get_users_recursive(node):
+            ret = []
+            for user in node.users.keys():
+                custom = get_custom(user)
+                if not isinstance(custom, NestedRegionOp):
+                    ret.append(user)
+                    continue
+
+                subgraph = graph.subgraphs[custom.subgraph_name]
+                nested_placeholders = filter_fx_graph(subgraph, is_placeholder)
+                for nested in nested_placeholders:
+                    captured = get_custom(nested).get_captured_fx_node()
+                    if captured == node:
+                        ret += get_users_recursive(nested)
+
+            return ret
+
         def only_read_dependencies(node):
-            return all([isinstance(get_custom(x), Read) for x in node.users.keys()])
+            return all(
+                [isinstance(get_custom(x), Read) for x in get_users_recursive(node)]
+            )
 
         def only_write_dependencies(node):
             if len(node.users) == 0:
                 return False
-            return all([isinstance(get_custom(x), Write) for x in node.users.keys()])
+            return all(
+                [isinstance(get_custom(x), Write) for x in get_users_recursive(node)]
+            )
 
         for node in placeholder_nodes:
             index = None
