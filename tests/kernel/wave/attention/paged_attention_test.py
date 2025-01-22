@@ -205,12 +205,12 @@ def testPagedFlashDecoding(
         shape.num_kv_heads = key_cache.shape[2]
         shape.head_size_kv = value_cache.shape[3]
 
-    permuted_key_cache = key_cache.view(
+    key_cache_4d = key_cache.view(
         shape.num_seqs, -1, shape.num_kv_heads, shape.head_size
-    ).permute([0, 2, 1, 3])
-    permuted_value_cache = value_cache.view(
+    )
+    value_cache_4d = value_cache.view(
         shape.num_seqs, -1, shape.num_kv_heads, shape.head_size_kv
-    ).permute([0, 2, 3, 1])
+    )
 
     # Run the wave kernel.
     (
@@ -222,8 +222,8 @@ def testPagedFlashDecoding(
         shape,
         mfma_variant,
         num_kv_splits,
-        permuted_key_cache.shape,
-        permuted_value_cache.shape,
+        key_cache_4d.shape,
+        value_cache_4d.shape,
         block_table.shape,
     )
     hyperparams_0.update(get_default_scheduling_params())
@@ -269,8 +269,8 @@ def testPagedFlashDecoding(
         # TODO: Add variant of non-transposed V attention kernel.
         mb_qk = phase_0(
             query * dk_sqrt * log2e,
-            permuted_key_cache,
-            permuted_value_cache,
+            key_cache_4d,
+            value_cache_4d,
             request_indices,
             kv_lens_tensor,
             block_table,
