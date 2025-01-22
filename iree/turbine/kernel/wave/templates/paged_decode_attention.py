@@ -281,8 +281,11 @@ def get_paged_decode_attention_kernels(
         res = res_mm * reciprocal_sum
         res_max_log_sum = res_max + tkw.log2(res_sum)
 
-        tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
-        tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        cond = tkw.apply_expr(seq_length, lambda x: x > 0)
+        @tkw.conditional(cond)
+        def then():
+            tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
+            tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(

@@ -1182,6 +1182,16 @@ class NestedRegionOp(CustomOp):
                 captured_vars.append(nested_node)
         return captured_vars
 
+    def get_captured_fx_node(
+        self, graph: fx.Graph, outer_node: fx.Node
+    ) -> Optional[fx.Node]:
+        for var in self.captured_vars(graph):
+            custom = get_custom(var)
+            if custom.get_captured_fx_node() == outer_node:
+                return var
+
+        return None
+
 
 @define_op("conditional")
 @dataclass
