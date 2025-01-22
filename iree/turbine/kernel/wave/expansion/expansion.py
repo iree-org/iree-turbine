@@ -656,7 +656,7 @@ def expand_graph(
 
     leaf_ops = [get_custom(node) for node in reversed(trace.walk(is_leaf_node))]
     if not leaf_ops:
-        final_op = get_custom(next(reversed(trace.get_root_graph().nodes)))
+        final_op = get_custom(trace.get_root_graph()._root.prev)
         leaf_ops.append(final_op)
         logger.warning(
             f"No leaf operations found in kernel. Using final operation {final_op}"

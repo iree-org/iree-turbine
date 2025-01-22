@@ -288,6 +288,51 @@ def gemm(
     tkw.write(repeat, c, elements_per_thread=4)
 
 
+@tkw.wave_trace_only()
+def no_writes(a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16]):
+    tkw.read(a, elements_per_thread=16)
+
+
+@run_test
+def test_no_writes():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 1, 1),
+            vector_shapes={M: 16, K: 16},
+        )
+    ]
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_M: 32,
+            BLOCK_K: 32,
+        }
+    ):
+        graph = no_writes()
+        IndexingContext.current().finalize()
+        initialize_iter_args(graph)
+        infer_types(graph)
+        set_node_indices(graph, constraints)
+        expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
+        print_trace(graph)
+
+        # CHECK: graph():
+        # CHECK: %a :
+        # CHECK-SAME: [num_users=1] = placeholder[target=a]
+        # CHECK: %read :
+        # CHECK-SAME: (args = (%a, 16, None, (), None), kwargs = {})
+        # CHECK: return None
+        # CHECK: placeholder(_name=a, _type=Memory[M, K].of(f16))
+        # CHECK: read(memory=a, elements_per_thread=16
+        # CHECK: output(return_vals=(None,))
+
+        # CHECK: -----
+
+
 @run_test
 def test_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
