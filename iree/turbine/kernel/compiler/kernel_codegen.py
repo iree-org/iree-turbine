@@ -31,7 +31,6 @@ from ..lang.kernel_buffer import (
     KernelBuffer,
     KernelBufferUsage,
     is_kernel_buffer_meta_derived,
-    NotSetType,
 )
 from ..lang.wave_types import Memory
 from ..lang.grid import Grid
@@ -132,10 +131,7 @@ class BindingDesc:
                 spec_asm = element_type_asm
             ref_type = self.reference[1].type
             # If a physical layout is present, use it to determine the shape and strides.
-            if (
-                not isinstance(ref_type.physical_layout, NotSetType)
-                and ref_type.physical_layout
-            ):
+            if ref_type.physical_layout:
                 shape_asm = "x".join(
                     sym_to_dim_asm(s) for s in ref_type.physical_layout.shape
                 )

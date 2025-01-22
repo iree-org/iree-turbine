@@ -23,13 +23,6 @@ __all__ = [
 SubtypeT = TypeVar("SubtypeT")
 
 
-class NotSetType:
-    ...
-
-
-NotSet = NotSetType()
-
-
 class AddressSpace(Enum):
     REGISTER = 0
     SHARED_MEMORY = 1
@@ -72,20 +65,20 @@ class KernelBufferMeta(ShapedDataType):
     def new_subtype(
         cls: Type[SubtypeT],
         *,
-        name: str | NotSetType = NotSet,
-        address_space: AddressSpace | NotSetType = NotSet,
-        symbolic_shape: tuple[IndexExpr, ...] | NotSetType = NotSet,
-        dtype: DataType | NotSetType = NotSet,
-        physical_layout: MemoryLayout | NotSetType = NotSet,
-        usage: KernelBufferUsage | NotSetType = NotSet,
+        name: str | None = None,
+        address_space: AddressSpace | None = None,
+        symbolic_shape: tuple[IndexExpr, ...] | None = None,
+        dtype: DataType | None = None,
+        physical_layout: MemoryLayout | None = None,
+        usage: KernelBufferUsage | None = None,
     ) -> Type[SubtypeT]:
         init_address_space = (
             address_space if address_space else AddressSpace.GLOBAL_MEMORY
         )
-        init_symbolic_shape = symbolic_shape if symbolic_shape is not NotSet else cls.symbolic_shape  # type: ignore
-        init_dtype = dtype if dtype is not NotSet else cls.dtype  # type: ignore
+        init_symbolic_shape = symbolic_shape if symbolic_shape is not None else cls.symbolic_shape  # type: ignore
+        init_dtype = dtype if dtype is not None else cls.dtype  # type: ignore
         init_physical_layout = physical_layout if physical_layout else None  # type: ignore
-        init_usage = usage if usage is not NotSet else cls.usage  # type: ignore
+        init_usage = usage if usage is not None else cls.usage  # type: ignore
 
         class SubType(cls):
             address_space = init_address_space
@@ -95,7 +88,7 @@ class KernelBufferMeta(ShapedDataType):
             physical_layout = init_physical_layout
             usage = init_usage
 
-        if name is not NotSet:
+        if name is not None:
             SubType.__name__ = name
         else:
             SubType.__name__ = KernelBufferUsage._type_name(init_usage)

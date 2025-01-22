@@ -16,6 +16,7 @@ from iree.turbine.kernel.wave.templates.decode_attention import (
 )
 from iree.turbine.kernel.wave.templates.paged_decode_attention import (
     get_paged_decode_attention_kernels,
+    paged_decode_attention_shape,
 )
 import torch
 import sympy
@@ -1087,41 +1088,40 @@ def test_attention_bias():
 
 @run_test
 def test_paged_flash_decoding():
-    B = 128
-    M = 1
-    N = 32
-    K1 = 32
-    K2 = 64
-    BH = 4
-    S = 8
-    SEQ_LEN = 100
-    shape = (B, BH, K1, N, K2, S, SEQ_LEN)
+    shape = paged_decode_attention_shape(
+        num_query_heads=128,
+        num_kv_heads=4,
+        head_size=32,
+        head_size_kv=32,
+        block_size=64,
+        num_seqs=8,
+        kv_lens=100,
+    )
     num_kv_splits = 8
-    U = num_kv_splits
-    k_shape = (S, SEQ_LEN, BH, K1)
-    v_shape = (S, SEQ_LEN, N, K2)
-    block_table_shape = (S, SEQ_LEN)
+    k_shape = (shape.num_seqs, shape.num_kv_heads, shape.kv_lens, shape.head_size)
+    v_shape = (shape.num_seqs, shape.num_kv_heads, shape.head_size_kv, shape.kv_lens)
+    q_shape = (shape.num_seqs, shape.num_query_heads, shape.head_size)
+    o_shape = (shape.num_seqs, shape.num_query_heads, shape.head_size_kv)
+    logits_shape = (num_kv_splits, shape.num_seqs, shape.head_size_kv, shape.kv_lens)
+    logits_max_shape = (num_kv_splits, shape.num_seqs, shape.head_size_kv)
+    block_table_shape = (shape.num_seqs, shape.kv_lens)
     mfma_variant = tkw.MMAType.F32_16x16x16_F16
     (
         phase_0,
         phase_1,
         hyperparams_0,
         hyperparams_1,
-        dynamic_symbols_0,
-        dynamic_symbols_map_0,
-        dynamic_symbols_1,
-        dynamic_symbols_map_1,
     ) = get_paged_decode_attention_kernels(
         shape, mfma_variant, num_kv_splits, k_shape, v_shape, block_table_shape
     )
 
     torch.manual_seed(0)
-    q = torch.randn(S, B, K1, dtype=torch.float16)
+    q = torch.randn(q_shape, dtype=torch.float16)
     k = torch.randn(k_shape, dtype=torch.float16)
     v = torch.randn(v_shape, dtype=torch.float16)
-    logits = torch.zeros(U, S, N, B, dtype=torch.float32)
-    logits_max = torch.zeros(U, S, B, dtype=torch.float32)
-    output = torch.zeros(S, B, N, dtype=torch.float32)
+    logits = torch.zeros(logits_shape, dtype=torch.float32)
+    logits_max = torch.zeros(logits_max_shape, dtype=torch.float32)
+    output = torch.zeros(o_shape, dtype=torch.float32)
 
     with tk.gen.TestLaunchContext(
         hyperparams_0,
@@ -1130,8 +1130,6 @@ def test_paged_flash_decoding():
         run_bench=False,
         schedule=False,
         use_scheduling_barriers=False,
-        dynamic_symbols=dynamic_symbols_0,
-        dynamic_symbols_map=dynamic_symbols_map_0,
     ):
         print(phase_0(q, k, v, logits, logits_max).module_op)
 
@@ -1164,8 +1162,6 @@ def test_paged_flash_decoding():
         run_bench=False,
         schedule=False,
         use_scheduling_barriers=False,
-        dynamic_symbols=dynamic_symbols_1,
-        dynamic_symbols_map=dynamic_symbols_map_1,
     ):
         print(phase_1(logits, logits_max, output).module_op)
 

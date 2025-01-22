@@ -20,6 +20,7 @@ from iree.turbine.kernel.wave.utils import (
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.paged_decode_attention import (
     get_paged_decode_attention_kernels,
+    paged_decode_attention_shape,
 )
 import os
 from torch.testing import assert_allclose
@@ -159,17 +160,17 @@ def testPagedFlashDecoding(
 ):
 
     torch.manual_seed(0)
-    (
-        num_query_heads,
-        num_kv_heads,
-        head_size,
-        head_size_kv,
-        block_size,
-        num_seqs,
-        kv_lens,
-    ) = shape
-    assert num_query_heads % num_kv_heads == 0
-    scale = head_size**-0.5
+    shape = paged_decode_attention_shape(
+        num_query_heads=shape[0],
+        num_kv_heads=shape[1],
+        head_size=shape[2],
+        head_size_kv=shape[3],
+        block_size=shape[4],
+        num_seqs=shape[5],
+        kv_lens=shape[6],
+    )
+    assert shape.num_query_heads % shape.num_kv_heads == 0
+    scale = shape.head_size**-0.5
 
     artifact_directory = None
     if not artifact_directory:
@@ -181,12 +182,12 @@ def testPagedFlashDecoding(
             request_indices,
             kv_lens_tensor,
         ) = create_inputs(
-            num_seqs,
-            kv_lens,
-            num_query_heads,
-            num_kv_heads,
-            head_size,
-            head_size_kv,
+            shape.num_seqs,
+            shape.kv_lens,
+            shape.num_query_heads,
+            shape.num_kv_heads,
+            shape.head_size,
+            shape.head_size_kv,
             dtype,
         )
     else:
@@ -198,17 +199,17 @@ def testPagedFlashDecoding(
             request_indices,
             kv_lens_tensor,
         ) = load_inputs(artifact_directory)
-        num_seqs = query.shape[0]
-        num_query_heads = query.shape[1]
-        head_size = query.shape[2]
-        num_kv_heads = key_cache.shape[2]
-        head_size_kv = value_cache.shape[3]
+        shape.num_seqs = query.shape[0]
+        shape.num_query_heads = query.shape[1]
+        shape.head_size = query.shape[2]
+        shape.num_kv_heads = key_cache.shape[2]
+        shape.head_size_kv = value_cache.shape[3]
 
-    permuted_key_cache = key_cache.view(num_seqs, -1, num_kv_heads, head_size).permute(
-        [0, 2, 1, 3]
-    )
+    permuted_key_cache = key_cache.view(
+        shape.num_seqs, -1, shape.num_kv_heads, shape.head_size
+    ).permute([0, 2, 1, 3])
     permuted_value_cache = value_cache.view(
-        num_seqs, -1, num_kv_heads, head_size_kv
+        shape.num_seqs, -1, shape.num_kv_heads, shape.head_size_kv
     ).permute([0, 2, 3, 1])
 
     # Run the wave kernel.
@@ -217,10 +218,6 @@ def testPagedFlashDecoding(
         phase_1,
         hyperparams_0,
         hyperparams_1,
-        dynamic_symbols_0,
-        dynamic_symbols_map_0,
-        dynamic_symbols_1,
-        dynamic_symbols_map_1,
     ) = get_paged_decode_attention_kernels(
         shape,
         mfma_variant,
@@ -244,14 +241,20 @@ def testPagedFlashDecoding(
         )
 
     phase_0_output = device_zeros(
-        num_kv_splits, num_seqs, head_size_kv, num_query_heads, dtype=torch.float32
+        num_kv_splits,
+        shape.num_seqs,
+        shape.head_size_kv,
+        shape.num_query_heads,
+        dtype=torch.float32,
     )
     phase_0_output_max = device_zeros(
-        num_kv_splits, num_seqs, num_query_heads, dtype=torch.float32
+        num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
-    output = device_zeros(num_seqs, num_query_heads, head_size_kv, dtype=torch.float32)
+    output = device_zeros(
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float32
+    )
     log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / head_size)
+    dk_sqrt = math.sqrt(1.0 / shape.head_size)
 
     with tk.gen.TestLaunchContext(
         hyperparams_0,
@@ -261,8 +264,6 @@ def testPagedFlashDecoding(
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        dynamic_symbols=dynamic_symbols_0,
-        dynamic_symbols_map=dynamic_symbols_map_0,
     ):
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
@@ -285,8 +286,6 @@ def testPagedFlashDecoding(
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        dynamic_symbols=dynamic_symbols_1,
-        dynamic_symbols_map=dynamic_symbols_map_1,
     ):
         mb_sv = phase_1(phase_0_output, phase_0_output_max, output)
 
@@ -304,7 +303,7 @@ def testPagedFlashDecoding(
             query=query,
             key_cache=key_cache,
             value_cache=value_cache,
-            query_lens=torch.ones(num_seqs, dtype=torch.int32),
+            query_lens=torch.ones(shape.num_seqs, dtype=torch.int32),
             kv_lens=kv_lens_tensor,
             block_tables=block_table,
             scale=scale,

@@ -14,10 +14,24 @@ from iree.turbine.kernel.wave.utils import (
 )
 import sympy
 from enum import Enum
+from collections import namedtuple
+
+paged_decode_attention_shape = namedtuple(
+    "paged_decode_attention_shape",
+    [
+        "num_query_heads",
+        "num_kv_heads",
+        "head_size",
+        "head_size_kv",
+        "block_size",
+        "num_seqs",
+        "kv_lens",
+    ],
+)
 
 
 def get_paged_decode_attention_kernels(
-    shape: tuple[int],
+    shape: paged_decode_attention_shape,
     mfma_variant: MMAType,
     num_kv_splits: int,
     k_shape: tuple[int],
@@ -37,9 +51,7 @@ def get_paged_decode_attention_kernels(
     # Workgroup tile sizes
     BLOCK_B = tkl.sym.BLOCK_B
     BLOCK_BH = tkl.sym.BLOCK_BH
-    BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K2 = tkl.sym.BLOCK_K2
     BLOCK_U = tkl.sym.BLOCK_U
     BLOCK_T = tkl.sym.BLOCK_T
     BLOCK_S = tkl.sym.BLOCK_S
@@ -326,18 +338,9 @@ def get_paged_decode_attention_kernels(
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
 
-    dynamic_symbols_0 = []
-    dynamic_symbols_1 = []
-    dynamic_symbols_map_0 = {}
-    dynamic_symbols_map_1 = {}
-
     return (
         phase_0,
         phase_1,
         symbols_0,
         symbols_1,
-        dynamic_symbols_0,
-        dynamic_symbols_map_0,
-        dynamic_symbols_1,
-        dynamic_symbols_map_1,
     )

@@ -40,6 +40,19 @@ class Memory(metaclass=KernelBufferMeta):
     Parameterized by a shape, address space and element type. The allocated
     memory is traversed by an iterator that specifies the offset, stride
     and size along each dimension.
+
+    The symbolic shape specified here can be interpreted as the logical shape
+    of the memory buffer that may or may not be the same as the physical shape.
+    If the physical shape is different, it can be specified using the
+    physical_layout parameter.
+
+    As an example, consider a GEMM output buffer of logical shape (M, N) where
+    M and N are the parallel dimensions of the problem. This is logical shape
+    of the buffer. However, the physical shape of the buffer may be (M', N')
+    and can be specified as
+
+    Memory[(M, N), AddressSpace.GLOBAL_MEMORY, dtype, MemoryLayout(shape=(M', N'))]
+
     """
 
     address_space: ClassVar[int]
@@ -59,20 +72,16 @@ class Memory(metaclass=KernelBufferMeta):
         if len(shape_and_dtype) < 3:
             raise TypeError(f"Expected at least 3 arguments, got: {shape_and_dtype}")
 
-        shift = 0
         usage = KernelBufferUsage.NONE
-        last_dim = -1
-        if isinstance(shape_and_dtype[last_dim], KernelBufferUsage):
-            shift += 1
-            usage = shape_and_dtype[last_dim]
-            last_dim -= 1
+        shape_and_dtype = list(shape_and_dtype)
+        if isinstance(shape_and_dtype[-1], KernelBufferUsage):
+            usage = shape_and_dtype.pop()
         physical_layout = None
-        if isinstance(shape_and_dtype[last_dim], MemoryLayout):
-            shift += 1
-            physical_layout = shape_and_dtype[last_dim]
-        shape = shape_and_dtype[: -2 - shift]
-        addressSpace = shape_and_dtype[-2 - shift]
-        dtype = shape_and_dtype[-1 - shift]
+        if isinstance(shape_and_dtype[-1], MemoryLayout):
+            physical_layout = shape_and_dtype.pop()
+        dtype = shape_and_dtype.pop()
+        addressSpace = shape_and_dtype.pop()
+        shape = tuple(shape_and_dtype)
 
         # Allow constant int expressions in shape
         shape = tuple(IndexExpr(s) if isinstance(s, int) else s for s in shape)
