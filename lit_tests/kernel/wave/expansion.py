@@ -193,6 +193,84 @@ def test_read_write():
 
 
 @tkw.wave_trace_only()
+def write_in_reduction(
+    a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+    b: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+    c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+):
+    # TODO(#364): simplify this by removing the max once it's possible to have a
+    # loop/reduction without reducing over something.
+    init_max = tkl.Register[M, tkl.f16](-1e6)
+
+    @tkw.reduction(K, init_args=[init_max])
+    def repeat(acc: tkl.Register[M, tkl.f16]) -> tkl.Register[M, tkl.f16]:
+        a_reg = tkw.read(a, elements_per_thread=4)
+        tkw.write(a_reg, b, elements_per_thread=4)
+        return tkw.max(a_reg, acc, dim=K)
+
+    tkw.write(repeat, c, elements_per_thread=4)
+
+
+@run_test
+def test_write_in_reduction():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 1, 1),
+            vector_shapes={M: 16, K: 16},
+        )
+    ]
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_M: 32,
+            BLOCK_K: 32,
+        }
+    ):
+        graph = write_in_reduction()
+        IndexingContext.current().finalize()
+        initialize_iter_args(graph)
+        infer_types(graph)
+        set_node_indices(graph, constraints)
+        expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
+        print_trace(graph)
+        # Root graph:
+        # CHECK: graph()
+        # CHECK: %reduction :
+        # CHECK-SAME: args = (K,
+        # CHECK: %getresult_M:0_K:0 :
+        # CHECK-SAME: args = (%reduction, 0)
+        # CHECK: %write_M:0_K:0 :
+        # CHECK-SAME: (%getresult_M:0_K:0, %c, 4,
+
+        # Custom format:
+        # CHECK: reduction(axis=K,
+        # CHECK: get_result(value=reduction, res_idx=0)
+        # CHECK: write(register_=getresult_M:0_K:0, memory=c, elements_per_thread=4,
+
+        # Reduction subgraph:
+        # CHECK: graph():
+        # CHECK: %read_M:0_K:0 :
+        # CHECK-SAME: (args = (%a, 4,
+        # CHECK: %read_M:0_K:1 :
+        # CHECK-SAME: (args = (%a, 4,
+        # CHECK: %write_M:0_K:0 :
+        # CHECK-SAME: (%read_M:0_K:0, %b, 4,
+        # CHECK: %write_M:0_K:1 :
+        # CHECK-SAME: (%read_M:0_K:1, %b, 4,
+
+        # Custom format:
+        # CHECK: read(memory=a, elements_per_thread=4,
+        # CHECK: read(memory=a, elements_per_thread=4,
+        # CHECK: write(register_=read_M:0_K:0, memory=b, elements_per_thread=4,
+        # CHECK: write(register_=read_M:0_K:1, memory=b, elements_per_thread=4,
+        # CHECK: -----
+
+
+@tkw.wave_trace_only()
 def gemm(
     a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
     b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
@@ -208,6 +286,51 @@ def gemm(
         return acc
 
     tkw.write(repeat, c, elements_per_thread=4)
+
+
+@tkw.wave_trace_only()
+def no_writes(a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16]):
+    tkw.read(a, elements_per_thread=16)
+
+
+@run_test
+def test_no_writes():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 1, 1),
+            vector_shapes={M: 16, K: 16},
+        )
+    ]
+    with tk.gen.TestLaunchContext(
+        {
+            BLOCK_M: 32,
+            BLOCK_K: 32,
+        }
+    ):
+        graph = no_writes()
+        IndexingContext.current().finalize()
+        initialize_iter_args(graph)
+        infer_types(graph)
+        set_node_indices(graph, constraints)
+        expand_graph(graph, constraints)
+        set_post_expansion_indices(graph, constraints)
+        print_trace(graph)
+
+        # CHECK: graph():
+        # CHECK: %a :
+        # CHECK-SAME: [num_users=1] = placeholder[target=a]
+        # CHECK: %read :
+        # CHECK-SAME: (args = (%a, 16, None, (), None), kwargs = {})
+        # CHECK: return None
+        # CHECK: placeholder(_name=a, _type=Memory[M, K].of(f16))
+        # CHECK: read(memory=a, elements_per_thread=16
+        # CHECK: output(return_vals=(None,))
+
+        # CHECK: -----
 
 
 @run_test
