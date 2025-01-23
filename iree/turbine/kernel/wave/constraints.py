@@ -376,6 +376,7 @@ class WorkgroupConstraint(Constraint):
     workgroup_dim: int
     apply_fn: Optional[Callable] = None
     primary: Optional[bool] = True
+    iters: Optional[IndexExpr] = None
 
     def __post_init__(self):
         self.wg_dim = None
@@ -392,6 +393,8 @@ class WorkgroupConstraint(Constraint):
         """
         Returns an expression for the total number of workgroups for the specific workgroup_dim.
         """
+        if self.iters:
+            return self.iters
         return ceiling(self.dim / self.tile_size)
 
     def apply(self) -> IndexSequence:
