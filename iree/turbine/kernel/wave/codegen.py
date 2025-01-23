@@ -1395,7 +1395,12 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
         for i, v in enumerate(forOp.inner_iter_args):
             emitter.bind_node_proxy(iter_args[i], IRProxyValue(v))
         captured_vars: list[fx.Node] = get_custom(node).captured_vars(subgraph)
-        for root_v, subgraph_v in zip(implicit_capture, captured_vars):
+        for subgraph_v in captured_vars:
+            if "lifted" not in subgraph_v.meta:
+                raise ValueError(
+                    "Cannot find subgraph_v's corresponding value in the root graph."
+                )
+            root_v = subgraph_v.meta["lifted"]
             emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)
         # Emit the subgraph.
         return_values = emitter._emit_graph(subgraph)
