@@ -852,7 +852,8 @@ def get_users(
                 subgraph = custom.graph.subgraphs[custom.subgraph_name]
                 var = custom.get_captured_fx_node(subgraph, node)
                 assert var is not None, "Invalid captured var"
-                users.append(var)
+                for u in var.users:
+                    users.append(u)
 
             continue
 
