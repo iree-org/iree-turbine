@@ -251,7 +251,7 @@ def testPagedFlashDecoding(
         num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
     output = device_zeros(
-        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float32
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
     )
     log2e = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)

@@ -1121,7 +1121,7 @@ def test_paged_flash_decoding():
     v = torch.randn(v_shape, dtype=torch.float16)
     logits = torch.zeros(logits_shape, dtype=torch.float32)
     logits_max = torch.zeros(logits_max_shape, dtype=torch.float32)
-    output = torch.zeros(o_shape, dtype=torch.float32)
+    output = torch.zeros(o_shape, dtype=torch.float16)
 
     with tk.gen.TestLaunchContext(
         hyperparams_0,

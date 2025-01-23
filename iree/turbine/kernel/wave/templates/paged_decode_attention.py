@@ -279,7 +279,7 @@ def get_paged_decode_attention_kernels(
     def phase_1(
         logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
         c_reg = tkl.Register[S, B, N, tkl.f32](0.0)
         init_sum = tkl.Register[S, B, tkl.f32](0.0)
@@ -304,6 +304,7 @@ def get_paged_decode_attention_kernels(
 
         res_max, res_sum, res_mm = repeat
         res = res_mm / res_sum
+        res = tkw.cast(res, tkl.f16)
         tkw.write(
             res, output, mapping=mapping, elements_per_thread=PHASE_1_ELEMS_PER_THREAD
         )
