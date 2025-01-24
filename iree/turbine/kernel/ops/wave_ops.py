@@ -509,12 +509,21 @@ class CustomOp(ABC):
     @property
     def node_args(self) -> dict[int, Any]:
         """Returns the args to this custom op using subclasses of CustomOp if possible."""
+
+        def propagate(n):
+            custom = get_custom(n)
+            if isinstance(custom, Placeholder):
+                if prev := custom.get_captured_fx_node():
+                    return propagate(prev)
+
+            return custom
+
         custom_args = {}
         for i, arg in enumerate(self.fx_node.args):
             if isinstance(arg, fx.Node):
-                custom_args[i] = get_custom(arg)
+                custom_args[i] = propagate(arg)
             if isinstance(arg, list) and all(isinstance(x, fx.Node) for x in arg):
-                custom_args[i] = [get_custom(x) for x in arg]
+                custom_args[i] = [propagate(x) for x in arg]
         return custom_args
 
     def get_node_arg_index(self, arg: CustomOp) -> Optional[CustomOp | list[CustomOp]]:
@@ -826,6 +835,29 @@ class Placeholder(CustomOp):
         vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
         vars_str = ", ".join(vars_list)
         return f"{self.tkw_op_name}({vars_str})"
+
+    def erase(self):
+        """Erase the current node from the graph where it exists."""
+        parent = self.graph.parent_op
+        super().erase()
+        if not parent:
+            return
+
+        custom = get_custom(parent)
+        if not isinstance(custom, NestedRegionOp):
+            return
+
+        # Cleanup dead captures
+        subgraph = custom.graph.subgraphs[custom.subgraph_name]
+        live_captures = []
+        for var in custom.implicit_captures:
+            if custom.get_captured_fx_node(subgraph, var):
+                live_captures.append(var)
+
+        if len(live_captures) != len(custom.implicit_captures):
+            print("live_captures", custom.implicit_captures, live_captures)
+        custom.update_arg("implicit_captures", live_captures)
+        print(get_custom(parent).implicit_captures)
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

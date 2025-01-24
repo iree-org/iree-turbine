@@ -206,6 +206,7 @@ def DCE(trace: CapturedTrace):
 
     def is_removable_operator(node: fx.Node) -> bool:
         custom = get_custom(node)
+
         if (
             custom.users
             or isinstance(custom, (Output, SetSymbol, ApplyExpr))
@@ -220,7 +221,7 @@ def DCE(trace: CapturedTrace):
 
     while removable_nodes := trace.walk(is_removable_operator):
         for node in removable_nodes:
-            get_custom(node).graph.erase_node(node)
+            get_custom(node).erase()
 
 
 def remove_chained_getresult(trace: CapturedTrace):
