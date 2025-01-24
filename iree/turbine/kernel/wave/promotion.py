@@ -34,16 +34,20 @@ def apply_padding(
     )
 
 
-def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
+def apply_promotion_pattern(
+    custom_node: Read | Write, allocate_node: Allocate, last_write_to_shared: fx.Node
+):
     match custom_node:
         case Read(memory, elements_per_thread) if get_custom(
             memory
         ).type.address_space != allocate_node.address_space:
+            # Moves memory to top of graph after allocate to avoid non-dominating operands.
             move_node_after(custom_node.memory, allocate_node.fx_node)
-            if hasattr(apply_promotion_pattern, "last_shared_write"):
-                moved_src = move_node_after(
-                    custom_node.fx_node, apply_promotion_pattern.last_shared_write
-                )
+            # We move CustomOp/Read up to the last write_to_shared_mem S.T
+            # all reads from shared mem happens only after all read from globals
+            # and write to shared mem happen. Which will minimize lds_barrier count.
+            if last_write_to_shared:
+                moved_src = move_node_after(custom_node.fx_node, last_write_to_shared)
                 custom_node = get_custom(moved_src)
             with custom_node.graph.inserting_after(custom_node.fx_node):
                 promoted_read = Read(
@@ -57,11 +61,15 @@ def apply_promotion_pattern(custom_node: Read | Write, allocate_node: Allocate):
                 custom_read = get_custom(promoted_read)
                 custom_read.write_dependency = [promoted_write]
             custom_node.memory_type.address_space = GLOBAL_ADDRESS_SPACE
-            apply_promotion_pattern.last_shared_write = promoted_write
+            last_write_to_shared = promoted_write
+            return last_write_to_shared
 
 
 def promote_node(
-    node: Read | Write, address_space: IndexSymbol, constraints: list[Constraint]
+    node: Read | Write,
+    last_write_to_shared: fx.Node,
+    address_space: IndexSymbol,
+    constraints: list[Constraint],
 ):
     """Promotes the given operand in the provided graph
     to the specified address space.
@@ -82,7 +90,10 @@ def promote_node(
             address_space,
         )
         allocate_node.add_to_graph(node.graph)
-    apply_promotion_pattern(node, allocate_node)
+    last_write_to_shared = apply_promotion_pattern(
+        node, allocate_node, last_write_to_shared
+    )
+    return last_write_to_shared
 
 
 def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
@@ -90,10 +101,13 @@ def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
         lambda node: isinstance(get_custom(node), Read)
         or isinstance(get_custom(node), Write)
     )
+    last_write_to_shared = None
     for node in read_or_write_nodes:
         custom = get_custom(node)
         if not custom.memory_type:
             continue
         address_space = subs_idxc(custom.memory_type.address_space)
         if address_space == SHARED_ADDRESS_SPACE:
-            promote_node(custom, address_space, constraints)
+            last_write_to_shared = promote_node(
+                custom, last_write_to_shared, address_space, constraints
+            )

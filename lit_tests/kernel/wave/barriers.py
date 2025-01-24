@@ -86,17 +86,17 @@ def test_read_write_equal_sizes():
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
         infer_types(trace)
-        promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
+        promote_node(read_node, None, SHARED_ADDRESS_SPACE, constraints)
         set_node_indices(trace, constraints)
         expand_graph(trace, constraints)
         set_post_expansion_indices(trace, constraints)
         tweak_index(graph)
         add_shared_memory_barriers(trace)
         print_trace(trace, False)
-        # CHECK: %a
-        # CHECK-NEXT: %c
-        # CHECK-NEXT: %allocate
+        # CHECK: %allocate
         # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-NEXT: %a
+        # CHECK-NEXT: %c
         # CHECK-NEXT: %read_M:0_N:0
         # CHECK-SAME: (%a, 4, None, (), None)
         # CHECK-NEXT: %read_M:0_N:1
@@ -175,7 +175,7 @@ def test_gemm():
         infer_types(trace)
         read_nodes = get_read_nodes(graph)
         for read_node in read_nodes:
-            promote_node(read_node, SHARED_ADDRESS_SPACE, constraints)
+            promote_node(read_node, None, SHARED_ADDRESS_SPACE, constraints)
         set_node_indices(trace, constraints)
         expand_graph(trace, constraints)
         set_post_expansion_indices(trace, constraints)
@@ -191,10 +191,10 @@ def test_gemm():
         # CHECK-NEXT: %register_M:0_N:1_K:0
         # CHECK-NEXT: %register_M:1_N:0_K:0
         # CHECK-NEXT: %register_M:1_N:1_K:0
-        # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: %allocate_1
         # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-NEXT: %allocate
+        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE)
         # CHECK-NEXT: reduction
         # CHECK-SAME: (K, [%register_M:0_N:0_K:0, %register_M:0_N:1_K:0, %register_M:1_N:0_K:0, %register_M:1_N:1_K:0]
         # CHECK-NEXT: %getresult_M:0_N:0_K:0
@@ -216,11 +216,12 @@ def test_gemm():
         # CHECK-NEXT: return None
 
         # Reduction subgraph:
-        # CHECK: %acc_M:0_N:0_K:0
+        # CHECK: %b
+        # CHECK: %a
+        # CHECK-NEXT: %acc_M:0_N:0_K:0
         # CHECK-NEXT: %acc_M:0_N:1_K:0
         # CHECK-NEXT: %acc_M:1_N:0_K:0
         # CHECK-NEXT: %acc_M:1_N:1_K:0
-        # CHECK-NEXT: %a
         # CHECK-NEXT: %read_M:0_N:0_K:0
         # CHECK-NEXT: %read_M:0_N:0_K:1
         # CHECK-NEXT: %read_M:1_N:0_K:0
@@ -234,7 +235,6 @@ def test_gemm():
         # CHECK-NEXT: %read_shared_M:0_N:0_K:1
         # CHECK-NEXT: %read_shared_M:1_N:0_K:0
         # CHECK-NEXT: %read_shared_M:1_N:0_K:1
-        # CHECK-NEXT: %b
         # CHECK-NEXT: %read_M:0_N:0_K:0
         # CHECK-NEXT: %read_M:0_N:0_K:1
         # CHECK-NEXT: %read_M:0_N:1_K:0
