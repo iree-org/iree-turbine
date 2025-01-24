@@ -1,3 +1,5 @@
 sphinx==7.4.7
 sphinx-autobuild==2024.10.3
 sphinx-rtd-theme==2.0.0
+
+-r ../../pytorch-cpu-requirements.txt

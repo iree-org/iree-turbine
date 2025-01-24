@@ -6,10 +6,18 @@ This directory uses Sphinx to build API documentation.
 
 ### Setup virtual environment with requirements
 
+From this docs/api_docs/ directory:
+
 ```shell
 python -m venv .venv
 source .venv/bin/activate
+
+# Install sphinx website generator requirements and PyTorch dep.
 python -m pip install -r requirements.txt
+
+# Install iree-turbine itself.
+# Editable so you can make local changes and preview them easily
+python -m pip install -e ../..
 ```
 
 ### Build docs
