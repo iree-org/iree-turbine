@@ -1281,7 +1281,7 @@ def handle_abs(source: Value) -> OpResult:
 
 
 @handle_unary_op(tanh)
-def handle_abs(source: Value) -> OpResult:
+def handle_tanh(source: Value) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
         result = math_d.tanh(source)
