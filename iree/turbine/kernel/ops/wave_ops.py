@@ -856,10 +856,7 @@ class Placeholder(CustomOp):
             if custom.get_captured_fx_node(subgraph, var):
                 live_captures.append(var)
 
-        if len(live_captures) != len(custom.implicit_captures):
-            print("live_captures", custom.implicit_captures, live_captures)
         custom.update_arg("implicit_captures", live_captures)
-        print(get_custom(parent).implicit_captures)
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

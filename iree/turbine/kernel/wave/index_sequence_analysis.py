@@ -630,7 +630,6 @@ def should_update_index(
     source_vector_shapes: dict[IndexSymbol, int],
     symbolic_constraints: list[SymbolicAlias],
 ):
-    # print("should_update_index", source)
     # Get symbolic shape without any aliased variables.
     aliased_dims = [x.source for x in symbolic_constraints]
     symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
@@ -638,7 +637,6 @@ def should_update_index(
     # If all the source indexing dimensions are not present in source vector shapes,
     # we should not update the index.
     if not set(symbolic_shape).issubset(set(source_vector_shapes.keys())):
-        print("fail 1")
         return False
 
     # Determine if we should update the idx based on the source.
@@ -649,12 +647,10 @@ def should_update_index(
     # If the source index is smaller than the non-batch dims, check if the
     # source index is a subset of the non-batch dims.
     if len(source_index.keys()) < len(non_batch_dims):
-        print("fail 2", set(source_index.keys()).issubset(set(non_batch_dims)))
         return set(source_index.keys()).issubset(set(non_batch_dims))
 
     # Otherwise, check if the non-batch dims are a subset of the source index.
     if not set(non_batch_dims).issubset(set(source_index.keys())):
-        print("fail 3")
         return False
 
     return True
@@ -707,8 +703,6 @@ def propagate_index(
             source_index = source.transform_index(source_index)
             source.index = combine_indices(source.index, source_index)
             source.vector_shapes = source_vector_shapes
-            # print("  source.index",source.index)
-            # print("  source.vector_shapes", source.vector_shapes)
             append_aliased_shapes(source, symbolic_constraints)
         visited.add(source)
         for func in [get_inputs, get_users]:
