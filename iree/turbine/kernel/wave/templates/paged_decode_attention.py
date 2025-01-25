@@ -76,7 +76,7 @@ def get_paged_decode_attention_kernels(
 
     # T represents the indices of the sequence tokens.
     # T is dynamic and is distributed across workgroups and is tiled.
-    count = sympy.Piecewise(
+    iter_count = sympy.Piecewise(
         (sympy.ceiling(T / U), WORKGROUP_0 < sympy.Mod(T, U)),
         (sympy.floor(T / U), True),
     )
@@ -94,7 +94,7 @@ def get_paged_decode_attention_kernels(
         constraints += [
             tkw.WorkgroupConstraint(T, BLOCK_T, 0, apply_fn=wg_func, primary=False)
         ]
-        constraints += [tkw.TilingConstraint(T, 1, iters=count)]
+        constraints += [tkw.TilingConstraint(T, 1, iters=iter_count)]
 
         # BH is the kv-head index and is distributed across workgroups.
         # B is the query index and is distributed like BH but with a different
@@ -282,7 +282,7 @@ def get_paged_decode_attention_kernels(
         res = res_mm * reciprocal_sum
         res_max_log_sum = res_max + tkw.log2(res_sum)
 
-        @tkw.conditional(count > 0)
+        @tkw.conditional(iter_count > 0)
         def then():
             tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
             tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
