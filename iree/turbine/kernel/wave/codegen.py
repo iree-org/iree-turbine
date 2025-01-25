@@ -1326,8 +1326,11 @@ def handle_conditional(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    condition = cast_vector(emitter, condition)
-    condition = _to_scalar(condition)
+    if isinstance(condition, sympy.Basic):
+        condition = gen_sympy_index(add_emitter_subs(emitter), condition)
+    else:
+        condition = cast_vector(emitter, condition)
+        condition = _to_scalar(condition)
 
     cond_type = condition.type
     assert IntegerType.isinstance(

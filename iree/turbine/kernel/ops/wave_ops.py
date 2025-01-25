@@ -74,7 +74,9 @@ def read(
     ...
 
 
-def conditional(condition: "Register") -> Callable[[Callable[[], None]], None]:
+def conditional(
+    condition: "Register" | IndexExpr,
+) -> Callable[[Callable[[], None]], None]:
     ...
 
 
@@ -1228,7 +1230,7 @@ class NestedRegionOp(CustomOp):
 @define_op("conditional")
 @dataclass
 class Conditional(NestedRegionOp):
-    condition: fx.Proxy
+    condition: fx.Proxy | IndexExpr
     subgraph_name: str
     implicit_captures: Sequence[fx.Proxy]
 
@@ -1254,7 +1256,10 @@ class Conditional(NestedRegionOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
-        return get_custom(self.condition).indexing_dims
+        if isinstance(self.condition, fx.Node):
+            return get_custom(self.condition).indexing_dims
+
+        return []
 
 
 @define_op("reduction")

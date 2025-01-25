@@ -74,6 +74,13 @@ def get_paged_decode_attention_kernels(
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     B_WAVES = 1
 
+    # T represents the indices of the sequence tokens.
+    # T is dynamic and is distributed across workgroups and is tiled.
+    count = sympy.Piecewise(
+        (sympy.ceiling(T / U), WORKGROUP_0 < sympy.Mod(T, U)),
+        (sympy.floor(T / U), True),
+    )
+
     def phase_0_constraints():
         # K1, K2 are reduction dimensions that are fixed (not distributed) so
         # they are not part of the constraints.
@@ -83,12 +90,6 @@ def get_paged_decode_attention_kernels(
         # U is parallelizable and is distributed across workgroups.
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 0)]
 
-        # T represents the indices of the sequence tokens.
-        # T is dynamic and is distributed across workgroups and is tiled.
-        count = sympy.Piecewise(
-            (sympy.ceiling(T / U), WORKGROUP_0 < sympy.Mod(T, U)),
-            (sympy.floor(T / U), True),
-        )
         wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
         constraints += [
             tkw.WorkgroupConstraint(T, BLOCK_T, 0, apply_fn=wg_func, primary=False)
@@ -281,8 +282,7 @@ def get_paged_decode_attention_kernels(
         res = res_mm * reciprocal_sum
         res_max_log_sum = res_max + tkw.log2(res_sum)
 
-        cond = tkw.apply_expr(seq_length, lambda x: x > 0)
-        @tkw.conditional(cond)
+        @tkw.conditional(count > 0)
         def then():
             tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
             tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
