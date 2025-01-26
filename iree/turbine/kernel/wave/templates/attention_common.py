@@ -21,10 +21,14 @@ class AttentionShape:
     num_seqs: Optional[int] = None
     max_seq_len: Optional[int] = None
     total_seq_len: Optional[int] = None
+    context_len: Optional[int] = None
     # -----------------------
     # Vanilla attention
     query_seq_len: Optional[int] = None
     kv_seq_len: Optional[int] = None
+    # -----------------------
+    # Decode specific
+    block_size: Optional[int] = None
 
 
 # Commonly-used attention symbols.
@@ -40,7 +44,7 @@ D_KV = tkl.sym.D_KV  # key/value head size
 BLOCK_H = tkl.sym.BLOCK_H
 BLOCK_H_Q = tkl.sym.BLOCK_H
 BLOCK_H_KV = tkl.sym.BLOCK_H
-BLOCK_N_Q = tkl.sym.BLOCK_N_D
+BLOCK_N_Q = tkl.sym.BLOCK_N_Q
 BLOCK_N_KV = tkl.sym.BLOCK_N_KV
 BLOCK_D_Q = tkl.sym.BLOCK_D_Q
 BLOCK_D_KV = tkl.sym.BLOCK_D_KV

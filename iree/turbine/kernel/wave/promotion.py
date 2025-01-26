@@ -77,7 +77,7 @@ def apply_promotion_pattern(
             # We move CustomOp/Read up to the last write_to_shared_mem S.T
             # all reads from shared mem happens only after all read from globals
             # and write to shared mem happen. Which will minimize lds_barrier count.
-            if last_write_to_shared:
+            if last_write_to_shared and last_write_to_shared.graph == custom_node.graph:
                 moved_src = move_node_after(custom_node.fx_node, last_write_to_shared)
                 custom_node = get_custom(moved_src)
             with custom_node.graph.inserting_after(custom_node.fx_node):
