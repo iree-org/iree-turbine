@@ -632,7 +632,8 @@ def fixup_reduction_nodes(
     expansion_context: ExpansionContext,
 ):
     reduction_context = expansion_context.reduction_context
-    for reduction in trace.walk(lambda x: isinstance(get_custom(x), Reduction)):
+    reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Reduction))
+    for reduction in reversed(reduction_nodes):
         reduction = get_custom(reduction)
         reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
         output = get_custom(get_last(reduction_subgraph.nodes))
@@ -667,7 +668,7 @@ def fixup_reduction_nodes(
             )
             get_result.name = get_item.fx_node.name
             get_item.replace_all_uses_with(get_custom(get_result))
-            get_item.graph.erase_node(get_item.fx_node)
+            get_item.erase()
 
         remove_original_nodes(return_vals)
 

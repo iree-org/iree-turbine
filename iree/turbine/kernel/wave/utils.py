@@ -890,6 +890,18 @@ def get_users(
     return users, reduction
 
 
+def propagate_placeholders(n):
+    """
+    Returns the captured node of a placeholder if it exists.
+    """
+    c = get_custom(n)
+    if isinstance(c, Placeholder):
+        p = c.get_captured_fx_node()
+        if p is not None:
+            return p
+    return n
+
+
 def get_inputs(
     node: fx.Node, reduction: fx.Node = None
 ) -> tuple[list[fx.Node], fx.Node]:
@@ -926,16 +938,7 @@ def get_inputs(
         for input in node.all_input_nodes:
             inputs.append(input)
 
-    def propagate(n):
-        c = get_custom(n)
-        if isinstance(c, Placeholder):
-            p = c.get_captured_fx_node()
-            if p is not None:
-                return p
-
-        return n
-
-    inputs = [propagate(i) for i in inputs]
+    inputs = [propagate_placeholders(i) for i in inputs]
     return inputs, reduction
 
 
@@ -1170,6 +1173,10 @@ def to_default_device(tensor: torch.Tensor) -> torch.Tensor:
 
 def device_arange(*args, **kwargs):
     return to_default_device(torch.arange(*args, **kwargs))
+
+
+def device_empty(*args, **kwargs):
+    return to_default_device(torch.empty(*args, **kwargs))
 
 
 def device_full(*args, **kwargs):
