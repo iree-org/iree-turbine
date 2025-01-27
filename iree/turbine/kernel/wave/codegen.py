@@ -77,6 +77,7 @@ from ..ops.wave_ops import (
     set_symbol,
     shared_memory_barrier,
     shuffle,
+    tanh,
     write,
 )
 from ..lang.wave_types import IndexMapping, IndexSymbol
@@ -1277,6 +1278,16 @@ def handle_abs(source: Value) -> OpResult:
     else:
         raise ValidationError(f"Found unhandled operand type for abs: {element_type}")
     return abs
+
+
+@handle_unary_op(tanh)
+def handle_tanh(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        result = math_d.tanh(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
+    return result
 
 
 ###############################################################################
