@@ -23,7 +23,7 @@ from iree.turbine.kernel.wave.templates.paged_decode_attention import (
     paged_decode_attention_shape,
 )
 import os
-from torch.testing import assert_allclose
+from torch.testing import assert_close
 from ..common.utils import (
     require_e2e,
     require_cdna3,
@@ -314,4 +314,4 @@ def testPagedFlashDecoding(
     else:
         ref_vllm_output = torch.load(os.path.join(artifact_directory, "output.pt"))
 
-    assert_allclose(output, ref_vllm_output, rtol=1e-3, atol=1e-3)
+    assert_close(output, ref_vllm_output.to(torch.float32), rtol=1e-3, atol=1e-3)

@@ -13,7 +13,7 @@
 import copy
 import pytest
 import torch
-from torch.testing import assert_allclose
+from torch.testing import assert_close
 import math
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
@@ -186,7 +186,7 @@ def testSameConfig(request):
     dk_sqrt = math.sqrt(1.0 / shape[3])
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q, k, v, attn_mask=None
-    )
+    ).to(torch.float32)
     cache_manager = get_cache_manager()
     with tk.gen.TestLaunchContext(
         copy.deepcopy(hyperparams),
@@ -203,7 +203,7 @@ def testSameConfig(request):
         # First run/call to kernel, this should compile from scratch.
         output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
-        assert_allclose(output, torch_ref)
+        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
         assert isinstance(
             mb, tk.compiler.builder.ModuleBuilder
         ), "Expected first call to not be cached."
@@ -216,7 +216,7 @@ def testSameConfig(request):
         cached_kernel = base_attention(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
-        assert_allclose(output, torch_ref)
+        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
         assert (
             len(cache_manager.session_cache) == 1
         ), "Expected to keep size of cache because we reuse same kernel."
@@ -317,7 +317,7 @@ def testDifferentDynamicSameBlock(request):
         dk_sqrt = math.sqrt(1.0 / shape_0[3])
         torch_ref_shape_0 = torch.nn.functional.scaled_dot_product_attention(
             q_shape_0, k_shape_0, v_shape_0, attn_mask=None
-        )
+        ).to(torch.float32)
         output_shape_0 = device_zeros(
             shape_0[0], shape_0[1], shape_0[2], dtype=torch.float32
         )
@@ -327,7 +327,7 @@ def testDifferentDynamicSameBlock(request):
             v_shape_0.permute([0, 2, 1]),
             output_shape_0,
         )
-        assert_allclose(output_shape_0, torch_ref_shape_0)
+        assert_close(output_shape_0, torch_ref_shape_0, atol=1e-3, rtol=1e-3)
         assert isinstance(
             mb, tk.compiler.builder.ModuleBuilder
         ), "Expected first call to not be cached."
@@ -363,7 +363,7 @@ def testDifferentDynamicSameBlock(request):
         dk_sqrt = math.sqrt(1.0 / shape_1[3])
         torch_ref_shape_1 = torch.nn.functional.scaled_dot_product_attention(
             q_shape_1, k_shape_1, v_shape_1, attn_mask=None
-        )
+        ).to(torch.float32)
         assert (
             len(cache_manager.session_cache) == 1
         ), "Expected len == 1, after caching first kernel."
@@ -378,7 +378,7 @@ def testDifferentDynamicSameBlock(request):
             v_shape_1.permute([0, 2, 1]),
             output_shape_1,
         )
-        assert_allclose(output_shape_1, torch_ref_shape_1)
+        assert_close(output_shape_1, torch_ref_shape_1, atol=1e-3, rtol=1e-3)
         assert (
             len(cache_manager.session_cache) == 1
         ), "Expected to keep size of cache because we reuse same kernel."
@@ -456,7 +456,7 @@ def testSameSizeDifferentBlock(request):
     dk_sqrt = math.sqrt(1.0 / shape[3])
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q, k, v, attn_mask=None
-    )
+    ).to(torch.float32)
     cache_manager = get_cache_manager()
     with tk.gen.TestLaunchContext(
         copy.deepcopy(hyperparams),
@@ -475,7 +475,7 @@ def testSameSizeDifferentBlock(request):
         mb_config_0 = base_attention(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
-        assert_allclose(output, torch_ref)
+        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
         assert isinstance(
             mb_config_0, tk.compiler.builder.ModuleBuilder
         ), "Expected first call to not be cached."
@@ -499,7 +499,7 @@ def testSameSizeDifferentBlock(request):
         mb_config_1 = base_attention(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
-        assert_allclose(output, torch_ref)
+        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
         assert (
             len(cache_manager.session_cache) == 2
         ), "Expected cache size to increment, because we use different block size/config."

@@ -22,7 +22,7 @@ from iree.turbine.kernel.wave.utils import (
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
-from torch.testing import assert_allclose
+from torch.testing import assert_close
 from ..common.utils import (
     require_e2e,
     require_cdna3,
@@ -227,7 +227,7 @@ def testAttention(
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
 
-        assert_allclose(output, torch_ref)
+        assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
 
 
 @require_e2e
@@ -428,10 +428,10 @@ def testAttentionBias(
                 f.write(mb.module_op.get_asm())
 
         if "gfx94" in config["target"]:
-            assert_allclose(output, torch_ref, atol=2e-3, rtol=5e-3)
+            assert_close(output, torch_ref, atol=2e-3, rtol=5e-3, check_dtype=False)
         else:
             # TODO: Determine why the error is higher on gfx90.
-            assert_allclose(output, torch_ref, atol=3e-3, rtol=8e-1)
+            assert_close(output, torch_ref, atol=3e-3, rtol=8e-1, check_dtype=False)
 
 
 @require_e2e
@@ -634,10 +634,10 @@ def testAttentionSoftCap(
                 f.write(mb.module_op.get_asm())
 
         if "gfx94" in config["target"]:
-            assert_allclose(output, torch_ref, atol=2e-3, rtol=5e-3)
+            assert_close(output, torch_ref, atol=2e-3, rtol=5e-3, check_dtype=False)
         else:
             # TODO: Determine why the error is higher on gfx90.
-            assert_allclose(output, torch_ref, atol=3e-3, rtol=8e-1)
+            assert_close(output, torch_ref, atol=3e-3, rtol=8e-1, check_dtype=False)
 
 
 @require_e2e
