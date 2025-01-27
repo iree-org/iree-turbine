@@ -281,10 +281,10 @@ class KernelSignature:
                 [isinstance(get_custom(x), Read) for x in get_users_recursive(node)]
             )
 
-        def only_write_dependencies(node):
+        def any_write_dependencies(node):
             if len(node.users) == 0:
                 return False
-            return all(
+            return any(
                 [isinstance(get_custom(x), Write) for x in get_users_recursive(node)]
             )
 
@@ -302,7 +302,7 @@ class KernelSignature:
             if only_read_dependencies(node):
                 usage = KernelBufferUsage.INPUT
 
-            if only_write_dependencies(node):
+            if any_write_dependencies(node):
                 usage = KernelBufferUsage.OUTPUT
 
             # Create new Memory type with the correct usage
