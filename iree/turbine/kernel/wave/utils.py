@@ -153,9 +153,12 @@ def print_trace(trace: CapturedTrace, custom_print: bool = True):
     then using our custom node format.
     """
     # The root graph is at the back so we print the subgraphs in reverse order
-    for subgraph in reversed(list(trace.region_graph.subgraphs.values())):
-        print(subgraph)
+    for name, subgraph in reversed(list(trace.region_graph.subgraphs.items())):
+        if name == trace.root_graph:
+            name = f"{name} [root]"
+        print(f"{name}:\n{subgraph}")
         if custom_print:
+            print("Custom format:")
             for node in subgraph.nodes:
                 print(get_custom(node))
 
@@ -166,7 +169,6 @@ def print_subgraph(trace: CapturedTrace, subgraph_name: str, custom_print: bool 
     The graphs are printed first in the torch printing format and
     then using our custom node format.
     """
-    # The root graph is at the back so we print the subgraphs in reverse order
     for name, subgraph in trace.region_graph.subgraphs.items():
         if name == subgraph_name:
             print(subgraph)
