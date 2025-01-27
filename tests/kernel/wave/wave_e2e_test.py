@@ -1500,9 +1500,9 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
                     dump_perf, "iree_" + perf_filename
                 )
 
-            config["iree_preprocessing_pass_pipeline"] = (
-                "builtin.module(iree-preprocessing-transpose-convolution-pipeline, iree-preprocessing-pad-to-intrinsics)"
-            )
+            config[
+                "iree_preprocessing_pass_pipeline"
+            ] = "builtin.module(iree-preprocessing-transpose-convolution-pipeline, iree-preprocessing-pad-to-intrinsics)"
             iree_ref = torch.zeros_like(out_ref)
             generate_iree_ref(
                 "conv_2d_" + layout,
