@@ -38,6 +38,7 @@ from typing import List, Optional
 shapes = [(16, 1, 64, 64, 32, 2, 100)]
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
 shapes += [(128, 2, 80, 80, 32, 2, 500)]
+shapes += [(128, 2, 80, 80, 32, 2, 5)]
 
 
 def ref_paged_attn(
