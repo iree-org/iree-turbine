@@ -99,6 +99,13 @@ def get_paged_decode_attention_kernels(
         # B is the query index and is distributed like BH but with a different
         # workgroup and wave tile size.
 
+        # For GQA, the number of query heads >> number of kv heads. So we launch
+        # workgroups where each workgroup processes HEAD_BLOCK_SIZE query heads
+        # as this allows us to use MMA for the attention computation. While
+        # each workgroup processes HEAD_BLOCK_SIZE query heads, it only processes
+        # one kv head. So we need to specify an apply_func to determine the
+        # appropriate kv head index.
+
         wg_func_2 = lambda wg: wg // math.ceil(head_ratio / HEAD_BLOCK_SIZE)
         count = shape.num_query_heads // min(HEAD_BLOCK_SIZE, head_ratio)
         constraints += [
