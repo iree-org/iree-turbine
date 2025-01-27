@@ -634,10 +634,10 @@ def testAttentionSoftCap(
                 f.write(mb.module_op.get_asm())
 
         if "gfx94" in config["target"]:
-            assert_allclose(output, torch_ref, atol=2e-3, rtol=5e-3)
+            assert_close(output, torch_ref, atol=2e-3, rtol=5e-3, check_dtype=False)
         else:
             # TODO: Determine why the error is higher on gfx90.
-            assert_allclose(output, torch_ref, atol=3e-3, rtol=8e-1)
+            assert_close(output, torch_ref, atol=3e-3, rtol=8e-1, check_dtype=False)
 
 
 @require_e2e
