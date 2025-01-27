@@ -4,10 +4,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import logging
 import pytest
 import torch
-import unittest
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
@@ -15,7 +13,6 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
-    get_default_arch,
     get_default_scheduling_params,
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
@@ -25,9 +22,7 @@ from iree.turbine.kernel.wave.utils import (
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
-import json
 from torch.testing import assert_close
-from enum import Enum
 
 from .common.utils import (
     require_e2e,
@@ -36,44 +31,12 @@ from .common.utils import (
     enable_scheduling_barriers,
     dump_generated_mlir,
     param_bool,
-    perf_test,
 )
 
-# Add test shapes for validation and performance testing.
-default_test_shapes = {}
-gemm_shapes = [
-    (1024, 5120, 640),
-    (2048, 10240, 1280),
-    (4096, 20480, 2560),
-]
-
-default_test_shapes["test_gemm"] = [
-    pytest.param(s, id="x".join(map(str, s))) for s in gemm_shapes
-] + [
-    pytest.param(s, id="x".join(map(str, s)) + "-perf", marks=pytest.mark.perf_only)
-    for s in gemm_shapes
-]
-
-default_test_shapes["test_batched_gemm"] = [(8, 256, 128, 192), (32, 1024, 512, 768)]
-
-
-user_specified_test_shapes = ""
-
-test_params_path = os.environ.get("TEST_PARAMS_PATH", None)
-
-if test_params_path:
-    with open(test_params_path, "r") as file:
-        user_specified_test_shapes = json.load(file)
-
-
-def get_test_shapes(test_name: str) -> list[tuple[int]]:
-    if test_name in user_specified_test_shapes:
-        return user_specified_test_shapes[test_name]
-    return default_test_shapes[test_name]
-
+from .common.shapes import get_test_shapes
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -220,7 +183,7 @@ def testGemm(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -368,7 +331,7 @@ def testVMFMAGemm(
 
 @require_e2e
 @require_cdna2
-@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -517,7 +480,7 @@ def testCDNA2IntGemm(
 
 @require_e2e
 @require_cdna3
-@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -634,7 +597,7 @@ def testCDNA3IntGemm(
 
 @require_e2e
 @require_cdna3
-@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -748,7 +711,7 @@ def testF8Gemm(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("test_batched_gemm"))
+@pytest.mark.parametrize("shape", get_test_shapes("batched_gemm"))
 @param_bool("enable_scheduling", "sched")
 def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
     run_bench = request.config.getoption("--runperf")

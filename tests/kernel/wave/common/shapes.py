@@ -22,6 +22,17 @@ _e2e_test_shapes["evoformer"] = [
     (1, 512, 256, 8, 8, 256, 8),
 ]
 
+_e2e_test_shapes["gemm"] = [
+    (1024, 5120, 640),
+    (2048, 10240, 1280),
+    (4096, 20480, 2560),
+]
+
+_e2e_test_shapes["batched_gemm"] = [
+    (8, 256, 128, 192),
+    (32, 1024, 512, 768),
+]
+
 def get_test_shapes(test_name: str):
     assert test_name in _e2e_test_shapes, f"Unknown test name: {test_name}"
     shapes = [

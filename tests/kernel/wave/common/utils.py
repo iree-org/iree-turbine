@@ -22,8 +22,5 @@ dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
 # Whether to use scheduling group barriers (needs LLVM fix).
 enable_scheduling_barriers = int(os.environ.get("WAVE_USE_SCHED_BARRIERS", 0))
 
-# Add test shapes for validation and performance testing.
-perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
-
 def param_bool(name, short_name, *args, **kwargs):
     return pytest.mark.parametrize(name, [False, True], ids=[f"no_{short_name}", short_name], *args, **kwargs)
