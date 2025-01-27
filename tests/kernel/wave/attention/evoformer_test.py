@@ -27,9 +27,8 @@ from ..common.utils import (
     require_e2e,
     enable_scheduling_barriers,
     dump_generated_mlir,
-    param_bool,
 )
-from ..common.shapes import param_shape
+from ..common.shapes import get_test_shapes
 
 
 default_tile_sizes = [(1, 1, 32, 1, None, 64, 32)]
@@ -60,9 +59,9 @@ def attention_reference(
 
 
 @require_e2e
-@param_shape("evoformer")
+@pytest.mark.parametrize("shape", get_test_shapes("evoformer"))
 @pytest.mark.parametrize("tile_sizes", default_tile_sizes)
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [

@@ -22,13 +22,5 @@ dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
 # Whether to use scheduling group barriers (needs LLVM fix).
 enable_scheduling_barriers = int(os.environ.get("WAVE_USE_SCHED_BARRIERS", 0))
 
-def param_bool(name, short_name, vals=None, *args, **kwargs):
-    """Add a boolean parameterization with useful names.
-    
-    By default the values will be both False and True, but you can pass vals for
-    the case where it's helpful to have a test technically be parameterized but
-    actually have only one option.
-    """
-    vals = [False, True] if vals is None else vals
-    ids = [short_name if val else f"no_{short_name}" for val in vals]
-    return pytest.mark.parametrize(name, vals, ids=ids, *args, **kwargs)
+def param_bool(name, short_name, *args, **kwargs):
+    return pytest.mark.parametrize(name, [False, True], ids=[f"no_{short_name}", short_name], *args, **kwargs)

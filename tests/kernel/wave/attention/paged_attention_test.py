@@ -29,9 +29,8 @@ from ..common.utils import (
     require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
-    param_bool,
 )
-from ..common.shapes import param_shape
+from ..common.shapes import get_test_shapes
 from typing import List, Optional
 
 # Reference paged attention implementation from vLLM and sglang.
@@ -143,7 +142,7 @@ def load_inputs(directory):
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("dtype", [torch.float16])
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize("num_kv_splits", [8])
 @pytest.mark.parametrize(
     "mfma_variant",

@@ -27,14 +27,13 @@ from ..common.utils import (
     require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
-    param_bool,
 )
-from ..common.shapes import param_shape
+from ..common.shapes import get_test_shapes
 
 
 @require_e2e
-@param_shape("chained_gemm")
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("shape", get_test_shapes("chained_gemm"))
+@pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -173,8 +172,8 @@ def testChainedGemm(
 
 @require_e2e
 @require_cdna3
-@param_shape("chained_gemm")
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("shape", get_test_shapes("chained_gemm"))
+@pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [

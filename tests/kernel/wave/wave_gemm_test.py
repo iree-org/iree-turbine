@@ -33,10 +33,10 @@ from .common.utils import (
     param_bool,
 )
 
-from .common.shapes import param_shape
+from .common.shapes import get_test_shapes
 
 @require_e2e
-@param_shape("gemm")
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -183,7 +183,7 @@ def testGemm(
 
 
 @require_e2e
-@param_shape("gemm")
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -331,7 +331,7 @@ def testVMFMAGemm(
 
 @require_e2e
 @require_cdna2
-@param_shape("gemm")
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -480,7 +480,7 @@ def testCDNA2IntGemm(
 
 @require_e2e
 @require_cdna3
-@param_shape("gemm")
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -597,7 +597,7 @@ def testCDNA3IntGemm(
 
 @require_e2e
 @require_cdna3
-@param_shape("gemm")
+@pytest.mark.parametrize("shape", get_test_shapes("gemm"))
 @param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -711,7 +711,7 @@ def testF8Gemm(
 
 
 @require_e2e
-@param_shape("batched_gemm")
+@pytest.mark.parametrize("shape", get_test_shapes("batched_gemm"))
 @param_bool("enable_scheduling", "sched")
 def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
     run_bench = request.config.getoption("--runperf")

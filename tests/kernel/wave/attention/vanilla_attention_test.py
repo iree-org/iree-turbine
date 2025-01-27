@@ -29,11 +29,11 @@ from ..common.utils import (
     enable_scheduling_barriers,
     dump_generated_mlir,
 )
-from ..common.shapes import param_shape
+from ..common.shapes import get_test_shapes
 
 
 @require_e2e
-@param_shape("attention")
+@pytest.mark.parametrize("shape", get_test_shapes("attention"))
 @pytest.mark.parametrize("enable_scheduling", [False, True])
 @pytest.mark.parametrize("dynamic_dims", [False, True])
 @pytest.mark.parametrize(
@@ -231,7 +231,7 @@ def testAttention(
 
 
 @require_e2e
-@param_shape("attention")
+@pytest.mark.parametrize("shape", get_test_shapes("attention"))
 @pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize("dynamic_dims", [False, True])
 @pytest.mark.parametrize(
@@ -436,7 +436,7 @@ def testAttentionBias(
 
 @require_e2e
 @require_cdna3
-@param_shape("attention")
+@pytest.mark.parametrize("shape", get_test_shapes("attention"))
 @pytest.mark.parametrize("enable_scheduling", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",

@@ -33,12 +33,6 @@ _e2e_test_shapes["batched_gemm"] = [
     (32, 1024, 512, 768),
 ]
 
-_e2e_test_shapes["paged_attention"] = [
-  (16, 1, 64, 64, 32, 2, 100),
-  (64, 1, 80, 80, 32, 2, 128),
-  (128, 2, 80, 80, 32, 2, 500),
-]
-
 def get_test_shapes(test_name: str):
     assert test_name in _e2e_test_shapes, f"Unknown test name: {test_name}"
     shapes = [
@@ -49,6 +43,3 @@ def get_test_shapes(test_name: str):
         for s in _e2e_test_shapes[test_name]
     ]
     return shapes
-
-def param_shape(test_name: str):
-    return pytest.mark.parametrize("shape", get_test_shapes(test_name))

@@ -25,15 +25,14 @@ from ..common.utils import (
     require_e2e,
     enable_scheduling_barriers,
     dump_generated_mlir,
-    param_bool,
 )
-from ..common.shapes import param_shape
+from ..common.shapes import get_test_shapes
 
 
 @require_e2e
-@param_shape("decode_attention")
-@param_bool("enable_scheduling", "sched", [False])
-@param_bool("dynamic_dims", "dyn")
+@pytest.mark.parametrize("shape", get_test_shapes("decode_attention"))
+@pytest.mark.parametrize("enable_scheduling", [False])
+@pytest.mark.parametrize("dynamic_dims", [True, False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
