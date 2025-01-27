@@ -550,13 +550,13 @@ def test_read_write_same(shape, request):
     @tkw.wave(constraints)
     def double(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        double = res+res
+        double = res + res
         tkw.write(double, a, elements_per_thread=ELEMS_PER_THREAD)
 
     config = get_default_run_config()
 
     a = device_randn(shape, dtype=torch.float16)
-    ref = a+a
+    ref = a + a
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
@@ -1500,9 +1500,9 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
                     dump_perf, "iree_" + perf_filename
                 )
 
-            config[
-                "iree_preprocessing_pass_pipeline"
-            ] = "builtin.module(iree-preprocessing-transpose-convolution-pipeline, iree-preprocessing-pad-to-intrinsics)"
+            config["iree_preprocessing_pass_pipeline"] = (
+                "builtin.module(iree-preprocessing-transpose-convolution-pipeline, iree-preprocessing-pad-to-intrinsics)"
+            )
             iree_ref = torch.zeros_like(out_ref)
             generate_iree_ref(
                 "conv_2d_" + layout,
