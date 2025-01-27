@@ -9,7 +9,7 @@ import torch
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.wave_sim import wave_sim
-from numpy.testing import assert_allclose
+from torch.testing import assert_close
 
 
 def test_eltwise():
@@ -47,7 +47,7 @@ def test_eltwise():
     b = torch.randn(128, 256, dtype=torch.float32)
     c = torch.zeros(128, 256, dtype=torch.float32)
     eltwise(a, b, c)
-    assert_allclose(c, a + b)
+    assert_close(c, a + b)
 
 
 def test_broadcast_1():
@@ -85,7 +85,7 @@ def test_broadcast_1():
     b = torch.randn(256, dtype=torch.float32)
     c = torch.zeros(128, 256, dtype=torch.float32)
     eltwise(a, b, c)
-    assert_allclose(c, a + b)
+    assert_close(c, a + b)
 
 
 def test_broadcast_2():
@@ -120,7 +120,7 @@ def test_broadcast_2():
     b = torch.randn(256, dtype=torch.float32)
     c = torch.zeros(128, 256, dtype=torch.float32)
     eltwise(b, c)
-    assert_allclose(c, b + torch.zeros(128, 256, dtype=torch.float32))
+    assert_close(c, b + torch.zeros(128, 256, dtype=torch.float32))
 
 
 def test_broadcast_3():
@@ -155,7 +155,7 @@ def test_broadcast_3():
     b = torch.randn(256, dtype=torch.float32)
     c = torch.zeros(128, 256, dtype=torch.float32)
     eltwise(b, c)
-    assert_allclose(c, b[0] + torch.zeros(128, 256, dtype=torch.float32))
+    assert_close(c, b[0] + torch.zeros(128, 256, dtype=torch.float32))
 
 
 def test_gemm():
@@ -215,7 +215,7 @@ def test_gemm():
     b = torch.randn(128, 256, dtype=torch.float16)
     c = torch.zeros(64, 128, dtype=torch.float32)
     gemm(a, b, c)
-    assert_allclose(c, a @ b.T)
+    assert_close(c, a @ b.T, check_dtype=False)
 
 
 def test_transpose_1():
@@ -256,7 +256,7 @@ def test_transpose_1():
     a = torch.randn(128, 256, dtype=torch.float32)
     c = torch.zeros(256, 128, dtype=torch.float32)
     transpose(a, c)
-    assert_allclose(c, a.T)
+    assert_close(c, a.T)
 
 
 def test_transpose_2():
@@ -302,7 +302,7 @@ def test_transpose_2():
     a = torch.randn(128, 256, dtype=torch.float32)
     c = torch.zeros(256, 128, dtype=torch.float32)
     transpose(a, c)
-    assert_allclose(c, a.T)
+    assert_close(c, a.T)
 
 
 @pytest.mark.parametrize("n", [1, 2, 4])
@@ -408,4 +408,4 @@ def test_igemm_conv(n, c, nf, stride):
 
     out = torch.zeros_like(out_ref)
     conv(x, we, out)
-    assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
+    assert_close(out, out_ref, rtol=1e-05, atol=1e-05)
