@@ -1481,6 +1481,15 @@ def print_graph(graph: fx.Graph):
     print(graph_str)
 
 
+def is_reduction_subgraph(graph: fx.Graph):
+    """
+    Check that graph is a subgraph that is owned by ReductionOp.
+    """
+    if not hasattr(graph, "parent_op"):
+        return False
+    return isinstance(get_custom(graph.parent_op), Reduction)
+
+
 def initialize_iter_args(trace: CapturedTrace) -> None:
     """
     Initializes the IterArgs in each reduction with an index

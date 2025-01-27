@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from .utils import is_reduction_subgraph
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import get_custom, Read, SharedMemoryBarrier, Write, Reduction
 from ..lang.global_symbols import SHARED_ADDRESS_SPACE
@@ -36,6 +37,7 @@ def add_shared_memory_barriers(
                 last_node = custom
                 continue
             if type(custom) != type(last_node):
+                # Synchronize after the write to shared memory before we read from it.
                 with graph.inserting_before(node):
                     SharedMemoryBarrier().add_to_graph(graph)
             last_node = custom
@@ -43,5 +45,12 @@ def add_shared_memory_barriers(
             last_node = add_shared_memory_barriers(
                 trace.get_subgraph(custom.subgraph_name), last_node
             )
+
+    # Synchronize before the write to shared memory to avoid stepping over
+    # reads in the previous iteration of a loop.
+    if is_reduction_subgraph(graph) and last_node:
+        # Insert barrier at start of block, if load from shared memory exist.
+        with graph.inserting_after(graph._root):
+            SharedMemoryBarrier().add_to_graph(graph)
 
     return last_node

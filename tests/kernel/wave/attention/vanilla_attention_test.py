@@ -326,14 +326,13 @@ def testAttentionBias(
             tkl.Register[B, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-            bias_reg = tkw.read(bias, elements_per_thread=STORE_ELEMS_PER_THREAD)
             q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             # b_reg: tkw.Register[B, N, K, tkl.f16]
             k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             # acc: tkw.Register[B, N, M, tkl.f32]
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
-            # bias_reg = tkw.read(bias, elements_per_thread=STORE_ELEMS_PER_THREAD)
+            bias_reg = tkw.read(bias, elements_per_thread=STORE_ELEMS_PER_THREAD)
             x_j = x_j + bias_reg
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
