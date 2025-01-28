@@ -133,7 +133,7 @@ def test_gemm():
         # CHECK-SAME: (%getresult_M:1_N:1_K:0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
-        # Root graph (custom format):
+        # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=b
         # CHECK-NEXT: placeholder(_name=c
@@ -220,7 +220,7 @@ def test_gemm():
         # CHECK-NEXT: %mma_M:1_N:1_K:2
         # CHECK-NEXT: %mma_M:1_N:1_K:3
 
-        # Reduction subgraph (custom format):
+        # CHECK: Custom format:
         # CHECK: placeholder(_name=acc_M:0_N:0_K:0
         # CHECK-NEXT: placeholder(_name=acc_M:0_N:1_K:0
         # CHECK-NEXT: placeholder(_name=acc_M:1_N:0_K:0

@@ -94,7 +94,7 @@ def test_read_write_equal_sizes():
         # CHECK-SAME: (%read_M:1_N:1, %c, 4, None, ())
         # CHECK-NEXT: return
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: read(memory=a
@@ -172,7 +172,7 @@ def test_read_write():
         # CHECK-SAME: (%read_M:1_N:0_K:0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: read(memory=a
@@ -246,7 +246,7 @@ def test_write_in_reduction():
         # CHECK: %write_M:0_K:0 :
         # CHECK-SAME: (%getresult_M:0_K:0, %c, 4,
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK: reduction(axis=K,
         # CHECK: get_result(value=reduction, res_idx=0)
         # CHECK: write(register_=getresult_M:0_K:0, memory=c, elements_per_thread=4,
@@ -262,7 +262,7 @@ def test_write_in_reduction():
         # CHECK: %write_M:0_K:1 :
         # CHECK-SAME: (%read_M:0_K:1, %b, 4,
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK: read(memory=a, elements_per_thread=4,
         # CHECK: read(memory=a, elements_per_thread=4,
         # CHECK: write(register_=read_M:0_K:0, memory=b, elements_per_thread=4,
@@ -326,6 +326,7 @@ def test_no_writes():
         # CHECK: %read :
         # CHECK-SAME: (args = (%a, 16, None, (), None), kwargs = {})
         # CHECK: return None
+        # CHECK: Custom format:
         # CHECK: placeholder(_name=a, _type=Memory[M, K].of(f16))
         # CHECK: read(memory=a, elements_per_thread=16
         # CHECK: output(return_vals=(None,))
@@ -382,7 +383,7 @@ def test_gemm():
         # CHECK-SAME: (%getresult_M:1_N:1_K:0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=b
         # CHECK-NEXT: placeholder(_name=c
@@ -449,7 +450,7 @@ def test_gemm():
         # CHECK-SAME: (%read_M:1_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:1_N:1_K:0, None)
         # CHECK-NEXT: return [mma_M:0_N:0_K:1, mma_M:0_N:1_K:1, mma_M:1_N:0_K:1, mma_M:1_N:1_K:1]
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=acc_M:0_N:0_K:0
         # CHECK-NEXT: placeholder(_name=acc_M:0_N:1_K:0
         # CHECK-NEXT: placeholder(_name=acc_M:1_N:0_K:0
@@ -569,7 +570,7 @@ def test_batched_gemm():
         # CHECK-SAME: (%getresult_M:1_N:1_K:0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=b
         # CHECK-NEXT: placeholder(_name=c
@@ -637,7 +638,7 @@ def test_batched_gemm():
         # CHECK-SAME: (%read_M:1_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:1_N:1_K:0, None)
         # CHECK-NEXT: return [mma_M:0_N:0_K:1, mma_M:0_N:1_K:1, mma_M:1_N:0_K:1, mma_M:1_N:1_K:1]
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=acc_M:0_N:0_K:0
         # CHECK-NEXT: placeholder(_name=acc_M:0_N:1_K:0
         # CHECK-NEXT: placeholder(_name=acc_M:1_N:0_K:0
@@ -728,29 +729,29 @@ def test_gemm_non_direct_acc():
         set_post_expansion_indices(graph, constraints)
         print_trace(graph)
         # CHECK: %add_M:0_N:0_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_M:0_N:0_K:0, %acc_M:0_N:0_K:0), kwargs = {})
+        # CHECK-SAME: [add](args = (%exp2_M:0_N:0_K:0, %acc_M:0_N:0_K:0), kwargs = {})
         # CHECK: %add_M:0_N:1_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_M:0_N:1_K:0, %acc_M:0_N:1_K:0), kwargs = {})
+        # CHECK-SAME: [add](args = (%exp2_M:0_N:1_K:0, %acc_M:0_N:1_K:0), kwargs = {})
         # CHECK: %add_M:1_N:0_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_M:1_N:0_K:0, %acc_M:1_N:0_K:0), kwargs = {})
+        # CHECK-SAME: [add](args = (%exp2_M:1_N:0_K:0, %acc_M:1_N:0_K:0), kwargs = {})
         # CHECK: %add_M:1_N:1_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_M:1_N:1_K:0, %acc_M:1_N:1_K:0), kwargs = {})
+        # CHECK-SAME: [add](args = (%exp2_M:1_N:1_K:0, %acc_M:1_N:1_K:0), kwargs = {})
         # CHECK: %mma_M:0_N:0_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:0_N:0_K:0, %read_M:0_N:0_K:0, %add_M:0_N:0_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:0_N:0_K:0, %read_M:0_N:0_K:0, %add_M:0_N:0_K:0, None), kwargs = {})
         # CHECK: %mma_M:0_N:0_K:1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:0_N:0_K:1, %read_M:0_N:0_K:1, %mma_M:0_N:0_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:0_N:0_K:1, %read_M:0_N:0_K:1, %mma_M:0_N:0_K:0, None), kwargs = {})
         # CHECK: %mma_M:0_N:1_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:0_N:0_K:0, %read_M:0_N:1_K:0, %add_M:0_N:1_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:0_N:0_K:0, %read_M:0_N:1_K:0, %add_M:0_N:1_K:0, None), kwargs = {})
         # CHECK: %mma_M:0_N:1_K:1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:0_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:0_N:1_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:0_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:0_N:1_K:0, None), kwargs = {})
         # CHECK: %mma_M:1_N:0_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:1_N:0_K:0, %read_M:0_N:0_K:0, %add_M:1_N:0_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:1_N:0_K:0, %read_M:0_N:0_K:0, %add_M:1_N:0_K:0, None), kwargs = {})
         # CHECK: %mma_M:1_N:0_K:1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:1_N:0_K:1, %read_M:0_N:0_K:1, %mma_M:1_N:0_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:1_N:0_K:1, %read_M:0_N:0_K:1, %mma_M:1_N:0_K:0, None), kwargs = {})
         # CHECK: %mma_M:1_N:1_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:1_N:0_K:0, %read_M:0_N:1_K:0, %add_M:1_N:1_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:1_N:0_K:0, %read_M:0_N:1_K:0, %add_M:1_N:1_K:0, None), kwargs = {})
         # CHECK: %mma_M:1_N:1_K:1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:1_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:1_N:1_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:1_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:1_N:1_K:0, None), kwargs = {})
 
 
 @tkw.wave_trace_only()
@@ -839,7 +840,7 @@ def test_gemm_reduction_expansion_only():
         # CHECK-SAME: (%getresult_M:0_N:0_K:0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=b
         # CHECK-NEXT: placeholder(_name=c
@@ -873,7 +874,7 @@ def test_gemm_reduction_expansion_only():
 
         # CHECK-NEXT: return [mma_M:0_N:0_K:1]
 
-        # Custom format:
+        # CHECK: Custom format:
 
         # CHECK-NEXT: placeholder(_name=acc_M:0_N:0_K:0
         # CHECK-NEXT: placeholder(_name=a
@@ -1097,7 +1098,7 @@ def py_arithmetic_different_dims():
         # CHECK-SAME: (%neg_M:1_N:0_K:0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
-        # Custom format:
+        # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: read(memory=a, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}

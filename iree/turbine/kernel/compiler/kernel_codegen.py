@@ -320,11 +320,16 @@ class KernelSignature:
     def __repr__(self):
         parts = []
         for b in self.bindings:
-            part = repr(b.reference)
-            if b.name:
-                part = f"{b.name}: {part}"
-            parts.append(part)
-        return f"Signature({', '.join(parts)})"
+            name = b.name or repr(b.reference)
+
+            type_str = b.binding_type.name
+            if b.binding_type == BindingType.KERNEL_BUFFER:
+                type_str += f".{b.kernel_buffer_type.usage.name}.{b.kernel_buffer_type}"
+            elif b.binding_type == BindingType.SYMBOL_VALUE:
+                type_str += f".{b.symbol_type}"
+
+            parts.append(f"{name}: {type_str}")
+        return f"KernelSignature({', '.join(parts)})"
 
 
 class BoundKernelSignature(ABC):

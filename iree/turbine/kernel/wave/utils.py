@@ -3,6 +3,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import functools
+
 from ..compiler.ir import (
     builtin_d,
     InsertionPoint,
@@ -156,9 +158,13 @@ def print_trace(trace: CapturedTrace, custom_print: bool = True):
     then using our custom node format.
     """
     # The root graph is at the back so we print the subgraphs in reverse order
-    for subgraph in reversed(list(trace.region_graph.subgraphs.values())):
-        print(subgraph)
+    for name, subgraph in reversed(list(trace.region_graph.subgraphs.items())):
+        if name == trace.root_graph:
+            name = f"{name} [root]"
+        print(f"{name}:\n")
+        print_graph(subgraph)
         if custom_print:
+            print("Custom format:")
             for node in subgraph.nodes:
                 print(get_custom(node))
 
@@ -169,7 +175,6 @@ def print_subgraph(trace: CapturedTrace, subgraph_name: str, custom_print: bool 
     The graphs are printed first in the torch printing format and
     then using our custom node format.
     """
-    # The root graph is at the back so we print the subgraphs in reverse order
     for name, subgraph in trace.region_graph.subgraphs.items():
         if name == subgraph_name:
             print(subgraph)
@@ -1476,3 +1481,10 @@ def initialize_iter_args(trace: CapturedTrace) -> None:
             if isinstance(custom, IterArg):
                 custom.iter_idx = count
                 count += 1
+
+
+def partial(func, *args, **kwargs):
+    """functools.partial but with function attributes copied to the partial function."""
+    partial_func = functools.partial(func, *args, **kwargs)
+    functools.update_wrapper(partial_func, func)
+    return partial_func
