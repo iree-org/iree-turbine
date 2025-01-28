@@ -1141,8 +1141,9 @@ def test_paged_flash_decoding():
     # CHECK-DAG:               %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:               %[[C1:.*]] = arith.constant 1 : index
     # CHECK-DAG:               %[[FALSE:.*]] = arith.constant false
-    # CHECK-COUNT-6:           vector.load
+    # CHECK-COUNT-4:           vector.load
     # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT:.*]] step %[[C1]]
+    # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-3:                vector.maskedload
     # CHECK-COUNT-8:                vector.store
     # TODO: Remove gathers for performance

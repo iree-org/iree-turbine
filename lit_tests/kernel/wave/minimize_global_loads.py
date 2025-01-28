@@ -221,6 +221,7 @@ def test_gemm():
 
         # Reduction subgraph (custom format):
         # CHECK: Custom format:
+        # CHECK-NEXT: shared_memory_barrier()
         # CHECK-NEXT: placeholder(_name=b, _type=Memory[N, K].of(f16))
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=acc_M:0_N:0_K:0
