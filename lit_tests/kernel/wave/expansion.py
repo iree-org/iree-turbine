@@ -729,29 +729,29 @@ def test_gemm_non_direct_acc():
         set_post_expansion_indices(graph, constraints)
         print_trace(graph)
         # CHECK: %add_M:0_N:0_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_M:0_N:0_K:0, %acc_M:0_N:0_K:0), kwargs = {})
+        # CHECK-SAME: [add](args = (%exp2_M:0_N:0_K:0, %acc_M:0_N:0_K:0), kwargs = {})
         # CHECK: %add_M:0_N:1_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_M:0_N:1_K:0, %acc_M:0_N:1_K:0), kwargs = {})
+        # CHECK-SAME: [add](args = (%exp2_M:0_N:1_K:0, %acc_M:0_N:1_K:0), kwargs = {})
         # CHECK: %add_M:1_N:0_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_M:1_N:0_K:0, %acc_M:1_N:0_K:0), kwargs = {})
+        # CHECK-SAME: [add](args = (%exp2_M:1_N:0_K:0, %acc_M:1_N:0_K:0), kwargs = {})
         # CHECK: %add_M:1_N:1_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.add](args = (%exp2_M:1_N:1_K:0, %acc_M:1_N:1_K:0), kwargs = {})
+        # CHECK-SAME: [add](args = (%exp2_M:1_N:1_K:0, %acc_M:1_N:1_K:0), kwargs = {})
         # CHECK: %mma_M:0_N:0_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:0_N:0_K:0, %read_M:0_N:0_K:0, %add_M:0_N:0_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:0_N:0_K:0, %read_M:0_N:0_K:0, %add_M:0_N:0_K:0, None), kwargs = {})
         # CHECK: %mma_M:0_N:0_K:1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:0_N:0_K:1, %read_M:0_N:0_K:1, %mma_M:0_N:0_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:0_N:0_K:1, %read_M:0_N:0_K:1, %mma_M:0_N:0_K:0, None), kwargs = {})
         # CHECK: %mma_M:0_N:1_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:0_N:0_K:0, %read_M:0_N:1_K:0, %add_M:0_N:1_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:0_N:0_K:0, %read_M:0_N:1_K:0, %add_M:0_N:1_K:0, None), kwargs = {})
         # CHECK: %mma_M:0_N:1_K:1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:0_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:0_N:1_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:0_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:0_N:1_K:0, None), kwargs = {})
         # CHECK: %mma_M:1_N:0_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:1_N:0_K:0, %read_M:0_N:0_K:0, %add_M:1_N:0_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:1_N:0_K:0, %read_M:0_N:0_K:0, %add_M:1_N:0_K:0, None), kwargs = {})
         # CHECK: %mma_M:1_N:0_K:1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:1_N:0_K:1, %read_M:0_N:0_K:1, %mma_M:1_N:0_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:1_N:0_K:1, %read_M:0_N:0_K:1, %mma_M:1_N:0_K:0, None), kwargs = {})
         # CHECK: %mma_M:1_N:1_K:0
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:1_N:0_K:0, %read_M:0_N:1_K:0, %add_M:1_N:1_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:1_N:0_K:0, %read_M:0_N:1_K:0, %add_M:1_N:1_K:0, None), kwargs = {})
         # CHECK: %mma_M:1_N:1_K:1
-        # CHECK-SAME: call_function[target=iree.turbine.kernel.ops.wave_ops.mma](args = (%read_M:1_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:1_N:1_K:0, None), kwargs = {})
+        # CHECK-SAME: [mma](args = (%read_M:1_N:0_K:1, %read_M:0_N:1_K:1, %mma_M:1_N:1_K:0, None), kwargs = {})
 
 
 @tkw.wave_trace_only()

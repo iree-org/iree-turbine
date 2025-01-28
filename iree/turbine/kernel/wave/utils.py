@@ -158,7 +158,8 @@ def print_trace(trace: CapturedTrace, custom_print: bool = True):
     for name, subgraph in reversed(list(trace.region_graph.subgraphs.items())):
         if name == trace.root_graph:
             name = f"{name} [root]"
-        print(f"{name}:\n{subgraph}")
+        print(f"{name}:\n")
+        print_graph(subgraph)
         if custom_print:
             print("Custom format:")
             for node in subgraph.nodes:
