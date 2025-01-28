@@ -17,7 +17,7 @@ import torch.fx as fx
 import torch.utils._pytree as pytree
 from collections import namedtuple
 
-from .symbolic_constraints import SymbolicAlias
+from .symbolic_constraints import SymbolicConstraint
 from ..compiler.ir import (
     Attribute,
     DenseElementsAttr,
