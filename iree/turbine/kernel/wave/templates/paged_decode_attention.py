@@ -278,12 +278,13 @@ def get_paged_decode_attention_kernels(
             return m_j, d_j, acc
 
         res_max, res_sum, res_mm = loop
-        reciprocal_sum = tkw.reciprocal(res_sum)
-        res = res_mm * reciprocal_sum
-        res_max_log_sum = res_max + tkw.log2(res_sum)
 
         @tkw.conditional(iter_count > 0)
         def then():
+            reciprocal_sum = tkw.reciprocal(res_sum)
+            res = res_mm * reciprocal_sum
+            res_max_log_sum = res_max + tkw.log2(res_sum)
+
             tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
             tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
 

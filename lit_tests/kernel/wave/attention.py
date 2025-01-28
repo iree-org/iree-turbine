@@ -1154,11 +1154,11 @@ def test_paged_flash_decoding():
     # CHECK-COUNT-8:                vector.store
     # CHECK-COUNT-8:                vector.load
     # CHECK-COUNT-8:                amdgpu.mfma
-    # CHECK-COUNT-1:          arith.divf
-    # CHECK-COUNT-1:          math.log2
     # CHECK:                  %[[C1:.*]] = arith.cmpi sgt, %[[COUNT]], %[[C0]] : index
     # CHECK:                  %[[C2:.*]] = arith.cmpi ne, %[[C1]], %[[FALSE]] : i1
     # CHECK:                  scf.if %[[C2]] {
+    # CHECK-COUNT-1:          arith.divf
+    # CHECK-COUNT-1:          math.log2
     # CHECK-COUNT-9:         vector.store
 
     with tk.gen.TestLaunchContext(
