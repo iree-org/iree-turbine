@@ -1506,7 +1506,8 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
 
     # Get thread_shape/size for broadcast.
-    get_thread_shape = lambda index: max(x.size for x in index.values())
+    get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
+
     bcast_dim_lane_dim_size = get_thread_shape(node.index)
 
     # Check MLIR shape
