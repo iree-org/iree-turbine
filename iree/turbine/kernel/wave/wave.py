@@ -453,7 +453,7 @@ class LaunchableWave(Launchable):
         kernel_sig.add_grid(self.grid_type)
         kernel_sig.determine_input_output_buffers(root_graph)
         if compile_config.get("print_signature", False):
-            print(f"Kernel signature: {kernel_sig}")
+            print(kernel_sig)
 
         mb = builder.ModuleBuilder(context=context, module_op=module_op)
         entrypoint_name = self._name
