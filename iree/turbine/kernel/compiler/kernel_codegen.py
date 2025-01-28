@@ -220,6 +220,10 @@ class KernelSignature:
         # Extract all placeholder nodes.
         placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
+        # Sort the arguments based on the original arg_id/ordering during
+        # tracing, if not found during tracing/i.e if it's index symbol
+        # we will just leave it at the end.
+        placeholder_nodes.sort(key=lambda x: x.meta.get("arg_id", 1e6))
         # Create bindings for placeholder nodes.
         for node in placeholder_nodes:
             t = node.type

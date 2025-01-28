@@ -26,7 +26,7 @@ from .indexing import (
 )
 import sympy
 
-from ..lang.kernel_buffer import KernelBuffer
+from ..lang.kernel_buffer import KernelBuffer, KernelBufferMeta
 from ..lang.grid import Grid
 
 from ..lang.types import (
@@ -99,10 +99,15 @@ class KernelBufferProxy(fx.Proxy):
 class KernelTracer(SubgraphTracer):
     """Custom Tracer for generating a trace of a kernel computation."""
 
+    current_arg_id = 0
+
     # Register our custom proxies.
     def proxy(self, node: fx.Node) -> fx.Proxy:
         t = node.type
         if t is not None:
+            if isinstance(t, KernelBufferMeta):
+                node.meta["arg_id"] = self.current_arg_id
+                self.current_arg_id += 1
             if issubclass(t, KernelBuffer):
                 return KernelBufferProxy(node, self, t)
         return super().proxy(node)
