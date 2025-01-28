@@ -1121,7 +1121,7 @@ def test_paged_flash_decoding():
     v = torch.randn(v_shape, dtype=torch.float16)
     logits = torch.zeros(logits_shape, dtype=torch.float32)
     logits_max = torch.zeros(logits_max_shape, dtype=torch.float32)
-    output = torch.zeros(o_shape, dtype=torch.float32)
+    output = torch.zeros(o_shape, dtype=torch.float16)
 
     with tk.gen.TestLaunchContext(
         hyperparams_0,
@@ -1139,21 +1139,21 @@ def test_paged_flash_decoding():
     # CHECK-COUNT-3:                vector.maskedload
     # CHECK-COUNT-8:                vector.store
     # CHECK-COUNT-8:                vector.load
-    # CHECK-COUNT-16:               amdgpu.mfma
-    # CHECK-COUNT-4:                gpu.shuffle
-    # CHECK-COUNT-2:                arith.subf
-    # CHECK-COUNT-2:                math.exp2
-    # CHECK-COUNT-8:                arith.subf
-    # CHECK-COUNT-8:                math.exp2
-    # CHECK-COUNT-4:                gpu.shuffle
+    # CHECK-COUNT-8:               amdgpu.mfma
+    # CHECK-COUNT-2:                gpu.shuffle
+    # CHECK-COUNT-1:                arith.subf
+    # CHECK-COUNT-1:                math.exp2
+    # CHECK-COUNT-4:                arith.subf
+    # CHECK-COUNT-4:                math.exp2
+    # CHECK-COUNT-2:                gpu.shuffle
     # TODO: Remove gathers for performance
     # CHECK-COUNT-2:                vector.gather
     # CHECK-COUNT-8:                vector.store
     # CHECK-COUNT-8:                vector.load
-    # CHECK-COUNT-16:                amdgpu.mfma
-    # CHECK-COUNT-2:          arith.divf
-    # CHECK-COUNT-2:          math.log2
-    # CHECK-COUNT-18:         vector.store
+    # CHECK-COUNT-8:                amdgpu.mfma
+    # CHECK-COUNT-1:          arith.divf
+    # CHECK-COUNT-1:          math.log2
+    # CHECK-COUNT-9:         vector.store
 
     with tk.gen.TestLaunchContext(
         hyperparams_1,
