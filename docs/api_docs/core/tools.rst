@@ -1,7 +1,7 @@
-iree-turbine AOT APIs
+`iree.turbine.tools`
 =====================
 
-.. automodule:: iree.turbine.aot
+.. automodule:: iree.turbine.tools
   :imported-members:
   :members:
   :undoc-members:

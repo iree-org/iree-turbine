@@ -1,13 +1,24 @@
 IREE Turbine documentation
 ==========================
 
-.. toctree::
-   :maxdepth: 2
-   :caption: API Docs
+Welcome to the documentation for https://github.com/iree-org/iree-turbine!
 
-   aot/aot.rst
-   kernel/kernel.rst
-   kernel/wave.rst
+API documentation
+=================
+
+.. toctree::
+   :maxdepth: 1
+   :caption: IREE Turbine Core
+   :glob:
+
+   core/*
+
+.. toctree::
+   :maxdepth: 1
+   :caption: TK and TKW
+   :glob:
+
+   kernel/*
 
 Indices and tables
 ==================

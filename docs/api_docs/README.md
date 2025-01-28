@@ -2,6 +2,9 @@
 
 This directory uses Sphinx to build API documentation.
 
+<!-- ## Hosting on readthedocs -->
+<!-- TODO: https://iree-turbine.readthedocs.io/ -->
+
 ## Building the API documentation locally
 
 ### Setup virtual environment with requirements
@@ -38,3 +41,10 @@ sphinx-autobuild . _build --watch ../..
 
 Then open http://127.0.0.1:8000 as instructed by the logs and make changes to
 the files in this directory as needed to update the documentation.
+
+## Authoring documentation
+
+### Useful references
+
+* https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
+* https://www.sphinx-doc.org/en/master/usage/restructuredtext/directives.html
