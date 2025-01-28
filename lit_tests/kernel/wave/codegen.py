@@ -1446,6 +1446,82 @@ def test_reduce_propagate_broadcast():
 
 
 @run_test
+def test_explicit_broadcast():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def explicit_broadcast(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+        rhs = tkw.read(b, elements_per_thread=1)
+        broadcast_rhs = tkw.broadcast(rhs, (M, N))
+        res = lhs + broadcast_rhs
+        tkw.write(res, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    config = get_default_compile_config()
+
+    shape = (256, 128)
+    a = torch.ones(shape, dtype=torch.float16)
+    b = torch.ones(shape[0], dtype=torch.float16)
+    c = torch.zeros(shape, dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            BLOCK_M: 2,
+            BLOCK_N: 128,
+            LOAD_ELEMS_PER_THREAD: 2,
+            STORE_ELEMS_PER_THREAD: 2,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run=False,
+        run_config=config,
+    ):
+        print(explicit_broadcast(a, b, c).module_op)
+        # CHECK-LABEL: func.func @explicit_broadcast
+        # CHECK-SAME: (%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
+        # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
+        # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
+
+        # Slicing LHS
+        # CHECK: %[[LHS:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<256x128xf16
+        # CHECK: %[[LHS_0:.+]] = vector.load %[[LHS]][%[[X_SLICE_0:.+]], %[[Y_SLICE:.+]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
+        # CHECK: %[[X_SLICE_1:.+]] = arith.addi %[[X_SLICE_0]], %c1 overflow<nsw, nuw> : index
+        # CHECK: %[[LHS_1:.+]] = vector.load %[[LHS]][%[[X_SLICE_1]], %[[Y_SLICE]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
+
+        # Slicing RHS
+        # CHECK: %[[RHS:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<256xf16
+        # CHECK: %[[RHS_0:.+]] = vector.load %[[RHS]][%[[X_SLICE_0]]] : memref<256xf16, strided<[1], offset: ?>>, vector<1xf16>
+        # CHECK: %[[RHS_1:.+]] = vector.load %[[RHS]][%[[X_SLICE_1]]] : memref<256xf16, strided<[1], offset: ?>>, vector<1xf16>
+
+        # 1st Broadcast RHS
+        # CHECK: %[[EXTRACT_0:.+]] = vector.extract %[[RHS_0]][0] : f16 from vector<1xf16>
+        # CHECK: %[[BCAST_RHS_0:.+]] = vector.splat %[[EXTRACT_0]] : vector<2xf16>
+
+        # 2nd Broadcast RHS
+        # CHECK: %[[EXTRACT_1:.+]] = vector.extract %[[RHS_1]][0] : f16 from vector<1xf16>
+        # CHECK: %[[BCAST_RHS_1:.+]] = vector.splat %[[EXTRACT_1]] : vector<2xf16>
+
+        # Broadcast-ADD RHS
+        # CHECK: arith.addf %[[LHS_0]], %[[BCAST_RHS_0]] : vector<2xf16>
+        # CHECK: arith.addf %[[LHS_1]], %[[BCAST_RHS_1]] : vector<2xf16>
+
+
+@run_test
 def test_broadcast_add():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
