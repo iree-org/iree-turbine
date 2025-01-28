@@ -17,19 +17,22 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 from ..ops.wave_ops import (
-    get_custom,
-    Output,
-    Write,
-    MMA,
-    CustomOp,
-    Reduction,
-    GetResult,
-    ExtractSlice,
-    IterArg,
-    Reshape,
-    Read,
-    SetSymbol,
     ApplyExpr,
+    Conditional,
+    CustomOp,
+    ExtractSlice,
+    GetResult,
+    IterArg,
+    MMA,
+    NestedRegionOp,
+    Output,
+    Placeholder,
+    Read,
+    Reduction,
+    Reshape,
+    SetSymbol,
+    Write,
+    get_custom,
 )
 from ..lang.wave_types import IndexMapping
 from .constraints import (
@@ -182,24 +185,43 @@ def DCE(trace: CapturedTrace):
     Repeats this process till no more operators can be removed.
     """
 
-    def is_removable_operator(node: fx.Node) -> bool:
+    def is_global_write(node: fx.Node) -> bool:
         custom = get_custom(node)
-        idxc = IndexingContext.current()
-        is_global_write = isinstance(custom, Write) and (
-            custom.type.address_space.subs(idxc.subs) == GLOBAL_ADDRESS_SPACE
-            or custom.type.address_space.subs(idxc.subs)
-            == tkl.AddressSpace.GLOBAL_MEMORY.value
+        return isinstance(custom, Write) and (
+            subs_idxc(custom.type.address_space)
+            in [GLOBAL_ADDRESS_SPACE, tkl.AddressSpace.GLOBAL_MEMORY.value]
         )
 
-        return (
-            not custom.users
-            and not isinstance(custom, (Output, SetSymbol, ApplyExpr))
-            and not is_global_write
-        )
+    def has_nested_writes(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        if not isinstance(custom, NestedRegionOp):
+            return False
+
+        subgraph = custom.graph.subgraphs[custom.subgraph_name]
+        for node in subgraph.nodes:
+            if is_global_write(node) or has_nested_writes(node):
+                return True
+
+        return False
+
+    def is_removable_operator(node: fx.Node) -> bool:
+        custom = get_custom(node)
+
+        if (
+            custom.users
+            or isinstance(custom, (Output, SetSymbol, ApplyExpr))
+            or is_global_write(node)
+        ):
+            return False
+
+        if has_nested_writes(node):
+            return False
+
+        return True
 
     while removable_nodes := trace.walk(is_removable_operator):
         for node in removable_nodes:
-            get_custom(node).graph.erase_node(node)
+            get_custom(node).erase()
 
 
 def remove_chained_getresult(trace: CapturedTrace):
@@ -824,6 +846,18 @@ def get_users(
                 if output_idx in get_results:
                     users.append(get_results[output_idx])
             continue
+        if isinstance(custom, Conditional):
+            if node == custom.condition:
+                users.append(user)
+            else:
+                subgraph = custom.graph.subgraphs[custom.subgraph_name]
+                var = custom.get_captured_fx_node(subgraph, node)
+                assert var is not None, "Invalid captured var"
+                for u in var.users:
+                    users.append(u)
+
+            continue
+
         users.append(user)
     return users, reduction
 
@@ -863,6 +897,17 @@ def get_inputs(
         # Default handling for other ops.
         for input in node.all_input_nodes:
             inputs.append(input)
+
+    def propagate(n):
+        c = get_custom(n)
+        if isinstance(c, Placeholder):
+            p = c.get_captured_fx_node()
+            if p is not None:
+                return p
+
+        return n
+
+    inputs = [propagate(i) for i in inputs]
     return inputs, reduction
 
 

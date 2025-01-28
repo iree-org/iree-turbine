@@ -74,6 +74,13 @@ def get_paged_decode_attention_kernels(
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     B_WAVES = 1
 
+    # T represents the indices of the sequence tokens.
+    # T is dynamic and is distributed across workgroups and is tiled.
+    iter_count = sympy.Piecewise(
+        (sympy.ceiling(T / U), WORKGROUP_0 < sympy.Mod(T, U)),
+        (sympy.floor(T / U), True),
+    )
+
     def phase_0_constraints():
         # K1, K2 are reduction dimensions that are fixed (not distributed) so
         # they are not part of the constraints.
@@ -83,17 +90,11 @@ def get_paged_decode_attention_kernels(
         # U is parallelizable and is distributed across workgroups.
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 0)]
 
-        # T represents the indices of the sequence tokens.
-        # T is dynamic and is distributed across workgroups and is tiled.
-        count = sympy.Piecewise(
-            (sympy.ceiling(T / U), WORKGROUP_0 < sympy.Mod(T, U)),
-            (sympy.floor(T / U), True),
-        )
         wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
         constraints += [
             tkw.WorkgroupConstraint(T, BLOCK_T, 0, apply_fn=wg_func, primary=False)
         ]
-        constraints += [tkw.TilingConstraint(T, 1, iters=count)]
+        constraints += [tkw.TilingConstraint(T, 1, iters=iter_count)]
 
         # BH is the kv-head index and is distributed across workgroups.
         # B is the query index and is distributed like BH but with a different
@@ -277,12 +278,15 @@ def get_paged_decode_attention_kernels(
             return m_j, d_j, acc
 
         res_max, res_sum, res_mm = loop
-        reciprocal_sum = tkw.reciprocal(res_sum)
-        res = res_mm * reciprocal_sum
-        res_max_log_sum = res_max + tkw.log2(res_sum)
 
-        tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
-        tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        @tkw.conditional(iter_count > 0)
+        def then():
+            reciprocal_sum = tkw.reciprocal(res_sum)
+            res = res_mm * reciprocal_sum
+            res_max_log_sum = res_max + tkw.log2(res_sum)
+
+            tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
+            tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(

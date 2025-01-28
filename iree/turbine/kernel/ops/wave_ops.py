@@ -74,7 +74,9 @@ def read(
     ...
 
 
-def conditional(condition: "Register") -> Callable[[Callable[[], None]], None]:
+def conditional(
+    condition: "Register" | IndexExpr,
+) -> Callable[[Callable[[], None]], None]:
     ...
 
 
@@ -509,12 +511,21 @@ class CustomOp(ABC):
     @property
     def node_args(self) -> dict[int, Any]:
         """Returns the args to this custom op using subclasses of CustomOp if possible."""
+
+        def propagate(n):
+            custom = get_custom(n)
+            if isinstance(custom, Placeholder):
+                if prev := custom.get_captured_fx_node():
+                    return propagate(prev)
+
+            return custom
+
         custom_args = {}
         for i, arg in enumerate(self.fx_node.args):
             if isinstance(arg, fx.Node):
-                custom_args[i] = get_custom(arg)
+                custom_args[i] = propagate(arg)
             if isinstance(arg, list) and all(isinstance(x, fx.Node) for x in arg):
-                custom_args[i] = [get_custom(x) for x in arg]
+                custom_args[i] = [propagate(x) for x in arg]
         return custom_args
 
     def get_node_arg_index(self, arg: CustomOp) -> Optional[CustomOp | list[CustomOp]]:
@@ -826,6 +837,26 @@ class Placeholder(CustomOp):
         vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
         vars_str = ", ".join(vars_list)
         return f"{self.tkw_op_name}({vars_str})"
+
+    def erase(self):
+        """Erase the current node from the graph where it exists."""
+        parent = self.graph.parent_op
+        super().erase()
+        if not parent:
+            return
+
+        custom = get_custom(parent)
+        if not isinstance(custom, NestedRegionOp):
+            return
+
+        # Cleanup dead captures
+        subgraph = custom.graph.subgraphs[custom.subgraph_name]
+        live_captures = []
+        for var in custom.implicit_captures:
+            if custom.get_captured_fx_node(subgraph, var):
+                live_captures.append(var)
+
+        custom.update_arg("implicit_captures", live_captures)
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -1182,11 +1213,21 @@ class NestedRegionOp(CustomOp):
                 captured_vars.append(nested_node)
         return captured_vars
 
+    def get_captured_fx_node(
+        self, graph: fx.Graph, outer_node: fx.Node
+    ) -> Optional[fx.Node]:
+        for var in self.captured_vars(graph):
+            custom = get_custom(var)
+            if custom.get_captured_fx_node() == outer_node:
+                return var
+
+        return None
+
 
 @define_op("conditional")
 @dataclass
 class Conditional(NestedRegionOp):
-    condition: fx.Proxy
+    condition: fx.Proxy | IndexExpr
     subgraph_name: str
     implicit_captures: Sequence[fx.Proxy]
 
@@ -1212,7 +1253,10 @@ class Conditional(NestedRegionOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
-        return get_custom(self.condition).indexing_dims
+        if isinstance(self.condition, fx.Node):
+            return get_custom(self.condition).indexing_dims
+
+        return []
 
 
 @define_op("reduction")

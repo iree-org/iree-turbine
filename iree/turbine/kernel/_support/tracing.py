@@ -24,6 +24,7 @@ from .indexing import (
     IndexSymbol,
     IndexingContext,
 )
+import sympy
 
 from ..lang.kernel_buffer import KernelBuffer
 from ..lang.grid import Grid
@@ -108,7 +109,7 @@ class KernelTracer(SubgraphTracer):
 
     def create_arg(self, a):
         # Let IndexExpr persist as arguments.
-        if isinstance(a, IndexExpr):
+        if isinstance(a, sympy.Basic):
             return a
         # Let DataType persist as arguments.
         if isinstance(a, DataType):
