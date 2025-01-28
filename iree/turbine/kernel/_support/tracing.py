@@ -99,6 +99,7 @@ class KernelBufferProxy(fx.Proxy):
 class KernelTracer(SubgraphTracer):
     """Custom Tracer for generating a trace of a kernel computation."""
 
+    # Property to keep track of current number of arguments.
     current_arg_id = 0
 
     # Register our custom proxies.
@@ -106,6 +107,9 @@ class KernelTracer(SubgraphTracer):
         t = node.type
         if t is not None:
             if isinstance(t, KernelBufferMeta):
+                # Set arg_id meta to placeholder/argument nodes
+                # S.T we don't rely on topological order for correct
+                # argument ordering later on.
                 node.meta["arg_id"] = self.current_arg_id
                 self.current_arg_id += 1
             if issubclass(t, KernelBuffer):
