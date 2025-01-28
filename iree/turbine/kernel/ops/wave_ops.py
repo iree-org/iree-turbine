@@ -135,7 +135,7 @@ def maximum(lhs: "Register", rhs: "Register") -> "Register":
 
 
 def broadcast(
-    arg: "Register", target_shape: Optional[IndexExpr | int] = None
+    arg: "Register", target_shape: Optional[Sequence[IndexExpr | int]] = None
 ) -> "Register":
     ...
 
@@ -1605,11 +1605,7 @@ class Broadcast(CustomOp, ABC):
     """
 
     arg: fx.Node
-    target_type: Sequence[IndexSymbol] = None
-
-    @property
-    def target_shape(self):
-        return self.target_type.symbolic_shape
+    target_shape: Sequence[IndexSymbol] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

@@ -1501,7 +1501,7 @@ def handle_extract_slice(emitter: WaveEmitter, node: fx.Node):
 @handle_op(broadcast)
 def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     try:
-        register, target_type = node.args
+        register, _ = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
