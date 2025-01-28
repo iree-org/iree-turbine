@@ -22,8 +22,8 @@ BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_K = tkl.sym.BLOCK_K
 BLOCK_B = tkl.sym.BLOCK_B
-LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEM_PER_THREAD
-STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEM_PER_THREAD
+LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
@@ -65,14 +65,14 @@ def test_read():
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
-    def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+    def read(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
         tkw.read(a, elements_per_thread=16)
 
     with codegen_test_context():
         a = torch.randn(16, 16, dtype=torch.float16)
-        print(test(a).module_op)
+        print(read(a).module_op)
 
-        # CHECK-LABEL:    func.func @test
+        # CHECK-LABEL:    func.func @read
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
         # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
@@ -120,14 +120,14 @@ def test_read_mapped():
     )
 
     @tkw.wave(constraints)
-    def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+    def read_mapped(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
         tkw.read(a, mapping=mapping, elements_per_thread=16)
 
     with codegen_test_context():
         a = torch.randn(16, 16, dtype=torch.float16)
-        print(test(a).module_op)
+        print(read_mapped(a).module_op)
 
-        # CHECK-LABEL:    func.func @test
+        # CHECK-LABEL:    func.func @read_mapped
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
         # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
@@ -175,7 +175,7 @@ def test_read_write():
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
-    def test(
+    def read_write(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
@@ -185,9 +185,9 @@ def test_read_write():
     with codegen_test_context(canonicalize=True):
         a = torch.randn(16, 16, dtype=torch.float16)
         b = torch.zeros(16, 16, dtype=torch.float16)
-        print(test(a, b).module_op)
+        print(read_write(a, b).module_op)
 
-        # CHECK-LABEL:    func.func @test
+        # CHECK-LABEL:    func.func @read_write
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
         # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
@@ -228,7 +228,7 @@ def test_read_write_masked():
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
-    def test(
+    def read_write_masked(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
@@ -247,9 +247,9 @@ def test_read_write_masked():
     ):
         a = torch.randn(4, 4, dtype=torch.float16)
         b = torch.zeros(4, 4, dtype=torch.float16)
-        print(test(a, b).module_op)
+        print(read_write_masked(a, b).module_op)
 
-        # CHECK-LABEL:    func.func @test
+        # CHECK-LABEL:    func.func @read_write_masked
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<4xf16>
         # CHECK-DAG:        %[[CST_0:.*]] = arith.constant dense<3> : vector<4xindex>
@@ -300,7 +300,7 @@ def test_read_write_masked_shared():
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
-    def test(
+    def read_write_masked_shared(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f16],
     ):
@@ -320,9 +320,9 @@ def test_read_write_masked_shared():
     ):
         a = torch.randn(4, 4, dtype=torch.float16)
         b = torch.zeros(4, 4, dtype=torch.float16)
-        print(test(a, b).module_op)
+        print(read_write_masked_shared(a, b).module_op)
 
-        # CHECK-LABEL:    func.func @test
+        # CHECK-LABEL:    func.func @read_write_masked_shared
         # Check shared mem load stores are non masked
         # CHECK:            %{{.*}} = vector.maskedload {{.*}} : memref<1x3xf16, strided<[3, 1], offset: ?>>, vector<4xi1>, vector<4xf16> into vector<4xf16>
         # CHECK:            vector.store {{.*}} : memref<4x8xf16, #gpu.address_space<workgroup>>, vector<4xf16>
@@ -349,7 +349,7 @@ def test_read_write_mapping():
     )
 
     @tkw.wave(constraints)
-    def test(
+    def read_write_mapping(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[N, M, ADDRESS_SPACE, tkl.f16],
     ):
@@ -359,9 +359,9 @@ def test_read_write_mapping():
     with codegen_test_context(canonicalize=True):
         a = torch.randn(16, 16, dtype=torch.float16)
         b = torch.zeros(16, 16, dtype=torch.float16)
-        print(test(a, b).module_op)
+        print(read_write_mapping(a, b).module_op)
 
-        # CHECK-LABEL:    func.func @test
+        # CHECK-LABEL:    func.func @read_write_mapping
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK:            %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208,
         # CHECK-SAME:         224, 240]> : vector<16xindex>
@@ -415,7 +415,7 @@ def test_read_write_dynamic_mapping():
     )
 
     @tkw.wave(constraints)
-    def test(
+    def read_write_dynamic_mapping(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
@@ -433,9 +433,9 @@ def test_read_write_dynamic_mapping():
         a = torch.randn(16, 16, dtype=torch.float16)
         off = torch.randint(16, (16, 16), dtype=torch.int32)
         b = torch.zeros(16, 16, dtype=torch.float16)
-        print(test(a, off, b).module_op)
+        print(read_write_dynamic_mapping(a, off, b).module_op)
 
-        # CHECK-LABEL:    func.func @test
+        # CHECK-LABEL:    func.func @read_write_dynamic_mapping
         # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
         # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
         # CHECK-DAG:        %[[D0:.*]] = arith.constant 0 : index
@@ -486,7 +486,7 @@ def test_read_write_dynamic_mapping_broadcast():
     )
 
     @tkw.wave(constraints)
-    def test(
+    def read_write_dynamic_mapping_broadcast(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         off: tkl.Memory[M, ONE, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
@@ -504,9 +504,9 @@ def test_read_write_dynamic_mapping_broadcast():
         a = torch.randn(16, 16, dtype=torch.float16)
         off = torch.randint(16, (16, 1), dtype=torch.int32)
         b = torch.zeros(16, 16, dtype=torch.float16)
-        print(test(a, off, b).module_op)
+        print(read_write_dynamic_mapping_broadcast(a, off, b).module_op)
 
-        # CHECK-LABEL:    func.func @test
+        # CHECK-LABEL:    func.func @read_write_dynamic_mapping_broadcast
         # CHECK:            %[[OFF:.*]] = vector.load %{{.*}}[%[[M:.*]], %{{.*}}] : memref<16x1xi32, strided<[1, 1], offset: ?>>, vector<1xi32>
         # CHECK:            %[[IDX:.*]] = arith.index_cast %[[OFF]] : vector<1xi32> to vector<1xindex>
         # CHECK:            %[[IDX1:.*]] = vector.extract %[[IDX]][0] : index from vector<1xindex>
@@ -547,7 +547,7 @@ def test_read_write_dynamic_mapping_chain():
     )
 
     @tkw.wave(constraints)
-    def test(
+    def read_write_dynamic_mapping_chain(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         off1: tkl.Memory[M, SIZE1, ADDRESS_SPACE, tkl.i32],
         off2: tkl.Memory[M, SIZE2, ADDRESS_SPACE, tkl.i32],
@@ -575,9 +575,9 @@ def test_read_write_dynamic_mapping_chain():
         off1 = torch.randint(2, (16, 2), dtype=torch.int32)
         off2 = torch.randint(16, (16, 4), dtype=torch.int32)
         b = torch.zeros(16, 16, dtype=torch.float16)
-        print(test(a, off1, off2, b).module_op)
+        print(read_write_dynamic_mapping_chain(a, off1, off2, b).module_op)
 
-        # CHECK-LABEL:    func.func @test
+        # CHECK-LABEL:    func.func @read_write_dynamic_mapping_chain
         # CHECK:            %[[C8:.*]] = arith.constant 8 : index
         # CHECK:            %[[thread_id_y:.*]] = gpu.thread_id  y
         # CHECK:            %[[D7:.*]] = arith.addi %{{.*}}, %[[thread_id_y]] overflow<nsw, nuw> : index
@@ -790,15 +790,15 @@ def test_dynamic_copy():
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
-    def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+    def dynamic_copy(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
         b = tkw.read(a, elements_per_thread=16)
         tkw.write(b, a, elements_per_thread=16)
 
     with codegen_test_context(canonicalize=True, dynamic_symbols=[M, N]):
         a = torch.randn(16, 16, dtype=torch.float16)
-        print(test(a).module_op)
+        print(dynamic_copy(a).module_op)
 
-    # CHECK-LABEL:    func.func @test(%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index)
+    # CHECK-LABEL:    func.func @dynamic_copy(%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index)
     # CHECK-SAME:       attributes {translation_info = #[[TRANSLATION:.+]]} {
     # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<16xf16>
     # CHECK-DAG:        %[[CST_0:.+]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> :
@@ -1446,6 +1446,82 @@ def test_reduce_propagate_broadcast():
 
 
 @run_test
+def test_explicit_broadcast():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def explicit_broadcast(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+        rhs = tkw.read(b, elements_per_thread=1)
+        broadcast_rhs = tkw.broadcast(rhs, (M, N))
+        res = lhs + broadcast_rhs
+        tkw.write(res, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    config = get_default_compile_config()
+
+    shape = (256, 128)
+    a = torch.ones(shape, dtype=torch.float16)
+    b = torch.ones(shape[0], dtype=torch.float16)
+    c = torch.zeros(shape, dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            BLOCK_M: 2,
+            BLOCK_N: 128,
+            LOAD_ELEMS_PER_THREAD: 2,
+            STORE_ELEMS_PER_THREAD: 2,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run=False,
+        run_config=config,
+    ):
+        print(explicit_broadcast(a, b, c).module_op)
+        # CHECK-LABEL: func.func @explicit_broadcast
+        # CHECK-SAME: (%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
+        # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
+        # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
+
+        # Slicing LHS
+        # CHECK: %[[LHS:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<256x128xf16
+        # CHECK: %[[LHS_0:.+]] = vector.load %[[LHS]][%[[X_SLICE_0:.+]], %[[Y_SLICE:.+]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
+        # CHECK: %[[X_SLICE_1:.+]] = arith.addi %[[X_SLICE_0]], %c1 overflow<nsw, nuw> : index
+        # CHECK: %[[LHS_1:.+]] = vector.load %[[LHS]][%[[X_SLICE_1]], %[[Y_SLICE]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
+
+        # Slicing RHS
+        # CHECK: %[[RHS:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<256xf16
+        # CHECK: %[[RHS_0:.+]] = vector.load %[[RHS]][%[[X_SLICE_0]]] : memref<256xf16, strided<[1], offset: ?>>, vector<1xf16>
+        # CHECK: %[[RHS_1:.+]] = vector.load %[[RHS]][%[[X_SLICE_1]]] : memref<256xf16, strided<[1], offset: ?>>, vector<1xf16>
+
+        # 1st Broadcast RHS
+        # CHECK: %[[EXTRACT_0:.+]] = vector.extract %[[RHS_0]][0] : f16 from vector<1xf16>
+        # CHECK: %[[BCAST_RHS_0:.+]] = vector.splat %[[EXTRACT_0]] : vector<2xf16>
+
+        # 2nd Broadcast RHS
+        # CHECK: %[[EXTRACT_1:.+]] = vector.extract %[[RHS_1]][0] : f16 from vector<1xf16>
+        # CHECK: %[[BCAST_RHS_1:.+]] = vector.splat %[[EXTRACT_1]] : vector<2xf16>
+
+        # Broadcast-ADD RHS
+        # CHECK: arith.addf %[[LHS_0]], %[[BCAST_RHS_0]] : vector<2xf16>
+        # CHECK: arith.addf %[[LHS_1]], %[[BCAST_RHS_1]] : vector<2xf16>
+
+
+@run_test
 def test_broadcast_add():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -1460,7 +1536,7 @@ def test_broadcast_add():
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
-    def test(
+    def broadcast_add(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
@@ -1490,8 +1566,8 @@ def test_broadcast_add():
         run=False,
         run_config=config,
     ):
-        print(test(a, b, c).module_op)
-        # CHECK-LABEL: func.func @test
+        print(broadcast_add(a, b, c).module_op)
+        # CHECK-LABEL: func.func @broadcast_add
         # CHECK-SAME: (%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
         # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
         # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
@@ -1533,7 +1609,7 @@ def test_binary_lowerings():
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
-    def test(
+    def binary_lowerings(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
@@ -1547,8 +1623,8 @@ def test_binary_lowerings():
     a = torch.randn(16, 16, dtype=torch.float16)
     b = torch.randn(16, 16, dtype=torch.float16)
     with codegen_test_context():
-        print(test(a, b).module_op)
-        # CHECK-LABEL: func @test
+        print(binary_lowerings(a, b).module_op)
+        # CHECK-LABEL: func @binary_lowerings
         # CHECK: %[[SUB:.+]] = arith.subf
         # CHECK: %[[MUL:.+]] = arith.mulf %[[SUB]]
         # CHECK: %[[DIV:.+]] = arith.divf %[[MUL]]
@@ -1569,7 +1645,7 @@ def test_get_item():
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
-    def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+    def get_item(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
         res = a[0]
         tkw.write(res, a, elements_per_thread=4)
 
@@ -1577,7 +1653,7 @@ def test_get_item():
     with pytest.raises(
         NotImplementedError, match="getitem: Currently only stub implementation"
     ):
-        test(a)
+        get_item(a)
 
 
 # TODO: Add more tests once we have more than a stub implementation.

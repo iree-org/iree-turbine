@@ -778,9 +778,9 @@ def create_broadcast(
     Create a broadcast node for the given binary operator.
     """
     with binary_op.graph.inserting_before(binary_op.fx_node):
-        broadcasted = Broadcast(to_broadcast.fx_node, target_node.type).add_to_graph(
-            binary_op.graph
-        )
+        broadcasted = Broadcast(
+            to_broadcast.fx_node, target_node.type.symbolic_shape
+        ).add_to_graph(binary_op.graph)
         custom = get_custom(broadcasted)
         custom.vector_shapes = binary_op.vector_shapes
         custom.index = deepcopy(target_node.index)
