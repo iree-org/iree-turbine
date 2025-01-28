@@ -24,7 +24,7 @@ def test_trace_empty():
     # CHECK: %a
     # CHECK-NEXT: return None
 
-    # Custom format:
+    # CHECK: Custom format:
     # CHECK-NEXT: placeholder
     # CHECK-SAME: _type=Memory[M, N].of(f16)
     # CHECK-NEXT: output
@@ -55,7 +55,7 @@ def test_trace_empty_then_add_nodes():
     # CHECK-NEXT: %write
     # CHECK-NEXT: return None
 
-    # Custom format:
+    # CHECK: Custom format:
     # CHECK-NEXT: placeholder
     # CHECK-SAME: _type=Memory[M, N].of(f16)
     # CHECK-NEXT: read(memory=a
@@ -87,7 +87,7 @@ def test_trace_py_arithmetic():
     # CHECK-SAME: (%neg, %a, 4, None, ())
     # CHECK-NEXT: return None
 
-    # Custom format:
+    # CHECK: Custom format:
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: read(memory=a
     # CHECK-NEXT: add(lhs=read, rhs=read)
@@ -109,7 +109,7 @@ def test_trace_read():
     # CHECK-NEXT: %read
     # CHECK-NEXT: return None
 
-    # Custom format:
+    # CHECK: Custom format:
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: read(memory=a
     # CHECK-NEXT: output
@@ -129,7 +129,7 @@ def test_trace_register():
     # CHECK-NEXT: %register
     # CHECK-NEXT: return None
 
-    # Custom format:
+    # CHECK: Custom format:
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: register
     # CHECK-SAME: shape=[M, N], dtype=f16
@@ -152,7 +152,7 @@ def test_trace_write():
     # CHECK-NEXT: %write
     # CHECK-NEXT: return None
 
-    # Custom format:
+    # CHECK: Custom format:
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: register
     # CHECK-NEXT: write
@@ -179,7 +179,7 @@ def test_trace_mma():
     # CHECK-NEXT: %mma
     # CHECK-NEXT: return None
 
-    # Custom format:
+    # CHECK: Custom format:
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: read(memory=a
     # CHECK-NEXT: read(memory=a
@@ -219,7 +219,7 @@ def test_trace_gemm():
     # CHECK-NEXT: %write
     # CHECK-NEXT: return None
 
-    # Root graph in custom format:
+    # CHECK: Custom format:
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: placeholder
@@ -238,8 +238,8 @@ def test_trace_gemm():
     # CHECK-NEXT: %mma
     # CHECK-NEXT: return register
 
-    # Subgraph in custom format:
-    # CHECK-NEXT: placeholder
+    # CHECK: Custom format:
+    # CHECK: placeholder
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: read
     # CHECK-NEXT: placeholder
