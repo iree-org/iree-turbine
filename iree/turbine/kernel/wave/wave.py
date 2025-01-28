@@ -36,6 +36,8 @@ from .utils import (
     delinearize_index,
     _write_file,
     initialize_iter_args,
+    partial,
+    print_trace,
 )
 from .minimize_global_loads import minimize_global_loads
 from .decompose_reduce_ops import decompose_reduce_ops
@@ -313,56 +315,72 @@ class LaunchableWave(Launchable):
         kwargs,
         context: Optional[Context] = None,
         module_op: Optional[Operation] = None,
-    ) -> CapturedTrace:
-        # Trace the function.
-        graph = self._trace()
+    ) -> tuple[
+        builder.ModuleBuilder,
+        CapturedTrace,
+        dispatch_codegen.StreamExecutable,
+        kernel_codegen.KernelSignature,
+        str,
+    ]:
+        compile_config = kwargs.get("compile_config", {})
+        print_ir_after = compile_config.get("print_ir_after", [])
+        print_ir_before = compile_config.get("print_ir_before", [])
+        if compile_config.get("print_trace_begin", False):
+            print(f"\n***Tracing kernel {self._name}***")
 
-        initialize_iter_args(graph)
-        self.create_induction_vars(graph)
-        self.initialize_wave_constraints(graph)
-        self.initialize_reductions(graph)
-        self.initialize_symbolic_constraints(graph)
-        self.initialize_workgroup_constraints(graph)
+        trace = self._trace()
+        if (
+            "all" in print_ir_after
+            or "all" in print_ir_before
+            or "trace" in print_ir_after
+            or "first" in print_ir_before
+        ):
+            print(f"***After trace/Before first pass***\n")
+            print_trace(trace)
 
         idxc = IndexingContext.current()
-        idxc.finalize()
 
-        # Initialize Vector shapes
-        self.hardware_constraints[0].subs_vector_shapes(idxc.subs)
+        def finalize_indices():
+            idxc.finalize()
 
-        # Do type inference.
-        infer_types(graph)
+        def substitute_vector_shapes():
+            self.hardware_constraints[0].subs_vector_shapes(idxc.subs)
 
-        # Promote the placeholders to the appropriate address space.
-        promote_placeholders(graph, self.constraints)
-
-        # Set indices.
-        set_node_indices(graph, self.constraints)
-
-        # Expansion
-        expand_graph(graph, self.constraints)
-
-        # Set post expansion indices.
-        set_post_expansion_indices(graph, self.constraints)
-
-        # Clean up chains of GetResults
-        remove_chained_getresult(graph)
+        graph_passes = [
+            partial(initialize_iter_args, trace),
+            partial(self.create_induction_vars, trace),
+            partial(self.initialize_wave_constraints, trace),
+            partial(self.initialize_reductions, trace),
+            partial(self.initialize_symbolic_constraints, trace),
+            partial(self.initialize_workgroup_constraints, trace),
+            finalize_indices,
+            substitute_vector_shapes,
+            partial(infer_types, trace),
+            partial(promote_placeholders, trace, self.constraints),
+            partial(set_node_indices, trace, self.constraints),
+            partial(expand_graph, trace, self.constraints),
+            partial(set_post_expansion_indices, trace, self.constraints),
+            partial(remove_chained_getresult, trace),
+        ]
 
         # Optimizations.
-        decompose_vmma_ops(graph, self.constraints)
-        hoist_loop_invariant_ops(graph, self.constraints)
-        minimize_global_loads(graph, self.constraints)
-
-        # Apply shared memory indexing corrections.
-        apply_shared_memory_indexing_corrections(graph, self.constraints)
+        graph_passes += [
+            partial(decompose_vmma_ops, trace, self.constraints),
+            partial(hoist_loop_invariant_ops, trace, self.constraints),
+            partial(minimize_global_loads, trace, self.constraints),
+            partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
+        ]
 
         # Partition strided operators.
-        partition_ops_with_gpr_offsets(graph, self.constraints)
-        partition_strided_operators(graph, self.constraints)
-        remove_chained_extractslice(graph)
+        graph_passes += [
+            partial(partition_ops_with_gpr_offsets, trace, self.constraints),
+            partial(partition_strided_operators, trace, self.constraints),
+            partial(remove_chained_extractslice, trace),
+        ]
 
-        # Decompose reduce Ops.
-        decompose_reduce_ops(graph, self.constraints, idxc.subs)
+        graph_passes += [
+            partial(decompose_reduce_ops, trace, self.constraints, idxc.subs)
+        ]
 
         # Schedule the reduction ops.
         # Scheduling should always be used with use_scheduling_barriers=True,
@@ -375,15 +393,38 @@ class LaunchableWave(Launchable):
         # [Manually resolve conflicts consistent with the PR]
         if kwargs.get("schedule", False):
             use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
-            schedule_graph(graph, self.constraints, use_scheduling_barriers)
+            graph_passes.append(
+                partial(
+                    schedule_graph, trace, self.constraints, use_scheduling_barriers
+                )
+            )
 
-        # Align sizes to WG/Tile sizes
-        # This pass changes indexing keys, which can interfere with other passes,
-        # so it should be called close to the end of pipeline.
-        align_index_sizes(graph, self.constraints)
+        graph_passes += [
+            # Align sizes to WG/Tile sizes
+            # This pass changes indexing keys, which can interfere with other passes,
+            # so it should be called close to the end of pipeline.
+            partial(align_index_sizes, trace, self.constraints),
+            partial(add_shared_memory_barriers, trace),
+        ]
 
-        # Add shared memory barriers.
-        add_shared_memory_barriers(graph)
+        for p in graph_passes:
+            if "all" in print_ir_before or p.__name__ in print_ir_before:
+                print(f"***Before {p.__name__}***\n")
+                print_trace(trace)
+            try:
+                p()
+            except Exception:
+                print(f"Error in pass: {p.__name__}\n")
+                print_trace(trace)
+                raise
+            if "all" in print_ir_after or p.__name__ in print_ir_after:
+                print(f"***After {p.__name__}***\n")
+                print_trace(trace)
+
+        if "all" in print_ir_after or "last" in print_ir_after:
+            # Take advantage of Python leaking loop variables
+            print(f"***After final pass {p.__name__}***\n")
+            print_trace(trace)
 
         # Determine grid shape.
         self.grid_type.dims = [1, 1, 1]
@@ -401,14 +442,18 @@ class LaunchableWave(Launchable):
             )
             self.grid_type.dims[dim] *= safe_subs(constraint.count, idxc.subs)
         grid = self.grid_type
+        if compile_config.get("print_grid", False):
+            print(f"Grid: {grid}")
 
-        root_graph = graph.get_root_graph()
+        root_graph = trace.get_root_graph()
         kernel_sig = kernel_codegen.KernelSignature()
         kernel_sig.add_from_graph_placeholders(root_graph)
         dynamic_symbols = kwargs.get("dynamic_symbols", [])
         kernel_sig.add_from_dynamic_symbols(dynamic_symbols)
         kernel_sig.add_grid(self.grid_type)
         kernel_sig.determine_input_output_buffers(root_graph)
+        if compile_config.get("print_signature", False):
+            print(f"Kernel signature: {kernel_sig}")
 
         mb = builder.ModuleBuilder(context=context, module_op=module_op)
         entrypoint_name = self._name
@@ -417,7 +462,6 @@ class LaunchableWave(Launchable):
         subgroup_size = self.hardware_constraints[0].threads_per_wave
 
         # Setup LLVM func compilation configs.
-        compile_config = kwargs.get("compile_config", {})
         llvm_func_config = {}
         denorm_fp_math_f32 = compile_config.get("denorm_fp_math_f32", None)
         if denorm_fp_math_f32 != None:
@@ -438,15 +482,21 @@ class LaunchableWave(Launchable):
         )
 
         emitter = WaveEmitter(
-            dispatch_entrypoint, graph, self.constraints, dynamic_symbols
+            dispatch_entrypoint, trace, self.constraints, dynamic_symbols
         )
-        emitter.emit(graph.get_root_graph())
+        try:
+            emitter.emit(trace.get_root_graph())
+        except:
+            print("Error in emitter")
+            asm = mb.module_op.get_asm()
+            print(asm)
+            raise
         emitter.finish()
 
         if kwargs.get("canonicalize", False):
             canonicalize_module(mb.module_op)
 
-        return mb, graph, exe, kernel_sig, entrypoint_name
+        return mb, trace, exe, kernel_sig, entrypoint_name
 
     def test_execute(self, args, kwargs):
         run = kwargs.get("run", False)
@@ -486,7 +536,7 @@ class LaunchableWave(Launchable):
                 )
                 return cached_kernel
 
-        # Recompile from kernel scratch if not found in cache.
+        # Recompile kernel from scratch if not found in cache.
         (
             mb,
             graph,

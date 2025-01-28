@@ -3,6 +3,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import functools
+
 from ..compiler.ir import (
     builtin_d,
     InsertionPoint,
@@ -1433,3 +1435,10 @@ def initialize_iter_args(trace: CapturedTrace) -> None:
             if isinstance(custom, IterArg):
                 custom.iter_idx = count
                 count += 1
+
+
+def partial(func, *args, **kwargs):
+    """functools.partial but with function attributes copied to the partial function."""
+    partial_func = functools.partial(func, *args, **kwargs)
+    functools.update_wrapper(partial_func, func)
+    return partial_func
