@@ -37,6 +37,37 @@ def apply_padding(
 def apply_promotion_pattern(
     custom_node: Read | Write, allocate_node: Allocate, last_write_to_shared: fx.Node
 ):
+    """
+    Decompose and reorders read_from_global -> write_to_shared -> read_from_shared sequence.
+    In the previous naive way, the generated instruction ordering used to look like:
+    ```
+    read_from_global lhs
+    write_to_shared lhs
+    shared_barrier
+    read_from_shared lhs
+    read_from_global rhs
+    write_to_shared rhs
+    shared_barrier
+    read_from_shared rhs
+    ```
+    For this simple example, we have 2 shared barriers.
+
+    Currently, this pass keep track of the last_write_to_shared, S.T
+    read_from_global -> write_to_shared -> read_from_shared sequence
+    can be inserted after the `last_write_to_shared` and before the
+    last read from shared. This ensures that we isolate all the
+    read_from_shared to be located one after another. This allows
+    us to only need 1 shared barrier as seen below:
+    ```
+    read_from_global lhs
+    write_to_shared lhs
+    read_from_global lhs
+    write_to_shared lhs
+    shared_barrier
+    read_from_shared lhs
+    read_from_shared rhs
+    ```
+    """
     match custom_node:
         case Read(memory, elements_per_thread) if get_custom(
             memory
