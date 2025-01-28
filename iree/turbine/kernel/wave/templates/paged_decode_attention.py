@@ -15,6 +15,7 @@ from iree.turbine.kernel.wave.utils import (
 import sympy
 from enum import Enum
 from collections import namedtuple
+import math
 
 paged_decode_attention_shape = namedtuple(
     "paged_decode_attention_shape",
@@ -65,11 +66,13 @@ def get_paged_decode_attention_kernels(
         PHASE_0 = (0,)
         PHASE_1 = (1,)
 
-    B_WAVES = 1
     THREADS_PER_WAVE = 64
     PHASE_1_BLOCK_B = 64
     PHASE_1_ELEMS_PER_THREAD = PHASE_1_BLOCK_B // THREADS_PER_WAVE
     PHASE_1_BLOCK_N = 1
+    HEAD_BLOCK_SIZE = 16
+    head_ratio = shape.num_query_heads // shape.num_kv_heads
+    B_WAVES = 1
 
     def phase_0_constraints():
         # K1, K2 are reduction dimensions that are fixed (not distributed) so
@@ -88,20 +91,26 @@ def get_paged_decode_attention_kernels(
         )
         wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
         constraints += [
-            tkw.WorkgroupConstraint(
-                T, BLOCK_T, 0, apply_fn=lambda wg: wg_func(wg), primary=False
-            )
+            tkw.WorkgroupConstraint(T, BLOCK_T, 0, apply_fn=wg_func, primary=False)
         ]
         constraints += [tkw.TilingConstraint(T, 1, iters=count)]
 
         # BH is the kv-head index and is distributed across workgroups.
         # B is the query index and is distributed like BH but with a different
         # workgroup and wave tile size.
-        # TODO: We will want to add a function to the workgroup constraint to
-        # allow for using WG / ceil(kv_group_num, BLOCK_B) instead of just WG.
-        # This can be done by adding an optional additional argument to the WorkgroupConstraint.
 
-        constraints += [tkw.WorkgroupConstraint(BH, BLOCK_BH, 1)]
+        # For GQA, the number of query heads >> number of kv heads. So we launch
+        # workgroups where each workgroup processes HEAD_BLOCK_SIZE query heads
+        # as this allows us to use MMA for the attention computation. While
+        # each workgroup processes HEAD_BLOCK_SIZE query heads, it only processes
+        # one kv head. So we need to specify an apply_func to determine the
+        # appropriate kv head index.
+
+        wg_func_2 = lambda wg: wg // math.ceil(head_ratio / HEAD_BLOCK_SIZE)
+        count = shape.num_query_heads // min(HEAD_BLOCK_SIZE, head_ratio)
+        constraints += [
+            tkw.WorkgroupConstraint(BH, BLOCK_BH, 1, apply_fn=wg_func_2, iters=count)
+        ]
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1, primary=False)]
         constraints += [tkw.WaveConstraint(B, BLOCK_B / B_WAVES)]
 
@@ -279,7 +288,7 @@ def get_paged_decode_attention_kernels(
     def phase_1(
         logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
         c_reg = tkl.Register[S, B, N, tkl.f32](0.0)
         init_sum = tkl.Register[S, B, tkl.f32](0.0)
@@ -304,35 +313,29 @@ def get_paged_decode_attention_kernels(
 
         res_max, res_sum, res_mm = repeat
         res = res_mm / res_sum
+        res_f16 = tkw.cast(res, tkl.f16)
         tkw.write(
-            res, output, mapping=mapping, elements_per_thread=PHASE_1_ELEMS_PER_THREAD
+            res_f16,
+            output,
+            mapping=mapping,
+            elements_per_thread=PHASE_1_ELEMS_PER_THREAD,
         )
-
-    (
-        num_query_heads,
-        num_kv_heads,
-        head_size,
-        head_size_kv,
-        block_size,
-        num_seqs,
-        kv_lens,
-    ) = shape
 
     symbols_0 = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
         STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_BH: 1,
-        BLOCK_B: num_query_heads // num_kv_heads,
+        BLOCK_B: HEAD_BLOCK_SIZE,
         BLOCK_S: 1,
         BLOCK_U: 1,
-        B: num_query_heads,
+        B: shape.num_query_heads,
         M: 1,
-        N: head_size_kv,
-        K1: head_size,
-        K2: block_size,
-        BH: num_kv_heads,
-        S: num_seqs,
+        N: shape.head_size_kv,
+        K1: shape.head_size,
+        K2: shape.block_size,
+        BH: shape.num_kv_heads,
+        S: shape.num_seqs,
         U: num_kv_splits,
     }
     symbols_1 = dict(symbols_0)

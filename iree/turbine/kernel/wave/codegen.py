@@ -396,6 +396,23 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         if isinstance(val, _Rational):
             raise CodegenError(f"Rational is not supported yet in '{type(term)}'")
 
+    def _remove_denominators(lhs, rhs):
+        """
+        Converts     (z/x) < y -> z < x*y
+              or     z < (y/x) -> z*x < y
+              or (a/b) < (c/d) -> a*d < b*c
+        """
+        if isinstance(lhs, _Rational) and not isinstance(rhs, _Rational):
+            rhs = _mul(lhs.denominator, rhs)
+            lhs = lhs.numerator
+        if isinstance(rhs, _Rational) and not isinstance(lhs, _Rational):
+            lhs = _mul(rhs.denominator, lhs)
+            rhs = rhs.numerator
+        if isinstance(lhs, _Rational) and isinstance(rhs, _Rational):
+            rhs = _mul(lhs.denominator, rhs.numerator)
+            lhs = _mul(rhs.denominator, lhs.numerator)
+        return lhs, rhs
+
     def _get_const(val):
         if isinstance(val, int):
             return arith_d.constant(IndexType.get(), val)
@@ -450,11 +467,18 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 numerator = _get_const(term.p)
                 denominator = _get_const(term.q)
                 stack.append(_Rational(numerator, denominator))
+            case sympy.LessThan():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                if isinstance(rhs, _Rational) or isinstance(lhs, _Rational):
+                    lhs, rhs = _remove_denominators(lhs, rhs)
+                res = arith_d.cmpi(arith_d.CmpIPredicate.sle, *_broadcast(lhs, rhs))
+                stack.append(res)
             case sympy.StrictLessThan():
                 rhs = stack.pop()
                 lhs = stack.pop()
-                _enforce_non_rational(rhs, term)
-                _enforce_non_rational(lhs, term)
+                if isinstance(rhs, _Rational) or isinstance(lhs, _Rational):
+                    lhs, rhs = _remove_denominators(lhs, rhs)
                 res = arith_d.cmpi(arith_d.CmpIPredicate.slt, *_broadcast(lhs, rhs))
                 stack.append(res)
             case sympy.StrictGreaterThan():
