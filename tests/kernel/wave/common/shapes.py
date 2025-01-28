@@ -22,6 +22,7 @@ _e2e_test_shapes["evoformer"] = [
     (1, 512, 256, 8, 8, 256, 8),
 ]
 
+
 def get_test_shapes(test_name: str):
     assert test_name in _e2e_test_shapes, f"Unknown test name: {test_name}"
     shapes = [
