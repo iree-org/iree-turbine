@@ -44,6 +44,11 @@ def allocate(
 ) -> "Memory":
     ...
 
+def self_index(
+    idx: IndexExpr, dtype: DataType
+) -> "Register":
+    ...
+
 
 def extract(
     register: "Register",
@@ -932,6 +937,21 @@ class Allocate(CustomOp):
     @property
     def type(self) -> "Memory":
         return Memory[(*self.shape, self.address_space, self.dtype)]
+
+
+@define_op("self_index")
+@dataclass
+class SelfIndex(CustomOp):
+    idx: IndexExpr
+    dtype: DataType
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return [self.idx]
+
+    @property
+    def type(self) -> "Register":
+        return Register[(self.idx, self.dtype)]
 
 
 @define_op("shared_memory_barrier")

@@ -15,7 +15,6 @@ from iree.turbine.kernel.wave.utils import (
 import math
 from iree.turbine.kernel.wave.templates.attention_common import *
 
-
 def get_prefill_attention_kernel(
     shape: AttentionShape,
     mfma_variant: MMAType,
@@ -130,6 +129,8 @@ def get_prefill_attention_kernel(
             acc: tkl.Register[H, D_KV, N_Q, tkl.f32],
         ):
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
+            iota = tkw.self_index(N_KV, tkl.f32)
+            imm_reg = imm_reg + iota
             q_reg = tkw.read(
                 q,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
