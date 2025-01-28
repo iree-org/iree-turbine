@@ -13,7 +13,7 @@ from iree.turbine.kernel.wave.utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
-from ..symbolic_constraints import SymbolicAlias
+from ..symbolic_constraints import SymbolicConstraint
 import sympy
 from enum import Enum
 import math
@@ -64,7 +64,7 @@ def get_decode_attention_kernels(
         constraints += [tkw.WaveConstraint(K2, BLOCK_K2 / K_WAVES)]
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 3)]
         constraints += [
-            SymbolicAlias(U, K2, lambda x: sympy.ceiling(x / (BLOCK_K2 / K_WAVES)))
+            SymbolicConstraint(U, K2, lambda x: sympy.ceiling(x / (BLOCK_K2 / K_WAVES)))
         ]
         vector_shapes = {B: 0}
         waves_per_block = (M_WAVES, N_WAVES, K_WAVES)
