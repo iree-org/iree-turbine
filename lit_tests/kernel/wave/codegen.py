@@ -761,7 +761,6 @@ def test_read_write_conditional():
         # CHECK-LABEL:    func.func @test_conditional
         #  CHECK-SAME:      (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
         #   CHECK-DAG:      %[[CST:.*]] = arith.constant dense<0> : vector<1xindex>
-        #   CHECK-DAG:      %[[FALSE:.*]] = arith.constant false
         #   CHECK-DAG:      %[[C0:.*]] = arith.constant 0 : index
         #       CHECK:      %[[A1:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
         #       CHECK:      %[[RES:.*]] = vector.load %[[A1]][%[[M:.*]], %[[N:.*]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
@@ -770,8 +769,7 @@ def test_read_write_conditional():
         #       CHECK:      %[[O2:.*]] = arith.index_cast %[[O1]] : vector<1xi32> to vector<1xindex>
         #       CHECK:      %[[O3:.*]] = arith.cmpi sgt, %[[O2]], %[[CST]] : vector<1xindex>
         #       CHECK:      %[[O4:.*]] = vector.extract %[[O3]][0] : i1 from vector<1xi1>
-        #       CHECK:      %[[O5:.*]] = arith.cmpi ne, %[[O4]], %[[FALSE]] : i1
-        #       CHECK:      scf.if %[[O5]] {
+        #       CHECK:      scf.if %[[O4]] {
         #       CHECK:        %[[A3:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
         #       CHECK:        vector.store %[[RES]], %[[A3]][%[[M]], %[[N]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
         #       CHECK:      }

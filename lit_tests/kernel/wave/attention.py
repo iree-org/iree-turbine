@@ -1140,7 +1140,6 @@ def test_paged_flash_decoding():
     # CHECK:                func.func @phase_0
     # CHECK-DAG:               %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:               %[[C1:.*]] = arith.constant 1 : index
-    # CHECK-DAG:               %[[FALSE:.*]] = arith.constant false
     # CHECK-COUNT-4:           vector.load
     # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT:.*]] step %[[C1]]
     # CHECK:                        amdgpu.lds_barrier
@@ -1152,9 +1151,8 @@ def test_paged_flash_decoding():
     # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-8:                vector.load
     # CHECK-COUNT-8:                amdgpu.mfma
-    # CHECK:                  %[[C1:.*]] = arith.cmpi sgt, %[[COUNT]], %[[C0]] : index
-    # CHECK:                  %[[C2:.*]] = arith.cmpi ne, %[[C1]], %[[FALSE]] : i1
-    # CHECK:                  scf.if %[[C2]] {
+    # CHECK:                  %[[COND:.*]] = arith.cmpi sgt, %[[COUNT]], %[[C0]] : index
+    # CHECK:                  scf.if %[[COND]] {
     # CHECK-COUNT-1:          arith.divf
     # CHECK-COUNT-1:          math.log2
     # CHECK-COUNT-9:         vector.store
