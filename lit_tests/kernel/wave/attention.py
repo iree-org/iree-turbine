@@ -205,8 +205,11 @@ def test_evoformer():
 
         # CHECK:            func.func @evoformer
         # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-5:            {{.*}} = vector.load
-        # CHECK-COUNT-1:            vector.store {{.*}}
+        # CHECK:                    {{.*}} = vector.load
+        # CHECK:                    vector.store {{.*}}
+        # CHECK:                    amdgpu.lds_barrier
+        # CHECK-COUNT-4:            {{.*}} = vector.load
+        # CHECK-COUNT-4:            {{.*}} = vector.load
         # CHECK-COUNT-4:            {{.*}} = vector.load
         # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
         # CHECK-COUNT-2:            {{.*}} = vector.load
@@ -341,21 +344,22 @@ def test_dynamic_attention_pipelined():
         print(dynamic_attention_pipelined(q, k, v, output).module_op)
 
         # CHECK-LABEL:       func.func @dynamic_attention_pipelined
-        # CHECK-COUNT-2:        {{.*}} = vector.maskedload {{.*}}
+        # CHECK-COUNT-4:        {{.*}} = vector.maskedload {{.*}}
         # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
         # CHECK-COUNT-2:            {{.*}} = vector.maskedload {{.*}}
-        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
         # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
-        # CHECK-COUNT-6:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
-        # CHECK-COUNT-11:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
         # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
+        # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
+        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
+        # CHECK-COUNT-15:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
         # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-16:       vector.maskedstore {{.*}}
 
@@ -477,12 +481,12 @@ def test_attention_pipelined():
         # CHECK-LABEL:       func.func @base_attention_pipelined
         # CHECK:                {{.*}} = scf.for
         # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-5:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-19:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-15:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
         # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
 
 
@@ -1139,19 +1143,13 @@ def test_paged_flash_decoding():
     # CHECK-DAG:               %[[FALSE:.*]] = arith.constant false
     # CHECK-COUNT-4:           vector.load
     # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT:.*]] step %[[C1]]
+    # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-3:                vector.maskedload
     # CHECK-COUNT-8:                vector.store
-    # CHECK-COUNT-8:                vector.load
-    # CHECK-COUNT-8:               amdgpu.mfma
-    # CHECK-COUNT-2:                gpu.shuffle
-    # CHECK-COUNT-1:                arith.subf
-    # CHECK-COUNT-1:                math.exp2
-    # CHECK-COUNT-4:                arith.subf
-    # CHECK-COUNT-4:                math.exp2
-    # CHECK-COUNT-2:                gpu.shuffle
     # TODO: Remove gathers for performance
     # CHECK-COUNT-2:                vector.gather
     # CHECK-COUNT-8:                vector.store
+    # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-8:                vector.load
     # CHECK-COUNT-8:                amdgpu.mfma
     # CHECK:                  %[[C1:.*]] = arith.cmpi sgt, %[[COUNT]], %[[C0]] : index

@@ -229,6 +229,21 @@ def DCE(trace: CapturedTrace):
             get_custom(node).erase()
 
 
+def move_node_after(src_node: fx.Node, anchor: fx.Node):
+    """
+    Moves src_node into a location after a given anchor node.
+    This function will invalidate "src_node" and return the
+    newly copied/"moved" node.
+    """
+    custom_src = get_custom(src_node)
+    moved_src = custom_src.copy(anchor=(anchor)).fx_node
+    custom_src.replace_all_uses_with(moved_src)
+    src_name = src_node.name
+    src_node.graph.erase_node(src_node)
+    moved_src.name = src_name
+    return moved_src
+
+
 def remove_chained_getresult(trace: CapturedTrace):
     def is_chained_getresult(node: fx.Node) -> bool:
         custom = get_custom(node)
@@ -1464,6 +1479,15 @@ def print_graph(graph: fx.Graph):
     graph_str = graph_str.replace("target=iree.turbine.kernel.ops.wave_ops.", "")
     graph_str = graph_str.replace("call_function", "")
     print(graph_str)
+
+
+def is_reduction_subgraph(graph: fx.Graph):
+    """
+    Check that graph is a subgraph that is owned by ReductionOp.
+    """
+    if not hasattr(graph, "parent_op"):
+        return False
+    return isinstance(get_custom(graph.parent_op), Reduction)
 
 
 def initialize_iter_args(trace: CapturedTrace) -> None:
