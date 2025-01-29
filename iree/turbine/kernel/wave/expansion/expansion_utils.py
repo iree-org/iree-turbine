@@ -156,11 +156,14 @@ def is_expandable(arg: Any) -> bool:
 def get_expanded_name(node: CustomOp, dims: dict[IndexSymbol, int]) -> str:
     """Returns the name of a node with the dimensions appended."""
 
-    node_name = node.fx_node.name
+    separated = node.fx_node.name.split("_")
+    node_name = separated[0]
     if isinstance(node, Read) or isinstance(node, Write):
         if get_custom(node.memory).type.address_space == SHARED_ADDRESS_SPACE:
             node_name = node_name + "_shared"
     # Special case for get_result op
+    if node_name == "get":
+        node_name = node_name + separated[1]
     max_chars = 4
     for key, val in dims.items():
         key_str = str(key)
