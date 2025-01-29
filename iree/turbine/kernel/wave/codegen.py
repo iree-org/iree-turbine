@@ -894,7 +894,7 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
         )
         size_full = arith_d.muli(size_full, size, overflow_flags=overflow_flags)
 
-    size_full = arith.subi(size_full, size, overflow_flags=overflow_flags)
+    size_full = arith_d.subi(size_full, offset, overflow_flags=overflow_flags)
 
     # limit size to INT_MAX - 1, the last val will be used for buffer oob handling
     max_size = arith_d.constant(
