@@ -868,6 +868,10 @@ def _construct_gather_scatter_indices(
     return start_indices, offsets_vec, mask
 
 
+def _get_max_buffer_size(elem_type: IrType) -> int:
+    return ((1 << 31) - 1) // (elem_type.width // 8)
+
+
 def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
     memref_type = mem.type
     rank = memref_type.rank
@@ -894,9 +898,11 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
             overflow_flags=overflow_flags,
         )
 
-    # limit size to UINT_MAX - 1, the last val will be used for buffer oob handling
-    max_size = arith_d.constant(size_full.type, (1 << 31) - 2)
-    size_full = arith_d.minui(size_full, max_size)
+    # limit size to INT_MAX - 1, the last val will be used for buffer oob handling
+    max_size = arith_d.constant(
+        size_full.type, _get_max_buffer_size(memref_type.element_type) - 1
+    )
+    size_full = arith_d.minsi(size_full, max_size)
 
     dyn_val = ShapedType.get_dynamic_size()
     res_shape = [dyn_val]
@@ -953,7 +959,7 @@ def _create_vec_read(
             i32 = IntegerType.get_signless(32)
             i32vec = VectorType.get([elements_per_thread], i32)
             offsets_vec = arith_d.index_cast(i32vec, offsets_vec)
-            oob_idx = (1 << 31) - 1
+            oob_idx = _get_max_buffer_size(element_type)
             oob_idx = arith_d.constant(i32, oob_idx)
             oob_idx = vector_d.splat(offsets_vec.type, oob_idx)
             offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
