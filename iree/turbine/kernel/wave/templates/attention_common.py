@@ -27,15 +27,16 @@ class AttentionShape:
     kv_seq_len: Optional[int] = None
 
 
-# Commonly-used attention symbols
-H = tkl.sym.H
-H_Q = tkl.sym.H
-H_KV = tkl.sym.H
-N_Q = tkl.sym.N_D
-N_KV = tkl.sym.N_KV
-D_Q = tkl.sym.D_Q
-D_KV = tkl.sym.D_KV
+# Commonly-used attention symbols.
+H = tkl.sym.H  # number of heads
+H_Q = tkl.sym.H  # number of query heads
+H_KV = tkl.sym.H  # number of key/value heads
+N_Q = tkl.sym.N_D  # query sequence length
+N_KV = tkl.sym.N_KV  # key/value sequence length
+D_Q = tkl.sym.D_Q  # query head size
+D_KV = tkl.sym.D_KV  # key/value head size
 
+# And their corresponding tile sizes.
 BLOCK_H = tkl.sym.BLOCK_H
 BLOCK_H_Q = tkl.sym.BLOCK_H
 BLOCK_H_KV = tkl.sym.BLOCK_H
