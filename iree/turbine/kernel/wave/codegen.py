@@ -117,7 +117,7 @@ from .._support.indexing import IndexingContext, IndexExpr, IndexSequence, index
 from .scheduling.resources import get_scheduling_mask
 
 unroll_vector_ops = True
-use_buffer_ops = False
+use_buffer_ops = True
 
 
 @dataclass
@@ -931,71 +931,67 @@ def _create_vec_read(
         return vector_d.load(vector_type, mem, start_indices)
 
     element_type = vector_type.element_type
-    if offsets_vec is not None:
-        zero = get_constant_attr(0, element_type)
-        zero = arith_d.constant(element_type, zero)
+    if offsets_vec is None:
+        offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
+        vals = [IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)]
+        offsets_vec = arith_d.constant(
+            offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
+        )
 
-        if unroll_vector_ops:
-            result = vector_d.splat(vector_type, zero)
+    zero = get_constant_attr(0, element_type)
+    zero = arith_d.constant(element_type, zero)
 
-            data = _linearize_memref(mem, start_indices)
-            mask1_type = VectorType.get([1], IntegerType.get_signless(1))
-            vec1_type = VectorType.get([1], element_type)
-            passthru = vector_d.splat(vec1_type, zero)
-            if mask is not None and use_buffer_ops:
-                i32 = IntegerType.get_signless(32)
-                i32vec = VectorType.get([elements_per_thread], i32)
-                offsets_vec = arith_d.index_cast(i32vec, offsets_vec)
-                oob_idx = (1 << 31) - 1
-                oob_idx = arith_d.constant(i32, oob_idx)
-                oob_idx = vector_d.splat(offsets_vec.type, oob_idx)
-                offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
+    if unroll_vector_ops:
+        result = vector_d.splat(vector_type, zero)
 
-            for i in range(elements_per_thread):
-                offset = vector_d.extract(
-                    offsets_vec, static_position=[i], dynamic_position=[]
-                )
-                if mask is None:
-                    elem = memref_d.load(element_type, data, indices=[offset])
-                elif use_buffer_ops:
-                    elem = amdgpu_d.raw_buffer_load(
-                        element_type, data, indices=[offset]
-                    )
-                else:
-                    mask_elem = vector_d.extract(
-                        mask, static_position=[i], dynamic_position=[]
-                    )
-                    mask_elem = vector_d.splat(mask1_type, mask_elem)
-                    elem = vector_d.maskedload(
-                        vec1_type, data, [offset], mask_elem, passthru
-                    )
-                    elem = vector_d.extract(
-                        elem, static_position=[0], dynamic_position=[]
-                    )
+        data = _linearize_memref(mem, start_indices)
+        mask1_type = VectorType.get([1], IntegerType.get_signless(1))
+        vec1_type = VectorType.get([1], element_type)
+        passthru = vector_d.splat(vec1_type, zero)
+        if mask is not None and use_buffer_ops:
+            i32 = IntegerType.get_signless(32)
+            i32vec = VectorType.get([elements_per_thread], i32)
+            offsets_vec = arith_d.index_cast(i32vec, offsets_vec)
+            oob_idx = (1 << 31) - 1
+            oob_idx = arith_d.constant(i32, oob_idx)
+            oob_idx = vector_d.splat(offsets_vec.type, oob_idx)
+            offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
 
-                result = vector_d.insert(
-                    elem, result, static_position=[i], dynamic_position=[]
-                )
-
-            return result
-
-        else:
-            passthru = vector_d.splat(vector_type, zero)
-
-            if mask is None:
-                mask_vec_type = VectorType.get(
-                    [elements_per_thread], IntegerType.get_signless(1)
-                )
-                mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
-            return vector_d.gather(
-                vector_type, mem, start_indices, offsets_vec, mask, passthru
+        for i in range(elements_per_thread):
+            offset = vector_d.extract(
+                offsets_vec, static_position=[i], dynamic_position=[]
             )
+            if mask is None:
+                elem = memref_d.load(element_type, data, indices=[offset])
+            elif use_buffer_ops:
+                elem = amdgpu_d.raw_buffer_load(element_type, data, indices=[offset])
+            else:
+                mask_elem = vector_d.extract(
+                    mask, static_position=[i], dynamic_position=[]
+                )
+                mask_elem = vector_d.splat(mask1_type, mask_elem)
+                elem = vector_d.maskedload(
+                    vec1_type, data, [offset], mask_elem, passthru
+                )
+                elem = vector_d.extract(elem, static_position=[0], dynamic_position=[])
+
+            result = vector_d.insert(
+                elem, result, static_position=[i], dynamic_position=[]
+            )
+
+        return result
+
     else:
-        zero = get_constant_attr(0, element_type)
-        zero = arith_d.ConstantOp(element_type, zero)
         passthru = vector_d.splat(vector_type, zero)
 
-        return vector_d.maskedload(vector_type, mem, start_indices, mask, passthru)
+        if mask is None:
+            mask_vec_type = VectorType.get(
+                [elements_per_thread], IntegerType.get_signless(1)
+            )
+            mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+        return vector_d.gather(
+            vector_type, mem, start_indices, offsets_vec, mask, passthru
+        )
 
 
 @handle_op(read)
