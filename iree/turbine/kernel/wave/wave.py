@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional
 import torch.fx as fx
 import inspect
 
-from .symbolic_constraints import SymbolicAlias
+from .symbolic_constraints import SymbolicConstraint
 
 from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
 from ..compiler.ir import Context, Operation
@@ -143,7 +143,7 @@ class LaunchableWave(Launchable):
         return [
             constraint
             for constraint in self.constraints
-            if isinstance(constraint, SymbolicAlias)
+            if isinstance(constraint, SymbolicConstraint)
         ]
 
     def _trace(self) -> CapturedTrace:
@@ -232,7 +232,7 @@ class LaunchableWave(Launchable):
         """
         # Ignore aliased variables. They will be handled separately.
         aliased_dims = [
-            x.source for x in self.constraints if isinstance(x, SymbolicAlias)
+            x.source for x in self.constraints if isinstance(x, SymbolicConstraint)
         ]
         workgroup_dims = {
             x.workgroup_dim: x
@@ -248,7 +248,7 @@ class LaunchableWave(Launchable):
         This function updates the wg_dim for aliased workgroup constraints.
         """
         aliased_dims = [
-            x.source for x in self.constraints if isinstance(x, SymbolicAlias)
+            x.source for x in self.constraints if isinstance(x, SymbolicConstraint)
         ]
         # Update the workgroup constraints for aliases sources.
         for constraint in self.workgroup_constraints:
@@ -429,7 +429,9 @@ class LaunchableWave(Launchable):
         # Determine grid shape.
         self.grid_type.dims = [1, 1, 1]
         max_workgroup_dim = 2
-        aliases = [x.source for x in self.constraints if isinstance(x, SymbolicAlias)]
+        aliases = [
+            x.source for x in self.constraints if isinstance(x, SymbolicConstraint)
+        ]
         for constraint in self.workgroup_constraints:
             if constraint.dim in aliases:
                 continue

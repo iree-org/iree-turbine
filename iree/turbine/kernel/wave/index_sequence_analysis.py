@@ -28,7 +28,7 @@ from .constraints import (
     WorkgroupConstraint,
 )
 from .assumptions import Assumption
-from .symbolic_constraints import SymbolicAlias
+from .symbolic_constraints import SymbolicConstraint
 from .._support.tracing import CapturedTrace, IndexingContext
 from .._support.indexing import IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
@@ -469,7 +469,7 @@ def set_thread_independent_index(
     constraints = [
         c
         for c in constraints
-        if not isinstance(c, (HardwareConstraint, Assumption, SymbolicAlias))
+        if not isinstance(c, (HardwareConstraint, Assumption, SymbolicConstraint))
     ]
 
     index = {}
@@ -628,7 +628,7 @@ def should_update_index(
     source: CustomOp,
     source_index: dict[IndexSymbol, IndexSequence],
     source_vector_shapes: dict[IndexSymbol, int],
-    symbolic_constraints: list[SymbolicAlias],
+    symbolic_constraints: list[SymbolicConstraint],
 ):
     # Get symbolic shape without any aliased variables.
     aliased_dims = [x.source for x in symbolic_constraints]
@@ -656,7 +656,9 @@ def should_update_index(
     return True
 
 
-def append_aliased_shapes(source: CustomOp, symbolic_constraints: list[SymbolicAlias]):
+def append_aliased_shapes(
+    source: CustomOp, symbolic_constraints: list[SymbolicConstraint]
+):
     """
     Append the aliased shapes to the vector shapes of the source, if they
     are present in the source index.
@@ -677,7 +679,7 @@ def propagate_index(
     workgroup_constraints: list[WorkgroupConstraint],
     mma_index: dict[MMA, dict[IndexSymbol, int]],
     visited: set[CustomOp],
-    symbolic_constraints: list[SymbolicAlias],
+    symbolic_constraints: list[SymbolicConstraint],
 ):
     """
     Propagate the index and vector shapes through the graph
@@ -736,7 +738,7 @@ def set_thread_dependent_index(
     workgroup_constraints = [
         c for c in constraints if isinstance(c, WorkgroupConstraint)
     ]
-    symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
+    symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicConstraint)]
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)

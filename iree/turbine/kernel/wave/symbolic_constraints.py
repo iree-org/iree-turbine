@@ -17,13 +17,13 @@ from .constraints import (
 
 
 @dataclass
-class SymbolicAlias:
+class SymbolicConstraint:
     """
     A constraint of the form `tkw.SymbolicConstraint(K, SYMBOLIC_K)` specifies
     that the relationship between the source and target symbols is given by
     source = source_to_target(target).
 
-    SymbolicAliases are modeled in the compiler as additional workgroup, wave,
+    SymbolicConstraintes are modeled in the compiler as additional workgroup, wave,
     and tiling constraints that are derived from the source. They are ignored
     during expansion and utilize the same workgroup and wave ids as the
     target symbol.
