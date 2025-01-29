@@ -877,13 +877,10 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
     results = results[2:]
     sizes = results[:rank]
     strides = results[rank:]
-    size = arith_d.constant(IndexType.get(), 1)
-    overflow_flags = arith_d.IntegerOverflowFlags.nsw | arith_d.IntegerOverflowFlags.nuw
+    size_full = arith_d.constant(IndexType.get(), 1)
+    overflow_flags = arith_d.IntegerOverflowFlags.nsw
     for ind, size, stride in zip(indices, sizes, strides):
         if isinstance(ind, int):
-            if ind == 0:
-                continue
-
             ind = arith_d.constant(IndexType.get(), ind)
 
         offset = arith_d.addi(
@@ -891,8 +888,8 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
             arith_d.muli(ind, stride, overflow_flags=overflow_flags),
             overflow_flags=overflow_flags,
         )
-        size = arith_d.muli(
-            size,
+        size_full = arith_d.muli(
+            size_full,
             arith_d.subi(size, ind, overflow_flags=overflow_flags),
             overflow_flags=overflow_flags,
         )
@@ -911,7 +908,7 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
         resut_type,
         base,
         offsets=[offset],
-        sizes=[size],
+        sizes=[size_full],
         strides=[],
         static_offsets=[dyn_val],
         static_sizes=[dyn_val],
