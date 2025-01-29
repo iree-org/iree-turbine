@@ -822,11 +822,6 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         lhs_index = get_index(lhs)
         rhs_index = get_index(rhs)
 
-        if not isinstance(lhs_index, dict):
-            raise RuntimeError(f"Index for lhs is not a dict: {lhs_index}\n{lhs}")
-        if not isinstance(rhs_index, dict):
-            raise RuntimeError(f"Index for lhs is not a dict: {rhs_index}\n{rhs}")
-
         lhs_dim, lhs_size = get_largest_index_and_size(lhs_index)
         rhs_dim, rhs_size = get_largest_index_and_size(rhs_index)
 
