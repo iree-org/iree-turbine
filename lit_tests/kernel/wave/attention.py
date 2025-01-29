@@ -18,6 +18,15 @@ from iree.turbine.kernel.wave.templates.paged_decode_attention import (
     get_paged_decode_attention_kernels,
     paged_decode_attention_shape,
 )
+from iree.turbine.kernel.wave.templates.prefill_attention import (
+    get_prefill_attention_kernel,
+)
+from iree.turbine.kernel.wave.templates.vanilla_attention import (
+    get_vanilla_attention_kernel,
+)
+from iree.turbine.kernel.wave.templates.attention_common import (
+    AttentionShape,
+)
 import torch
 import sympy
 import math
@@ -849,100 +858,18 @@ def test_dynamic_attention_32x32x8():
 
 @run_test
 def test_attention():
-    shape = (8, 128, 128, 64, 256)
-    # Expose user-constraints
-    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
-    constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
-
-    mfma_variant = tkw.MMAType.F32_16x16x16_F16
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
-            mma_type=mfma_variant,
-            vector_shapes={B: 0, M: 16, N: 16},
-        )
-    ]
-
-    i = tkw.IndexMapping.iterator(0)
-    j = tkw.IndexMapping.iterator(1)
-    k = tkw.IndexMapping.iterator(2)
-    mapping = tkw.IndexMapping(
-        num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
+    shape = AttentionShape(
+        num_query_heads=8,
+        num_kv_heads=8,
+        query_seq_len=128,
+        head_size_kv=128,
+        head_size=64,
+        kv_seq_len=256,
     )
-
-    @tkw.wave(constraints)
-    def base_attention(
-        q: tkl.Memory[B, M, K1, ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    ):
-        c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
-        init_sum = tkl.Register[B, M, tkl.f32](0.0)
-        init_max = tkl.Register[B, M, tkl.f32](-1e6)
-
-        # This microkernel encodes the fact that if the reduction
-        # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
-        def repeat(
-            partial_max: tkl.Register[B, M, tkl.f32],
-            partial_sum: tkl.Register[B, M, tkl.f32],
-            acc: tkl.Register[B, N, M, tkl.f32],
-        ) -> (
-            tkl.Register[B, M, tkl.f32],
-            tkl.Register[B, M, tkl.f32],
-            tkl.Register[B, N, M, tkl.f32],
-        ):
-            imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            # b_reg: tkw.Register[B, N, K, tkl.f16]
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            # acc: tkw.Register[B, N, M, tkl.f32]
-            inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
-            x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
-            m_j = tkw.max(x_j, partial_max, dim=K2)
-            e_delta_max = tkw.exp2(partial_max - m_j)
-            e_delta = tkw.exp2(x_j - m_j)
-            e_init = partial_sum * e_delta_max
-            d_j = tkw.sum(e_delta, e_init, dim=K2)
-            imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            new_acc = acc * e_delta_max
-            acc = tkw.mma(v_reg, imm_f16, new_acc)
-            return m_j, d_j, acc
-
-        # repeat represents the results of the loop
-        res_max, res_sum, res_mm = repeat
-        res = res_mm / res_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
-
-    hyperparams = {
-        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
-        BLOCK_B: 1,
-        BLOCK_M: 64,
-        BLOCK_N: 64,
-        BLOCK_K2: 32,
-        B: shape[0],
-        M: shape[1],
-        N: shape[2],
-        K1: shape[3],
-        K2: shape[4],
-        READ_SHARED_DELAY: 1,
-        WRITE_SHARED_DELAY: 1,
-        READ_GLOBAL_DELAY: 2,
-        WRITE_GLOBAL_DELAY: 2,
-        MMA_DELAY: 1,
-        SHARED_MEMORY_UNITS: 4,
-        GLOBAL_MEMORY_UNITS: 4,
-        MMA_UNITS: 4,
-    }
+    mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
+    base_attention, hyperparams, _, _ = get_vanilla_attention_kernel(
+        shape, mfma_variant, False
+    )
 
     with tk.gen.TestLaunchContext(
         hyperparams,
@@ -953,10 +880,27 @@ def test_attention():
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-        v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-        output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+        q = torch.randn(
+            shape.num_query_heads,
+            shape.query_seq_len,
+            shape.head_size,
+            dtype=torch.float16,
+        )
+        k = torch.randn(
+            shape.num_kv_heads, shape.kv_seq_len, shape.head_size, dtype=torch.float16
+        )
+        v = torch.randn(
+            shape.num_kv_heads,
+            shape.kv_seq_len,
+            shape.head_size_kv,
+            dtype=torch.float16,
+        )
+        output = torch.zeros(
+            shape.num_query_heads,
+            shape.query_seq_len,
+            shape.head_size_kv,
+            dtype=torch.float32,
+        )
         print(base_attention(q, k, v, output).module_op)
 
         # CHECK-LABEL:       func.func @base_attention
@@ -1181,3 +1125,58 @@ def test_paged_flash_decoding():
     # CHECK-COUNT-1:           arith.addf
     # CHECK-COUNT-1:      arith.divf
     # CHECK-COUNT-1:      vector.store
+
+
+@run_test
+def test_prefill_attention():
+    shape = AttentionShape(
+        num_query_heads=16,
+        num_kv_heads=4,
+        head_size=64,
+        head_size_kv=64,
+        num_seqs=2,
+        max_seq_len=12,
+        total_seq_len=20,
+    )
+    q_shape = (shape.total_seq_len, shape.num_query_heads, shape.head_size)
+    k_shape = (shape.total_seq_len, shape.num_kv_heads, shape.head_size)
+    v_shape = (shape.total_seq_len, shape.num_kv_heads, shape.head_size_kv)
+    o_shape = (shape.total_seq_len, shape.num_query_heads, shape.head_size_kv)
+    mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
+    prefill_attention, hyperparams = get_prefill_attention_kernel(
+        shape, mfma_variant, q_shape, k_shape, v_shape, o_shape
+    )
+
+    with tk.gen.TestLaunchContext(
+        hyperparams,
+        canonicalize=True,
+        run=False,
+        run_bench=False,
+        schedule=False,
+        use_scheduling_barriers=False,
+    ):
+        torch.manual_seed(0)
+        q = torch.randn(q_shape, dtype=torch.float16)
+        k = torch.randn(k_shape, dtype=torch.float16)
+        v = torch.randn(v_shape, dtype=torch.float16)
+        output = torch.zeros(o_shape, dtype=torch.float32)
+        offsets = torch.ones(shape.num_seqs, dtype=torch.int32)
+        seq_lens = torch.ones(shape.num_seqs, dtype=torch.int32)
+        print(prefill_attention(q, k, v, offsets, seq_lens, output).module_op)
+
+        # CHECK-LABEL:       func.func @prefill_attention
+        # CHECK-COUNT-4:        vector.maskedload
+        # CHECK:                scf.for
+        # CHECK-COUNT-1:            vector.maskedload
+        # CHECK-COUNT-1:            vector.store
+        # CHECK-COUNT-1:            vector.maskedload
+        # CHECK-COUNT-1:            vector.store
+        # CHECK-COUNT-1:            vector.maskedload
+        # CHECK-COUNT-1:            vector.store
+        # CHECK-COUNT-1:            vector.maskedload
+        # CHECK-COUNT-1:            vector.store
+        # CHECK-COUNT-32:           vector.load
+        # CHECK-COUNT-16:           amdgpu.mfma
+        # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-16:           amdgpu.mfma
+        # CHECK-COUNT-16:      vector.maskedstore
