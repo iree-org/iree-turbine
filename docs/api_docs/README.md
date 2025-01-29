@@ -17,6 +17,7 @@ source .venv/bin/activate
 
 # Install sphinx website generator requirements and PyTorch dep.
 python -m pip install -r requirements.txt
+python -m pip install -r ../../pytorch-cpu-requirements.txt
 
 # Install iree-turbine itself.
 # Editable so you can make local changes and preview them easily.
