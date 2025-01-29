@@ -1,7 +1,8 @@
 `iree.turbine.tools`
 =====================
 
-.. automodule:: iree.turbine.tools
-  :imported-members:
+.. py:module:: iree.turbine.tools
+
+.. autoclass:: Interpreter
   :members:
   :undoc-members:
