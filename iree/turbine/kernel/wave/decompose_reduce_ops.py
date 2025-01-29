@@ -201,11 +201,6 @@ def decompose_reduce_ops(
     hardware_constraint = next(
         c for c in constraints if isinstance(c, HardwareConstraint)
     )
-    constraint_tile_size = {
-        c.dim: c.tile_size
-        for c in constraints
-        if isinstance(c, TilingConstraint) or isinstance(c, WorkgroupConstraint)
-    }
     induction_vars = [
         c.induction_var for c in constraints if isinstance(c, TilingConstraint)
     ]
@@ -266,7 +261,8 @@ def decompose_reduce_ops(
                 )
 
             if (
-                get_custom(local_reduction).type.symbolic_shape
+                reduction_acc is not None
+                and get_custom(local_reduction).type.symbolic_shape
                 != get_custom(reduction_acc).type.symbolic_shape
             ):
                 raise RuntimeError(

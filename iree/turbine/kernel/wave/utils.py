@@ -341,14 +341,16 @@ def get_mma_dimensional_mapping(
         rhs_shape = custom.rhs_type.symbolic_shape
         acc_shape = custom.acc_type.symbolic_shape
 
-        error_msg = f"{node}: Invalid MMA shapes\n{lhs_shape=}\n{rhs_shape=}\n{acc_shape=}\n{m=}, {n=}, {k=}\n{custom}"
-
         try:
             k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
         except KeyError as e:
-            raise RuntimeError(error_msg)
+            raise RuntimeError(
+                f"{node}: Invalid MMA shapes\n{lhs_shape=}\n{rhs_shape=}\n{acc_shape=}\n{m=}, {n=}\n{custom}"
+            )
         if m not in lhs_shape or n not in rhs_shape:
-            raise RuntimeError(error_msg)
+            raise RuntimeError(
+                f"{node}: Invalid MMA shapes\n{lhs_shape=}\n{rhs_shape=}\n{acc_shape=}\n{m=}, {n=}, {k=}\n{custom}"
+            )
 
         if custom not in mapping:
             mapping[custom] = {}
