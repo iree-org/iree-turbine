@@ -10,7 +10,12 @@ from typing import (
     Sequence,
 )
 
-from .kernel_buffer import AddressSpace, KernelBufferMeta, KernelBufferUsage
+from .kernel_buffer import (
+    AddressSpace,
+    KernelBufferMeta,
+    KernelBufferUsage,
+    MemoryLayout,
+)
 from .._support.dtype import DataType
 from .._support.indexing import IndexExpr, IndexSymbol, index_symbol
 
@@ -35,12 +40,26 @@ class Memory(metaclass=KernelBufferMeta):
     Parameterized by a shape, address space and element type. The allocated
     memory is traversed by an iterator that specifies the offset, stride
     and size along each dimension.
+
+    The symbolic shape specified here can be interpreted as the logical shape
+    of the memory buffer that may or may not be the same as the physical shape.
+    If the physical shape is different, it can be specified using the
+    physical_layout parameter.
+
+    As an example, consider a GEMM output buffer of logical shape (M, N) where
+    M and N are the parallel dimensions of the problem. This is logical shape
+    of the buffer. However, the physical shape of the buffer may be (M', N')
+    and can be specified as
+
+    Memory[(M, N), AddressSpace.GLOBAL_MEMORY, dtype, MemoryLayout(shape=(M', N'))]
+
     """
 
     address_space: ClassVar[int]
     symbolic_shape: ClassVar[tuple[IndexExpr, ...]]
     rank: ClassVar[int]
     dtype: ClassVar[DataType]
+    physical_layout: ClassVar[Optional[MemoryLayout]]
     usage: ClassVar[Optional[KernelBufferUsage]]
 
     def __init__(self) -> None:
@@ -53,14 +72,16 @@ class Memory(metaclass=KernelBufferMeta):
         if len(shape_and_dtype) < 3:
             raise TypeError(f"Expected at least 3 arguments, got: {shape_and_dtype}")
 
-        shift = 0
         usage = KernelBufferUsage.NONE
+        shape_and_dtype = list(shape_and_dtype)
         if isinstance(shape_and_dtype[-1], KernelBufferUsage):
-            shift = 1
-            usage = shape_and_dtype[-1]
-        shape = shape_and_dtype[: -2 - shift]
-        addressSpace = shape_and_dtype[-2 - shift]
-        dtype = shape_and_dtype[-1 - shift]
+            usage = shape_and_dtype.pop()
+        physical_layout = None
+        if isinstance(shape_and_dtype[-1], MemoryLayout):
+            physical_layout = shape_and_dtype.pop()
+        dtype = shape_and_dtype.pop()
+        addressSpace = shape_and_dtype.pop()
+        shape = tuple(shape_and_dtype)
 
         # Allow constant int expressions in shape
         shape = tuple(IndexExpr(s) if isinstance(s, int) else s for s in shape)
@@ -85,6 +106,7 @@ class Memory(metaclass=KernelBufferMeta):
             address_space=addressSpace,
             symbolic_shape=shape,
             dtype=dtype,
+            physical_layout=physical_layout,
             usage=usage,
         )
 

@@ -74,6 +74,12 @@ def read(
     ...
 
 
+def conditional(
+    condition: "Register" | IndexExpr,
+) -> Callable[[Callable[[], None]], None]:
+    ...
+
+
 def reduction(
     axis: IndexExpr, init_args: Sequence["Register"]
 ) -> Callable[[Callable[[AccT], AccT]], AccT]:
@@ -122,12 +128,16 @@ def abs(src: "Register") -> "Register":
     ...
 
 
+def tanh(src: "Register") -> "Register":
+    ...
+
+
 def maximum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
 def broadcast(
-    arg: "Register", target_shape: Optional[IndexExpr | int] = None
+    arg: "Register", target_shape: Optional[Sequence[IndexExpr | int]] = None
 ) -> "Register":
     ...
 
@@ -501,12 +511,21 @@ class CustomOp(ABC):
     @property
     def node_args(self) -> dict[int, Any]:
         """Returns the args to this custom op using subclasses of CustomOp if possible."""
+
+        def propagate(n):
+            custom = get_custom(n)
+            if isinstance(custom, Placeholder):
+                if prev := custom.get_captured_fx_node():
+                    return propagate(prev)
+
+            return custom
+
         custom_args = {}
         for i, arg in enumerate(self.fx_node.args):
             if isinstance(arg, fx.Node):
-                custom_args[i] = get_custom(arg)
+                custom_args[i] = propagate(arg)
             if isinstance(arg, list) and all(isinstance(x, fx.Node) for x in arg):
-                custom_args[i] = [get_custom(x) for x in arg]
+                custom_args[i] = [propagate(x) for x in arg]
         return custom_args
 
     def get_node_arg_index(self, arg: CustomOp) -> Optional[CustomOp | list[CustomOp]]:
@@ -712,6 +731,7 @@ class BinaryPyOp(CustomOp, ABC):
 @define_interface_op("exp2")
 @define_interface_op("reciprocal")
 @define_interface_op("abs")
+@define_interface_op("tanh")
 @define_py_op(operator.neg)
 @dataclass
 class UnaryPyOp(CustomOp, ABC):
@@ -818,12 +838,55 @@ class Placeholder(CustomOp):
         vars_str = ", ".join(vars_list)
         return f"{self.tkw_op_name}({vars_str})"
 
+    def erase(self):
+        """Erase the current node from the graph where it exists."""
+        parent = self.graph.parent_op
+        super().erase()
+        if not parent:
+            return
+
+        custom = get_custom(parent)
+        if not isinstance(custom, NestedRegionOp):
+            return
+
+        # Cleanup dead captures
+        subgraph = custom.graph.subgraphs[custom.subgraph_name]
+        live_captures = []
+        for var in custom.implicit_captures:
+            if custom.get_captured_fx_node(subgraph, var):
+                live_captures.append(var)
+
+        custom.update_arg("implicit_captures", live_captures)
+
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         return list(self._type.symbolic_shape) if self._type else []
 
+    def get_captured_fx_node(self) -> Optional[fx.Node]:
+        return self.fx_node.meta.get("lifted", None)
+
     def infer_type(self):
         self.fx_node.type = self._type
+
+    @property
+    def index(self) -> list[dict[IndexSymbol, IndexSequence]]:
+        var = self.get_captured_fx_node()
+        if var is not None:
+            return get_custom(var).index
+
+        if hasattr(self.fx_node, "index"):
+            return self.fx_node.index
+
+        return None
+
+    @index.setter
+    def index(self, value: Any):
+        var = self.get_captured_fx_node()
+        if var is None:
+            CustomOp.index.fset(self, value)
+            return
+
+        get_custom(var).index = value
 
 
 @dataclass
@@ -1138,9 +1201,67 @@ class Read(CustomOp):
         )
 
 
+class NestedRegionOp(CustomOp):
+    def captured_vars(self, graph: fx.Graph) -> list[fx.Node]:
+        """
+        Nodes that are placeholders and are not iter args are captured vars.
+        """
+        captured_vars = []
+        for nested_node in graph.nodes:
+            custom = get_custom(nested_node)
+            if isinstance(custom, Placeholder) and not isinstance(custom, IterArg):
+                captured_vars.append(nested_node)
+        return captured_vars
+
+    def get_captured_fx_node(
+        self, graph: fx.Graph, outer_node: fx.Node
+    ) -> Optional[fx.Node]:
+        for var in self.captured_vars(graph):
+            custom = get_custom(var)
+            if custom.get_captured_fx_node() == outer_node:
+                return var
+
+        return None
+
+
+@define_op("conditional")
+@dataclass
+class Conditional(NestedRegionOp):
+    condition: fx.Proxy | IndexExpr
+    subgraph_name: str
+    implicit_captures: Sequence[fx.Proxy]
+
+    @classmethod
+    def handle(cls, graph, *args, **kwargs):
+        def wrapper(f):
+            with graph.subtracer() as subtracer:
+                subgraph_name, implicit_captures = subtracer.trace(f)
+            node = Conditional(
+                *args,
+                **kwargs,
+                subgraph_name=subgraph_name,
+                implicit_captures=implicit_captures,
+            )
+
+            node._add_proxy_to_graph(graph)
+            node.fx_node.node.tkw_op = cls
+            node.fx_node.node.tkw_op_name = cls.tkw_op_name
+            graph.subgraphs[subgraph_name].parent_op = node.fx_node.node
+            return node.fx_node
+
+        return wrapper
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        if isinstance(self.condition, fx.Node):
+            return get_custom(self.condition).indexing_dims
+
+        return []
+
+
 @define_op("reduction")
 @dataclass
-class Reduction(CustomOp):
+class Reduction(NestedRegionOp):
     axis: IndexSymbol
     init_args: Sequence[Any]
     subgraph_name: str
@@ -1218,17 +1339,6 @@ class Reduction(CustomOp):
         # Sort by iter_idx.
         iter_args = sorted(iter_args, key=lambda x: get_custom(x).iter_idx)
         return iter_args
-
-    def captured_vars(self, graph: fx.Graph) -> list[fx.Node]:
-        """
-        Nodes that are placeholders and are not iter args are captured vars.
-        """
-        captured_vars = []
-        for nested_node in graph.nodes:
-            custom = get_custom(nested_node)
-            if isinstance(custom, Placeholder) and not isinstance(custom, IterArg):
-                captured_vars.append(nested_node)
-        return captured_vars
 
     def infer_type(self):
         res_types = [get_custom(x).type for x in self.init_args]
@@ -1539,11 +1649,7 @@ class Broadcast(CustomOp, ABC):
     """
 
     arg: fx.Node
-    target_type: Sequence[IndexSymbol] = None
-
-    @property
-    def target_shape(self):
-        return self.target_type.symbolic_shape
+    target_shape: Sequence[IndexSymbol] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

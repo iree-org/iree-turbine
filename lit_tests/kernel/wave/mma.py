@@ -15,8 +15,8 @@ K = tkl.sym.K
 BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_K = tkl.sym.BLOCK_K
-LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEM_PER_THREAD
-STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEM_PER_THREAD
+LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
@@ -77,7 +77,7 @@ def test_mma():
         # CHECK-DAG:        %[[ALLOC_0:.+]] = memref.alloc() : memref<32x20xf16,
         # CHECK-DAG:        %[[D12:.+]] = vector.load %[[ALLOC]][{{.*}}, {{.*}}] : memref<32x20xf16,
         # CHECK-DAG:        %[[D20:.+]] = vector.load %[[ALLOC_0]][{{.*}}, {{.*}}] : memref<32x20xf16,
-        # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D12]] * %[[D20]] + %[[CST]] {blocks = 1 : i32, k = 16 : i32, m = 16 :
+        # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D20]] * %[[D12]] + %[[CST]] {blocks = 1 : i32, k = 16 : i32, m = 16 :
         # CHECK-SAME:         i32, n = 16 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<4xf32>
         # CHECK:            %[[D22:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [0], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>
@@ -169,7 +169,7 @@ def test_mma_32x32x8():
         # CHECK-DAG:        %[[D12:.+]] = vector.load %[[ALLOC]]{{.*}} : memref<64x12xf16,
         # CHECK-DAG:        %[[ALLOC_0:.+]] = memref.alloc() : memref<64x12xf16,
         # CHECK:            %[[D20:.+]] = vector.load %[[ALLOC_0]]{{.*}} : memref<64x12xf16,
-        # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D12]] * %[[D20]] + %[[CST]] {blocks = 1 : i32, k = 8 : i32, m = 32 :
+        # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D20]] * %[[D12]] + %[[CST]] {blocks = 1 : i32, k = 8 : i32, m = 32 :
         # CHECK-SAME:         i32, n = 32 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<16xf32>
         # CHECK:            %[[D22:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [0], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<16xf32> to vector<1xf32>
@@ -323,7 +323,7 @@ def test_mma_32x32x16():
         # CHECK-DAG:        %[[D12:.+]] = vector.load %[[ALLOC]]{{.*}} : memref<64x24xf8E4M3FNUZ,
         # CHECK-DAG:        %[[ALLOC_0:.+]] = memref.alloc() : memref<64x24xf8E4M3FNUZ,
         # CHECK:            %[[D20:.+]] = vector.load %[[ALLOC_0]]{{.*}} : memref<64x24xf8E4M3FNUZ,
-        # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D12]] * %[[D20]] + %[[CST]] {blocks = 1 : i32, k = 16 : i32, m = 32 :
+        # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D20]] * %[[D12]] + %[[CST]] {blocks = 1 : i32, k = 16 : i32, m = 32 :
         # CHECK-SAME:         i32, n = 32 : i32} blgp =  none : vector<8xf8E4M3FNUZ>, vector<8xf8E4M3FNUZ>, vector<16xf32>
         # CHECK:            %[[D22:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [0], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<16xf32> to vector<1xf32>
@@ -465,7 +465,7 @@ def test_mma_16x16x32():
         # CHECK-DAG:        %[[ALLOC_0:.+]] = memref.alloc() : memref<32x40xf8E4M3FNUZ,
         # CHECK-DAG:        %[[D12:.+]] = vector.load %[[ALLOC]][{{.*}}, {{.*}}] : memref<32x40xf8E4M3FNUZ,
         # CHECK-DAG:        %[[D20:.+]] = vector.load %[[ALLOC_0]][{{.*}}, {{.*}}] : memref<32x40xf8E4M3FNUZ,
-        # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D12]] * %[[D20]] + %[[CST]] {blocks = 1 : i32, k = 32 : i32, m = 16 :
+        # CHECK:            %[[D21:.+]] = amdgpu.mfma %[[D20]] * %[[D12]] + %[[CST]] {blocks = 1 : i32, k = 32 : i32, m = 16 :
         # CHECK-SAME:         i32, n = 16 : i32} blgp =  none : vector<8xf8E4M3FNUZ>, vector<8xf8E4M3FNUZ>, vector<4xf32>
         # CHECK:            %[[D22:.+]] = vector.extract_strided_slice %[[D21]] {offsets = [0], sizes = [1], strides = [1]} :
         # CHECK-SAME:         vector<4xf32> to vector<1xf32>

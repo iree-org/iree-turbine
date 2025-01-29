@@ -2,6 +2,7 @@
 .env
 .vs/
 .vscode/
+*.code-workspace
 *.sdf
 *.opensdf
 *.VC.opendb
@@ -37,3 +38,6 @@ version_local.json
 
 # Test artifacts
 .lit_test_times.txt
+
+# Output files
+out

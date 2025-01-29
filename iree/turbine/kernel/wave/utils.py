@@ -3,6 +3,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import functools
+
 from ..compiler.ir import (
     builtin_d,
     InsertionPoint,
@@ -17,19 +19,22 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 from ..ops.wave_ops import (
-    get_custom,
-    Output,
-    Write,
-    MMA,
-    CustomOp,
-    Reduction,
-    GetResult,
-    ExtractSlice,
-    IterArg,
-    Reshape,
-    Read,
-    SetSymbol,
     ApplyExpr,
+    Conditional,
+    CustomOp,
+    ExtractSlice,
+    GetResult,
+    IterArg,
+    MMA,
+    NestedRegionOp,
+    Output,
+    Placeholder,
+    Read,
+    Reduction,
+    Reshape,
+    SetSymbol,
+    Write,
+    get_custom,
 )
 from ..lang.wave_types import IndexMapping
 from .constraints import (
@@ -153,9 +158,13 @@ def print_trace(trace: CapturedTrace, custom_print: bool = True):
     then using our custom node format.
     """
     # The root graph is at the back so we print the subgraphs in reverse order
-    for subgraph in reversed(list(trace.region_graph.subgraphs.values())):
-        print(subgraph)
+    for name, subgraph in reversed(list(trace.region_graph.subgraphs.items())):
+        if name == trace.root_graph:
+            name = f"{name} [root]"
+        print(f"{name}:\n")
+        print_graph(subgraph)
         if custom_print:
+            print("Custom format:")
             for node in subgraph.nodes:
                 print(get_custom(node))
 
@@ -166,7 +175,6 @@ def print_subgraph(trace: CapturedTrace, subgraph_name: str, custom_print: bool 
     The graphs are printed first in the torch printing format and
     then using our custom node format.
     """
-    # The root graph is at the back so we print the subgraphs in reverse order
     for name, subgraph in trace.region_graph.subgraphs.items():
         if name == subgraph_name:
             print(subgraph)
@@ -182,24 +190,58 @@ def DCE(trace: CapturedTrace):
     Repeats this process till no more operators can be removed.
     """
 
-    def is_removable_operator(node: fx.Node) -> bool:
+    def is_global_write(node: fx.Node) -> bool:
         custom = get_custom(node)
-        idxc = IndexingContext.current()
-        is_global_write = isinstance(custom, Write) and (
-            custom.type.address_space.subs(idxc.subs) == GLOBAL_ADDRESS_SPACE
-            or custom.type.address_space.subs(idxc.subs)
-            == tkl.AddressSpace.GLOBAL_MEMORY.value
+        return isinstance(custom, Write) and (
+            subs_idxc(custom.type.address_space)
+            in [GLOBAL_ADDRESS_SPACE, tkl.AddressSpace.GLOBAL_MEMORY.value]
         )
 
-        return (
-            not custom.users
-            and not isinstance(custom, (Output, SetSymbol, ApplyExpr))
-            and not is_global_write
-        )
+    def has_nested_writes(node: fx.Node) -> bool:
+        custom = get_custom(node)
+        if not isinstance(custom, NestedRegionOp):
+            return False
+
+        subgraph = custom.graph.subgraphs[custom.subgraph_name]
+        for node in subgraph.nodes:
+            if is_global_write(node) or has_nested_writes(node):
+                return True
+
+        return False
+
+    def is_removable_operator(node: fx.Node) -> bool:
+        custom = get_custom(node)
+
+        if (
+            custom.users
+            or isinstance(custom, (Output, SetSymbol, ApplyExpr))
+            or is_global_write(node)
+        ):
+            return False
+
+        if has_nested_writes(node):
+            return False
+
+        return True
 
     while removable_nodes := trace.walk(is_removable_operator):
         for node in removable_nodes:
-            get_custom(node).graph.erase_node(node)
+            get_custom(node).erase()
+
+
+def move_node_after(src_node: fx.Node, anchor: fx.Node):
+    """
+    Moves src_node into a location after a given anchor node.
+    This function will invalidate "src_node" and return the
+    newly copied/"moved" node.
+    """
+    custom_src = get_custom(src_node)
+    moved_src = custom_src.copy(anchor=(anchor)).fx_node
+    custom_src.replace_all_uses_with(moved_src)
+    src_name = src_node.name
+    src_node.graph.erase_node(src_node)
+    moved_src.name = src_name
+    return moved_src
 
 
 def remove_chained_getresult(trace: CapturedTrace):
@@ -314,6 +356,7 @@ def get_mma_dimensional_mapping(
         rhs_shape = custom.rhs_type.symbolic_shape
         acc_shape = custom.acc_type.symbolic_shape
         k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
+
         if custom not in mapping:
             mapping[custom] = {}
         mapping[custom][m] = MMAOperand.M
@@ -498,7 +541,7 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
     for output in outputs:
-        if isinstance(input, torch.Tensor):
+        if isinstance(output, torch.Tensor):
             push_tensor_to_arg_list(output)
         else:
             raise ValueError(f"Unsupported output type: {type(output)}")
@@ -823,6 +866,18 @@ def get_users(
                 if output_idx in get_results:
                     users.append(get_results[output_idx])
             continue
+        if isinstance(custom, Conditional):
+            if node == custom.condition:
+                users.append(user)
+            else:
+                subgraph = custom.graph.subgraphs[custom.subgraph_name]
+                var = custom.get_captured_fx_node(subgraph, node)
+                assert var is not None, "Invalid captured var"
+                for u in var.users:
+                    users.append(u)
+
+            continue
+
         users.append(user)
     return users, reduction
 
@@ -862,6 +917,17 @@ def get_inputs(
         # Default handling for other ops.
         for input in node.all_input_nodes:
             inputs.append(input)
+
+    def propagate(n):
+        c = get_custom(n)
+        if isinstance(c, Placeholder):
+            p = c.get_captured_fx_node()
+            if p is not None:
+                return p
+
+        return n
+
+    inputs = [propagate(i) for i in inputs]
     return inputs, reduction
 
 
@@ -1096,6 +1162,10 @@ def to_default_device(tensor: torch.Tensor) -> torch.Tensor:
 
 def device_arange(*args, **kwargs):
     return to_default_device(torch.arange(*args, **kwargs))
+
+
+def device_full(*args, **kwargs):
+    return to_default_device(torch.full(*args, **kwargs))
 
 
 def device_randn(*args, **kwargs):
@@ -1411,6 +1481,15 @@ def print_graph(graph: fx.Graph):
     print(graph_str)
 
 
+def is_reduction_subgraph(graph: fx.Graph):
+    """
+    Check that graph is a subgraph that is owned by ReductionOp.
+    """
+    if not hasattr(graph, "parent_op"):
+        return False
+    return isinstance(get_custom(graph.parent_op), Reduction)
+
+
 def initialize_iter_args(trace: CapturedTrace) -> None:
     """
     Initializes the IterArgs in each reduction with an index
@@ -1426,3 +1505,10 @@ def initialize_iter_args(trace: CapturedTrace) -> None:
             if isinstance(custom, IterArg):
                 custom.iter_idx = count
                 count += 1
+
+
+def partial(func, *args, **kwargs):
+    """functools.partial but with function attributes copied to the partial function."""
+    partial_func = functools.partial(func, *args, **kwargs)
+    functools.update_wrapper(partial_func, func)
+    return partial_func

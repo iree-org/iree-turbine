@@ -8,18 +8,19 @@ from ..ops.wave_ops import (
     Allocate,
     BinaryPyOp,
     Broadcast,
-    Read,
-    Write,
+    CustomOp,
     ExtractSlice,
     get_custom,
-    Reduction,
-    ReduceOp,
-    MMA,
-    Placeholder,
     IterArg,
-    CustomOp,
-    Reshape,
+    MMA,
+    NestedRegionOp,
     Output,
+    Placeholder,
+    Read,
+    ReduceOp,
+    Reduction,
+    Reshape,
+    Write,
 )
 from .constraints import (
     Constraint,
@@ -342,7 +343,7 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
             custom, IterArg
         ):
             continue
-        if isinstance(custom, (Output, Reduction)):
+        if isinstance(custom, (Output, NestedRegionOp)):
             continue
         assert custom.index, f"Index not set for node {custom.fx_node}"
         if not custom.vector_shapes:
@@ -694,7 +695,7 @@ def propagate_index(
         source, source_index, source_vector_shapes = sources.pop(0)
         if source in visited:
             continue
-        if not isinstance(source, (Reduction, MMA)):
+        if not isinstance(source, (NestedRegionOp, MMA)):
             if not should_update_index(
                 source, source_index, source_vector_shapes, symbolic_constraints
             ):
@@ -777,9 +778,9 @@ def create_broadcast(
     Create a broadcast node for the given binary operator.
     """
     with binary_op.graph.inserting_before(binary_op.fx_node):
-        broadcasted = Broadcast(to_broadcast.fx_node, target_node.type).add_to_graph(
-            binary_op.graph
-        )
+        broadcasted = Broadcast(
+            to_broadcast.fx_node, target_node.type.symbolic_shape
+        ).add_to_graph(binary_op.graph)
         custom = get_custom(broadcasted)
         custom.vector_shapes = binary_op.vector_shapes
         custom.index = deepcopy(target_node.index)

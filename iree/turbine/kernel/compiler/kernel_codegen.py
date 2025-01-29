@@ -34,7 +34,7 @@ from ..lang.kernel_buffer import (
 )
 from ..lang.wave_types import Memory
 from ..lang.grid import Grid
-from ..ops.wave_ops import get_custom, Placeholder, Read, Write
+from ..ops.wave_ops import get_custom, Placeholder, NestedRegionOp, Read, Write
 
 from .base import (
     CodegenError,
@@ -129,8 +129,16 @@ class BindingDesc:
             else:
                 # Unranked. Not well supported, but for completeness.
                 spec_asm = element_type_asm
+            ref_type = self.reference[1].type
+            # If a physical layout is present, use it to determine the shape and strides.
+            if ref_type.physical_layout:
+                shape_asm = "x".join(
+                    sym_to_dim_asm(s) for s in ref_type.physical_layout.shape
+                )
+                spec_asm = f"{shape_asm}x{element_type_asm}"
+                symbolic_shape = ref_type.physical_layout.shape
             strides = strides_from_symbolic_shape(
-                idx_context, kb_t.symbolic_shape, allow_mixed_shapes=True
+                idx_context, symbolic_shape, allow_mixed_shapes=True
             )
             if strides is None:
                 memref_asm = f"memref<{spec_asm}>"
@@ -212,6 +220,9 @@ class KernelSignature:
         # Extract all placeholder nodes.
         placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
+        # Sort the arguments based on the original arg_id/ordering.
+        # This is set when graph was first traced.
+        placeholder_nodes.sort(key=lambda x: x.meta["arg_id"])
         # Create bindings for placeholder nodes.
         for node in placeholder_nodes:
             t = node.type
@@ -251,13 +262,34 @@ class KernelSignature:
         # Extract all placeholder nodes.
         placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
-        def only_read_dependencies(node):
-            return all([isinstance(get_custom(x), Read) for x in node.users.keys()])
+        def get_users_recursive(node):
+            ret = []
+            for user in node.users.keys():
+                custom = get_custom(user)
+                if not isinstance(custom, NestedRegionOp):
+                    ret.append(user)
+                    continue
 
-        def only_write_dependencies(node):
+                subgraph = graph.subgraphs[custom.subgraph_name]
+                nested_placeholders = filter_fx_graph(subgraph, is_placeholder)
+                for nested in nested_placeholders:
+                    captured = get_custom(nested).get_captured_fx_node()
+                    if captured == node:
+                        ret += get_users_recursive(nested)
+
+            return ret
+
+        def only_read_dependencies(node):
+            return all(
+                [isinstance(get_custom(x), Read) for x in get_users_recursive(node)]
+            )
+
+        def any_write_dependencies(node):
             if len(node.users) == 0:
                 return False
-            return all([isinstance(get_custom(x), Write) for x in node.users.keys()])
+            return any(
+                [isinstance(get_custom(x), Write) for x in get_users_recursive(node)]
+            )
 
         for node in placeholder_nodes:
             index = None
@@ -273,7 +305,7 @@ class KernelSignature:
             if only_read_dependencies(node):
                 usage = KernelBufferUsage.INPUT
 
-            if only_write_dependencies(node):
+            if any_write_dependencies(node):
                 usage = KernelBufferUsage.OUTPUT
 
             # Create new Memory type with the correct usage
@@ -291,11 +323,16 @@ class KernelSignature:
     def __repr__(self):
         parts = []
         for b in self.bindings:
-            part = repr(b.reference)
-            if b.name:
-                part = f"{b.name}: {part}"
-            parts.append(part)
-        return f"Signature({', '.join(parts)})"
+            name = b.name or repr(b.reference)
+
+            type_str = b.binding_type.name
+            if b.binding_type == BindingType.KERNEL_BUFFER:
+                type_str += f".{b.kernel_buffer_type.usage.name}.{b.kernel_buffer_type}"
+            elif b.binding_type == BindingType.SYMBOL_VALUE:
+                type_str += f".{b.symbol_type}"
+
+            parts.append(f"{name}: {type_str}")
+        return f"KernelSignature({', '.join(parts)})"
 
 
 class BoundKernelSignature(ABC):
