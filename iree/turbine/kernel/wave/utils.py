@@ -340,7 +340,15 @@ def get_mma_dimensional_mapping(
         lhs_shape = custom.lhs_type.symbolic_shape
         rhs_shape = custom.rhs_type.symbolic_shape
         acc_shape = custom.acc_type.symbolic_shape
-        k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
+
+        error_msg = f"{node}: Invalid MMA shapes\n{lhs_shape=}\n{rhs_shape=}\n{acc_shape=}\n{m=}, {n=}, {k=}\n{custom}"
+
+        try:
+            k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
+        except KeyError as e:
+            raise RuntimeError(error_msg)
+        if m not in lhs_shape or n not in rhs_shape:
+            raise RuntimeError(error_msg)
 
         if custom not in mapping:
             mapping[custom] = {}
@@ -536,7 +544,15 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
         else:
             raise ValueError(f"Unsupported dynamic dim type: {type(dynamic_dim)}")
 
-    vm_context.invoke(entry_function, arg_list, ret_list)
+    try:
+        vm_context.invoke(entry_function, arg_list, ret_list)
+    except ValueError as e:
+        raise RuntimeError(
+            f"Error invoking IREE\n{entry_function}\n"
+            f"{arg_list=}\n"
+            f"inputs: {', '.join([str(i.shape) for i in inputs])}\n"
+            f"outputs: {', '.join([str(o.shape) for o in outputs])}"
+        ) from e
 
 
 def _read_file(name, mode):
@@ -838,7 +854,8 @@ def get_users(
             return_vals = custom.return_vals[0]
             parent_reduction = custom.graph.parent_op
             if not isinstance(return_vals, (list, tuple)):
-                users.append(next(iter(parent_reduction.users)))
+                if parent_reduction.users:
+                    users.append(next(iter(parent_reduction.users)))
             else:
                 # Handles case where DCE eliminate unused GetResult.
                 get_results = {
@@ -883,8 +900,11 @@ def get_inputs(
         iter_arg_idx = custom.iter_idx
         inputs.append(local_reduction.init_args[iter_arg_idx])
     elif isinstance(custom, GetResult):
+        assert custom.value is not None, f"GetResult node {custom} has no value"
         reduction = get_custom(custom.value)
-        assert isinstance(reduction, Reduction), "GetResult must be used by a Reduction"
+        assert isinstance(
+            reduction, Reduction
+        ), f"GetResult must be using a Reduction, but\n{custom}\nis using\n{reduction}"
         # Map get result to output
         reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
         if len(reduction.init_args) == 1:

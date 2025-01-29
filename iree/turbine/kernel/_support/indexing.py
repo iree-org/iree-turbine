@@ -117,6 +117,18 @@ class IndexingContext:
         self.frozen_subs: list[tuple[IndexSymbol, int]] = []
         self.unbacked_symbols: list[IndexSymbol] = []
 
+    def __str__(self):
+        return (
+            f"IndexingContext("
+            f"subs: {self.subs}\n"
+            f"special_subs: {self.special_subs}\n"
+            f"shaped_bindings: {self.shaped_bindings}\n"
+            f"dyn_dims: {self.dyn_dims}\n"
+            f"frozen_subs: {self.frozen_subs}\n"
+            f"unbacked_symbols: {self.unbacked_symbols}\n"
+            ")"
+        )
+
     def next_dyn_dim(self) -> IndexSymbol:
         s = index_symbol(f"D{len(self.dyn_dims)}")
         self.dyn_dims.append(s)
@@ -157,7 +169,7 @@ class IndexingContext:
         self.subs[symbol] = value
 
     def finalize(self):
-        assert len(self.frozen_subs) == 0
+        assert len(self.frozen_subs) == 0, f"{self.frozen_subs=}"
         # Go over everything we know and bind all free symbols.
         for _sb in self.shaped_bindings.values():
             for i in range(_sb.shaped_type.rank):

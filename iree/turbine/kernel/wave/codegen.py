@@ -165,7 +165,11 @@ class WaveEmitter:
         except KeyError:
             raise CodegenError(f"No handler registered for op {target_op}")
 
-        handler(self, node)
+        try:
+            handler(self, node)
+        except:
+            print(f"Error handling {node}")
+            raise
 
     def lookup_node_values(self, node: fx.Node) -> List[Value]:
         assert NDEBUG or isinstance(node, fx.Node)
@@ -1141,7 +1145,16 @@ def handle_binary_op(op):
             rhs = cast_py_value(emitter, rhs)
 
             if lhs.ir_value.type != rhs.ir_value.type:
-                raise ValidationError("Expected lhs and rhs to have same type.")
+                op = get_custom(node)
+                raise ValidationError(
+                    f"Expected lhs and rhs to have same type for\n"
+                    f"{op}\nGot\n"
+                    f"lhs: {lhs.ir_value.type} vs rhs: {rhs.ir_value.type}\n"
+                    f"{lhs=}\n"
+                    f"{rhs=}\n"
+                    f"lhs={get_custom(op.lhs)}\n"
+                    f"rhs={get_custom(op.rhs)}"
+                )
 
             lhs = lhs.ir_value
             rhs = rhs.ir_value
@@ -1392,6 +1405,11 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
         # Add mapping for iter args.
         subgraph: fx.Graph = emitter.trace.get_subgraph(subgraph)
         iter_args: list[fx.Node] = get_custom(node).iter_args(subgraph)
+        assert len(iter_args) == len(forOp.inner_iter_args), (
+            f"Len of reduction and for op iter args must match,"
+            f" Reduction args: {iter_args};"
+            f" For Op args: {[a.type for a in forOp.inner_iter_args]}"
+        )
         for i, v in enumerate(forOp.inner_iter_args):
             emitter.bind_node_proxy(iter_args[i], IRProxyValue(v))
         captured_vars: list[fx.Node] = get_custom(node).captured_vars(subgraph)
@@ -1404,6 +1422,12 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
         flat_ret_values = [
             cast_py_value(emitter, value).ir_value for value in flat_ret_values
         ]
+        assert len(flat_ret_values) == len(flat_init_args), (
+            f"Loop must have the same number of return values as init args, but got\n"
+            f"{len(flat_ret_values)} vs {len(flat_init_args)}\n"
+            f"{flat_ret_values=}\n"
+            f"{flat_init_args=}\n"
+        )
         scf_d.YieldOp(flat_ret_values)
 
     emitter.bind_node_proxies(node, [IRProxyValue(v) for v in forOp.results_])
@@ -1519,8 +1543,8 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     # Only support broadcasting vector<1xdtype> for now.
     if not VectorType.isinstance(vector_type):
         raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
-    assert vector_type.rank == 1
-    assert vector_type.shape[0] == 1
+    assert vector_type.rank == 1, f"{vector_type} {node}"
+    assert vector_type.shape[0] == 1, f"{vector_type} {node}"
 
     # Extract and Splat
     # If by chance broadcast size  matches current size, we can return src.
