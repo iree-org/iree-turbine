@@ -1321,7 +1321,7 @@ class Reduction(NestedRegionOp):
         expand_dims: list[IndexSymbol] = []
         return_node = [
             nested_node
-            for nested_node in self.get_root_graph().subgraphs[self.subgraph_name].nodes
+            for nested_node in self.graph.subgraphs[self.subgraph_name].nodes
             if isinstance(get_custom(nested_node), Output)
         ]
         assert len(return_node) == 1
