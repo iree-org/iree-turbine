@@ -881,7 +881,7 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
     results = results[2:]
     sizes = results[:rank]
     strides = results[rank:]
-    size_full = arith_d.constant(IndexType.get(), 1)
+    # size_full = arith_d.constant(IndexType.get(), 1)
     overflow_flags = arith_d.IntegerOverflowFlags.nsw
     for ind, size, stride in zip(indices, sizes, strides):
         if isinstance(ind, int):
@@ -892,15 +892,16 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
             arith_d.muli(ind, stride, overflow_flags=overflow_flags),
             overflow_flags=overflow_flags,
         )
-        size_full = arith_d.muli(size_full, size, overflow_flags=overflow_flags)
+        # size_full = arith_d.muli(size_full, size, overflow_flags=overflow_flags)
 
-    size_full = arith_d.subi(size_full, offset, overflow_flags=overflow_flags)
+    # size_full = arith_d.subi(size_full, offset, overflow_flags=overflow_flags)
 
     # limit size to INT_MAX - 1, the last val will be used for buffer oob handling
     max_size = arith_d.constant(
         size_full.type, _get_max_buffer_size(memref_type.element_type) - 1
     )
-    size_full = arith_d.minsi(size_full, max_size)
+    # size_full = arith_d.minsi(size_full, max_size)
+    size_full = max_size
 
     dyn_val = ShapedType.get_dynamic_size()
     res_shape = [dyn_val]
