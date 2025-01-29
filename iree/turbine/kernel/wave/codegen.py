@@ -894,6 +894,10 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
             overflow_flags=overflow_flags,
         )
 
+    # limit size to UINT_MAX - 1, the last val will be used for buffer oob handling
+    max_size = arith_d.constant(size_full.type, (1 << 31) - 2)
+    size_full = arith_d.minui(size_full, max_size)
+
     dyn_val = ShapedType.get_dynamic_size()
     res_shape = [dyn_val]
     element_type = memref_type.element_type
