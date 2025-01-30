@@ -10,8 +10,8 @@ build:
 
 python:
   install:
-    - requirements: docs/api_docs/requirements.txt
+    - requirements: docs/requirements.txt
     - requirements: pytorch-cpu-requirements.txt
 
 sphinx:
-  configuration: docs/api_docs/conf.py
+  configuration: docs/conf.py
