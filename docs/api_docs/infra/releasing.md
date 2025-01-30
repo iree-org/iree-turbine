@@ -1,8 +1,8 @@
-# Releasing iree-turbine
+# Releasing iree-turbine packages
 
-This project hosts the https://pypi.org/project/iree-turbine/ package, which
-depends on the https://pypi.org/project/iree-base-compiler/ and
-https://pypi.org/project/iree-base-runtime/ packages. Releases can either be
+This project hosts the <https://pypi.org/project/iree-turbine/> package, which
+depends on the <https://pypi.org/project/iree-base-compiler/> and
+<https://pypi.org/project/iree-base-runtime/> packages. Releases can either be
 conducted independently, or they can be coordinated across projects by
 initiating a release here.
 

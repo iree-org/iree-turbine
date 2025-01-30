@@ -3,7 +3,7 @@ IREE Turbine documentation
 
 Welcome to the documentation for https://github.com/iree-org/iree-turbine!
 
-API documentation
+API reference material
 =================
 
 .. toctree::
@@ -19,6 +19,17 @@ API documentation
    :glob:
 
    kernel/*
+
+
+Project documentation
+=================
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Infrastructure
+   :glob:
+
+   infra/*
 
 Indices and tables
 ==================
