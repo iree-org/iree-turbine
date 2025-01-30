@@ -1077,10 +1077,11 @@ def _create_vec_write(
             offset = vector_d.extract(
                 offsets_vec, static_position=[i], dynamic_position=[]
             )
+            elem = vector_d.extract(value, static_position=[i], dynamic_position=[])
             if mask is None:
-                memref_d.store(value, data, indices=[offset])
+                memref_d.store(elem, data, indices=[offset])
             else:
-                amdgpu_d.raw_buffer_store(value, data, indices=[offset])
+                amdgpu_d.raw_buffer_store(elem, data, indices=[offset])
 
     else:
         if mask is None:
