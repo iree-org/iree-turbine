@@ -1095,7 +1095,7 @@ def _create_vec_write(
             )
             mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
 
-        return vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
+        vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
 
 
 @handle_op(write)
