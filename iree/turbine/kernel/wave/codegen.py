@@ -116,7 +116,8 @@ from .utils import subs_idxc, find_index_bounds, get_hardware_vector_map
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from .scheduling.resources import get_scheduling_mask
 
-use_buffer_ops = True
+use_buffer_load_ops = True
+use_buffer_store_ops = True
 
 
 @dataclass
@@ -946,7 +947,7 @@ def _create_vec_read(
     zero = get_constant_attr(0, element_type)
     zero = arith_d.constant(element_type, zero)
 
-    if use_buffer_ops:
+    if use_buffer_load_ops:
         result = vector_d.splat(vector_type, zero)
 
         data = _linearize_memref(mem, start_indices)
@@ -1062,7 +1063,7 @@ def _create_vec_write(
             offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
         )
 
-    if use_buffer_ops:
+    if use_buffer_store_ops:
         data = _linearize_memref(mem, start_indices)
         if mask is not None:
             i32 = IntegerType.get_signless(32)
