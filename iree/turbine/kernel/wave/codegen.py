@@ -719,6 +719,17 @@ def _build_mask(
     return mask
 
 
+def _get_splat_const(vec_type: IrType, value: Any) -> Value:
+    splat = DenseElementsAttr.get_splat(
+        vec_type, get_constant_attr(value, vec_type.element_type)
+    )
+    return arith_d.constant(vec_type, splat)
+
+
+def _constant_mask(vec_type: IrType) -> Value:
+    return _get_splat_const(vec_type, 1)
+
+
 def _construct_gather_scatter_indices(
     emitter: WaveEmitter,
     symbolc_shape: tuple[IndexExpr],
@@ -763,7 +774,7 @@ def _construct_gather_scatter_indices(
         mask_vec_type = VectorType.get(
             [elements_per_thread], IntegerType.get_signless(1)
         )
-        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+        mask = _constant_mask(mask_vec_type)
 
     def extract0(src):
         static_pos = [0] * src.type.rank
@@ -981,7 +992,7 @@ def _create_vec_read(
             mask_vec_type = VectorType.get(
                 [elements_per_thread], IntegerType.get_signless(1)
             )
-            mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+            mask = _constant_mask(mask_vec_type)
 
         return vector_d.gather(
             vector_type, mem, start_indices, offsets_vec, mask, passthru
@@ -1100,7 +1111,7 @@ def _create_vec_write(
             mask_vec_type = VectorType.get(
                 [elements_per_thread], IntegerType.get_signless(1)
             )
-            mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+            mask = _constant_mask(mask_vec_type)
 
         vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
 
