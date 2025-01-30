@@ -482,7 +482,7 @@ class LaunchableWave(Launchable):
         )
 
         emitter = WaveEmitter(
-            dispatch_entrypoint, trace, self.constraints, dynamic_symbols
+            dispatch_entrypoint, trace, self.constraints, dynamic_symbols, kwargs
         )
         try:
             emitter.emit(trace.get_root_graph())

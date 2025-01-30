@@ -116,9 +116,6 @@ from .utils import subs_idxc, find_index_bounds, get_hardware_vector_map
 from .._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from .scheduling.resources import get_scheduling_mask
 
-use_buffer_load_ops = True
-use_buffer_store_ops = True
-
 
 @dataclass
 class WaveEmitter:
@@ -128,6 +125,7 @@ class WaveEmitter:
     trace: CapturedTrace
     constraints: list[Constraint]
     dynamic_symbols: list[IndexSymbol]
+    params: dict[str, Any]
     ip: InsertionPoint = None
     OP_HANDLERS: ClassVar[dict[str, Callable[["WaveEmitter", fx.Node], None]]] = {}
     _node_values: ClassVar[dict[fx.Node, List[IRProxyValue]]] = {}
@@ -926,6 +924,7 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
 
 
 def _create_vec_read(
+    emitter: WaveEmitter,
     mem: Value,
     vector_type: IrType,
     start_indices: tuple[Value],
@@ -947,7 +946,7 @@ def _create_vec_read(
     zero = get_constant_attr(0, element_type)
     zero = arith_d.constant(element_type, zero)
 
-    if use_buffer_load_ops:
+    if emitter.params.get("use_buffer_load_ops", False):
         result = vector_d.splat(vector_type, zero)
 
         data = _linearize_memref(mem, start_indices)
@@ -1018,6 +1017,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             elements_per_thread,
         )
         result = _create_vec_read(
+            emitter,
             kb_src,
             vector_type,
             start_indices,
@@ -1040,13 +1040,20 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             is_contiguous=get_custom(node).is_contiguous_vec(),
         )
         result = _create_vec_read(
-            kb_src, vector_type, start_indices, elements_per_thread, mask, offsets_vec
+            emitter,
+            kb_src,
+            vector_type,
+            start_indices,
+            elements_per_thread,
+            mask,
+            offsets_vec,
         )
 
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
 def _create_vec_write(
+    emitter: WaveEmitter,
     mem: Value,
     value: Value,
     start_indices: tuple[Value],
@@ -1067,7 +1074,7 @@ def _create_vec_write(
             offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
         )
 
-    if use_buffer_store_ops:
+    if emitter.params.get("use_buffer_store_ops", False):
         data = _linearize_memref(mem, start_indices)
         if mask is not None:
             i32 = IntegerType.get_signless(32)
@@ -1129,6 +1136,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         start_indices = _build_start_indices(emitter, index)
         mask = _build_mask(emitter, index, elements_per_thread)
         _create_vec_write(
+            emitter,
             kb_dest,
             insert_vector,
             start_indices,
@@ -1156,6 +1164,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         )
 
         _create_vec_write(
+            emitter,
             kb_dest,
             insert_vector,
             start_indices,
