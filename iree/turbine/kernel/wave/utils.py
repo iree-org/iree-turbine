@@ -663,10 +663,10 @@ def invoke_vmfb(
     if not (run or run_bench):
         return
 
-    if inplace:
-        # Select device as the GPU, where input tensors are coming from.
-        device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
-        device = f"{device}://GPU-{device_uuid}"
+    # if inplace:
+    #     # Select device as the GPU, where input tensors are coming from.
+    #     device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
+    #     device = f"{device}://GPU-{device_uuid}"
     rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
