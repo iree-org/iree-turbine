@@ -969,6 +969,10 @@ def _create_vec_read(
             else:
                 elem = amdgpu_d.raw_buffer_load(element_type, data, indices=[offset])
 
+            result = vector_d.insert(
+                elem, result, static_position=[i], dynamic_position=[]
+            )
+
         return result
 
     else:
