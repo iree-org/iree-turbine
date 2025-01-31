@@ -29,8 +29,8 @@ class AttentionShape:
 
 # Commonly-used attention symbols.
 H = tkl.sym.H  # number of heads
-H_Q = tkl.sym.H  # number of query heads
-H_KV = tkl.sym.H  # number of key/value heads
+H_Q = tkl.sym.H_Q  # number of query heads
+H_KV = tkl.sym.H_KV  # number of key/value heads
 N_Q = tkl.sym.N_D  # query sequence length
 N_KV = tkl.sym.N_KV  # key/value sequence length
 D_Q = tkl.sym.D_Q  # query head size

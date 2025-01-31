@@ -124,7 +124,7 @@ def testPrefillAttention(
     (query, key, value, start_offsets, seq_lens) = create_inputs(shape, seq_lens, dtype)
 
     output_shape = (shape.total_seq_len, shape.num_query_heads, shape.head_size_kv)
-    permuted_value = value.permute(1, 2, 0)
+    permuted_value = value
     # Run the wave kernel.
     (prefill, hyperparams) = get_prefill_attention_kernel(
         shape,
