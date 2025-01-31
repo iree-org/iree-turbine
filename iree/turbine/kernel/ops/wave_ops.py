@@ -724,9 +724,6 @@ class BinaryPyOp(CustomOp, ABC):
         return self.tkw_op_name
 
     def infer_type(self):
-        print(
-            f"infer_type(self) {self} lhs {get_custom(self.lhs)} rhs {get_custom(self.rhs)}"
-        )
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
         has_same_type = has_same_custom_type(lhs_type, rhs_type)
