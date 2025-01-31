@@ -24,7 +24,7 @@ Turbine provides a collection of tools:
 
 ## Documentation
 
-* API reference pages and project documentation: https://iree-python-api.readthedocs.io/
+* API reference pages and project documentation: https://iree-turbine.readthedocs.io/
 * Guides for using Turbine as a bridge between PyTorch and IREE:
   https://iree.dev/guides/ml-frameworks/pytorch/
 
