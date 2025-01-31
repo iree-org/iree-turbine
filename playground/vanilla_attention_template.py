@@ -4,6 +4,9 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from dataclasses import dataclass
+from typing import Optional
+
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
@@ -13,11 +16,11 @@ from iree.turbine.kernel.wave.utils import (
     get_mfma_store_elems_per_thread,
 )
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
-from dataclasses import dataclass
 
 
 def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
-                                 dynamic_dims: bool):
+                                 dynamic_dims: bool,
+                                 max_context_length: Optional[int]):
     # RPE
     ZERO = tkl.sym.ZERO
     OFFSET = tkl.sym.OFFSET
@@ -94,16 +97,20 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
         outputs={K2: i},
     )
 
+    use_t5_rpe = max_context_length is not None
+    if use_t5_rpe:
+        rpe_layout = tkl.MemoryLayout(shape=[
+            max_context_length,
+        ])
+    assert use_t5_rpe, "use_t5_rpe needed until rpe arg can DCE without crashing"
+
     @tkw.wave(constraints)
     def base_attention(
         q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
-        # TODO: double check whether MAX_CONTEXT_LENGTH relates to K2 actually
-        # TODO: there is a memory logical layout different from the physical one
-        # so we could have different sizes at runtime but still use the same
-        # symbol for the shape.
-        rpe: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        # TODO: if not use_t5_rpe, this will DCE; atm DCE on blockargs crashes.
+        rpe: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
@@ -124,27 +131,51 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
 
-            # T5 RPE adds attention bias pre softmax. When fusing into flash
-            # attention variant, add before the max and the partial softmax.
-            i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-            i = tkw.broadcast(i, target_shape=[K2])
-            j = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
+            ####################################################################
+            # T5 RPE
+            ####################################################################
+            # Fused T5 RPE adds attention bias pre-softmax normalization.
+            # When fusing into the FA variant, adding locally before the max and
+            # the partial softmax should be equivalent.
+            if use_t5_rpe:
+                # 1. Indices i and j broadcasted along K2 with a twist:
+                # here we use *static* information that is *implicitly* encoded
+                # in the *transformation*: under the distribution constraints
+                # specified we know that the shape [M] will eventually resolve
+                # to [1] and can thus be "cast + broadcast" to [K2].
+                i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+                i = tkw.broadcast(i, target_shape=[K2])
+                j = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
 
-            # TODO: some errors below.
-            # TODO: tkw.maximum/minimum to support 0 instead of requiring a ZERO
-            # symbol: ValueError: Expected an fx.Node but got <class 'int'>
-            idx = tkw.maximum(i - j, ZERO)
-            # TODO(ntv): may actually need MAX_CONTEXT_LENGTH here
-            idx = tkw.minimum(i - j, K2)
-            # TODO: may need adjustements depending on how we want to do
-            # bucketing; atm it is bucketing of size 1.
-            tkw.set_symbol(OFFSET, idx)  # offset will have shape [K2]
+                # 2. Clip i - j to the proper bucket in [0, max_context_length]
+                # to represent the following:
+                #   - if 0 < i - j < max_context_length
+                #       then x_j += rpe_reg
+                #   - otherwise (i.e. i - j == {0, max_context_length})
+                #       then x_j += 0
+                # TODO: we may need scaling adjustements depending on how we want
+                # to do bucketing; atm it is bucketing of size 1.
+                # Note: tkw.apply_expr allows us to circumvent issues such as.
+                # ValueError: Expected an fx.Node but got <class 'int'>
+                zero = tkw.broadcast(tkw.apply_expr(i, lambda i: 0),
+                                     target_shape=[K2])
+                idx = tkw.maximum(i - j, tkw.cast(zero, tkl.i64))
+                # Note: tkw.apply_expr allows us to circumvent issues such as.
+                # ValueError: Expected an fx.Node but got <class 'Symbol'>
+                max = tkw.broadcast( \
+                    tkw.apply_expr(i, lambda i: max_context_length), \
+                    target_shape=[K2])
+                idx = tkw.minimum(idx, tkw.cast(max, tkl.i64))
 
-            # Note: this is a read indirect with an OFFSET via offset_mapping.
-            rpe_reg = tkw.read(rpe,
-                               mapping=offset_mapping,
-                               elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-            x_j = x_j + rpe_reg
+                # 3. Read indirect into the 1-D rpe array via offset_mapping.
+                tkw.set_symbol(OFFSET, idx)  # offset will have shape [K2]
+                rpe_reg = tkw.read(
+                    rpe,
+                    mapping=offset_mapping,
+                    elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+
+                # 4. Tadaaaa.
+                x_j = x_j + rpe_reg
 
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)

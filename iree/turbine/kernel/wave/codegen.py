@@ -46,7 +46,11 @@ from ..compiler.ir import (
     vector_d,
     llvm_d,
 )
-from iree.turbine.aot.support.ir_utils import _is_float_type, _is_integer_like_type
+from iree.turbine.aot.support.ir_utils import (
+    _is_float_type,
+    _is_index_type,
+    _is_integer_like_type,
+)
 
 # TK infrastructure imports.
 from iree.turbine.kernel.lang.global_symbols import *
@@ -1571,7 +1575,8 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
 
     # Get thread_shape/size for broadcast.
-    get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
+    get_thread_shape = lambda index: max(
+        subs_idxc(x.size) for x in index.values())
 
     bcast_dim_lane_dim_size = get_thread_shape(node.index)
 
@@ -1580,17 +1585,34 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     vector_type = vector_src.type
     # Only support broadcasting vector<1xdtype> for now.
     if not VectorType.isinstance(vector_type):
-        raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
-    assert vector_type.rank == 1
-    assert vector_type.shape[0] == 1, f"expected vector_type.shape[0] == 1 but got {vector_type}"
+        raise NotImplementedError(
+            "Scalar src is not implemented yet for shuffleOp.")
+    assert vector_type.rank == 0 or vector_type.rank == 1, \
+        f"expected vector_type.rank == 1 but got {vector_type}"
+
+    if vector_type.rank == 0:
+        result_type = VectorType.get([bcast_dim_lane_dim_size],
+                                     vector_type.element_type)
+        element = vector_d.extract(vector_src,
+                                   static_position=[],
+                                   dynamic_position=[])
+        splat = vector_d.splat(result_type, element)
+        emitter.bind_node_proxy(node, IRProxyValue(splat))
+        return
+
+    assert vector_type.shape[
+        0] == 1, f"expected vector_type.shape[0] == 1 but got {vector_type}"
 
     # Extract and Splat
     # If by chance broadcast size  matches current size, we can return src.
     if bcast_dim_lane_dim_size == vector_type.shape[0]:
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
 
-    result_type = VectorType.get([bcast_dim_lane_dim_size], vector_type.element_type)
-    element = vector_d.extract(vector_src, static_position=[0], dynamic_position=[])
+    result_type = VectorType.get([bcast_dim_lane_dim_size],
+                                 vector_type.element_type)
+    element = vector_d.extract(vector_src,
+                               static_position=[0],
+                               dynamic_position=[])
     splat = vector_d.splat(result_type, element)
     emitter.bind_node_proxy(node, IRProxyValue(splat))
 
@@ -1648,6 +1670,10 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
     is_dst_float = _is_float_type(dst_elem_type)
     is_src_int = _is_integer_like_type(src_elem_type)
     is_dst_int = _is_integer_like_type(dst_elem_type)
+    if is_src_int and is_dst_int and (_is_index_type(src_elem_type) or _is_index_type(dst_elem_type)):
+        casted_vector = arith_d.index_cast(dst_vector_type, vector_src)
+        emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
+        return
 
     conversion_ops = {
         (True, False): arith_d.fptosi,
