@@ -1,6 +1,7 @@
 # IREE Turbine
 
 [![PyPI version](https://badge.fury.io/py/iree-turbine.svg)](https://badge.fury.io/py/iree-turbine)
+[![Documentation status](https://readthedocs.org/projects/iree-turbine/badge/?version=latest)](https://app.readthedocs.org/projects/iree-turbine/builds/?version__slug=latest)
 
 <img src="https://netl.doe.gov/sites/default/files/2020-11/Turbine-8412270026_83cfc8ee8f_c.jpg" height="300px" width="300px">
 
@@ -10,7 +11,9 @@ Turbine is [IREE's](https://iree.dev/) frontend for
 Turbine provides a collection of tools:
 
 * *AOT Export*: For compiling one or more `nn.Module`s to compiled, deployment
-  ready artifacts. This operates via both a simple one-shot export API (Already upstreamed to [torch-mlir](https://github.com/llvm/torch-mlir/blob/main/python/torch_mlir/extras/fx_importer.py))
+  ready artifacts. This operates via both a simple one-shot export API
+  (also available via
+  [torch-mlir](https://github.com/llvm/torch-mlir/blob/main/python/torch_mlir/extras/fx_importer.py))
   for simple models and an underlying
   [advanced API](https://github.com/iree-org/iree-turbine/blob/main/iree/turbine/aot/compiled_module.py)
   for complicated models and accessing the full features of the runtime.
@@ -19,7 +22,11 @@ Turbine provides a collection of tools:
 * *Custom Ops*: Integration for defining custom PyTorch ops and implementing them in
   terms of IREE's backend IR or a Pythonic kernel language.
 
-Documentation is available at https://iree.dev/guides/ml-frameworks/pytorch/.
+## Documentation
+
+* API reference pages and project documentation: https://iree-python-api.readthedocs.io/
+* Guides for using Turbine as a bridge between PyTorch and IREE:
+  https://iree.dev/guides/ml-frameworks/pytorch/
 
 ## Contact us
 
@@ -37,7 +44,7 @@ Discord server).
     ```bash
     # Fast installation of torch with just CPU support.
     # See other options at https://pytorch.org/get-started/locally/
-    pip install torch --index-url https://download.pytorch.org/whl/test/cpu
+    pip install torch --index-url https://download.pytorch.org/whl/cpu
     ```
 
     Then install iree-turbine:

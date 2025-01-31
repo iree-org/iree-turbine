@@ -1,9 +1,18 @@
-# API Docs
+# IREE Turbine Documentation
 
 This directory uses Sphinx to build documentation that is hosted at
 https://iree-turbine.readthedocs.io/.
 
-## Building the API documentation locally
+## Publishing on Read the Docs
+
+The project dashboard is here:
+https://app.readthedocs.org/projects/iree-turbine/.
+
+A webhook is configured in the iree-turbine GitHub repository to notify
+readthedocs when new changes are pushed, at which point it automatically starts
+a website build and publishes the latest content.
+
+## Building the documentation locally
 
 ### Setup virtual environment with requirements
 

@@ -84,13 +84,17 @@ setup(
     description="IREE Turbine Machine Learning Deployment Tools",
     long_description=README,
     long_description_content_type="text/markdown",
-    url="https://github.com/iree-org/iree-turbine/",
     license="Apache-2.0",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
     ],
+    project_urls={
+        "homepage": "https://iree.dev/",
+        "repository": "https://github.com/iree-org/iree-turbine/",
+        "documentation": "https://iree-turbine.readthedocs.io/en/latest/",
+    },
     packages=packages,
     include_package_data=True,
     package_data={
