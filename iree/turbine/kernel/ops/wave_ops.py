@@ -144,6 +144,10 @@ def maximum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
+def minimum(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
 def broadcast(
     arg: "Register", target_shape: Optional[Sequence[IndexExpr | int]] = None
 ) -> "Register":
@@ -689,6 +693,7 @@ class CustomOp(ABC):
 @define_py_op(operator.mul)
 @define_py_op(operator.truediv)
 @define_interface_op("maximum")
+@define_interface_op("minimum")
 @dataclass
 class BinaryPyOp(CustomOp, ABC):
     """
@@ -719,6 +724,9 @@ class BinaryPyOp(CustomOp, ABC):
         return self.tkw_op_name
 
     def infer_type(self):
+        print(
+            f"infer_type(self) {self} lhs {get_custom(self.lhs)} rhs {get_custom(self.rhs)}"
+        )
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
         has_same_type = has_same_custom_type(lhs_type, rhs_type)

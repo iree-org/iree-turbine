@@ -131,18 +131,13 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
             j = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
 
             # TODO: some errors below.
-            # ZERO = i - i
-            # # TODO: tkw.maximum/minimum to support 0 instead of requiring a ZERO
-            # # symbol: ValueError: Expected an fx.Node but got <class 'int'>
-            # # TODO: Expected an fx.Node but got <class 'sympy.core.symbol.Symbol'>
-            # idx = tkw.maximum(i - j, ZERO)
-            # # TODO(ntv): add tkw.minimum
-            # # TODO(ntv): may actually need MAX_CONTEXT_LENGTH here
-            # # idx = tkw.minimum(idx, K2)
+            # TODO: tkw.maximum/minimum to support 0 instead of requiring a ZERO
+            # symbol: ValueError: Expected an fx.Node but got <class 'int'>
+            idx = tkw.maximum(i - j, ZERO)
+            # TODO(ntv): may actually need MAX_CONTEXT_LENGTH here
+            idx = tkw.minimum(i - j, K2)
             # TODO: may need adjustements depending on how we want to do
             # bucketing; atm it is bucketing of size 1.
-
-            idx = i - j
             tkw.set_symbol(OFFSET, idx)  # offset will have shape [K2]
 
             # Note: this is a read indirect with an OFFSET via offset_mapping.
