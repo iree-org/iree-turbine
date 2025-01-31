@@ -1233,7 +1233,7 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
     if _is_float_type(element_type):
         result = arith_d.divf(lhs, rhs)
     elif _is_integer_like_type(element_type) and (
-        element_type.is_signed() or element_type.is_signless()
+        element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.divsi(lhs, rhs)
     elif _is_integer_like_type(element_type) and element_type.is_unsigned():
@@ -1249,7 +1249,7 @@ def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
     if _is_float_type(element_type):
         result = arith_d.maximumf(lhs, rhs)
     elif _is_integer_like_type(element_type) and (
-        element_type.is_signed() or element_type.is_signless()
+        element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.maxsi(lhs, rhs)
     elif _is_integer_like_type(element_type) and element_type.is_unsigned():
