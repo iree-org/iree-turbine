@@ -663,18 +663,10 @@ def invoke_vmfb(
     if not (run or run_bench):
         return
 
-    # TODO: the following crashes with:
-    #
-    # File "/home/nico/dev/iree-turbine/iree/turbine/kernel/wave/utils.py",
-    #   line 550, in get_device_uuid
-    # uuid = str(torch.cuda.get_device_properties(device).uuid)
-    # AttributeError: 'torch._C._CudaDeviceProperties' object has no attribute
-    # 'uuid'. Hack it out for now.
-    #
-    # if inplace:
-    #     # Select device as the GPU, where input tensors are coming from.
-    #     device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
-    #     device = f"{device}://GPU-{device_uuid}"
+    if inplace:
+        # Select device as the GPU, where input tensors are coming from.
+        device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
+        device = f"{device}://GPU-{device_uuid}"
     rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
