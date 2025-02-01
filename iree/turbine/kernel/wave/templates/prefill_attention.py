@@ -29,12 +29,12 @@ def get_prefill_attention_kernel(
     o_shape: tuple[int],
     input_dtype: Optional[torch.dtype] = torch.float16,
     output_dtype: Optional[torch.dtype] = torch.float32,
-    seq_dtype: Optional[torch.dtype] = torch.int32,
+    size_dtype: Optional[torch.dtype] = torch.int32,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
     wave_output_dtype = torch_dtype_to_wave(output_dtype)
-    wave_seq_dtype = torch_dtype_to_wave(seq_dtype)
+    wave_size_dtype = torch_dtype_to_wave(size_dtype)
     assert wave_input_dtype in [
         tkl.f16,
         tkl.bf16,
@@ -43,8 +43,8 @@ def get_prefill_attention_kernel(
         wave_output_dtype.is_float_asm()
     ), f"Unsupported output datatype: {wave_output_dtype}"
     assert (
-        wave_seq_dtype.is_int_asm()
-    ), f"Expected seq to be int but got: {wave_seq_dtype}"
+        wave_size_dtype.is_int_asm()
+    ), f"Expected seq to be int but got: {wave_size_dtype}"
 
     S = tkl.sym.S
     OFFSET = tkl.sym.OFFSET
@@ -130,8 +130,8 @@ def get_prefill_attention_kernel(
         q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, wave_input_dtype, q_layout],
         k: tkl.Memory[N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_layout],
         v: tkl.Memory[N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_layout],
-        offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_seq_dtype],
-        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_seq_dtype],
+        offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
