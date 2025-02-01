@@ -1512,3 +1512,26 @@ def partial(func, *args, **kwargs):
     partial_func = functools.partial(func, *args, **kwargs)
     functools.update_wrapper(partial_func, func)
     return partial_func
+
+
+TORCH_DTYPE_TO_WAVE = {
+    torch.bfloat16: tkl.bf16,
+    torch.float8_e5m2: tkl.f8e5m2,
+    torch.float8_e5m2fnuz: tkl.f8e5m2fnuz,
+    torch.float8_e4m3fn: tkl.f8e4m3fn,
+    torch.torch.float8_e4m3fnuz: tkl.f8e4m3fnuz,
+    torch.float16: tkl.f16,
+    torch.float32: tkl.f32,
+    torch.float64: tkl.f64,
+    torch.int16: tkl.i16,
+    torch.int32: tkl.i32,
+    torch.int64: tkl.i64,
+    torch.bool: tkl.bool,
+}
+
+
+def torch_dtype_to_wave(torch_dtype: torch.dtype) -> Any:
+    try:
+        return TORCH_DTYPE_TO_WAVE[torch_dtype]
+    except KeyError:
+        raise ValueError(f"Unable to map torch dtype {torch_dtype} to Wave.")
