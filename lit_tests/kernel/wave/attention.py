@@ -1255,6 +1255,18 @@ def test_extend_attention():
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                scf.for
         # CHECK-COUNT-1:            vector.maskedload
+        # CHECK-COUNT-1:            vector.maskedload
+        # CHECK-COUNT-1:            vector.store
+        # CHECK-COUNT-1:            vector.maskedload
+        # CHECK-COUNT-1:            vector.store
+        # CHECK-COUNT-16:           vector.load
+        # CHECK-COUNT-16:           amdgpu.mfma
+        # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-16:           vector.maskedload
+        # CHECK-COUNT-16:           amdgpu.mfma
+        # CHECK-COUNT-4:        vector.maskedload
+        # CHECK:                scf.for
+        # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.store
         # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.store

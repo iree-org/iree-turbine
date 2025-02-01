@@ -11,10 +11,12 @@ from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
+    torch_dtype_to_wave,
 )
-import sympy
 from .attention_common import *
 import math
+import torch
+from typing import Optional
 
 
 def get_extend_attention_kernel(
@@ -27,7 +29,25 @@ def get_extend_attention_kernel(
     k_cache_shape: tuple[int],
     v_cache_shape: tuple[int],
     o_shape: tuple[int],
+    input_dtype: Optional[torch.dtype] = torch.float16,
+    output_dtype: Optional[torch.dtype] = torch.float32,
+    size_dtype: Optional[torch.dtype] = torch.int32,
 ):
+    # Determine dtype of operands.
+    wave_input_dtype = torch_dtype_to_wave(input_dtype)
+    wave_output_dtype = torch_dtype_to_wave(output_dtype)
+    wave_size_dtype = torch_dtype_to_wave(size_dtype)
+
+    assert wave_input_dtype in [
+        tkl.f16,
+    ], f"Unsupported input datatype: {wave_input_dtype}"
+    assert (
+        wave_output_dtype.is_float_asm()
+    ), f"Unsupported output datatype: {wave_output_dtype}"
+    assert (
+        wave_size_dtype.is_int_asm()
+    ), f"Expected seq to be int but got: {wave_size_dtype}"
+
     S = tkl.sym.S
     EXT_IDX = tkl.sym.EXT_IDX
     REQ_IDX = tkl.sym.REQ_IDX
@@ -117,7 +137,7 @@ def get_extend_attention_kernel(
 
     block_table_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={S: i + REQ_IDX, N_KV: j},
+        inputs={S: REQ_IDX, N_KV: j},
         outputs={S: i, N_KV: j},
     )
 
@@ -131,21 +151,23 @@ def get_extend_attention_kernel(
 
     @tkw.wave(constraints)
     def extend_attention(
-        q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, tkl.f16, q_layout],
-        k: tkl.Memory[N_KV, H, D_Q, ADDRESS_SPACE, tkl.f16, k_layout],
-        v: tkl.Memory[H, D_KV, N_KV, ADDRESS_SPACE, tkl.f16, v_layout],
-        k_cache: tkl.Memory[N_KV, H, D_Q, ADDRESS_SPACE, tkl.f16, k_cache_layout],
+        q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, wave_input_dtype, q_layout],
+        k: tkl.Memory[N_KV, H, D_Q, ADDRESS_SPACE, wave_input_dtype, k_layout],
+        v: tkl.Memory[H, D_KV, N_KV, ADDRESS_SPACE, wave_input_dtype, v_layout],
+        k_cache: tkl.Memory[
+            N_KV, H, D_Q, ADDRESS_SPACE, wave_input_dtype, k_cache_layout
+        ],
         v_cache: tkl.Memory[
-            H, D_KV, N_KV, GLOBAL_ADDRESS_SPACE, tkl.f16, v_cache_layout
+            H, D_KV, N_KV, GLOBAL_ADDRESS_SPACE, wave_input_dtype, v_cache_layout
         ],
         block_table: tkl.Memory[
-            S, N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
+            S, N_KV, GLOBAL_ADDRESS_SPACE, wave_size_dtype, block_table_layout
         ],
-        request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, o_layout],
+        request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
@@ -192,7 +214,7 @@ def get_extend_attention_kernel(
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
-            imm_f16 = tkw.cast(e_delta, tkl.f16)
+            imm_f16 = tkw.cast(e_delta, wave_input_dtype)
             v_reg = tkw.read(
                 v_cache,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
@@ -230,7 +252,7 @@ def get_extend_attention_kernel(
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
-            imm_f16 = tkw.cast(e_delta, tkl.f16)
+            imm_f16 = tkw.cast(e_delta, wave_input_dtype)
             v_reg = tkw.read(
                 v,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
@@ -244,6 +266,8 @@ def get_extend_attention_kernel(
         res_max, res_sum, res_mm = second_loop
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
+        if wave_output_dtype != tkl.f32:
+            res = tkw.cast(res, wave_output_dtype)
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     hyperparams = {

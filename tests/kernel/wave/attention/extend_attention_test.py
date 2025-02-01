@@ -36,12 +36,11 @@ from ..common.utils import (
     dump_generated_mlir,
 )
 from ..common.shapes import get_test_shapes
-from typing import List, Optional
 
 # Reference paged attention implementation from vLLM and sglang.
 shapes = [
     AttentionShape(
-        num_seqs=1,
+        num_seqs=2,
         context_len=1024,
         num_query_heads=16,
         num_kv_heads=1,
@@ -145,13 +144,14 @@ def create_inputs(
     b_seq_len_prefix = torch.randint(
         1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
     )
+    # TODO: Make this work for values != 64.
     b_seq_len_prefix[0] = 64
-    # b_seq_len_prefix[1] = 128
+    b_seq_len_prefix[1] = 64
     b_seq_len_extend = torch.randint(
         1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
     )
     b_seq_len_extend[0] = 128
-    # b_seq_len_extend[1] = 256
+    b_seq_len_extend[1] = 256
     b_seq_len = b_seq_len_prefix + b_seq_len_extend
     max_len_in_batch = torch.max(b_seq_len, 0)[0].item()
 
@@ -320,8 +320,6 @@ def testExtendAttention(
             b_start_loc_extend,
             output,
         )
-        with open("wave_extend_kernel.mlir", "w") as f:
-            f.write(mb_qk.module_op.get_asm())
 
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"

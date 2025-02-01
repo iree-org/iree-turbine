@@ -42,8 +42,8 @@ D_KV = tkl.sym.D_KV  # key/value head size
 
 # And their corresponding tile sizes.
 BLOCK_H = tkl.sym.BLOCK_H
-BLOCK_H_Q = tkl.sym.BLOCK_H
-BLOCK_H_KV = tkl.sym.BLOCK_H
+BLOCK_H_Q = tkl.sym.BLOCK_H_Q
+BLOCK_H_KV = tkl.sym.BLOCK_H_KV
 BLOCK_N_Q = tkl.sym.BLOCK_N_Q
 BLOCK_N_KV = tkl.sym.BLOCK_N_KV
 BLOCK_D_Q = tkl.sym.BLOCK_D_Q
