@@ -21,10 +21,14 @@ class AttentionShape:
     num_seqs: Optional[int] = None
     max_seq_len: Optional[int] = None
     total_seq_len: Optional[int] = None
+    context_len: Optional[int] = None
     # -----------------------
     # Vanilla attention
     query_seq_len: Optional[int] = None
     kv_seq_len: Optional[int] = None
+    # -----------------------
+    # Decode specific
+    block_size: Optional[int] = None
 
 
 # Commonly-used attention symbols.
