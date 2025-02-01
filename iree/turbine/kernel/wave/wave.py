@@ -234,11 +234,9 @@ class LaunchableWave(Launchable):
         aliased_dims = [
             x.source for x in self.constraints if isinstance(x, SymbolicAlias)
         ]
-        workgroup_dims = {
-            x.workgroup_dim: x
-            for x in self.workgroup_constraints
-            if x.dim not in aliased_dims
-        }
+        workgroup_dims = [
+            x for x in self.workgroup_constraints if x.dim not in aliased_dims
+        ]
         return workgroup_dims
 
     def update_aliased_workgroup_constraints(
@@ -263,15 +261,17 @@ class LaunchableWave(Launchable):
         """
 
         workgroup_dims = self.get_workgroup_dims()
-        if all(x <= 2 for x in workgroup_dims.keys()):
+        # Filter to WG2 and above.
+        dims_to_delinearize = [x for x in workgroup_dims if x.workgroup_dim >= 2]
+        if all(x.workgroup_dim <= 2 for x in dims_to_delinearize):
             return
-        shape = [
-            subs_idxc(workgroup_dims[i].count)
-            for i in range(2, max(workgroup_dims.keys()) + 1)
-        ]
+        # Only take account primary dim for delinearize shape.
+        shape = [subs_idxc(x.count) for x in dims_to_delinearize if x.primary]
         new_workgroup_dims = delinearize_index(WORKGROUP_2, shape)
-        for i in range(2, max(workgroup_dims.keys()) + 1):
-            workgroup_dims[i].wg_dim = new_workgroup_dims[i - 2]
+        for delinearize_dim in dims_to_delinearize:
+            delinearize_dim.wg_dim = new_workgroup_dims[
+                delinearize_dim.workgroup_dim - 2
+            ]
         self.update_aliased_workgroup_constraints(workgroup_dims)
 
     def initialize_symbolic_constraints(self, trace: CapturedTrace) -> None:

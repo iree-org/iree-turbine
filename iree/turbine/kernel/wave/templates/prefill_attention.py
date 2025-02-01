@@ -47,6 +47,7 @@ def get_prefill_attention_kernel(
     ]
     constraints += [tkw.WorkgroupConstraint(D_KV, BLOCK_D_KV, 1)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 2)]
+    constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 2, primary=False)]
     constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3)]
     constraints += [tkw.TilingConstraint(N_KV, BLOCK_N_KV)]
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / M_WAVES)]
@@ -64,7 +65,7 @@ def get_prefill_attention_kernel(
             threads_per_wave=64,
             waves_per_block=(M_WAVES, N_WAVES, 1),
             mma_type=mfma_variant[1],
-            vector_shapes={H: 0, N_Q: Mvec, D_KV: Nvec, S: 0},
+            vector_shapes={H: 0, H_KV: 0, N_Q: Mvec, D_KV: Nvec, S: 0},
         )
     ]
 
@@ -87,14 +88,14 @@ def get_prefill_attention_kernel(
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     k_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H: i // head_ratio, N_KV: j + OFFSET, D_Q: k},
-        outputs={H: i, N_KV: j, D_Q: k},
+        inputs={H_KV: i // head_ratio, N_KV: j + OFFSET, D_Q: k},
+        outputs={H_KV: i, N_KV: j, D_Q: k},
     )
 
     v_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H: i // head_ratio, D_KV: j, N_KV: k + OFFSET},
-        outputs={H: i, D_KV: j, N_KV: k},
+        inputs={H_KV: i // head_ratio, D_KV: j, N_KV: k + OFFSET},
+        outputs={H_KV: i, D_KV: j, N_KV: k},
     )
 
     q_layout = tkl.MemoryLayout(shape=q_shape)
@@ -105,8 +106,8 @@ def get_prefill_attention_kernel(
     @tkw.wave(constraints)
     def prefill_attention(
         q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, tkl.f16, q_layout],
-        k: tkl.Memory[N_KV, H, D_Q, ADDRESS_SPACE, tkl.f16, k_layout],
-        v: tkl.Memory[H, D_KV, N_KV, ADDRESS_SPACE, tkl.f16, v_layout],
+        k: tkl.Memory[N_KV, H_KV, D_Q, ADDRESS_SPACE, tkl.f16, k_layout],
+        v: tkl.Memory[N_KV, H_KV, D_KV, ADDRESS_SPACE, tkl.f16, v_layout],
         offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, o_layout],
@@ -174,6 +175,7 @@ def get_prefill_attention_kernel(
         BLOCK_N_KV: SEQ_TILE_SIZE,
         BLOCK_S: 1,
         H: shape.num_query_heads,
+        H_KV: shape.num_kv_heads,
         D_KV: shape.head_size_kv,
         D_Q: shape.head_size,
         S: shape.num_seqs,
