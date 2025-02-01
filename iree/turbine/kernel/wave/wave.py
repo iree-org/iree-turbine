@@ -268,10 +268,9 @@ class LaunchableWave(Launchable):
         # Only take account primary dim for delinearize shape.
         shape = [subs_idxc(x.count) for x in dims_to_delinearize if x.primary]
         new_workgroup_dims = delinearize_index(WORKGROUP_2, shape)
-        rank = len(shape)
         for delinearize_dim in dims_to_delinearize:
             delinearize_dim.wg_dim = new_workgroup_dims[
-                delinearize_dim.workgroup_dim - rank
+                delinearize_dim.workgroup_dim - 2
             ]
         self.update_aliased_workgroup_constraints(workgroup_dims)
 
