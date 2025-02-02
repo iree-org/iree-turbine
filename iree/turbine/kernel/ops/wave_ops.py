@@ -840,11 +840,12 @@ class Placeholder(CustomOp):
 
     def erase(self):
         """Erase the current node from the graph where it exists."""
-        parent = self.graph.parent_op
+
         super().erase()
-        if not parent:
+        if not hasattr(self.graph, "parent_op"):
             return
 
+        parent = self.graph.parent_op
         custom = get_custom(parent)
         if not isinstance(custom, NestedRegionOp):
             return
