@@ -631,6 +631,17 @@ def fixup_reduction_nodes(
     trace: CapturedTrace,
     expansion_context: ExpansionContext,
 ):
+    """
+    This function fixes up the reduction nodes by updating the outputs,
+    init_args and get_results of the reduction nodes. It also removes the
+    original nodes from the graph.
+
+    In situations where we have multiple reductions, and the outputs of a
+    reduction are used as inputs to another reduction, we need to ensure
+    the fixup is done in the correct order, specifically from the last
+    reduction to the first reduction since that is the order in
+    which expansion proceeds.
+    """
     reduction_context = expansion_context.reduction_context
     reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Reduction))
     for reduction in reversed(reduction_nodes):
