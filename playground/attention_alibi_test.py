@@ -89,7 +89,7 @@ dk_sqrt = math.sqrt(1.0 / q.shape[-1])
 def get_relative_positions(seq_len: int) -> torch.Tensor:
     x = torch.arange(seq_len)[None, :]
     y = torch.arange(seq_len)[:, None]
-    return torch.minimum(x - y, torch.zeros(seq_len, seq_len))
+    return to_default_device(torch.minimum(x - y, torch.zeros(seq_len, seq_len)))
 
 
 def precompute_alibi_slopes(n_heads: int) -> torch.Tensor:
