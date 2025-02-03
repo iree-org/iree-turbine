@@ -41,7 +41,7 @@ def run(fun: Callable, hparams, *args) -> Any:
         with TestLaunchContext(
             hparams,
             canonicalize=True,
-            run=False,
+            run=True,
             run_config=get_default_run_config(),
             run_bench=False,
             schedule=False,
@@ -167,14 +167,13 @@ tkw_alibi_attention, hyperparams, dynamic_symbols, dynamic_symbols_map = (
         shape,
         mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
         dynamic_dims=False,
-        max_context_length=max_context_length + 2,
     )
 )
 
 
-def attention_alibi(tq, tk, tv, trpe, alibi_slopes):
-    mb = tkw_alibi_attention(tq, tk, tv, trpe, alibi_slopes)
-    print(mb.module_op)
+def attention_alibi(tq, tk, tv, alibi_slopes, toutput):
+    mb = tkw_alibi_attention(tq, tk, tv, alibi_slopes, toutput)
+    # print(mb.module_op)
 
 
 run(
@@ -183,16 +182,15 @@ run(
     q * dk_sqrt * log2e,
     k,
     v.permute([0, 2, 1]),
-    rpe,
-    tkw_attention_alibi_output,
     alibi_slopes,
+    tkw_attention_alibi_output,
 )
 
-tkw_rpe_delta_output = tkw_attention_alibi_output - tkw_attention_output
+tkw_alibi_delta_output = tkw_attention_alibi_output - tkw_attention_output
 
 assert_close(
-    torch_alibi_delta_output.to(dtype=tkw_rpe_delta_output.dtype),
-    tkw_rpe_delta_output,
+    torch_alibi_delta_output.to(dtype=tkw_alibi_delta_output.dtype),
+    tkw_alibi_delta_output,
     atol=2e-3,
     rtol=2e-3,
 )
