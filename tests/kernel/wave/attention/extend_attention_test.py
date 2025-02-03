@@ -153,7 +153,7 @@ def create_inputs(
     # )
     b_seq_len_extend = torch.empty((B,), dtype=torch.int32, device="cuda")
     for i in range(B):
-        b_seq_len_prefix[i] = shape.block_size * (i + 2)
+        b_seq_len_extend[i] = shape.block_size * (i + 2)
     b_seq_len = b_seq_len_prefix + b_seq_len_extend
     max_len_in_batch = torch.max(b_seq_len, 0)[0].item()
 
