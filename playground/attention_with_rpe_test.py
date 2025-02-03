@@ -22,8 +22,9 @@ from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     to_default_device,
 )
-from vanilla_attention_template import (
-    get_vanilla_attention_kernel as get_vanilla_tkw_attention_with_rpe_output_kernel)
+from attention_with_rpe_template import (
+    get_vanilla_attention_kernel as
+    get_vanilla_tkw_attention_with_rpe_output_kernel)
 
 torch.manual_seed(0)
 torch.set_printoptions(
@@ -123,7 +124,10 @@ torch_attention_output = torch.matmul(torch.softmax(a, dim=-1), v)
 # Sanity check that torch_attention_output and torch_attention_ref_output are
 # the same so we can inject RPE pre-softmax and compute the delta.
 # We will test that the delta post-softmax is the same for torch and TKW.
-assert_close(torch_attention_output, torch_attention_ref_output, atol=2e-3, rtol=2e-3)
+assert_close(torch_attention_output,
+             torch_attention_ref_output,
+             atol=2e-3,
+             rtol=2e-3)
 
 a += rpe_cond.unsqueeze(0)
 torch_attention_with_rpe_output = torch.matmul(F.softmax(a, dim=-1), v)
@@ -140,8 +144,10 @@ tkw_attention, hyperparams, dynamic_symbols, dynamic_symbols_map = \
                       MMAType.F32_16x16x16_F16],
         dynamic_dims=False)
 
+
 def attention(tq, tk, tv, toutput):
     tkw_attention(tq, tk, tv, toutput)
+
 
 run(attention, hyperparams, q * dk_sqrt * log2e, k, v.permute([0, 2, 1]),
     tkw_attention_output)
@@ -160,9 +166,11 @@ tkw_attention_with_rpe, hyperparams, dynamic_symbols, dynamic_symbols_map = \
         dynamic_dims=False,
         max_context_length = max_context_length + 2)
 
+
 def attention_with_rpe(tq, tk, tv, trpe, toutput):
     mb = tkw_attention_with_rpe(tq, tk, tv, trpe, toutput)
     # print(mb.module_op)
+
 
 run(attention_with_rpe, hyperparams, q * dk_sqrt * log2e, k,
     v.permute([0, 2, 1]), rpe, tkw_attention_with_rpe_output)
