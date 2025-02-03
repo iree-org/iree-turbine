@@ -18,9 +18,9 @@ from iree.turbine.kernel.wave.utils import (
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 
 
-def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
-                                 dynamic_dims: bool,
-                                 max_context_length: Optional[int]):
+def get_alibi_attention_kernel(
+    shape: AttentionShape, mfma_variant: MMAType, dynamic_dims: bool
+):
     # RPE
     ZERO = tkl.sym.ZERO
     OFFSET = tkl.sym.OFFSET
@@ -44,9 +44,7 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
-    constraints: list[tkw.Constraint] = [
-        tkw.WorkgroupConstraint(M, BLOCK_M, 0)
-    ]
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
@@ -65,11 +63,7 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
             threads_per_wave=64,
             waves_per_block=(4, 1, 1),
             mma_type=mfma_variant[1],
-            vector_shapes={
-                B: 0,
-                M: Mvec,
-                N: Nvec
-            },
+            vector_shapes={B: 0, M: Mvec, N: Nvec},
         )
     ]
 
@@ -79,17 +73,9 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     k = tkw.IndexMapping.iterator(2)
-    mapping = tkw.IndexMapping(num_iterators=3,
-                               inputs={
-                                   B: i,
-                                   N: j,
-                                   M: k
-                               },
-                               outputs={
-                                   B: i,
-                                   M: k,
-                                   N: j
-                               })
+    mapping = tkw.IndexMapping(
+        num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
+    )
 
     offset_mapping = tkw.IndexMapping(
         num_iterators=1,
@@ -97,25 +83,22 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
         outputs={K2: i},
     )
 
-    use_t5_rpe = max_context_length is not None
-    if use_t5_rpe:
-        rpe_layout = tkl.MemoryLayout(shape=[
-            max_context_length,
-        ])
-    assert use_t5_rpe, "use_t5_rpe needed until rpe arg can DCE without crashing"
-
     @tkw.wave(constraints)
-    def base_attention(
+    def alibi_attention(
         q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
-        # TODO: if not use_t5_rpe, this will DCE; atm DCE on blockargs crashes.
-        rpe: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        m: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
+        m_reg = tkw.read(m, elements_per_thread=1)
+
+        # b_idx = tkw.self_index(B, tkl.i64, elements_per_thread=1)
+        # m_0 = tkw.apply_expr(b_idx, lambda x: 2.**(-8. / B))
+        # m = m_0**(tkw.cast(b_idx, tkl.f32) + 1.0)
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
@@ -132,50 +115,20 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
 
             ####################################################################
-            # T5 RPE
+            # ALiBi
             ####################################################################
-            # Fused T5 RPE adds attention bias pre-softmax normalization.
-            # When fusing into the FA variant, adding locally before the max and
-            # the partial softmax should be equivalent.
-            if use_t5_rpe:
-                # 1. Indices i and j broadcasted along K2 with a twist:
-                # here we use *static* information that is *implicitly* encoded
-                # in the *transformation*: under the distribution constraints
-                # specified we know that the shape [M] will eventually resolve
-                # to [1] and can thus be "cast + broadcast" to [K2].
-                i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-                i = tkw.broadcast(i, target_shape=[K2])
-                j = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
+            # ALiBi is essentially adding a lower-triangular matrix of constants
+            # to the result of QK product. The triangular matrix is obtained by
+            # doing min(i - j, 0).
+            i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+            i = tkw.broadcast(i, target_shape=[K2])
+            j = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
+            zero = tkl.Register[K2, tkl.i64](0)
+            idx = tkw.minimum(i - j, zero)
+            local_m = tkw.broadcast(m_reg, target_shape=[K2])
+            idx = tkw.cast(idx, tkl.f32) * local_m
 
-                # 2. Clip i - j to the proper bucket in [0, max_context_length]
-                # to represent the following:
-                #   - if 0 < i - j < max_context_length
-                #       then x_j += rpe_reg
-                #   - otherwise (i.e. i - j == {0, max_context_length})
-                #       then x_j += 0
-                # TODO: we may need scaling adjustements depending on how we want
-                # to do bucketing; atm it is bucketing of size 1.
-                # Note: tkw.apply_expr allows us to circumvent issues such as.
-                # ValueError: Expected an fx.Node but got <class 'int'>
-                zero = tkw.broadcast(tkw.apply_expr(i, lambda i: 0),
-                                     target_shape=[K2])
-                idx = tkw.maximum(i - j, tkw.cast(zero, tkl.i64))
-                # Note: tkw.apply_expr allows us to circumvent issues such as.
-                # ValueError: Expected an fx.Node but got <class 'Symbol'>
-                max = tkw.broadcast( \
-                    tkw.apply_expr(i, lambda i: max_context_length), \
-                    target_shape=[K2])
-                idx = tkw.minimum(idx, tkw.cast(max, tkl.i64))
-
-                # 3. Read indirect into the 1-D rpe array via offset_mapping.
-                tkw.set_symbol(OFFSET, idx)  # offset will have shape [K2]
-                rpe_reg = tkw.read(
-                    rpe,
-                    mapping=offset_mapping,
-                    elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-
-                # 4. Tadaaaa.
-                x_j = x_j + rpe_reg
+            x_j = x_j + idx
 
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
@@ -192,19 +145,13 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
-        tkw.write(res,
-                  c,
-                  mapping=mapping,
-                  elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD_QK:
-        get_mfma_load_elems_per_thread(mfma_variant[0]),
-        LOAD_ELEMS_PER_THREAD_PV:
-        get_mfma_load_elems_per_thread(mfma_variant[1]),
-        STORE_ELEMS_PER_THREAD:
-        get_mfma_store_elems_per_thread(mfma_variant[1]),
+        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
+        LOAD_ELEMS_PER_THREAD_PV: get_mfma_load_elems_per_thread(mfma_variant[1]),
+        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_B: 1,
         BLOCK_M: 128,
         BLOCK_N: 64,
@@ -232,4 +179,4 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
         del hyperparams[B]
         del hyperparams[K2]
 
-    return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return alibi_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
