@@ -20,7 +20,7 @@ import torch.fx as fx
 from ..lang.wave_types import Memory, Register, IndexMapping
 from ..lang.global_symbols import *
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
-from .._support.dtype import DataType
+from .._support.dtype import DataType, i1
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
 import numpy as np
@@ -174,6 +174,22 @@ def shuffle(src: "Register", offset: int, width: int) -> "Register":
     ...
 
 
+def sgt(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def sge(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def slt(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def sle(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
 def cast(src: "Register", dtype: DataType) -> "Register":
     ...
 
@@ -183,6 +199,10 @@ def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
 
 
 def reshape(inputs: Sequence["Register"]) -> "Register":
+    ...
+
+
+def select(cond: "Register", if_true: "Register", if_false: "Register") -> "Register":
     ...
 
 
@@ -688,14 +708,8 @@ class CustomOp(ABC):
         return index
 
 
-@define_py_op(operator.add)
-@define_py_op(operator.sub)
-@define_py_op(operator.mul)
-@define_py_op(operator.truediv)
-@define_interface_op("maximum")
-@define_interface_op("minimum")
 @dataclass
-class BinaryPyOp(CustomOp, ABC):
+class BinaryOpBase(CustomOp, ABC):
     """
     Represents an elementwise binary python operator.
 
@@ -723,21 +737,46 @@ class BinaryPyOp(CustomOp, ABC):
     def py_operator(self) -> str:
         return self.tkw_op_name
 
-    def infer_type(self):
+    def infer_shape(self) -> Any:
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
         has_same_type = has_same_custom_type(lhs_type, rhs_type)
         if has_same_type:
-            self.type = lhs_type
-            return
+            return lhs_type.symbolic_shape
+
         lhs_dim_set = set(lhs_type.symbolic_shape)
         rhs_dim_set = set(rhs_type.symbolic_shape)
         if lhs_dim_set.isdisjoint(rhs_dim_set):
             raise ValueError(
                 "BinaryPyOp requires lhs and rhs shape to be at least broadcastable."
                 f" got {lhs_type.symbolic_shape} vs {rhs_type.symbolic_shape}")
+
+        # TODO: this logic looks suspicious. Specifically, there's no check that
+        # rhs_dim_set subsumes lhs_dim_set, they may partially overlap.
         broadcasted_type = lhs_type if lhs_dim_set > rhs_dim_set else rhs_type
-        self.type = broadcasted_type
+        return broadcasted_type.symbolic_shape
+
+
+@define_py_op(operator.add)
+@define_py_op(operator.sub)
+@define_py_op(operator.mul)
+@define_py_op(operator.truediv)
+@define_py_op(operator.pow)
+@define_interface_op("maximum")
+@define_interface_op("minimum")
+@dataclass
+class BinaryPyOp(BinaryOpBase, ABC):
+    def infer_type(self):
+        self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
+
+@define_interface_op("sgt")
+@define_interface_op("sge")
+@define_interface_op("slt")
+@define_interface_op("sle")
+@dataclass
+class ComparisonPyOp(BinaryOpBase, ABC):
+    def infer_type(self):
+        self.type = Register[(*self.infer_shape(), i1)]
 
 
 @define_interface_op("log2")
@@ -765,6 +804,40 @@ class UnaryPyOp(CustomOp, ABC):
     def infer_type(self):
         src_type = get_custom(self.arg).type
         self.type = src_type
+
+
+@define_op("select")
+@dataclass
+class SelectOp(CustomOp):
+    cond: fx.Node
+    if_true: fx.Node
+    if_false: fx.Node
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        combined_dims = []
+        combined_dims += get_custom(self.cond).indexing_dims
+        combined_dims += get_custom(self.if_true).indexing_dims
+        combined_dims += get_custom(self.if_false).indexing_dims
+        return list(dict.fromkeys(combined_dims))
+
+    def infer_type(self):
+        cond_type = get_custom(self.cond).type
+        if_true_type = get_custom(self.if_true).type
+        if_false_type = get_custom(self.if_false).type
+
+        if cond_type.dtype != i1:
+            raise ValueError("SelectOp expects condition type to be i1.")
+
+        if if_true_type.dtype != if_false_type.dtype:
+            raise ValueError("SelectOp expects lhs and rhs dtype to match.")
+
+        # TODO: support broadcasting behavior.
+        if (cond_type.symbolic_shape != if_true_type.symbolic_shape or
+            cond_type.symbolic_shape != if_false_type.symbolic_shape):
+            raise ValueError("SelectOp doesn't support broadcasting. (yet?)")
+
+        self.type = if_true_type
 
 
 @final

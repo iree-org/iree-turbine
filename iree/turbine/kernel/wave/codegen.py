@@ -80,9 +80,14 @@ from ..ops.wave_ops import (
     scheduling_barrier,
     scheduling_group_barrier,
     self_index,
+    select,
     set_symbol,
+    sge,
+    sgt,
     shared_memory_barrier,
     shuffle,
+    sle,
+    slt,
     tanh,
     write,
 )
@@ -1247,6 +1252,44 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
     return result
 
 
+@handle_binary_op(operator.pow)
+def handle_pow(lhs: Value, rhs: Value) -> OpResult:
+    lhs_element_type = get_type_or_element_type(lhs.type)
+    rhs_element_type = get_type_or_element_type(rhs.type)
+    if _is_integer_like_type(rhs_element_type):
+        if _is_integer_like_type(lhs_element_type):
+            result = math_d.ipowi(lhs, rhs)
+        elif _is_float_type(lhs_element_type):
+            result = math_d.fpowi(lhs, rhs)
+        else:
+            raise ValidationError(f"Unhandled LHS type for pow: {lhs_element_type}")
+    elif _is_float_type(rhs_element_type):
+        result = math_d.powf(lhs, rhs)
+    else:
+        raise ValidationError(f"Unhandled RHS type for pow: {rhs_element_type}")
+    return result
+
+
+@handle_binary_op(sgt)
+def handle_sgt(lhs: Value, rhs: Value) -> OpResult:
+    return arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)
+
+
+@handle_binary_op(sge)
+def handle_sge(lhs: Value, rhs: Value) -> OpResult:
+    return arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs, rhs)
+
+
+@handle_binary_op(slt)
+def handle_slt(lhs: Value, rhs: Value) -> OpResult:
+    return arith_d.cmpi(arith_d.CmpIPredicate.slt, lhs, rhs)
+
+
+@handle_binary_op(sle)
+def handle_sle(lhs: Value, rhs: Value) -> OpResult:
+    return arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
+
+
 @handle_binary_op(maximum)
 def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
@@ -1620,6 +1663,18 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 # Miscellanous ops
 ###############################################################################
+
+
+@handle_op(select)
+def handle_select(emitter: WaveEmitter, node: fx.Node):
+    try:
+        cond, if_true, if_false = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    unwrap = lambda x: cast_py_value(emitter, x).ir_value
+    selected = arith_d.select(unwrap(cond), unwrap(if_true), unwrap(if_false))
+    emitter.bind_node_proxy(node, IRProxyValue(selected))
 
 
 @handle_op(get_result)
