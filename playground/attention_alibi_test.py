@@ -46,6 +46,10 @@ def run(fun: Callable, hparams, *args) -> Any:
             run_bench=False,
             schedule=False,
             use_scheduling_barriers=False,
+            compile_config={
+                "print_ir_before": ["expand_graph"],
+                "print_ir_after": ["expand_graph"],
+            }
         ):
             fun(*args)
 
@@ -76,6 +80,7 @@ k = device_randn(k_shape, dtype=torch.float16)
 v = device_randn(v_shape, dtype=torch.float16)
 tkw_attention_output = device_zeros(o_shape, dtype=torch.float32)
 tkw_attention_alibi_output = device_zeros(o_shape, dtype=torch.float32)
+tkw_tmp = device_zeros((shape.num_query_heads, shape.query_seq_len, shape.kv_seq_len), dtype=torch.float32)
 
 log2e = 1.44269504089
 dk_sqrt = math.sqrt(1.0 / q.shape[-1])
@@ -171,9 +176,9 @@ tkw_alibi_attention, hyperparams, dynamic_symbols, dynamic_symbols_map = (
 )
 
 
-def attention_alibi(tq, tk, tv, alibi_slopes, toutput):
-    mb = tkw_alibi_attention(tq, tk, tv, alibi_slopes, toutput)
-    # print(mb.module_op)
+def attention_alibi(tq, tk, tv, alibi_slopes, toutput, tmp):
+    mb = tkw_alibi_attention(tq, tk, tv, alibi_slopes, toutput, tmp)
+    print(mb.module_op)
 
 
 run(
@@ -184,7 +189,15 @@ run(
     v.permute([0, 2, 1]),
     alibi_slopes,
     tkw_attention_alibi_output,
+    tkw_tmp
 )
+
+ref_tmp = (alibi_slopes.unsqueeze(-1).unsqueeze(-1) * get_relative_positions(
+    q_shape[1]
+).unsqueeze(0))
+
+print(get_relative_positions(q_shape[1]))
+print(tkw_tmp[0])
 
 tkw_alibi_delta_output = tkw_attention_alibi_output - tkw_attention_output
 

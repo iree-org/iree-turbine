@@ -88,8 +88,9 @@ def get_alibi_attention_kernel(
         q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         m: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        tmp: tkl.Memory[B, M, K2, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
@@ -124,9 +125,11 @@ def get_alibi_attention_kernel(
             i = tkw.broadcast(i, target_shape=[K2])
             j = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
             zero = tkl.Register[K2, tkl.i64](0)
-            idx = tkw.minimum(i - j, zero)
+            idx = tkw.minimum(j - i, zero)
             local_m = tkw.broadcast(m_reg, target_shape=[K2])
             idx = tkw.cast(idx, tkl.f32) * local_m
+
+            tkw.write(tkw.cast(i, tkl.f32), tmp, elements_per_thread=4)
 
             x_j = x_j + idx
 
