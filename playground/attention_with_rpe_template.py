@@ -117,6 +117,7 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
+        m_reg = tkw.read(m, elements_per_thread=1)
 
         # b_idx = tkw.self_index(B, tkl.i64, elements_per_thread=1)
         # m_0 = tkw.apply_expr(b_idx, lambda x: 2.**(-8. / B))
@@ -135,19 +136,15 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
             k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
 
-            ii = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-            i = tkw.broadcast(ii, target_shape=[M, K2])
-            jj = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
-            j = tkw.broadcast(jj, target_shape=[M, K2])
+            i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+            i = tkw.broadcast(i, target_shape=[K2])
+            j = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
 
-            zero = tkw.broadcast(tkw.apply_expr(i, lambda i: 0),
-                                 target_shape=[M, K2])
-            idx = tkw.minimum(i - j, tkw.cast(zero, tkl.i64))
-            idx = tkw.broadcast(idx, target_shape=[B, M, K2])
+            zero = tkl.Register[K2, tkl.i64](0)
+            idx = tkw.minimum(i - j, zero)
 
-            mm = tkw.broadcast(m, target_shape=[B, M, K2])
-
-            idx = tkw.cast(idx, tkl.f32) * mm
+            local_m = tkw.broadcast(m_reg, target_shape=[K2])
+            idx = tkw.cast(idx, tkl.f32) * local_m
 
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
 
