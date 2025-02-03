@@ -61,7 +61,7 @@ def get_extend_attention_kernel(
     LOAD_ELEMS_PER_THREAD_PV = index_symbol("LOAD_ELEMS_PER_THREAD_PV")
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
-    SEQ_TILE_SIZE = 64
+    SEQ_TILE_SIZE = shape.block_size
     M_WAVES = 4
     N_WAVES = 1
 
@@ -158,7 +158,7 @@ def get_extend_attention_kernel(
             N_KV, H, D_Q, ADDRESS_SPACE, wave_input_dtype, k_cache_layout
         ],
         v_cache: tkl.Memory[
-            H, D_KV, N_KV, GLOBAL_ADDRESS_SPACE, wave_input_dtype, v_cache_layout
+            H, D_KV, N_KV, ADDRESS_SPACE, wave_input_dtype, v_cache_layout
         ],
         block_table: tkl.Memory[
             S, N_KV, GLOBAL_ADDRESS_SPACE, wave_size_dtype, block_table_layout
@@ -183,6 +183,12 @@ def get_extend_attention_kernel(
         seq_len_prefix = seq_len - seq_len_extend
 
         tkw.set_symbol(N_KV, seq_len_prefix)
+        block_indices = tkw.read(
+            block_table,
+            elements_per_thread=1,
+            mapping=block_table_mapping,
+        )
+        tkw.set_symbol(SEQ_IDX, block_indices)
 
         @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
         def first_loop(
@@ -190,12 +196,6 @@ def get_extend_attention_kernel(
             partial_sum: tkl.Register[H, N_Q, tkl.f32],
             acc: tkl.Register[H, D_KV, N_Q, tkl.f32],
         ):
-            block_indices = tkw.read(
-                block_table,
-                elements_per_thread=1,
-                mapping=block_table_mapping,
-            )
-            tkw.set_symbol(SEQ_IDX, block_indices)
             q_reg = tkw.read(
                 q,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
