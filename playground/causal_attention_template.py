@@ -111,11 +111,7 @@ def get_causal_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
             acc: tkl.Register[B, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-            inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
-            x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
-
+            imm_reg = tkw.permute(imm_reg, target_shape=[B, M, K2])
             ####################################################################
             # Causal mask
             ####################################################################
@@ -133,7 +129,14 @@ def get_causal_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
             MIN_INF = tkl.Register[K2, tkl.f32](float('-inf'))
             idx = j - i - ONE
             bias = tkw.select(tkw.slt(idx, ZERO), ZEROF, MIN_INF)
-            x_j = x_j + bias
+            ### Apply causality mask to imm_reg.
+            imm_reg = imm_reg + bias
+            imm_reg = tkw.permute(imm_reg, target_shape=[B, K2, M])
+
+            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+            inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
+            x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
 
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
