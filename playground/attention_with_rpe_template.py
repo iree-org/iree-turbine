@@ -112,10 +112,15 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
         # TODO: if not use_t5_rpe, this will DCE; atm DCE on blockargs crashes.
         rpe: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        m: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
+
+        # b_idx = tkw.self_index(B, tkl.i64, elements_per_thread=1)
+        # m_0 = tkw.apply_expr(b_idx, lambda x: 2.**(-8. / B))
+        # m = m_0**(tkw.cast(b_idx, tkl.f32) + 1.0)
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
@@ -129,7 +134,24 @@ def get_vanilla_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
             q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
+
+            ii = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+            i = tkw.broadcast(ii, target_shape=[M, K2])
+            jj = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
+            j = tkw.broadcast(jj, target_shape=[M, K2])
+
+            zero = tkw.broadcast(tkw.apply_expr(i, lambda i: 0),
+                                 target_shape=[M, K2])
+            idx = tkw.minimum(i - j, tkw.cast(zero, tkl.i64))
+            idx = tkw.broadcast(idx, target_shape=[B, M, K2])
+
+            mm = tkw.broadcast(m, target_shape=[B, M, K2])
+
+            idx = tkw.cast(idx, tkl.f32) * mm
+
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
+
+            x_j = x_j + idx
 
             ####################################################################
             # T5 RPE

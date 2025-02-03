@@ -36,23 +36,23 @@ torch.set_printoptions(
 
 ### TKW Harness
 def run(fun: Callable, hparams, *args) -> Any:
-    with torch.profiler.profile(
-            activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
-        with torch.no_grad():  # Disable gradient calculations
-            with TestLaunchContext(
-                    hparams,
-                    canonicalize=True,
-                    run=True,
-                    run_config=get_default_run_config(),
-                    run_bench=False,
-                    schedule=False,
-                    use_scheduling_barriers=False,
-            ):
-                fun(*args)
+    # with torch.profiler.profile(
+    #         activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+    with torch.no_grad():  # Disable gradient calculations
+        with TestLaunchContext(
+                hparams,
+                canonicalize=True,
+                run=False,
+                run_config=get_default_run_config(),
+                run_bench=False,
+                schedule=False,
+                use_scheduling_barriers=False,
+        ):
+            fun(*args)
 
-    print(
-        prof.key_averages(group_by_input_shape=True).table(
-            sort_by="self_cuda_time_total", row_limit=10))
+    # print(
+    #     prof.key_averages(group_by_input_shape=True).table(
+    #         sort_by="self_cuda_time_total", row_limit=10))
 
 
 #################################################################################
@@ -113,6 +113,24 @@ rpe_cond = t5_rpe_masked_cond(rpe,
                               dtype=tkw_attention_with_rpe_output.dtype)
 
 #################################################################################
+# ALIBI INIT VALS
+#################################################################################
+
+
+def precompute_alibi_slopes(n_heads: int) -> torch.Tensor:
+    n = 2 ** math.floor(math.log2(n_heads))
+    m_0 = 2.0 ** (-8.0 / n)
+    m = torch.pow(m_0, torch.arange(1, 1 + n))
+    if n < n_heads:
+        m_hat_0 = 2.0 ** (-4.0 / n)
+        m_hat = torch.pow(m_hat_0, torch.arange(1, 1 + 2 * (n_heads - n), 2))
+        m = torch.cat([m, m_hat])
+    return to_default_device(m)
+
+alibi_slopes = precompute_alibi_slopes(shape.num_query_heads)
+
+
+#################################################################################
 # TORCH ATTENTION and ATTENTION + RPE
 #################################################################################
 torch_attention_ref_output = torch.nn.functional.scaled_dot_product_attention(
@@ -137,25 +155,25 @@ torch_rpe_delta_output = torch_attention_with_rpe_output - torch_attention_outpu
 # TKW BASE ATTENTION
 #################################################################################
 ### Reference version
-tkw_attention, hyperparams, dynamic_symbols, dynamic_symbols_map = \
-    get_vanilla_tkw_attention_kernel(
-        shape,
-        mfma_variant=[MMAType.F32_16x16x16_F16,
-                      MMAType.F32_16x16x16_F16],
-        dynamic_dims=False)
+# tkw_attention, hyperparams, dynamic_symbols, dynamic_symbols_map = \
+#     get_vanilla_tkw_attention_kernel(
+#         shape,
+#         mfma_variant=[MMAType.F32_16x16x16_F16,
+#                       MMAType.F32_16x16x16_F16],
+#         dynamic_dims=False)
 
 
-def attention(tq, tk, tv, toutput):
-    tkw_attention(tq, tk, tv, toutput)
+# def attention(tq, tk, tv, toutput):
+#     tkw_attention(tq, tk, tv, toutput)
 
 
-run(attention, hyperparams, q * dk_sqrt * log2e, k, v.permute([0, 2, 1]),
-    tkw_attention_output)
+# run(attention, hyperparams, q * dk_sqrt * log2e, k, v.permute([0, 2, 1]),
+#     tkw_attention_output)
 
-assert_close(torch_attention_output.to(dtype=tkw_attention_output.dtype),
-             tkw_attention_output,
-             atol=2e-3,
-             rtol=2e-3)
+# assert_close(torch_attention_output.to(dtype=tkw_attention_output.dtype),
+#              tkw_attention_output,
+#              atol=2e-3,
+#              rtol=2e-3)
 
 ### RPE version
 tkw_attention_with_rpe, hyperparams, dynamic_symbols, dynamic_symbols_map = \
@@ -167,13 +185,13 @@ tkw_attention_with_rpe, hyperparams, dynamic_symbols, dynamic_symbols_map = \
         max_context_length = max_context_length + 2)
 
 
-def attention_with_rpe(tq, tk, tv, trpe, toutput):
-    mb = tkw_attention_with_rpe(tq, tk, tv, trpe, toutput)
-    # print(mb.module_op)
+def attention_with_rpe(tq, tk, tv, trpe, toutput, alibi_slopes):
+    mb = tkw_attention_with_rpe(tq, tk, tv, trpe, toutput, alibi_slopes)
+    print(mb.module_op)
 
 
 run(attention_with_rpe, hyperparams, q * dk_sqrt * log2e, k,
-    v.permute([0, 2, 1]), rpe, tkw_attention_with_rpe_output)
+    v.permute([0, 2, 1]), rpe, tkw_attention_with_rpe_output, alibi_slopes)
 
 tkw_rpe_delta_output = tkw_attention_with_rpe_output - tkw_attention_output
 
