@@ -25,6 +25,7 @@ from ..ops.wave_ops import (
 from .constraints import (
     Constraint,
     HardwareConstraint,
+    TilingConstraint,
     WorkgroupConstraint,
 )
 from .assumptions import Assumption
@@ -477,6 +478,12 @@ def set_thread_independent_index(
         index_seq = None
         for constraint in constraints:
             if constraint.dim == dim:
+                # If the constraint is a tiling constraint, and the node
+                # is outside a reduction, we don't apply the constraint.
+                if isinstance(constraint, TilingConstraint):
+                    if not hasattr(custom.graph, "parent_op"):
+                        continue
+
                 if index_seq is None:
                     index_seq = constraint.apply()
                 else:

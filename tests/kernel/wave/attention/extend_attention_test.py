@@ -140,18 +140,20 @@ def create_inputs(
     H_KV = shape.num_kv_heads
     H_Q = shape.num_query_heads
     D = shape.head_size
-
-    b_seq_len_prefix = torch.randint(
-        1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
-    )
-    # TODO: Make this work for values != 64.
-    b_seq_len_prefix[0] = 64
-    b_seq_len_prefix[1] = 64
-    b_seq_len_extend = torch.randint(
-        1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
-    )
-    b_seq_len_extend[0] = 128
-    b_seq_len_extend[1] = 256
+    # TODO: Enable when we have proper masking for attention.
+    # b_seq_len_prefix = torch.randint(
+    #     1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
+    # )
+    b_seq_len_prefix = torch.empty((B,), dtype=torch.int32, device="cuda")
+    for i in range(B):
+        b_seq_len_prefix[i] = shape.block_size * (i + 1)
+    # TODO: Enable when we have proper masking for attention.
+    # b_seq_len_extend = torch.randint(
+    #     1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
+    # )
+    b_seq_len_extend = torch.empty((B,), dtype=torch.int32, device="cuda")
+    for i in range(B):
+        b_seq_len_extend[i] = shape.block_size * (i + 2)
     b_seq_len = b_seq_len_prefix + b_seq_len_extend
     max_len_in_batch = torch.max(b_seq_len, 0)[0].item()
 
@@ -286,14 +288,6 @@ def testExtendAttention(
 
     log2e = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
-    (prefill_attention, hyperparams) = get_prefill_attention_kernel(
-        shape,
-        mfma_variant,
-        q_extend.shape,
-        k_extend.shape,
-        v_extend.permute(1, 2, 0).shape,
-        output.shape,
-    )
 
     with tk.gen.TestLaunchContext(
         hyperparams,
@@ -306,7 +300,6 @@ def testExtendAttention(
     ):
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
-        oseq = torch.zeros_like(b_seq_len)
         mb_qk = extend_attention(
             q_extend * dk_sqrt * log2e,
             k_extend,

@@ -1192,6 +1192,7 @@ def test_extend_attention():
         head_size_kv=64,
         num_seqs=2,
         max_seq_len=32,
+        block_size=64,
     )
     total_token_num = 12189
     extend_token_num = 3198
@@ -1252,9 +1253,8 @@ def test_extend_attention():
         )
 
         # CHECK-LABEL:       func.func @extend_attention
-        # CHECK-COUNT-4:        vector.maskedload
+        # CHECK-COUNT-5:        vector.maskedload
         # CHECK:                scf.for
-        # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.store
         # CHECK-COUNT-1:            vector.maskedload
@@ -1262,7 +1262,6 @@ def test_extend_attention():
         # CHECK-COUNT-16:           vector.load
         # CHECK-COUNT-16:           amdgpu.mfma
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-16:           vector.maskedload
         # CHECK-COUNT-16:           amdgpu.mfma
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                scf.for
