@@ -1628,6 +1628,83 @@ def test_binary_lowerings():
         # CHECK: %[[DIV:.+]] = arith.divf %[[MUL]]
 
 
+@run_test
+def test_int_comparisons():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    @tkw.wave(constraints)
+    def cmp_lowerings(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=4)
+        b_reg = tkw.read(b, elements_per_thread=4)
+        sgt = tkw.sgt(a_reg, b_reg)
+        s1 = tkw.select(sgt, a_reg, b_reg)
+        slt = tkw.slt(a_reg, b_reg)
+        s2 = tkw.select(slt, a_reg, b_reg)
+        sge = tkw.sge(s1, s2)
+        s3 = tkw.select(sge, s1, s2)
+        sle = tkw.sle(s1, s2)
+        s4 = tkw.select(sle, s1, s2)
+        res = s1 + s2 + s3 + s4
+        tkw.write(res, a, elements_per_thread=4)
+
+    a = torch.randint(42, (16, 16), dtype=torch.int32)
+    b = torch.randint(42, (16, 16), dtype=torch.int32)
+    with codegen_test_context():
+        print(cmp_lowerings(a, b).module_op)
+        # CHECK-LABEL: @cmp_lowerings
+        # CHECK: arith.cmpi sgt
+        # CHECK: arith.select
+        # CHECK: arith.cmpi slt
+        # CHECK: arith.select
+        # CHECK: arith.cmpi sge
+        # CHECK: arith.select
+
+
+@run_test
+def test_pow():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    @tkw.wave(constraints)
+    def pow_lowerings(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=4)
+        b_reg = tkw.read(b, elements_per_thread=4)
+        ii = a_reg**a_reg
+        fi = b_reg**a_reg
+        ff = b_reg**b_reg
+        res = tkw.cast(ii, tkl.f32) + fi + ff
+        tkw.write(res, b, elements_per_thread=4)
+
+    a = torch.randint(42, (16, 16), dtype=torch.int32)
+    b = torch.randn(16, 16, dtype=torch.float32)
+    with codegen_test_context():
+        print(pow_lowerings(a, b).module_op)
+        # CHECK-LABEL: @pow_lowerings
+        # CHECK: math.ipowi
+        # CHECK: math.fpowi
+        # CHECK: math.powf
+
 # TODO: Something is broken in codegen and we are getting int in place of fx.Node
 # @launch
 @pytest.mark.skip(reason="getitem: Currently only stub implementation")
