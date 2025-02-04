@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 
 def get_vanilla_attention_kernel(
-    shape: AttentionShape, mfma_variant: MMAType, dynamic_dims: bool
+    shape: AttentionShape, mfma_variant: MMAType, dynamic_dims: bool, is_causal: bool = False
 ):
     # Input sizes
     B = tkl.sym.B
@@ -81,6 +81,9 @@ def get_vanilla_attention_kernel(
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
+        if is_causal:
+            ZEROF = tkl.Register[M, K2, tkl.f32](0.0)
+            MIN_INF = tkl.Register[M, K2, tkl.f32](float("-inf"))
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
@@ -95,6 +98,12 @@ def get_vanilla_attention_kernel(
             k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
+            if is_causal:
+                m_index = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+                m_index = tkw.broadcast(m_index, target_shape=[M, K2])
+                k2_index = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
+                bias = tkw.select(m_index >= k2_index, ZEROF, MIN_INF)
+                x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)

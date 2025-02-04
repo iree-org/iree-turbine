@@ -652,9 +652,9 @@ def handle_self_index(emitter: WaveEmitter, node: fx.Node):
         index_type,
         get_constant_attr(cast_py_literal(emitter, stride), index_type))
     stride_vec = vector_d.splat(vector_index_type, stride_cst)
-    scaled = arith_d.MulIOp(step, stride_vec)
+    scaled = arith_d.muli(step, stride_vec)
     offset = vector_d.splat(vector_index_type, start)
-    shifted = arith_d.AddIOp(scaled, offset)
+    shifted = arith_d.addi(scaled, offset)
     casted_i = arith_d.IndexCastOp(vector_type, shifted).result
 
     emitter.bind_node_proxy(node, IRProxyValue(casted_i))
@@ -1085,41 +1085,6 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 
     register = cast_vector(emitter, register, element_type=IndexType.get())
     emitter.dynamic_dims[symbol] = _to_scalar(register)
-
-
-@handle_op(self_index)
-def handle_self_index(emitter: WaveEmitter, node: fx.Node):
-    try:
-        iterator, dtype, elements_per_thread = node.args
-    except ValueError as e:
-        raise ValidationError("Malformed arguments") from e
-
-    index = get_custom(node).index
-    var = index[iterator]
-    offset = subs_idxc(var.start)
-    size = elements_per_thread * subs_idxc(var.size)
-    stride = subs_idxc(var.stride)
-
-    start = _build_start_indices(emitter, {iterator: var})[0]
-
-    element_type = IrType.parse(dtype.ir_type_asm())
-    index_type = IrType.parse("index")
-    vector_shape = cast_py_literal(emitter, [size])
-
-    vector_index_type = VectorType.get(vector_shape, index_type)
-    vector_type = VectorType.get(vector_shape, element_type)
-
-    step = vector_d.step(vector_index_type)
-    stride_cst = arith_d.ConstantOp(
-        index_type,
-        get_constant_attr(cast_py_literal(emitter, stride), index_type))
-    stride_vec = vector_d.splat(vector_index_type, stride_cst)
-    scaled = arith_d.MulIOp(step, stride_vec)
-    offset = vector_d.splat(vector_index_type, start)
-    shifted = arith_d.AddIOp(scaled, offset)
-    casted_i = arith_d.IndexCastOp(vector_type, shifted).result
-
-    emitter.bind_node_proxy(node, IRProxyValue(casted_i))
 
 
 ###############################################################################
