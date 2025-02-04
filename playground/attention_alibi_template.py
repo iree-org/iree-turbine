@@ -97,10 +97,6 @@ def get_alibi_attention_kernel(
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
         m_reg = tkw.read(m, elements_per_thread=1)
 
-        # b_idx = tkw.self_index(B, tkl.i64, elements_per_thread=1)
-        # m_0 = tkw.apply_expr(b_idx, lambda x: 2.**(-8. / B))
-        # m = m_0**(tkw.cast(b_idx, tkl.f32) + 1.0)
-
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
         @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
@@ -122,16 +118,16 @@ def get_alibi_attention_kernel(
             # to the result of QK product. The triangular matrix is obtained by
             # doing min(i - j, 0).
             i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-            i = tkw.broadcast(i, target_shape=[K2])
+            i = tkw.broadcast(i, target_shape=[M, K2])
             j = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
-            zero = tkl.Register[K2, tkl.i64](0)
+            zero = tkl.Register[M, K2, tkl.i64](0)
             idx = tkw.minimum(j - i, zero)
-            local_m = tkw.broadcast(m_reg, target_shape=[K2])
-            idx = tkw.cast(idx, tkl.f32) * local_m
+            local_m = tkw.broadcast(m_reg, target_shape=[B, M, K2])
+            bias = local_m * tkw.cast(idx, tkl.f32)
 
-            tkw.write(tkw.cast(i, tkl.f32), tmp, elements_per_thread=4)
+            tkw.write(bias, tmp, elements_per_thread=4)
 
-            x_j = x_j + idx
+            x_j = x_j + bias
 
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)

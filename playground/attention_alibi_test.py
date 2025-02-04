@@ -46,10 +46,6 @@ def run(fun: Callable, hparams, *args) -> Any:
             run_bench=False,
             schedule=False,
             use_scheduling_barriers=False,
-            compile_config={
-                "print_ir_before": ["expand_graph"],
-                "print_ir_after": ["expand_graph"],
-            }
         ):
             fun(*args)
 
@@ -80,7 +76,9 @@ k = device_randn(k_shape, dtype=torch.float16)
 v = device_randn(v_shape, dtype=torch.float16)
 tkw_attention_output = device_zeros(o_shape, dtype=torch.float32)
 tkw_attention_alibi_output = device_zeros(o_shape, dtype=torch.float32)
-tkw_tmp = device_zeros((shape.num_query_heads, shape.query_seq_len, shape.kv_seq_len), dtype=torch.float32)
+tkw_tmp = device_zeros(
+    (shape.num_query_heads, shape.query_seq_len, shape.kv_seq_len), dtype=torch.float32
+)
 
 log2e = 1.44269504089
 dk_sqrt = math.sqrt(1.0 / q.shape[-1])
@@ -126,10 +124,10 @@ torch_attention_output = torch.matmul(torch.softmax(a, dim=-1), v)
 # We will test that the delta post-softmax is the same for torch and TKW.
 assert_close(torch_attention_output, torch_attention_ref_output, atol=2e-3, rtol=2e-3)
 
-a += alibi_slopes.unsqueeze(-1).unsqueeze(-1) * get_relative_positions(
+a = a.float() + alibi_slopes.unsqueeze(-1).unsqueeze(-1) * get_relative_positions(
     q_shape[1]
 ).unsqueeze(0)
-torch_attention_alibi_output = torch.matmul(F.softmax(a, dim=-1), v)
+torch_attention_alibi_output = torch.matmul(F.softmax(a, dim=-1).to(torch.float16), v)
 torch_alibi_delta_output = torch_attention_alibi_output - torch_attention_output
 
 
@@ -137,12 +135,15 @@ torch_alibi_delta_output = torch_attention_alibi_output - torch_attention_output
 # TKW BASE ATTENTION
 #################################################################################
 ### Reference version
-tkw_attention, hyperparams, dynamic_symbols, dynamic_symbols_map = (
-    get_vanilla_tkw_attention_kernel(
-        shape,
-        mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
-        dynamic_dims=False,
-    )
+(
+    tkw_attention,
+    hyperparams,
+    dynamic_symbols,
+    dynamic_symbols_map,
+) = get_vanilla_tkw_attention_kernel(
+    shape,
+    mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
+    dynamic_dims=False,
 )
 
 
@@ -167,17 +168,20 @@ assert_close(
 )
 
 ### ALiBi version
-tkw_alibi_attention, hyperparams, dynamic_symbols, dynamic_symbols_map = (
-    get_alibi_attention_kernel(
-        shape,
-        mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
-        dynamic_dims=False,
-    )
+(
+    tkw_alibi_attention,
+    hyperparams,
+    dynamic_symbols,
+    dynamic_symbols_map,
+) = get_alibi_attention_kernel(
+    shape,
+    mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
+    dynamic_dims=False,
 )
 
 
-def attention_alibi(tq, tk, tv, alibi_slopes, toutput, tmp):
-    mb = tkw_alibi_attention(tq, tk, tv, alibi_slopes, toutput, tmp)
+def attention_alibi(*args):
+    mb = tkw_alibi_attention(*args)
     print(mb.module_op)
 
 
@@ -189,15 +193,14 @@ run(
     v.permute([0, 2, 1]),
     alibi_slopes,
     tkw_attention_alibi_output,
-    tkw_tmp
+    tkw_tmp,
 )
 
-ref_tmp = (alibi_slopes.unsqueeze(-1).unsqueeze(-1) * get_relative_positions(
+ref_tmp = alibi_slopes.unsqueeze(-1).unsqueeze(-1) * get_relative_positions(
     q_shape[1]
-).unsqueeze(0))
+).unsqueeze(0)
 
-print(get_relative_positions(q_shape[1]))
-print(tkw_tmp[0])
+assert_close(ref_tmp, tkw_tmp)
 
 tkw_alibi_delta_output = tkw_attention_alibi_output - tkw_attention_output
 
