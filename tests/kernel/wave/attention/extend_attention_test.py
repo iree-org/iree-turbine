@@ -267,10 +267,10 @@ def testExtendAttention(
         mfma_variant,
         q_extend.shape,
         k_extend.shape,
-        v_extend.permute(1, 2, 0).shape,
+        v_extend.shape,
         req_to_tokens.shape,
         k_buffer.shape,
-        v_buffer.permute(1, 2, 0).shape,
+        v_buffer.shape,
         output.shape,
     )
     hyperparams.update(get_default_scheduling_params())
@@ -303,9 +303,9 @@ def testExtendAttention(
         mb_qk = extend_attention(
             q_extend * dk_sqrt * log2e,
             k_extend,
-            v_extend.permute(1, 2, 0),
+            v_extend,
             k_buffer,
-            v_buffer.permute(1, 2, 0),
+            v_buffer,
             req_to_tokens,
             b_req_idx,
             b_seq_len,
