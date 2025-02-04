@@ -1285,22 +1285,66 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
 
 @handle_binary_op(operator.gt)
 def handle_gt(lhs: Value, rhs: Value) -> OpResult:
-    return arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.cmpi(arith_d.CmpFPredicate.OGT, lhs, rhs)
+    elif _is_integer_like_type(element_type) and (
+        element_type.is_signed or element_type.is_signless
+    ):
+        result = arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+        result = arith_d.cmpi(arith_d.CmpIPredicate.ugt, lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for gt: {element_type}")
+    return result
 
 
 @handle_binary_op(operator.ge)
 def handle_ge(lhs: Value, rhs: Value) -> OpResult:
-    return arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs, rhs)
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.cmpi(arith_d.CmpFPredicate.OGE, lhs, rhs)
+    elif _is_integer_like_type(element_type) and (
+        element_type.is_signed or element_type.is_signless
+    ):
+        result = arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs, rhs)
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+        result = arith_d.cmpi(arith_d.CmpIPredicate.uge, lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for ge: {element_type}")
+    return result
 
 
 @handle_binary_op(operator.lt)
 def handle_lt(lhs: Value, rhs: Value) -> OpResult:
-    return arith_d.cmpi(arith_d.CmpIPredicate.slt, lhs, rhs)
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.cmpi(arith_d.CmpFPredicate.OLT, lhs, rhs)
+    elif _is_integer_like_type(element_type) and (
+        element_type.is_signed or element_type.is_signless
+    ):
+        result = arith_d.cmpi(arith_d.CmpIPredicate.slt, lhs, rhs)
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+        result = arith_d.cmpi(arith_d.CmpIPredicate.ult, lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for lt: {element_type}")
+    return result
 
 
 @handle_binary_op(operator.le)
 def handle_le(lhs: Value, rhs: Value) -> OpResult:
-    return arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.cmpi(arith_d.CmpFPredicate.OLE, lhs, rhs)
+    elif _is_integer_like_type(element_type) and (
+        element_type.is_signed or element_type.is_signless
+    ):
+        result = arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+        result = arith_d.cmpi(arith_d.CmpIPredicate.ule, lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for le: {element_type}")
+    return result
 
 
 @handle_binary_op(maximum)
