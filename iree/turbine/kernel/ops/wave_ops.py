@@ -1011,17 +1011,17 @@ class Allocate(CustomOp):
 @define_op("self_index")
 @dataclass
 class SelfIndex(CustomOp):
-    idx: IndexExpr
+    dim: IndexExpr
     dtype: DataType
     elements_per_thread: Optional[IndexExpr | int] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
-        return [self.idx]
+        return [self.dim]
 
     @property
     def type(self) -> "Register":
-        return Register[(self.idx, self.dtype)]
+        return Register[(self.dim, self.dtype)]
 
 
 @define_op("shared_memory_barrier")
@@ -1753,7 +1753,8 @@ class Broadcast(CustomOp, ABC):
             raise ValueError(f"Unexpected broadcast src type of {type(self.arg)}")
 
         # Verifies target broadcast shape is valid.
-        src_shape = set(get_custom(src).type.symbolic_shape)
+        src_type = get_custom(src).type
+        src_shape = set(getattr(src_type, "symbolic_shape", []))
         dst_shape = set(self.target_shape)
         assert src_shape.issubset(
             dst_shape

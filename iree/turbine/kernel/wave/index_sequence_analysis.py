@@ -199,7 +199,10 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
             for dim in custom.index
         }
         if isinstance(custom, SelfIndex):
-            elements_per_thread = custom.index[custom.idx].size
+            # If specified use element_per_thread instead of IndexExpr size.
+            elements_per_thread = (
+                custom.elements_per_thread or custom.index[custom.dim].size
+            )
         else:
             elements_per_thread = subs_idxc(custom.elements_per_thread)
         dim_with_gpr_offsets = [
@@ -282,7 +285,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                     # elements_per_thread to chunk size, else return None.
                     self_index_size = gpr_size if custom.elements_per_thread else None
                     new_node = SelfIndex(
-                        custom.idx, custom.dtype, self_index_size
+                        custom.dim, custom.dtype, self_index_size
                     ).add_to_graph(custom.graph)
 
                 # Update new_node information
