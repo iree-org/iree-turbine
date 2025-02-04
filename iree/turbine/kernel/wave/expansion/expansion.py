@@ -61,6 +61,9 @@ class ExpansionInfo:
     node: CustomOp
     indexed_dims: tuple[tuple[IndexSymbol, int], ...]
 
+    def __repr__(self):
+        return f"ExpansionInfo({self.node.fx_node}, {self.indexed_dims})"
+
 
 class ReductionInfo:
     """
@@ -71,7 +74,16 @@ class ReductionInfo:
         self.reduction = reduction
         self.outputs: dict[int, ExpansionInfo] = {}
         self.init_args: dict[int, ExpansionInfo] = {}
-        self.get_results: dict[int, ExpansionInfo] = {}
+        self.get_results: dict[int, CustomOp] = {}
+
+    def __repr__(self):
+        get_results = {i: c.fx_node for i, c in self.get_results.items()}
+        return (
+            f"ReductionInfo({self.reduction.fx_node},"
+            f"outputs={self.outputs},"
+            f" init_args={self.init_args},"
+            f" get_results={get_results}"
+        )
 
 
 class ExpansionContext:
@@ -231,8 +243,13 @@ def handle_reduction_entry(
         result_index = compute_result_index(dim_query, dim_scaling, inputs[0], outputs)
         custom = get_custom(inputs[0])
         key = ExpansionInfo(custom, get_indexed_dims(dim_query, custom))
-        reduction_context[reduction].outputs[result_index] = key
-        reduction_context[reduction].get_results[result_index] = new_node
+        reduction_info = reduction_context[reduction]
+        assert (
+            result_index not in reduction_info.outputs
+            and result_index not in reduction_info.get_results
+        ), f"{result_index=} has already been computed for {reduction_info}"
+        reduction_info.outputs[result_index] = key
+        reduction_info.get_results[result_index] = new_node
 
 
 def handle_reduction_exit(
@@ -405,7 +422,12 @@ def populate_inputs(
                     node, metadata, dim_scaling, new_nodes_to_expand
                 )
             case ReduceOp():
-                reduction_count = dim_scaling[node.reduction_dim]
+                try:
+                    reduction_count = dim_scaling[node.reduction_dim]
+                except KeyError as e:
+                    raise RuntimeError(
+                        f"Reduction dimension {node.reduction_dim} is not in {dim_scaling} for ReduceOp {node}"
+                    )
                 dim_queries = []
                 for i in range(reduction_count):
                     dim_query = deepcopy(metadata.dim_query)
@@ -467,8 +489,13 @@ def store_fixup_data(
     """
     match node:
         case MMA():
-            if expanded_dims[node.reduction_dim] == 0:
-                return
+            try:
+                if expanded_dims[node.reduction_dim] == 0:
+                    return
+            except KeyError as e:
+                raise RuntimeError(
+                    f"Reduction dim {node.reduction_dim} not in expanded dims {expanded_dims} for {node}"
+                )
 
             def get_dim_query(new_v: int):
                 dims = {
