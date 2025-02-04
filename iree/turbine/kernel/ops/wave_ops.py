@@ -761,7 +761,6 @@ class BinaryOpBase(CustomOp, ABC):
 @define_py_op(operator.sub)
 @define_py_op(operator.mul)
 @define_py_op(operator.truediv)
-@define_py_op(operator.pow)
 @define_interface_op("maximum")
 @define_interface_op("minimum")
 @dataclass

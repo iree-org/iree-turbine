@@ -56,7 +56,7 @@ LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
 STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
 
-# @run_test
+@run_test
 def test_evoformer():
     # B, BN, K2, H, K1, M, N
     shape = (1, 256, 256, 4, 32, 256, 32)
@@ -236,7 +236,7 @@ def test_evoformer():
 # The reason why we can't set K1 to be dynamic is because K1 is the
 # tile size we use for expanding the K1 MMA. We could set K1 to be
 # dynamic if we tiled the K1 dimension with a tile size of BLOCK_K1.
-# @run_test
+@run_test
 def test_dynamic_attention_pipelined():
     shape = (8, 128, 128, 64, 256)
     # Expose user-constraints
@@ -376,7 +376,7 @@ def test_dynamic_attention_pipelined():
         # CHECK-COUNT-16:       vector.maskedstore {{.*}}
 
 
-# @run_test
+@run_test
 def test_attention_pipelined():
     shape = (8, 128, 128, 64, 256)
     # Expose user-constraints
@@ -502,7 +502,7 @@ def test_attention_pipelined():
         # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
 
 
-# @run_test
+@run_test
 def test_flash_decoding():
     shape = (8, 128, 128, 64, 256)
     mfma_variant = tkw.MMAType.F32_16x16x16_F16
@@ -584,7 +584,7 @@ def test_flash_decoding():
     # CHECK-COUNT-1:      vector.scatter
 
 
-# @run_test
+@run_test
 def test_attention_32x32x8():
     shape = (8, 128, 128, 64, 256)
     # Expose user-constraints
@@ -721,7 +721,7 @@ def test_attention_32x32x8():
         # CHECK-COUNT-4:            vector.store {{.*}}: memref<8x128x128xf32{{.*}}>, vector<4xf32>
 
 
-# @run_test
+@run_test
 def test_dynamic_attention_32x32x8():
     shape = (8, 128, 128, 64, 256)
     # Expose user-constraints
@@ -859,7 +859,7 @@ def test_dynamic_attention_32x32x8():
         # CHECK-COUNT-3:        vector.maskedstore {{.*}} : memref<?x?x?xf32, strided<[?, ?, 1], offset: ?>>, vector<4xi1>, vector<4xf32>
 
 
-# @run_test
+@run_test
 def test_attention():
     shape = AttentionShape(
         num_query_heads=8,
@@ -913,7 +913,7 @@ def test_attention():
         # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
 
 
-# @run_test
+@run_test
 def test_attention_bias():
     shape = (8, 128, 128, 64, 256)
     # Expose user-constraints
@@ -1037,7 +1037,7 @@ def test_attention_bias():
         # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
 
 
-# @run_test
+@run_test
 def test_paged_flash_decoding():
     shape = paged_decode_attention_shape(
         num_query_heads=128,

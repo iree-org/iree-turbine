@@ -1252,24 +1252,6 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
     return result
 
 
-@handle_binary_op(operator.pow)
-def handle_pow(lhs: Value, rhs: Value) -> OpResult:
-    lhs_element_type = get_type_or_element_type(lhs.type)
-    rhs_element_type = get_type_or_element_type(rhs.type)
-    if _is_integer_like_type(rhs_element_type):
-        if _is_integer_like_type(lhs_element_type):
-            result = math_d.ipowi(lhs, rhs)
-        elif _is_float_type(lhs_element_type):
-            result = math_d.fpowi(lhs, rhs)
-        else:
-            raise ValidationError(f"Unhandled LHS type for pow: {lhs_element_type}")
-    elif _is_float_type(rhs_element_type):
-        result = math_d.powf(lhs, rhs)
-    else:
-        raise ValidationError(f"Unhandled RHS type for pow: {rhs_element_type}")
-    return result
-
-
 @handle_binary_op(sgt)
 def handle_sgt(lhs: Value, rhs: Value) -> OpResult:
     return arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)

@@ -1673,40 +1673,6 @@ def test_int_comparisons():
         # CHECK: arith.select
 
 
-@run_test
-def test_pow():
-    constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
-    ]
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
-
-    @tkw.wave(constraints)
-    def pow_lowerings(
-        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
-        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
-    ):
-        a_reg = tkw.read(a, elements_per_thread=4)
-        b_reg = tkw.read(b, elements_per_thread=4)
-        ii = a_reg**a_reg
-        fi = b_reg**a_reg
-        ff = b_reg**b_reg
-        res = tkw.cast(ii, tkl.f32) + fi + ff
-        tkw.write(res, b, elements_per_thread=4)
-
-    a = torch.randint(42, (16, 16), dtype=torch.int32)
-    b = torch.randn(16, 16, dtype=torch.float32)
-    with codegen_test_context():
-        print(pow_lowerings(a, b).module_op)
-        # CHECK-LABEL: @pow_lowerings
-        # CHECK: math.ipowi
-        # CHECK: math.fpowi
-        # CHECK: math.powf
-
 # TODO: Something is broken in codegen and we are getting int in place of fx.Node
 # @launch
 @pytest.mark.skip(reason="getitem: Currently only stub implementation")

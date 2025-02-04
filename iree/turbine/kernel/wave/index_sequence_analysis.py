@@ -337,14 +337,12 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
     """
     Verify that all the valid nodes have their index and vector shapes set.
     """
-    # TODO: don't disable verification!
-    return
     nodes = trace.walk(lambda x: x)
     for node in nodes:
         custom = get_custom(node)
-        if isinstance(
-                custom,
-            (Placeholder, Allocate)) and not isinstance(custom, IterArg):
+        if isinstance(custom, (Placeholder, Allocate)) and not isinstance(
+            custom, IterArg
+        ):
             continue
         if isinstance(custom, (Output, NestedRegionOp)):
             continue
@@ -353,14 +351,12 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
             update_vector_shapes = [
-                dim for dim in custom.index
-                if dim in hw_constraint.vector_shapes
+                dim for dim in custom.index if dim in hw_constraint.vector_shapes
             ]
             if update_vector_shapes:
                 custom.vector_shapes = {}
                 for dim in update_vector_shapes:
-                    custom.vector_shapes[dim] = hw_constraint.vector_shapes[
-                        dim]
+                    custom.vector_shapes[dim] = hw_constraint.vector_shapes[dim]
         assert custom.vector_shapes, f"Vector shapes not set for node {custom.fx_node}"
 
 
