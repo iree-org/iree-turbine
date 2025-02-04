@@ -418,6 +418,9 @@ class IndexSequence:
             return value.subs(map)
         return value
 
+    def __hash__(self):
+        return hash((self.start))
+
     def subs(self, map: dict[IndexExpr, IndexExpr]):
         start = self._subs(self.start, map)
         size = self._subs(self.size, map)
