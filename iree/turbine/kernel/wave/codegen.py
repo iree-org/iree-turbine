@@ -65,6 +65,7 @@ from ..ops.wave_ops import (
     get_result,
     log2,
     maximum,
+    minimum,
     mma,
     permute,
     read,
@@ -1218,6 +1219,24 @@ def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
     else:
         raise ValidationError(
             f"Found unhandled operand type for maximum: {element_type}"
+        )
+    return result
+
+
+@handle_binary_op(minimum)
+def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.minimumf(lhs, rhs)
+    elif _is_integer_like_type(element_type) and (
+        element_type.is_signed() or element_type.is_signless()
+    ):
+        result = arith_d.minsi(lhs, rhs)
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+        result = arith_d.minui(lhs, rhs)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for minimum: {element_type}"
         )
     return result
 
