@@ -694,6 +694,35 @@ def handle_allocate(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxy(node, IRProxyValue(alloc))
 
 
+def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
+    if isinstance(i, IndexSequence):
+        i = i.start
+
+    return i
+
+
+def _get_start_indices(
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+) -> list[IndexExpr]:
+    start_indices = []
+    for dim_indexing in src_indices:
+        i = _get_start_index(src_indices[dim_indexing])
+        start_indices.append(i)
+
+    return start_indices
+
+
+def _build_start_indices(
+    emitter: WaveEmitter,
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
+    dynamic_values: dict[IndexExpr, Any] = {},
+) -> list[OpResult]:
+    return [
+        gen_sympy_index(add_emitter_subs(emitter, dynamic_values), i)
+        for i in _get_start_indices(src_indices)
+    ]
+
+
 def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
     """
     This function takes in indices of a Node, extract their sizes
@@ -972,8 +1001,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
 
     assert (
         tuple(insert_type.shape) == vector_shape
-    ), f"Shape doesn't match: {tuple(insert_type.shape)} and {(vector_shape)}" + \
-    f" in register {register} and elements_per_thread {elements_per_thread}"
+    ), f"Shape doesn't match: {tuple(insert_type.shape)} and {(vector_shape)}"
 
     if not hasattr(node, "index"):
         raise ValidationError("codegen expected write to have index attr.")
@@ -1015,6 +1043,9 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         else:
             vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
 
+###############################################################################
+# Expressions, Dims and Indexing related ops
+###############################################################################
 
 @handle_op(apply_expr)
 def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
@@ -1054,6 +1085,41 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 
     register = cast_vector(emitter, register, element_type=IndexType.get())
     emitter.dynamic_dims[symbol] = _to_scalar(register)
+
+
+@handle_op(self_index)
+def handle_self_index(emitter: WaveEmitter, node: fx.Node):
+    try:
+        iterator, dtype, elements_per_thread = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    index = get_custom(node).index
+    var = index[iterator]
+    offset = subs_idxc(var.start)
+    size = elements_per_thread * subs_idxc(var.size)
+    stride = subs_idxc(var.stride)
+
+    start = _build_start_indices(emitter, {iterator: var})[0]
+
+    element_type = IrType.parse(dtype.ir_type_asm())
+    index_type = IrType.parse("index")
+    vector_shape = cast_py_literal(emitter, [size])
+
+    vector_index_type = VectorType.get(vector_shape, index_type)
+    vector_type = VectorType.get(vector_shape, element_type)
+
+    step = vector_d.step(vector_index_type)
+    stride_cst = arith_d.ConstantOp(
+        index_type,
+        get_constant_attr(cast_py_literal(emitter, stride), index_type))
+    stride_vec = vector_d.splat(vector_index_type, stride_cst)
+    scaled = arith_d.MulIOp(step, stride_vec)
+    offset = vector_d.splat(vector_index_type, start)
+    shifted = arith_d.AddIOp(scaled, offset)
+    casted_i = arith_d.IndexCastOp(vector_type, shifted).result
+
+    emitter.bind_node_proxy(node, IRProxyValue(casted_i))
 
 
 ###############################################################################
@@ -1596,8 +1662,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
 
     # Get thread_shape/size for broadcast.
-    get_thread_shape = lambda index: max(
-        subs_idxc(x.size) for x in index.values())
+    get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
 
     bcast_dim_lane_dim_size = get_thread_shape(node.index)
 
@@ -1606,8 +1671,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     vector_type = vector_src.type
     # Only support broadcasting vector<1xdtype> for now.
     if not VectorType.isinstance(vector_type):
-        raise NotImplementedError(
-            "Scalar src is not implemented yet for shuffleOp.")
+        raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
     assert vector_type.rank == 0 or vector_type.rank == 1, \
         f"expected vector_type.rank == 1 but got {vector_type}"
 
