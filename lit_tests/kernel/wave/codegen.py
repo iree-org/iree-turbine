@@ -1649,13 +1649,13 @@ def test_int_comparisons():
     ):
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
-        sgt = tkw.sgt(a_reg, b_reg)
+        sgt = a_reg > b_reg
         s1 = tkw.select(sgt, a_reg, b_reg)
-        slt = tkw.slt(a_reg, b_reg)
+        slt = a_reg < b_reg
         s2 = tkw.select(slt, a_reg, b_reg)
-        sge = tkw.sge(s1, s2)
+        sge = s1 >= s2
         s3 = tkw.select(sge, s1, s2)
-        sle = tkw.sle(s1, s2)
+        sle = s1 <= s2
         s4 = tkw.select(sle, s1, s2)
         res = s1 + s2 + s3 + s4
         tkw.write(res, a, elements_per_thread=4)

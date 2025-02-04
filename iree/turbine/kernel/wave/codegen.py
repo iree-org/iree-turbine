@@ -82,12 +82,8 @@ from ..ops.wave_ops import (
     self_index,
     select,
     set_symbol,
-    sge,
-    sgt,
     shared_memory_barrier,
     shuffle,
-    sle,
-    slt,
     tanh,
     write,
 )
@@ -1252,23 +1248,23 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
     return result
 
 
-@handle_binary_op(sgt)
-def handle_sgt(lhs: Value, rhs: Value) -> OpResult:
+@handle_binary_op(operator.gt)
+def handle_gt(lhs: Value, rhs: Value) -> OpResult:
     return arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)
 
 
-@handle_binary_op(sge)
-def handle_sge(lhs: Value, rhs: Value) -> OpResult:
+@handle_binary_op(operator.ge)
+def handle_ge(lhs: Value, rhs: Value) -> OpResult:
     return arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs, rhs)
 
 
-@handle_binary_op(slt)
-def handle_slt(lhs: Value, rhs: Value) -> OpResult:
+@handle_binary_op(operator.lt)
+def handle_lt(lhs: Value, rhs: Value) -> OpResult:
     return arith_d.cmpi(arith_d.CmpIPredicate.slt, lhs, rhs)
 
 
-@handle_binary_op(sle)
-def handle_sle(lhs: Value, rhs: Value) -> OpResult:
+@handle_binary_op(operator.le)
+def handle_le(lhs: Value, rhs: Value) -> OpResult:
     return arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
 
 
