@@ -75,6 +75,7 @@ from ..ops.wave_ops import (
     reshape,
     scheduling_barrier,
     scheduling_group_barrier,
+    self_index,
     set_symbol,
     shared_memory_barrier,
     shuffle,
@@ -591,6 +592,69 @@ def handle_op(op: Callable[..., Any]):
 ###############################################################################
 
 
+def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
+    if isinstance(i, IndexSequence):
+        i = i.start
+
+    return i
+
+
+def _get_start_indices(
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+) -> list[IndexExpr]:
+    start_indices = []
+    for dim_indexing in src_indices:
+        i = _get_start_index(src_indices[dim_indexing])
+        start_indices.append(i)
+
+    return start_indices
+
+
+def _build_start_indices(
+    emitter: WaveEmitter,
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
+    dynamic_values: dict[IndexExpr, Any] = {},
+) -> list[OpResult]:
+    return [
+        gen_sympy_index(add_emitter_subs(emitter, dynamic_values), i)
+        for i in _get_start_indices(src_indices)
+    ]
+
+@handle_op(self_index)
+def handle_self_index(emitter: WaveEmitter, node: fx.Node):
+    try:
+        iterator, dtype, elements_per_thread = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    index = get_custom(node).index
+    var = index[iterator]
+    offset = subs_idxc(var.start)
+    size = elements_per_thread * subs_idxc(var.size)
+    stride = subs_idxc(var.stride)
+
+    start = _build_start_indices(emitter, {iterator: var})[0]
+
+    element_type = IrType.parse(dtype.ir_type_asm())
+    index_type = IrType.parse("index")
+    vector_shape = cast_py_literal(emitter, [size])
+
+    vector_index_type = VectorType.get(vector_shape, index_type)
+    vector_type = VectorType.get(vector_shape, element_type)
+
+    step = vector_d.step(vector_index_type)
+    stride_cst = arith_d.ConstantOp(
+        index_type,
+        get_constant_attr(cast_py_literal(emitter, stride), index_type))
+    stride_vec = vector_d.splat(vector_index_type, stride_cst)
+    scaled = arith_d.MulIOp(step, stride_vec)
+    offset = vector_d.splat(vector_index_type, start)
+    shifted = arith_d.AddIOp(scaled, offset)
+    casted_i = arith_d.IndexCastOp(vector_type, shifted).result
+
+    emitter.bind_node_proxy(node, IRProxyValue(casted_i))
+
+
 @handle_op(register)
 def handle_register(emitter: WaveEmitter, node: fx.Node):
     try:
@@ -623,35 +687,6 @@ def handle_allocate(emitter: WaveEmitter, node: fx.Node):
     memref_type = MemRefType.get(memref_shape, element_type, None, address_space)
     alloc = memref_d.alloc(memref_type, [], [])
     emitter.bind_node_proxy(node, IRProxyValue(alloc))
-
-
-def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
-    if isinstance(i, IndexSequence):
-        i = i.start
-
-    return i
-
-
-def _get_start_indices(
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
-) -> list[IndexExpr]:
-    start_indices = []
-    for dim_indexing in src_indices:
-        i = _get_start_index(src_indices[dim_indexing])
-        start_indices.append(i)
-
-    return start_indices
-
-
-def _build_start_indices(
-    emitter: WaveEmitter,
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
-    dynamic_values: dict[IndexExpr, Any] = {},
-) -> list[OpResult]:
-    return [
-        gen_sympy_index(add_emitter_subs(emitter, dynamic_values), i)
-        for i in _get_start_indices(src_indices)
-    ]
 
 
 def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
@@ -932,7 +967,8 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
 
     assert (
         tuple(insert_type.shape) == vector_shape
-    ), f"Shape doesn't match: {tuple(insert_type.shape)} and {(vector_shape)}"
+    ), f"Shape doesn't match: {tuple(insert_type.shape)} and {(vector_shape)}" + \
+    f" in register {register} and elements_per_thread {elements_per_thread}"
 
     if not hasattr(node, "index"):
         raise ValidationError("codegen expected write to have index attr.")
@@ -1142,7 +1178,9 @@ def handle_binary_op(op):
             rhs = cast_py_value(emitter, rhs)
 
             if lhs.ir_value.type != rhs.ir_value.type:
-                raise ValidationError("Expected lhs and rhs to have same type.")
+                raise ValidationError(
+                    "Expected lhs and rhs to have same type."
+                    f" Got: {lhs.ir_value.type} vs {rhs.ir_value.type}")
 
             lhs = lhs.ir_value
             rhs = rhs.ir_value
@@ -1544,7 +1582,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     if not VectorType.isinstance(vector_type):
         raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
     assert vector_type.rank == 1
-    assert vector_type.shape[0] == 1
+    assert vector_type.shape[0] == 1, f"expected vector_type.shape[0] == 1 but got {vector_type}"
 
     # Extract and Splat
     # If by chance broadcast size  matches current size, we can return src.
