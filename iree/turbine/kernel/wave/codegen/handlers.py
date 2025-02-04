@@ -54,6 +54,7 @@ from iree.turbine.kernel.lang.global_symbols import *
 from ...ops.wave_ops import (
     abs,
     allocate,
+    and_op,
     apply_expr,
     broadcast,
     cast,
@@ -523,6 +524,17 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
     return result
 
 
+@handle_binary_op(and_op)
+def handle_and_op(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_integer_like_type(element_type):
+        result = arith_d.andi(lhs, rhs)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for le: {element_type}")
+    return result
+
+
 @handle_binary_op(maximum)
 def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
@@ -553,7 +565,6 @@ def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
             f"Found unhandled operand type for minimum: {element_type}"
         )
     return result
-
 
 ###############################################################################
 # Unary math Ops
