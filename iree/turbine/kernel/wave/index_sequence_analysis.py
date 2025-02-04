@@ -278,9 +278,11 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         _write_dependency=custom._write_dependency,
                     ).add_to_graph(custom.graph)
                 elif isinstance(custom, SelfIndex):
-                    # TODO: Add support on how to handle strided reads.
+                    # iff elements_per_thread is specified, we update
+                    # elements_per_thread to chunk size, else return None.
+                    self_index_size = gpr_size if custom.elements_per_thread else None
                     new_node = SelfIndex(
-                        custom.idx, custom.dtype, custom.elements_per_thread
+                        custom.idx, custom.dtype, self_index_size
                     ).add_to_graph(custom.graph)
 
                 # Update new_node information

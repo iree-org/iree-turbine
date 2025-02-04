@@ -597,70 +597,6 @@ def handle_op(op: Callable[..., Any]):
 ###############################################################################
 
 
-def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
-    if isinstance(i, IndexSequence):
-        i = i.start
-
-    return i
-
-
-def _get_start_indices(
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
-) -> list[IndexExpr]:
-    start_indices = []
-    for dim_indexing in src_indices:
-        i = _get_start_index(src_indices[dim_indexing])
-        start_indices.append(i)
-
-    return start_indices
-
-
-def _build_start_indices(
-    emitter: WaveEmitter,
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
-    dynamic_values: dict[IndexExpr, Any] = {},
-) -> list[OpResult]:
-    return [
-        gen_sympy_index(add_emitter_subs(emitter, dynamic_values), i)
-        for i in _get_start_indices(src_indices)
-    ]
-
-
-@handle_op(self_index)
-def handle_self_index(emitter: WaveEmitter, node: fx.Node):
-    try:
-        iterator, dtype, elements_per_thread = node.args
-    except ValueError as e:
-        raise ValidationError("Malformed arguments") from e
-
-    index = get_custom(node).index
-    var = index[iterator]
-    offset = subs_idxc(var.start)
-    size = elements_per_thread * subs_idxc(var.size)
-    stride = subs_idxc(var.stride)
-
-    start = _build_start_indices(emitter, {iterator: var})[0]
-
-    element_type = IrType.parse(dtype.ir_type_asm())
-    index_type = IrType.parse("index")
-    vector_shape = cast_py_literal(emitter, [size])
-
-    vector_index_type = VectorType.get(vector_shape, index_type)
-    vector_type = VectorType.get(vector_shape, element_type)
-
-    step = vector_d.step(vector_index_type)
-    stride_cst = arith_d.ConstantOp(
-        index_type, get_constant_attr(cast_py_literal(emitter, stride), index_type)
-    )
-    stride_vec = vector_d.splat(vector_index_type, stride_cst)
-    scaled = arith_d.muli(step, stride_vec)
-    offset = vector_d.splat(vector_index_type, start)
-    shifted = arith_d.addi(scaled, offset)
-    casted_i = arith_d.IndexCastOp(vector_type, shifted).result
-
-    emitter.bind_node_proxy(node, IRProxyValue(casted_i))
-
-
 @handle_op(register)
 def handle_register(emitter: WaveEmitter, node: fx.Node):
     try:
@@ -1050,6 +986,41 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
+@handle_op(self_index)
+def handle_self_index(emitter: WaveEmitter, node: fx.Node):
+    try:
+        iterator, dtype, elements_per_thread = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    index = get_custom(node).index
+    var = index[iterator]
+    offset = subs_idxc(var.start)
+    size = elements_per_thread or subs_idxc(var.size)
+    stride = subs_idxc(var.stride)
+
+    start = _build_start_indices(emitter, {iterator: var})[0]
+
+    element_type = IrType.parse(dtype.ir_type_asm())
+    index_type = IrType.parse("index")
+    vector_shape = cast_py_literal(emitter, [size])
+
+    vector_index_type = VectorType.get(vector_shape, index_type)
+    vector_type = VectorType.get(vector_shape, element_type)
+
+    step = vector_d.step(vector_index_type)
+    stride_cst = arith_d.ConstantOp(
+        index_type, get_constant_attr(cast_py_literal(emitter, stride), index_type)
+    )
+    stride_vec = vector_d.splat(vector_index_type, stride_cst)
+    scaled = arith_d.muli(step, stride_vec)
+    offset = vector_d.splat(vector_index_type, start)
+    shifted = arith_d.addi(scaled, offset)
+    casted_i = arith_d.index_cast(vector_type, shifted)
+
+    emitter.bind_node_proxy(node, IRProxyValue(casted_i))
+
+
 @handle_op(apply_expr)
 def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
     try:
@@ -1276,7 +1247,7 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.divsi(lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.divui(lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for div: {element_type}")
@@ -1292,7 +1263,7 @@ def handle_gt(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.cmpi(arith_d.CmpIPredicate.ugt, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for gt: {element_type}")
@@ -1308,7 +1279,7 @@ def handle_ge(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.cmpi(arith_d.CmpIPredicate.uge, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for ge: {element_type}")
@@ -1324,7 +1295,7 @@ def handle_lt(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.slt, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.cmpi(arith_d.CmpIPredicate.ult, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for lt: {element_type}")
@@ -1340,7 +1311,7 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.cmpi(arith_d.CmpIPredicate.ule, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for le: {element_type}")
@@ -1356,7 +1327,7 @@ def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.maxsi(lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.maxui(lhs, rhs)
     else:
         raise ValidationError(
@@ -1374,7 +1345,7 @@ def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed() or element_type.is_signless()
     ):
         result = arith_d.minsi(lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.minui(lhs, rhs)
     else:
         raise ValidationError(

@@ -1013,7 +1013,7 @@ class Allocate(CustomOp):
 class SelfIndex(CustomOp):
     idx: IndexExpr
     dtype: DataType
-    elements_per_thread: Optional[IndexExpr | int]
+    elements_per_thread: Optional[IndexExpr | int] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -1740,6 +1740,24 @@ class Broadcast(CustomOp, ABC):
 
     arg: fx.Node
     target_shape: Sequence[IndexSymbol] = None
+
+    def __post_init__(self):
+        # Required for setting up hash.
+        super().__post_init__()
+        # Verify for valid src type.
+        if isinstance(self.arg, fx.Node):
+            src = self.arg
+        elif isinstance(self.arg, fx.Proxy):
+            src = self.arg.node
+        else:
+            raise ValueError(f"Unexpected broadcast src type of {type(self.arg)}")
+
+        # Verifies target broadcast shape is valid.
+        src_shape = set(get_custom(src).type.symbolic_shape)
+        dst_shape = set(self.target_shape)
+        assert src_shape.issubset(
+            dst_shape
+        ), "Fail to initialize broadcast because of invalid target_shape."
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

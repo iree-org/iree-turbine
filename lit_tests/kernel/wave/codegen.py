@@ -235,9 +235,9 @@ def test_read_write_diagonal():
     ):
         ZEROF = tkl.Register[M, N, tkl.f16](0.0)
         ONEF = tkl.Register[M, N, tkl.f16](1.0)
-        m_index = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+        m_index = tkw.self_index(M, tkl.i64)
         m_index = tkw.broadcast(m_index, target_shape=[M, N])
-        n_index = tkw.self_index(N, tkl.i64, elements_per_thread=1)
+        n_index = tkw.self_index(N, tkl.i64)
         res = tkw.select(m_index >= n_index, ZEROF, ONEF)
         tkw.write(res, c, elements_per_thread=16)
 

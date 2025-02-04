@@ -102,9 +102,14 @@ def get_vanilla_attention_kernel(
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
             if is_causal:
-                m_index = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+                # Indices i and j broadcasted along K2 with a twist:
+                # here we use *static* information that is *implicitly* encoded
+                # in the *transformation*: under the distribution constraints
+                # specified we know that the shape [M] will eventually resolve
+                # to [1] and can thus be "cast + broadcast" to [K2].
+                m_index = tkw.self_index(M, tkl.i64)
                 m_index = tkw.broadcast(m_index, target_shape=[M, K2])
-                k2_index = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
+                k2_index = tkw.self_index(K2, tkl.i64)
                 bias = tkw.select(m_index >= k2_index, ZEROF, MIN_INF)
                 x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=K2)
