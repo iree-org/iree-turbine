@@ -123,6 +123,92 @@ def testAttention(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
+<<<<<<< HEAD
+=======
+@pytest.mark.parametrize("enable_scheduling", [False])
+@pytest.mark.parametrize("dynamic_dims", [False])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+    ],
+)
+def testAttentionCausal(
+    shape: tuple[int],
+    enable_scheduling: bool,
+    dynamic_dims: bool,
+    mfma_variant: tuple[MMAType],
+    request,
+):
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    shape = AttentionShape(
+        num_query_heads=shape[0],
+        num_kv_heads=shape[0],
+        query_seq_len=shape[1],
+        head_size_kv=shape[2],
+        head_size=shape[3],
+        kv_seq_len=shape[4],
+    )
+    (
+        base_attention,
+        hyperparams,
+        dynamic_symbols,
+        dynamic_symbols_map,
+    ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims, is_causal=True)
+    q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
+    k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
+    v_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
+    o_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)
+    hyperparams.update(get_default_scheduling_params())
+    config = get_default_run_config()
+    if run_bench:
+        config["benchmark_batch_size"] = 10
+        config["benchmark_repetitions"] = 3
+    if dump_perf is not None:
+        perf_filename = request.node.name + ".json"
+        config["benchmark_results_file"] = os.path.join(
+            dump_perf, "tk_" + perf_filename
+        )
+    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
+    with tk.gen.TestLaunchContext(
+        hyperparams,
+        canonicalize=True,
+        run=True,
+        run_bench=run_bench,
+        run_config=config,
+        compile_config=compile_config,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+    ):
+        torch.manual_seed(1)
+        q = device_randn(q_shape, dtype=torch.float16)
+        k = device_randn(k_shape, dtype=torch.float16)
+        v = device_randn(v_shape, dtype=torch.float16)
+        output = device_zeros(o_shape, dtype=torch.float32)
+        log2e = 1.44269504089
+        dk_sqrt = math.sqrt(1.0 / shape.head_size)
+        # TODO: Add scaling of QK as part of kernel.
+        # TODO: Add variant of non-transposed V attention kernel.
+        mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+        torch_ref = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, is_causal=True
+        )
+
+        if dump_generated_mlir:
+            filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
+            with open(filename, "w") as f:
+                f.write(mb.module_op.get_asm())
+
+        assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("attention"))
+>>>>>>> 061868f (Add GPR_NUM partition support for SelfIndex to enable more MMA intrinsic)
 @pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize("dynamic_dims", [False, True])
 @pytest.mark.parametrize(
