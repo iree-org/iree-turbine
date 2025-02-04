@@ -4,6 +4,11 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from dataclasses import dataclass
+import sympy
+import sys
+from typing import Optional
+
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
@@ -12,16 +17,13 @@ from iree.turbine.kernel.wave.utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
-from .attention_common import AttentionShape
-from dataclasses import dataclass
+from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 
 
-def get_vanilla_attention_kernel(
-    shape: AttentionShape,
-    mfma_variant: MMAType,
-    dynamic_dims: bool,
-    is_causal: bool = False,
-):
+def get_causal_attention_kernel(shape: AttentionShape, mfma_variant: MMAType,
+                                dynamic_dims: bool):
+    ZERO = tkl.sym.ZERO
+
     # Input sizes
     B = tkl.sym.B
     M = tkl.sym.M
@@ -41,7 +43,9 @@ def get_vanilla_attention_kernel(
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
-    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints: list[tkw.Constraint] = [
+        tkw.WorkgroupConstraint(M, BLOCK_M, 0)
+    ]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
@@ -60,7 +64,11 @@ def get_vanilla_attention_kernel(
             threads_per_wave=64,
             waves_per_block=(4, 1, 1),
             mma_type=mfma_variant[1],
-            vector_shapes={B: 0, M: Mvec, N: Nvec},
+            vector_shapes={
+                B: 0,
+                M: Mvec,
+                N: Nvec
+            },
         )
     ]
 
@@ -70,23 +78,29 @@ def get_vanilla_attention_kernel(
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     k = tkw.IndexMapping.iterator(2)
-    mapping = tkw.IndexMapping(
-        num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
-    )
+    mapping = tkw.IndexMapping(num_iterators=3,
+                               inputs={
+                                   B: i,
+                                   N: j,
+                                   M: k
+                               },
+                               outputs={
+                                   B: i,
+                                   M: k,
+                                   N: j
+                               })
 
     @tkw.wave(constraints)
     def base_attention(
         q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+        tmp: tkl.Memory[K2, ADDRESS_SPACE, tkl.f32],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
-        if is_causal:
-            ZEROF = tkl.Register[M, K2, tkl.f32](0.0)
-            MIN_INF = tkl.Register[M, K2, tkl.f32](-1e6)
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
@@ -97,16 +111,33 @@ def get_vanilla_attention_kernel(
             acc: tkl.Register[B, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
+            imm_reg = tkw.permute(imm_reg, target_shape=[B, M, K2])
+            ####################################################################
+            # Causal mask
+            ####################################################################
+            # Indices i and j broadcasted along K2 with a twist:
+            # here we use *static* information that is *implicitly* encoded
+            # in the *transformation*: under the distribution constraints
+            # specified we know that the shape [M] will eventually resolve
+            # to [1] and can thus be "cast + broadcast" to [K2].
+            i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+            i = tkw.broadcast(i, target_shape=[K2])
+            j = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
+            ZERO = tkl.Register[K2, tkl.i64](0)
+            ONE = tkl.Register[K2, tkl.i64](1)
+            ZEROF = tkl.Register[K2, tkl.f32](0.0)
+            MIN_INF = tkl.Register[K2, tkl.f32](float('-inf'))
+            idx = j - i - ONE
+            bias = tkw.select(tkw.slt(idx, ZERO), ZEROF, MIN_INF)
+            ### Apply causality mask to imm_reg.
+            imm_reg = imm_reg + bias
+            imm_reg = tkw.permute(imm_reg, target_shape=[B, K2, M])
+
             q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
-            if is_causal:
-                m_index = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-                m_index = tkw.broadcast(m_index, target_shape=[M, K2])
-                k2_index = tkw.self_index(K2, tkl.i64, elements_per_thread=1)
-                bias = tkw.select(m_index >= k2_index, ZEROF, MIN_INF)
-                x_j = x_j + bias
+
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
@@ -122,13 +153,19 @@ def get_vanilla_attention_kernel(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res,
+                  c,
+                  mapping=mapping,
+                  elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
-        LOAD_ELEMS_PER_THREAD_PV: get_mfma_load_elems_per_thread(mfma_variant[1]),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
+        LOAD_ELEMS_PER_THREAD_QK:
+        get_mfma_load_elems_per_thread(mfma_variant[0]),
+        LOAD_ELEMS_PER_THREAD_PV:
+        get_mfma_load_elems_per_thread(mfma_variant[1]),
+        STORE_ELEMS_PER_THREAD:
+        get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_B: 1,
         BLOCK_M: 128,
         BLOCK_N: 64,
@@ -138,6 +175,7 @@ def get_vanilla_attention_kernel(
         N: shape.head_size_kv,
         K1: shape.head_size,
         K2: shape.kv_seq_len,
+        ZERO: 0,
     }
 
     dynamic_symbols = []
