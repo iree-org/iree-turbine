@@ -17,7 +17,10 @@ from dataclasses import dataclass
 
 
 def get_vanilla_attention_kernel(
-    shape: AttentionShape, mfma_variant: MMAType, dynamic_dims: bool, is_causal: bool = False
+    shape: AttentionShape,
+    mfma_variant: MMAType,
+    dynamic_dims: bool,
+    is_causal: bool = False,
 ):
     # Input sizes
     B = tkl.sym.B

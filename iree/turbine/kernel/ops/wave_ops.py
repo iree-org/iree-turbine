@@ -733,7 +733,8 @@ class BinaryOpBase(CustomOp, ABC):
         if lhs_dim_set.isdisjoint(rhs_dim_set):
             raise ValueError(
                 "BinaryPyOp requires lhs and rhs shape to be at least broadcastable."
-                f" got {lhs_type.symbolic_shape} vs {rhs_type.symbolic_shape}")
+                f" got {lhs_type.symbolic_shape} vs {rhs_type.symbolic_shape}"
+            )
 
         # TODO: this logic looks suspicious. Specifically, there's no check that
         # rhs_dim_set subsumes lhs_dim_set, they may partially overlap.
@@ -751,6 +752,7 @@ class BinaryOpBase(CustomOp, ABC):
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
         self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
+
 
 @define_py_op(operator.gt)
 @define_py_op(operator.ge)
@@ -816,8 +818,10 @@ class SelectOp(CustomOp):
             raise ValueError("SelectOp expects lhs and rhs dtype to match.")
 
         # TODO: support broadcasting behavior.
-        if (cond_type.symbolic_shape != if_true_type.symbolic_shape or
-            cond_type.symbolic_shape != if_false_type.symbolic_shape):
+        if (
+            cond_type.symbolic_shape != if_true_type.symbolic_shape
+            or cond_type.symbolic_shape != if_false_type.symbolic_shape
+        ):
             raise ValueError("SelectOp doesn't support broadcasting. (yet?)")
 
         self.type = if_true_type

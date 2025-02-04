@@ -625,6 +625,7 @@ def _build_start_indices(
         for i in _get_start_indices(src_indices)
     ]
 
+
 @handle_op(self_index)
 def handle_self_index(emitter: WaveEmitter, node: fx.Node):
     try:
@@ -649,8 +650,8 @@ def handle_self_index(emitter: WaveEmitter, node: fx.Node):
 
     step = vector_d.step(vector_index_type)
     stride_cst = arith_d.ConstantOp(
-        index_type,
-        get_constant_attr(cast_py_literal(emitter, stride), index_type))
+        index_type, get_constant_attr(cast_py_literal(emitter, stride), index_type)
+    )
     stride_vec = vector_d.splat(vector_index_type, stride_cst)
     scaled = arith_d.muli(step, stride_vec)
     offset = vector_d.splat(vector_index_type, start)
@@ -1043,9 +1044,11 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         else:
             vector_d.scatter(kb_dest, start_indices, offsets_vec, mask, insert_vector)
 
+
 ###############################################################################
 # Expressions, Dims and Indexing related ops
 ###############################################################################
+
 
 @handle_op(apply_expr)
 def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
@@ -1216,7 +1219,8 @@ def handle_binary_op(op):
             if lhs.ir_value.type != rhs.ir_value.type:
                 raise ValidationError(
                     "Expected lhs and rhs to have same type."
-                    f" Got: {lhs.ir_value.type} vs {rhs.ir_value.type}")
+                    f" Got: {lhs.ir_value.type} vs {rhs.ir_value.type}"
+                )
 
             lhs = lhs.ir_value
             rhs = rhs.ir_value
@@ -1637,32 +1641,30 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     # Only support broadcasting vector<1xdtype> for now.
     if not VectorType.isinstance(vector_type):
         raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
-    assert vector_type.rank == 0 or vector_type.rank == 1, \
-        f"expected vector_type.rank == 1 but got {vector_type}"
+    assert (
+        vector_type.rank == 0 or vector_type.rank == 1
+    ), f"expected vector_type.rank == 1 but got {vector_type}"
 
     if vector_type.rank == 0:
-        result_type = VectorType.get([bcast_dim_lane_dim_size],
-                                     vector_type.element_type)
-        element = vector_d.extract(vector_src,
-                                   static_position=[],
-                                   dynamic_position=[])
+        result_type = VectorType.get(
+            [bcast_dim_lane_dim_size], vector_type.element_type
+        )
+        element = vector_d.extract(vector_src, static_position=[], dynamic_position=[])
         splat = vector_d.splat(result_type, element)
         emitter.bind_node_proxy(node, IRProxyValue(splat))
         return
 
-    assert vector_type.shape[
-        0] == 1, f"expected vector_type.shape[0] == 1 but got {vector_type}"
+    assert (
+        vector_type.shape[0] == 1
+    ), f"expected vector_type.shape[0] == 1 but got {vector_type}"
 
     # Extract and Splat
     # If by chance broadcast size  matches current size, we can return src.
     if bcast_dim_lane_dim_size == vector_type.shape[0]:
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
 
-    result_type = VectorType.get([bcast_dim_lane_dim_size],
-                                 vector_type.element_type)
-    element = vector_d.extract(vector_src,
-                               static_position=[0],
-                               dynamic_position=[])
+    result_type = VectorType.get([bcast_dim_lane_dim_size], vector_type.element_type)
+    element = vector_d.extract(vector_src, static_position=[0], dynamic_position=[])
     splat = vector_d.splat(result_type, element)
     emitter.bind_node_proxy(node, IRProxyValue(splat))
 
@@ -1732,7 +1734,11 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
     is_dst_float = _is_float_type(dst_elem_type)
     is_src_int = _is_integer_like_type(src_elem_type)
     is_dst_int = _is_integer_like_type(dst_elem_type)
-    if is_src_int and is_dst_int and (_is_index_type(src_elem_type) or _is_index_type(dst_elem_type)):
+    if (
+        is_src_int
+        and is_dst_int
+        and (_is_index_type(src_elem_type) or _is_index_type(dst_elem_type))
+    ):
         casted_vector = arith_d.index_cast(dst_vector_type, vector_src)
         emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
         return

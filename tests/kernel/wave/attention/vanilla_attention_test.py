@@ -120,10 +120,21 @@ def testAttention(
 
         assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
 
+
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
-@pytest.mark.parametrize("enable_scheduling", [False,])
-@pytest.mark.parametrize("dynamic_dims", [False,])
+@pytest.mark.parametrize(
+    "enable_scheduling",
+    [
+        False,
+    ],
+)
+@pytest.mark.parametrize(
+    "dynamic_dims",
+    [
+        False,
+    ],
+)
 @pytest.mark.parametrize(
     "mfma_variant",
     [
