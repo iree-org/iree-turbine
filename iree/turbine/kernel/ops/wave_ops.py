@@ -174,6 +174,22 @@ def shuffle(src: "Register", offset: int, width: int) -> "Register":
     ...
 
 
+def gt(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def ge(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def lt(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def le(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
 def cast(src: "Register", dtype: DataType) -> "Register":
     ...
 
@@ -758,6 +774,10 @@ class BinaryPyOp(BinaryOpBase, ABC):
 @define_py_op(operator.ge)
 @define_py_op(operator.lt)
 @define_py_op(operator.le)
+@define_interface_op("gt")
+@define_interface_op("ge")
+@define_interface_op("lt")
+@define_interface_op("le")
 @dataclass
 class ComparisonPyOp(BinaryOpBase, ABC):
     def infer_type(self):

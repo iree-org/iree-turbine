@@ -65,9 +65,13 @@ from ..ops.wave_ops import (
     exp2,
     extract,
     extract_slice,
+    ge,
     get_custom,
     get_result,
+    gt,
+    le,
     log2,
+    lt,
     maximum,
     minimum,
     mma,
@@ -582,11 +586,17 @@ def get_constant_attr(value: Any, element_type: IrType) -> Attribute:
     raise CodegenError(f"Cannot create a constant attribute for type `{element_type}`")
 
 
-def handle_op(op: Callable[..., Any]):
+def handle_op(op: Callable[..., Any] | list[Callable[..., Any]]):
     def decorator(
         f: Callable[[WaveEmitter, fx.Node], None]
     ) -> Callable[[WaveEmitter, fx.Node], None]:
-        WaveEmitter.OP_HANDLERS[op.__name__] = f
+        if isinstance(op, Callable):
+            WaveEmitter.OP_HANDLERS[op.__name__] = f
+        elif isinstance(op, list):
+            for op_iter in op:
+                WaveEmitter.OP_HANDLERS[op_iter.__name__] = f
+        else:
+            raise ValueError("handle_op only handle Callable or list of Callable")
         return f
 
     return decorator
@@ -1247,14 +1257,12 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.divsi(lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
-        result = arith_d.divui(lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for div: {element_type}")
     return result
 
 
-@handle_binary_op(operator.gt)
+@handle_binary_op([operator.gt, gt])
 def handle_gt(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
@@ -1263,14 +1271,12 @@ def handle_gt(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
-        result = arith_d.cmpi(arith_d.CmpIPredicate.ugt, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for gt: {element_type}")
     return result
 
 
-@handle_binary_op(operator.ge)
+@handle_binary_op([ge, operator.ge])
 def handle_ge(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
@@ -1279,14 +1285,12 @@ def handle_ge(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
-        result = arith_d.cmpi(arith_d.CmpIPredicate.uge, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for ge: {element_type}")
     return result
 
 
-@handle_binary_op(operator.lt)
+@handle_binary_op([operator.lt, lt])
 def handle_lt(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
@@ -1295,14 +1299,12 @@ def handle_lt(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.slt, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
-        result = arith_d.cmpi(arith_d.CmpIPredicate.ult, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for lt: {element_type}")
     return result
 
 
-@handle_binary_op(operator.le)
+@handle_binary_op([operator.le, le])
 def handle_le(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
@@ -1311,8 +1313,6 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
-        result = arith_d.cmpi(arith_d.CmpIPredicate.ule, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for le: {element_type}")
     return result
@@ -1327,8 +1327,6 @@ def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.maxsi(lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
-        result = arith_d.maxui(lhs, rhs)
     else:
         raise ValidationError(
             f"Found unhandled operand type for maximum: {element_type}"
@@ -1345,8 +1343,6 @@ def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed() or element_type.is_signless()
     ):
         result = arith_d.minsi(lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
-        result = arith_d.minui(lhs, rhs)
     else:
         raise ValidationError(
             f"Found unhandled operand type for minimum: {element_type}"
