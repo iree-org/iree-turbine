@@ -86,7 +86,7 @@ def get_vanilla_attention_kernel(
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
         if is_causal:
             ZEROF = tkl.Register[M, K2, tkl.f32](0.0)
-            MIN_INF = tkl.Register[M, K2, tkl.f32](float("-inf"))
+            MIN_INF = tkl.Register[M, K2, tkl.f32](-1e6)
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.

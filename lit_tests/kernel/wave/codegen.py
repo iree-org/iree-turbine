@@ -216,6 +216,73 @@ def test_read_write():
 
 
 @run_test
+def test_read_write_diagonal():
+    # This test, tests for functionality of tkw.self_index, by
+    # generating code that generate a triangular matrix if M > N.
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def read_write_diagonal(
+        c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        ZEROF = tkl.Register[M, N, tkl.f16](0.0)
+        ONEF = tkl.Register[M, N, tkl.f16](1.0)
+        m_index = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+        m_index = tkw.broadcast(m_index, target_shape=[M, N])
+        n_index = tkw.self_index(N, tkl.i64, elements_per_thread=1)
+        res = tkw.select(m_index >= n_index, ZEROF, ONEF)
+        tkw.write(res, c, elements_per_thread=16)
+
+    with codegen_test_context(canonicalize=True):
+        c = torch.zeros(16, 16, dtype=torch.float16)
+        print(read_write_diagonal(c).module_op)
+
+        # CHECK-LABEL:    func.func @read_write_diagonal
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
+        # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
+        # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
+        # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
+        # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
+        # CHECK-DAG:        %[[ONE:.+]] = arith.constant dense<1.000000e+00> : vector<16xf16>
+        # CHECK-DAG:        %[[ZERO:.+]] = arith.constant dense<0.000000e+00> : vector<16xf16>
+        # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
+        # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
+        # CHECK-DAG:        %[[THREAD_ID_X:.+]] = gpu.thread_id  x
+        # CHECK-DAG:        %[[THREAD_ID_Y:.+]] = gpu.thread_id  y
+        # CHECK:            %[[D1:.+]] = arith.muli %[[WORKGROUP_ID_0]], %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D2:.+]] = arith.divsi %[[THREAD_ID_X]], %[[C64]] : index
+        # CHECK:            %[[D3:.+]] = arith.muli %[[D2]], %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D4:.+]] = arith.addi %[[D3]], %[[D1]] overflow<nsw, nuw> : index
+        # CHECK:            %[[BASE_INDEX_X:.+]] = arith.addi %[[D4]], %[[THREAD_ID_X]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D5:.+]] = vector.step : vector<1xindex>
+        # CHECK:            %[[D6:.+]] = arith.muli %[[D5]], %{{.*}} : vector<1xindex>
+        # CHECK:            %[[D7:.+]] = vector.splat %[[BASE_INDEX_X]] : vector<1xindex>
+        # CHECK:            %[[D8:.+]] = arith.addi %[[D6]], %[[D7]] : vector<1xindex>
+        # CHECK:            %[[INDEX_X:.+]] = arith.index_cast %[[D8]] : vector<1xindex> to vector<1xi64>
+        # CHECK:            %[[D10:.+]] = vector.extract %[[INDEX_X]][0] : i64 from vector<1xi64>
+        # CHECK:            %[[BCAST_INDEX_X:.+]] = vector.splat %[[D10]] : vector<16xi64>
+        # CHECK:            %[[D12:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D13:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] overflow<nsw, nuw> : index
+        # CHECK:            %[[BASE_INDEX_Y:.+]] = arith.addi %[[D13]], %[[D12]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D15:.+]] = vector.step : vector<16xindex>
+        # CHECK:            %[[D16:.+]] = vector.splat %[[BASE_INDEX_Y]] : vector<16xindex>
+        # CHECK:            %[[D17:.+]] = arith.addi %[[D15]], %[[D16]] : vector<16xindex>
+        # CHECK:            %[[INDEX_Y:.+]] = arith.index_cast %[[D17]] : vector<16xindex> to vector<16xi64>
+        # CHECK:            %[[MASK:.+]] = arith.cmpi sge, %[[BCAST_INDEX_X]], %[[INDEX_Y]] : vector<16xi64>
+        # CHECK:            %[[MASK_VAL:.+]] = arith.select %[[MASK]], %[[ZERO]], %[[ONE]] : vector<16xi1>, vector<16xf16>
+        # CHECK:            %[[OUTPUT:.+]] = stream.binding.subspan %arg0[%c0] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
+        # CHECK:            vector.store %[[MASK_VAL]], %[[OUTPUT]][%[[BASE_INDEX_X]], %[[BASE_INDEX_Y]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+
+
+@run_test
 def test_read_write_masked():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
