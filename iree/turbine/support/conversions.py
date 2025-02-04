@@ -111,6 +111,10 @@ TORCH_DTYPE_TO_IREE_TYPE_ASM = {
     torch.float8_e5m2fnuz: "f8E5M2FNUZ",
 }
 
+IREE_TYPE_ASM_TO_TORCH_DTYPE = dict(
+    (v, k) for k, v in TORCH_DTYPE_TO_IREE_TYPE_ASM.items()
+)
+
 DTYPE_TO_ELEMENT_TYPE: dict[torch.dtype, HalElementType] = {
     torch.float16: HalElementType.FLOAT_16,
     torch.bfloat16: HalElementType.BFLOAT_16,
