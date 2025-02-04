@@ -174,22 +174,6 @@ def shuffle(src: "Register", offset: int, width: int) -> "Register":
     ...
 
 
-def sgt(lhs: "Register", rhs: "Register") -> "Register":
-    ...
-
-
-def sge(lhs: "Register", rhs: "Register") -> "Register":
-    ...
-
-
-def slt(lhs: "Register", rhs: "Register") -> "Register":
-    ...
-
-
-def sle(lhs: "Register", rhs: "Register") -> "Register":
-    ...
-
-
 def cast(src: "Register", dtype: DataType) -> "Register":
     ...
 
@@ -768,10 +752,10 @@ class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
         self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
 
-@define_interface_op("sgt")
-@define_interface_op("sge")
-@define_interface_op("slt")
-@define_interface_op("sle")
+@define_py_op(operator.gt)
+@define_py_op(operator.ge)
+@define_py_op(operator.lt)
+@define_py_op(operator.le)
 @dataclass
 class ComparisonPyOp(BinaryOpBase, ABC):
     def infer_type(self):
