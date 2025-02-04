@@ -58,6 +58,7 @@ from ..ops.wave_ops import (
     CustomOp,
     abs,
     allocate,
+    and_op,
     apply_expr,
     broadcast,
     cast,
@@ -1276,7 +1277,7 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.divsi(lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.divui(lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for div: {element_type}")
@@ -1292,7 +1293,7 @@ def handle_gt(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.cmpi(arith_d.CmpIPredicate.ugt, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for gt: {element_type}")
@@ -1308,7 +1309,7 @@ def handle_ge(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.cmpi(arith_d.CmpIPredicate.uge, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for ge: {element_type}")
@@ -1324,7 +1325,7 @@ def handle_lt(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.slt, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.cmpi(arith_d.CmpIPredicate.ult, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for lt: {element_type}")
@@ -1340,10 +1341,21 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.cmpi(arith_d.CmpIPredicate.ule, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for le: {element_type}")
+    return result
+
+
+@handle_binary_op(and_op)
+def handle_and_op(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_integer_like_type(element_type):
+        result = arith_d.andi(lhs, rhs)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for le: {element_type}")
     return result
 
 
@@ -1356,7 +1368,7 @@ def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.maxsi(lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.maxui(lhs, rhs)
     else:
         raise ValidationError(
@@ -1371,17 +1383,16 @@ def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
     if _is_float_type(element_type):
         result = arith_d.minimumf(lhs, rhs)
     elif _is_integer_like_type(element_type) and (
-        element_type.is_signed() or element_type.is_signless()
+        element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.minsi(lhs, rhs)
-    elif _is_integer_like_type(element_type) and element_type.is_unsigned():
+    elif _is_integer_like_type(element_type) and element_type.is_unsigned:
         result = arith_d.minui(lhs, rhs)
     else:
         raise ValidationError(
             f"Found unhandled operand type for minimum: {element_type}"
         )
     return result
-
 
 ###############################################################################
 # Unary math Ops
