@@ -914,6 +914,65 @@ def test_attention():
 
 
 @run_test
+def test_attention_causal():
+    shape = AttentionShape(
+        num_query_heads=8,
+        num_kv_heads=8,
+        query_seq_len=128,
+        head_size_kv=128,
+        head_size=64,
+        kv_seq_len=256,
+    )
+    mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
+    base_attention, hyperparams, _, _ = get_vanilla_attention_kernel(
+        shape, mfma_variant, False, is_causal=True
+    )
+
+    with tk.gen.TestLaunchContext(
+        hyperparams,
+        canonicalize=True,
+        run=False,
+        run_bench=False,
+        schedule=False,
+        use_scheduling_barriers=False,
+    ):
+        torch.manual_seed(0)
+        q = torch.randn(
+            shape.num_query_heads,
+            shape.query_seq_len,
+            shape.head_size,
+            dtype=torch.float16,
+        )
+        k = torch.randn(
+            shape.num_kv_heads, shape.kv_seq_len, shape.head_size, dtype=torch.float16
+        )
+        v = torch.randn(
+            shape.num_kv_heads,
+            shape.kv_seq_len,
+            shape.head_size_kv,
+            dtype=torch.float16,
+        )
+        output = torch.zeros(
+            shape.num_query_heads,
+            shape.query_seq_len,
+            shape.head_size_kv,
+            dtype=torch.float32,
+        )
+        print(base_attention(q, k, v, output).module_op)
+
+        # CHECK-LABEL:       func.func @base_attention
+        # CHECK:                %[[NEG_INF:.+]] = arith.constant dense<-1.000000e+06> : vector<4xf32>
+        # CHECK:                %[[ZERO:.+]] = arith.constant dense<0.000000e+00> : vector<4xf32>
+        # CHECK:                {{.*}} = scf.for
+        # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-8:            {{.*}} = arith.cmpi sge, {{.*}} : vector<4xi64>
+        # CHECK-COUNT-8:            {{.*}} = arith.select %{{.*}}, %[[ZERO]], %[[NEG_INF]] : vector<4xi1>, vector<4xf32>
+        # CHECK-COUNT-8:            {{.*}} = arith.addf %{{.*}}, %{{.*}} : vector<4xf32>
+        # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
+
+
+@run_test
 def test_attention_bias():
     shape = (8, 128, 128, 64, 256)
     # Expose user-constraints
