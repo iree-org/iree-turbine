@@ -291,7 +291,6 @@ def test_transpose_read(shape, use_buffer_ops, request):
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
     config = get_default_run_config()
-    # config["print_ir_after_all"] = True
 
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape[::-1], dtype=torch.float16)
@@ -1514,7 +1513,6 @@ def test_igemm_conv(
         config["benchmark_results_file"] = os.path.join(
             dump_perf, "tk_" + perf_filename
         )
-    # config["print_ir_after_all"] = True
 
     with tk.gen.TestLaunchContext(
         hyperparams,
