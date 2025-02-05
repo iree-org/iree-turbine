@@ -40,6 +40,7 @@ def get_extend_attention_kernel(
 
     assert wave_input_dtype in [
         tkl.f16,
+        tkl.bf16,
     ], f"Unsupported input datatype: {wave_input_dtype}"
     assert (
         wave_output_dtype.is_float_asm()
@@ -162,12 +163,12 @@ def get_extend_attention_kernel(
             N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_cache_layout
         ],
         block_table: tkl.Memory[
-            S, N_KV, GLOBAL_ADDRESS_SPACE, wave_size_dtype, block_table_layout
+            S, N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
         ],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
         sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
-        sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
-        start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
@@ -181,6 +182,7 @@ def get_extend_attention_kernel(
         seq_len_extend = tkw.read(sequence_lengths_extend, elements_per_thread=1)
         tkw.set_symbol(N_Q, seq_len_extend)
         seq_len = tkw.read(sequence_lengths, elements_per_thread=1)
+        seq_len = tkw.cast(seq_len, tkl.i32)
         seq_len_prefix = seq_len - seq_len_extend
 
         tkw.set_symbol(N_KV, seq_len_prefix)
@@ -202,11 +204,15 @@ def get_extend_attention_kernel(
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=q_mapping,
             )
+            if wave_input_dtype == tkl.bf16:
+                q_reg = tkw.cast(tkw.cast(q_reg, tkl.f32), tkl.f16)
             k_reg = tkw.read(
                 k_cache,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=k_cache_mapping,
             )
+            if wave_input_dtype == tkl.bf16:
+                k_reg = tkw.cast(tkw.cast(k_reg, tkl.f32), tkl.f16)
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
@@ -215,12 +221,14 @@ def get_extend_attention_kernel(
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
-            imm_f16 = tkw.cast(e_delta, wave_input_dtype)
+            imm_f16 = tkw.cast(e_delta, tkl.f16)
             v_reg = tkw.read(
                 v_cache,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
                 mapping=v_cache_mapping,
             )
+            if wave_input_dtype == tkl.bf16:
+                v_reg = tkw.cast(tkw.cast(v_reg, tkl.f32), tkl.f16)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
@@ -241,11 +249,15 @@ def get_extend_attention_kernel(
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=q_mapping,
             )
+            if wave_input_dtype == tkl.bf16:
+                q_reg = tkw.cast(tkw.cast(q_reg, tkl.f32), tkl.f16)
             k_reg = tkw.read(
                 k,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=k_mapping,
             )
+            if wave_input_dtype == tkl.bf16:
+                k_reg = tkw.cast(tkw.cast(k_reg, tkl.f32), tkl.f16)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
@@ -253,12 +265,14 @@ def get_extend_attention_kernel(
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
-            imm_f16 = tkw.cast(e_delta, wave_input_dtype)
+            imm_f16 = tkw.cast(e_delta, tkl.f16)
             v_reg = tkw.read(
                 v,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
                 mapping=v_mapping,
             )
+            if wave_input_dtype == tkl.bf16:
+                v_reg = tkw.cast(tkw.cast(v_reg, tkl.f32), tkl.f16)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
