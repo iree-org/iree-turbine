@@ -138,7 +138,7 @@ def test_read_mapped():
         # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
         # CHECK:            %[[ARR:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>
-        # CHECK-DAG:        %[[MASK:.+]] = vector.constant_mask [16] : vector<16xi1>
+        # CHECK-DAG:        %[[MASK:.+]] = arith.constant dense<true> : vector<16xi1>
         # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
         # CHECK:            %[[D0:.+]] = arith.muli %[[THREAD_ID_X]], %[[C16]] overflow<nsw, nuw> : index
         # CHECK-DAG:        %[[C16_0:.+]] = arith.constant 16 : index
@@ -355,6 +355,49 @@ def test_read_write_masked():
 
 
 @run_test
+def test_read_write_buffer():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 4, N: 4}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def read_write_buffer(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        res = tkw.read(a, elements_per_thread=4)
+        tkw.write(res, b, elements_per_thread=4)
+
+    with tk.gen.TestLaunchContext(
+        {
+            M: 1,
+            N: 3,
+            BLOCK_M: 4,
+            BLOCK_N: 4,
+            ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
+        },
+        canonicalize=True,
+        use_buffer_load_ops=True,
+        use_buffer_store_ops=True,
+    ):
+        a = torch.randn(4, 4, dtype=torch.float16)
+        b = torch.zeros(4, 4, dtype=torch.float16)
+        print(read_write_buffer(a, b).module_op)
+
+        # CHECK-LABEL:    func.func @read_write_buffer
+        # CHECK-COUNT-1:    memref.reinterpret_cast
+        # CHECK-COUNT-4:    amdgpu.raw_buffer_load
+        # CHECK-COUNT-1:    memref.reinterpret_cast
+        # CHECK-COUNT-4:    amdgpu.raw_buffer_store
+
+
+@run_test
 def test_read_write_masked_shared():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -432,6 +475,7 @@ def test_read_write_mapping():
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
         # CHECK:            %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208,
         # CHECK-SAME:         224, 240]> : vector<16xindex>
+        # CHECK-DAG:        %[[D11:.+]] = arith.constant dense<true> : vector<16xi1>
         # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
         # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
         # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
@@ -454,7 +498,6 @@ def test_read_write_mapping():
         # CHECK-SAME:         vector<16xf16>
         # CHECK:            %[[D10:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>
-        # CHECK:            %[[D11:.+]] = vector.constant_mask [16] : vector<16xi1>
         # CHECK:            vector.scatter %[[D10]][%[[D8]], %[[D5]]] [%[[CST]]], %[[D11]], %[[D9]] : memref<16x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16>
 
@@ -510,11 +553,11 @@ def test_read_write_dynamic_mapping():
         # CHECK-DAG:        %[[C32:.*]] = arith.constant 32 : index
         # CHECK-DAG:        %[[C64:.*]] = arith.constant 64 : index
         # CHECK-DAG:        %[[C256:.*]] = arith.constant 256 : index
+        # CHECK-DAG:        %[[D12:.*]] = arith.constant dense<true> : vector<16xi1>
         # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
         # CHECK:            %[[D9:.*]] = vector.load %[[D0]][%[[D5:.*]], %[[D8:.*]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>, vector<16xi32>
         # CHECK:            %[[D10:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
         # CHECK:            %[[D11:.*]] = arith.index_cast %[[D9]] : vector<16xi32> to vector<16xindex>
-        # CHECK-DAG:        %[[D12:.*]] = vector.constant_mask [16] : vector<16xi1>
         # CHECK:            %[[D13:.*]] = arith.muli %{{.*}}, %[[C16]] overflow<nsw, nuw> : index
         # CHECK:            %[[D14:.*]] = arith.muli %{{.*}}, %[[C256]] overflow<nsw, nuw> : index
         # CHECK:            %[[D15:.*]] = arith.muli %{{.*}}, %[[C256]] overflow<nsw, nuw> : index
