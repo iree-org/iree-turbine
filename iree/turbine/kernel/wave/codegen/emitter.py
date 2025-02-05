@@ -11,25 +11,34 @@ from collections import namedtuple
 
 import torch.fx as fx
 
+from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.aot.support.ir_utils import (
+    _is_float_type,
+    _is_index_type,
+    _is_integer_like_type,
+)
+
+
 from ...compiler.ir import (
-    InsertionPoint,
-    IrType,
-    OpResult,
-    Value,
-    arith_d,
-    IndexType,
-    Location,
-    stream_d,
-    IntegerAttr,
-    gpu_d,
-    func_d,
-    ShapedType,
-    VectorType,
+    Attribute,
     DenseElementsAttr,
+    FloatAttr,
+    IndexType,
+    InsertionPoint,
+    IntegerAttr,
+    IrType,
+    Location,
+    OpResult,
+    ShapedType,
+    Value,
+    VectorType,
+    arith_d,
+    func_d,
+    gpu_d,
+    stream_d,
     vector_d,
 )
 
-from iree.turbine.kernel.lang.global_symbols import *
 
 from ...compiler.builder import IRProxyValue
 from ...compiler.kernel_codegen import BoundKernelSignature
@@ -517,3 +526,11 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         raise CodegenError(f"Expected single result, got {len(stack)}")
 
     return stack[0]
+
+
+def get_constant_attr(value: Any, element_type: IrType) -> Attribute:
+    if _is_integer_like_type(element_type):
+        return IntegerAttr.get(element_type, int(value))
+    if _is_float_type(element_type):
+        return FloatAttr.get(element_type, float(value))
+    raise CodegenError(f"Cannot create a constant attribute for type `{element_type}`")
