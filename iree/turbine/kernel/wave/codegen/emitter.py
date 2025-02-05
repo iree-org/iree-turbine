@@ -26,6 +26,7 @@ from ...compiler.ir import (
     IndexType,
     InsertionPoint,
     IntegerAttr,
+    IntegerType
     IrType,
     Location,
     OpResult,
