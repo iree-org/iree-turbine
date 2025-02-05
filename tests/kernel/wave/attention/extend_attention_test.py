@@ -225,6 +225,7 @@ def create_inputs(
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
+@pytest.mark.parametrize("is_causal", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [(MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)],
@@ -233,6 +234,7 @@ def testExtendAttention(
     shape: list[AttentionShape],
     dtype: torch.dtype,
     enable_scheduling: bool,
+    is_causal: bool,
     mfma_variant: MMAType,
     request,
 ):
@@ -272,6 +274,7 @@ def testExtendAttention(
         k_buffer.shape,
         v_buffer.shape,
         output.shape,
+        is_causal=is_causal,
     )
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
@@ -331,6 +334,7 @@ def testExtendAttention(
         max_len_in_batch=max_len_in_batch,
         extend_token_num=extend_token_num,
         dtype=dtype,
+        is_causal=is_causal,
     )
 
     assert_allclose(output, ref_output, rtol=1e-3, atol=1e-3)
