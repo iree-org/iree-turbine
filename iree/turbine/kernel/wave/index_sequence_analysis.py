@@ -20,6 +20,7 @@ from ..ops.wave_ops import (
     ReduceOp,
     Reduction,
     Reshape,
+    SelfIndex,
     Write,
 )
 from .constraints import (
@@ -179,7 +180,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         read more than a single element.
         """
         custom = get_custom(node)
-        if not isinstance(custom, (Read, Write)):
+        if not isinstance(custom, (Read, Write, SelfIndex)):
             return False
         num_dims_with_gpr = sum(
             1 for v in custom.index.values() if sympy.sympify(v.start).has(GPR_NUM)
@@ -197,7 +198,13 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
             dim: simplify_index(custom.index.get(dim, custom.index[dim]))
             for dim in custom.index
         }
-        elements_per_thread = subs_idxc(custom.elements_per_thread)
+        if isinstance(custom, SelfIndex):
+            # If specified use element_per_thread instead of IndexExpr size.
+            elements_per_thread = (
+                custom.elements_per_thread or custom.index[custom.dim].size
+            )
+        else:
+            elements_per_thread = subs_idxc(custom.elements_per_thread)
         dim_with_gpr_offsets = [
             (k, v.start) for k, v in simplified_index.items() if v.start.has(GPR_NUM)
         ]
@@ -233,7 +240,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                 cur_gpr_start_id = chunk_id * gpr_size
                 # Get updated index with VGPR offset.
                 output_mapping = list(custom.index)
-                if custom.mapping is not None:
+                if hasattr(custom, "mapping") and custom.mapping is not None:
                     output_mapping = list(custom.mapping.output_mapping.keys())
                 # Modify stride to 1 S.T we can have vectorized read/write
                 # iff gpr_offset_dim is or will be (after mapping) fastest dim.
@@ -273,6 +280,13 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         mapping=custom.mapping,
                         _write_dependency=custom._write_dependency,
                     ).add_to_graph(custom.graph)
+                elif isinstance(custom, SelfIndex):
+                    # iff elements_per_thread is specified, we update
+                    # elements_per_thread to chunk size, else return None.
+                    self_index_size = gpr_size if custom.elements_per_thread else None
+                    new_node = SelfIndex(
+                        custom.dim, custom.dtype, self_index_size
+                    ).add_to_graph(custom.graph)
 
                 # Update new_node information
                 new_node.index = updated_index_with_gpr_offset
@@ -283,7 +297,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
             if isinstance(custom, Write):
                 # Useful to handle write/read dependency
                 custom.replace_all_uses_with(ops_to_combine)
-            elif isinstance(custom, Read):
+            elif isinstance(custom, (Read, SelfIndex)):
                 reshape = Reshape(ops_to_combine, custom.vector_shapes).add_to_graph(
                     custom.graph
                 )
