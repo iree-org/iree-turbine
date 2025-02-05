@@ -44,12 +44,41 @@ def write_version_to_file(version_file, version):
         f.write("\n")
 
 
+def represents_int(s: str) -> bool:
+    try:
+        int(s)
+    except ValueError:
+        return False
+    else:
+        return True
+
+
+def get_next_available_tag(tag_prefix: str) -> str:
+    """
+    Get the next numbered tag that does not exists.
+    E.g. iree-turbine-3.1.0rc20250205. -> iree-turbine-3.1.0rc20250205.3
+    """
+    tags = (
+        subprocess.check_output(["git", "tag", "--list", f"{tag_prefix}*"])
+        .decode()
+        .strip()
+        .splitlines()
+    )
+    tag_suffixes = [tag.removeprefix(tag_prefix) for tag in tags]
+    tag_suffix_nums = [int(suffix) for suffix in tag_suffixes if represents_int(suffix)]
+    max_num = -1
+    if len(tag_suffix_nums) > 0:
+        max_num = max(tag_suffix_nums)
+    return f"{tag_prefix}{max_num+1}"
+
+
 version_info = load_version_from_file(VERSION_FILE_PATH)
 package_version = version_info.get("package-version")
 current_version = Version(package_version).base_version
 
 if args.nightly_release:
     current_version += "rc" + datetime.today().strftime("%Y%m%d")
+    current_version = get_next_available_tag(f"{current_version}.")
 elif args.development_release:
     current_version += (
         ".dev0+"
