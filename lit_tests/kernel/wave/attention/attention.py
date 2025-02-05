@@ -364,6 +364,9 @@ def test_attention():
         # CHECK-LABEL:       func.func @base_attention
         # CHECK:                {{.*}} = scf.for
         # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-4:            {{.*}} = arith.cmpi slt
+        # CHECK-COUNT-4:            {{.*}} = arith.select
+        # CHECK-COUNT-8:            {{.*}} = arith.addf
         # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
 
@@ -420,7 +423,9 @@ def test_attention_causal():
         # CHECK:                %[[ZERO:.+]] = arith.constant dense<0.000000e+00> : vector<4xf32>
         # CHECK:                {{.*}} = scf.for
         # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
+        # CHECK-COUNT-4:            {{.*}} = arith.cmpi slt, {{.*}} : vector<4xindex>
         # CHECK-COUNT-8:            {{.*}} = arith.cmpi sge, {{.*}} : vector<4xi64>
+        # CHECK-COUNT-8:            {{.*}} = arith.andi {{.*}} : vector<4xi1>
         # CHECK-COUNT-8:            {{.*}} = arith.select %{{.*}}, %[[ZERO]], %[[NEG_INF]] : vector<4xi1>, vector<4xf32>
         # CHECK-COUNT-8:            {{.*}} = arith.addf %{{.*}}, %{{.*}} : vector<4xf32>
         # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
