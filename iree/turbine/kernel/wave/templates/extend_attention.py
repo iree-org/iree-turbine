@@ -142,10 +142,13 @@ def get_extend_attention_kernel(
         outputs={S: i, N_KV: j},
     )
 
-    q_layout = tkl.MemoryLayout(shape=q_shape)
-    k_layout = tkl.MemoryLayout(shape=k_shape)
-    v_layout = tkl.MemoryLayout(shape=v_shape)
-    o_layout = tkl.MemoryLayout(shape=o_shape)
+    # Set the dynamic shapes for the kernel. Here we set it to N_Q
+    # which is the first argument of the query and output.
+    set_dynamic_dim = lambda shape: [x if i != 0 else None for i, x in enumerate(shape)]
+    q_layout = tkl.MemoryLayout(shape=set_dynamic_dim(q_shape))
+    k_layout = tkl.MemoryLayout(shape=set_dynamic_dim(k_shape))
+    v_layout = tkl.MemoryLayout(shape=set_dynamic_dim(v_shape))
+    o_layout = tkl.MemoryLayout(shape=set_dynamic_dim(o_shape))
     block_table_layout = tkl.MemoryLayout(shape=block_table_shape)
     k_cache_layout = tkl.MemoryLayout(shape=k_cache_shape)
     v_cache_layout = tkl.MemoryLayout(shape=v_cache_shape)
@@ -288,4 +291,7 @@ def get_extend_attention_kernel(
         S: shape.num_seqs,
     }
 
-    return extend_attention, hyperparams
+    dynamic_symbols = [N_Q, N_KV]
+    dynamic_symbols_map = {N_Q: q_shape[0], N_KV: k_shape[0]}
+
+    return extend_attention, hyperparams, dynamic_symbols, dynamic_symbols_map

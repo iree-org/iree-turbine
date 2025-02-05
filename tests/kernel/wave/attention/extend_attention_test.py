@@ -262,7 +262,12 @@ def testExtendAttention(
     output = device_zeros(
         extend_token_num, shape.num_query_heads, shape.head_size, dtype=torch.float32
     )
-    (extend_attention, hyperparams,) = get_extend_attention_kernel(
+    (
+        extend_attention,
+        hyperparams,
+        dynamic_symbols,
+        dynamic_symbols_map,
+    ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
         q_extend.shape,
@@ -297,6 +302,8 @@ def testExtendAttention(
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
     ):
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.

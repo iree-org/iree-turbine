@@ -36,7 +36,12 @@ def test_extend_attention():
     v_cache_shape = (total_token_num, shape.num_kv_heads, shape.head_size)
     block_table_shape = (shape.num_seqs, shape.max_seq_len)
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
-    extend_attention, hyperparams = get_extend_attention_kernel(
+    (
+        extend_attention,
+        hyperparams,
+        dynamic_symbols,
+        dynamic_symbols_map,
+    ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
         q_shape,
@@ -55,6 +60,8 @@ def test_extend_attention():
         run_bench=False,
         schedule=False,
         use_scheduling_barriers=False,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
     ):
         torch.manual_seed(0)
         q = torch.randn(q_shape, dtype=torch.float16)
@@ -85,7 +92,9 @@ def test_extend_attention():
         )
 
         # CHECK-LABEL:       func.func @extend_attention
-        # CHECK-COUNT-5:        vector.maskedload
+        # CHECK-COUNT-1:        vector.maskedload
+        # CHECK:                stream.binding.subspan %arg0[%c0] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>{%arg11}
+        # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                scf.for
         # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.store
@@ -100,6 +109,8 @@ def test_extend_attention():
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-16:           amdgpu.mfma
         # CHECK-COUNT-4:        vector.maskedload
+        # CHECK:                stream.binding.subspan %arg2[%c0] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>{%arg12}
+        # CHECK:                stream.binding.subspan %arg1[%c0] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>{%arg12}
         # CHECK:                scf.for
         # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.store
@@ -113,4 +124,5 @@ def test_extend_attention():
         # CHECK-COUNT-16:           amdgpu.mfma
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-16:           amdgpu.mfma
+        # CHECK:               stream.binding.subspan %arg10[%c0] : !stream.binding -> memref<?x16x64xf32, strided<[1024, 64, 1], offset: ?>>{%arg11}
         # CHECK-COUNT-16:      vector.maskedstore
