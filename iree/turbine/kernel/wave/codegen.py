@@ -878,10 +878,22 @@ def _construct_gather_scatter_indices(
 
 
 def _get_max_buffer_size(elem_type: IrType) -> int:
+    """
+    Return max memref size suitable for buffer ops.
+
+    Buffer ops offsets are i32, return maximum memref size in elements.
+    """
     return ((1 << 31) - 1) // (elem_type.width // 8)
 
 
-def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
+def _linearize_memref(mem: Value, offsets: tuple[Value | int]) -> Value:
+    """
+    Convert n-D memref into 1-D memref, suitable for buffer ops.
+
+    Apply offsets to the memref and convert result to 1-D. Resulting memref size
+    is set to `max_buffer_size - 1` so buffer access to the last element will be
+    no-op.
+    """
     memref_type = mem.type
     rank = memref_type.rank
     results = memref_d.extract_strided_metadata(mem)
@@ -890,9 +902,8 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
     results = results[2:]
     sizes = results[:rank]
     strides = results[rank:]
-    # size_full = arith_d.constant(IndexType.get(), 1)
     overflow_flags = arith_d.IntegerOverflowFlags.nsw
-    for ind, size, stride in zip(indices, sizes, strides):
+    for ind, size, stride in zip(offsets, sizes, strides):
         if isinstance(ind, int):
             ind = arith_d.constant(IndexType.get(), ind)
 
@@ -901,16 +912,10 @@ def _linearize_memref(mem: Value, indices: tuple[Value | int]) -> Value:
             arith_d.muli(ind, stride, overflow_flags=overflow_flags),
             overflow_flags=overflow_flags,
         )
-        # size_full = arith_d.muli(size_full, size, overflow_flags=overflow_flags)
 
-    # size_full = arith_d.subi(size_full, offset, overflow_flags=overflow_flags)
-
-    # limit size to INT_MAX - 1, the last val will be used for buffer oob handling
-    max_size = arith_d.constant(
+    size_full = arith_d.constant(
         IndexType.get(), _get_max_buffer_size(memref_type.element_type) - 1
     )
-    # size_full = arith_d.minsi(size_full, max_size)
-    size_full = max_size
 
     dyn_val = ShapedType.get_dynamic_size()
     res_shape = [dyn_val]
