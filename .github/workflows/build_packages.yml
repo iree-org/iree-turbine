@@ -25,8 +25,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-tags: true
 
       - name: "Setting up Python"
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
@@ -38,13 +36,10 @@ jobs:
 
       - name: Build iree-turbine release candidate
         run: |
-          version_name="$(./build_tools/compute_local_version.py -rc --write-json)"
+          ./build_tools/compute_local_version.py \
+            -rc --write-json \
+            --version-suffix ".${{ github.run_number }}"
           ./build_tools/build_release.py --no-download
-
-      - name: Tag version
-        run: |
-          git tag "$version_name"
-          git push origin "$version_name"
 
       - name: Upload python wheels
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
