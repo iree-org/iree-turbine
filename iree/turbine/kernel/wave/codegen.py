@@ -1088,7 +1088,8 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
 
     register = cast_vector(emitter, register, element_type=IndexType.get())
-    emitter.dynamic_dims[symbol] = _to_scalar(register)
+    # emitter.dynamic_dims[symbol] = _to_scalar(register)
+    emitter.dynamic_dims[symbol] = register
 
 
 ###############################################################################
