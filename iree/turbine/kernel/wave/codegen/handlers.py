@@ -850,7 +850,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
 
     src_thread_size = get_thread_shape(register.index) if register.index else None
-    bcast_dim_lane_dim_size = get_thread_shape(node.index)
+    target_thread_size = get_thread_shape(node.index)
 
     # Check MLIR shape
     vector_src = cast_vector(emitter, register)
@@ -864,9 +864,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
 
     # Handles scalar broadcast case.
     if vector_type.rank == 0:
-        result_type = VectorType.get(
-            [bcast_dim_lane_dim_size], vector_type.element_type
-        )
+        result_type = VectorType.get([target_thread_size], vector_type.element_type)
         element = vector_d.extract(vector_src, static_position=[], dynamic_position=[])
         splat = vector_d.splat(result_type, element)
         emitter.bind_node_proxy(node, IRProxyValue(splat))
@@ -877,7 +875,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     src_dims = set(get_custom(register).indexing_dims)
     bcast_dims = list(set(target_shape) - src_dims)
     bcast_sizes = [subs_idxc(node.index[x].size) for x in bcast_dims]
-    lane_level_broadcast = bcast_dim_lane_dim_size != src_thread_size
+    lane_level_broadcast = target_thread_size != src_thread_size
     if math.prod(bcast_sizes) == 1 and not lane_level_broadcast:
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
         return
@@ -888,10 +886,10 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
 
     # Extract and Splat
     # If by chance broadcast size  matches current size, we can return src.
-    if bcast_dim_lane_dim_size == vector_type.shape[0]:
+    if target_thread_size == vector_type.shape[0]:
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
 
-    result_type = VectorType.get([bcast_dim_lane_dim_size], vector_type.element_type)
+    result_type = VectorType.get([target_thread_size], vector_type.element_type)
     element = vector_d.extract(vector_src, static_position=[0], dynamic_position=[])
     splat = vector_d.splat(result_type, element)
     emitter.bind_node_proxy(node, IRProxyValue(splat))

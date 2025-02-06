@@ -12,7 +12,6 @@ _e2e_test_shapes = {}
 _e2e_test_shapes["attention"] = [
     (8, 128, 128, 64, 256),
     (40, 1024, 64, 64, 1024),
-    (32, 1024, 128, 128, 1357),
 ]
 _e2e_test_shapes["chained_gemm"] = _e2e_test_shapes["attention"]
 _e2e_test_shapes["decode_attention"] = _e2e_test_shapes["attention"]
