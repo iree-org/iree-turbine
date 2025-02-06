@@ -122,12 +122,6 @@ class StreamExecutable:
         """
         kb_input_bindings = sig.kernel_buffer_input_bindings
         kb_output_bindings = sig.kernel_buffer_output_bindings
-        # TODO: The way we are doing grid bindings is wrong. The Grid type
-        # should be paramerized with special grid axis symbols which are
-        # algebraically related to concrete shape dim symbols. For now, we are
-        # just assuming that the grid dims can be resolved to constants , when
-        # in reality, we should pass the workload and parameterize the grid
-        # dims on the workloads.
         dynamic_dim_bindings = sig.dynamic_dim_bindings
 
         # Input bindings are always user specified.
@@ -139,14 +133,6 @@ class StreamExecutable:
             "begin": len(kb_input_bindings) + len(kb_output_bindings),
             "end": len(linear_bindings),
         }
-
-        # TODO: This is sloppy. This assert will hit on some user errors for
-        # unsupported type combinations and is just a last resort right now.
-        # TODO: This is currently disabled because the grid_bindings don't match
-        # workload bindings.
-        # assert len(linear_bindings) == len(
-        #     sig.bindings
-        # ), f"Not all bindings converted: {linear_bindings} vs {sig.bindings}"
 
         with self._loc:
             binding_type = IrType.parse("!stream.binding")
@@ -287,6 +273,29 @@ class DispatchEntrypoint(BoundKernelSignature):
             for value, b in zip(entry_block.arguments, linear_bindings)
         }
 
+    def get_dynamic_dims(self, binding: BindingDesc) -> list[Value]:
+        """
+        This function determines the dynamic dimensions of the binding.
+        If the binding has a physical layout, we check whether the physical layout
+        is completely static. In this case there are no dynamic dimensions.
+        If the physical layout does have dynamic dimensions, then we return
+        the dynamic dimensions based on the symbolic shape of the binding.
+        """
+        dynamic_dims = [
+            self.dynamic_symbols_mapping[dim]
+            for dim in binding.kernel_buffer_type.symbolic_shape
+            if dim in self.dynamic_symbols_mapping
+        ]
+        node_type = binding.reference[1].type
+        if node_type.physical_layout:
+            physical_shape = node_type.physical_layout.shape
+            if all(physical_shape):
+                return []
+            assert len(dynamic_dims) == physical_shape.count(
+                None
+            ), f"Expected {physical_shape.count(None)} dynamic dims, got {len(dynamic_dims)}"
+        return dynamic_dims
+
     def resolve(self, binding: BindingDesc) -> Value:
         ref_type, ref_value = binding.reference
         if ref_type == "grid":
@@ -303,11 +312,7 @@ class DispatchEntrypoint(BoundKernelSignature):
                 binding.as_mlir_type(),
                 linear_arg_value,
                 byte_offset=zero_value,
-                dynamic_dims=[
-                    self.dynamic_symbols_mapping[dim]
-                    for dim in binding.kernel_buffer_type.symbolic_shape
-                    if dim in self.dynamic_symbols_mapping
-                ],
+                dynamic_dims=self.get_dynamic_dims(binding),
             )
 
         raise ValidationError(f"Unhandled binding type: {binding}")
