@@ -140,20 +140,13 @@ def create_inputs(
     H_KV = shape.num_kv_heads
     H_Q = shape.num_query_heads
     D = shape.head_size
-    # TODO: Enable when we have proper masking for attention.
-    # b_seq_len_prefix = torch.randint(
-    #     1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
-    # )
-    b_seq_len_prefix = torch.empty((B,), dtype=torch.int32, device="cuda")
-    for i in range(B):
-        b_seq_len_prefix[i] = shape.block_size * (i + 1)
-    # TODO: Enable when we have proper masking for attention.
-    # b_seq_len_extend = torch.randint(
-    #     1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
-    # )
-    b_seq_len_extend = torch.empty((B,), dtype=torch.int32, device="cuda")
-    for i in range(B):
-        b_seq_len_extend[i] = shape.block_size * (i + 2)
+    torch.manual_seed(0)
+    b_seq_len_prefix = torch.randint(
+        1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
+    )
+    b_seq_len_extend = torch.randint(
+        1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
+    )
     b_seq_len = b_seq_len_prefix + b_seq_len_extend
     max_len_in_batch = torch.max(b_seq_len, 0)[0].item()
 
