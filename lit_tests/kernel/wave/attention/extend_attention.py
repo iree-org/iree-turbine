@@ -123,7 +123,6 @@ def test_extend_attention():
         # CHECK-COUNT-16:      vector.maskedstore
 
 
-
 @run_test
 def test_causal_extend_attention():
     shape = AttentionShape(
