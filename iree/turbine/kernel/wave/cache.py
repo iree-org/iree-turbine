@@ -182,8 +182,7 @@ class WaveCacheManager(object):
         including it's MLIR, VMFB, and kernel signature.
         """
         cur_cache_dir = CACHE_BASE_DIR / kernel_hash
-        if not os.path.exists(cur_cache_dir):
-            os.makedirs(cur_cache_dir)
+        os.makedirs(cur_cache_dir, exist_ok=True)
         cur_cache_basefile = cur_cache_dir / kernel_hash
         cur_vmfb_path = cur_cache_basefile.with_suffix(".vmfb")
         cur_module_path = cur_cache_basefile.with_suffix(".mlir")
