@@ -292,7 +292,7 @@ def get_extend_attention_kernel(
         BLOCK_H: 1,
         BLOCK_N_Q: SEQ_TILE_SIZE,
         BLOCK_D_KV: SEQ_TILE_SIZE,
-        BLOCK_N_KV: SEQ_TILE_SIZE // 4,
+        BLOCK_N_KV: SEQ_TILE_SIZE // 2,
         BLOCK_S: 1,
         H: shape.num_query_heads,
         H_KV: shape.num_kv_heads,
