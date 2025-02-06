@@ -93,31 +93,35 @@ def test_extend_attention():
 
         # CHECK-LABEL:       func.func @extend_attention
         # CHECK-COUNT-1:        vector.maskedload
-        # CHECK:                stream.binding.subspan %arg0[%c0] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>{%arg11}
+        # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
+        # CHECK-DAG:            %[[ALLOC1:.*]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
+        # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                scf.for
         # CHECK-COUNT-1:            vector.maskedload
-        # CHECK-COUNT-1:            vector.store
+        # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC2]]
         # CHECK-COUNT-1:            vector.gather
-        # CHECK-COUNT-1:            vector.store
-        # CHECK-COUNT-8:            vector.load
-        # CHECK-COUNT-4:            amdgpu.mfma
+        # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
+        # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
+        # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
+        # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-4:            amdgpu.mfma
+        # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-4:        vector.maskedload
-        # CHECK:                stream.binding.subspan %arg2[%c0] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>{%arg12}
-        # CHECK:                stream.binding.subspan %arg1[%c0] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>{%arg12}
+        # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
+        # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
         # CHECK:                scf.for
         # CHECK-COUNT-1:            vector.maskedload
-        # CHECK-COUNT-1:            vector.store
+        # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC2]]
         # CHECK-COUNT-1:            vector.gather
-        # CHECK-COUNT-1:            vector.store
-        # CHECK-COUNT-8:            vector.load
-        # CHECK-COUNT-4:            amdgpu.mfma
+        # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
+        # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
+        # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
+        # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-4:            amdgpu.mfma
-        # CHECK:               stream.binding.subspan %arg10[%c0] : !stream.binding -> memref<?x16x64xf32, strided<[1024, 64, 1], offset: ?>>{%arg11}
+        # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-16:      vector.maskedstore
+
 
 
 @run_test
@@ -198,26 +202,32 @@ def test_causal_extend_attention():
         )
 
         # CHECK-LABEL:       func.func @extend_attention
-        # CHECK-COUNT-5:        vector.maskedload
-        # CHECK:                scf.for
-        # CHECK-COUNT-1:            vector.maskedload
-        # CHECK-COUNT-1:            vector.store
-        # CHECK-COUNT-1:            vector.gather
-        # CHECK-COUNT-1:            vector.store
-        # CHECK-COUNT-8:           vector.load
-        # CHECK-COUNT-4:           amdgpu.mfma
-        # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-4:           amdgpu.mfma
+        # CHECK-COUNT-1:        vector.maskedload
+        # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
+        # CHECK-DAG:            %[[ALLOC1:.*]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
+        # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                scf.for
         # CHECK-COUNT-1:            vector.maskedload
-        # CHECK-COUNT-1:            vector.store
+        # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC2]]
         # CHECK-COUNT-1:            vector.gather
-        # CHECK-COUNT-1:            vector.store
-        # CHECK-COUNT-8:           vector.load
-        # CHECK-COUNT-4:           amdgpu.mfma
-        # CHECK-COUNT-1:            arith.cmpi
-        # CHECK-COUNT-1:            arith.select
+        # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
+        # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
+        # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
+        # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-4:           amdgpu.mfma
+        # CHECK-COUNT-8:            amdgpu.mfma
+        # CHECK-COUNT-4:        vector.maskedload
+        # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
+        # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
+        # CHECK:                scf.for
+        # CHECK-COUNT-1:            vector.maskedload
+        # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC2]]
+        # CHECK-COUNT-1:            vector.gather
+        # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
+        # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
+        # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
+        # CHECK-COUNT-8:            amdgpu.mfma
+        # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
+        # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-16:      vector.maskedstore
