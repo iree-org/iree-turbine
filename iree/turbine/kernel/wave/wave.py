@@ -25,6 +25,7 @@ from .codegen import WaveEmitter
 from .expansion.expansion import expand_graph
 from .promotion import promote_placeholders
 from .hoisting import hoist_loop_invariant_ops
+from .reuse_shared_allocs import reuse_shared_allocs
 from .utils import (
     canonicalize_module,
     compile_to_vmfb,
@@ -367,6 +368,7 @@ class LaunchableWave(Launchable):
         graph_passes += [
             partial(decompose_vmma_ops, trace, self.constraints),
             partial(hoist_loop_invariant_ops, trace, self.constraints),
+            partial(reuse_shared_allocs, trace),
             partial(minimize_global_loads, trace, self.constraints),
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
         ]
