@@ -37,6 +37,10 @@ def memref_to_tensor(memrefs: list[IrType]):
 def get_dynamic_dims(bindings: list[BindingDesc], dynamic_symbols: list[IndexSymbol]):
     dynamic_dims: list[IndexSymbol] = []
     for b in bindings:
+        node_type = b.reference[1].type
+        if node_type.physical_layout:
+            if all(node_type.physical_layout.shape):
+                continue
         for dim in b.kernel_buffer_type.symbolic_shape:
             if dim in dynamic_symbols:
                 dynamic_dims.append(dim)
