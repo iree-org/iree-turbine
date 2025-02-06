@@ -14,11 +14,11 @@ from .utils import get_users
 
 def reuse_shared_allocs(trace: CapturedTrace):
     """
-    Reuse shared allocs if their lifetimes doesnt intersect
+    Reuse shared allocs if their lifetimes doesn't intersect
     """
     allocs = defaultdict(list)
 
-    # This pass is supposed to be run after hoisintg so we only check top-level
+    # This pass is supposed to be run after hoisting so we only check top-level
     # graph.
     root_graph = trace.get_root_graph()
     for node in list(root_graph.nodes):
@@ -30,12 +30,11 @@ def reuse_shared_allocs(trace: CapturedTrace):
         candidates = allocs[(alloc_type.symbolic_shape, alloc_type.dtype)]
         if not candidates or not _try_replace(node, candidates):
             candidates.append(node)
-            continue
 
 
 def _is_dead(current_node: fx.Node, node: fx.Node) -> bool:
     """
-    Check if `node` is dead, i.e. all uses are before `current_node`.
+    Check if alloc `node` is dead, i.e. all uses are before `current_node`.
     """
     graph = current_node.graph
     users, _ = get_users(node, None)
