@@ -42,6 +42,7 @@ def get_extend_attention_kernel(
 
     assert wave_input_dtype in [
         tkl.f16,
+        tkl.bf16,
     ], f"Unsupported input datatype: {wave_input_dtype}"
     assert (
         wave_output_dtype.is_float_asm()
@@ -168,12 +169,15 @@ def get_extend_attention_kernel(
             N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_cache_layout
         ],
         block_table: tkl.Memory[
-            S, N_KV, GLOBAL_ADDRESS_SPACE, wave_size_dtype, block_table_layout
+            #S, N_KV, GLOBAL_ADDRESS_SPACE, wave_size_dtype, block_table_layout
+            S, N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
         ],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
         sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
-        sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
-        start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        #sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        #start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
@@ -191,6 +195,7 @@ def get_extend_attention_kernel(
         seq_len_extend = tkw.read(sequence_lengths_extend, elements_per_thread=1)
         tkw.set_symbol(N_Q, seq_len_extend)
         seq_len = tkw.read(sequence_lengths, elements_per_thread=1)
+        seq_len = tkw.cast(seq_len, tkl.i32)
         seq_len_prefix = seq_len - seq_len_extend
 
         tkw.set_symbol(N_KV, seq_len_prefix)
