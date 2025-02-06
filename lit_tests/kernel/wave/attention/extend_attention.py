@@ -142,6 +142,7 @@ def test_causal_extend_attention():
     )
     total_token_num = 12189
     extend_token_num = 3198
+    logit_cap = 30.0
     q_shape = (extend_token_num, shape.num_query_heads, shape.head_size)
     k_shape = (extend_token_num, shape.num_kv_heads, shape.head_size)
     v_shape = (extend_token_num, shape.num_kv_heads, shape.head_size_kv)
@@ -166,6 +167,7 @@ def test_causal_extend_attention():
         v_cache_shape,
         o_shape,
         is_causal=True,
+        logit_cap=logit_cap,
     )
 
     with tk.gen.TestLaunchContext(
@@ -220,9 +222,17 @@ def test_causal_extend_attention():
         # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
         # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
         # CHECK-COUNT-8:            amdgpu.mfma
+
+        # softcap/logitcap modifier:
+        # CHECK-COUNT-2:            arith.divf
+        # CHECK-COUNT-2:            math.tanh
+        # CHECK-COUNT-2:            arith.mulf
+
+        # unaligned attention masking:
         # CHECK-COUNT-2:            arith.cmpi slt
         # CHECK-COUNT-2:            arith.select
         # CHECK-COUNT-2:            arith.addf
+
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-4:        vector.maskedload
@@ -236,11 +246,19 @@ def test_causal_extend_attention():
         # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
         # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
         # CHECK-COUNT-8:            amdgpu.mfma
+
+        # softcap/logitcap modifier:
+        # CHECK-COUNT-2:            arith.divf
+        # CHECK-COUNT-2:            math.tanh
+        # CHECK-COUNT-2:            arith.mulf
+
+        # unaligned and causal masking:
         # CHECK-COUNT-1:            arith.cmpi slt
         # CHECK-COUNT-2:            arith.cmpi sge
         # CHECK-COUNT-2:            arith.andi
         # CHECK-COUNT-2:            arith.select
         # CHECK-COUNT-2:            arith.addf
+
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-16:      vector.maskedstore

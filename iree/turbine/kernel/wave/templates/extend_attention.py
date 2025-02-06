@@ -33,6 +33,7 @@ def get_extend_attention_kernel(
     output_dtype: Optional[torch.dtype] = torch.float32,
     size_dtype: Optional[torch.dtype] = torch.int32,
     is_causal: Optional[bool] = False,
+    logit_cap: Optional[float] = 0.0,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
@@ -65,6 +66,8 @@ def get_extend_attention_kernel(
     SEQ_TILE_SIZE = shape.block_size
     M_WAVES = 4
     N_WAVES = 1
+    LOG2E = 1.44269504089
+    logit_cap *= LOG2E
 
     constraints: list[tkw.Constraint] = []
     constraints += [
@@ -178,6 +181,8 @@ def get_extend_attention_kernel(
         init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)
         zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
         neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
+        if logit_cap > 0:
+            logit_cap_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](logit_cap)
 
         req_idx = tkw.read(request_indices, elements_per_thread=1)
         tkw.set_symbol(REQ_IDX, req_idx)
@@ -215,6 +220,8 @@ def get_extend_attention_kernel(
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            if logit_cap > 0:
+                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
@@ -259,6 +266,8 @@ def get_extend_attention_kernel(
             )
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            if logit_cap > 0:
+                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
