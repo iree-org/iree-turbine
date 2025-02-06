@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from typing import Any, Callable
+from collections.abc import Sequence
 
 import numpy as np
 import torch
@@ -160,3 +161,28 @@ def torch_dtype_to_numpy(torch_dtype: torch.dtype) -> Any:
         return TORCH_DTYPE_TO_NUMPY[torch_dtype]
     except KeyError:
         raise UnknownDTypeError(torch_dtype)
+
+
+def torch_dtyped_shape_to_iree_format(
+    shape_or_tensor: Sequence[int] | torch.Tensor,
+    /,
+    dtype: torch.dtype | None = None,
+) -> str:
+    """Example:
+    shape = [1, 2, 3]
+    dtype = torch.bfloat16
+    Returns
+    "1x2x3xbf16"
+    """
+    if isinstance(shape_or_tensor, torch.Tensor):
+        dtype = dtype or shape_or_tensor.dtype
+        return torch_dtyped_shape_to_iree_format(shape_or_tensor.shape, dtype)
+    else:
+        if dtype is None:
+            raise ValueError(
+                "dtype must be provided when shape is given instead of a tensor."
+            )
+    shape_str = "x".join([str(d) for d in shape_or_tensor])
+    shape_dtype_delimiter = "x" if len(shape_or_tensor) > 0 else ""
+    dtype_str = TORCH_DTYPE_TO_IREE_TYPE_ASM[dtype]
+    return f"{shape_str}{shape_dtype_delimiter}{dtype_str}"
