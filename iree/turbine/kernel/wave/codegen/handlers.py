@@ -455,6 +455,18 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
     return result
 
 
+@handle_binary_op(operator.and_)
+def handle_and(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_integer_like_type(element_type) and (
+        element_type.is_signed or element_type.is_signless
+    ):
+        result = arith_d.andi(lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for div: {element_type}")
+    return result
+
+
 @handle_binary_op([operator.gt, gt])
 def handle_gt(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
@@ -830,14 +842,15 @@ def handle_extract_slice(emitter: WaveEmitter, node: fx.Node):
 @handle_op(broadcast)
 def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     try:
-        register, _ = node.args
+        register, target_shape = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
     # Get thread_shape/size for broadcast.
     get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
 
-    bcast_dim_lane_dim_size = get_thread_shape(node.index)
+    src_thread_size = get_thread_shape(register.index) if register.index else None
+    target_thread_size = get_thread_shape(node.index)
 
     # Check MLIR shape
     vector_src = cast_vector(emitter, register)
@@ -849,13 +862,22 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
         vector_type.rank == 0 or vector_type.rank == 1
     ), f"expected vector_type.rank == 1 but got {vector_type}"
 
+    # Handles scalar broadcast case.
     if vector_type.rank == 0:
-        result_type = VectorType.get(
-            [bcast_dim_lane_dim_size], vector_type.element_type
-        )
+        result_type = VectorType.get([target_thread_size], vector_type.element_type)
         element = vector_d.extract(vector_src, static_position=[], dynamic_position=[])
         splat = vector_d.splat(result_type, element)
         emitter.bind_node_proxy(node, IRProxyValue(splat))
+        return
+
+    # Handle broadcasting to unit dims as no-op.
+    # Most useful for handling broadcast in symbolic shapes.
+    src_dims = set(get_custom(register).indexing_dims)
+    bcast_dims = list(set(target_shape) - src_dims)
+    bcast_sizes = [subs_idxc(node.index[x].size) for x in bcast_dims]
+    lane_level_broadcast = target_thread_size != src_thread_size
+    if math.prod(bcast_sizes) == 1 and not lane_level_broadcast:
+        emitter.bind_node_proxy(node, IRProxyValue(vector_src))
         return
 
     assert (
@@ -864,10 +886,10 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
 
     # Extract and Splat
     # If by chance broadcast size  matches current size, we can return src.
-    if bcast_dim_lane_dim_size == vector_type.shape[0]:
+    if target_thread_size == vector_type.shape[0]:
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
 
-    result_type = VectorType.get([bcast_dim_lane_dim_size], vector_type.element_type)
+    result_type = VectorType.get([target_thread_size], vector_type.element_type)
     element = vector_d.extract(vector_src, static_position=[0], dynamic_position=[])
     splat = vector_d.splat(result_type, element)
     emitter.bind_node_proxy(node, IRProxyValue(splat))
@@ -931,7 +953,7 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
     dst_vector_type = VectorType.get(src_vector_type.shape, dst_elem_type)
 
     if src_vector_type == dst_vector_type:
-        emitter.bind_node_proxy(node, vector_src)
+        emitter.bind_node_proxy(node, IRProxyValue(vector_src))
         return
 
     is_src_float = _is_float_type(src_elem_type)

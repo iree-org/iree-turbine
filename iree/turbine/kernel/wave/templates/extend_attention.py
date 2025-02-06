@@ -118,7 +118,6 @@ def get_extend_attention_kernel(
         inputs={H_KV: i // head_ratio, N_KV: j + EXT_IDX, D_Q: k},
         outputs={H_KV: i, N_KV: j, D_Q: k},
     )
-    # TODO: Need to add SEQ_IDX below
     k_cache_mapping = tkw.IndexMapping(
         num_iterators=3,
         inputs={H_KV: i // head_ratio, N_KV: j + SEQ_IDX, D_Q: k},
@@ -177,9 +176,8 @@ def get_extend_attention_kernel(
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
         init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)
-        if is_causal:
-            zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
-            neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
+        zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
+        neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
 
         req_idx = tkw.read(request_indices, elements_per_thread=1)
         tkw.set_symbol(REQ_IDX, req_idx)
@@ -217,6 +215,12 @@ def get_extend_attention_kernel(
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            mask = tkw.cast(mask, tkw.i1)
+            bias = tkw.select(mask, zero, neg_infinity)
+            x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
@@ -255,12 +259,16 @@ def get_extend_attention_kernel(
             )
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
             if is_causal:
                 n_q_index = tkw.self_index(N_Q, tkl.i32)
                 n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
-                n_kv_index = tkw.self_index(N_KV, tkl.i32)
-                bias = tkw.select(n_q_index >= n_kv_index, zero, neg_infinity)
-                x_j = x_j + bias
+                mask = (n_q_index >= n_kv_index) & mask
+            mask = tkw.cast(mask, tkw.i1)
+            bias = tkw.select(mask, zero, neg_infinity)
+            x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)

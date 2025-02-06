@@ -105,6 +105,9 @@ def test_extend_attention():
         # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
         # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
         # CHECK-COUNT-8:            amdgpu.mfma
+        # CHECK-COUNT-2:            arith.cmpi slt
+        # CHECK-COUNT-2:            arith.select
+        # CHECK-COUNT-2:            arith.addf
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-4:        vector.maskedload
@@ -118,6 +121,9 @@ def test_extend_attention():
         # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
         # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
         # CHECK-COUNT-8:            amdgpu.mfma
+        # CHECK-COUNT-2:            arith.cmpi slt
+        # CHECK-COUNT-2:            arith.select
+        # CHECK-COUNT-2:            arith.addf
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-16:      vector.maskedstore
@@ -214,6 +220,9 @@ def test_causal_extend_attention():
         # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
         # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
         # CHECK-COUNT-8:            amdgpu.mfma
+        # CHECK-COUNT-2:            arith.cmpi slt
+        # CHECK-COUNT-2:            arith.select
+        # CHECK-COUNT-2:            arith.addf
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-4:        vector.maskedload
@@ -227,6 +236,11 @@ def test_causal_extend_attention():
         # CHECK-COUNT-8:            vector.load %[[ALLOC1]]
         # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
         # CHECK-COUNT-8:            amdgpu.mfma
+        # CHECK-COUNT-1:            arith.cmpi slt
+        # CHECK-COUNT-2:            arith.cmpi sge
+        # CHECK-COUNT-2:            arith.andi
+        # CHECK-COUNT-2:            arith.select
+        # CHECK-COUNT-2:            arith.addf
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
         # CHECK-COUNT-16:      vector.maskedstore

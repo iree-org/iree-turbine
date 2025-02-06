@@ -15,6 +15,14 @@ _e2e_test_shapes["attention"] = [
 ]
 _e2e_test_shapes["chained_gemm"] = _e2e_test_shapes["attention"]
 _e2e_test_shapes["decode_attention"] = _e2e_test_shapes["attention"]
+_e2e_test_shapes["unaligned_attention"] = [
+    (32, 1024, 128, 128, 1357),
+    (48, 1024, 128, 128, 1357),
+]
+_e2e_test_shapes["all_attention"] = (
+    _e2e_test_shapes["unaligned_attention"] + _e2e_test_shapes["attention"]
+)
+
 
 # Order of shapes: (B, BN, K2, H, K1, M, N)
 _e2e_test_shapes["evoformer"] = [

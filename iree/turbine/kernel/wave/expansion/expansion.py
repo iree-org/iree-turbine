@@ -440,7 +440,7 @@ def populate_inputs(
                         mma_metadata.last_mma_node = True
                     new_nodes_to_expand.append((arg, mma_metadata))
                 continue
-            case Allocate() | SetSymbol() | ApplyExpr():
+            case Allocate() | SetSymbol():
                 alloc_metadata = deepcopy(metadata)
                 alloc_metadata.do_not_expand = True
                 new_nodes_to_expand.append((arg, alloc_metadata))

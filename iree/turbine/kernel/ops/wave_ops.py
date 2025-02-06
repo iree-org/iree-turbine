@@ -46,7 +46,7 @@ def allocate(
 
 
 def self_index(
-    idx: IndexExpr,
+    dim: IndexExpr,
     dtype: DataType,
     elements_per_thread: Optional[IndexExpr | int] = None,
 ) -> "Register":
@@ -253,8 +253,12 @@ def define_py_op(py_op: Callable) -> Callable[[T], T]:
         setattr(current_module, NewSubclass.__name__, NewSubclass)
 
         original_handler = None
-        if hasattr(fx.Proxy, f"__{op_name}__"):
-            original_handler = getattr(fx.Proxy, f"__{op_name}__")
+        # Some py operator has trailing "_", which needs to be removed
+        # before reformatting to torch.fx.Proxy formats.
+        # i.e `and_` -> `and`, `or_` -> `or`.
+        fx_op_name = op_name.replace("_", "")
+        if hasattr(fx.Proxy, f"__{fx_op_name}__"):
+            original_handler = getattr(fx.Proxy, f"__{fx_op_name}__")
 
         def new_function(*args: Any, **kwargs: dict[str, Any]):
             dispatcher = None
@@ -274,7 +278,7 @@ def define_py_op(py_op: Callable) -> Callable[[T], T]:
         if original_handler:
             new_function.__name__ = op_name
             NewSubclass._tracing_function = new_function
-            setattr(fx.Proxy, f"__{op_name}__", new_function)
+            setattr(fx.Proxy, f"__{fx_op_name}__", new_function)
 
         # Return cls unchanged so we can reuse the decorator to register more ops
         return cls
@@ -761,6 +765,7 @@ class BinaryOpBase(CustomOp, ABC):
 @define_py_op(operator.add)
 @define_py_op(operator.sub)
 @define_py_op(operator.mul)
+@define_py_op(operator.and_)
 @define_py_op(operator.truediv)
 @define_interface_op("maximum")
 @define_interface_op("minimum")

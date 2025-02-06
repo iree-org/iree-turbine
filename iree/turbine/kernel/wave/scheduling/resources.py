@@ -16,7 +16,10 @@ from ...ops.wave_ops import (
     CustomOp,
     CastOp,
     UnaryPyOp,
-    BinaryPyOp,
+    BinaryOpBase,
+    ApplyExpr,
+    SelectOp,
+    SelfIndex,
     ShuffleOp,
     Permute,
     Extract,
@@ -53,7 +56,7 @@ class Operation(Enum):
     SHUFFLE = "shuffle"
 
 
-SCHEDULING_NOOPS = (IterArg, Permute, Extract, Broadcast, CastOp, Reshape)
+SCHEDULING_NOOPS = (IterArg, Permute, Extract, Broadcast, CastOp, Reshape, SelfIndex)
 
 # This table contains the cycles required to execute each operation.
 delay_table = {
@@ -98,7 +101,7 @@ def get_custom_operation_type(custom: CustomOp) -> Operation:
         return Operation.MMA
     elif isinstance(custom, SCHEDULING_NOOPS + (Output,)):
         return Operation.NOOP
-    elif isinstance(custom, (UnaryPyOp, BinaryPyOp)):
+    elif isinstance(custom, (ApplyExpr, UnaryPyOp, BinaryOpBase, SelectOp)):
         return Operation.VALU
     elif isinstance(custom, ShuffleOp):
         return Operation.SHUFFLE
@@ -130,7 +133,7 @@ def annotate_resource_usage(
             custom.rrt = resource_reservation_table[Operation.MMA]
         elif isinstance(custom, ShuffleOp):
             custom.rrt = resource_reservation_table[Operation.SHUFFLE]
-        elif isinstance(custom, (UnaryPyOp, BinaryPyOp)):
+        elif isinstance(custom, (ApplyExpr, UnaryPyOp, BinaryOpBase, SelectOp)):
             custom.rrt = resource_reservation_table[Operation.VALU]
         elif isinstance(custom, SCHEDULING_NOOPS):
             if isinstance(custom, IterArg):
