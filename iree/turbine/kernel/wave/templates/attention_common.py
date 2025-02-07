@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Optional
 
 import iree.turbine.kernel.lang as tkl
@@ -22,6 +22,8 @@ class AttentionShape:
     max_seq_len: Optional[int] = None
     total_seq_len: Optional[int] = None
     context_len: Optional[int] = None
+    fixed_seq_len_prefix: Optional[int] = None
+    fixed_seq_len_extend: Optional[int] = None
     # -----------------------
     # Vanilla attention
     query_seq_len: Optional[int] = None
@@ -29,6 +31,12 @@ class AttentionShape:
     # -----------------------
     # Decode specific
     block_size: Optional[int] = None
+
+    def __iter__(self):
+        for field in fields(AttentionShape):
+            field_value = getattr(self, field.name)
+            if field_value:
+                yield field_value
 
 
 # Commonly-used attention symbols.
