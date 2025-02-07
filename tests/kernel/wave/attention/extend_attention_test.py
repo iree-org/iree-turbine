@@ -36,6 +36,8 @@ from ..common.utils import (
     dump_generated_mlir,
 )
 from ..common.shapes import get_test_shapes
+from torch.nn.attention.flex_attention import flex_attention
+from torch.nn.attention.flex_attention import create_block_mask
 
 # Reference paged attention implementation from vLLM and sglang.
 shapes = [
@@ -60,20 +62,41 @@ def context_attention_fwd(
     b_seq_len: torch.Tensor,
     max_len_in_batch: int,
     is_causal: bool = False,
+    logit_cap: float = 0.0,
 ):
+    def soft_cap(score, b, h, q_idx, kv_idx):
+        score = score / logit_cap
+        score = torch.tanh(score)
+        score = score * logit_cap
+        return score
+
+    def causal(b, h, q_idx, kv_idx):
+        return q_idx >= kv_idx
+
     cu_seq_lens = [0] * (len(b_seq_len) + 1)
     for i, seq_len in enumerate(b_seq_len):
         cu_seq_lens[i + 1] = cu_seq_lens[i] + seq_len
 
     for i in range(len(b_seq_len)):
         start, end = cu_seq_lens[i], cu_seq_lens[i + 1]
-        o_torch = torch.nn.functional.scaled_dot_product_attention(
-            q[start:end].permute(1, 0, 2),
-            k[start:end].permute(1, 0, 2),
-            v[start:end].permute(1, 0, 2),
-            is_causal=is_causal,
-            enable_gqa=True,
-        ).permute(1, 0, 2)
+        qkv_len = end - start
+        block_mask = (
+            create_block_mask(causal, B=None, H=None, Q_LEN=qkv_len, KV_LEN=qkv_len)
+            if is_causal
+            else None
+        )
+        o_torch = (
+            flex_attention(
+                q[start:end].permute(1, 0, 2).unsqueeze(0),
+                k[start:end].permute(1, 0, 2).unsqueeze(0),
+                v[start:end].permute(1, 0, 2).unsqueeze(0),
+                score_mod=soft_cap,
+                enable_gqa=True,
+                block_mask=block_mask,
+            )
+            .squeeze(0)
+            .permute(1, 0, 2)
+        )
         o[start:end] = o_torch
 
     return o
@@ -92,6 +115,7 @@ def ref_extend_attn(
     extend_token_num: int,
     dtype: torch.dtype,
     is_causal: bool = False,
+    logit_cap: float = 0.0,
 ) -> torch.Tensor:
     total_token_num = k_buffer.shape[0]
     B, H_Q, D = b_req_idx.shape[0], q_extend.shape[-2], q_extend.shape[-1]
@@ -117,6 +141,7 @@ def ref_extend_attn(
         b_seq_len,
         max_len_in_batch,
         is_causal,
+        logit_cap=logit_cap,
     )
 
     pt = 0
@@ -192,6 +217,7 @@ def create_inputs(
     b_start_loc_extend = torch.zeros_like(b_seq_len)
     b_start_loc_extend[1:] = torch.cumsum(b_seq_len_extend[:-1], 0)
     max_len_extend = torch.max(b_seq_len_extend, 0)[0].item()
+    logit_cap = 30.0
 
     return (
         q_extend,
@@ -209,6 +235,7 @@ def create_inputs(
         max_len_in_batch,
         extend_token_num,
         max_len_extend,
+        logit_cap,
     )
 
 
@@ -250,6 +277,7 @@ def testExtendAttention(
         max_len_in_batch,
         extend_token_num,
         max_len_extend,
+        logit_cap,
     ) = create_inputs(shape, dtype)
     shape.max_seq_len = max_len_extend
 
@@ -273,6 +301,7 @@ def testExtendAttention(
         v_buffer.shape,
         output.shape,
         is_causal=is_causal,
+        logit_cap=logit_cap,
     )
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
@@ -335,6 +364,7 @@ def testExtendAttention(
         extend_token_num=extend_token_num,
         dtype=dtype,
         is_causal=is_causal,
+        logit_cap=logit_cap,
     )
 
     assert_allclose(output, ref_output, rtol=1e-3, atol=1e-3)
