@@ -66,7 +66,10 @@ def extract_mappings(kernel_fn: Callable):
 
 def extract_arg_types(kernel_fn: Callable):
     """Look for arg types used in the kernel by iterating over arg signature."""
-    return [arg.annotation for arg in inspect.signature(kernel_fn).parameters.values()]
+    return [
+        (arg.annotation, arg.annotation.physical_layout)
+        for arg in inspect.signature(kernel_fn).parameters.values()
+    ]
 
 
 def anonymize_constraints(input_constraints: list[Constraint]):
