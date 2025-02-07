@@ -71,11 +71,7 @@ def get_extend_attention_kernel(
     logit_cap *= LOG2E
 
     constraints: list[tkw.Constraint] = []
-    constraints += [
-        tkw.WorkgroupConstraint(
-            N_Q, BLOCK_N_Q, 0, iters=math.ceil(shape.max_seq_len / SEQ_TILE_SIZE)
-        )
-    ]
+    constraints += [tkw.WorkgroupConstraint(N_Q, BLOCK_N_Q, 0)]
     constraints += [tkw.WorkgroupConstraint(D_KV, BLOCK_D_KV, 1)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 2)]
     constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 2, primary=False)]
@@ -156,6 +152,7 @@ def get_extend_attention_kernel(
     block_table_layout = tkl.MemoryLayout(shape=block_table_shape)
     k_cache_layout = tkl.MemoryLayout(shape=k_cache_shape)
     v_cache_layout = tkl.MemoryLayout(shape=v_cache_shape)
+    num_seqs_layout = tkl.MemoryLayout(shape=[None])
 
     @tkw.wave(constraints)
     def extend_attention(
@@ -171,10 +168,18 @@ def get_extend_attention_kernel(
         block_table: tkl.Memory[
             S, N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
         ],
-        request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
-        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
-        sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        request_indices: tkl.Memory[
+            S, GLOBAL_ADDRESS_SPACE, wave_size_dtype, num_seqs_layout
+        ],
+        sequence_lengths: tkl.Memory[
+            S, GLOBAL_ADDRESS_SPACE, wave_size_dtype, num_seqs_layout
+        ],
+        sequence_lengths_extend: tkl.Memory[
+            S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout
+        ],
+        start_indices_extend: tkl.Memory[
+            S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout
+        ],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
@@ -317,10 +322,9 @@ def get_extend_attention_kernel(
         H_KV: shape.num_kv_heads,
         D_KV: shape.head_size_kv,
         D_Q: shape.head_size,
-        S: shape.num_seqs,
     }
 
-    dynamic_symbols = [N_Q, N_KV]
-    dynamic_symbols_map = {N_Q: q_shape[0], N_KV: k_shape[0]}
+    dynamic_symbols = [N_Q, N_KV, S]
+    dynamic_symbols_map = {N_Q: q_shape[0], N_KV: k_shape[0], S: shape.num_seqs}
 
     return extend_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
