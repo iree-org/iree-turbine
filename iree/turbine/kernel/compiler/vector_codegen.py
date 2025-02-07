@@ -854,10 +854,9 @@ def cast_kernel_buffer(
     return value, MemRefType(ir_type), py_type
 
 
-def cast_vector(emitter: ThreadEmitter,
-                value,
-                *,
-                element_type: Optional[IrType] = None):
+def cast_vector(
+    emitter: ThreadEmitter, value, *, element_type: Optional[IrType] = None
+):
     proxy_value = cast_py_value(emitter, value)
 
     # Cast scalar types correctly first.
@@ -865,7 +864,7 @@ def cast_vector(emitter: ThreadEmitter,
         # Implicit scalar type promotion.
         proxy_value = ScalarBuilder.to_dtype(proxy_value, element_type)
 
-    print(f"proxy_value {proxy_value}")
+    # print(f"proxy_value {proxy_value}")
     value = proxy_value.ir_value
 
     # After scalar promotion, promote to vector.

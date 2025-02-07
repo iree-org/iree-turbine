@@ -15,7 +15,8 @@ from iree.turbine.kernel.gen import TestLaunchContext
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
-    get_vanilla_attention_kernel as get_vanilla_tkw_attention_kernel)
+    get_vanilla_attention_kernel as get_vanilla_tkw_attention_kernel,
+)
 from iree.turbine.kernel.wave.utils import (
     device_randn,
     device_zeros,
@@ -23,8 +24,8 @@ from iree.turbine.kernel.wave.utils import (
     to_default_device,
 )
 from attention_with_rpe_template import (
-    get_vanilla_attention_kernel as
-    get_vanilla_tkw_attention_with_rpe_output_kernel)
+    get_vanilla_attention_kernel as get_vanilla_tkw_attention_with_rpe_output_kernel,
+)
 
 torch.manual_seed(0)
 torch.set_printoptions(
@@ -37,23 +38,26 @@ torch.set_printoptions(
 ### TKW Harness
 def run(fun: Callable, hparams, *args) -> Any:
     with torch.profiler.profile(
-            activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+        activities=[torch.profiler.ProfilerActivity.CUDA]
+    ) as prof:
         with torch.no_grad():  # Disable gradient calculations
             with TestLaunchContext(
-                    hparams,
-                    canonicalize=True,
-                    compile_config={"print-ir-after": "all"},
-                    run=True,
-                    run_config=get_default_run_config(),
-                    run_bench=False,
-                    schedule=False,
-                    use_scheduling_barriers=False,
+                hparams,
+                canonicalize=True,
+                compile_config={"print-ir-after": "all"},
+                run=True,
+                run_config=get_default_run_config(),
+                run_bench=False,
+                schedule=False,
+                use_scheduling_barriers=False,
             ):
                 fun(*args)
 
     print(
         prof.key_averages(group_by_input_shape=True).table(
-            sort_by="self_cuda_time_total", row_limit=10))
+            sort_by="self_cuda_time_total", row_limit=10
+        )
+    )
 
 
 #################################################################################
@@ -64,8 +68,9 @@ shape = AttentionShape(128, 128, 128, 128)
 shape.query_seq_len = 128
 shape.kv_seq_len = 128
 
-assert shape.num_query_heads == shape.num_kv_heads, \
-    "expected query and kv to have the same number of heads!"
+assert (
+    shape.num_query_heads == shape.num_kv_heads
+), "expected query and kv to have the same number of heads!"
 
 q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
 k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
@@ -90,40 +95,44 @@ max_context_length = 33
 # Applied pre-softmax on the MMA'ed result so f32.
 # Provision more room for clipping and adding 0 at the boundaries.
 rpe = device_zeros(1000 + max_context_length + 2, dtype=torch.float32)
-rpe = rpe[:max_context_length + 2].view(max_context_length + 2)
+rpe = rpe[: max_context_length + 2].view(max_context_length + 2)
 rpe.copy_(device_randn(max_context_length + 2, dtype=torch.float32))
 rpe[0] = 0
 rpe[max_context_length + 1] = 0
 
 
-def t5_rpe_masked_cond(rpe, max_context_length: int, sequence_length: int,
-                       dtype):
+def t5_rpe_masked_cond(rpe, max_context_length: int, sequence_length: int, dtype):
     positions = to_default_device(torch.arange(sequence_length))
     pos_diff = positions.unsqueeze(1) - positions.unsqueeze(0)
-    mask = to_default_device((pos_diff >= 0)
-                             & (pos_diff <= max_context_length))
+    mask = to_default_device((pos_diff >= 0) & (pos_diff <= max_context_length))
     rpe_cond = device_zeros(sequence_length, sequence_length, dtype=dtype)
     rpe_cond[mask] = rpe[pos_diff[mask]]
     return rpe_cond
 
 
 # rpe_cond is used by torch only
-rpe_cond = t5_rpe_masked_cond(rpe,
-                              max_context_length=max_context_length,
-                              sequence_length=shape.kv_seq_len,
-                              dtype=tkw_attention_with_rpe_output.dtype)
+rpe_cond = t5_rpe_masked_cond(
+    rpe,
+    max_context_length=max_context_length,
+    sequence_length=shape.kv_seq_len,
+    dtype=tkw_attention_with_rpe_output.dtype,
+)
 
 #################################################################################
 # TKW BASE ATTENTION
 #################################################################################
 ### RPE version
-tkw_attention_with_rpe, hyperparams, dynamic_symbols, dynamic_symbols_map = \
-    get_vanilla_tkw_attention_with_rpe_output_kernel(
-        shape,
-        mfma_variant=[MMAType.F32_16x16x16_F16,
-                      MMAType.F32_16x16x16_F16],
-        dynamic_dims=False,
-        max_context_length = max_context_length + 2)
+(
+    tkw_attention_with_rpe,
+    hyperparams,
+    dynamic_symbols,
+    dynamic_symbols_map,
+) = get_vanilla_tkw_attention_with_rpe_output_kernel(
+    shape,
+    mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
+    dynamic_dims=False,
+    max_context_length=max_context_length + 2,
+)
 
 
 def attention_with_rpe(tq, tk, tv, trpe, toutput):
@@ -131,24 +140,41 @@ def attention_with_rpe(tq, tk, tv, trpe, toutput):
     print(mb.module_op)
 
 
-run(attention_with_rpe, hyperparams, q * dk_sqrt * log2e, k,
-    v.permute([0, 2, 1]), rpe, tkw_attention_with_rpe_output)
+run(
+    attention_with_rpe,
+    hyperparams,
+    q * dk_sqrt * log2e,
+    k,
+    v.permute([0, 2, 1]),
+    rpe * log2e,
+    tkw_attention_with_rpe_output,
+)
 
 ### Reference version
-tkw_attention, hyperparams, dynamic_symbols, dynamic_symbols_map = \
-    get_vanilla_tkw_attention_kernel(
-        shape,
-        mfma_variant=[MMAType.F32_16x16x16_F16,
-                      MMAType.F32_16x16x16_F16],
-        dynamic_dims=False)
+(
+    tkw_attention,
+    hyperparams,
+    dynamic_symbols,
+    dynamic_symbols_map,
+) = get_vanilla_tkw_attention_kernel(
+    shape,
+    mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
+    dynamic_dims=False,
+)
 
 
 def attention(tq, tk, tv, toutput):
     tkw_attention(tq, tk, tv, toutput)
 
 
-run(attention, hyperparams, q * dk_sqrt * log2e, k, v.permute([0, 2, 1]),
-    tkw_attention_output)
+run(
+    attention,
+    hyperparams,
+    q * dk_sqrt * log2e,
+    k,
+    v.permute([0, 2, 1]),
+    tkw_attention_output,
+)
 
 tkw_rpe_delta_output = tkw_attention_with_rpe_output - tkw_attention_output
 # print(tkw_rpe_delta_output)
@@ -157,7 +183,8 @@ tkw_rpe_delta_output = tkw_attention_with_rpe_output - tkw_attention_output
 # TORCH ATTENTION and ATTENTION + RPE
 #################################################################################
 torch_attention_ref_output = torch.nn.functional.scaled_dot_product_attention(
-    q, k, v, attn_mask=None)
+    q, k, v, attn_mask=None
+)
 
 a = torch.matmul(q, k.transpose(-1, -2)) * dk_sqrt
 torch_attention_output = torch.matmul(torch.softmax(a, dim=-1), v)
@@ -165,23 +192,24 @@ torch_attention_output = torch.matmul(torch.softmax(a, dim=-1), v)
 # Sanity check that torch_attention_output and torch_attention_ref_output are
 # the same so we can inject RPE pre-softmax and compute the delta.
 # We will test that the delta post-softmax is the same for torch and TKW.
-assert_close(torch_attention_output,
-             torch_attention_ref_output,
-             atol=2e-3,
-             rtol=2e-3)
+assert_close(torch_attention_output, torch_attention_ref_output, atol=2e-3, rtol=2e-3)
 
 a += rpe_cond.unsqueeze(0)
 torch_attention_with_rpe_output = torch.matmul(F.softmax(a, dim=-1), v)
 torch_rpe_delta_output = torch_attention_with_rpe_output - torch_attention_output
 
 # Check basic attentions match as we expect.
-assert_close(torch_attention_output.to(dtype=tkw_attention_output.dtype),
-             tkw_attention_output,
-             atol=2e-3,
-             rtol=2e-3)
+assert_close(
+    torch_attention_output.to(dtype=tkw_attention_output.dtype),
+    tkw_attention_output,
+    atol=2e-3,
+    rtol=2e-3,
+)
 
 # Check RPE attentions match as we expect.
-assert_close(torch_rpe_delta_output.to(dtype=tkw_rpe_delta_output.dtype),
-             tkw_rpe_delta_output,
-             atol=2e-3,
-             rtol=2e-3)
+assert_close(
+    torch_rpe_delta_output.to(dtype=tkw_rpe_delta_output.dtype),
+    tkw_rpe_delta_output,
+    atol=2e-3,
+    rtol=2e-3,
+)

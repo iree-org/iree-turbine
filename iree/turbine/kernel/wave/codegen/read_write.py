@@ -7,6 +7,7 @@
 import sympy
 import functools
 from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
+import math
 
 import torch.fx as fx
 
@@ -134,19 +135,9 @@ def _build_mask(
     return mask
 
 
-def _get_splat_const(vec_type: IrType, value: Any) -> Value:
-    splat = DenseElementsAttr.get_splat(
-        vec_type, get_constant_attr(value, vec_type.element_type)
-    )
-    return arith_d.constant(vec_type, splat)
-
-
-def _constant_mask(vec_type: IrType) -> Value:
-    return _get_splat_const(vec_type, 1)
-
-
 def _construct_gather_scatter_indices(
     emitter: WaveEmitter,
+    # TODO TODO TODO  fix typo
     symbolc_shape: tuple[IndexExpr],
     index: tuple[IndexExpr],
     mapping: IndexMapping,
@@ -154,6 +145,7 @@ def _construct_gather_scatter_indices(
     is_read: bool,
     dynamic_vals: tuple[Any, ...],
     is_contiguous: bool,
+    vector_shaped_symbols={},
 ) -> tuple[OpResult, OpResult, OpResult]:
     # Apply symbolc_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
@@ -189,7 +181,7 @@ def _construct_gather_scatter_indices(
         mask_vec_type = VectorType.get(
             [elements_per_thread], IntegerType.get_signless(1)
         )
-        mask = _constant_mask(mask_vec_type)
+        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
 
     def extract0(src):
         static_pos = [0] * src.type.rank
@@ -221,34 +213,46 @@ def _construct_gather_scatter_indices(
     offsets = []
     strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
     start_indices_offset = _compute_offset(start_indices, strides)
-    for i in range(elements_per_thread):
-        # Update fastest dim, i.e. in case of identity mapping it will
-        # be equivalent to just vector.load
-        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
-        subs[fastest_dim] = (subs[fastest_dim][0], start_indices_orig[fastest_dim] + i)
-        indices = [i.subs(subs) for i in index_mapping]
 
-        # First, we build indices as if resulting gather/scatter `start_indices`
-        # are 0 as mapping expression may depend on absolute value of index
-        # (e.g. `index % 32`). Then we adjust for the non-0 `start_indices` by
-        # subtracting computed previously linear `start_indices_offset`. For
-        # simple cases like transpose, the resulting expression should fold into
-        # simple constant while more complex expressions may requires actual
-        # arith ops on dynamic values.
-        offset = _compute_offset(indices, strides) - start_indices_offset
-        offset = subs_idxc(offset)
+    # TODO TODO TODO  we don't necessarily care if they are vector shaped, but
+    # if they are indxed by the fastest varying dimension?
+    # Note that we may want to "expand" the symbol to per-element
+    # copies and trigger `need_dynamic_offests` below
+    if len(start_indices_offset.free_symbols.intersection(vector_shaped_symbols)) != 0:
+        need_dynamic_offsets = True
 
-        if offset.is_number:
-            # If resulted offset sympy expr is convertible to int constant it
-            # will be directly encoded into `arith.constant`.
-            # For non-constant expressions, we will generate a real sequence of
-            # arith ops and then `vector.insertelement` them into offsets vec.
-            offset = int(offset)
-        else:
-            need_dynamic_offsets = True
-            break
+    if not need_dynamic_offsets:
+        for i in range(elements_per_thread):
+            # Update fastest dim, i.e. in case of identity mapping it will
+            # be equivalent to just vector.load
+            subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
+            subs[fastest_dim] = (
+                subs[fastest_dim][0],
+                start_indices_orig[fastest_dim] + i,
+            )
+            indices = [i.subs(subs) for i in index_mapping]
 
-        offsets.append(offset)
+            # First, we build indices as if resulting gather/scatter `start_indices`
+            # are 0 as mapping expression may depend on absolute value of index
+            # (e.g. `index % 32`). Then we adjust for the non-0 `start_indices` by
+            # subtracting computed previously linear `start_indices_offset`. For
+            # simple cases like transpose, the resulting expression should fold into
+            # simple constant while more complex expressions may requires actual
+            # arith ops on dynamic values.
+            offset = _compute_offset(indices, strides) - start_indices_offset
+            offset = subs_idxc(offset)
+
+            if offset.is_number:
+                # If resulted offset sympy expr is convertible to int constant it
+                # will be directly encoded into `arith.constant`.
+                # For non-constant expressions, we will generate a real sequence of
+                # arith ops and then `vector.insertelement` them into offsets vec.
+                offset = int(offset)
+            else:
+                need_dynamic_offsets = True
+                break
+
+            offsets.append(offset)
 
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
     if need_dynamic_offsets:
@@ -260,13 +264,22 @@ def _construct_gather_scatter_indices(
         )
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
         # Last item in `subs` corresponds to last item in `start_indices_orig`
-        # which is fastest changing dim.
-        # Replacing last element with `idxc.iota(elements_per_thread)` will
-        # generate vectorized index code, each element in it corresponding to
-        # individual vector element index.
+        # which is fastest changing dim. Replacing last element with
+        # `idxc.iota(elements_per_thread)` will generate vectorized index code,
+        # each element in it corresponding to individual vector element index.
+        #
+        # TODO TODO TODO: vector shaped symbol means we can't just iota here
+        # instead we should just take the value of the symbol; we should instead
+        # somehow get different values of OFFSET (or other vector shaped
+        # symbols) into the `get_sympy_index` below
+        #
+        # we also need to take care if there are several symbols, especially a
+        # mix of constant and non-constant symbols...
+        #
+        # what happens when there are no symbols?
         subs[-1] = (
             subs[-1][0],
-            start_indices_orig[-1] + idxc.iota(elements_per_thread),
+            start_indices_orig[-1],  # + idxc.iota(elements_per_thread),
         )
         dynamic_vals_map = {
             sym: val
@@ -460,6 +473,15 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         dyn_vals = tuple(
             cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
         )
+
+        # TODO TODO TODO we can sink this down, actually...
+        vector_shaped_symbols = set(
+            sym
+            for sym, value in emitter.dynamic_dims.items()
+            if isinstance(value.type, ShapedType)
+            and math.prod(ShapedType(value.type).shape) != 1
+        )
+
         start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
             emitter=emitter,
             symbolc_shape=input_shape,
@@ -469,6 +491,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             is_read=True,
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
+            vector_shaped_symbols=vector_shaped_symbols,
         )
         result = _create_vec_read(
             emitter,

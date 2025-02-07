@@ -531,8 +531,7 @@ def handle_and_op(lhs: Value, rhs: Value) -> OpResult:
     if _is_integer_like_type(element_type):
         result = arith_d.andi(lhs, rhs)
     else:
-        raise ValidationError(
-            f"Found unhandled operand type for le: {element_type}")
+        raise ValidationError(f"Found unhandled operand type for le: {element_type}")
     return result
 
 
@@ -566,6 +565,7 @@ def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
             f"Found unhandled operand type for minimum: {element_type}"
         )
     return result
+
 
 ###############################################################################
 # Unary math Ops
