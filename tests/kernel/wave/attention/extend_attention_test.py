@@ -35,22 +35,11 @@ from ..common.utils import (
     enable_scheduling_barriers,
     dump_generated_mlir,
 )
-from ..common.shapes import get_test_shapes
 from torch.nn.attention.flex_attention import flex_attention
 from torch.nn.attention.flex_attention import create_block_mask
+from ..common.shapes import get_test_shapes, construct_test_name
 
 # Reference paged attention implementation from vLLM and sglang.
-shapes = [
-    AttentionShape(
-        num_seqs=2,
-        context_len=1024,
-        num_query_heads=16,
-        num_kv_heads=1,
-        head_size=128,
-        head_size_kv=128,
-        block_size=64,
-    )
-]
 
 
 def context_attention_fwd(
@@ -169,9 +158,13 @@ def create_inputs(
     b_seq_len_prefix = torch.randint(
         1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
     )
+    if shape.fixed_seq_len_prefix:
+        b_seq_len_prefix.fill_(shape.fixed_seq_len_prefix)
     b_seq_len_extend = torch.randint(
         1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
     )
+    if shape.fixed_seq_len_extend:
+        b_seq_len_extend.fill_(shape.fixed_seq_len_extend)
     b_seq_len = b_seq_len_prefix + b_seq_len_extend
     max_len_in_batch = torch.max(b_seq_len, 0)[0].item()
 
@@ -242,7 +235,7 @@ def create_inputs(
 # TODO: Investigate errors on MI250.
 @require_e2e
 @require_cdna3
-@pytest.mark.parametrize("shape", shapes)
+@pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize("is_causal", [False, True])
@@ -308,13 +301,13 @@ def testExtendAttention(
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
     if run_bench:
-        config["benchmark_batch_size"] = 10
+        config["benchmark_batch_size"] = 1000
         config["benchmark_repetitions"] = 3
     if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
+        perf_filename = construct_test_name(
+            "wave_extend_attention", mfma_variant, is_causal, shape
         )
+        config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
     log2e = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)

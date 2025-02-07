@@ -654,8 +654,9 @@ def invoke_vmfb(
 
         benchmark_flags = {}
 
-        if bench_batch_size is not None:
-            benchmark_flags["batch_size"] = int(bench_batch_size)
+        # If we use 1000 for bench_batch_size during compilation, and set this batch size to 1,
+        # then the latency is in milliseconds.
+        benchmark_flags["batch_size"] = 1
 
         if bench_repetitions is not None:
             benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
@@ -707,6 +708,7 @@ def invoke_vmfb(
         tempfiles = []
         inputs = []
         all_inputs = kernel_inputs + kernel_outputs if inplace else kernel_inputs
+        all_inputs += kernel_dynamic_dims
         if bench_with_constant_weights:
             for inp in all_inputs:
                 if isinstance(inp, torch.Tensor):
@@ -723,7 +725,6 @@ def invoke_vmfb(
         else:
             for inp in all_inputs:
                 if isinstance(inp, torch.Tensor):
-                    tf = tempfile.NamedTemporaryFile(suffix=".npy")
                     inp = inp.cpu()
                     if inp.dtype == torch.bfloat16:
                         inp = (
@@ -733,9 +734,10 @@ def invoke_vmfb(
                         )
                     else:
                         inp = inp.numpy()
-                    numpy.save(tf, inp)
-                    tempfiles.append(tf)
-                    inputs.append("@" + tf.name)
+                    with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as tf:
+                        numpy.save(tf, inp)
+                        tempfiles.append(tf)
+                        inputs.append("@" + tf.name)
                 elif isinstance(inp, int):
                     inputs.append(f"1xi32={inp}")
                 else:
@@ -749,6 +751,8 @@ def invoke_vmfb(
             **benchmark_flags,
         )
         _print_bench_result(benchmark_results, bench_file)
+        for file in tempfiles:
+            Path.unlink(file.name)
 
 
 def compile_and_invoke(
