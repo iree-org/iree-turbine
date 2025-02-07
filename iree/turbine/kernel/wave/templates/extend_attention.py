@@ -169,15 +169,12 @@ def get_extend_attention_kernel(
             N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_cache_layout
         ],
         block_table: tkl.Memory[
-            #S, N_KV, GLOBAL_ADDRESS_SPACE, wave_size_dtype, block_table_layout
             S, N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
         ],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
         sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
-        #sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
         sequence_lengths_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        #start_indices_extend: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
