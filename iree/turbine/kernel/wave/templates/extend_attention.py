@@ -124,7 +124,11 @@ def get_extend_attention_kernel(
     )
     k_cache_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H_KV: i // head_ratio, N_KV: j + SEQ_IDX, D_Q: k},
+        inputs={
+            H_KV: i // head_ratio,
+            N_KV: j + SEQ_IDX - index_symbol("$ARGN_KV") * BLOCK_N_KV,
+            D_Q: k,
+        },
         outputs={H_KV: i, N_KV: j, D_Q: k},
     )
 
@@ -136,7 +140,11 @@ def get_extend_attention_kernel(
 
     v_cache_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H_KV: i // head_ratio, D_KV: j, N_KV: k + SEQ_IDX},
+        inputs={
+            H_KV: i // head_ratio,
+            D_KV: j,
+            N_KV: k + SEQ_IDX - index_symbol("$ARGN_KV") * BLOCK_N_KV,
+        },
         outputs={H_KV: i, D_KV: j, N_KV: k},
     )
 
@@ -196,12 +204,6 @@ def get_extend_attention_kernel(
         seq_len_prefix = seq_len - seq_len_extend
 
         tkw.set_symbol(N_KV, seq_len_prefix)
-        block_indices = tkw.read(
-            block_table,
-            elements_per_thread=1,
-            mapping=block_table_mapping,
-        )
-        tkw.set_symbol(SEQ_IDX, block_indices)
 
         @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
         def first_loop(
@@ -214,6 +216,12 @@ def get_extend_attention_kernel(
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=q_mapping,
             )
+            block_indices = tkw.read(
+                block_table,
+                elements_per_thread=1,
+                mapping=block_table_mapping,
+            )
+            tkw.set_symbol(SEQ_IDX, block_indices)
             k_reg = tkw.read(
                 k_cache,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
