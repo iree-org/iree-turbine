@@ -545,7 +545,7 @@ def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
     if _is_float_type(element_type):
         result = arith_d.minimumf(lhs, rhs)
     elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+        element_type.is_signed() or element_type.is_signless()
     ):
         result = arith_d.minsi(lhs, rhs)
     else:
