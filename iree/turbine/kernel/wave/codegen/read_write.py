@@ -457,9 +457,12 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             offsets_vec=None,
         )
     else:
-        dyn_vals = tuple(
-            cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
-        )
+        try:
+            dyn_vals = tuple(
+                cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
+            )
+        except:
+            breakpoint()
         start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
             emitter=emitter,
             symbolc_shape=input_shape,

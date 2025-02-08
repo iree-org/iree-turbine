@@ -340,7 +340,7 @@ def testExtendAttention(
         )
 
     if dump_generated_mlir:
-        filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
+        filename = f"wave_extend_attention_kernel_x.mlir"
         with open(filename, "w") as f:
             f.write(mb_qk.module_op.get_asm())
 
