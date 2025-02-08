@@ -144,9 +144,9 @@ def get_extend_attention_kernel(
     )
 
     block_table_mapping = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={S: REQ_IDX, N_KV: j},
-        outputs={S: i, N_KV: j},
+        num_iterators=1,
+        inputs={S: REQ_IDX, N_KV: i},
+        outputs={N_KV: i},
     )
 
     # Set the dynamic shapes for the kernel. Here we set it to N_Q
@@ -222,12 +222,22 @@ def get_extend_attention_kernel(
                 mapping=k_cache_mapping,
                 mapping_dynamic_vals=(block_indices,),
             )
+            n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            k_mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            k_mask = tkw.broadcast(k_mask, target_shape=[N_KV, D_Q])
+            k_mask = tkw.cast(k_mask, tkw.i1)
+            qk_zero = tkl.Register[N_KV, D_Q, wave_input_dtype](0.0)
+            qk_one = tkl.Register[N_KV, D_Q, wave_input_dtype](1.0)
+            # kv_mask = tkw.apply_expr(block_indices, lambda x: x < N_KV)
+            # kv_mask = tkw.cast(kv_mask, tkw.i1)
+            # k_mask = tkw.broadcast(mask, target_shape=[N_KV, D_Q])
+            k_bias = tkw.select(k_mask, qk_one, qk_zero)
+            k_reg = k_reg * k_bias
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
             if logit_cap > 0:
                 x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
-            n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
             mask = tkw.cast(mask, tkw.i1)
@@ -245,6 +255,13 @@ def get_extend_attention_kernel(
                 mapping=v_cache_mapping,
                 mapping_dynamic_vals=(block_indices,),
             )
+            v_mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            v_mask = tkw.broadcast(v_mask, target_shape=[N_KV, D_KV])
+            v_mask = tkw.cast(v_mask, tkw.i1)
+            v_zero = tkl.Register[N_KV, D_KV, wave_input_dtype](0.0)
+            v_one = tkl.Register[N_KV, D_KV, wave_input_dtype](1.0)
+            v_bias = tkw.select(v_mask, v_one, v_zero)
+            v_reg = v_reg * v_bias
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc

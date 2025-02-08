@@ -24,6 +24,7 @@ from ...ops.wave_ops import (
     SetSymbol,
     ApplyExpr,
     Broadcast,
+    Read,
 )
 from ..._support.indexing import IndexingContext, IndexSymbol
 import itertools
@@ -398,6 +399,7 @@ def populate_inputs(
     expandable_args = filter_expandable_args([get_custom(x) for x in inputs])
     new_nodes_to_expand = []
 
+
     if isinstance(node, (Reshape, ReduceOp)):
         match node:
             case Reshape():
@@ -429,6 +431,9 @@ def populate_inputs(
         nodes_to_expand.extend(new_nodes_to_expand)
         return nodes_to_expand
 
+    # if any(op.name == "read_1" for op in expandable_args):
+    #     # reads = [op for op in node.graph.subgraphs["region_0"].nodes if isinstance(get_custom(op), Read)]
+    #     breakpoint()
     for arg in expandable_args:
         match arg:
             case MMA():
@@ -536,6 +541,12 @@ def expand_node(
     )
 
     # Check for any expanded users and update their arguments.
+    # if node.name == "read_1":
+    #     cool = [user for user in node.users if ExpansionInfo(user, get_indexed_dims(metadata.dim_query, user)) in expansion_context]
+    #     breakpoint()
+    # cool = [user for user in node.users if ExpansionInfo(user, get_indexed_dims(metadata.dim_query, user)) in expansion_context]
+    # if len(cool) > 0:
+    #     breakpoint()
     update_users(node, new_node, metadata, expansion_context)
 
     # Add expandable inputs to the list of nodes to expand.

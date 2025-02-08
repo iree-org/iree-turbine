@@ -560,7 +560,7 @@ class CustomOp(ABC):
         for i, arg in enumerate(self.fx_node.args):
             if isinstance(arg, fx.Node):
                 custom_args[i] = propagate(arg)
-            if isinstance(arg, list) and all(isinstance(x, fx.Node) for x in arg):
+            if isinstance(arg, Sequence) and all(isinstance(x, fx.Node) for x in arg):
                 custom_args[i] = [propagate(x) for x in arg]
         return custom_args
 

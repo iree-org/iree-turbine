@@ -877,6 +877,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     bcast_sizes = [subs_idxc(node.index[x].size) for x in bcast_dims]
     lane_level_broadcast = target_thread_size != src_thread_size
     if math.prod(bcast_sizes) == 1 and not lane_level_broadcast:
+        breakpoint()
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
         return
 

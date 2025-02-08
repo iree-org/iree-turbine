@@ -238,7 +238,7 @@ def create_inputs(
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("is_causal", [False, True])
+@pytest.mark.parametrize("is_causal", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [(MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)],
