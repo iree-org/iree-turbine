@@ -309,9 +309,6 @@ def testExtendAttention(
         )
         config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape.head_size)
-
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -323,10 +320,8 @@ def testExtendAttention(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
-        # TODO: Add scaling of QK as part of kernel.
-        # TODO: Add variant of non-transposed V attention kernel.
         mb_qk = extend_attention(
-            q_extend * dk_sqrt * log2e,
+            q_extend,
             k_extend,
             v_extend,
             k_buffer,
