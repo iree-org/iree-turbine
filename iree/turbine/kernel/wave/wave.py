@@ -368,7 +368,7 @@ class LaunchableWave(Launchable):
         graph_passes += [
             partial(decompose_vmma_ops, trace, self.constraints),
             partial(hoist_loop_invariant_ops, trace, self.constraints),
-            partial(reuse_shared_allocs, trace),
+            # partial(reuse_shared_allocs, trace),
             partial(minimize_global_loads, trace, self.constraints),
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
         ]
