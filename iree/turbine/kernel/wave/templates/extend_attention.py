@@ -69,6 +69,8 @@ def get_extend_attention_kernel(
     N_WAVES = 1
     LOG2E = 1.44269504089
     logit_cap *= LOG2E
+    dk_sqrt = math.sqrt(1.0 / shape.head_size)
+    layer_scaling = dk_sqrt * LOG2E
 
     constraints: list[tkw.Constraint] = []
     constraints += [
@@ -185,6 +187,7 @@ def get_extend_attention_kernel(
         init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)
         zero = tkl.Register[H, N_Q, N_KV, tkl.f32](0.0)
         neg_infinity = tkl.Register[H, N_Q, N_KV, tkl.f32](-1e6)
+        layer_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](layer_scaling)
         if logit_cap > 0:
             logit_cap_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](logit_cap)
 
@@ -234,6 +237,7 @@ def get_extend_attention_kernel(
             # > (N_Q: 1, N_KV: 4)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            x_j = x_j * layer_scale_reg
             if logit_cap > 0:
                 x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
@@ -285,6 +289,7 @@ def get_extend_attention_kernel(
             )
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            x_j = x_j * layer_scale_reg
             if logit_cap > 0:
                 x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
