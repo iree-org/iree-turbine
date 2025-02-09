@@ -19,7 +19,6 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 from ..ops.wave_ops import (
-    ApplyExpr,
     Conditional,
     CustomOp,
     ExtractSlice,
@@ -33,6 +32,7 @@ from ..ops.wave_ops import (
     Reduction,
     Reshape,
     SetSymbol,
+    SharedMemoryBarrier,
     Write,
     get_custom,
 )
@@ -214,7 +214,7 @@ def DCE(trace: CapturedTrace):
 
         if (
             custom.users
-            or isinstance(custom, (Output, SetSymbol, ApplyExpr))
+            or isinstance(custom, (Output, SetSymbol, SharedMemoryBarrier))
             or is_global_write(node)
         ):
             return False
