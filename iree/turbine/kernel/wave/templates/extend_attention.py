@@ -183,8 +183,8 @@ def get_extend_attention_kernel(
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
         init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)
-        zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
-        neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
+        zero = tkl.Register[H, N_Q, N_KV, tkl.f32](0.0)
+        neg_infinity = tkl.Register[H, N_Q, N_KV, tkl.f32](-1e6)
         if logit_cap > 0:
             logit_cap_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](logit_cap)
 
@@ -238,7 +238,11 @@ def get_extend_attention_kernel(
                 x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
-            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            mask = tkw.broadcast(mask, target_shape=[H, N_Q, N_KV])
+            n_q_index = tkw.self_index(N_Q, tkl.i32)
+            n_mask = tkw.apply_expr(n_q_index, lambda x: x < N_Q)
+            n_mask = tkw.broadcast(n_mask, target_shape=[H, N_Q, N_KV])
+            mask = mask & n_mask
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, zero, neg_infinity)
             x_j = x_j + bias
@@ -285,11 +289,13 @@ def get_extend_attention_kernel(
                 x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
-            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            mask = tkw.broadcast(mask, target_shape=[H, N_Q, N_KV])
             if is_causal:
                 n_q_index = tkw.self_index(N_Q, tkl.i32)
-                n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
-                mask = (n_q_index >= n_kv_index) & mask
+                n_mask = tkw.apply_expr(n_q_index, lambda x: x < N_Q)
+                n_mask = tkw.broadcast(n_mask, target_shape=[H, N_Q, N_KV])
+                n_q_index = tkw.broadcast(n_q_index, target_shape=[H, N_Q, N_KV])
+                mask = (n_q_index >= n_kv_index) & n_mask & mask
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, zero, neg_infinity)
             x_j = x_j + bias
