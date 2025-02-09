@@ -414,9 +414,14 @@ def _create_vec_read(
             )
             mask = _constant_mask(mask_vec_type)
 
-        return vector_d.gather(
-            vector_type, mem, start_indices, offsets_vec, mask, passthru
-        )
+        if offsets_vec is None:
+            return vector_d.maskedload(
+                vector_type, kb_src, start_indices, mask, passthru
+            )
+        else:
+            return vector_d.gather(
+                vector_type, mem, start_indices, offsets_vec, mask, passthru
+            )
 
 
 @handle_op(read)
@@ -533,7 +538,10 @@ def _create_vec_write(
             )
             mask = _constant_mask(mask_vec_type)
 
-        vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
+        if offsets_vec is None:
+            vector_d.maskedstore(mem, start_indices, mask, value)
+        else:
+            vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
 
 
 @handle_op(write)
