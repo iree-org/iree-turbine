@@ -239,6 +239,7 @@ def create_inputs(
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
 @pytest.mark.parametrize("is_causal", [False, True])
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -251,6 +252,7 @@ def testExtendAttention(
     dtype: torch.dtype,
     enable_scheduling: bool,
     is_causal: bool,
+    use_buffer_ops: bool,
     mfma_variant: MMAType,
     request,
 ):
@@ -328,6 +330,8 @@ def testExtendAttention(
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         mb_qk = extend_attention(
             q_extend,
