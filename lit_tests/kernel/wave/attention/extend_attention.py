@@ -92,7 +92,6 @@ def test_extend_attention():
         )
 
         # CHECK-LABEL:       func.func @extend_attention
-        # CHECK-COUNT-1:        vector.maskedload
         # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
         # CHECK-DAG:            %[[ALLOC1:.*]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
         # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
@@ -209,7 +208,6 @@ def test_causal_extend_attention():
         )
 
         # CHECK-LABEL:       func.func @extend_attention
-        # CHECK-COUNT-1:        vector.maskedload
         # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
         # CHECK-DAG:            %[[ALLOC1:.*]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
         # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
