@@ -42,7 +42,7 @@ from ...ops.wave_ops import (
     write,
 )
 
-from ..utils import subs_idxc, find_index_bounds
+from ..utils import safe_subs, subs_idxc, find_index_bounds
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from ...lang.wave_types import IndexMapping
@@ -79,9 +79,9 @@ def _get_start_indices(
 def _split_index(src: IndexExpr) -> tuple[IndexExpr, IndexExpr]:
     subs_wg = {WORKGROUP_0: 0, WORKGROUP_1: 0, WORKGROUP_2: 0}
     subs_th = {THREAD_0: 0, THREAD_1: 0, THREAD_2: 0}
-    thread_dependend_index = src.subs(subs_wg)
+    thread_dependend_index = safe_subs(src, subs_wg)
     return (
-        sympy.simplify((src - thread_dependend_index).subs(subs_th)),
+        sympy.simplify(safe_subs(src - thread_dependend_index, subs_th)),
         thread_dependend_index,
     )
 
