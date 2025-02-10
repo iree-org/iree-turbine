@@ -8,7 +8,7 @@ from collections import defaultdict
 from iree.turbine.kernel._support.tracing import CapturedTrace
 import torch.fx as fx
 
-from ..ops.wave_ops import get_custom, Allocate
+from ..ops.wave_ops import get_custom, Allocate, SharedMemoryBarrier
 from .utils import get_users
 
 
@@ -55,6 +55,11 @@ def _try_replace(current_node: fx.Node, candidates: list[fx.Node]) -> bool:
     """
     for candidate in candidates:
         if _is_dead(current_node, candidate):
+            if not isinstance(get_custom(current_node.prev), SharedMemoryBarrier):
+                graph = current_node.graph
+                with graph.inserting_before(current_node):
+                    SharedMemoryBarrier().add_to_graph(graph)
+
             custom = get_custom(current_node)
             custom.replace_all_uses_with(candidate)
             custom.erase()

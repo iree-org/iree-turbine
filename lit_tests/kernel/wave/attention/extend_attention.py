@@ -118,6 +118,8 @@ def test_extend_attention():
         # CHECK-COUNT-2:            arith.addf
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
+        # CHECK:                amdgpu.lds_barrier
+        # CHECK-NOT:            amdgpu.lds_barrier
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
         # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
@@ -242,6 +244,8 @@ def test_causal_extend_attention():
 
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
+        # CHECK:                amdgpu.lds_barrier
+        # CHECK-NOT:            amdgpu.lds_barrier
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
         # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
