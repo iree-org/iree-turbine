@@ -46,6 +46,7 @@ from ..utils import subs_idxc, find_index_bounds
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from ...lang.wave_types import IndexMapping
+from ...lang.global_symbols import *
 
 from .emitter import (
     WaveEmitter,
@@ -75,15 +76,25 @@ def _get_start_indices(
     return start_indices
 
 
+def _split_index(src: IndexExpr) -> tuple[IndexExpr, IndexExpr]:
+    subs_wg = {WORKGROUP_0: 0, WORKGROUP_1: 0, WORKGROUP_2: 0}
+    subs_th = {THREAD_0: 0, THREAD_1: 0, THREAD_2: 0}
+    thread_dependend_index = src.subs(subs_wg)
+    return (
+        sympy.simplify((src - thread_dependend_index).subs(subs_th)),
+        thread_dependend_index,
+    )
+
+
 def _build_start_indices(
     emitter: WaveEmitter,
     src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
     dynamic_values: dict[IndexExpr, Any] = {},
 ) -> list[OpResult]:
-    return [
-        gen_sympy_index(add_emitter_subs(emitter, dynamic_values), i)
-        for i in _get_start_indices(src_indices)
-    ]
+    split_indices = [_split_index(i) for i in _get_start_indices(src_indices)]
+    print("split_indices", split_indices)
+    subs = add_emitter_subs(emitter, dynamic_values)
+    return [gen_sympy_index(subs, i) for i in _get_start_indices(src_indices)]
 
 
 def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
