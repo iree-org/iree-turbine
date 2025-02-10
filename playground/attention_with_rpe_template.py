@@ -86,6 +86,14 @@ def get_vanilla_attention_kernel(
         outputs={K2: i},
     )
 
+    # d = tkw.IndexMapping.dynamic_val(0)
+    # dynamic_mapping = tkw.IndexMapping(
+    #     num_iterators=3,
+    #     inputs = {B: d},
+    #     outputs = {B: i, M: j, K2: k},
+    #     dynamic_val_mappings = {B: i, M: j, K2: k}
+    # )
+
     use_t5_rpe = max_context_length is not None
     if use_t5_rpe:
         rpe_layout = tkl.MemoryLayout(
@@ -103,6 +111,7 @@ def get_vanilla_attention_kernel(
         # TODO: if not use_t5_rpe, this will DCE; atm DCE on blockargs crashes.
         rpe: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        debug_out: tkl.Memory[B, M, K2, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
@@ -152,11 +161,22 @@ def get_vanilla_attention_kernel(
                 # to do bucketing; atm it is bucketing of size 1.
 
                 # min/max variant
-                # idx = tkw.maximum(i - j, ZERO)
-                # idx = tkw.minimum(idx, MAX)
+                idx = tkw.maximum(i - j, ZERO)
+                idx = tkw.minimum(idx, MAX)
 
                 # select variant.
-                idx = tkw.select(tkw.and_op(i - j >= ZERO, i - j <= MAX), i - j, ZERO)
+                # idx = tkw.select(tkw.and_op(i - j >= ZERO, i - j <= MAX), i - j, ZERO)
+
+                idx = tkw.broadcast(idx, target_shape=[B,M,K2])
+
+                ### alternative
+                # rpe_reg = tkw.read(
+                #     rpe,
+                #     mapping=dynamic_mapping,
+                #     mapping_dynamic_vals=(idx,),
+                #     elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+                # )
+                ###
 
                 # 3. Read indirect into the 1-D rpe array via offset_mapping.
                 tkw.set_symbol(OFFSET, idx)  # offset will have shape [M, K2]
@@ -165,6 +185,9 @@ def get_vanilla_attention_kernel(
                     mapping=offset_mapping,
                     elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 )
+                rpe_reg = tkw.broadcast(rpe_reg, target_shape=[B,M,K2])
+                tkw.write(rpe_reg, debug_out, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+                # tkw.write(tkw.cast(idx, tkl.f32), debug_out, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
 
                 # 4. Tadaaaa.
                 x_j = x_j + rpe_reg + tkw.cast(ZERO * idx, tkl.f32)

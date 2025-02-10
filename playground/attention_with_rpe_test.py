@@ -37,14 +37,14 @@ torch.set_printoptions(
 
 ### TKW Harness
 def run(fun: Callable, hparams, *args) -> Any:
-    with torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CUDA]
-    ) as prof:
+    # with torch.profiler.profile(
+    #     activities=[torch.profiler.ProfilerActivity.CUDA]
+    # ) as prof:
         with torch.no_grad():  # Disable gradient calculations
             with TestLaunchContext(
                 hparams,
                 canonicalize=True,
-                compile_config={"print-ir-after": "all"},
+                # compile_config={"print-ir-after": "all"},
                 run=True,
                 run_config=get_default_run_config(),
                 run_bench=False,
@@ -53,11 +53,11 @@ def run(fun: Callable, hparams, *args) -> Any:
             ):
                 fun(*args)
 
-    print(
-        prof.key_averages(group_by_input_shape=True).table(
-            sort_by="self_cuda_time_total", row_limit=10
-        )
-    )
+    # print(
+    #     prof.key_averages(group_by_input_shape=True).table(
+    #         sort_by="self_cuda_time_total", row_limit=10
+    #     )
+    # )
 
 
 #################################################################################
@@ -90,7 +90,7 @@ dk_sqrt = math.sqrt(1.0 / q.shape[-1])
 # T5 RPE INIT VALS
 #################################################################################
 # T5 RPE parameter
-max_context_length = 33
+max_context_length = 30
 
 # Applied pre-softmax on the MMA'ed result so f32.
 # Provision more room for clipping and adding 0 at the boundaries.
@@ -100,6 +100,7 @@ rpe.copy_(device_randn(max_context_length + 2, dtype=torch.float32))
 rpe[0] = 0
 rpe[max_context_length + 1] = 0
 
+tmp_out = device_zeros(shape.num_query_heads, shape.query_seq_len, shape.kv_seq_len, dtype=torch.float32)
 
 def t5_rpe_masked_cond(rpe, max_context_length: int, sequence_length: int, dtype):
     positions = to_default_device(torch.arange(sequence_length))
@@ -118,6 +119,10 @@ rpe_cond = t5_rpe_masked_cond(
     dtype=tkw_attention_with_rpe_output.dtype,
 )
 
+# print(rpe)
+print(rpe_cond.shape)
+print(rpe_cond)
+
 #################################################################################
 # TKW BASE ATTENTION
 #################################################################################
@@ -135,10 +140,9 @@ rpe_cond = t5_rpe_masked_cond(
 )
 
 
-def attention_with_rpe(tq, tk, tv, trpe, toutput):
-    mb = tkw_attention_with_rpe(tq, tk, tv, trpe, toutput)
+def attention_with_rpe(*args):
+    mb = tkw_attention_with_rpe(*args)
     print(mb.module_op)
-
 
 run(
     attention_with_rpe,
@@ -146,9 +150,13 @@ run(
     q * dk_sqrt * log2e,
     k,
     v.permute([0, 2, 1]),
-    rpe * log2e,
+    rpe,  # * log2e,
     tkw_attention_with_rpe_output,
+    tmp_out
 )
+
+print(tmp_out.shape)
+print(tmp_out[0, :, :])
 
 ### Reference version
 (
