@@ -39,7 +39,10 @@ from typing import List, Optional, Tuple
 
 shapes = [(128, 128, 128, 128, 128, 128)]
 
-def get_relative_positions(seq_len: int, kv_seq_len: Optional[int] = None) -> torch.Tensor:
+
+def get_relative_positions(
+    seq_len: int, kv_seq_len: Optional[int] = None
+) -> torch.Tensor:
     """Returns a lower-trinagular tensor with distance between rows and columns.
 
     The tensor resembles the following:
@@ -49,7 +52,8 @@ def get_relative_positions(seq_len: int, kv_seq_len: Optional[int] = None) -> to
         [-2 -1  0  0  0]
         [-3 -2 -1  0  0]
     """
-    if not kv_seq_len: kv_seq_len = seq_len
+    if not kv_seq_len:
+        kv_seq_len = seq_len
     x = torch.arange(kv_seq_len)[None, :]
     y = torch.arange(seq_len)[:, None]
     return to_default_device(torch.minimum(x - y, torch.zeros(seq_len, kv_seq_len)))
@@ -68,10 +72,7 @@ def precompute_alibi_slopes(n_heads: int) -> torch.Tensor:
 
 
 def validate_accuracy(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    output: torch.Tensor
+    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, output: torch.Tensor
 ) -> torch.Tensor:
     # Precompute values.
     dk_sqrt = math.sqrt(1.0 / query.shape[-1])
@@ -79,7 +80,9 @@ def validate_accuracy(
 
     # Straightforward implementation of attention with bias.
     scores = torch.matmul(query, key.transpose(-1, -2)) * dk_sqrt
-    bias = alibi_slopes.unsqueeze(-1).unsqueeze(-1) * get_relative_positions(query.shape[1], key.shape[1])
+    bias = alibi_slopes.unsqueeze(-1).unsqueeze(-1) * get_relative_positions(
+        query.shape[1], key.shape[1]
+    )
     bias = bias.to(dtype=scores.dtype)
     scores = scores + bias
     reference = torch.matmul(torch.softmax(scores, dim=-1), value)
@@ -88,8 +91,7 @@ def validate_accuracy(
 
 
 def create_inputs(
-    shape: AttentionShape,
-    dtype: torch.dtype
+    shape: AttentionShape, dtype: torch.dtype
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
@@ -98,6 +100,7 @@ def create_inputs(
     k = device_randn(k_shape, dtype=dtype)
     v = device_randn(v_shape, dtype=dtype)
     return (q, k, v)
+
 
 @require_e2e
 @pytest.mark.parametrize("shape", shapes)
@@ -124,7 +127,9 @@ def test_alibi_attention(
     assert shape.num_query_heads % shape.num_kv_heads == 0
 
     (query, key, value) = create_inputs(shape, dtype)
-    alibi_attention, hyperparams, _, _ = get_alibi_attention_kernel(shape, mfma_variant, dynamic_dims=False)
+    alibi_attention, hyperparams, _, _ = get_alibi_attention_kernel(
+        shape, mfma_variant, dynamic_dims=False
+    )
     output_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)
 
     hyperparams.update(get_default_scheduling_params())
@@ -162,7 +167,7 @@ def test_alibi_attention(
             # multiplied by the same factor as the Q matrix to preserve the result post
             # softmax:  exp(x + alibi) = exp2((x + alibi) * log2(e))
             alibi_slopes * log2e,
-            output
+            output,
         )
 
         validate_accuracy(query, key, value, output)
