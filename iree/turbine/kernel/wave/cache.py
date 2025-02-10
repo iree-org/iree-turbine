@@ -72,6 +72,15 @@ def extract_arg_types(kernel_fn: Callable):
     ]
 
 
+def extract_free_vars(kernel_fn: Callable):
+    """Look for variables that are defined outside the kernel but impact kernel generated. (e.g is_causal, logit_cap, or mfma_variants)"""
+    return [
+        (k, v)
+        for k, v in inspect.getclosurevars(kernel_fn).nonlocals.items()
+        if not isinstance(v, IndexMapping)
+    ]
+
+
 def anonymize_constraints(input_constraints: list[Constraint]):
     """
     Helper function to anonymize constraint S.T we can have the same generate
@@ -132,6 +141,7 @@ class WaveCacheManager(object):
             kernel_src = inspect.getsource(kernel_fn)
             index_mappings = extract_mappings(kernel_fn)
             arg_dtypes = extract_arg_types(kernel_fn)
+            free_vars = extract_free_vars(kernel_fn)
         except:
             # sets kernel_hash as None if fail to inspect source.
             # We also taught load_kernel and store_kernel to skip
@@ -147,6 +157,7 @@ class WaveCacheManager(object):
             use_scheduling_barriers,
             index_mappings,
             arg_dtypes,
+            free_vars,
         ]
 
         # Benchmark related hash
