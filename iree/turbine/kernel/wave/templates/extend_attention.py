@@ -71,7 +71,7 @@ def get_extend_attention_kernel(
     LOG2E = 1.44269504089
     logit_cap *= LOG2E
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
-    layer_scaling = layer_scaling or dk_sqrt * LOG2E
+    layer_scaling = (layer_scaling or dk_sqrt) * LOG2E
 
     constraints: list[tkw.Constraint] = []
     constraints += [
