@@ -90,11 +90,13 @@ def _build_start_indices(
     emitter: WaveEmitter,
     src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
     dynamic_values: dict[IndexExpr, Any] = {},
-) -> list[OpResult]:
+) -> tuple[list[OpResult], list[OpResult]]:
     split_indices = [_split_index(i) for i in _get_start_indices(src_indices)]
-    print("split_indices", split_indices)
     subs = add_emitter_subs(emitter, dynamic_values)
-    return [gen_sympy_index(subs, i) for i in _get_start_indices(src_indices)]
+    indices_wg = [gen_sympy_index(subs, i[0]) for i in split_indices]
+    indices_th = [gen_sympy_index(subs, i[1]) for i in split_indices]
+
+    return indices_wg, indices_th
 
 
 def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
@@ -165,7 +167,7 @@ def _construct_gather_scatter_indices(
     is_read: bool,
     dynamic_vals: tuple[Any, ...],
     is_contiguous: bool,
-) -> tuple[OpResult, OpResult, OpResult]:
+) -> tuple[list[OpResult], list[OpResult], OpResult, OpResult]:
     # Apply symbolc_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
     # be (iter(1), iter(0))
@@ -211,10 +213,10 @@ def _construct_gather_scatter_indices(
         for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
     }
     if is_contiguous:
-        start_indices = _build_start_indices(
+        start_indices_wg, start_indices_th = _build_start_indices(
             emitter, result_index, dynamic_vals_map_start
         )
-        return start_indices, None, mask
+        return start_indices_wg, start_indices_th, None, mask
 
     start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
@@ -266,7 +268,7 @@ def _construct_gather_scatter_indices(
         # In case we need dynamic `offsets_vec`, set all `start_indices` to 0
         # and encode entire index info in `offsets_vec`.
         result_index = {key: 0 for key in symbolc_shape}
-        start_indices = _build_start_indices(
+        start_indices_wg, start_indices_th = _build_start_indices(
             emitter, result_index, dynamic_vals_map_start
         )
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
@@ -289,18 +291,18 @@ def _construct_gather_scatter_indices(
             _compute_offset(indices, strides),
         )
     else:
-        start_indices = _build_start_indices(
+        start_indices_wg, start_indices_th = _build_start_indices(
             emitter, result_index, dynamic_vals_map_start
         )
         if offsets == list(range(elements_per_thread)):
-            return start_indices, None, mask
+            return start_indices_wg, start_indices_th, None, mask
 
         offsets = [IntegerAttr.get(IndexType.get(), off) for off in offsets]
         offsets_vec = arith_d.ConstantOp(
             offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
         )
 
-    return start_indices, offsets_vec, mask
+    return start_indices_wg, start_indices_th, offsets_vec, mask
 
 
 def _get_max_buffer_size(elem_type: IrType) -> int:
@@ -312,7 +314,9 @@ def _get_max_buffer_size(elem_type: IrType) -> int:
     return ((1 << 31) - 1) // (elem_type.width // 8)
 
 
-def _linearize_memref(mem: Value, offsets: tuple[Value | int]) -> Value:
+def _linearize_memref(
+    mem: Value, offsets_wg: tuple[Value | int], offsets_th: tuple[Value | int]
+) -> tuple[Value, Value]:
     """
     Convert n-D memref into 1-D memref, suitable for buffer ops.
 
@@ -325,19 +329,26 @@ def _linearize_memref(mem: Value, offsets: tuple[Value | int]) -> Value:
     results = memref_d.extract_strided_metadata(mem)
     base = results[0]
     offset = results[1]
+    offset_th = None
     results = results[2:]
     sizes = results[:rank]
     strides = results[rank:]
     overflow_flags = arith_d.IntegerOverflowFlags.nsw
-    for ind, size, stride in zip(offsets, sizes, strides):
-        if isinstance(ind, int):
-            ind = arith_d.constant(IndexType.get(), ind)
+    for ind_wg, ind_th, size, stride in zip(offsets_wg, offsets_th, sizes, strides):
+        if isinstance(ind_wg, int):
+            ind_wg = arith_d.constant(IndexType.get(), ind_wg)
 
-        offset = arith_d.addi(
-            offset,
-            arith_d.muli(ind, stride, overflow_flags=overflow_flags),
-            overflow_flags=overflow_flags,
-        )
+        if isinstance(ind_th, int):
+            ind_th = arith_d.constant(IndexType.get(), ind_th)
+
+        off_wg = arith_d.muli(ind_wg, stride, overflow_flags=overflow_flags)
+        offset = arith_d.addi(offset, off_wg, overflow_flags=overflow_flags)
+
+        off_th = arith_d.muli(ind_th, stride, overflow_flags=overflow_flags)
+        if offset_th is None:
+            offset_th = off_th
+        else:
+            offset_th = arith_d.addi(offset_th, off_th, overflow_flags=overflow_flags)
 
     size_full = arith_d.constant(
         IndexType.get(), _get_max_buffer_size(memref_type.element_type) - 1
@@ -353,15 +364,18 @@ def _linearize_memref(mem: Value, offsets: tuple[Value | int]) -> Value:
         layout=Attribute.parse("strided<[1], offset: ?>"),
         memory_space=memory_space,
     )
-    return memref_d.reinterpret_cast(
-        resut_type,
-        base,
-        offsets=[offset],
-        sizes=[size_full],
-        strides=[],
-        static_offsets=[dyn_val],
-        static_sizes=[dyn_val],
-        static_strides=[1],
+    return (
+        memref_d.reinterpret_cast(
+            resut_type,
+            base,
+            offsets=[offset],
+            sizes=[size_full],
+            strides=[],
+            static_offsets=[dyn_val],
+            static_sizes=[dyn_val],
+            static_strides=[1],
+        ),
+        offset_th,
     )
 
 
@@ -369,12 +383,16 @@ def _create_vec_read(
     emitter: WaveEmitter,
     mem: Value,
     vector_type: IrType,
-    start_indices: tuple[Value],
+    start_indices_wg: tuple[Value],
+    start_indices_th: tuple[Value],
     elements_per_thread: int,
     mask: Optional[Value],
     offsets_vec: Optional[Value],
 ) -> Value:
     if mask is None and offsets_vec is None:
+        start_indices = [
+            arith_d.addi(i, j) for i, j in zip(start_indices_wg, start_indices_th)
+        ]
         return vector_d.load(vector_type, mem, start_indices)
 
     element_type = vector_type.element_type
@@ -391,7 +409,9 @@ def _create_vec_read(
     if emitter.params.get("use_buffer_load_ops", False):
         result = vector_d.splat(vector_type, zero)
 
-        data = _linearize_memref(mem, start_indices)
+        data, offset_th = _linearize_memref(mem, start_indices_wg, start_indices_th)
+        offset_th = vector_d.splat(offsets_vec.type, offset_th)
+        offsets_vec = arith_d.addi(offsets_vec, offset_th)
         if mask is not None:
             i32 = IntegerType.get_signless(32)
             i32vec = VectorType.get([elements_per_thread], i32)
@@ -425,6 +445,9 @@ def _create_vec_read(
             )
             mask = _constant_mask(mask_vec_type)
 
+        start_indices = [
+            arith_d.addi(i, j) for i, j in zip(start_indices_wg, start_indices_th)
+        ]
         return vector_d.gather(
             vector_type, mem, start_indices, offsets_vec, mask, passthru
         )
@@ -452,7 +475,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     input_shape = _get_symbolic_shape(memory)
     elements_per_thread = cast_py_literal(emitter, elements_per_thread)
     if get_custom(node).has_identity_mapping():
-        start_indices = _build_start_indices(emitter, index)
+        start_indices_wg, start_indices_th = _build_start_indices(emitter, index)
         mask = _build_mask(
             emitter,
             index,
@@ -462,7 +485,8 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             emitter,
             kb_src,
             vector_type,
-            start_indices,
+            start_indices_wg,
+            start_indices_th,
             elements_per_thread,
             mask,
             offsets_vec=None,
@@ -471,7 +495,12 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         dyn_vals = tuple(
             cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
         )
-        start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
+        (
+            start_indices_wg,
+            start_indices_th,
+            offsets_vec,
+            mask,
+        ) = _construct_gather_scatter_indices(
             emitter=emitter,
             symbolc_shape=input_shape,
             index=index,
@@ -485,7 +514,8 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             emitter,
             kb_src,
             vector_type,
-            start_indices,
+            start_indices_wg,
+            start_indices_th,
             elements_per_thread,
             mask,
             offsets_vec,
@@ -498,12 +528,16 @@ def _create_vec_write(
     emitter: WaveEmitter,
     mem: Value,
     value: Value,
-    start_indices: tuple[Value],
+    start_indices_wg: tuple[Value],
+    start_indices_th: tuple[Value],
     elements_per_thread: int,
     mask: Optional[Value],
     offsets_vec: Optional[Value],
 ):
     if mask is None and offsets_vec is None:
+        start_indices = [
+            arith_d.addi(i, j) for i, j in zip(start_indices_wg, start_indices_th)
+        ]
         vector_d.store(value, mem, start_indices)
         return
 
@@ -517,7 +551,9 @@ def _create_vec_write(
         )
 
     if emitter.params.get("use_buffer_store_ops", False):
-        data = _linearize_memref(mem, start_indices)
+        data, offset_th = _linearize_memref(mem, start_indices_wg, start_indices_th)
+        offset_th = vector_d.splat(offsets_vec.type, offset_th)
+        offsets_vec = arith_d.addi(offsets_vec, offset_th)
         if mask is not None:
             i32 = IntegerType.get_signless(32)
             i32vec = VectorType.get([elements_per_thread], i32)
@@ -544,6 +580,9 @@ def _create_vec_write(
             )
             mask = _constant_mask(mask_vec_type)
 
+        start_indices = [
+            arith_d.addi(i, j) for i, j in zip(start_indices_wg, start_indices_th)
+        ]
         vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
 
 
@@ -575,13 +614,14 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     output_shape = _get_symbolic_shape(memory)
     elements_per_thread = cast_py_literal(emitter, elements_per_thread)
     if get_custom(node).has_identity_mapping():
-        start_indices = _build_start_indices(emitter, index)
+        start_indices_wg, start_indices_th = _build_start_indices(emitter, index)
         mask = _build_mask(emitter, index, elements_per_thread)
         _create_vec_write(
             emitter,
             kb_dest,
             insert_vector,
-            start_indices,
+            start_indices_wg,
+            start_indices_th,
             elements_per_thread,
             mask,
             offsets_vec=None,
@@ -594,7 +634,12 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         dyn_vals = tuple(
             cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
         )
-        start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
+        (
+            start_indices_wg,
+            start_indices_th,
+            offsets_vec,
+            mask,
+        ) = _construct_gather_scatter_indices(
             emitter=emitter,
             symbolc_shape=output_shape,
             index=index,
@@ -609,7 +654,8 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             emitter,
             kb_dest,
             insert_vector,
-            start_indices,
+            start_indices_wg,
+            start_indices_th,
             elements_per_thread,
             mask,
             offsets_vec,
