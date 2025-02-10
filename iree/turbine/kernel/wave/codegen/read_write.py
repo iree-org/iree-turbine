@@ -328,8 +328,6 @@ def _linearize_memref(
     no-op.
     """
     memref_type = mem.type
-    results = memref_d.extract_strided_metadata(mem)
-    base = results[0]
     offset = None
     offset_th = None
     overflow_flags = arith_d.IntegerOverflowFlags.nsw
@@ -369,7 +367,7 @@ def _linearize_memref(
     return (
         memref_d.reinterpret_cast(
             resut_type,
-            base,
+            mem,
             offsets=[offset],
             sizes=[size_full],
             strides=[],
