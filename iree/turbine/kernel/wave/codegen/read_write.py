@@ -407,12 +407,14 @@ def _create_vec_read(
     zero = get_constant_attr(0, element_type)
     zero = arith_d.constant(element_type, zero)
 
-    if emitter.params.get("use_buffer_load_ops", False):
+    strides = strides_from_symbolic_shape(
+        IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
+    )
+    if emitter.params.get("use_buffer_load_ops", False) and all(
+        isinstance(s, int) for s in strides
+    ):
         result = vector_d.splat(vector_type, zero)
 
-        strides = strides_from_symbolic_shape(
-            IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
-        )
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
         data, offset_th = _linearize_memref(
             mem, start_indices_wg, start_indices_th, strides
@@ -560,10 +562,12 @@ def _create_vec_write(
             offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
         )
 
-    if emitter.params.get("use_buffer_store_ops", False):
-        strides = strides_from_symbolic_shape(
-            IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
-        )
+    strides = strides_from_symbolic_shape(
+        IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
+    )
+    if emitter.params.get("use_buffer_store_ops", False) and all(
+        isinstance(s, int) for s in strides
+    ):
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
         data, offset_th = _linearize_memref(
             mem, start_indices_wg, start_indices_th, strides
