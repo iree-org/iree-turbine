@@ -849,8 +849,12 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     # Get thread_shape/size for broadcast.
     get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
 
-    src_thread_size = get_thread_shape(register.index) if register.index else None
-    target_thread_size = get_thread_shape(node.index)
+    src_thread_size = (
+        get_thread_shape(register.index)
+        if hasattr(register, "index") and register.index
+        else None
+    )
+    target_thread_size = get_thread_shape(node.index) if node.index else None
 
     # Check MLIR shape
     vector_src = cast_vector(emitter, register)
