@@ -315,7 +315,10 @@ def _get_max_buffer_size(elem_type: IrType) -> int:
 
 
 def _linearize_memref(
-    mem: Value, offsets_wg: tuple[Value | int], offsets_th: tuple[Value | int]
+    mem: Value,
+    offsets_wg: tuple[Value | int],
+    offsets_th: tuple[Value | int],
+    strides: tuple[Value],
 ) -> tuple[Value, Value]:
     """
     Convert n-D memref into 1-D memref, suitable for buffer ops.
@@ -325,16 +328,12 @@ def _linearize_memref(
     no-op.
     """
     memref_type = mem.type
-    rank = memref_type.rank
     results = memref_d.extract_strided_metadata(mem)
     base = results[0]
-    offset = results[1]
+    offset = None
     offset_th = None
-    results = results[2:]
-    sizes = results[:rank]
-    strides = results[rank:]
     overflow_flags = arith_d.IntegerOverflowFlags.nsw
-    for ind_wg, ind_th, size, stride in zip(offsets_wg, offsets_th, sizes, strides):
+    for ind_wg, ind_th, stride in zip(offsets_wg, offsets_th, strides):
         if isinstance(ind_wg, int):
             ind_wg = arith_d.constant(IndexType.get(), ind_wg)
 
@@ -342,7 +341,10 @@ def _linearize_memref(
             ind_th = arith_d.constant(IndexType.get(), ind_th)
 
         off_wg = arith_d.muli(ind_wg, stride, overflow_flags=overflow_flags)
-        offset = arith_d.addi(offset, off_wg, overflow_flags=overflow_flags)
+        if offset is None:
+            offset = off_wg
+        else:
+            offset = arith_d.addi(offset, off_wg, overflow_flags=overflow_flags)
 
         off_th = arith_d.muli(ind_th, stride, overflow_flags=overflow_flags)
         if offset_th is None:
@@ -381,6 +383,7 @@ def _linearize_memref(
 
 def _create_vec_read(
     emitter: WaveEmitter,
+    symbolic_shape: tuple[IndexExpr, ...],
     mem: Value,
     vector_type: IrType,
     start_indices_wg: tuple[Value],
@@ -409,7 +412,13 @@ def _create_vec_read(
     if emitter.params.get("use_buffer_load_ops", False):
         result = vector_d.splat(vector_type, zero)
 
-        data, offset_th = _linearize_memref(mem, start_indices_wg, start_indices_th)
+        strides = strides_from_symbolic_shape(
+            IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
+        )
+        strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
+        data, offset_th = _linearize_memref(
+            mem, start_indices_wg, start_indices_th, strides
+        )
         offset_th = vector_d.splat(offsets_vec.type, offset_th)
         offsets_vec = arith_d.addi(offsets_vec, offset_th)
         if mask is not None:
@@ -483,6 +492,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         )
         result = _create_vec_read(
             emitter,
+            input_shape,
             kb_src,
             vector_type,
             start_indices_wg,
@@ -512,6 +522,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         )
         result = _create_vec_read(
             emitter,
+            input_shape,
             kb_src,
             vector_type,
             start_indices_wg,
@@ -526,6 +537,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
 
 def _create_vec_write(
     emitter: WaveEmitter,
+    symbolic_shape: tuple[IndexExpr, ...],
     mem: Value,
     value: Value,
     start_indices_wg: tuple[Value],
@@ -551,7 +563,13 @@ def _create_vec_write(
         )
 
     if emitter.params.get("use_buffer_store_ops", False):
-        data, offset_th = _linearize_memref(mem, start_indices_wg, start_indices_th)
+        strides = strides_from_symbolic_shape(
+            IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
+        )
+        strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
+        data, offset_th = _linearize_memref(
+            mem, start_indices_wg, start_indices_th, strides
+        )
         offset_th = vector_d.splat(offsets_vec.type, offset_th)
         offsets_vec = arith_d.addi(offsets_vec, offset_th)
         if mask is not None:
@@ -618,6 +636,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         mask = _build_mask(emitter, index, elements_per_thread)
         _create_vec_write(
             emitter,
+            output_shape,
             kb_dest,
             insert_vector,
             start_indices_wg,
@@ -652,6 +671,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
 
         _create_vec_write(
             emitter,
+            output_shape,
             kb_dest,
             insert_vector,
             start_indices_wg,
