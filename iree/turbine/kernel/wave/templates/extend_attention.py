@@ -36,6 +36,7 @@ def get_extend_attention_kernel(
     is_causal: Optional[bool] = False,
     logit_cap: Optional[float] = 0.0,
     layer_scaling: Optional[float] = None,
+    num_waves: Optional[int] = 4,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
@@ -68,7 +69,7 @@ def get_extend_attention_kernel(
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     SEQ_TILE_SIZE = shape.block_size
-    M_WAVES = 4
+    M_WAVES = num_waves
     N_WAVES = 1
     LOG2E = 1.44269504089
     logit_cap *= LOG2E

@@ -241,7 +241,10 @@ def create_inputs(
 @pytest.mark.parametrize("is_causal", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
-    [(MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)],
+    [
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+    ],
 )
 def testExtendAttention(
     shape: list[AttentionShape],
@@ -274,6 +277,11 @@ def testExtendAttention(
     ) = create_inputs(shape, dtype)
     shape.max_seq_len = max_len_extend
 
+    if mfma_variant[0] == MMAType.F32_16x16x16_F16:
+        num_waves = 4
+    if mfma_variant[1] == MMAType.F32_32x32x8_F16:
+        num_waves = 2
+
     # Run the wave kernel.
     output = device_zeros(
         extend_token_num, shape.num_query_heads, shape.head_size, dtype=torch.float32
@@ -295,6 +303,7 @@ def testExtendAttention(
         output.shape,
         is_causal=is_causal,
         logit_cap=logit_cap,
+        num_waves=num_waves,
     )
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
