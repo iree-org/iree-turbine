@@ -378,16 +378,6 @@ def _linearize_memref(
         offset_th,
     )
 
-_current_op = 0
-_use_buffer = []
-
-def _check_buffer():
-    global _current_op
-    global _use_buffer
-    res = (_current_op in _use_buffer)
-    # print(_current_op) 58
-    _current_op += 1
-    return res
 
 def _create_vec_read(
     emitter: WaveEmitter,
@@ -422,7 +412,7 @@ def _create_vec_read(
     )
     if emitter.params.get("use_buffer_load_ops", False) and all(
         isinstance(s, int) for s in strides
-    ) and _check_buffer():
+    ):
         result = vector_d.splat(vector_type, zero)
 
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
@@ -577,7 +567,7 @@ def _create_vec_write(
     )
     if emitter.params.get("use_buffer_store_ops", False) and all(
         isinstance(s, int) for s in strides
-    ) and _check_buffer():
+    ):
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
         data, offset_th = _linearize_memref(
             mem, start_indices_wg, start_indices_th, strides
