@@ -4,13 +4,21 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Any, Callable, Optional
-import torch.fx as fx
-import inspect
-
-from .symbolic_constraints import SymbolicAlias
-
+# Lang, compiler, ops, constraints
+import iree.turbine.kernel.lang as tkl
 from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
+from ..lang import Grid, IndexMapping
+from ..lang.global_symbols import *
+from ..ops import wave_ops
+from ..ops.wave_ops import Reduction, CustomOp, get_custom, IterArg
+from .._support.indexing import IndexingContext, IndexExpr
+from .symbolic_constraints import SymbolicAlias
+from .._support.tracing import (
+    CapturedTrace,
+    CompiledContext,
+    KernelRegionGraph,
+    Launchable,
+)
 from ..compiler.ir import Context, Operation
 from .codegen import WaveEmitter
 from .constraints import (
@@ -21,11 +29,32 @@ from .constraints import (
     WorkgroupConstraint,
     get_grid_shape,
 )
+
+# Passes
+from .barriers import add_shared_memory_barriers
 from .codegen import WaveEmitter
+from .decompose_reduce_ops import decompose_reduce_ops
+from .decompose_vmma_ops import decompose_vmma_ops
 from .expansion.expansion import expand_graph
-from .promotion import promote_placeholders
+from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
+from .minimize_global_loads import minimize_global_loads
+from .promotion import promote_placeholders
 from .reuse_shared_allocs import reuse_shared_allocs
+from .scheduling.schedule import schedule_graph
+from .type_inference import infer_types
+from .index_sequence_analysis import (
+    partition_ops_with_gpr_offsets,
+    partition_strided_operators,
+    set_node_indices,
+    set_post_expansion_indices,
+)
+from .shared_memory_indexing import (
+    apply_shared_memory_indexing_corrections,
+    align_index_sizes,
+)
+
+# Utils
 from .utils import (
     canonicalize_module,
     compile_to_vmfb,
@@ -40,36 +69,12 @@ from .utils import (
     partial,
     print_trace,
 )
-from .minimize_global_loads import minimize_global_loads
-from .decompose_reduce_ops import decompose_reduce_ops
-from .decompose_vmma_ops import decompose_vmma_ops
-from .barriers import add_shared_memory_barriers
-from ..lang import Grid, IndexMapping
-from ..lang.global_symbols import *
-from ..ops import wave_ops
-from ..ops.wave_ops import Reduction, CustomOp, get_custom, IterArg
-from .index_sequence_analysis import (
-    partition_ops_with_gpr_offsets,
-    partition_strided_operators,
-    set_node_indices,
-    set_post_expansion_indices,
-)
-from .shared_memory_indexing import (
-    apply_shared_memory_indexing_corrections,
-    align_index_sizes,
-)
-from .scheduling.schedule import schedule_graph
-from .._support.indexing import IndexingContext, IndexExpr
-from .type_inference import infer_types
-import iree.turbine.kernel.lang as tkl
-from .._support.tracing import (
-    CapturedTrace,
-    CompiledContext,
-    KernelRegionGraph,
-    Launchable,
-)
 from .cache import is_cache_enabled, get_cache_manager, invoke_cached_kernel
 
+# Others
+from typing import Any, Callable, Optional
+import torch.fx as fx
+import inspect
 import sympy
 
 __all__ = ["wave", "wave_trace_only"]
@@ -368,6 +373,7 @@ class LaunchableWave(Launchable):
         graph_passes += [
             partial(decompose_vmma_ops, trace, self.constraints),
             partial(hoist_loop_invariant_ops, trace, self.constraints),
+            partial(global_to_shared_gathers, trace, self.constraints),
             partial(minimize_global_loads, trace, self.constraints),
             partial(reuse_shared_allocs, trace),
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),

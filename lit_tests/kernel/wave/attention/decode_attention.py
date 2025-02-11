@@ -71,10 +71,16 @@ def test_paged_flash_decoding():
     # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-3:                vector.maskedload
     # CHECK-COUNT-8:                vector.store
-    # TODO: Remove gathers for performance
-    # CHECK-COUNT-2:                vector.gather
-    # CHECK-COUNT-8:                vector.store
+    # CHECK-COUNT-1:                vector.maskedload
+    # CHECK-COUNT-1:                vector.store
+    # CHECK-COUNT-1:                vector.maskedload
+    # CHECK-COUNT-1:                vector.store
+    # CHECK-COUNT-1:                vector.maskedload
+    # CHECK-COUNT-1:                vector.store
+    # CHECK-COUNT-1:                vector.maskedload
+    # CHECK-COUNT-1:                vector.store
     # CHECK:                        amdgpu.lds_barrier
+    # CHECK-COUNT-8:                vector.gather
     # CHECK-COUNT-8:                vector.load
     # CHECK-COUNT-8:                amdgpu.mfma
     # CHECK:                  %[[COND:.*]] = arith.cmpi sgt, %[[COUNT]], %[[C0]] : index
