@@ -16,6 +16,7 @@ from iree.turbine.kernel.wave.utils import (
 from .attention_common import *
 import math
 import torch
+import sympy
 from typing import Optional
 
 
@@ -56,6 +57,7 @@ def get_extend_attention_kernel(
     EXT_IDX = tkl.sym.EXT_IDX
     REQ_IDX = tkl.sym.REQ_IDX
     SEQ_IDX = tkl.sym.SEQ_IDX
+    MAX_EXTEND_SEQ_LEN = tkl.sym.MAX_EXTEND_SEQ_LEN
     # Workgroup tile sizes
     BLOCK_S = tkl.sym.BLOCK_S
     # Address space (for GPU, shared(1) or global(0))
@@ -74,7 +76,11 @@ def get_extend_attention_kernel(
     layer_scaling = (layer_scaling or dk_sqrt) * LOG2E
 
     constraints: list[tkw.Constraint] = []
-    constraints += [tkw.WorkgroupConstraint(N_Q, BLOCK_N_Q, 0)]
+    constraints += [
+        tkw.WorkgroupConstraint(
+            N_Q, BLOCK_N_Q, 0, iters=sympy.ceiling(MAX_EXTEND_SEQ_LEN / SEQ_TILE_SIZE)
+        )
+    ]
     constraints += [tkw.WorkgroupConstraint(D_KV, BLOCK_D_KV, 1)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 2)]
     constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 2, primary=False)]
@@ -339,7 +345,12 @@ def get_extend_attention_kernel(
         D_Q: shape.head_size,
     }
 
-    dynamic_symbols = [N_Q, N_KV, S]
-    dynamic_symbols_map = {N_Q: q_shape[0], N_KV: k_shape[0], S: shape.num_seqs}
+    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN]
+    dynamic_symbols_map = {
+        N_Q: q_shape[0],
+        N_KV: k_shape[0],
+        S: shape.num_seqs,
+        MAX_EXTEND_SEQ_LEN: shape.max_seq_len,
+    }
 
     return extend_attention, hyperparams, dynamic_symbols, dynamic_symbols_map

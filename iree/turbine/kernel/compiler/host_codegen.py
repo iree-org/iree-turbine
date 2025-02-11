@@ -60,6 +60,10 @@ def isolated_test_call(
         argument_dims = get_dynamic_dims(sig.kernel_buffer_bindings, dynamic_symbols)
         # Adding unique dynamic dims as inputs.
         input_tensors += [IndexType.get() for _ in list(dict.fromkeys(argument_dims))]
+        # Add additional dynamic symbols as inputs.
+        input_tensors += [
+            IndexType.get() for _ in set(dynamic_symbols).difference(argument_dims)
+        ]
 
         output_types = [b.as_mlir_type() for b in sig.kernel_buffer_output_bindings]
         output_tensors = memref_to_tensor(output_types)
