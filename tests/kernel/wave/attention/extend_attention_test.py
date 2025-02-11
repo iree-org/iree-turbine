@@ -314,11 +314,15 @@ def testExtendAttention(
     if run_bench:
         config["benchmark_batch_size"] = 1000
         config["benchmark_repetitions"] = 3
+        config["dump_intermediates"] = "./inter"
+
     if dump_perf is not None:
         perf_filename = construct_test_name(
             "wave_extend_attention", mfma_variant, is_causal, shape
         )
         config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
+
+    # config["print_ir_after_all"] = True
 
     with tk.gen.TestLaunchContext(
         hyperparams,
