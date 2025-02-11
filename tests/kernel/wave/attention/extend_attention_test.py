@@ -322,8 +322,6 @@ def testExtendAttention(
         )
         config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
-    # config["print_ir_after_all"] = True
-
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
