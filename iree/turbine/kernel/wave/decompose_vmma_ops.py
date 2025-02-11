@@ -34,12 +34,14 @@ def get_m_dim(mma_op, vmma_expr):
     m_sets = set(mma_op.lhs_type.symbolic_shape).difference(
         mma_op.rhs_type.symbolic_shape
     )
+    # Filters candidate for M-dims. Adds candidate dim to list iff we find any occurrence
+    # of the reference MMA template expression in the candidate dim's index expression
     vmma_expr = vmma_expr.subs({MMA_ACC: 0})
     m_dims = set(
         [
             m_candidate
             for m_candidate in m_sets
-            if len(mma_op.lhs.index[m_candidate].start.find(vmma_expr)) != 0
+            if mma_op.lhs.index[m_candidate].start.find(vmma_expr)
         ]
     )
     assert len(m_dims) == 1, "Expect to have single M-dim."
@@ -50,12 +52,14 @@ def get_n_dim(mma_op, vmma_expr):
     n_sets = set(mma_op.rhs_type.symbolic_shape).difference(
         mma_op.lhs_type.symbolic_shape
     )
+    # Filters candidate for N-dims. Adds candidate dim to list iff we find any occurrence
+    # of the reference MMA template expression in the candidate dim's index expression
     vmma_expr = vmma_expr.subs({MMA_ACC: 0})
     n_dims = set(
         [
             n_candidate
             for n_candidate in n_sets
-            if len(mma_op.rhs.index[n_candidate].start.find(vmma_expr)) != 0
+            if mma_op.rhs.index[n_candidate].start.find(vmma_expr)
         ]
     )
     assert len(n_dims) == 1, "Expect to have single N-dim."
