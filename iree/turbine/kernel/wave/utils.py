@@ -389,11 +389,11 @@ def get_mma_dimensional_mapping(
             arg = get_custom(arg)
             if is_reshape_needed(arg, mma.vector_shapes, prev_mma.vector_shapes):
                 reshape = Reshape(arg.fx_node, prev_mma.vector_shapes).add_to_graph(
-                    custom.graph
+                    mma.graph
                 )
                 custom_reshape = get_custom(reshape)
-                custom_reshape.vector_shapes = custom.vector_shapes
-                custom.update_arg(arg_index, reshape)
+                custom_reshape.vector_shapes = mma.vector_shapes
+                mma.update_arg(arg_index, reshape)
 
     def find_mma_in_slice(node: CustomOp) -> Optional[MMA]:
         """
