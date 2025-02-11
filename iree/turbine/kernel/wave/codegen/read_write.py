@@ -396,6 +396,7 @@ def _create_vec_read(
         ]
         return vector_d.load(vector_type, mem, start_indices)
 
+    is_gather = offsets_vec is not None
     element_type = vector_type.element_type
     if offsets_vec is None:
         offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
@@ -410,8 +411,10 @@ def _create_vec_read(
     strides = strides_from_symbolic_shape(
         IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
     )
-    if emitter.params.get("use_buffer_load_ops", False) and all(
-        isinstance(s, int) for s in strides
+    if (
+        emitter.params.get("use_buffer_load_ops", False)
+        and all(isinstance(s, int) for s in strides)
+        and is_gather
     ):
         result = vector_d.splat(vector_type, zero)
 
@@ -553,6 +556,7 @@ def _create_vec_write(
         vector_d.store(value, mem, start_indices)
         return
 
+    is_scatter = offsets_vec is not None
     vector_type = value.type
     element_type = vector_type.element_type
     if offsets_vec is None:
@@ -565,8 +569,10 @@ def _create_vec_write(
     strides = strides_from_symbolic_shape(
         IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
     )
-    if emitter.params.get("use_buffer_store_ops", False) and all(
-        isinstance(s, int) for s in strides
+    if (
+        emitter.params.get("use_buffer_store_ops", False)
+        and all(isinstance(s, int) for s in strides)
+        and is_scatter
     ):
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
         data, offset_th = _linearize_memref(
