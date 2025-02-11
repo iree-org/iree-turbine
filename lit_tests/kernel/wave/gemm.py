@@ -18,6 +18,7 @@ M = tkl.sym.M
 N = tkl.sym.N
 K = tkl.sym.K
 B = tkl.sym.B
+B_KV = tkl.sym.B_KV
 BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_K = tkl.sym.BLOCK_K
@@ -1393,3 +1394,92 @@ def test_gemm_with_maximized_shared_read_16x16x32():
         # CHECK:            %[[RHS_SLICE_1:.+]] = vector.extract_strided_slice %[[RHS_SHARED_READ]] {offsets = [4], sizes = [4], strides = [1]} : vector<8xf16> to vector<4xf16>
         # CHECK:            %[[MMA_SLICE_1:.+]] = amdgpu.mfma %[[LHS_SLICE_1]] * %[[RHS_SLICE_1]] + %[[MMA_SLICE_0]] {blocks = 1 : i32, k = 16 : i32, m = 16 : i32, n = 16 : i32} blgp =  none : vector<4xf16>, vector<4xf16>, vector<4xf32>
         # CHECK:            scf.yield %[[MMA_SLICE_1]] : vector<4xf32>
+
+
+@run_test
+def test_broadcast_batched_gemm_with_vmma():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.WorkgroupConstraint(B_KV, BLOCK_B, 2, primary=False)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x32_K8_F16,
+            vector_shapes={B: 0, B_KV: 0, M: 16, N: 16},
+        )
+    ]
+
+    head_ratio = B // B_KV
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    k = tkw.IndexMapping.iterator(2)
+    a_mapping = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={B_KV: i // head_ratio, M: j, K: k},
+        outputs={B_KV: i, M: j, K: k},
+    )
+
+    @tkw.wave(constraints)
+    def broadcast_batched_gemm_with_vmma(
+        a: tkl.Memory[B_KV, M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[B, N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(
+            acc: tkl.Register[B, M, N, tkl.f32]
+        ) -> tkl.Register[B, M, N, tkl.f32]:
+            a_reg = tkw.read(
+                a, elements_per_thread=LOAD_ELEMS_PER_THREAD, mapping=a_mapping
+            )
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    with tk.gen.TestLaunchContext(
+        {
+            B: 6,
+            B_KV: 1,
+            M: 64,
+            N: 128,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 32,
+            BLOCK_B: 1,
+            LOAD_ELEMS_PER_THREAD: 8,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+    ):
+        a = torch.randn(1, 64, 64, dtype=torch.float16)
+        b = torch.randn(6, 128, 64, dtype=torch.float16)
+        c = torch.zeros(6, 64, 128, dtype=torch.float32)
+        print(broadcast_batched_gemm_with_vmma(a, b, c).module_op)
+        # CHECK-LABEL:    func.func @broadcast_batched_gemm_with_vmma
+        # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
+        # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
+        # CHECK:            %[[HEAD_RATIO:.+]] = arith.constant 6 : index
+        # CHECK:            %[[WG_ID2:.+]] = stream.dispatch.workgroup.id[2] : index
+        # CHECK:            %[[RHS_GLOBAL:.+]] = stream.binding.subspan %[[ARG1]]
+        # CHECK:            %[[LHS_GLOBAL:.+]] = stream.binding.subspan %[[ARG0]]
+        # CHECK:            %[[HKV_IDX:.+]] = arith.divsi %[[WG_ID2]], %[[HEAD_RATIO]] : index
+        # CHECK:            scf.for
+        # CHECK:             %[[LHS_READ:.+]] = vector.load %[[LHS_GLOBAL]][%[[HKV_IDX]], %{{.+}}, {{.+}}] : {{.*}}, vector<8xf16>
+        # CHECK:             %[[RHS_READ:.+]] = vector.load %[[RHS_GLOBAL]][%[[WG_ID2]], %{{.+}}, {{.+}}] : {{.*}}, vector<8xf16>
+        # CHECK-COUNT-2:     vector.extract_strided_slice
+        # CHECK-COUNT-1:     amdgpu.mfma
+        # CHECK-COUNT-2:     vector.extract_strided_slice
+        # CHECK-COUNT-1:     amdgpu.mfma
+        # CHECK:            scf.yield
