@@ -22,9 +22,8 @@ from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     to_default_device,
 )
-from attention_with_rpe_template import (
-    get_vanilla_attention_kernel as get_vanilla_tkw_attention_with_rpe_output_kernel,
-)
+from iree.turbine.kernel.wave.templates.t5_rpe_attention import (
+    get_t5_rpe_attention_kernel)
 
 torch.manual_seed(0)
 torch.set_printoptions(
@@ -36,14 +35,10 @@ torch.set_printoptions(
 
 ### TKW Harness
 def run(fun: Callable, hparams, *args) -> Any:
-    # with torch.profiler.profile(
-    #     activities=[torch.profiler.ProfilerActivity.CUDA]
-    # ) as prof:
     with torch.no_grad():  # Disable gradient calculations
         with TestLaunchContext(
             hparams,
             canonicalize=True,
-            # compile_config={"print-ir-after": "all"},
             run=True,
             run_config=get_default_run_config(),
             run_bench=False,
@@ -51,12 +46,6 @@ def run(fun: Callable, hparams, *args) -> Any:
             use_scheduling_barriers=False,
         ):
             fun(*args)
-
-# print(
-#     prof.key_averages(group_by_input_shape=True).table(
-#         sort_by="self_cuda_time_total", row_limit=10
-#     )
-# )
 
 
 #################################################################################
@@ -112,7 +101,8 @@ def t5_rpe_masked_cond(rpe, max_context_length: int, sequence_length: int, dtype
     return rpe_cond
 
 
-# rpe_cond is used by torch only
+# rpe_cond is used by torch only and to sanity check the tmp RPE cond that we
+# output as debug information.
 rpe_cond = t5_rpe_masked_cond(
     rpe,
     max_context_length=max_context_length,
@@ -129,17 +119,16 @@ rpe_cond = t5_rpe_masked_cond(
     hyperparams,
     dynamic_symbols,
     dynamic_symbols_map,
-) = get_vanilla_tkw_attention_with_rpe_output_kernel(
+) = get_t5_rpe_attention_kernel(
     shape,
     mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
     dynamic_dims=False,
     max_context_length=max_context_length + 2,
-)
+    dump_intermediate_t5_cond=True)
 
 
 def attention_with_rpe(*args):
-    mb = tkw_attention_with_rpe(*args)
-    # print(mb.module_op)
+    tkw_attention_with_rpe(*args)
 
 run(
     attention_with_rpe,
@@ -154,22 +143,19 @@ run(
 
 ### Reference version
 (
-    tkw_attention,
+    tkw_attention_without_rpe,
     hyperparams,
     dynamic_symbols,
     dynamic_symbols_map,
-) = get_vanilla_tkw_attention_with_rpe_output_kernel(
+) = get_t5_rpe_attention_kernel(
     shape,
     mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
-    dynamic_dims=False,
-    max_context_length=None, # This will disable RPE
+    dynamic_dims=False
 )
 
 
 def attention(tq, tk, tv, toutput):
-    mb = tkw_attention(tq, tk, tv, toutput)
-    # print(mb.module_op)
-
+    tkw_attention_without_rpe(tq, tk, tv, toutput)
 
 run(
     attention,

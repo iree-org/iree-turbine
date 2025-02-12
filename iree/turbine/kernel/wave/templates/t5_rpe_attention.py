@@ -20,11 +20,12 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 import sympy
 
 
-def get_vanilla_attention_kernel(
+def get_t5_rpe_attention_kernel(
     shape: AttentionShape,
     mfma_variant: MMAType,
     dynamic_dims: bool,
-    max_context_length: Optional[int],
+    max_context_length: Optional[int] = None,
+    dump_intermediate_t5_cond: Optional[bool] = None,
 ):
     # Input sizes
     B = tkl.sym.B
@@ -115,7 +116,6 @@ def get_vanilla_attention_kernel(
         q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
-        # TODO: if not use_t5_rpe, this will DCE; atm DCE on blockargs crashes.
         rpe: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         debug_out: tkl.Memory[B, M, K2, GLOBAL_ADDRESS_SPACE, tkl.f32],
@@ -158,9 +158,10 @@ def get_vanilla_attention_kernel(
                     elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 )
                 # yapf: enable
-                tkw.write(rpe_reg,
-                          debug_out,
-                          elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+                if dump_intermediate_t5_cond:
+                    tkw.write(rpe_reg,
+                            debug_out,
+                            elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
                 x_j = x_j + rpe_reg
 
             m_j = tkw.max(x_j, partial_max, dim=K2)
