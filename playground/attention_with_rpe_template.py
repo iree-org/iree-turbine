@@ -86,25 +86,17 @@ def get_vanilla_attention_kernel(
 
     use_t5_rpe = max_context_length is not None
     if use_t5_rpe:
-        d0, d1 = [ tkw.IndexMapping.dynamic_val(i) for i in range(2)]
-        clip_upper = sympy.Piecewise(
-            (d0 - d1, d0 - d1 <= max_context_length),
-            (max_context_length, True)
-        )
-        clip_lower_and_upper = sympy.Piecewise(
-            (clip_upper, d0 - d1 >= 0),
-            (0, True)
-        )
         offset_mapping = tkw.IndexMapping(
-            num_iterators=2,
+            num_iterators=3,
             inputs={
-                M: i,
-                K2: clip_lower_and_upper
+                K2: k
+                + sympy.Piecewise(
+                    (max_context_length, (j - k) >= max_context_length),
+                    (sympy.Piecewise((j - k, (j - k) >= 0), (0, True)), True),
+                )
             },
-            outputs={ M: i, K2: j },
-            dynamic_val_mappings=({ M: i, K2: j }, { M: i, K2: j })
+            outputs={B: i, M: j, K2: k},
         )
-
         rpe_layout = tkl.MemoryLayout(shape=[max_context_length, ])
     else:
         rpe_layout = tkl.MemoryLayout(shape=[1, ])
@@ -145,16 +137,10 @@ def get_vanilla_attention_kernel(
             # When fusing into the FA variant, adding locally before the max and
             # the partial softmax should be equivalent.
             if use_t5_rpe:
-                i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-                i = tkw.broadcast(i, target_shape=[B, M, K2])
-                j = tkw.self_index(
-                    K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-
                 # yapf: disable
                 rpe_reg = tkw.read(
                     rpe,
                     mapping=offset_mapping,
-                    mapping_dynamic_vals=( i, j, ),
                     elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 )
                 # yapf: enable
