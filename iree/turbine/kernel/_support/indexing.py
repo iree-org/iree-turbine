@@ -60,6 +60,11 @@ class _IndexSymbolExpando:
 
 sym = _IndexSymbolExpando()
 
+
+class xor(sympy.Function):
+    pass
+
+
 ###############################################################################
 # Shape expressions
 ###############################################################################
