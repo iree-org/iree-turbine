@@ -48,7 +48,7 @@ from ...compiler.base import CodegenError, NDEBUG
 
 from ...lang.wave_types import IndexSymbol
 from ..constraints import Constraint, TilingConstraint
-from ..._support.indexing import IndexingContext, IndexExpr
+from ..._support.indexing import IndexingContext, IndexExpr, xor
 from ..compile_options import WaveCompileOptions
 
 
@@ -529,6 +529,14 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                     stack.append(_Rational(_get_const(1), base))
                 else:
                     stack.append(base)
+            case xor():
+                lhs = stack.pop()
+                rhs = stack.pop()
+                _enforce_non_rational(lhs, term)
+                _enforce_non_rational(rhs, term)
+                elem_type = get_type_or_element_type(rhs.type)
+                res = arith_d.xori(lhs, rhs)
+                stack.append(res)
             case sympy.UnevaluatedExpr():
                 continue
             case sympy.functions.elementary.piecewise.ExprCondPair():
