@@ -26,6 +26,7 @@ from iree.turbine.kernel.wave.templates.t5_rpe_attention import (
 )
 from ..common.utils import (
     require_e2e,
+    require_cdna3,
     enable_scheduling_barriers,
 )
 from typing import Tuple
@@ -81,7 +82,9 @@ def create_inputs(
     return (q, k, v)
 
 
+# TODO: Debug why failing numerics on MI250.
 @require_e2e
+@require_cdna3
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize(

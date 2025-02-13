@@ -77,22 +77,17 @@ def get_t5_rpe_attention_kernel(
     )
 
     d0, d1 = [tkw.IndexMapping.dynamic_val(i) for i in range(2)]
-    clip_upper = sympy.Piecewise(
-        (d0 - d1, d0 - d1 <= max_context_length), (max_context_length, True)
+    clip = sympy.Piecewise(
+        (d0 - d1, (d0 - d1 <= max_context_length) & (d0 - d1 > 0)), (0, True)
     )
-    clip_lower_and_upper = sympy.Piecewise((clip_upper, d0 - d1 >= 0), (0, True))
     offset_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={M: i, K2: clip_lower_and_upper},
+        inputs={M: i, K2: clip},
         outputs={M: i, K2: j},
-        dynamic_val_mappings=({M: i, K2: j}, {M: i, K2: j}),
+        dynamic_val_mappings=({M: i}, {K2: j}),
     )
 
-    rpe_layout = tkl.MemoryLayout(
-        shape=[
-            max_context_length,
-        ]
-    )
+    rpe_layout = tkl.MemoryLayout(shape=[max_context_length])
 
     @tkw.wave(constraints)
     def base_attention(
@@ -134,10 +129,7 @@ def get_t5_rpe_attention_kernel(
             rpe_reg = tkw.read(
                 rpe,
                 mapping=offset_mapping,
-                mapping_dynamic_vals=(
-                    i,
-                    j,
-                ),
+                mapping_dynamic_vals=(i, j),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
             x_j = x_j + rpe_reg
