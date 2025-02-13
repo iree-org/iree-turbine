@@ -450,6 +450,13 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 _enforce_non_rational(lhs, term)
                 res = arith_d.cmpi(arith_d.CmpIPredicate.sgt, *_broadcast(lhs, rhs))
                 stack.append(res)
+            case sympy.GreaterThan():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                _enforce_non_rational(rhs, term)
+                _enforce_non_rational(lhs, term)
+                res = arith_d.cmpi(arith_d.CmpIPredicate.sge, *_broadcast(lhs, rhs))
+                stack.append(res)
             case sympy.And():
                 rhs = stack.pop()
                 lhs = stack.pop()
@@ -518,7 +525,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 cond = select_stack.pop()
                 last_expr = select_stack.pop()
                 last_cond = select_stack.pop()
-                res = arith_d.select(last_cond, last_expr, expr)
+                res = arith_d.select(last_cond, *_broadcast(last_expr, expr))
                 stack.append(res)
             case _:
                 raise CodegenError(f"Can not handle {type(term)} : {term}")

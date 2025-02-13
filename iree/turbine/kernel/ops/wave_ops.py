@@ -1259,7 +1259,7 @@ class Read(CustomOp):
             }
             return {
                 k: IndexSequence.from_expr(mapping[k], subs)
-                for k in arg.type.symbolic_shape
+                for k in get_custom(arg).type.symbolic_shape
                 if k in mapping
             }
 
