@@ -23,9 +23,11 @@ from iree.turbine.kernel.wave.utils import (
     to_default_device,
 )
 from iree.turbine.kernel.wave.templates.t5_rpe_attention import (
-    get_t5_rpe_attention_kernel)
+    get_t5_rpe_attention_kernel,
+)
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
-    get_vanilla_attention_kernel)
+    get_vanilla_attention_kernel,
+)
 
 torch.manual_seed(0)
 torch.set_printoptions(
@@ -92,6 +94,7 @@ rpe.copy_(device_randn(max_context_length + 2, dtype=torch.float32))
 rpe[0] = 0
 rpe[max_context_length + 1] = 0
 
+
 def t5_rpe_masked_cond(rpe, max_context_length: int, sequence_length: int, dtype):
     positions = to_default_device(torch.arange(sequence_length))
     pos_diff = positions.unsqueeze(1) - positions.unsqueeze(0)
@@ -123,11 +126,13 @@ rpe_cond = t5_rpe_masked_cond(
     shape,
     mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
     dynamic_dims=False,
-    max_context_length=max_context_length + 2)
+    max_context_length=max_context_length + 2,
+)
 
 
 def attention_with_rpe(*args):
     tkw_attention_with_rpe(*args)
+
 
 run(
     attention_with_rpe,
@@ -136,7 +141,7 @@ run(
     k,
     v.permute([0, 2, 1]),
     rpe * log2e,
-    tkw_attention_with_rpe_output
+    tkw_attention_with_rpe_output,
 )
 
 ### Reference version
@@ -148,11 +153,13 @@ run(
 ) = get_vanilla_attention_kernel(
     shape,
     mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
-    dynamic_dims=False)
+    dynamic_dims=False,
+)
 
 
 def attention(tq, tk, tv, toutput):
     tkw_attention_without_rpe(tq, tk, tv, toutput)
+
 
 run(
     attention,
@@ -181,8 +188,7 @@ assert_close(
 
 # Check RPE attentions match as we expect.
 assert_close(
-    torch_attention_with_rpe_output.to(
-        dtype=tkw_attention_with_rpe_output.dtype),
+    torch_attention_with_rpe_output.to(dtype=tkw_attention_with_rpe_output.dtype),
     tkw_attention_with_rpe_output,
     atol=2e-3,
     rtol=2e-3,

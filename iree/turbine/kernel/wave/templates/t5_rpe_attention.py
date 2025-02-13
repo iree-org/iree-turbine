@@ -45,9 +45,7 @@ def get_t5_rpe_attention_kernel(
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
-    constraints: list[tkw.Constraint] = [
-        tkw.WorkgroupConstraint(M, BLOCK_M, 0)
-    ]
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
@@ -66,11 +64,7 @@ def get_t5_rpe_attention_kernel(
             threads_per_wave=64,
             waves_per_block=(4, 1, 1),
             mma_type=mfma_variant[1],
-            vector_shapes={
-                B: 0,
-                M: Mvec,
-                N: Nvec
-            },
+            vector_shapes={B: 0, M: Mvec, N: Nvec},
         )
     ]
 
@@ -79,31 +73,26 @@ def get_t5_rpe_attention_kernel(
 
     i, j, k = [tkw.IndexMapping.iterator(i) for i in range(3)]
     mapping = tkw.IndexMapping(
-        num_iterators=3,
-        inputs={ B: i, N: j, M: k },
-        outputs={ B: i, M: k, N: j })
+        num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
+    )
 
-    d0, d1 = [ tkw.IndexMapping.dynamic_val(i) for i in range(2)]
+    d0, d1 = [tkw.IndexMapping.dynamic_val(i) for i in range(2)]
     clip_upper = sympy.Piecewise(
-        (d0 - d1, d0 - d1 <= max_context_length),
-        (max_context_length, True)
+        (d0 - d1, d0 - d1 <= max_context_length), (max_context_length, True)
     )
-    clip_lower_and_upper = sympy.Piecewise(
-        (clip_upper, d0 - d1 >= 0),
-        (0, True)
-    )
+    clip_lower_and_upper = sympy.Piecewise((clip_upper, d0 - d1 >= 0), (0, True))
     offset_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={
-            M: i,
-            K2: clip_lower_and_upper
-        },
-        outputs={ M: i, K2: j },
-        dynamic_val_mappings=({ M: i, K2: j }, { M: i, K2: j })
+        inputs={M: i, K2: clip_lower_and_upper},
+        outputs={M: i, K2: j},
+        dynamic_val_mappings=({M: i, K2: j}, {M: i, K2: j}),
     )
 
-    rpe_layout = tkl.MemoryLayout(shape=[max_context_length, ])
-    
+    rpe_layout = tkl.MemoryLayout(
+        shape=[
+            max_context_length,
+        ]
+    )
 
     @tkw.wave(constraints)
     def base_attention(
@@ -140,11 +129,15 @@ def get_t5_rpe_attention_kernel(
             i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
             i = tkw.broadcast(i, target_shape=[B, M, K2])
             j = tkw.self_index(
-                K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+                K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
+            )
             rpe_reg = tkw.read(
                 rpe,
                 mapping=offset_mapping,
-                mapping_dynamic_vals=( i, j, ),
+                mapping_dynamic_vals=(
+                    i,
+                    j,
+                ),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
             x_j = x_j + rpe_reg
@@ -164,19 +157,13 @@ def get_t5_rpe_attention_kernel(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
-        tkw.write(res,
-                  c,
-                  mapping=mapping,
-                  elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD_QK:
-        get_mfma_load_elems_per_thread(mfma_variant[0]),
-        LOAD_ELEMS_PER_THREAD_PV:
-        get_mfma_load_elems_per_thread(mfma_variant[1]),
-        STORE_ELEMS_PER_THREAD:
-        get_mfma_store_elems_per_thread(mfma_variant[1]),
+        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
+        LOAD_ELEMS_PER_THREAD_PV: get_mfma_load_elems_per_thread(mfma_variant[1]),
+        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_B: 1,
         BLOCK_M: 128,
         BLOCK_N: 64,

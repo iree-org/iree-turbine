@@ -197,8 +197,7 @@ _emulate_ceildiv = True
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
 
 
-def gen_sympy_index(dynamics: dict[IndexSymbol, Value],
-                    expr: sympy.Expr) -> OpResult:
+def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpResult:
     stack: list[OpResult] = []
 
     def _get_ir_value(arg):
@@ -260,9 +259,9 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value],
             # If rhs_val is negative, since it is of index type and we have
             # overflow flags, we need to express it as a sub to get the
             # correct result.
-            return arith_d.subi(lhs,
-                                _get_const(-rhs_val),
-                                overflow_flags=overflow_flags)
+            return arith_d.subi(
+                lhs, _get_const(-rhs_val), overflow_flags=overflow_flags
+            )
 
         return arith_d.addi(lhs, rhs, overflow_flags=overflow_flags)
 
@@ -306,8 +305,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value],
 
     def _floor(value):
         if isinstance(value, _Rational):
-            value = arith_d.divsi(
-                *_broadcast(value.numerator, value.denominator))
+            value = arith_d.divsi(*_broadcast(value.numerator, value.denominator))
 
         return value
 
@@ -318,16 +316,17 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value],
                 one = _get_const(1)
                 zero = _get_const(0)
                 lhs_minus_one = arith_d.subi(*_broadcast(value.numerator, one))
-                div = arith_d.divui(
-                    *_broadcast(lhs_minus_one, value.denominator))
+                div = arith_d.divui(*_broadcast(lhs_minus_one, value.denominator))
                 result = arith_d.addi(*_broadcast(div, one))
-                cmp = arith_d.cmpi(arith_d.CmpIPredicate.eq,
-                                   *_broadcast(value.numerator, zero))
+                cmp = arith_d.cmpi(
+                    arith_d.CmpIPredicate.eq, *_broadcast(value.numerator, zero)
+                )
                 zero, result = _broadcast(zero, result)
                 value = arith_d.select(cmp, zero, result)
             else:
                 value = arith_d.ceildivsi(
-                    *_broadcast(value.numerator, value.denominator))
+                    *_broadcast(value.numerator, value.denominator)
+                )
 
         return value
 
@@ -357,8 +356,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value],
 
     def _enforce_non_rational(val, term):
         if isinstance(val, _Rational):
-            raise CodegenError(
-                f"Rational is not supported yet in '{type(term)}'")
+            raise CodegenError(f"Rational is not supported yet in '{type(term)}'")
 
     def _remove_denominators(lhs, rhs):
         """
@@ -384,8 +382,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value],
         if isinstance(val, (tuple, list)):
             vec_type = VectorType.get([len(val)], IndexType.get())
             vals = [IntegerAttr.get(IndexType.get(), v) for v in val]
-            return arith_d.constant(vec_type,
-                                    DenseElementsAttr.get(vals, vec_type))
+            return arith_d.constant(vec_type, DenseElementsAttr.get(vals, vec_type))
 
         raise CodegenError(f"Unsupported const val {val} : {type(val)}")
 
@@ -398,8 +395,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value],
     # This can easily be adapted to affine expressions later.
     select_stack = []
     if isinstance(expr, sympy.Piecewise):
-        assert len(expr.args
-                   ) == 2 and expr.args[1][1], f"Unsupported piecewise {expr}"
+        assert len(expr.args) == 2 and expr.args[1][1], f"Unsupported piecewise {expr}"
     for term in sympy.postorder_traversal(expr):
         match term:
             case sympy.Symbol():
@@ -438,32 +434,28 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value],
                 lhs = stack.pop()
                 if isinstance(rhs, _Rational) or isinstance(lhs, _Rational):
                     lhs, rhs = _remove_denominators(lhs, rhs)
-                res = arith_d.cmpi(arith_d.CmpIPredicate.sle,
-                                   *_broadcast(lhs, rhs))
+                res = arith_d.cmpi(arith_d.CmpIPredicate.sle, *_broadcast(lhs, rhs))
                 stack.append(res)
             case sympy.StrictLessThan():
                 rhs = stack.pop()
                 lhs = stack.pop()
                 if isinstance(rhs, _Rational) or isinstance(lhs, _Rational):
                     lhs, rhs = _remove_denominators(lhs, rhs)
-                res = arith_d.cmpi(arith_d.CmpIPredicate.slt,
-                                   *_broadcast(lhs, rhs))
+                res = arith_d.cmpi(arith_d.CmpIPredicate.slt, *_broadcast(lhs, rhs))
                 stack.append(res)
             case sympy.StrictGreaterThan():
                 rhs = stack.pop()
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
-                res = arith_d.cmpi(arith_d.CmpIPredicate.sgt,
-                                   *_broadcast(lhs, rhs))
+                res = arith_d.cmpi(arith_d.CmpIPredicate.sgt, *_broadcast(lhs, rhs))
                 stack.append(res)
             case sympy.GreaterThan():
                 rhs = stack.pop()
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
-                res = arith_d.cmpi(arith_d.CmpIPredicate.sge,
-                                   *_broadcast(lhs, rhs))
+                res = arith_d.cmpi(arith_d.CmpIPredicate.sge, *_broadcast(lhs, rhs))
                 stack.append(res)
             case sympy.And():
                 rhs = stack.pop()
