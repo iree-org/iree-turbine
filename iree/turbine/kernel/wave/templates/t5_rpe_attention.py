@@ -81,10 +81,10 @@ def get_t5_rpe_attention_kernel(
         (d0 - d1, (d0 - d1 < max_context_length) & (d0 - d1 >= 0)), (0, True)
     )
     offset_mapping = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={M: i, K2: clip},
-        outputs={M: i, K2: j},
-        dynamic_val_mappings=({M: i}, {K2: j}),
+        num_iterators=3,
+        inputs={B: i, M: j, K2: clip},
+        outputs={B: i, M: j, K2: k},
+        dynamic_val_mappings=({B: i, M: j, K2: k}, {K2: k}),
     )
 
     rpe_layout = tkl.MemoryLayout(shape=[max_context_length])
