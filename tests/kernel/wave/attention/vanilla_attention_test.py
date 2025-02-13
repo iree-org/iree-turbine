@@ -116,7 +116,7 @@ def testAttentionPure(
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, input_shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
 
@@ -199,7 +199,7 @@ def testAttentionCausal(
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
 
@@ -399,7 +399,7 @@ def testAttentionBias(
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         if "gfx94" in config["target"]:
             assert_close(output, torch_ref, atol=2e-3, rtol=5e-3, check_dtype=False)
@@ -605,7 +605,7 @@ def testAttentionSoftCap(
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         if "gfx94" in config["target"]:
             assert_close(output, torch_ref, atol=2e-3, rtol=5e-3, check_dtype=False)
@@ -771,6 +771,6 @@ def testAttentionF8(
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
         rmse = torch.sqrt(torch.mean(torch.square(output - torch_ref)))
         assert rmse <= 0.006

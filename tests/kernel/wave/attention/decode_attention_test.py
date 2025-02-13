@@ -128,9 +128,9 @@ def testFlashDecoding(
     if dump_generated_mlir:
         filename = f"wave_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(mb_qk.module_op)
         filename = f"wave_phase_1_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_sv.module_op.get_asm())
+            f.write(mb_sv.module_op)
 
     assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)

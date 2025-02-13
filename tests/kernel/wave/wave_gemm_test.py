@@ -205,7 +205,7 @@ def testGemm(
         if test_dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         if run_bench:
             if dump_perf is not None:
@@ -352,7 +352,7 @@ def testVMFMAGemm(
         if test_dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         if run_bench:
             if dump_perf is not None:
@@ -501,7 +501,7 @@ def testCDNA2IntGemm(
         if test_dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         if run_bench:
             if dump_perf is not None:
@@ -618,7 +618,7 @@ def testCDNA3IntGemm(
         if test_dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         if run_bench:
             if dump_perf is not None:
@@ -733,7 +733,7 @@ def testF8Gemm(
         if test_dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         if run_bench:
             if dump_perf is not None:
@@ -841,7 +841,7 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         if test_dump_generated_mlir:
             filename = f"wave_batched_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         if run_bench:
             if dump_perf is not None:

@@ -140,7 +140,7 @@ def testEvoformerAttentionForward(
         if dump_generated_mlir:
             filename = f"wave_evoformer_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         eps = 1e-2 if output.dtype == torch.float16 else 5e-2
         assert (

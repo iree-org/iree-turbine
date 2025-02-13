@@ -161,7 +161,7 @@ def testChainedGemm(
         if dump_generated_mlir:
             filename = f"wave_cgemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         iree_ref = torch.zeros(shape[0], shape[2], shape[1], dtype=torch.float32)
         generate_iree_ref(
@@ -302,7 +302,7 @@ def testChainedGemmF8(
         if dump_generated_mlir:
             filename = f"wave_cgemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(mb.module_op)
 
         iree_ref = torch.zeros(shape[0], shape[2], shape[1], dtype=torch.float32)
         generate_iree_ref(
