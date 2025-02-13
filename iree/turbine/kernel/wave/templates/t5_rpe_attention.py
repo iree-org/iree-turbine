@@ -24,7 +24,7 @@ def get_t5_rpe_attention_kernel(
     shape: AttentionShape,
     mfma_variant: MMAType,
     dynamic_dims: bool,
-    max_context_length: Optional[int] = None,
+    max_context_length: int,
 ):
     # Input sizes
     B = tkl.sym.B
@@ -77,38 +77,33 @@ def get_t5_rpe_attention_kernel(
     if dynamic_dims:
         constraints += [tkw.Assumption(K2 > BLOCK_K2 * 4)]
 
-    # yapf: disable
     i, j, k = [tkw.IndexMapping.iterator(i) for i in range(3)]
     mapping = tkw.IndexMapping(
         num_iterators=3,
         inputs={ B: i, N: j, M: k },
         outputs={ B: i, M: k, N: j })
 
-    use_t5_rpe = max_context_length is not None
-    if use_t5_rpe:
-        d0, d1 = [ tkw.IndexMapping.dynamic_val(i) for i in range(2)]
-        clip_upper = sympy.Piecewise(
-            (d0 - d1, d0 - d1 <= max_context_length),
-            (max_context_length, True)
-        )
-        clip_lower_and_upper = sympy.Piecewise(
-            (clip_upper, d0 - d1 >= 0),
-            (0, True)
-        )
-        offset_mapping = tkw.IndexMapping(
-            num_iterators=2,
-            inputs={
-                M: i,
-                K2: clip_lower_and_upper
-            },
-            outputs={ M: i, K2: j },
-            dynamic_val_mappings=({ M: i, K2: j }, { M: i, K2: j })
-        )
+    d0, d1 = [ tkw.IndexMapping.dynamic_val(i) for i in range(2)]
+    clip_upper = sympy.Piecewise(
+        (d0 - d1, d0 - d1 <= max_context_length),
+        (max_context_length, True)
+    )
+    clip_lower_and_upper = sympy.Piecewise(
+        (clip_upper, d0 - d1 >= 0),
+        (0, True)
+    )
+    offset_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={
+            M: i,
+            K2: clip_lower_and_upper
+        },
+        outputs={ M: i, K2: j },
+        dynamic_val_mappings=({ M: i, K2: j }, { M: i, K2: j })
+    )
 
-        rpe_layout = tkl.MemoryLayout(shape=[max_context_length, ])
-    else:
-        rpe_layout = tkl.MemoryLayout(shape=[1, ])
-    # yapf: enable
+    rpe_layout = tkl.MemoryLayout(shape=[max_context_length, ])
+    
 
     @tkw.wave(constraints)
     def base_attention(
@@ -142,21 +137,17 @@ def get_t5_rpe_attention_kernel(
             # Fused T5 RPE adds attention bias pre-softmax normalization.
             # When fusing into the FA variant, adding locally before the max and
             # the partial softmax should be equivalent.
-            if use_t5_rpe:
-                i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-                i = tkw.broadcast(i, target_shape=[B, M, K2])
-                j = tkw.self_index(
-                    K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-
-                # yapf: disable
-                rpe_reg = tkw.read(
-                    rpe,
-                    mapping=offset_mapping,
-                    mapping_dynamic_vals=( i, j, ),
-                    elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
-                )
-                # yapf: enable
-                x_j = x_j + rpe_reg
+            i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+            i = tkw.broadcast(i, target_shape=[B, M, K2])
+            j = tkw.self_index(
+                K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+            rpe_reg = tkw.read(
+                rpe,
+                mapping=offset_mapping,
+                mapping_dynamic_vals=( i, j, ),
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+            )
+            x_j = x_j + rpe_reg
 
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)

@@ -24,6 +24,8 @@ from iree.turbine.kernel.wave.utils import (
 )
 from iree.turbine.kernel.wave.templates.t5_rpe_attention import (
     get_t5_rpe_attention_kernel)
+from iree.turbine.kernel.wave.templates.vanilla_attention import (
+    get_vanilla_attention_kernel)
 
 torch.manual_seed(0)
 torch.set_printoptions(
@@ -143,11 +145,10 @@ run(
     hyperparams,
     dynamic_symbols,
     dynamic_symbols_map,
-) = get_t5_rpe_attention_kernel(
+) = get_vanilla_attention_kernel(
     shape,
     mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
-    dynamic_dims=False
-)
+    dynamic_dims=False)
 
 
 def attention(tq, tk, tv, toutput):
