@@ -24,11 +24,12 @@ from iree.turbine.kernel.wave.utils import (
 from iree.turbine.kernel.wave.templates.t5_rpe_attention import (
     get_t5_rpe_attention_kernel,
 )
-from ..common.utils import (
-    require_e2e,
-    require_cdna3,
-    enable_scheduling_barriers,
-)
+
+# from ..common.utils import (
+#     require_e2e,
+#     require_cdna3,
+#     enable_scheduling_barriers,
+# )
 from typing import Tuple
 
 shapes = [(128, 128, 128, 128, 128, 128)]
@@ -83,19 +84,19 @@ def create_inputs(
 
 
 # TODO: Debug why failing numerics on MI250.
-@require_e2e
-@require_cdna3
-@pytest.mark.parametrize("shape", shapes)
-@pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize(
-    "mfma_variant",
-    [(MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)],
-)
+# @require_e2e
+# @require_cdna3
+# @pytest.mark.parametrize("shape", shapes)
+# @pytest.mark.parametrize("dtype", [torch.float16])
+# @pytest.mark.parametrize(
+#     "mfma_variant",
+#     [(MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)],
+# )
 def test_t5_rpe_attention(
     shape: Tuple[int],
     dtype: torch.dtype,
-    mfma_variant: MMAType,
-    request,
+    mfma_variant: Tuple[MMAType],
+    # request,
 ):
     torch.manual_seed(0)
     shape = AttentionShape(
@@ -119,16 +120,15 @@ def test_t5_rpe_attention(
 
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
-    run_bench = request.config.getoption("--runperf")
-    dump_perf = request.config.getoption("--dump-perf-files-path")
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
+    # run_bench = request.config.getoption("--runperf")
+    # dump_perf = request.config.getoption("--dump-perf-files-path")
+    # if run_bench:
+    #     config["benchmark_batch_size"] = 10
+    #     config["benchmark_repetitions"] = 3
+    # if dump_perf is not None:
+    #     perf_filename = request.node.name + ".json"
+    #     config["benchmark_results_file"] = os.path.join(
+    #         dump_perf, "tk_" + perf_filename)
 
     log2e = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
@@ -143,9 +143,9 @@ def test_t5_rpe_attention(
         hyperparams,
         canonicalize=True,
         run=True,
-        run_bench=run_bench,
+        # run_bench=run_bench,
         run_config=config,
-        use_scheduling_barriers=enable_scheduling_barriers,
+        # use_scheduling_barriers=enable_scheduling_barriers,
     ):
         output = device_zeros(output_shape, dtype=torch.float32)
         # TODO: Add scaling of QK and t5_rpe as part of kernel.
@@ -161,3 +161,8 @@ def test_t5_rpe_attention(
         )
 
         validate_accuracy(query, key, value, rpe, output)
+
+
+test_t5_rpe_attention(
+    shapes[0], torch.float16, (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16)
+)

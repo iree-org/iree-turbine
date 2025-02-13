@@ -390,12 +390,14 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
     # Substitute in frozen vars to simplify expression.
     if not isinstance(expr, sympy.Expr):
         expr = sympy.sympify(expr)
+    print(f"\n\nexpr {expr} dynamics {dynamics}")
     expr = expr.subs(idxc.subs)
     # Why affine, for now simply create indexing expressions.
     # This can easily be adapted to affine expressions later.
     select_stack = []
     if isinstance(expr, sympy.Piecewise):
         assert len(expr.args) == 2 and expr.args[1][1], f"Unsupported piecewise {expr}"
+    print(f"\n\nexpr {expr} dynamics {dynamics}")
     for term in sympy.postorder_traversal(expr):
         match term:
             case sympy.Symbol():

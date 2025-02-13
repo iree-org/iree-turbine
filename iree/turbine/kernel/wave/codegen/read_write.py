@@ -80,6 +80,7 @@ def _build_start_indices(
     src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
     dynamic_values: dict[IndexExpr, Any] = {},
 ) -> list[OpResult]:
+    print(f"dynamic_values {dynamic_values}")
     return [
         gen_sympy_index(add_emitter_subs(emitter, dynamic_values), i)
         for i in _get_start_indices(src_indices)

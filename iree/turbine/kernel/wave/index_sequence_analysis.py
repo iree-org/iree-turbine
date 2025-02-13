@@ -210,6 +210,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         ]
         assert len(dim_with_gpr_offsets) == 1, "Expected only 1-Dim has gpr offsets"
         gpr_offset_dim, gpr_offset_expr = dim_with_gpr_offsets[0]
+        print(f"elements_per_thread {elements_per_thread}")
         gpr_offsets = [
             gpr_offset_expr.subs({GPR_NUM: i}) for i in range(elements_per_thread)
         ]
