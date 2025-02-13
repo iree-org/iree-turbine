@@ -90,8 +90,6 @@ rpe.copy_(device_randn(max_context_length + 2, dtype=torch.float32))
 rpe[0] = 0
 rpe[max_context_length + 1] = 0
 
-tmp_out = device_zeros(shape.num_query_heads, shape.query_seq_len, shape.kv_seq_len, dtype=torch.float32)
-
 def t5_rpe_masked_cond(rpe, max_context_length: int, sequence_length: int, dtype):
     positions = to_default_device(torch.arange(sequence_length))
     pos_diff = positions.unsqueeze(1) - positions.unsqueeze(0)
@@ -123,8 +121,7 @@ rpe_cond = t5_rpe_masked_cond(
     shape,
     mfma_variant=[MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16],
     dynamic_dims=False,
-    max_context_length=max_context_length + 2,
-    dump_intermediate_t5_cond=True)
+    max_context_length=max_context_length + 2)
 
 
 def attention_with_rpe(*args):
@@ -137,8 +134,7 @@ run(
     k,
     v.permute([0, 2, 1]),
     rpe * log2e,
-    tkw_attention_with_rpe_output,
-    tmp_out
+    tkw_attention_with_rpe_output
 )
 
 ### Reference version
@@ -165,18 +161,6 @@ run(
     v.permute([0, 2, 1]),
     tkw_attention_output,
 )
-
-###
-# Sanity checks, debug masks must match.
-for i in range(tmp_out.shape[0]):
-    assert_close(
-        tmp_out[i, :, :].to(dtype=rpe_cond.dtype),
-        # WARNING: we had to multiply rpe by log2e to account for the FA impl
-        # using exp2. We need to readjust to test the masks.
-        rpe_cond * log2e,
-        atol=2e-3,
-        rtol=2e-3,
-    )
 
 #################################################################################
 # TORCH ATTENTION and ATTENTION + RPE

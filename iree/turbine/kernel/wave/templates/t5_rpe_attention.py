@@ -25,7 +25,6 @@ def get_t5_rpe_attention_kernel(
     mfma_variant: MMAType,
     dynamic_dims: bool,
     max_context_length: Optional[int] = None,
-    dump_intermediate_t5_cond: Optional[bool] = None,
 ):
     # Input sizes
     B = tkl.sym.B
@@ -118,7 +117,6 @@ def get_t5_rpe_attention_kernel(
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
         rpe: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        debug_out: tkl.Memory[B, M, K2, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
@@ -158,10 +156,6 @@ def get_t5_rpe_attention_kernel(
                     elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 )
                 # yapf: enable
-                if dump_intermediate_t5_cond:
-                    tkw.write(rpe_reg,
-                            debug_out,
-                            elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
                 x_j = x_j + rpe_reg
 
             m_j = tkw.max(x_j, partial_max, dim=K2)
