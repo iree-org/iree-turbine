@@ -76,8 +76,6 @@ def run_inference() -> np.ndarray:
     logger.debug(f"Inference result: {y.to_host()}")
     return y.to_host()
 
-    return y.to_host()
-
 
 class ModelTest(unittest.TestCase):
     def test_mlp_export_simple(self) -> None:
