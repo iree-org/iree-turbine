@@ -284,12 +284,12 @@ def get_extend_attention_rpe_kernel(
             # Layer and RPE scaling since we use log2 instead of log2
             x_j = x_j * layer_scale_reg + rpe_reg * rpe_scale_reg
 
-            n_kv_index = tkw.self_index(N_KV, tkl.i32)
-            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
-            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
-            mask = tkw.cast(mask, tkw.i1)
-            bias = tkw.select(mask, zero, neg_infinity)
-            x_j = x_j + bias
+            # n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            # mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            # mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            # mask = tkw.cast(mask, tkw.i1)
+            # bias = tkw.select(mask, zero, neg_infinity)
+            # x_j = x_j + bias
 
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
@@ -350,16 +350,16 @@ def get_extend_attention_rpe_kernel(
             # Layer and RPE scaling since we use log2 instead of log2
             x_j = x_j * layer_scale_reg + rpe_reg * rpe_scale_reg
 
-            n_kv_index = tkw.self_index(N_KV, tkl.i32)
-            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
-            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
-            if is_causal:
-                n_q_index = tkw.self_index(N_Q, tkl.i32)
-                n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
-                mask = (n_q_index >= n_kv_index) & mask
-            mask = tkw.cast(mask, tkw.i1)
-            bias = tkw.select(mask, zero, neg_infinity)
-            x_j = x_j + bias
+            # n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            # mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            # mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            # if is_causal:
+            #     n_q_index = tkw.self_index(N_Q, tkl.i32)
+            #     n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
+            #     mask = (n_q_index >= n_kv_index) & mask
+            # mask = tkw.cast(mask, tkw.i1)
+            # bias = tkw.select(mask, zero, neg_infinity)
+            # x_j = x_j + bias
 
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
