@@ -416,6 +416,9 @@ class LaunchableWave(Launchable):
         ]
 
         for p in graph_passes:
+            # align_index_sizes may bug the printer
+            if p.__name__ == "align_index_sizes":
+                continue
             if "all" in print_ir_before or p.__name__ in print_ir_before:
                 print(f"***Before {p.__name__}***\n")
                 print_trace(trace)
