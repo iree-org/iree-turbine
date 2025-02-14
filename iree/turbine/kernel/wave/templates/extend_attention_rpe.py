@@ -36,6 +36,7 @@ def get_extend_attention_rpe_kernel(
     is_causal: Optional[bool] = False,
     layer_scaling: Optional[float] = None,
     num_waves: Optional[int] = 4,
+    max_rpe_context_length: Optional[int] = 0,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
@@ -154,7 +155,8 @@ def get_extend_attention_rpe_kernel(
     )
 
     clip = sympy.Piecewise(
-        (d0 - d1, (d0 - d1 < MAX_EXTEND_SEQ_LEN) & (d0 - d1 > 0)), (0, True)
+        (d0 - d1, (d0 - d1 < max_rpe_context_length) & (d0 - d1 >= 0)),
+        (max_rpe_context_length, True),
     )
     rpe_mapping = tkw.IndexMapping(
         num_iterators=3,
@@ -271,10 +273,8 @@ def get_extend_attention_rpe_kernel(
                 mapping_dynamic_vals=(i, j),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
-            x_j = x_j + rpe_reg
-
             # Layer scaling since we use log2 instead of log2
-            x_j = x_j * layer_scale_reg
+            x_j = x_j * layer_scale_reg + rpe_reg
 
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
@@ -338,10 +338,8 @@ def get_extend_attention_rpe_kernel(
                 mapping_dynamic_vals=(i, j),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
-            x_j = x_j + rpe_reg
-
             # Layer scaling since we use log2 instead of log2
-            x_j = x_j * layer_scale_reg
+            x_j = x_j * layer_scale_reg + rpe_reg
 
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)

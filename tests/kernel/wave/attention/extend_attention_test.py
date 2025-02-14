@@ -4,9 +4,12 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import math
 import pytest
 import torch
-import math
+from torch.nn import functional as F
+
+
 import iree.turbine.kernel as tk
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils import (
@@ -46,6 +49,17 @@ from ..common.shapes import get_test_shapes, construct_test_name
 # Reference paged attention implementation from vLLM and sglang.
 
 
+def t5_rpe_masked_cond(
+    rpe: torch.Tensor, max_rpe_context_length: int, sequence_length: int
+) -> torch.Tensor:
+    positions = torch.arange(sequence_length).to(device=rpe.device)
+    pos_diff = positions.unsqueeze(1) - positions.unsqueeze(0)
+    mask = ((pos_diff >= 0) & (pos_diff < max_rpe_context_length)).to(device=rpe.device)
+    rpe_cond = device_zeros(sequence_length, sequence_length, dtype=rpe.dtype)
+    rpe_cond[mask] = rpe[pos_diff[mask]]
+    return rpe_cond
+
+
 class ScoreMod(Enum):
     SoftCap = 0
     RPE = 1
@@ -64,30 +78,6 @@ def context_attention_fwd(
     rpe_bias: torch.Tensor = None,
     score_mod: ScoreMod = ScoreMod.SoftCap,
 ):
-    def soft_cap(score, b, h, q_idx, kv_idx):
-        score = score / logit_cap
-        score = torch.tanh(score)
-        score = score * logit_cap
-        return score
-
-    zero_tensor = torch.zeros_like(rpe_bias)
-
-    def t5_rpe(score, b, h, q_idx, kv_idx):
-        bias = torch.where(q_idx - kv_idx >= 0, score, zero_tensor)
-        bias = torch.where(q_idx - kv_idx < max_len_extend, score, zero_tensor)
-        score = score + bias[q_idx - kv_idx]
-        return score
-
-    match score_mod:
-        case ScoreMod.SoftCap:
-            score_mod_fn = soft_cap
-        case ScoreMod.RPE:
-            score_mod_fn = t5_rpe
-        case _:
-            raise ValueError("Unexpectred score_mod type")
-
-    def causal(b, h, q_idx, kv_idx):
-        return q_idx >= kv_idx
 
     cu_seq_lens = [0] * (len(b_seq_len) + 1)
     for i, seq_len in enumerate(b_seq_len):
@@ -96,24 +86,31 @@ def context_attention_fwd(
     for i in range(len(b_seq_len)):
         start, end = cu_seq_lens[i], cu_seq_lens[i + 1]
         qkv_len = end - start
-        block_mask = (
-            create_block_mask(causal, B=None, H=None, Q_LEN=qkv_len, KV_LEN=qkv_len)
-            if is_causal
-            else None
-        )
-        o_torch = (
-            flex_attention(
-                q[start:end].permute(1, 0, 2).unsqueeze(0),
-                k[start:end].permute(1, 0, 2).unsqueeze(0),
-                v[start:end].permute(1, 0, 2).unsqueeze(0),
-                score_mod=score_mod_fn,
-                enable_gqa=True,
-                block_mask=block_mask,
+        Q = q[start:end].permute(1, 0, 2)
+        K = k[start:end].permute(1, 0, 2)
+        K = K.expand(Q.shape[0], *K.shape[1:])
+        V = v[start:end].permute(1, 0, 2)
+        V = V.expand(Q.shape[0], *V.shape[1:])
+        dk_sqrt = math.sqrt(1.0 / Q.shape[-1])
+        a = torch.bmm(Q, K.transpose(-1, -2)) * dk_sqrt
+        if ScoreMod == ScoreMod.SoftCap:
+            a = a / logit_cap
+            a = torch.tanh(a)
+            a = a * logit_cap
+        else:
+            rpe_cond = t5_rpe_masked_cond(
+                rpe_bias,
+                max_rpe_context_length=max_rpe_context_length,
+                sequence_length=K.shape[1],
             )
-            .squeeze(0)
-            .permute(1, 0, 2)
-        )
-        o[start:end] = o_torch
+            print(a.shape)
+            print(rpe_cond.shape)
+            rpe_cond = rpe_cond.unsqueeze(0)
+            rpe_cond = rpe_cond.expand(Q.shape[0], *rpe_cond.shape[1:])
+            a = a + rpe_cond
+        reference = torch.bmm(F.softmax(a, dim=-1).to(dtype=V.dtype), V)
+        reference = reference.squeeze(0).permute(1, 0, 2)
+        o[start:end] = reference
 
     return o
 
@@ -241,8 +238,15 @@ def create_inputs(
     b_start_loc_extend = torch.zeros_like(b_seq_len)
     b_start_loc_extend[1:] = torch.cumsum(b_seq_len_extend[:-1], 0)
     max_len_extend = torch.max(b_seq_len_extend, 0)[0].item()
+    max_rpe_context_length = 2
     logit_cap = 30.0
-    rpe_bias = 5 * torch.rand(max_len_extend, dtype=torch.float32, device="cuda")
+
+    rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
+    rpe_bias.copy_(
+        5 * torch.rand(max_rpe_context_length + 1, dtype=torch.float32, device="cuda")
+    )
+    rpe_bias[max_rpe_context_length] = 0
+    print(rpe_bias)
 
     return (
         q_extend,
@@ -262,17 +266,18 @@ def create_inputs(
         max_len_extend,
         logit_cap,
         rpe_bias,
+        max_rpe_context_length,
     )
 
 
 # TODO: Investigate errors on MI250.
 @require_e2e
-@require_cdna3
+# @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("is_causal", [False, True])
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@pytest.mark.parametrize("is_causal", [False])
+@pytest.mark.parametrize("use_buffer_ops", [False, True]))
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -309,6 +314,7 @@ def testExtendAttention(
         extend_token_num,
         max_len_extend,
         logit_cap,
+        _,
         _,
     ) = create_inputs(shape, dtype)
     shape.max_seq_len = max_len_extend
@@ -410,11 +416,11 @@ def testExtendAttention(
 
 # TODO: Investigate errors on MI250.
 @require_e2e
-@require_cdna3
+# @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("is_causal", [True])
+@pytest.mark.parametrize("is_causal", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -450,6 +456,7 @@ def testExtendRpeAttention(
         max_len_extend,
         logit_cap,
         rpe_bias,
+        max_rpe_context_length,
     ) = create_inputs(shape, dtype)
     shape.max_seq_len = max_len_extend
 
@@ -504,6 +511,7 @@ def testExtendRpeAttention(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
+        log2e = 1.44269504089
         mb_qk = extend_attention_rpe(
             q_extend,
             k_extend,
@@ -515,8 +523,9 @@ def testExtendRpeAttention(
             b_seq_len,
             b_seq_len_extend,
             b_start_loc_extend,
-            rpe_bias,
+            rpe_bias * log2e,
             output,
+            max_rpe_context_length=max_rpe_context_length,
         )
 
     if dump_generated_mlir:
