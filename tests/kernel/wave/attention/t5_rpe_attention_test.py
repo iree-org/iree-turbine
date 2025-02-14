@@ -24,6 +24,7 @@ from iree.turbine.kernel.wave.utils import (
 from iree.turbine.kernel.wave.templates.t5_rpe_attention import (
     get_t5_rpe_attention_kernel,
 )
+from ..common.shapes import make_shape_param
 from ..common.utils import (
     require_e2e,
     require_cdna3,
@@ -31,7 +32,10 @@ from ..common.utils import (
 )
 from typing import Tuple
 
-shapes = [(128, 128, 128, 128, 128, 128)]
+shapes = [
+    make_shape_param((128, 128, 128, 128, 128, 128), is_perf=False),
+    make_shape_param((128, 128, 128, 128, 128, 128), is_perf=True),
+]
 
 
 def t5_rpe_masked_cond(
