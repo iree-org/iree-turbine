@@ -207,6 +207,7 @@ def get_extend_attention_rpe_kernel(
         ],
         rpe: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
+        rpe_debug: tkl.Memory[H, N_Q, N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
@@ -273,6 +274,11 @@ def get_extend_attention_rpe_kernel(
                 rpe,
                 mapping=rpe_mapping,
                 mapping_dynamic_vals=(i, j),
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+            )
+            tkw.write(
+                rpe_reg,
+                rpe_debug,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
             # Layer and RPE scaling since we use log2 instead of log2
