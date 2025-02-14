@@ -74,6 +74,7 @@ def get_extend_attention_rpe_kernel(
     LOG2E = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
     layer_scaling = (layer_scaling or dk_sqrt) * LOG2E
+    rpe_scaling = LOG2E
 
     constraints: list[tkw.Constraint] = []
     constraints += [
@@ -213,6 +214,7 @@ def get_extend_attention_rpe_kernel(
         zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
         neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
         layer_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](layer_scaling)
+        rpe_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](rpe_scaling)
 
         req_idx = tkw.read(request_indices, elements_per_thread=1)
         tkw.set_symbol(REQ_IDX, req_idx)
@@ -273,8 +275,8 @@ def get_extend_attention_rpe_kernel(
                 mapping_dynamic_vals=(i, j),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
-            # Layer scaling since we use log2 instead of log2
-            x_j = x_j * layer_scale_reg + rpe_reg
+            # Layer and RPE scaling since we use log2 instead of log2
+            x_j = x_j * layer_scale_reg + rpe_reg * rpe_scale_reg
 
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
@@ -282,6 +284,7 @@ def get_extend_attention_rpe_kernel(
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, zero, neg_infinity)
             x_j = x_j + bias
+
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
@@ -338,8 +341,8 @@ def get_extend_attention_rpe_kernel(
                 mapping_dynamic_vals=(i, j),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
-            # Layer scaling since we use log2 instead of log2
-            x_j = x_j * layer_scale_reg + rpe_reg
+            # Layer and RPE scaling since we use log2 instead of log2
+            x_j = x_j * layer_scale_reg + rpe_reg * rpe_scale_reg
 
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
@@ -351,6 +354,7 @@ def get_extend_attention_rpe_kernel(
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, zero, neg_infinity)
             x_j = x_j + bias
+
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
