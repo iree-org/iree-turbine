@@ -1257,11 +1257,14 @@ class Read(CustomOp):
             subs = {
                 k: index[v] for k, v in zip(iters, self.mapping.output_mapping.keys())
             }
-            return {
+            print(f"subs {subs}")
+            d = {
                 k: IndexSequence.from_expr(mapping[k], subs)
                 for k in get_custom(arg).type.symbolic_shape
                 if k in mapping
             }
+            print(f"d {d}")
+            return d
 
         return index
 

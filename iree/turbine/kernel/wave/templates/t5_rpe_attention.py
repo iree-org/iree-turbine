@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
@@ -22,7 +22,7 @@ import sympy
 
 def get_t5_rpe_attention_kernel(
     shape: AttentionShape,
-    mfma_variant: MMAType,
+    mfma_variant: Tuple[MMAType],
     dynamic_dims: bool,
     max_context_length: int,
 ):
@@ -123,9 +123,7 @@ def get_t5_rpe_attention_kernel(
             # the partial softmax should be equivalent.
             i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
             i = tkw.broadcast(i, target_shape=[B, M, K2])
-            j = tkw.self_index(
-                K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
-            )
+            j = tkw.self_index(K2, tkl.i64, elements_per_thread=4)
             rpe_reg = tkw.read(
                 rpe,
                 mapping=offset_mapping,
