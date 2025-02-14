@@ -14,9 +14,15 @@ from .conversions import torch_dtyped_shape_to_iree_format
 def iree_tool_format_cli_input_arg(arg: torch.Tensor, file_path: str | PathLike) -> str:
     """Format the CLI value for an input argument.
     Example:
-    iree_tool_format_cli_input_arg(torch.empty([1,2], dtype=torch.float32), "arg0.bin")
+
+    .. code-block:: Python
+
+        iree_tool_format_cli_input_arg(torch.empty([1,2], dtype=torch.float32), "arg0.bin")
     Returns:
-    "1x2xf32=@arg0.bin"
+
+    .. code-block:: Python
+
+        "1x2xf32=@arg0.bin"
     """
     return f"{torch_dtyped_shape_to_iree_format(arg)}=@{file_path}"
 
@@ -37,22 +43,28 @@ def iree_tool_prepare_input_args(
     """Write the raw contents of tensors to files without any metadata.
     Returns the CLI input args description.
 
-    If file_path_prefix is given, will chose a default naming for argument files.
-    It is treated as a string prefix and not as directory.
+    If :code:`file_path_prefix` is given, will chose a default naming for argument
+    files. It is treated as a string prefix and not as directory.
     Example:
-    ```
-    file_path_prefix="/some/path/arg"
-    ```
+
+    .. code-block:: Python
+
+        iree_tool_prepare_input_args(
+            args,
+            file_path_prefix="/some/path/arg",
+        )
+
 
     returns
-    ```
-    [
-        "1x2x3xf32=@/some/path/arg0.bin",
-        "4x5xi8=@/some/path/arg1.bin"
-    ]
-    ```
 
-    This results can be prefixed with "--input=" to arrive at the final CLI flags
+    .. code-block:: Python
+
+        [
+            "1x2x3xf32=@/some/path/arg0.bin",
+            "4x5xi8=@/some/path/arg1.bin"
+        ]
+
+    This results can be prefixed with :code:`--input=` to arrive at the final CLI flags
     expected by IREE tools.
 
     Exactly one of file_paths and file_path_prefix must be provided.
