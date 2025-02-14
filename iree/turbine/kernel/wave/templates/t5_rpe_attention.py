@@ -78,7 +78,11 @@ def get_t5_rpe_attention_kernel(
 
     d0, d1 = [tkw.IndexMapping.dynamic_val(i) for i in range(2)]
     clip = sympy.Piecewise(
+<<<<<<< HEAD
         (d0 - d1, (d0 - d1 < max_context_length) & (d0 - d1 >= 0)), (0, True)
+=======
+        (d0 - d1, (d0 - d1 < max_context_length) & (d0 - d1 > 0)), (0, True)
+>>>>>>> 5d9d3f1 (actual fix)
     )
     offset_mapping = tkw.IndexMapping(
         num_iterators=2,
