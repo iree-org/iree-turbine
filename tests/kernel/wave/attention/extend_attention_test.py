@@ -346,7 +346,7 @@ def testExtendAttention(
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(mb_qk.module_op)
 
     # Run the reference implementation.
     ref_output = ref_extend_attn(
