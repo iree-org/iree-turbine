@@ -1424,6 +1424,7 @@ def check_is_mapping_contiguous(
         return True
 
     # TODO: Better dyn vals analysis.
+    # TODO TODO TODO: we also need to check if there are additional sybols in the mapping
     if mapping.num_dynamic_vals != 0:
         return False
 
@@ -1440,6 +1441,15 @@ def check_is_mapping_contiguous(
 
     index_mapping = tuple(subs_idxc(i) for i in index_mapping)
     iters = mapping.iters
+
+    # TODO TODO TODO   at this point, if the symbols present in the index are not
+    # known to be scalars or themselves contiguous, we shouldn't say the read is contiguous
+    #
+    # TODO TODO TODO   we should thread through the fact that _some_ symbols have vector shape
+    for expr in index_mapping:
+        if len(expr.free_symbols - mapping.iters.keys()) != 0:
+            print("### avoided")
+            return False
 
     subs = [(sym, sym + int(i == len(iters) - 1)) for i, sym in enumerate(iters)]
     diff = [

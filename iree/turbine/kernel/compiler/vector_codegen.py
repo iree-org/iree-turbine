@@ -864,6 +864,7 @@ def cast_vector(
         # Implicit scalar type promotion.
         proxy_value = ScalarBuilder.to_dtype(proxy_value, element_type)
 
+    # print(f"proxy_value {proxy_value}")
     value = proxy_value.ir_value
 
     # After scalar promotion, promote to vector.

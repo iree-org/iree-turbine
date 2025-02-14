@@ -54,6 +54,7 @@ from iree.turbine.kernel.lang.global_symbols import *
 from ...ops.wave_ops import (
     abs,
     allocate,
+    and_op,
     apply_expr,
     broadcast,
     cast,
@@ -261,7 +262,8 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("Malformed arguments") from e
 
     register = cast_vector(emitter, register, element_type=IndexType.get())
-    emitter.dynamic_dims[symbol] = _to_scalar(register)
+    # emitter.dynamic_dims[symbol] = _to_scalar(register)
+    emitter.dynamic_dims[symbol] = register
 
 
 ###############################################################################
@@ -518,6 +520,16 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
         element_type.is_signed or element_type.is_signless
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for le: {element_type}")
+    return result
+
+
+@handle_binary_op(and_op)
+def handle_and_op(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_integer_like_type(element_type):
+        result = arith_d.andi(lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for le: {element_type}")
     return result
