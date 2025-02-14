@@ -1,4 +1,2 @@
 numpy
-torch
 iree-turbine
-

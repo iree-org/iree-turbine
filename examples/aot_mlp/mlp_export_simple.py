@@ -24,7 +24,7 @@ class MLP(nn.Module):
     Defines a neural network with four linear layers and sigmoid activations.
     """
 
-    def __init__(self) -> None:
+    def __init__(self) -> object:
         super().__init__()
         # Define model layers
         self.layer0 = nn.Linear(8, 8, bias=True)
@@ -68,9 +68,7 @@ def run_inference() -> np.ndarray:
     """
     config = rt.Config("local-task")
     vmm = rt.load_vm_module(
-        rt.VmModule.wrap_buffer(
-            config.vm_instance, compiled_binary.map_memory()
-        ),
+        rt.VmModule.wrap_buffer(config.vm_instance, compiled_binary.map_memory()),
         config,
     )
     x = np.random.rand(97, 8).astype(np.float32)
@@ -78,19 +76,20 @@ def run_inference() -> np.ndarray:
     logger.debug(f"Inference result: {y.to_host()}")
     return y.to_host()
 
+    return y.to_host()
+
 
 class ModelTest(unittest.TestCase):
     def test_mlp_export_simple(self) -> None:
-        """Tests if the model export and inference work as expected."""
         output = run_inference()
-        self.assertIsNotNone(output, "Inference output should not be None")
+
+        self.assertIsNotNone(output, "inference output should not be None")
         self.assertEqual(
-            output.shape, (97, 2),
-            "Output shape doesn't match the expected (97, 2)"
+            output.shape, (97, 2), "output shape doesn't match the expected (97, 2)"
         )
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
     # Run unit tests
     unittest.main()
-
