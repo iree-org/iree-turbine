@@ -86,7 +86,7 @@ def create_inputs(
 
 # TODO: Debug why failing numerics on MI250.
 @require_e2e
-@require_cdna3
+# @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("max_context_length", [10, 128])  # T5 RPE parameter
 @pytest.mark.parametrize("dtype", [torch.float16])
@@ -156,7 +156,7 @@ def test_t5_rpe_attention(
     ):
         output = device_zeros(output_shape, dtype=torch.float32)
         # TODO: Add scaling of QK and t5_rpe as part of kernel.
-        t5_rpe_attention(
+        mb = t5_rpe_attention(
             query * dk_sqrt * log2e,
             key,
             value.permute([0, 2, 1]),
@@ -166,5 +166,7 @@ def test_t5_rpe_attention(
             rpe * log2e,
             output,
         )
+        print(mb.module_op)
+        abort()
 
         validate_accuracy(query, key, value, rpe, output, max_context_length)

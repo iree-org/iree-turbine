@@ -510,6 +510,7 @@ def testExtendRpeAttention(
         canonicalize=True,
         run=True,
         run_bench=run_bench,
+        compile_config={"print_ir_after": "all"},
         run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
