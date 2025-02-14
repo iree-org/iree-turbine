@@ -177,7 +177,7 @@ def get_extend_attention_rpe_kernel(
     k_cache_layout = tkl.MemoryLayout(shape=k_cache_shape)
     v_cache_layout = tkl.MemoryLayout(shape=v_cache_shape)
     num_seqs_layout = tkl.MemoryLayout(shape=[None])
-    rpe_layout = tkl.MemoryLayout(shape=[None])
+    rpe_layout = tkl.MemoryLayout(shape=[max_rpe_context_length + 1])
 
     @tkw.wave(constraints)
     def extend_attention_rpe(

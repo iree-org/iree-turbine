@@ -243,7 +243,7 @@ def create_inputs(
     max_len_extend = torch.max(b_seq_len_extend, 0)[0].item()
     logit_cap = 30.0
 
-    max_rpe_context_length = 3
+    max_rpe_context_length = 1
     rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
     rpe_bias.copy_(
         5 * torch.rand(max_rpe_context_length + 1, dtype=torch.float32, device="cuda")
@@ -531,6 +531,7 @@ def testExtendRpeAttention(
             output,
             rpe_debug,
         )
+        print(mb_qk.module_op)
 
     print(f"\n\nrpe_debug\n{rpe_debug[0]}")
     print(f"rpe_debug_shape: {rpe_debug[0].shape}")
