@@ -33,9 +33,6 @@ from typing import Tuple
 
 shapes = [(128, 128, 128, 128, 128, 128)]
 
-# T5 RPE parameter
-max_context_length = 10
-
 
 def t5_rpe_masked_cond(
     rpe: torch.Tensor, max_context_length: int, sequence_length: int, dtype: torch.dtype
@@ -54,6 +51,7 @@ def validate_accuracy(
     value: torch.Tensor,
     rpe: torch.Tensor,
     output: torch.Tensor,
+    max_context_length: int,
 ) -> torch.Tensor:
     # Precompute values.
     dk_sqrt = math.sqrt(1.0 / query.shape[-1])
@@ -86,6 +84,7 @@ def create_inputs(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
+@pytest.mark.parametrize("max_context_length", [10, 128])  # T5 RPE parameter
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -93,6 +92,7 @@ def create_inputs(
 )
 def test_t5_rpe_attention(
     shape: Tuple[int],
+    max_context_length: int,
     dtype: torch.dtype,
     mfma_variant: MMAType,
     request,
