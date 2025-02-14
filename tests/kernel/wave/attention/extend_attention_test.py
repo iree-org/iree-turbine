@@ -553,6 +553,7 @@ def testExtendRpeAttention(
         rpe_bias=rpe_bias,
         logit_cap=logit_cap,
         score_mod=ScoreMod.RPE,
+        max_rpe_context_length=max_rpe_context_length,
     )
 
-    assert_allclose(output, ref_output, rtol=2e-3, atol=2e-3)
+    torch.testing.assert_close(output, ref_output, rtol=2e-3, atol=2e-3, check_dtype=False)
