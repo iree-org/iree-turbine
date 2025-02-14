@@ -104,7 +104,8 @@ def context_attention_fwd(
                 max_rpe_context_length=max_rpe_context_length,
                 sequence_length=K.shape[1],
             )
-            print(rpe_cond)
+            print(f"\n\nrpe_cond\n{rpe_cond}")
+            print(f"rpe_cond_shape: {rpe_cond.shape}")
             rpe_cond = rpe_cond.unsqueeze(0)
             rpe_cond = rpe_cond.expand(Q.shape[0], *rpe_cond.shape[1:])
             a = a + rpe_cond
@@ -248,7 +249,7 @@ def create_inputs(
         5 * torch.rand(max_rpe_context_length + 1, dtype=torch.float32, device="cuda")
     )
     rpe_bias[max_rpe_context_length] = 0
-    print(rpe_bias)
+    print(f"\n\nrpe_bias\n{rpe_bias}")
 
     return (
         q_extend,
@@ -503,6 +504,7 @@ def testExtendRpeAttention(
         )
         config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
+    rpe_debug = torch.zeros((16, 864, 864), dtype=torch.float32, device="cuda")
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -527,7 +529,11 @@ def testExtendRpeAttention(
             b_start_loc_extend,
             rpe_bias,
             output,
+            rpe_debug,
         )
+
+    print(f"\n\nrpe_debug\n{rpe_debug[0]}")
+    print(f"rpe_debug_shape: {rpe_debug[0].shape}")
 
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_rpe_{'x'.join(map(str, shape))}.mlir"
