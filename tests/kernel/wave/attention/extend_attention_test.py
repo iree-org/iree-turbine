@@ -104,8 +104,7 @@ def context_attention_fwd(
                 max_rpe_context_length=max_rpe_context_length,
                 sequence_length=K.shape[1],
             )
-            print(a.shape)
-            print(rpe_cond.shape)
+            print(rpe_cond)
             rpe_cond = rpe_cond.unsqueeze(0)
             rpe_cond = rpe_cond.expand(Q.shape[0], *rpe_cond.shape[1:])
             a = a + rpe_cond
@@ -241,9 +240,9 @@ def create_inputs(
     b_start_loc_extend = torch.zeros_like(b_seq_len)
     b_start_loc_extend[1:] = torch.cumsum(b_seq_len_extend[:-1], 0)
     max_len_extend = torch.max(b_seq_len_extend, 0)[0].item()
-    max_rpe_context_length = 2
     logit_cap = 30.0
 
+    max_rpe_context_length = 3
     rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
     rpe_bias.copy_(
         5 * torch.rand(max_rpe_context_length + 1, dtype=torch.float32, device="cuda")
@@ -515,7 +514,6 @@ def testExtendRpeAttention(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
-        log2e = 1.44269504089
         mb_qk = extend_attention_rpe(
             q_extend,
             k_extend,
@@ -527,9 +525,8 @@ def testExtendRpeAttention(
             b_seq_len,
             b_seq_len_extend,
             b_start_loc_extend,
-            rpe_bias * log2e,
+            rpe_bias,
             output,
-            max_rpe_context_length=max_rpe_context_length,
         )
 
     if dump_generated_mlir:
@@ -556,4 +553,6 @@ def testExtendRpeAttention(
         max_rpe_context_length=max_rpe_context_length,
     )
 
-    torch.testing.assert_close(output, ref_output, rtol=2e-3, atol=2e-3, check_dtype=False)
+    torch.testing.assert_close(
+        output, ref_output, rtol=2e-3, atol=2e-3, check_dtype=False
+    )
