@@ -88,13 +88,16 @@ def construct_test_name(
     return test_name + ".json"
 
 
+def make_shape_param(shape: Sequence[int], is_perf: bool):
+    name = "x".join(map(str, shape))
+    if is_perf:
+        return pytest.param(shape, id=name + "-perf", marks=pytest.mark.perf_only)
+    else:
+        return pytest.param(shape, id=name)
+
+
 def get_test_shapes(test_name: str):
     assert test_name in _e2e_test_shapes, f"Unknown test name: {test_name}"
-    shapes = [
-        pytest.param(s, id="x".join(map(str, s))) for s in _e2e_test_shapes[test_name]
-    ]
-    shapes += [
-        pytest.param(s, id="x".join(map(str, s)) + "-perf", marks=pytest.mark.perf_only)
-        for s in _perf_test_shapes[test_name]
-    ]
+    shapes = [make_shape_param(s, False) for s in _e2e_test_shapes[test_name]]
+    shapes += [make_shape_param(s, True) for s in _perf_test_shapes[test_name]]
     return shapes
