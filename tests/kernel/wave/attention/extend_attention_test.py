@@ -77,6 +77,7 @@ def context_attention_fwd(
     logit_cap: float = 0.0,
     rpe_bias: torch.Tensor = None,
     score_mod: ScoreMod = ScoreMod.SoftCap,
+    max_rpe_context_length: int = 0,
 ):
 
     cu_seq_lens = [0] * (len(b_seq_len) + 1)
@@ -131,6 +132,7 @@ def ref_extend_attn(
     logit_cap: float = 0.0,
     rpe_bias: torch.Tensor = None,
     score_mod: ScoreMod = ScoreMod.SoftCap,
+    max_rpe_context_length: int = 0,
 ) -> torch.Tensor:
     total_token_num = k_buffer.shape[0]
     B, H_Q, D = b_req_idx.shape[0], q_extend.shape[-2], q_extend.shape[-1]
@@ -159,6 +161,7 @@ def ref_extend_attn(
         logit_cap=logit_cap,
         rpe_bias=rpe_bias,
         score_mod=score_mod,
+        max_rpe_context_length=max_rpe_context_length,
     )
 
     pt = 0
@@ -486,6 +489,7 @@ def testExtendRpeAttention(
         output.shape,
         is_causal=is_causal,
         num_waves=num_waves,
+        max_rpe_context_length=max_rpe_context_length,
     )
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
