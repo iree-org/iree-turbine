@@ -89,6 +89,8 @@ def _split_index(src: IndexExpr | int) -> tuple[IndexExpr, IndexExpr]:
     # Compute thread-independent index as `orig_index - thread_dependend_index`
     # All thread symbols should cancel-out in the result, but to be sure
     # replace all thread symbols by 0 in the result.
+    # We cannot just replace all thread symbols without the subtraction as
+    # any constant or dynamic values will end up in both expressions.
     thread_indepdndent_index = sympy.simplify(
         safe_subs(src - thread_dependend_index, subs_th)
     )
