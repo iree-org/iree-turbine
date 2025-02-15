@@ -16,6 +16,7 @@ from ..ops.wave_ops import (
     get_custom,
     Add,
     Maximum,
+    Minimum,
     ReduceOp,
     ShuffleOp,
     CustomOp,
@@ -29,7 +30,7 @@ import torch.fx as fx
 import math
 from typing import Callable
 
-TKW_COMBINER = {"sum": Add, "max": Maximum}
+TKW_COMBINER = {"sum": Add, "max": Maximum, "min": Minimum}
 
 
 def determine_shuffle_config(
