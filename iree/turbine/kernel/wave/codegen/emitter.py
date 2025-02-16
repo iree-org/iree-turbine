@@ -207,7 +207,17 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         return arg
 
     def _check_vec_scalar(a, b):
-        return isinstance(a.type, VectorType) and a.type.element_type == b.type
+        if not isinstance(a.type, VectorType):
+            return False
+
+        if a.type.element_type == b.type:
+            return True
+
+        return (
+            isinstance(b.type, VectorType)
+            and b.type.shape == [1]
+            and a.type.element_type == b.type.element_type
+        )
 
     def _broadcast(a, b):
         a = _get_ir_value(a)
@@ -217,10 +227,16 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
             return a, b
 
         if _check_vec_scalar(a, b):
+            if isinstance(b.type, VectorType):
+                b = vector_d.extract(b, static_position=[0], dynamic_position=[])
+
             b = vector_d.splat(a.type, b)
             return a, b
 
         if _check_vec_scalar(b, a):
+            if isinstance(a.type, VectorType):
+                a = vector_d.extract(a, static_position=[0], dynamic_position=[])
+
             a = vector_d.splat(b.type, a)
             return a, b
 
