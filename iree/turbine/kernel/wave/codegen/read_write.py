@@ -36,11 +36,7 @@ from ...compiler.vector_codegen import (
     cast_vector,
 )
 
-from ...ops.wave_ops import (
-    get_custom,
-    read,
-    write,
-)
+from ...ops.wave_ops import get_custom, read, write, CustomOp
 
 from ..utils import safe_subs, subs_idxc, find_index_bounds
 
@@ -173,27 +169,28 @@ def _constant_mask(vec_type: IrType) -> Value:
 
 def _construct_gather_scatter_indices(
     emitter: WaveEmitter,
-    symbolc_shape: tuple[IndexExpr],
+    symbolic_shape: tuple[IndexExpr],
     index: tuple[IndexExpr],
     mapping: IndexMapping,
     elements_per_thread: int,
     is_read: bool,
     dynamic_vals: tuple[Any, ...],
     is_contiguous: bool,
+    memory: CustomOp,
 ) -> tuple[list[OpResult], list[OpResult], list[OpResult], OpResult, OpResult]:
-    # Apply symbolc_shape order to indices, e.g. if original mapping is
-    # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
+    # Apply symbolic_shape order to indices, e.g. if original mapping is
+    # {M: iter(0), N: iter(1)} and symbolic_shape is (N, M), result will
     # be (iter(1), iter(0))
     if is_read:
         assert (
             mapping.is_output_identity()
         ), "non-identity output mapping is not supported yet"
-        index_mapping = mapping.map_input_indices(symbolc_shape)
+        index_mapping = mapping.map_input_indices(symbolic_shape)
     else:
         assert (
             mapping.is_input_identity()
         ), "non-identity input mapping is not supported yet"
-        index_mapping = mapping.map_output_indices(symbolc_shape)
+        index_mapping = mapping.map_output_indices(symbolic_shape)
 
     idxc = IndexingContext.current()
     index_mapping = tuple(i.subs(idxc.subs) for i in index_mapping)
@@ -208,7 +205,7 @@ def _construct_gather_scatter_indices(
 
     # Contruct input/output index, substituting iterators in input mapping with
     # expanded index.
-    result_index = {key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)}
+    result_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
 
     mask = _build_mask(emitter, index, elements_per_thread)
     if mask is None:
@@ -245,7 +242,9 @@ def _construct_gather_scatter_indices(
             need_dynamic_offsets = True
 
     offsets = []
-    strides = strides_from_symbolic_shape(idxc, symbolc_shape, allow_mixed_shapes=True)
+    if memory.type.address_space == SHARED_ADDRESS_SPACE:
+        symbolic_shape = memory.distributed_shape
+    strides = strides_from_symbolic_shape(idxc, symbolic_shape, allow_mixed_shapes=True)
     start_indices_offset = _compute_offset(start_indices, strides)
     for i in range(elements_per_thread):
         # Update fastest dim, i.e. in case of identity mapping it will
@@ -280,7 +279,7 @@ def _construct_gather_scatter_indices(
     if need_dynamic_offsets:
         # In case we need dynamic `offsets_vec`, set all `start_indices` to 0
         # and encode entire index info in `offsets_vec`.
-        result_index = {key: 0 for key in symbolc_shape}
+        result_index = {key: 0 for key in symbolic_shape}
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, result_index, dynamic_vals_map_start
         )
@@ -401,6 +400,7 @@ def _create_vec_read(
     start_indices_wg: tuple[Value],
     start_indices_th: tuple[Value],
     elements_per_thread: int,
+    memory: CustomOp,
     mask: Optional[Value],
     offsets_vec: Optional[Value],
 ) -> Value:
@@ -421,6 +421,8 @@ def _create_vec_read(
     zero = get_constant_attr(0, element_type)
     zero = arith_d.constant(element_type, zero)
 
+    if memory.type.address_space == SHARED_ADDRESS_SPACE:
+        symbolic_shape = memory.distributed_shape
     strides = strides_from_symbolic_shape(
         IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
     )
@@ -512,6 +514,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             start_indices_wg,
             start_indices_th,
             elements_per_thread,
+            get_custom(memory),
             mask,
             offsets_vec=None,
         )
@@ -527,13 +530,14 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             mask,
         ) = _construct_gather_scatter_indices(
             emitter=emitter,
-            symbolc_shape=input_shape,
+            symbolic_shape=input_shape,
             index=index,
             mapping=mapping,
             elements_per_thread=elements_per_thread,
             is_read=True,
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
+            memory=get_custom(memory),
         )
         result = _create_vec_read(
             emitter,
@@ -544,6 +548,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             start_indices_wg,
             start_indices_th,
             elements_per_thread,
+            get_custom(memory),
             mask,
             offsets_vec,
         )
@@ -560,6 +565,7 @@ def _create_vec_write(
     start_indices_wg: tuple[Value],
     start_indices_th: tuple[Value],
     elements_per_thread: int,
+    memory: CustomOp,
     mask: Optional[Value],
     offsets_vec: Optional[Value],
 ):
@@ -579,6 +585,8 @@ def _create_vec_write(
             offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
         )
 
+    if memory.type.address_space == SHARED_ADDRESS_SPACE:
+        symbolic_shape = memory.distributed_shape
     strides = strides_from_symbolic_shape(
         IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
     )
@@ -661,6 +669,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             start_indices_wg,
             start_indices_th,
             elements_per_thread,
+            get_custom(memory),
             mask,
             offsets_vec=None,
         )
@@ -680,13 +689,14 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             mask,
         ) = _construct_gather_scatter_indices(
             emitter=emitter,
-            symbolc_shape=output_shape,
+            symbolic_shape=output_shape,
             index=index,
             mapping=mapping,
             elements_per_thread=elements_per_thread,
             is_read=False,
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
+            memory=get_custom(memory),
         )
 
         _create_vec_write(
@@ -698,6 +708,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             start_indices_wg,
             start_indices_th,
             elements_per_thread,
+            get_custom(memory),
             mask,
             offsets_vec,
         )

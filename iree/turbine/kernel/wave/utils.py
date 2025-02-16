@@ -1546,3 +1546,28 @@ def torch_dtype_to_wave(torch_dtype: torch.dtype) -> Any:
         return TORCH_DTYPE_TO_WAVE[torch_dtype]
     except KeyError:
         raise ValueError(f"Unable to map torch dtype {torch_dtype} to Wave.")
+
+
+def is_shared_write(node: CustomOp) -> bool:
+    return (
+        isinstance(node, Write)
+        and subs_idxc(node.memory_type.address_space) == SHARED_ADDRESS_SPACE
+    )
+
+
+def is_shared_read(node: CustomOp) -> bool:
+    return (
+        isinstance(node, Read)
+        and subs_idxc(node.memory_type.address_space) == SHARED_ADDRESS_SPACE
+    )
+
+
+def is_gather(custom: CustomOp) -> bool:
+    if not isinstance(custom, Read):
+        return False
+    assert custom.index, f"Read node {custom} does not have an index."
+    return any(
+        custom.index[x].size > 1
+        for x in custom.memory_type.symbolic_shape[:-1]
+        if x in custom.index
+    )

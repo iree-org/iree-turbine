@@ -14,10 +14,20 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
-from .utils import delinearize_index, DCE, subs_idxc, ceildiv
+from .utils import delinearize_index, DCE, subs_idxc, ceildiv, is_shared_read
 from math import prod
 import torch.fx as fx
 from collections import defaultdict
+from copy import deepcopy
+from dataclasses import dataclass
+from ..lang.wave_types import IndexMapping
+
+
+@dataclass
+class SharedReadMetadata:
+    index: dict[IndexSymbol, IndexSequence]
+    mapping: IndexMapping
+    memory_shape: tuple[int | IndexExpr]
 
 
 def has_write_shared_user(node: Read) -> bool:
@@ -76,6 +86,8 @@ def identify_optimizable_loads(
     global_read_nodes: list[fx.Node],
     constraint_tile_size: dict[IndexSymbol, int],
     max_elements_per_load: int,
+    allow_mapping_dynamic_values: bool = False,
+    use_memory_type: bool = False,
 ) -> list[Read]:
     """
     Identify sub-optimal global loads that can be removed. A given memory has
@@ -88,16 +100,20 @@ def identify_optimizable_loads(
     for read_node in global_read_nodes:
         custom = get_custom(read_node)
         if custom.memory in processed_memories:
+            if custom.memory in optimizable_loads:
+                optimizable_loads[custom.memory][1].append(custom)
             continue
 
         # TODO: We need to properly update index/elements_per_thread on dependent reads.
         if len(custom.mapping_dynamic_vals) > 0:
-            continue
+            if not allow_mapping_dynamic_values:
+                continue
 
         processed_memories.add(custom.memory)
-        materialized_shape = materialize_shape(
-            constraint_tile_size, custom.type.symbolic_shape
-        )
+        symbolic_shape = custom.type.symbolic_shape
+        if use_memory_type:
+            symbolic_shape = custom.memory_type.symbolic_shape
+        materialized_shape = materialize_shape(constraint_tile_size, symbolic_shape)
         # Ensure that the innermost dimension of the shape is a multiple of the elements being loaded.
         if materialized_shape[-1] % max_elements_per_load == 0:
             continue
@@ -111,7 +127,7 @@ def identify_optimizable_loads(
         )
         if expected_number_of_loads >= actual_number_of_loads:
             continue
-        optimizable_loads[custom.memory] = (expected_number_of_loads, custom)
+        optimizable_loads[custom.memory] = (expected_number_of_loads, [custom])
     return optimizable_loads
 
 
@@ -121,14 +137,15 @@ def add_optimized_nodes(
     hardware_constraint: HardwareConstraint,
     max_elements_per_load: int,
     load_elems_per_thread: int,
-) -> list[fx.Node]:
+) -> dict[fx.Node, list[fx.Node]]:
     """
     Add optimized global read nodes and shared write nodes to the graph.
     """
     optimized_writes = defaultdict(list)
-    for memory, (expected_number_of_loads, custom) in optimizable_loads.items():
-        access_pattern: dict[IndexSymbol, IndexSequence] = custom.index
+    for memory, (expected_number_of_loads, custom_loads) in optimizable_loads.items():
+        access_pattern: dict[IndexSymbol, IndexSequence] = custom_loads[0].index
         for i in range(expected_number_of_loads):
+            custom = custom_loads[i]
             with custom.graph.inserting_before(custom.fx_node):
                 read = Read(memory, load_elems_per_thread, custom.mapping).add_to_graph(
                     custom.graph
@@ -161,7 +178,48 @@ def add_optimized_nodes(
     return optimized_writes
 
 
-def update_write_dependencies(optimized_writes: list[fx.Node], trace: CapturedTrace):
+def update_shared_memory_read(
+    writes: list[fx.Node], shared_read_metadata: SharedReadMetadata, shared_read: Read
+):
+    """
+    This function updates the shared memory reads as follows:
+    - The index is reordered as per the original index.
+    - The mapping is updated to the new mapping.
+    - The shape of the alloc is updated to account for the fact that we are doing a gather.
+
+    """
+    assert writes[0] in shared_read_metadata, f"Write {writes[0]} not found in metadata"
+    metadata = shared_read_metadata[writes[0]]
+    original_index = deepcopy(shared_read.index)
+    # Keep the shared read index, but re-order it like the original index.
+    shared_read.index = {}
+    for dim in metadata.index:
+        shared_read.index[dim] = original_index[dim]
+    # Apply the new mapping to the shared read.
+    shared_read.update_arg("mapping", metadata.mapping)
+    # If we are doing a gather from shared memory, we need to update the
+    # shape of the alloc as well.
+    custom_memory = get_custom(shared_read.memory)
+    custom_memory_shape = custom_memory.type.symbolic_shape
+    if custom_memory_shape != metadata.memory_shape:
+        permutation = [custom_memory_shape.index(k) for k in metadata.memory_shape]
+        custom_memory.update_arg("shape", metadata.memory_shape)
+        new_distributed_shape = []
+        for i, perm in enumerate(permutation):
+            offset = 0
+            if perm == len(permutation) - 1:
+                offset = -custom_memory.padding
+            elif i == len(permutation) - 1:
+                offset = custom_memory.padding
+            new_distributed_shape.append(custom_memory.distributed_shape[perm] + offset)
+        custom_memory.update_arg("distributed_shape", tuple(new_distributed_shape))
+
+
+def update_write_dependencies(
+    optimized_writes: list[fx.Node],
+    trace: CapturedTrace,
+    shared_read_metadata: SharedReadMetadata = None,
+):
     """
     Update all read shared nodes that have write dependencies on the unoptimized writes to
     the new optimized writes.
@@ -177,10 +235,14 @@ def update_write_dependencies(optimized_writes: list[fx.Node], trace: CapturedTr
                 and not custom.fx_node in writes
             )
 
-        for replaceable_write in trace.walk(is_replaceable_write):
+        replaceable_writes = trace.walk(is_replaceable_write)
+        for replaceable_write in replaceable_writes:
             for user in replaceable_write.users:
                 idx = user.args.index([replaceable_write])
-                get_custom(user).update_arg(idx, writes)
+                custom_user = get_custom(user)
+                custom_user.update_arg(idx, writes)
+                if is_shared_read(custom_user) and shared_read_metadata:
+                    update_shared_memory_read(writes, shared_read_metadata, custom_user)
                 break
 
     DCE(trace)
