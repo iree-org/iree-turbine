@@ -122,7 +122,6 @@ def get_t5_rpe_attention_kernel(
             # When fusing into the FA variant, adding locally before the max and
             # the partial softmax should be equivalent.
             i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-            i = tkw.broadcast(i, target_shape=[B, M, K2])
             j = tkw.self_index(
                 K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
             )
