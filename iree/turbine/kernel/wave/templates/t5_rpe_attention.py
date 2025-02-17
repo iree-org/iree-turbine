@@ -129,7 +129,7 @@ def get_t5_rpe_attention_kernel(
                 rpe,
                 mapping=offset_mapping,
                 mapping_dynamic_vals=(i, j),
-                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+                elements_per_thread=STORE_ELEMS_PER_THREAD,
             )
             x_j = x_j + rpe_reg
 

@@ -10,7 +10,6 @@ from ..ops.wave_ops import (
     Broadcast,
     CustomOp,
     ExtractSlice,
-    get_custom,
     IterArg,
     MMA,
     NestedRegionOp,
@@ -22,6 +21,7 @@ from ..ops.wave_ops import (
     Reshape,
     SelfIndex,
     Write,
+    get_custom,
 )
 from .constraints import (
     Constraint,
@@ -200,7 +200,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         }
         if isinstance(custom, SelfIndex):
             # If specified use element_per_thread instead of IndexExpr size.
-            elements_per_thread = (
+            elements_per_thread = subs_idxc(
                 custom.elements_per_thread or custom.index[custom.dim].size
             )
         else:
@@ -278,6 +278,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         custom.memory,
                         elements_per_thread=gpr_size,
                         mapping=custom.mapping,
+                        mapping_dynamic_vals=custom.mapping_dynamic_vals,
                         _write_dependency=custom._write_dependency,
                     ).add_to_graph(custom.graph)
                 elif isinstance(custom, SelfIndex):
@@ -304,6 +305,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                 reshape.expanded_dims = custom.expanded_dims
                 reshape.vector_shapes = custom.vector_shapes
                 custom.replace_all_uses_with(reshape)
+
             custom.graph.erase_node(custom.fx_node)
 
 
