@@ -284,6 +284,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         extract,
                         custom.memory,
                         mapping=custom.mapping,
+                        mapping_dynamic_vals=new_dynamic_vals,
                         elements_per_thread=gpr_size,
                     ).add_to_graph(custom.graph)
                 elif isinstance(custom, Read):
