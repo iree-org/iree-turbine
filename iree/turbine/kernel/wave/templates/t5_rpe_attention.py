@@ -121,8 +121,8 @@ def get_t5_rpe_attention_kernel(
             # Fused T5 RPE adds attention bias pre-softmax normalization.
             # When fusing into the FA variant, adding locally before the max and
             # the partial softmax should be equivalent.
-            i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-            j = tkw.self_index(K2, tkl.i64, elements_per_thread=STORE_ELEMS_PER_THREAD)
+            i = tkw.self_index(M, tkl.i64)
+            j = tkw.self_index(K2, tkl.i64)
             rpe_reg = tkw.read(
                 rpe,
                 mapping=offset_mapping,
