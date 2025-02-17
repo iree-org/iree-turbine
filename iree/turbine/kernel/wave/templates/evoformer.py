@@ -85,26 +85,26 @@ def get_evoformer_kernel(
     # [B, BN, M, H, K1] -> [B, BN, H, M, K1]
     q_mapping = tkw.IndexMapping(
         num_iterators=5,
-        inputs={B: i, BN: j, H: k, M: l, K1: m},
+        inputs={B: i, BN: j, M: l, H: k, K1: m},
         outputs={B: i, BN: j, H: k, M: l, K1: m},
     )
     # [B, BN, K2, H, K1] -> [B, BN, H, K2, K1]
     k_mapping = tkw.IndexMapping(
         num_iterators=5,
-        inputs={B: i, BN: j, H: k, K2: l, K1: m},
+        inputs={B: i, BN: j, K2: l, H: k, K1: m},
         outputs={B: i, BN: j, H: k, K2: l, K1: m},
     )
     # [B, BN, N, H, K2] -> [B, BN, H, N, K2]
     v_mapping = tkw.IndexMapping(
         num_iterators=5,
-        inputs={B: i, BN: j, H: k, N: l, K2: m},
+        inputs={B: i, BN: j, N: l, H: k, K2: m},
         outputs={B: i, BN: j, H: k, N: l, K2: m},
     )
     # [B, BN, H, N, M] -> [B, BN, M, H, N]
     o_mapping = tkw.IndexMapping(
         num_iterators=5,
         inputs={B: i, BN: j, H: k, N: l, M: m},
-        outputs={B: i, BN: j, H: k, N: l, M: m},
+        outputs={B: i, BN: j, M: m, H: k, N: l},
     )
 
     @tkw.wave(constraints)
