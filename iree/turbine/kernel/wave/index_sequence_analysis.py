@@ -261,6 +261,11 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                 ] = updated_dim_with_gpr_offset
 
                 if hasattr(custom, "mapping_dynamic_vals"):
+                    # If we are partitioning read/write ops, dynamic_vals can be
+                    # potentially partitioned as well. Partitioned dyn vals are
+                    # are merged into single value using Reshape op which still
+                    # holds the original index containing `GPR_NUM`.
+                    # Extract corresponding partitioned chunk from such ops.
                     new_dynamic_vals = []
                     for dyn_val in custom.mapping_dynamic_vals:
                         if any(
@@ -319,6 +324,9 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                 )
                 reshape.expanded_dims = custom.expanded_dims
                 reshape.vector_shapes = custom.vector_shapes
+
+                # Save the original index on the reshape op so later we can
+                # detect if op was part of `gpr_offset` partition.
                 reshape.index = custom.index
                 custom.replace_all_uses_with(reshape)
 
