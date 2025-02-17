@@ -260,6 +260,20 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                     gpr_offset_dim
                 ] = updated_dim_with_gpr_offset
 
+                if hasattr(custom, "mapping_dynamic_vals"):
+                    new_dynamic_vals = []
+                    for dyn_val in custom.mapping_dynamic_vals:
+                        if any(
+                            sympy.sympify(v.start).has(GPR_NUM)
+                            for v in get_custom(dyn_val).index.values()
+                        ):
+                            extract = ExtractSlice(
+                                dyn_val, [cur_gpr_start_id], [gpr_size], [1]
+                            ).add_to_graph(custom.graph)
+                            new_dynamic_vals.append(extract)
+                        else:
+                            new_dynamic_vals.append(dyn_val)
+
                 # Generate new Read/Write that has contiguous VGPR elements.
                 if isinstance(custom, Write):
                     extract = ExtractSlice(
@@ -278,7 +292,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         custom.memory,
                         elements_per_thread=gpr_size,
                         mapping=custom.mapping,
-                        mapping_dynamic_vals=custom.mapping_dynamic_vals,
+                        mapping_dynamic_vals=new_dynamic_vals,
                         _write_dependency=custom._write_dependency,
                     ).add_to_graph(custom.graph)
                 elif isinstance(custom, SelfIndex):
@@ -304,6 +318,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                 )
                 reshape.expanded_dims = custom.expanded_dims
                 reshape.vector_shapes = custom.vector_shapes
+                reshape.index = custom.index
                 custom.replace_all_uses_with(reshape)
 
             custom.graph.erase_node(custom.fx_node)
