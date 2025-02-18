@@ -20,7 +20,7 @@ from .utils import (
     subs_idxc,
     ceildiv,
     is_shared_read,
-    _get_fastest_index,
+    get_fastest_index,
 )
 from math import prod
 import torch.fx as fx
@@ -62,7 +62,7 @@ def is_transposed_read(custom: Read) -> bool:
     """
     assert isinstance(custom, Read) and "Expected input to be Read"
     global_fastest_dim = get_custom(custom.memory).type.symbolic_shape[-1]
-    fastest_dim_idx = _get_fastest_index(custom.index)
+    fastest_dim_idx = get_fastest_index(custom.index)
     register_fastest_dim = list(custom.index)[fastest_dim_idx]
     return register_fastest_dim != global_fastest_dim
 

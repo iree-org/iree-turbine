@@ -1235,7 +1235,7 @@ def _get_start_indices(
     return start_indices
 
 
-def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
+def get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
     """
     This function takes in indices of a Node, extract their sizes
     into a list, and then try do an argmax on it. In the case where

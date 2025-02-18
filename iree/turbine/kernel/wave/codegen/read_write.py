@@ -38,7 +38,7 @@ from ...compiler.vector_codegen import (
 
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils import safe_subs, subs_idxc, find_index_bounds, _get_fastest_index
+from ..utils import safe_subs, subs_idxc, find_index_bounds, get_fastest_index
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from ...lang.wave_types import IndexMapping
@@ -124,7 +124,7 @@ def _build_mask(
         return None
 
     idxc = IndexingContext.current()
-    fastest_dim = _get_fastest_index(index)
+    fastest_dim = get_fastest_index(index)
     last_dim = list(index)[fastest_dim]
     new_index = {k: _get_start_index(v) for k, v in index.items()}
 
@@ -216,7 +216,7 @@ def _construct_gather_scatter_indices(
 
     start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
-    fastest_dim = _get_fastest_index(index)
+    fastest_dim = get_fastest_index(index)
     need_dynamic_offsets = False
     for val in dynamic_vals:
         shape = val.type.shape
