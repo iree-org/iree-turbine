@@ -14,7 +14,14 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
-from .utils import delinearize_index, DCE, subs_idxc, ceildiv, is_shared_read
+from .utils import (
+    delinearize_index,
+    DCE,
+    subs_idxc,
+    ceildiv,
+    is_shared_read,
+    _get_fastest_index,
+)
 from math import prod
 import torch.fx as fx
 from collections import defaultdict
@@ -45,6 +52,19 @@ def is_valid_global_read(node: fx.Node) -> bool:
         and subs_idxc(custom.memory_type.address_space) == GLOBAL_ADDRESS_SPACE
         and has_write_shared_user(custom)
     )
+
+
+def is_transposed_read(custom: Read) -> bool:
+    """
+    Checks whether or not we are doing a transposed read.
+    Returns true if the fastest dim in register is not
+    the same as fastest dim in global memory.
+    """
+    assert isinstance(custom, Read) and "Expected input to be Read"
+    global_fastest_dim = get_custom(custom.memory).type.symbolic_shape[-1]
+    fastest_dim_idx = _get_fastest_index(custom.index)
+    register_fastest_dim = list(custom.index)[fastest_dim_idx]
+    return register_fastest_dim != global_fastest_dim
 
 
 def construct_min_global_access_pattern(
@@ -82,11 +102,24 @@ def materialize_shape(
     return materialized_shape
 
 
+def update_index_dims(src_node: fx.Node, target_expr: IndexExpr):
+    """
+    Given src node and a dst index expression, if src node has dims that also exist in target_expr,
+    we copy the expression in target_expr into src node's index expression.
+    """
+    src_keys = set(src_node.index.keys())
+    target_keys = set(target_expr.keys())
+    intersection_keys = src_keys & target_keys
+    for intersect_key in intersection_keys:
+        src_node.index[intersect_key] = target_expr[intersect_key]
+
+
 def identify_optimizable_loads(
     global_read_nodes: list[fx.Node],
     constraint_tile_size: dict[IndexSymbol, int],
+    load_elems_per_thread: int,
     max_elements_per_load: int,
-    allow_mapping_dynamic_values: bool = False,
+    allow_dynamic_transposed: bool = False,
     use_memory_type: bool = False,
 ) -> list[Read]:
     """
@@ -95,7 +128,7 @@ def identify_optimizable_loads(
         num_global_loads > (M * N) / (T * L)
     where the memory has shape [M, N], there are T threads and each thread can load L elements.
     """
-    optimizable_loads: dict[fx.Node, tuple[int, Read]] = {}
+    optimizable_loads: dict[fx.Node, tuple[int, list[Read], set["Custom"]]] = {}
     processed_memories = set()
     for read_node in global_read_nodes:
         custom = get_custom(read_node)
@@ -105,8 +138,8 @@ def identify_optimizable_loads(
             continue
 
         # TODO: We need to properly update index/elements_per_thread on dependent reads.
-        if len(custom.mapping_dynamic_vals) > 0:
-            if not allow_mapping_dynamic_values:
+        if is_transposed_read(custom) and len(custom.mapping_dynamic_vals) > 0:
+            if not allow_dynamic_transposed:
                 continue
 
         processed_memories.add(custom.memory)
@@ -127,7 +160,44 @@ def identify_optimizable_loads(
         )
         if expected_number_of_loads >= actual_number_of_loads:
             continue
-        optimizable_loads[custom.memory] = (expected_number_of_loads, [custom])
+
+        expanded_dynamic_vals = None
+        memory_load_elems_per_thread = load_elems_per_thread
+        memory_max_elements_per_load = max_elements_per_load
+        if len(custom.mapping_dynamic_vals) > 0 and not allow_dynamic_transposed:
+            expanded_dynamic_vals = set(
+                [
+                    get_custom(user).mapping_dynamic_vals
+                    for user in custom.memory.users.keys()
+                ]
+            )
+            expanded_dynamic_vals = list(expanded_dynamic_vals)
+            num_dynamic_vals = len(expanded_dynamic_vals)
+            if num_dynamic_vals == expected_number_of_loads:
+                pass
+            elif expected_number_of_loads > 1 and num_dynamic_vals == 1:
+                # If only one dyn val and many loads, broadcast dynamic vals across all the loads.
+                expanded_dynamic_vals = expanded_dynamic_vals * expected_number_of_loads
+            elif (
+                num_dynamic_vals > 1
+                and expected_number_of_loads == 1
+                and load_elems_per_thread % num_dynamic_vals == 0
+            ):
+                # If expected one loads but many dyn val, break apart the load to as many dyn val.
+                expected_number_of_loads = num_dynamic_vals
+                memory_load_elems_per_thread //= num_dynamic_vals
+                memory_max_elements_per_load //= num_dynamic_vals
+            else:
+                # Optimization do not handle other cases than above, so skip.
+                continue
+
+        optimizable_loads[custom.memory] = (
+            expected_number_of_loads,
+            [custom],
+            expanded_dynamic_vals,
+            memory_load_elems_per_thread,
+            memory_max_elements_per_load,
+        )
     return optimizable_loads
 
 
@@ -135,17 +205,23 @@ def add_optimized_nodes(
     optimizable_loads: dict[fx.Node, tuple[int, Read]],
     constraint_tile_size: dict[IndexSymbol, int],
     hardware_constraint: HardwareConstraint,
-    max_elements_per_load: int,
-    load_elems_per_thread: int,
 ) -> dict[fx.Node, list[fx.Node]]:
     """
     Add optimized global read nodes and shared write nodes to the graph.
     """
     optimized_writes = defaultdict(list)
-    for memory, (expected_number_of_loads, custom_loads) in optimizable_loads.items():
+    for memory, (
+        expected_number_of_loads,
+        custom_loads,
+        expanded_dynamic_vals,
+        load_elems_per_thread,
+        max_elements_per_load,
+    ) in optimizable_loads.items():
         access_pattern: dict[IndexSymbol, IndexSequence] = custom_loads[0].index
+        custom = custom_loads[0]
+        if expanded_dynamic_vals:
+            assert len(expanded_dynamic_vals) == expected_number_of_loads
         for i in range(expected_number_of_loads):
-            custom = custom_loads[i]
             with custom.graph.inserting_before(custom.fx_node):
                 read = Read(memory, load_elems_per_thread, custom.mapping).add_to_graph(
                     custom.graph
@@ -163,6 +239,13 @@ def add_optimized_nodes(
                     load_elems_per_thread,
                     materialized_shape,
                 )
+                if custom.mapping_dynamic_vals:
+                    # Update the dynamic vals' index expressions to match the min global access patterns.
+                    for dyn_val in expanded_dynamic_vals[i]:
+                        update_index_dims(dyn_val, read.index)
+                    get_custom(read).update_arg(
+                        "mapping_dynamic_vals", expanded_dynamic_vals[i]
+                    )
                 for custom_user in custom.users:
                     if (
                         isinstance(custom_user, Write)
@@ -279,7 +362,10 @@ def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
     max_elements_per_load = total_number_of_threads * load_elems_per_thread
 
     optimizable_loads = identify_optimizable_loads(
-        global_read_nodes, constraint_tile_size, max_elements_per_load
+        global_read_nodes,
+        constraint_tile_size,
+        load_elems_per_thread,
+        max_elements_per_load,
     )
 
     # Construct new global read nodes and write shared nodes.
@@ -287,8 +373,6 @@ def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
         optimizable_loads,
         constraint_tile_size,
         hardware_constraint,
-        max_elements_per_load,
-        load_elems_per_thread,
     )
 
     # Update all write dependencies.

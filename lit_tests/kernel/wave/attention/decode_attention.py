@@ -69,16 +69,13 @@ def test_paged_flash_decoding():
     # CHECK-COUNT-4:           vector.load
     # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT:.*]] step %[[C1]]
     # CHECK:                        amdgpu.lds_barrier
-    # CHECK-COUNT-3:                vector.maskedload
-    # CHECK-COUNT-8:                vector.store
+    # 1 masked load for sequence idx, 4 for k_cache, and 4 for v_cache.
     # CHECK-COUNT-1:                vector.maskedload
-    # CHECK-COUNT-1:                vector.store
-    # CHECK-COUNT-1:                vector.maskedload
-    # CHECK-COUNT-1:                vector.store
-    # CHECK-COUNT-1:                vector.maskedload
-    # CHECK-COUNT-1:                vector.store
-    # CHECK-COUNT-1:                vector.maskedload
-    # CHECK-COUNT-1:                vector.store
+    # CHECK-NEXT:                   arith.index_cast
+    # CHECK-COUNT-4:                vector.maskedload
+    # CHECK-NEXT:                   vector.store
+    # CHECK-COUNT-4:                vector.maskedload
+    # CHECK-NEXT:                   vector.store
     # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-8:                vector.gather
     # CHECK-COUNT-8:                vector.load
