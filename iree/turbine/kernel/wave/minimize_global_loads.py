@@ -177,7 +177,14 @@ def identify_optimizable_loads(
                 pass
             elif expected_number_of_loads > 1 and num_dynamic_vals == 1:
                 # If only one dyn val and many loads, broadcast dynamic vals across all the loads.
-                expanded_dynamic_vals = expanded_dynamic_vals * expected_number_of_loads
+                # We would need actual copies instead of same reference, because each copy will have
+                # it's own unique offset from the minimum_global_access_pattern.
+                for i in range(1, expected_number_of_loads):
+                    cur_expanded_dyn_vals = [
+                        get_custom(dyn_val).copy(anchor=(dyn_val)).fx_node
+                        for dyn_val in expanded_dynamic_vals[0]
+                    ]
+                    expanded_dynamic_vals.append(cur_expanded_dyn_vals)
             elif (
                 num_dynamic_vals > 1
                 and expected_number_of_loads == 1
