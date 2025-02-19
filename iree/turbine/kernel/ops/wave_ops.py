@@ -170,6 +170,14 @@ def max(
     ...
 
 
+def min(
+    src: "Register",
+    acc: Optional["Register"] = None,
+    dim: Optional[IndexExpr | int] = None,
+) -> "Register":
+    ...
+
+
 def shuffle(src: "Register", offset: int, width: int) -> "Register":
     ...
 
@@ -1023,6 +1031,7 @@ class Allocate(CustomOp):
     distributed_shape: tuple[IndexExpr]
     dtype: DataType
     address_space: AddressSpace
+    padding: int = 0
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -1288,7 +1297,7 @@ class Read(CustomOp):
         if mapping is None:
             return True
 
-        mem_shape = self.memory.type.symbolic_shape
+        mem_shape = get_custom(self.memory).type.symbolic_shape
         if mapping.is_identity() and mapping.input_shape == mem_shape:
             return True
 
@@ -1303,7 +1312,7 @@ class Read(CustomOp):
 
         mapping = self.mapping
 
-        mem_shape = self.memory.type.symbolic_shape
+        mem_shape = get_custom(self.memory).type.symbolic_shape
 
         from ..wave.utils import check_is_mapping_contiguous
 
@@ -1588,7 +1597,7 @@ class Write(CustomOp):
         if mapping is None:
             return True
 
-        mem_shape = self.memory.type.symbolic_shape
+        mem_shape = get_custom(self.memory).type.symbolic_shape
         if mapping.is_identity() and mapping.output_shape == mem_shape:
             return True
 
@@ -1602,7 +1611,7 @@ class Write(CustomOp):
             return True
         mapping = self.mapping
 
-        mem_shape = self.memory.type.symbolic_shape
+        mem_shape = get_custom(self.memory).type.symbolic_shape
 
         from ..wave.utils import check_is_mapping_contiguous
 
@@ -1795,6 +1804,7 @@ class Broadcast(CustomOp, ABC):
 
 
 @define_interface_op("max")
+@define_interface_op("min")
 @define_interface_op("sum")
 @dataclass
 class ReduceOp(CustomOp, ABC):

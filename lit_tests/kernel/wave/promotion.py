@@ -74,7 +74,7 @@ def test_read_write_equal_sizes():
         promote_node(read_node, None, SHARED_ADDRESS_SPACE, constraints)
         print_trace(trace, False)
         # CHECK: %allocate
-        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read
@@ -124,7 +124,7 @@ def test_read_write_equal_sizes_different_address_spaces():
         promote_placeholders(trace, constraints)
         print_trace(trace, False)
         # CHECK: %allocate
-        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read
@@ -188,9 +188,9 @@ def test_gemm():
         # CHECK-NEXT: %c
         # CHECK-NEXT: %register
         # CHECK: %allocate_1
-        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: reduction
         # CHECK-NEXT: %write
         # CHECK-SAME: (%reduction, %c, 4, None, ())

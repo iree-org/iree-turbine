@@ -10,14 +10,14 @@ from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 from .constraints import Constraint, get_constrained_shape
-from .utils import subs_idxc, move_node_after
+from .utils import subs_idxc, move_node_after, is_gather
 
 logger = get_logger("turbine.wave.promotion")
 
 
 def apply_padding(
     shape: tuple[IndexSymbol | int], dtype: DataType
-) -> tuple[IndexSymbol | int]:
+) -> tuple[int, tuple[IndexSymbol | int]]:
     """
     When accessing shared memory, we need to be cognizant of bank conflicts
     that can have a significant impact on performance. One way to mitigate
@@ -28,7 +28,7 @@ def apply_padding(
     would involve swizzling of the shared memory access patterns.
     """
     padding = 64 // dtype.bitwidth()
-    return tuple(
+    return padding, tuple(
         value + padding if i == len(shape) - 1 else value
         for i, value in enumerate(shape)
     )
@@ -114,14 +114,14 @@ def promote_node(
     """
 
     assert isinstance(node, Read) or isinstance(node, Write)
+    # If the read is a gather, then we should use the memory type instead of the
+    # type, when determining the shape of the promoted memory.
+    symbolic_shape = node.type.symbolic_shape
     with node.graph.inserting_after(node.graph._root):
-        constrained_shape = get_constrained_shape(node.type.symbolic_shape, constraints)
-        padded_shape = apply_padding(constrained_shape, node.type.dtype)
+        constrained_shape = get_constrained_shape(symbolic_shape, constraints)
+        padding, padded_shape = apply_padding(constrained_shape, node.type.dtype)
         allocate_node = Allocate(
-            node.type.symbolic_shape,
-            padded_shape,
-            node.type.dtype,
-            address_space,
+            symbolic_shape, padded_shape, node.type.dtype, address_space, padding
         )
         allocate_node.add_to_graph(node.graph)
     last_write_to_shared = apply_promotion_pattern(

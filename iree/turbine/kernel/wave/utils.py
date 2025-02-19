@@ -1235,6 +1235,20 @@ def _get_start_indices(
     return start_indices
 
 
+def get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
+    """
+    This function takes in indices of a Node, extract their sizes
+    into a list, and then try do an argmax on it. In the case where
+    there are multipled max_vals we pick the fastest/most minor one.
+    """
+
+    index_sizes = [subs_idxc(i.size) for i in indices.values()]
+    # Find the maximum value
+    max_size = max(index_sizes)
+    # Find the fastest/most minor index of the maximum value.
+    return max(i for i, size in enumerate(index_sizes) if size == max_size)
+
+
 def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
     """Apply custom sympy simplifications"""
 
@@ -1546,3 +1560,28 @@ def torch_dtype_to_wave(torch_dtype: torch.dtype) -> Any:
         return TORCH_DTYPE_TO_WAVE[torch_dtype]
     except KeyError:
         raise ValueError(f"Unable to map torch dtype {torch_dtype} to Wave.")
+
+
+def is_shared_write(node: CustomOp) -> bool:
+    return (
+        isinstance(node, Write)
+        and subs_idxc(node.memory_type.address_space) == SHARED_ADDRESS_SPACE
+    )
+
+
+def is_shared_read(node: CustomOp) -> bool:
+    return (
+        isinstance(node, Read)
+        and subs_idxc(node.memory_type.address_space) == SHARED_ADDRESS_SPACE
+    )
+
+
+def is_gather(custom: CustomOp) -> bool:
+    if not isinstance(custom, Read):
+        return False
+    assert custom.index, f"Read node {custom} does not have an index."
+    return any(
+        custom.index[x].size > 1
+        for x in custom.memory_type.symbolic_shape[:-1]
+        if x in custom.index
+    )

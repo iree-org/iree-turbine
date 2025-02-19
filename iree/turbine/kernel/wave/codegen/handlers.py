@@ -144,7 +144,7 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
 @handle_op(allocate)
 def handle_allocate(emitter: WaveEmitter, node: fx.Node):
     try:
-        shape, distributed_shape, dtype, address_space = node.args
+        shape, distributed_shape, dtype, address_space, padding = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     memref_shape = cast_py_literal(emitter, distributed_shape)
