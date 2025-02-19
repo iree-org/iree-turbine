@@ -88,6 +88,7 @@ def context_attention_fwd(
     for i in range(len(b_seq_len)):
         start, end = cu_seq_lens[i], cu_seq_lens[i + 1]
         qkv_len = end - start
+        print(f"qkv_len {qkv_len}")
         Q = q[start:end].permute(1, 0, 2)
         K = k[start:end].permute(1, 0, 2)
         K = K.expand(Q.shape[0], *K.shape[1:])
@@ -244,7 +245,7 @@ def create_inputs(
     max_len_extend = torch.max(b_seq_len_extend, 0)[0].item()
     logit_cap = 30.0
 
-    max_rpe_context_length = 1
+    max_rpe_context_length = 10
     rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
     rpe_bias.copy_(
         5 * torch.rand(max_rpe_context_length + 1, dtype=torch.float32, device="cuda")
@@ -511,7 +512,7 @@ def testExtendRpeAttention(
         canonicalize=True,
         run=True,
         # run_bench=run_bench,
-        compile_config={"print_ir_after": "all"},
+        # compile_config={"print_ir_after": "all"},
         run_config=config,
         schedule=enable_scheduling,
         # use_scheduling_barriers=enable_scheduling_barriers,
@@ -535,7 +536,7 @@ def testExtendRpeAttention(
         )
         print(mb_qk.module_op)
 
-    print(f"\n\nrpe_debug\n{rpe_debug[0][:8, :8]}")
+    print(f"\n\nrpe_debug\n{rpe_debug[0][0:8, 0:8]}")
     print(f"rpe_debug_shape: {rpe_debug[0].shape}")
 
     # if dump_generated_mlir:

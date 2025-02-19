@@ -163,6 +163,7 @@ def _construct_gather_scatter_indices(
     dynamic_vals: tuple[Any, ...],
     is_contiguous: bool,
     memory: CustomOp,
+    debug: bool = False,
 ) -> tuple[list[OpResult], list[OpResult], list[OpResult], OpResult, OpResult]:
     # Apply symbolic_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolic_shape is (N, M), result will
@@ -188,10 +189,14 @@ def _construct_gather_scatter_indices(
     subs = [
         (sym, expr.start) for sym, expr in zip(iters.keys(), index.values())
     ] + list(idxc.subs.items())
+    if debug:
+        print(f"subs {subs}")
 
     # Contruct input/output index, substituting iterators in input mapping with
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
+    if debug:
+        print(f"result_index {result_index}")
 
     mask = _build_mask(emitter, index, elements_per_thread)
     if mask is None:
@@ -260,6 +265,11 @@ def _construct_gather_scatter_indices(
             break
 
         offsets.append(offset)
+    if debug:
+        print(f"\noffsets {offsets}")
+        print(f"\nsymbolc_shape {symbolc_shape}")
+        print(f"\nstrides {strides}")
+        print(f"\nstart_indices_offset {start_indices_offset}")
 
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
     if need_dynamic_offsets:
@@ -284,6 +294,14 @@ def _construct_gather_scatter_indices(
             for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
         }
         indices = [i.subs(subs) for i in index_mapping]
+        if debug:
+            print(
+                f"\ndynamic_vals_map {list(dynamic_vals_map.values())[0]}, {list(dynamic_vals_map.values())[1]}"
+            )
+            print(f"\nindices {indices}")
+            print(
+                f"\n_compute_offset(indices, strides) {_compute_offset(indices, strides)}"
+            )
         offsets_vec = gen_sympy_index(
             add_emitter_subs(emitter, dynamic_vals_map),
             _compute_offset(indices, strides),
@@ -478,6 +496,10 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
 
     index = node.index
 
+    if memory.name == "rpe":
+        print(f"\nmemory.__dict__.items(): {memory.__dict__.items()}")
+        print(f"\nget_custom(node): {get_custom(node)}")
+
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
@@ -524,7 +546,14 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
             memory=get_custom(memory),
+            debug=memory.name == "rpe",
         )
+        if memory.name == "rpe":
+            print(f"\nstart_indices: {start_indices[0]}")
+            print(f"\noffsets_vec: {offsets_vec}")
+            print(f"\nmask: {mask}")
+            print(f"\n\n\n")
+            # exit()
         result = _create_vec_read(
             emitter,
             input_shape,
@@ -638,6 +667,10 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
 
     index = node.index
 
+    if memory.name == "rpe_debug":
+        print(f"\nmemory.__dict__.items(): {memory.__dict__.items()}")
+        print(f"\nget_custom(node): {get_custom(node)}")
+
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
     elements_per_thread = cast_py_literal(emitter, elements_per_thread)
@@ -659,6 +692,14 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             mask,
             offsets_vec=None,
         )
+        if memory.name == "rpe_debug":
+            print(
+                f"\nstart_indices: {start_indices[0]}, {start_indices[1]}, {start_indices[2]}"
+            )
+            print(f"\noffsets_vec: {None}")
+            print(f"\nmask: {mask}")
+            print(f"\n\n\n")
+            # exit()
     else:
         assert (
             input_shape == mapping.input_shape
@@ -684,7 +725,6 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             is_contiguous=get_custom(node).is_contiguous_vec(),
             memory=get_custom(memory),
         )
-
         _create_vec_write(
             emitter,
             output_shape,

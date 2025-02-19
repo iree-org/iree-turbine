@@ -188,6 +188,8 @@ def _build_start_indices(
 # Expressions, Dims and Indexing related ops
 ###############################################################################
 
+cnt = 0
+
 
 @handle_op(self_index)
 def handle_self_index(emitter: WaveEmitter, node: fx.Node):
@@ -203,6 +205,18 @@ def handle_self_index(emitter: WaveEmitter, node: fx.Node):
     stride = subs_idxc(var.stride)
 
     start = _build_start_indices(emitter, {iterator: var})[0]
+    global cnt
+    if cnt == 1:
+        print(f"\n\n\nhandle_self_index")
+        print(f"\n get_custom(node) { get_custom(node)}")
+        print(f"\n index { index}")
+        print(f"\n var { var}")
+        print(f"\n offset { offset}")
+        print(f"\n size { size}")
+        print(f"\n stride { stride}")
+        print(f"\n start { start}")
+        # exit()
+    cnt = cnt + 1
 
     element_type = IrType.parse(dtype.ir_type_asm())
     index_type = IrType.parse("index")

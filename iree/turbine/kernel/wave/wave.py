@@ -329,7 +329,7 @@ class LaunchableWave(Launchable):
         str,
     ]:
         compile_config = kwargs.get("compile_config", {})
-        print_ir_after = "all"  # compile_config.get("print_ir_after", [])
+        print_ir_after = compile_config.get("print_ir_after", [])
         print_ir_before = compile_config.get("print_ir_before", [])
         if compile_config.get("print_trace_begin", False):
             print(f"\n***Tracing kernel {self._name}***")

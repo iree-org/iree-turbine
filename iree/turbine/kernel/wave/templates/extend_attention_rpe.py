@@ -178,6 +178,13 @@ def get_extend_attention_rpe_kernel(
     v_cache_layout = tkl.MemoryLayout(shape=v_cache_shape)
     num_seqs_layout = tkl.MemoryLayout(shape=[None])
     rpe_layout = tkl.MemoryLayout(shape=[max_rpe_context_length + 1])
+    rpe_debug_layout = tkl.MemoryLayout(
+        shape=[
+            16,
+            864,
+            864,
+        ]
+    )
 
     @tkw.wave(constraints)
     def extend_attention_rpe(
@@ -207,7 +214,9 @@ def get_extend_attention_rpe_kernel(
         ],
         rpe: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
-        rpe_debug: tkl.Memory[H, N_Q, N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        rpe_debug: tkl.Memory[
+            H, N_Q, N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_debug_layout
+        ],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
@@ -284,12 +293,12 @@ def get_extend_attention_rpe_kernel(
             # Layer and RPE scaling since we use log2 instead of log2
             x_j = x_j * layer_scale_reg + rpe_reg * rpe_scale_reg
 
-            # n_kv_index = tkw.self_index(N_KV, tkl.i32)
-            # mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
-            # mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
-            # mask = tkw.cast(mask, tkw.i1)
-            # bias = tkw.select(mask, zero, neg_infinity)
-            # x_j = x_j + bias
+            n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            mask = tkw.cast(mask, tkw.i1)
+            bias = tkw.select(mask, zero, neg_infinity)
+            x_j = x_j + bias
 
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
@@ -350,16 +359,16 @@ def get_extend_attention_rpe_kernel(
             # Layer and RPE scaling since we use log2 instead of log2
             x_j = x_j * layer_scale_reg + rpe_reg * rpe_scale_reg
 
-            # n_kv_index = tkw.self_index(N_KV, tkl.i32)
-            # mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
-            # mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
-            # if is_causal:
-            #     n_q_index = tkw.self_index(N_Q, tkl.i32)
-            #     n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
-            #     mask = (n_q_index >= n_kv_index) & mask
-            # mask = tkw.cast(mask, tkw.i1)
-            # bias = tkw.select(mask, zero, neg_infinity)
-            # x_j = x_j + bias
+            n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            if is_causal:
+                n_q_index = tkw.self_index(N_Q, tkl.i32)
+                n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
+                mask = (n_q_index >= n_kv_index) & mask
+            mask = tkw.cast(mask, tkw.i1)
+            bias = tkw.select(mask, zero, neg_infinity)
+            x_j = x_j + bias
 
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
