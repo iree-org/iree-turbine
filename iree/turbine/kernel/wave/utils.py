@@ -609,6 +609,7 @@ def compile_to_vmfb(
     if backend == "rocm":
         target = config["target"]
         flags.append(f"--iree-hip-target={target}")
+        flags.append("--iree-codegen-gpu-native-math-precision=true")
 
     if config.get("print_ir_after_all", False):
         flags.append("--mlir-print-ir-after-all")
