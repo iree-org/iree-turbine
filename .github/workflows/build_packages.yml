@@ -36,7 +36,9 @@ jobs:
 
       - name: Build iree-turbine release candidate
         run: |
-          ./build_tools/compute_local_version.py -rc --write-json
+          ./build_tools/compute_local_version.py \
+            -rc --write-json \
+            --version-suffix "-${{ github.run_number }}"
           ./build_tools/build_release.py --no-download
 
       - name: Upload python wheels
