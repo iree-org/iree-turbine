@@ -38,7 +38,7 @@ from ...compiler.vector_codegen import (
 
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils import safe_subs, subs_idxc, find_index_bounds
+from ..utils import safe_subs, subs_idxc, find_index_bounds, get_fastest_index
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from ...lang.wave_types import IndexMapping
@@ -108,20 +108,6 @@ def _build_start_indices(
     return indices, indices_wg, indices_th
 
 
-def _get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
-    """
-    This function takes in indices of a Node, extract their sizes
-    into a list, and then try do an argmax on it. In the case where
-    there are multipled max_vals we pick the fastest/most minor one.
-    """
-
-    index_sizes = [subs_idxc(i.size) for i in indices.values()]
-    # Find the maximum value
-    max_size = max(index_sizes)
-    # Find the fastest/most minor index of the maximum value.
-    return max(i for i, size in enumerate(index_sizes) if size == max_size)
-
-
 def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> IndexExpr:
     return sum(i * s for i, s in zip(indices, strides))
 
@@ -138,7 +124,7 @@ def _build_mask(
         return None
 
     idxc = IndexingContext.current()
-    fastest_dim = _get_fastest_index(index)
+    fastest_dim = get_fastest_index(index)
     last_dim = list(index)[fastest_dim]
     new_index = {k: _get_start_index(v) for k, v in index.items()}
 
@@ -230,7 +216,7 @@ def _construct_gather_scatter_indices(
 
     start_indices = _get_start_indices(result_index)
     start_indices_orig = _get_start_indices(index)
-    fastest_dim = _get_fastest_index(index)
+    fastest_dim = get_fastest_index(index)
     need_dynamic_offsets = False
     for val in dynamic_vals:
         shape = val.type.shape

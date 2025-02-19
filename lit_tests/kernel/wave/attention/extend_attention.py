@@ -106,8 +106,10 @@ def test_extend_attention():
         # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                scf.for
-        # CHECK-COUNT-11:           vector.maskedload
-        # CHECK-COUNT-8:            vector.store %{{.*}}, %[[ALLOC2]]
+        # 3 masked load for sequence idx, 2 for k_cache, and 1 for v_cache.
+        # CHECK-COUNT-3:            vector.maskedload
+        # CHECK-COUNT-2:            vector.maskedload
+        # CHECK-NEXT:               vector.store %{{.*}}, %[[ALLOC2]]
         # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
         # CHECK-COUNT-8:            vector.gather %[[ALLOC1]]
@@ -222,8 +224,10 @@ def test_causal_extend_attention():
         # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                scf.for
-        # CHECK-COUNT-11:           vector.maskedload
-        # CHECK-COUNT-8:            vector.store %{{.*}}, %[[ALLOC2]]
+        # 3 masked load for sequence idx, 2 for k_cache, and 1 for v_cache.
+        # CHECK-COUNT-3:            vector.maskedload
+        # CHECK-COUNT-2:            vector.maskedload
+        # CHECK-NEXT:               vector.store %{{.*}}, %[[ALLOC2]]
         # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
         # CHECK-COUNT-8:            vector.gather %[[ALLOC1]]
@@ -357,8 +361,9 @@ def test_causal_extend_attention_32x32x8():
         # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
         # CHECK-COUNT-8:        vector.maskedload
         # CHECK:                scf.for
-        # CHECK-COUNT-11:           vector.maskedload
-        # CHECK-COUNT-8:            vector.store %{{.*}}, %[[ALLOC2]]
+        # 3 masked load for sequence idx, 2 for k_cache, and 1 for v_cache.
+        # CHECK-COUNT-3:            vector.maskedload
+        # CHECK-COUNT-2:            vector.maskedload
         # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
         # CHECK-COUNT-8:            vector.gather %[[ALLOC1]]

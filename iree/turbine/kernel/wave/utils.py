@@ -1235,6 +1235,20 @@ def _get_start_indices(
     return start_indices
 
 
+def get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
+    """
+    This function takes in indices of a Node, extract their sizes
+    into a list, and then try do an argmax on it. In the case where
+    there are multipled max_vals we pick the fastest/most minor one.
+    """
+
+    index_sizes = [subs_idxc(i.size) for i in indices.values()]
+    # Find the maximum value
+    max_size = max(index_sizes)
+    # Find the fastest/most minor index of the maximum value.
+    return max(i for i, size in enumerate(index_sizes) if size == max_size)
+
+
 def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
     """Apply custom sympy simplifications"""
 
