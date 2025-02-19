@@ -170,6 +170,14 @@ def max(
     ...
 
 
+def min(
+    src: "Register",
+    acc: Optional["Register"] = None,
+    dim: Optional[IndexExpr | int] = None,
+) -> "Register":
+    ...
+
+
 def shuffle(src: "Register", offset: int, width: int) -> "Register":
     ...
 
@@ -1796,6 +1804,7 @@ class Broadcast(CustomOp, ABC):
 
 
 @define_interface_op("max")
+@define_interface_op("min")
 @define_interface_op("sum")
 @dataclass
 class ReduceOp(CustomOp, ABC):

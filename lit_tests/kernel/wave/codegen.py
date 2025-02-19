@@ -1370,6 +1370,102 @@ def test_tiled_reduce_max():
         # CHECK: scf.yield %[[ACC_REDUCE]] : vector<1xf16>
 
 
+@run_test
+def test_tiled_reduce_min():
+    M = tkl.sym.M
+    N = tkl.sym.N
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+    ):
+        init_min = tkl.Register[M, tkl.f16](1e6)
+
+        @tkw.reduction(N, init_args=[init_min])
+        def repeat(
+            partial_min: tkl.Register[M, tkl.f16],
+        ) -> tkl.Register[M, tkl.f16]:
+            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            res = lhs * rhs
+            partial_min = tkw.min(res, partial_min, dim=N)
+            return partial_min
+
+        tkw.write(repeat, c, elements_per_thread=1)
+
+    config = get_default_compile_config()
+
+    shape = (256, 512)
+    a = torch.randn(shape, dtype=torch.float16)
+    b = torch.randn(shape, dtype=torch.float16)
+    c = torch.zeros((shape[0],), dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            BLOCK_M: 1,
+            BLOCK_N: 128,
+            ELEMS_PER_THREAD: 2,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+    ):
+        print(test(a, b, c).module_op)
+        # CHECK-LABEL: func @test
+        # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i32
+        # CHECK-DAG: %[[C2:.+]] = arith.constant 2 : i32
+        # CHECK-DAG: %[[C4:.+]] = arith.constant 4 : i32
+        # CHECK-DAG: %[[C8:.+]] = arith.constant 8 : i32
+        # CHECK-DAG: %[[C16:.+]] = arith.constant 16 : i32
+        # CHECK-DAG: %[[C32:.+]] = arith.constant 32 : i32
+        # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
+        # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
+        # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
+        # CHECK-DAG: %[[INIT:.+]] = arith.constant dense<0x7C00> : vector<1xf16>
+        # Tile Reduction Loop
+        # CHECK: scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
+        # CHECK-SAME: iter_args(%[[ACC:.+]] = %[[INIT]]) -> (vector<1xf16>) {
+        # Elementwise
+        # CHECK: arith.mulf {{.*}} : vector<2xf16>
+        # Local Reduction
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # Global Reduction
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C2]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C4]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C8]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C16]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C32]], %{{.+}} : f32
+        # CHECK: %[[GLOBAL_REDUCE:.+]] = arith.minimumf {{.*}} : vector<1xf16>
+        # Accumulator Reduction
+        # CHECK: %[[ACC_REDUCE:.+]] = arith.minimumf %[[ACC]], %[[GLOBAL_REDUCE]]
+        # CHECK: scf.yield %[[ACC_REDUCE]] : vector<1xf16>
+
+
 # This test is to ensure that the we can handle multiple IV in reduction properly.
 @run_test
 def test_multiple_reduction_iv():
