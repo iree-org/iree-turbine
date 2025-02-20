@@ -41,16 +41,21 @@ from ..common.shapes import get_test_shapes, construct_test_name
 
 # Reference paged attention implementation from vLLM and sglang.
 
+
 def print_tensors():
     import gc
+
     print("alive tensors ---------------")
     for obj in gc.get_objects():
         try:
-            if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                print(type(obj), obj.size())
+            if torch.is_tensor(obj) or (
+                hasattr(obj, "data") and torch.is_tensor(obj.data)
+            ):
+                print(hex(id(obj)), type(obj), obj.size())
         except:
             pass
     print("-----------------------------")
+
 
 def context_attention_fwd(
     q: torch.Tensor,
@@ -346,19 +351,20 @@ def testExtendAttention(
         use_buffer_store_ops=use_buffer_ops,
     ):
         print_tensors()
-        mb_qk = extend_attention(
-            q_extend,
-            k_extend,
-            v_extend,
-            k_buffer,
-            v_buffer,
-            req_to_tokens,
-            b_req_idx,
-            b_seq_len,
-            b_seq_len_extend,
-            b_start_loc_extend,
-            output,
-        )
+        if True:
+            mb_qk = extend_attention(
+                q_extend,
+                k_extend,
+                v_extend,
+                k_buffer,
+                v_buffer,
+                req_to_tokens,
+                b_req_idx,
+                b_seq_len,
+                b_seq_len_extend,
+                b_start_loc_extend,
+                output,
+            )
         del q_extend
         del k_extend
         del v_extend

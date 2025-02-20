@@ -71,6 +71,9 @@ import iree.runtime.benchmark as bench
 import numpy
 import ml_dtypes
 
+import ctypes
+from math import prod
+
 bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
 
@@ -520,6 +523,15 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
         ret[:] = type(ret)(host_array)
 
 
+def _detach_tensor(src: torch.Tensor) -> torch.Tensor:
+    shape = src.shape
+    ptr = src.data_ptr()
+    arr = (pointer._type_ * prod(shape)).from_address(ctypes.addressof(ptr))
+
+    # Assuming src tensor is c-contiguous
+    return torch.frombuffer(arr, dtype=torch_type).view(*shape)
+
+
 def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
     linearized_arg_len = len(inputs) + len(outputs) + len(dynamic_dims)
     # ret_list is 0 because we modify/write result in place.
@@ -529,6 +541,7 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     def push_tensor_to_arg_list(arg_tensor: torch.Tensor):
         if not arg_tensor.is_contiguous():
             arg_tensor = arg_tensor.contiguous()
+        arg_tensor = _detach_tensor(arg_tensor)
         capsule = arg_tensor.__dlpack__(None)
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
         arg_list.push_ref(arg_tensor_bv)
