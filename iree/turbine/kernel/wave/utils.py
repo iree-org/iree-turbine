@@ -71,6 +71,8 @@ import iree.runtime.benchmark as bench
 import numpy
 import ml_dtypes
 
+import ctypes
+
 bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
 
@@ -520,6 +522,10 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
         ret[:] = type(ret)(host_array)
 
 
+_dl_tensor_name = ctypes.create_string_buffer(b"dltensor")
+_set_capsule_name = ctypes.pythonapi.PyCapsule_SetName
+
+
 def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
     linearized_arg_len = len(inputs) + len(outputs) + len(dynamic_dims)
     # ret_list is 0 because we modify/write result in place.
@@ -531,6 +537,11 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
             arg_tensor = arg_tensor.contiguous()
         capsule = arg_tensor.__dlpack__(None)
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
+
+        # IREE runtime renames capsule to "dltensor_used" for some reason, but
+        # only deletes capsules with "dltensor" name, which is causing a memory
+        # leak.
+        _set_capsule_name(ctypes.py_object(capsule), _dl_tensor_name)
         arg_list.push_ref(arg_tensor_bv)
 
     # Linearize arguments, In linearized arg_list, we first push in all inputs,
@@ -1589,3 +1600,25 @@ def is_gather(custom: CustomOp) -> bool:
         for x in custom.memory_type.symbolic_shape[:-1]
         if x in custom.index
     )
+
+
+def print_live_tensors():
+    """
+    Print all alive torch tensors in program.
+
+    Use for debugging memory leaks.
+    """
+    import gc
+
+    gc.collect()
+
+    print("------ live tensors ---------")
+    for obj in gc.get_objects():
+        try:
+            if torch.is_tensor(obj) or (
+                hasattr(obj, "data") and torch.is_tensor(obj.data)
+            ):
+                print(hex(id(obj)), type(obj), obj.size())
+        except:
+            pass
+    print("-----------------------------")
