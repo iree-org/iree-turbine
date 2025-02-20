@@ -524,7 +524,7 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
 
 
 _dl_tensor_name = ctypes.create_string_buffer(b"dltensor")
-_set_capsule_name = ctypes.pythonapi.PyCapsule_setName
+_set_capsule_name = ctypes.pythonapi.PyCapsule_SetName
 
 
 def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
