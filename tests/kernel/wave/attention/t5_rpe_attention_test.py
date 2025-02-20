@@ -86,7 +86,7 @@ def create_inputs(
 
 # TODO: Debug why failing numerics on MI250.
 @require_e2e
-# @require_cdna3
+@require_cdna3
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("max_context_length", [10, 128])  # T5 RPE parameter
 @pytest.mark.parametrize("dtype", [torch.float16])
@@ -102,7 +102,7 @@ def test_t5_rpe_attention(
     max_context_length: int,
     dtype: torch.dtype,
     mfma_variant: MMAType,
-    # request,
+    request,
 ):
     torch.manual_seed(0)
     shape = AttentionShape(
@@ -126,16 +126,16 @@ def test_t5_rpe_attention(
 
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
-    # run_bench = request.config.getoption("--runperf")
-    # dump_perf = request.config.getoption("--dump-perf-files-path")
-    # if run_bench:
-    #     config["benchmark_batch_size"] = 10
-    #     config["benchmark_repetitions"] = 3
-    # if dump_perf is not None:
-    #     perf_filename = request.node.name + ".json"
-    #     config["benchmark_results_file"] = os.path.join(
-    #         dump_perf, "tk_" + perf_filename
-    #     )
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    if run_bench:
+        config["benchmark_batch_size"] = 10
+        config["benchmark_repetitions"] = 3
+    if dump_perf is not None:
+        perf_filename = request.node.name + ".json"
+        config["benchmark_results_file"] = os.path.join(
+            dump_perf, "tk_" + perf_filename
+        )
 
     log2e = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
@@ -150,13 +150,13 @@ def test_t5_rpe_attention(
         hyperparams,
         canonicalize=True,
         run=True,
-        # run_bench=run_bench,
+        run_bench=run_bench,
         run_config=config,
-        # use_scheduling_barriers=enable_scheduling_barriers,
+        use_scheduling_barriers=enable_scheduling_barriers,
     ):
         output = device_zeros(output_shape, dtype=torch.float32)
         # TODO: Add scaling of QK and t5_rpe as part of kernel.
-        mb = t5_rpe_attention(
+        t5_rpe_attention(
             query * dk_sqrt * log2e,
             key,
             value.permute([0, 2, 1]),

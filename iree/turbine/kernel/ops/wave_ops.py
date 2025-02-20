@@ -1242,9 +1242,7 @@ class Read(CustomOp):
         from ..wave.utils import align_index_vars, is_shared_mem_access
 
         if is_shared_mem_access(self):
-            print(f"MMA before {self.index} with constraints {constraints}")
             self.index = align_index_vars(self.index, constraints)
-            print(f"MMA  after {self.index}")
 
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
