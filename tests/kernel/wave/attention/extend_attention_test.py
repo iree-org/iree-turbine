@@ -37,17 +37,15 @@ import os
 from enum import Enum
 from torch.testing import assert_allclose
 
-# from ..common.utils import (
-#     require_e2e,
-#     require_cdna3,
-#     enable_scheduling_barriers,
-#     dump_generated_mlir,
-# )
-# from ..common.shapes import get_test_shapes, construct_test_name
+from ..common.utils import (
+    require_e2e,
+    require_cdna3,
+    enable_scheduling_barriers,
+    dump_generated_mlir,
+)
+from ..common.shapes import get_test_shapes, construct_test_name
 from torch.nn.attention.flex_attention import flex_attention
 from torch.nn.attention.flex_attention import create_block_mask
-
-# Reference paged attention implementation from vLLM and sglang.
 
 
 def t5_rpe_masked_cond(
@@ -88,14 +86,13 @@ def context_attention_fwd(
     for i in range(len(b_seq_len)):
         start, end = cu_seq_lens[i], cu_seq_lens[i + 1]
         qkv_len = end - start
-        print(f"qkv_len {qkv_len}")
         Q = q[start:end].permute(1, 0, 2)
         K = k[start:end].permute(1, 0, 2)
         K = K.expand(Q.shape[0], *K.shape[1:])
         V = v[start:end].permute(1, 0, 2)
         V = V.expand(Q.shape[0], *V.shape[1:])
         dk_sqrt = math.sqrt(1.0 / Q.shape[-1])
-        a = torch.bmm(Q, K.transpose(-1, -2)) * dk_sqrt
+        a = torch.bmm(Q * dk_sqrt, K.transpose(-1, -2))
         if ScoreMod == ScoreMod.SoftCap:
             a = a / logit_cap
             a = torch.tanh(a)
@@ -106,8 +103,6 @@ def context_attention_fwd(
                 max_rpe_context_length=max_rpe_context_length,
                 sequence_length=K.shape[1],
             )
-            print(f"\n\nrpe_cond\n{rpe_cond[:8, :8]}")
-            print(f"rpe_cond_shape: {rpe_cond.shape}")
             rpe_cond = rpe_cond.unsqueeze(0)
             rpe_cond = rpe_cond.expand(Q.shape[0], *rpe_cond.shape[1:])
             a = a + rpe_cond
@@ -248,10 +243,9 @@ def create_inputs(
     max_rpe_context_length = 10
     rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
     rpe_bias.copy_(
-        5 * torch.rand(max_rpe_context_length + 1, dtype=torch.float32, device="cuda")
+        torch.rand(max_rpe_context_length + 1, dtype=torch.float32, device="cuda")
     )
     rpe_bias[max_rpe_context_length] = 0
-    print(f"\n\nrpe_bias\n{rpe_bias}")
 
     return (
         q_extend,
@@ -275,21 +269,21 @@ def create_inputs(
     )
 
 
-# # TODO: Investigate errors on MI250.
-# @require_e2e
-# # @require_cdna3
-# @pytest.mark.parametrize("shape", get_test_shapes("extend"))
-# @pytest.mark.parametrize("dtype", [torch.float16])
-# @pytest.mark.parametrize("enable_scheduling", [False])
-# @pytest.mark.parametrize("is_causal", [False])
-# @pytest.mark.parametrize("use_buffer_ops", [False, True]))
-# @pytest.mark.parametrize(
-#     "mfma_variant",
-#     [
-#         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-#         (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
-#     ],
-# )
+# TODO: Investigate errors on MI250.
+@require_e2e
+# @require_cdna3
+@pytest.mark.parametrize("shape", get_test_shapes("extend"))
+@pytest.mark.parametrize("dtype", [torch.float16])
+@pytest.mark.parametrize("enable_scheduling", [False])
+@pytest.mark.parametrize("is_causal", [False])
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+    ],
+)
 def testExtendAttention(
     shape: list[AttentionShape],
     dtype: torch.dtype,
@@ -297,7 +291,7 @@ def testExtendAttention(
     is_causal: bool,
     use_buffer_ops: bool,
     mfma_variant: MMAType,
-    # request,
+    request,
 ):
 
     torch.manual_seed(0)
@@ -354,28 +348,28 @@ def testExtendAttention(
     )
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
-    # config["gpu-native-math-precision"] = True
-    # run_bench = request.config.getoption("--runperf")
-    # dump_perf = request.config.getoption("--dump-perf-files-path")
-    # if run_bench:
-    #     config["benchmark_batch_size"] = 1000
-    #     config["benchmark_repetitions"] = 3
-    #     config["dump_intermediates"] = "./inter"
+    config["gpu-native-math-precision"] = True
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    if run_bench:
+        config["benchmark_batch_size"] = 1000
+        config["benchmark_repetitions"] = 3
+        config["dump_intermediates"] = "./inter"
 
-    # if dump_perf is not None:
-    #     perf_filename = construct_test_name(
-    #         "wave_extend_attention", mfma_variant, is_causal, shape
-    #     )
-    #     config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
+    if dump_perf is not None:
+        perf_filename = construct_test_name(
+            "wave_extend_attention", mfma_variant, is_causal, shape
+        )
+        config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
         run=True,
-        # run_bench=run_bench,
+        run_bench=run_bench,
         run_config=config,
         schedule=enable_scheduling,
-        # use_scheduling_barriers=enable_scheduling_barriers,
+        use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         use_buffer_load_ops=use_buffer_ops,
@@ -395,10 +389,10 @@ def testExtendAttention(
             output,
         )
 
-    # if dump_generated_mlir:
-    #     filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
-    #     with open(filename, "w") as f:
-    #         f.write(mb_qk.module_op.get_asm())
+    if dump_generated_mlir:
+        filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(mb_qk.module_op.get_asm())
 
     # Run the reference implementation.
     ref_output = ref_extend_attn(
@@ -419,26 +413,26 @@ def testExtendAttention(
     assert_allclose(output, ref_output, rtol=1e-3, atol=1e-3)
 
 
-# # TODO: Investigate errors on MI250.
-# @require_e2e
-# # @require_cdna3
-# @pytest.mark.parametrize("shape", get_test_shapes("extend"))
-# @pytest.mark.parametrize("dtype", [torch.float16])
-# @pytest.mark.parametrize("enable_scheduling", [False])
-# @pytest.mark.parametrize("is_causal", [False])
-# @pytest.mark.parametrize(
-#     "mfma_variant",
-#     [
-#         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-#     ],
-# )
+# TODO: Investigate errors on MI250.
+@require_e2e
+@require_cdna3
+@pytest.mark.parametrize("shape", get_test_shapes("extend"))
+@pytest.mark.parametrize("dtype", [torch.float16])
+@pytest.mark.parametrize("enable_scheduling", [False])
+@pytest.mark.parametrize("is_causal", [False])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+    ],
+)
 def testExtendRpeAttention(
     shape: list[AttentionShape],
     dtype: torch.dtype,
     enable_scheduling: bool,
     is_causal: bool,
     mfma_variant: MMAType,
-    # request,
+    request,
 ):
 
     torch.manual_seed(0)
@@ -495,16 +489,16 @@ def testExtendRpeAttention(
     )
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
-    # run_bench = request.config.getoption("--runperf")
-    # dump_perf = request.config.getoption("--dump-perf-files-path")
-    # if run_bench:
-    #     config["benchmark_batch_size"] = 1000
-    #     config["benchmark_repetitions"] = 3
-    # if dump_perf is not None:
-    #     perf_filename = construct_test_name(
-    #         "wave_extend_attention", mfma_variant, is_causal, shape
-    #     )
-    #     config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    if run_bench:
+        config["benchmark_batch_size"] = 1000
+        config["benchmark_repetitions"] = 3
+    if dump_perf is not None:
+        perf_filename = construct_test_name(
+            "wave_extend_attention", mfma_variant, is_causal, shape
+        )
+        config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
     rpe_debug = torch.zeros(
         (16, q_extend.shape[0], k_extend.shape[0]), dtype=torch.float32, device="cuda"
@@ -513,11 +507,10 @@ def testExtendRpeAttention(
         hyperparams,
         canonicalize=True,
         run=True,
-        # run_bench=run_bench,
-        # compile_config={"print_ir_after": "all"},
+        run_bench=run_bench,
         run_config=config,
         schedule=enable_scheduling,
-        # use_scheduling_barriers=enable_scheduling_barriers,
+        use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
@@ -536,15 +529,11 @@ def testExtendRpeAttention(
             output,
             rpe_debug,
         )
-        print(mb_qk.module_op)
 
-    print(f"\n\nrpe_debug\n{rpe_debug[0][0:8, 0:8]}")
-    print(f"rpe_debug_shape: {rpe_debug[0].shape}")
-
-    # if dump_generated_mlir:
-    #     filename = f"wave_extend_attention_kernel_rpe_{'x'.join(map(str, shape))}.mlir"
-    #     with open(filename, "w") as f:
-    #         f.write(mb_qk.module_op.get_asm())
+    if dump_generated_mlir:
+        filename = f"wave_extend_attention_kernel_rpe_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(mb_qk.module_op.get_asm())
 
     # Run the reference implementation.
     ref_output = ref_extend_attn(
@@ -568,21 +557,3 @@ def testExtendRpeAttention(
     torch.testing.assert_close(
         output, ref_output, rtol=2e-3, atol=2e-3, check_dtype=False
     )
-
-
-shape = AttentionShape(
-    num_seqs=2,
-    context_len=1024,
-    num_query_heads=16,
-    num_kv_heads=1,
-    head_size=128,
-    head_size_kv=128,
-    block_size=64,
-)
-testExtendRpeAttention(
-    shape,
-    torch.float16,
-    enable_scheduling=False,
-    is_causal=False,
-    mfma_variant=(MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-)
