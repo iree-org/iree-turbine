@@ -309,6 +309,7 @@ def testExtendAttention(
     )
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
+    config["gpu-native-math-precision"] = True
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
     if run_bench:
