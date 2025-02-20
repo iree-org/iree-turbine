@@ -523,13 +523,8 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
         ret[:] = type(ret)(host_array)
 
 
-def _detach_tensor(src: torch.Tensor) -> torch.Tensor:
-    shape = src.shape
-    ptr = src.data_ptr()
-    arr = (pointer._type_ * prod(shape)).from_address(ctypes.addressof(ptr))
-
-    # Assuming src tensor is c-contiguous
-    return torch.frombuffer(arr, dtype=torch_type).view(*shape)
+_dl_tensor_name = ctypes.create_string_buffer(b"dltensor")
+_set_capsule_name = ctypes.pythonapi.PyCapsule_setName
 
 
 def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
@@ -541,9 +536,9 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     def push_tensor_to_arg_list(arg_tensor: torch.Tensor):
         if not arg_tensor.is_contiguous():
             arg_tensor = arg_tensor.contiguous()
-        arg_tensor = _detach_tensor(arg_tensor)
         capsule = arg_tensor.__dlpack__(None)
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
+        _set_capsule_name(ctypes.py_object(capsule), _dl_tensor_name)
         arg_list.push_ref(arg_tensor_bv)
 
     # Linearize arguments, In linearized arg_list, we first push in all inputs,
@@ -1602,3 +1597,18 @@ def is_gather(custom: CustomOp) -> bool:
         for x in custom.memory_type.symbolic_shape[:-1]
         if x in custom.index
     )
+
+
+def print_live_tensors():
+    import gc
+
+    print("------ live tensors ---------")
+    for obj in gc.get_objects():
+        try:
+            if torch.is_tensor(obj) or (
+                hasattr(obj, "data") and torch.is_tensor(obj.data)
+            ):
+                print(hex(id(obj)), type(obj), obj.size())
+        except:
+            pass
+    print("-----------------------------")

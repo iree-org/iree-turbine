@@ -42,21 +42,6 @@ from ..common.shapes import get_test_shapes, construct_test_name
 # Reference paged attention implementation from vLLM and sglang.
 
 
-def print_tensors():
-    import gc
-
-    print("alive tensors ---------------")
-    for obj in gc.get_objects():
-        try:
-            if torch.is_tensor(obj) or (
-                hasattr(obj, "data") and torch.is_tensor(obj.data)
-            ):
-                print(hex(id(obj)), type(obj), obj.size())
-        except:
-            pass
-    print("-----------------------------")
-
-
 def context_attention_fwd(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -350,6 +335,8 @@ def testExtendAttention(
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
     ):
+        from iree.turbine.kernel.wave.utils import print_live_tensors
+
         print_tensors()
         if True:
             mb_qk = extend_attention(
