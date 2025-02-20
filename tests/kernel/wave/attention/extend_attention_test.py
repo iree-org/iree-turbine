@@ -234,7 +234,7 @@ def create_inputs(
 
 # TODO: Investigate errors on MI250.
 @require_e2e
-# @require_cdna3
+@require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
