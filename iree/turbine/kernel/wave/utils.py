@@ -72,7 +72,6 @@ import numpy
 import ml_dtypes
 
 import ctypes
-from math import prod
 
 bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
@@ -538,6 +537,10 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
             arg_tensor = arg_tensor.contiguous()
         capsule = arg_tensor.__dlpack__(None)
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
+
+        # IREE runtime renames capsule to "dltensor_used" for some reason, but
+        # only deletes capsules with "dltensor" name, which is causing a memory
+        # leak.
         _set_capsule_name(ctypes.py_object(capsule), _dl_tensor_name)
         arg_list.push_ref(arg_tensor_bv)
 
@@ -1600,6 +1603,11 @@ def is_gather(custom: CustomOp) -> bool:
 
 
 def print_live_tensors():
+    """
+    Print all alive torch tensors in program.
+
+    Use for debugging memory leaks.
+    """
     import gc
 
     print("------ live tensors ---------")
