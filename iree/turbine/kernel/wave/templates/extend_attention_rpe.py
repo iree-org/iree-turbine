@@ -259,30 +259,7 @@ def get_extend_attention_rpe_kernel(
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
-            ####################################################################
-            # T5 RPE
-            ####################################################################
-            # Fused T5 RPE adds attention bias pre-softmax normalization.
-            # When fusing into the FA variant, adding locally before the max and
-            # the partial softmax should be equivalent.
-            i = tkw.self_index(N_Q, tkl.i64, elements_per_thread=1)
-            i = tkw.broadcast(i, target_shape=[H, N_Q, N_KV])
-            j = tkw.self_index(
-                N_KV, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
-            )
-            rpe_reg = tkw.read(
-                rpe,
-                mapping=rpe_mapping,
-                mapping_dynamic_vals=(i, j),
-                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
-            )
-            tkw.write(
-                rpe_reg,
-                rpe_debug,
-                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
-            )
-            # Layer and RPE scaling since we use log2 instead of log2
-            x_j = x_j * layer_scale_reg + rpe_reg * rpe_scale_reg
+            x_j = x_j * layer_scale_reg
 
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
@@ -345,6 +322,11 @@ def get_extend_attention_rpe_kernel(
                 rpe,
                 mapping=rpe_mapping,
                 mapping_dynamic_vals=(i, j),
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+            )
+            tkw.write(
+                rpe_reg,
+                rpe_debug,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
             # Layer and RPE scaling since we use log2 instead of log2
