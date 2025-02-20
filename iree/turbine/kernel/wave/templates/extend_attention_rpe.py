@@ -178,13 +178,6 @@ def get_extend_attention_rpe_kernel(
     v_cache_layout = tkl.MemoryLayout(shape=v_cache_shape)
     num_seqs_layout = tkl.MemoryLayout(shape=[None])
     rpe_layout = tkl.MemoryLayout(shape=[max_rpe_context_length + 1])
-    rpe_debug_layout = tkl.MemoryLayout(
-        shape=[
-            16,
-            864,
-            864,
-        ]
-    )
 
     @tkw.wave(constraints)
     def extend_attention_rpe(
@@ -214,9 +207,7 @@ def get_extend_attention_rpe_kernel(
         ],
         rpe: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
-        rpe_debug: tkl.Memory[
-            H, N_Q, N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_debug_layout
-        ],
+        rpe_debug: tkl.Memory[H, N_Q, N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)

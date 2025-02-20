@@ -506,7 +506,9 @@ def testExtendRpeAttention(
     #     )
     #     config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
-    rpe_debug = torch.zeros((16, 864, 864), dtype=torch.float32, device="cuda")
+    rpe_debug = torch.zeros(
+        (16, q_extend.shape[0], k_extend.shape[0]), dtype=torch.float32, device="cuda"
+    )
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
