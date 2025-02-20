@@ -335,35 +335,19 @@ def testExtendAttention(
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
     ):
-        from iree.turbine.kernel.wave.utils import print_live_tensors
-
-        print_live_tensors()
-        if True:
-            mb_qk = extend_attention(
-                q_extend,
-                k_extend,
-                v_extend,
-                k_buffer,
-                v_buffer,
-                req_to_tokens,
-                b_req_idx,
-                b_seq_len,
-                b_seq_len_extend,
-                b_start_loc_extend,
-                output,
-            )
-        del q_extend
-        del k_extend
-        del v_extend
-        del k_buffer
-        del v_buffer
-        del req_to_tokens
-        del b_req_idx
-        del b_seq_len
-        del b_seq_len_extend
-        del b_start_loc_extend
-        del output
-        print_live_tensors()
+        mb_qk = extend_attention(
+            q_extend,
+            k_extend,
+            v_extend,
+            k_buffer,
+            v_buffer,
+            req_to_tokens,
+            b_req_idx,
+            b_seq_len,
+            b_seq_len_extend,
+            b_start_loc_extend,
+            output,
+        )
 
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
@@ -371,19 +355,19 @@ def testExtendAttention(
             f.write(mb_qk.module_op.get_asm())
 
     # Run the reference implementation.
-    # ref_output = ref_extend_attn(
-    #     q_extend=q_extend,
-    #     k_buffer=k_buffer,
-    #     v_buffer=v_buffer,
-    #     b_req_idx=b_req_idx,
-    #     b_start_loc=b_start_loc,
-    #     b_seq_len=b_seq_len,
-    #     b_seq_len_prefix=b_seq_len_prefix,
-    #     max_len_in_batch=max_len_in_batch,
-    #     extend_token_num=extend_token_num,
-    #     dtype=dtype,
-    #     is_causal=is_causal,
-    #     logit_cap=logit_cap,
-    # )
+    ref_output = ref_extend_attn(
+        q_extend=q_extend,
+        k_buffer=k_buffer,
+        v_buffer=v_buffer,
+        b_req_idx=b_req_idx,
+        b_start_loc=b_start_loc,
+        b_seq_len=b_seq_len,
+        b_seq_len_prefix=b_seq_len_prefix,
+        max_len_in_batch=max_len_in_batch,
+        extend_token_num=extend_token_num,
+        dtype=dtype,
+        is_causal=is_causal,
+        logit_cap=logit_cap,
+    )
 
-    # assert_allclose(output, ref_output, rtol=1e-3, atol=1e-3)
+    assert_allclose(output, ref_output, rtol=1e-3, atol=1e-3)
