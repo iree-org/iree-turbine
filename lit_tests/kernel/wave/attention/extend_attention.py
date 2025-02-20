@@ -222,6 +222,7 @@ def test_causal_extend_attention():
         # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
         # CHECK-DAG:            %[[ALLOC1:.*]] = memref.alloc() : memref<32x1x68xf16, #gpu.address_space<workgroup>>
         # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
+        # CHECK-DAG:            %[[NQ_TILE_WG0:.*]] = arith.muli %workgroup_id_0, %[[NQ_TILE_SIZE:.+]]
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                scf.for
         # 3 masked load for sequence idx, 2 for k_cache, and 1 for v_cache.
@@ -246,11 +247,19 @@ def test_causal_extend_attention():
 
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
+
+        # Expressions to compute loop bound based on causal mask
+        # CHECK:                %[[NQ_TILE_UPPER_BOUND:.*]] = arith.addi %[[NQ_TILE_WG0]], %[[NQ_TILE_SIZE]]
+        # CHECK:                %[[NQ_LOOP_BOUND_SPLAT:.*]] = vector.splat %[[NQ_TILE_UPPER_BOUND]]
+        # CHECK:                arith.minsi {{.*}}, %[[NQ_LOOP_BOUND_SPLAT]]
+
         # CHECK:                amdgpu.lds_barrier
         # CHECK-NOT:            amdgpu.lds_barrier
+
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
         # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
+
         # CHECK:                scf.for
         # CHECK-COUNT-1:            vector.maskedload
         # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC2]]
