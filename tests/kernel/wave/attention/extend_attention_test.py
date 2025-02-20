@@ -337,7 +337,7 @@ def testExtendAttention(
     ):
         from iree.turbine.kernel.wave.utils import print_live_tensors
 
-        print_tensors()
+        print_live_tensors()
         if True:
             mb_qk = extend_attention(
                 q_extend,
@@ -363,7 +363,7 @@ def testExtendAttention(
         del b_seq_len_extend
         del b_start_loc_extend
         del output
-        print_tensors()
+        print_live_tensors()
 
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
