@@ -1610,6 +1610,8 @@ def print_live_tensors():
     """
     import gc
 
+    gc.collect()
+
     print("------ live tensors ---------")
     for obj in gc.get_objects():
         try:
