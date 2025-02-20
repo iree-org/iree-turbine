@@ -106,6 +106,15 @@ def context_attention_fwd(
             rpe_cond = rpe_cond.unsqueeze(0)
             rpe_cond = rpe_cond.expand(Q.shape[0], *rpe_cond.shape[1:])
             a = a + rpe_cond
+        if is_causal:
+            # Create a mask for the upper triangular part (excluding the diagonal)
+            mask = (
+                torch.triu(torch.ones(a.shape[-2:]), diagonal=1)
+                .unsqueeze(0)
+                .expand(a.shape)
+            )
+            # Apply the mask to set the upper triangular part to -infinity
+            a[mask == 1] = float("-inf")
         reference = torch.bmm(F.softmax(a, dim=-1).to(dtype=V.dtype), V)
         reference = reference.squeeze(0).permute(1, 0, 2)
         o[start:end] = reference
@@ -271,11 +280,11 @@ def create_inputs(
 
 # TODO: Investigate errors on MI250.
 @require_e2e
-# @require_cdna3
+@require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("is_causal", [False])
+@pytest.mark.parametrize("is_causal", [False, True])
 @pytest.mark.parametrize("use_buffer_ops", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -419,7 +428,7 @@ def testExtendAttention(
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("is_causal", [False])
+@pytest.mark.parametrize("is_causal", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -500,9 +509,6 @@ def testExtendRpeAttention(
         )
         config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
-    rpe_debug = torch.zeros(
-        (16, q_extend.shape[0], k_extend.shape[0]), dtype=torch.float32, device="cuda"
-    )
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -527,7 +533,6 @@ def testExtendRpeAttention(
             b_start_loc_extend,
             rpe_bias,
             output,
-            rpe_debug,
         )
 
     if dump_generated_mlir:
