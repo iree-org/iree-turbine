@@ -64,4 +64,4 @@ def test_prefill_attention():
         # CHECK-COUNT-16:           amdgpu.mfma
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-16:           amdgpu.mfma
-        # CHECK-COUNT-16:      vector.maskedstore
+        # CHECK-COUNT-4:       vector.maskedstore

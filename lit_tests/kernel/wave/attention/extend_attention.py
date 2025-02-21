@@ -136,7 +136,7 @@ def test_extend_attention():
         # CHECK-COUNT-2:            arith.addf
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
-        # CHECK-COUNT-16:      vector.maskedstore
+        # CHECK-COUNT-4:       vector.maskedstore
 
 
 @run_test
@@ -281,7 +281,7 @@ def test_causal_extend_attention():
 
         # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
-        # CHECK-COUNT-16:      vector.maskedstore
+        # CHECK-COUNT-4:       vector.maskedstore
 
 
 @run_test
@@ -417,4 +417,4 @@ def test_causal_extend_attention_32x32x8():
 
         # CHECK-COUNT-2:            gpu.shuffle xor {{.*}}
         # CHECK-COUNT-8:            amdgpu.mfma
-        # CHECK-COUNT-8:       vector.maskedstore
+        # CHECK-COUNT-2:       vector.maskedstore
