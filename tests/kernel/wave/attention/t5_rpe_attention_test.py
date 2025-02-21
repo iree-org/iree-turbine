@@ -39,11 +39,14 @@ shapes = [
 
 
 def t5_rpe_masked_cond(
-    rpe: torch.Tensor, max_context_length: int, sequence_length: int, dtype: torch.dtype
+    rpe: torch.Tensor,
+    max_rpe_context_length: int,
+    sequence_length: int,
+    dtype: torch.dtype,
 ) -> torch.Tensor:
     positions = to_default_device(torch.arange(sequence_length))
     pos_diff = positions.unsqueeze(1) - positions.unsqueeze(0)
-    mask = to_default_device((pos_diff >= 0) & (pos_diff <= max_context_length))
+    mask = to_default_device((pos_diff >= 0) & (pos_diff <= max_rpe_context_length))
     rpe_cond = device_zeros(sequence_length, sequence_length, dtype=dtype)
     rpe_cond[mask] = rpe[pos_diff[mask]]
     return rpe_cond
@@ -55,13 +58,13 @@ def validate_accuracy(
     value: torch.Tensor,
     rpe: torch.Tensor,
     output: torch.Tensor,
-    max_context_length: int,
+    max_rpe_context_length: int,
 ) -> torch.Tensor:
     # Precompute values.
     dk_sqrt = math.sqrt(1.0 / query.shape[-1])
     rpe_cond = t5_rpe_masked_cond(
         rpe,
-        max_context_length=max_context_length,
+        max_rpe_context_length=max_rpe_context_length,
         sequence_length=key.shape[1],
         dtype=output.dtype,
     )
@@ -88,7 +91,7 @@ def create_inputs(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
-@pytest.mark.parametrize("max_context_length", [10, 128])  # T5 RPE parameter
+@pytest.mark.parametrize("max_rpe_context_length", [10, 128])  # T5 RPE parameter
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -99,7 +102,7 @@ def create_inputs(
 )
 def test_t5_rpe_attention(
     shape: Tuple[int],
-    max_context_length: int,
+    max_rpe_context_length: int,
     dtype: torch.dtype,
     mfma_variant: MMAType,
     request,
@@ -120,7 +123,7 @@ def test_t5_rpe_attention(
         shape,
         mfma_variant,
         dynamic_dims=False,
-        max_context_length=max_context_length + 2,
+        max_rpe_context_length=max_rpe_context_length,
     )
     output_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)
 
@@ -140,11 +143,9 @@ def test_t5_rpe_attention(
     log2e = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
     # Provision more room for clipping and adding 0 at the boundaries.
-    rpe = device_zeros(max_context_length + 2, dtype=torch.float32)
-    rpe = rpe[: max_context_length + 2].view(max_context_length + 2)
-    rpe.copy_(device_randn(max_context_length + 2, dtype=torch.float32))
-    rpe[0] = 0
-    rpe[max_context_length + 1] = 0
+    rpe = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
+    rpe.copy_(device_randn(max_rpe_context_length + 1, dtype=torch.float32))
+    rpe[max_rpe_context_length] = 0
 
     with tk.gen.TestLaunchContext(
         hyperparams,
@@ -167,4 +168,4 @@ def test_t5_rpe_attention(
             output,
         )
 
-        validate_accuracy(query, key, value, rpe, output, max_context_length)
+        validate_accuracy(query, key, value, rpe, output, max_rpe_context_length)
