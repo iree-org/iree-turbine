@@ -446,7 +446,15 @@ def _create_vec_read(
 
         if splatted_masked:
             offset_th = arith_d.index_cast(IntegerType.get_signless(32), offset_th)
-            return amdgpu_d.raw_buffer_load(vector_type, data, indices=[offset_th])
+            load_type = vector_type
+            if elements_per_thread == 1:
+                load_type = element_type
+
+            res = amdgpu_d.raw_buffer_load(load_type, data, indices=[offset_th])
+            if elements_per_thread == 1:
+                res = vector_d.splat(vector_type, res)
+
+            return res
         else:
             offset_th = vector_d.splat(offsets_vec.type, offset_th)
             offsets_vec = arith_d.addi(offsets_vec, offset_th)
@@ -622,6 +630,11 @@ def _create_vec_write(
 
         if splatted_masked:
             offset_th = arith_d.index_cast(IntegerType.get_signless(32), offset_th)
+            if elements_per_thread == 1:
+                value = vector_d.extract(
+                    value, static_position=[0], dynamic_position=[]
+                )
+
             amdgpu_d.raw_buffer_store(value, data, indices=[offset_th])
         else:
             if offsets_vec is None:
