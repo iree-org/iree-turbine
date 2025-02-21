@@ -129,6 +129,9 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
             key=lambda item: item[1],
         )
+
+        # Compute offsets we will aplly to each index element for each partitioned
+        # write.
         offsets = np.array(
             [
                 np.unravel_index(int(i * max_stride), shape)
@@ -137,15 +140,46 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         )
 
         def check_contiguous_index():
+            """
+            Check if resulted partitioned write is equivalent to contiguous write.
+
+            Write is contiguous if offsets has form `x + [0,1,2...N]` for
+            the fastest mem dim and 0s for all others dims.
+            """
             fastest_mem_dim = custom.memory.type.symbolic_shape[-1]
-            offset = offsets.T[symbolic_shape.index(fastest_mem_dim)]
-            if not np.array_equal(offset, list(range(elements_per_thread))):
+
+            # Find fastest mem dim index in the register symbolic shape.
+            # If we have write with mapping, order of dims between register and
+            # mem may differ or mem dims may not even present in reg index.
+            if fastest_mem_dim not in symbolic_shape:
+                return False
+
+            fastest_mem_dim_idx = symbolic_shape.index(fastest_mem_dim)
+
+            # Construct expected effsets in the form
+            # [[0 0 0]
+            #  [0 1 0]
+            #  [0 2 0]
+            #  [0 3 0]]
+            expected_offsets = np.array(
+                [
+                    [
+                        (j if i == fastest_mem_dim_idx else 0)
+                        for j in range(elements_per_thread)
+                    ]
+                    for i in range(len(shape))
+                ]
+            ).T
+            if not np.array_equal(offsets, expected_offsets):
                 return False
 
             mapping = custom.mapping
+            # For writes without mapping this is enough.
             if mapping is None:
                 return True
 
+            # If we have mapping, check that fastest dim mapping is trivial, i.e.:
+            # IndexMapping(inputs={X: i, ...}, outputs={X: i, ...})
             return (
                 mapping.input_mapping.get(fastest_mem_dim, None)
                 == mapping.output_mapping[fastest_mem_dim]
