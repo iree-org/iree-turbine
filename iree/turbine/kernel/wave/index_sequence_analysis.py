@@ -129,6 +129,31 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
             key=lambda item: item[1],
         )
+        offsets = np.array(
+            [
+                np.unravel_index(int(i * max_stride), shape)
+                for i in range(elements_per_thread)
+            ]
+        )
+
+        def check_contiguous_index():
+            fastest_mem_dim = custom.memory.type.symbolic_shape[-1]
+            offset = offsets.T[symbolic_shape.index(fastest_mem_dim)]
+            if not np.array_equal(offset, list(range(elements_per_thread))):
+                return False
+
+            mapping = custom.mapping
+            if mapping is None:
+                return True
+
+            return (
+                mapping.input_mapping.get(fastest_mem_dim, None)
+                == mapping.output_mapping[fastest_mem_dim]
+            )
+
+        if check_contiguous_index():
+            continue
+
         ops_to_combine = []
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):
@@ -137,7 +162,8 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                 extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
                     custom.graph
                 )
-                offset = np.unravel_index(int(i * max_stride), shape)
+
+                offset = offsets[i]
                 write = Write(
                     extract,
                     custom.memory,
