@@ -273,6 +273,10 @@ def get_extend_attention_kernel(
 
         res_max, res_sum, res_mm = first_loop
 
+        if is_causal:
+            seq_len_extend = tkw.apply_expr(
+                seq_len_extend, lambda x: sympy.Min(x, (WORKGROUP_0 + 1) * BLOCK_N_Q)
+            )
         tkw.set_symbol(N_KV, seq_len_extend)
 
         @tkw.reduction(N_KV, init_args=[res_max, res_sum, res_mm])
@@ -337,7 +341,7 @@ def get_extend_attention_kernel(
         STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_H: 1,
         BLOCK_N_Q: SEQ_TILE_SIZE,
-        BLOCK_D_KV: SEQ_TILE_SIZE,
+        BLOCK_D_KV: shape.head_size_kv,
         BLOCK_N_KV: SEQ_TILE_SIZE // 2,
         BLOCK_S: 1,
         H: shape.num_query_heads,
