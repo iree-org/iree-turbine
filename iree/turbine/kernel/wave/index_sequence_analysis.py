@@ -143,7 +143,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             """
             Check if resulted partitioned write is equivalent to contiguous write.
 
-            Write is contiguous if offsets has form `x + [0,1,2...N]` for
+            Write is contiguous if offsets has form `[0,1,2...N]` for
             the fastest mem dim and 0s for all others dims.
             """
             fastest_mem_dim = custom.memory.type.symbolic_shape[-1]
@@ -156,7 +156,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
 
             fastest_mem_dim_idx = symbolic_shape.index(fastest_mem_dim)
 
-            # Construct expected effsets in the form
+            # Construct expected offsets in the form:
             # [[0 0 0]
             #  [0 1 0]
             #  [0 2 0]
