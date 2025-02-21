@@ -377,6 +377,20 @@ def _linearize_memref(
     )
 
 
+def _get_splat_input(src: Optional[Value]) -> Optional[Value]:
+    if src is None:
+        return None
+
+    try:
+        op = src.owner.opview
+    except:
+        return None
+    if isinstance(op, vector_d.SplatOp):
+        return op.input
+
+    return None
+
+
 def _create_vec_read(
     emitter: WaveEmitter,
     symbolic_shape: tuple[IndexExpr, ...],
@@ -393,16 +407,15 @@ def _create_vec_read(
     if mask is None and offsets_vec is None:
         return vector_d.load(vector_type, mem, start_indices)
 
-    # Only use buffer ops if it's gather/scatter on global mem.
-    use_buffer_ops = offsets_vec is not None and mem.type.memory_space is None
+    mask_splat = _get_splat_input(mask)
+    splatted_masked = offsets_vec is None and mask_splat is not None
+
+    # Only use buffer ops if it's gather/scatter or splated masked op on global mem.
+    use_buffer_ops = (
+        offsets_vec is not None or splatted_masked
+    ) and mem.type.memory_space is None
 
     element_type = vector_type.element_type
-    if offsets_vec is None:
-        offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
-        vals = [IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)]
-        offsets_vec = arith_d.constant(
-            offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
-        )
 
     zero = get_constant_attr(0, element_type)
     zero = arith_d.constant(element_type, zero)
@@ -421,33 +434,57 @@ def _create_vec_read(
         data, offset_th = _linearize_memref(
             mem, start_indices_wg, start_indices_th, strides
         )
-        offset_th = vector_d.splat(offsets_vec.type, offset_th)
-        offsets_vec = arith_d.addi(offsets_vec, offset_th)
-        if mask is not None:
-            i32 = IntegerType.get_signless(32)
-            i32vec = VectorType.get([elements_per_thread], i32)
-            offsets_vec = arith_d.index_cast(i32vec, offsets_vec)
-            oob_idx = _get_max_buffer_size(element_type)
-            oob_idx = arith_d.constant(i32, oob_idx)
-            oob_idx = vector_d.splat(offsets_vec.type, oob_idx)
-            offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
 
-        for i in range(elements_per_thread):
-            offset = vector_d.extract(
-                offsets_vec, static_position=[i], dynamic_position=[]
-            )
-            if mask is None:
-                elem = memref_d.load(element_type, data, indices=[offset])
-            else:
-                elem = amdgpu_d.raw_buffer_load(element_type, data, indices=[offset])
-
-            result = vector_d.insert(
-                elem, result, static_position=[i], dynamic_position=[]
+        if offsets_vec is None:
+            offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
+            vals = [
+                IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)
+            ]
+            offsets_vec = arith_d.constant(
+                offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
             )
 
-        return result
+        if splatted_masked:
+            offset_th = arith_d.index_cast(IntegerType.get_signless(32), offset_th)
+            return amdgpu_d.raw_buffer_load(vector_type, data, indices=[offset_th])
+        else:
+            offset_th = vector_d.splat(offsets_vec.type, offset_th)
+            offsets_vec = arith_d.addi(offsets_vec, offset_th)
+            if mask is not None:
+                i32 = IntegerType.get_signless(32)
+                i32vec = VectorType.get([elements_per_thread], i32)
+                offsets_vec = arith_d.index_cast(i32vec, offsets_vec)
+                oob_idx = _get_max_buffer_size(element_type)
+                oob_idx = arith_d.constant(i32, oob_idx)
+                oob_idx = vector_d.splat(offsets_vec.type, oob_idx)
+                offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
+
+            for i in range(elements_per_thread):
+                offset = vector_d.extract(
+                    offsets_vec, static_position=[i], dynamic_position=[]
+                )
+                if mask is None:
+                    elem = memref_d.load(element_type, data, indices=[offset])
+                else:
+                    elem = amdgpu_d.raw_buffer_load(
+                        element_type, data, indices=[offset]
+                    )
+
+                result = vector_d.insert(
+                    elem, result, static_position=[i], dynamic_position=[]
+                )
+
+            return result
 
     else:
+        if offsets_vec is None:
+            offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
+            vals = [
+                IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)
+            ]
+            offsets_vec = arith_d.constant(
+                offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
+            )
         passthru = vector_d.splat(vector_type, zero)
 
         if mask is None:
@@ -542,20 +579,6 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
-def _get_splat_input(src: Optional[Value]) -> Optional[Value]:
-    if src is None:
-        return None
-
-    try:
-        op = src.owner.opview
-    except:
-        return None
-    if isinstance(op, vector_d.SplatOp):
-        return op.input
-
-    return None
-
-
 def _create_vec_write(
     emitter: WaveEmitter,
     symbolic_shape: tuple[IndexExpr, ...],
@@ -573,10 +596,6 @@ def _create_vec_write(
         vector_d.store(value, mem, start_indices)
         return
 
-    # print(mask.owner.operation, type(mask.owner.opview), isinstance(mask.owner.opview, vector_d.SplatOp))
-    # breakpoint()
-    # print(mask)
-    # print(offsets_vec)
     mask_splat = _get_splat_input(mask)
     splatted_masked = offsets_vec is None and mask_splat is not None
 
