@@ -15,8 +15,7 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils import (
     get_default_run_config,
     get_default_scheduling_params,
-    device_arange,
-    device_randint,
+    device_randn,
     device_zeros,
     device_empty,
 )
@@ -251,9 +250,7 @@ def create_inputs(
 
     max_rpe_context_length = 10
     rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
-    rpe_bias.copy_(
-        torch.rand(max_rpe_context_length + 1, dtype=torch.float32, device="cuda")
-    )
+    rpe_bias.copy_(device_randn(max_rpe_context_length + 1, dtype=torch.float32))
     rpe_bias[max_rpe_context_length] = 0
 
     return (
@@ -280,7 +277,7 @@ def create_inputs(
 
 # TODO: Investigate errors on MI250.
 @require_e2e
-@require_cdna3
+# @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
@@ -424,7 +421,7 @@ def testExtendAttention(
 
 # TODO: Investigate errors on MI250.
 @require_e2e
-@require_cdna3
+# @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])

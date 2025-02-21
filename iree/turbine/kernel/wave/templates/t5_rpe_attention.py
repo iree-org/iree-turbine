@@ -24,7 +24,7 @@ def get_t5_rpe_attention_kernel(
     shape: AttentionShape,
     mfma_variant: MMAType,
     dynamic_dims: bool,
-    max_context_length: int,
+    max_rpe_context_length: int,
 ):
     # Input sizes
     B = tkl.sym.B
@@ -78,7 +78,8 @@ def get_t5_rpe_attention_kernel(
 
     d0, d1 = [tkw.IndexMapping.dynamic_val(i) for i in range(2)]
     clip = sympy.Piecewise(
-        (d0 - d1, (d0 - d1 < max_context_length) & (d0 - d1 >= 0)), (0, True)
+        (d0 - d1, (d0 - d1 < max_rpe_context_length) & (d0 - d1 >= 0)),
+        (max_rpe_context_length, True),
     )
     offset_mapping = tkw.IndexMapping(
         num_iterators=3,
@@ -87,7 +88,7 @@ def get_t5_rpe_attention_kernel(
         dynamic_val_mappings=({B: i, M: j, K2: k}, {K2: k}),
     )
 
-    rpe_layout = tkl.MemoryLayout(shape=[max_context_length])
+    rpe_layout = tkl.MemoryLayout(shape=[max_rpe_context_length + 1])
 
     @tkw.wave(constraints)
     def base_attention(
