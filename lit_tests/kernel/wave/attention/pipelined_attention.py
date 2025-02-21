@@ -174,7 +174,7 @@ def test_dynamic_attention_pipelined():
         # CHECK-COUNT-15:            {{.*}} = amdgpu.mfma
         # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
         # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-16:       vector.maskedstore {{.*}}
+        # CHECK-COUNT-4:        vector.maskedstore {{.*}}
 
 
 @run_test
