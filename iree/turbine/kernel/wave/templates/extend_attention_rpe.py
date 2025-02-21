@@ -323,7 +323,7 @@ def get_extend_attention_rpe_kernel(
                 mapping_dynamic_vals=(i, j),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
-            # Layer and RPE scaling since we use log2 instead of log2
+            # Layer and RPE scaling since we use log2 instead of ln
             x_j = x_j * layer_scale_reg + rpe_reg * rpe_scale_reg
 
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
