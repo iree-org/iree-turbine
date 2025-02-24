@@ -378,6 +378,9 @@ def _linearize_memref(
 
 
 def _get_splat_input(src: Optional[Value]) -> Optional[Value]:
+    """
+    If `src` is vector.splat result, return splat input, otherwise return None.
+    """
     if src is None:
         return None
 
@@ -445,12 +448,15 @@ def _create_vec_read(
             )
 
         if splatted_masked:
+            # If mask value is same for all vector elements, we can use vector
+            # buffer ops.
             i32 = IntegerType.get_signless(32)
             offset_th = arith_d.index_cast(i32, offset_th)
             oob_idx = _get_max_buffer_size(element_type)
             oob_idx = arith_d.constant(i32, oob_idx)
             offset_th = arith_d.select(mask_splat, offset_th, oob_idx)
 
+            # Buffer ops doesn't support 1-element vectors, convert to scalar.
             load_type = vector_type
             if elements_per_thread == 1:
                 load_type = element_type
@@ -461,6 +467,8 @@ def _create_vec_read(
 
             return res
         else:
+            # If mask value is different for each element, unroll op to
+            # individual values.
             offset_th = vector_d.splat(offsets_vec.type, offset_th)
             offsets_vec = arith_d.addi(offsets_vec, offset_th)
             if mask is not None:
@@ -634,12 +642,15 @@ def _create_vec_write(
         )
 
         if splatted_masked:
+            # If mask value is same for all vector elements, we can use vector
+            # buffer ops.
             i32 = IntegerType.get_signless(32)
             offset_th = arith_d.index_cast(i32, offset_th)
             oob_idx = _get_max_buffer_size(element_type)
             oob_idx = arith_d.constant(i32, oob_idx)
             offset_th = arith_d.select(mask_splat, offset_th, oob_idx)
 
+            # Buffer ops doesn't support 1-element vectors, convert to scalar.
             if elements_per_thread == 1:
                 value = vector_d.extract(
                     value, static_position=[0], dynamic_position=[]
@@ -647,6 +658,8 @@ def _create_vec_write(
 
             amdgpu_d.raw_buffer_store(value, data, indices=[offset_th])
         else:
+            # If mask value is different for each element, unroll op to
+            # individual values.
             if offsets_vec is None:
                 offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
                 vals = [
