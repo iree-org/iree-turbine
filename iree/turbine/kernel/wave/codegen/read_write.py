@@ -445,7 +445,12 @@ def _create_vec_read(
             )
 
         if splatted_masked:
-            offset_th = arith_d.index_cast(IntegerType.get_signless(32), offset_th)
+            i32 = IntegerType.get_signless(32)
+            offset_th = arith_d.index_cast(i32, offset_th)
+            oob_idx = _get_max_buffer_size(element_type)
+            oob_idx = arith_d.constant(i32, oob_idx)
+            offset_th = arith_d.select(mask_splat, offset_th, oob_idx)
+
             load_type = vector_type
             if elements_per_thread == 1:
                 load_type = element_type
@@ -629,7 +634,12 @@ def _create_vec_write(
         )
 
         if splatted_masked:
-            offset_th = arith_d.index_cast(IntegerType.get_signless(32), offset_th)
+            i32 = IntegerType.get_signless(32)
+            offset_th = arith_d.index_cast(i32, offset_th)
+            oob_idx = _get_max_buffer_size(element_type)
+            oob_idx = arith_d.constant(i32, oob_idx)
+            offset_th = arith_d.select(mask_splat, offset_th, oob_idx)
+
             if elements_per_thread == 1:
                 value = vector_d.extract(
                     value, static_position=[0], dynamic_position=[]
