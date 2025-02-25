@@ -385,10 +385,11 @@ def _get_splat_input(src: Optional[Value]) -> Optional[Value]:
     if src is None:
         return None
 
-    try:
-        op = src.owner.opview
-    except:
+    owner = getattr(src, "owner", None)
+    if owner is None:
         return None
+
+    op = src.owner.opview
     if isinstance(op, vector_d.SplatOp):
         return op.input
 
