@@ -109,6 +109,30 @@ class HardwareConstraint(Constraint):
     vector_shapes: Optional[dict[IndexSymbol, int]] = None
     max_bits_per_load: int = 128
 
+    def __eq__(self, value):
+        if not isinstance(value, HardwareConstraint):
+            return False
+        return (
+            self.threads_per_wave == value.threads_per_wave
+            and self.waves_per_block == value.waves_per_block
+            and self.mma_type == value.mma_type
+            and self.vector_shapes == value.vector_shapes
+            and self.max_bits_per_load == value.max_bits_per_load
+        )
+
+    def __hash__(self):
+        from .utils import safe_dict_to_tuple
+
+        return hash(
+            (
+                self.threads_per_wave,
+                self.waves_per_block,
+                self.mma_type,
+                safe_dict_to_tuple(self.vector_shapes),
+                self.max_bits_per_load,
+            )
+        )
+
     def max_elems_per_load(self, element_type: DataType) -> int:
         return self.max_bits_per_load // element_type.bitwidth()
 
@@ -378,6 +402,30 @@ class WorkgroupConstraint(Constraint):
     primary: Optional[bool] = True
     iters: Optional[IndexExpr | int] = None
 
+    def __eq__(self, value):
+        if not isinstance(value, WorkgroupConstraint):
+            return False
+        return (
+            self.dim == value.dim
+            and self.tile_size == value.tile_size
+            and self.workgroup_dim == value.workgroup_dim
+            and self.apply_fn == value.apply_fn
+            and self.primary == value.primary
+            and self.iters == value.iters
+        )
+
+    def __hash__(self):
+        return hash(
+            (
+                self.dim,
+                self.tile_size,
+                self.workgroup_dim,
+                self.apply_fn,
+                self.primary,
+                self.iters,
+            )
+        )
+
     def __post_init__(self):
         self.wg_dim = None
         match self.workgroup_dim:
@@ -434,6 +482,19 @@ class TilingConstraint(Constraint):
     induction_var: Optional[IndexExpr] = None
     iters: Optional[IndexExpr] = None
 
+    def __eq__(self, value):
+        if not isinstance(value, TilingConstraint):
+            return False
+        return (
+            self.dim == value.dim
+            and self.tile_size == value.tile_size
+            and self.induction_var == value.induction_var
+            and self.iters == value.iters
+        )
+
+    def __hash__(self):
+        return hash((self.dim, self.tile_size, self.induction_var, self.iters))
+
     @property
     def count(self) -> IndexExpr:
         """
@@ -482,6 +543,14 @@ class WaveConstraint(Constraint):
     dim: IndexExpr
     tile_size: IndexExpr
     wave_id: Optional[IndexExpr] = None
+
+    def __eq__(self, value):
+        if not isinstance(value, WaveConstraint):
+            return False
+        return self.dim == value.dim and self.tile_size == value.tile_size
+
+    def __hash__(self):
+        return hash((self.dim, self.tile_size))
 
     def apply(self) -> IndexSequence:
         if self.wave_id is None:

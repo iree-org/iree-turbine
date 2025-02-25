@@ -18,6 +18,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+import functools
 
 from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
@@ -30,6 +31,7 @@ CACHE_BASE_DIR = Path(os.environ.get("WAVE_CACHE_DIR", default_cache_base_dir))
 WAVE_ALWAYS_COMPILE = int(os.environ.get("WAVE_ALWAYS_COMPILE", 0))
 WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 1))
 WAVE_CACHE_LIMIT = int(os.environ.get("WAVE_CACHE_LIMIT", 16))
+MAX_LRU_CACHE_SIZE = int(os.environ.get("WAVE_MAX_LRU_CACHE_SIZE", 128))
 
 
 def is_cache_enabled() -> bool:
@@ -101,6 +103,7 @@ def anonymize_constraints(input_constraints: list[Constraint]):
             constraint.wave_id = None
         else:
             continue
+    return tuple(processed_constraints)
 
 
 class WaveCacheManager(object):
@@ -123,9 +126,10 @@ class WaveCacheManager(object):
         self.lock = threading.Lock()
         self.update_file_cache()
 
+    @staticmethod
+    @functools.lru_cache(maxsize=MAX_LRU_CACHE_SIZE)
     def get_hash(
-        self,
-        constraints: list[Constraint],
+        processed_constraints: list[Constraint],
         kernel_fn: Callable,
         hyperparams: dict[IndexExpr, Any],
         dynamic_symbols: list[IndexExpr, Any],
@@ -147,7 +151,6 @@ class WaveCacheManager(object):
             # We also taught load_kernel and store_kernel to skip
             # if kernel_hash is None.
             return None
-        processed_constraints = anonymize_constraints(constraints)
         key = [
             kernel_src,
             processed_constraints,

@@ -1624,3 +1624,13 @@ def print_live_tensors():
         except:
             pass
     print("-----------------------------")
+
+
+def safe_dict_to_tuple(d: dict) -> tuple:
+    """
+    Convert a dictionary to a tuple if not None,
+    else return None.
+    """
+    if d is None:
+        return None
+    return tuple(d.items())
