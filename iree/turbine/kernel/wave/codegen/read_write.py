@@ -79,19 +79,19 @@ def _split_index(src: IndexExpr | int) -> tuple[IndexExpr, IndexExpr]:
     subs_wg = {WORKGROUP_0: 0, WORKGROUP_1: 0, WORKGROUP_2: 0}
     # Replace all wg symbols with 0s to get thread-dependent index.
     # All dynamic values will also be part of thread-index.
-    thread_dependend_index = safe_subs(src, subs_wg)
+    thread_dependent_index = safe_subs(src, subs_wg)
 
-    # Compute thread-independent index as `orig_index - thread_dependend_index`
+    # Compute thread-independent index as `orig_index - thread_dependent_index`
     # All thread symbols and dynamic should cancel-out in the result.
-    thread_independent_index = sympy.simplify(src - thread_dependend_index)
+    thread_independent_index = sympy.simplify(src - thread_dependent_index)
     if thread_independent_index.free_symbols - set(subs_wg.keys()):
         # If we have any symbols besides wg symbols, means some thread or
         # dynamic symbols were not canceled out, use the entire index as
         # thread dependent index.
         thread_independent_index = sympy.sympify(0)
-        thread_dependend_index = src
+        thread_dependent_index = src
 
-    return thread_independent_index, thread_dependend_index
+    return thread_independent_index, thread_dependent_index
 
 
 def _build_start_indices(
