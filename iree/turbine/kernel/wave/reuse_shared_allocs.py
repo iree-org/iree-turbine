@@ -77,6 +77,7 @@ def reuse_shared_allocs(trace: CapturedTrace, constraints: list[Constraint]):
     # This pass is supposed to be run after hoisting so we only check top-level
     # graph.
     root_graph = trace.get_root_graph()
+    liverange_interval: dict[fx.Node, list[list[fx.Node]]] = {}
     for node in list(root_graph.nodes):
         alloc = get_custom(node)
         if not isinstance(alloc, Allocate):
@@ -85,40 +86,65 @@ def reuse_shared_allocs(trace: CapturedTrace, constraints: list[Constraint]):
         alloc_type = alloc.type
         shared_alloc_size = _get_shmem_size(alloc_type.symbolic_shape, constraints)
         candidates = allocs[(shared_alloc_size, alloc_type.dtype)]
-        if not candidates or not _try_replace(node, candidates):
+        if not candidates or not _try_replace(node, candidates, liverange_interval):
             candidates.append(node)
+
+
+def _get_live_range(node: fx.Node):
+    users, _ = get_users(node, None)
+    users = sorted(users, key=cmp_to_key(_is_dominant_location))
+    users_start = users[0]
+    users_end = users[-1]
+    return [users_start, users_end]
 
 
 # TODO: wave viewOp -> memref.view
 # TODO: better is_dead checker that is hoisting invariant
-def _is_dead(current_node: fx.Node, node: fx.Node) -> bool:
+def _is_dead(
+    current_node: fx.Node,
+    node: fx.Node,
+    liverange_interval: dict[fx.Node, list[list[fx.Node]]],
+) -> bool:
     """
     Check if alloc `node` is dead, i.e. all uses are before `current_node`.
     """
     graph = current_node.graph
-    current_users, _ = get_users(current_node, None)
-    current_users = sorted(current_users, key=cmp_to_key(_is_dominant_location))
-    users, _ = get_users(node, None)
-    users = sorted(users, key=cmp_to_key(_is_dominant_location))
+    if current_node not in liverange_interval:
+        liverange_interval[current_node] = [_get_live_range(current_node)]
 
-    current_start = current_users[0]
-    current_end = current_users[-1]
+    if node not in liverange_interval:
+        liverange_interval[node] = [_get_live_range(node)]
 
-    users_start = users[0]
-    users_end = users[-1]
+    current_start = liverange_interval[current_node][0][0]
+    current_end = liverange_interval[current_node][0][-1]
 
-    return not (
-        _is_dominant_location(users_end, current_start)
-        and _is_dominant_location(current_end, users_start)
-    )
+    users_start = liverange_interval[node][0][0]
+    users_end = liverange_interval[node][0][-1]
+
+    for current_node_interval in liverange_interval[current_node]:
+        for node_interval in liverange_interval[node]:
+            current_start = current_node_interval[0]
+            current_end = current_node_interval[-1]
+
+            users_start = node_interval[0]
+            users_end = node_interval[-1]
+            if _is_dominant_location(
+                users_end, current_start
+            ) and _is_dominant_location(current_end, users_start):
+                return False
+    return True
 
 
-def _try_replace(current_node: fx.Node, candidates: list[fx.Node]) -> bool:
+def _try_replace(
+    current_node: fx.Node,
+    candidates: list[fx.Node],
+    liverange_interval: dict[fx.Node, list[list[fx.Node]]],
+) -> bool:
     """
     Try to replace `current_node` if we have some dead alloc nodes
     """
     for candidate in candidates:
-        if _is_dead(current_node, candidate):
+        if _is_dead(current_node, candidate, liverange_interval):
             if not isinstance(get_custom(current_node.prev), SharedMemoryBarrier):
                 graph = current_node.graph
                 with graph.inserting_before(current_node):
@@ -126,6 +152,7 @@ def _try_replace(current_node: fx.Node, candidates: list[fx.Node]) -> bool:
 
             custom = get_custom(current_node)
             custom.replace_all_uses_with(candidate)
+            liverange_interval[candidate] += liverange_interval[custom.fx_node]
             custom.erase()
             return True
 

@@ -80,9 +80,9 @@ def apply_promotion_pattern(
             # If we have multiple nested region ops in the graph, then the last_write_to_shared
             # can be in a different graph, so we add a check to ensure that the last_write_to_shared
             # is always in the same graph as the custom_node.
-            if last_write_to_shared and last_write_to_shared.graph == custom_node.graph:
-                moved_src = move_node_after(custom_node.fx_node, last_write_to_shared)
-                custom_node = get_custom(moved_src)
+            # if last_write_to_shared and last_write_to_shared.graph == custom_node.graph:
+            #     moved_src = move_node_after(custom_node.fx_node, last_write_to_shared)
+            #     custom_node = get_custom(moved_src)
             with custom_node.graph.inserting_after(custom_node.fx_node):
                 promoted_read = Read(
                     allocate_node.fx_node, elements_per_thread
