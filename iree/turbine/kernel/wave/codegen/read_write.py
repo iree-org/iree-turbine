@@ -417,11 +417,12 @@ def _create_buffer_read_write(
         return None
 
 
-def _create_vec_read(
+def _create_vec_read_write(
     emitter: WaveEmitter,
     symbolic_shape: tuple[IndexExpr, ...],
     mem: Value,
-    vector_type: IrType,
+    value: Optional[Value],
+    vector_type: Optional[IrType],
     start_indices: tuple[Value],
     start_indices_wg: tuple[Value],
     start_indices_th: tuple[Value],
@@ -429,9 +430,14 @@ def _create_vec_read(
     memory: CustomOp,
     mask: Optional[Value],
     offsets_vec: Optional[Value],
-) -> Value:
+) -> Optional[Value]:
+    is_read = value is None
     if mask is None and offsets_vec is None:
-        return vector_d.load(vector_type, mem, start_indices)
+        if is_read:
+            return vector_d.load(vector_type, mem, start_indices)
+        else:
+            vector_d.store(value, mem, start_indices)
+            return
 
     mask_splat = _get_splat_input(mask)
     splatted_masked = offsets_vec is None and mask_splat is not None
@@ -441,20 +447,25 @@ def _create_vec_read(
         offsets_vec is not None or splatted_masked
     ) and mem.type.memory_space is None
 
+    if vector_type is None:
+        vector_type = value.type
+
     element_type = vector_type.element_type
 
-    zero = get_constant_attr(0, element_type)
-    zero = arith_d.constant(element_type, zero)
+    if is_read:
+        zero = get_constant_attr(0, element_type)
+        zero = arith_d.constant(element_type, zero)
 
     if memory.type.address_space == SHARED_ADDRESS_SPACE:
         symbolic_shape = memory.distributed_shape
     strides = strides_from_symbolic_shape(
         IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
     )
-    buffer_ops_enabled = emitter.params.get("use_buffer_load_ops", False)
+
+    optname = "use_buffer_load_ops" if is_read else "use_buffer_store_ops"
+    buffer_ops_enabled = emitter.params.get(optname, False)
     has_int_strides = all(isinstance(s, int) for s in strides)
     if buffer_ops_enabled and has_int_strides and use_buffer_ops:
-        result = vector_d.splat(vector_type, zero)
 
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
         data, offset_th = _linearize_memref(
@@ -479,7 +490,11 @@ def _create_vec_read(
             oob_idx = arith_d.constant(i32, oob_idx)
             offset_th = arith_d.select(mask_splat, offset_th, oob_idx)
 
-            return _create_buffer_read_write(vector_type, data, offset_th)
+            if is_read:
+                return _create_buffer_read_write(vector_type, data, offset_th)
+            else:
+                _create_buffer_read_write(vector_type, data, offset_th, value)
+                return
         else:
             # If mask value is different for each element, unroll op to
             # individual values.
@@ -494,127 +509,39 @@ def _create_vec_read(
                 oob_idx = vector_d.splat(offsets_vec.type, oob_idx)
                 offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
 
-            for i in range(elements_per_thread):
-                offset = vector_d.extract(
-                    offsets_vec, static_position=[i], dynamic_position=[]
-                )
-                if mask is None:
-                    elem = memref_d.load(element_type, data, indices=[offset])
-                else:
-                    elem = _create_buffer_read_write(element_type, data, offset)
+            if is_read:
+                result = vector_d.splat(vector_type, zero)
+                for i in range(elements_per_thread):
+                    offset = vector_d.extract(
+                        offsets_vec, static_position=[i], dynamic_position=[]
+                    )
 
-                result = vector_d.insert(
-                    elem, result, static_position=[i], dynamic_position=[]
-                )
+                    if mask is None:
+                        elem = memref_d.load(element_type, data, indices=[offset])
+                    else:
+                        elem = _create_buffer_read_write(element_type, data, offset)
 
-            return result
+                    result = vector_d.insert(
+                        elem, result, static_position=[i], dynamic_position=[]
+                    )
 
-    else:
-        if offsets_vec is None:
-            offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
-            vals = [
-                IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)
-            ]
-            offsets_vec = arith_d.constant(
-                offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
-            )
-        passthru = vector_d.splat(vector_type, zero)
+                return result
+            else:
+                for i in range(elements_per_thread):
+                    offset = vector_d.extract(
+                        offsets_vec, static_position=[i], dynamic_position=[]
+                    )
 
-        if mask is None:
-            mask_vec_type = VectorType.get(
-                [elements_per_thread], IntegerType.get_signless(1)
-            )
-            mask = _constant_mask(mask_vec_type)
+                    elem = vector_d.extract(
+                        value, static_position=[i], dynamic_position=[]
+                    )
 
-        return vector_d.gather(
-            vector_type, mem, start_indices, offsets_vec, mask, passthru
-        )
+                    if mask is None:
+                        memref_d.store(elem, data, indices=[offset])
+                    else:
+                        _create_buffer_read_write(vector_type, data, offset, elem)
 
-
-def _create_vec_write(
-    emitter: WaveEmitter,
-    symbolic_shape: tuple[IndexExpr, ...],
-    mem: Value,
-    value: Value,
-    start_indices: tuple[Value],
-    start_indices_wg: tuple[Value],
-    start_indices_th: tuple[Value],
-    elements_per_thread: int,
-    memory: CustomOp,
-    mask: Optional[Value],
-    offsets_vec: Optional[Value],
-):
-    if mask is None and offsets_vec is None:
-        vector_d.store(value, mem, start_indices)
-        return
-
-    mask_splat = _get_splat_input(mask)
-    splatted_masked = offsets_vec is None and mask_splat is not None
-
-    # Only use buffer ops if it's gather/scatter or splated masked op on global mem.
-    use_buffer_ops = (
-        offsets_vec is not None or splatted_masked
-    ) and mem.type.memory_space is None
-
-    vector_type = value.type
-    element_type = vector_type.element_type
-
-    if memory.type.address_space == SHARED_ADDRESS_SPACE:
-        symbolic_shape = memory.distributed_shape
-    strides = strides_from_symbolic_shape(
-        IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
-    )
-    buffer_ops_enabled = emitter.params.get("use_buffer_store_ops", False)
-    has_int_strides = all(isinstance(s, int) for s in strides)
-    if buffer_ops_enabled and has_int_strides and use_buffer_ops:
-        strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
-        data, offset_th = _linearize_memref(
-            mem, start_indices_wg, start_indices_th, strides
-        )
-
-        if splatted_masked:
-            # If mask value is same for all vector elements, we can use vector
-            # buffer ops.
-            i32 = IntegerType.get_signless(32)
-            offset_th = arith_d.index_cast(i32, offset_th)
-            oob_idx = _get_max_buffer_size(element_type)
-            oob_idx = arith_d.constant(i32, oob_idx)
-            offset_th = arith_d.select(mask_splat, offset_th, oob_idx)
-
-            _create_buffer_read_write(vector_type, data, offset_th, value)
-        else:
-            # If mask value is different for each element, unroll op to
-            # individual values.
-            if offsets_vec is None:
-                offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
-                vals = [
-                    IntegerAttr.get(IndexType.get(), v)
-                    for v in range(elements_per_thread)
-                ]
-                offsets_vec = arith_d.constant(
-                    offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
-                )
-
-            offset_th = vector_d.splat(offsets_vec.type, offset_th)
-            offsets_vec = arith_d.addi(offsets_vec, offset_th)
-            if mask is not None:
-                i32 = IntegerType.get_signless(32)
-                i32vec = VectorType.get([elements_per_thread], i32)
-                offsets_vec = arith_d.index_cast(i32vec, offsets_vec)
-                oob_idx = _get_max_buffer_size(element_type)
-                oob_idx = arith_d.constant(i32, oob_idx)
-                oob_idx = vector_d.splat(offsets_vec.type, oob_idx)
-                offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
-
-            for i in range(elements_per_thread):
-                offset = vector_d.extract(
-                    offsets_vec, static_position=[i], dynamic_position=[]
-                )
-                elem = vector_d.extract(value, static_position=[i], dynamic_position=[])
-                if mask is None:
-                    memref_d.store(elem, data, indices=[offset])
-                else:
-                    _create_buffer_read_write(vector_type, data, offset, elem)
+                return
 
     else:
         if offsets_vec is None:
@@ -632,7 +559,14 @@ def _create_vec_write(
             )
             mask = _constant_mask(mask_vec_type)
 
-        vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
+        if is_read:
+            passthru = vector_d.splat(vector_type, zero)
+            return vector_d.gather(
+                vector_type, mem, start_indices, offsets_vec, mask, passthru
+            )
+        else:
+            vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
+            return
 
 
 @handle_op(read)
@@ -665,10 +599,11 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             index,
             elements_per_thread,
         )
-        result = _create_vec_read(
+        result = _create_vec_read_write(
             emitter,
             input_shape,
             kb_src,
+            None,
             vector_type,
             start_indices,
             start_indices_wg,
@@ -699,10 +634,11 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             is_contiguous=get_custom(node).is_contiguous_vec(),
             memory=get_custom(memory),
         )
-        result = _create_vec_read(
+        result = _create_vec_read_write(
             emitter,
             input_shape,
             kb_src,
+            None,
             vector_type,
             start_indices,
             start_indices_wg,
@@ -748,11 +684,12 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             emitter, index
         )
         mask = _build_mask(emitter, index, elements_per_thread)
-        _create_vec_write(
+        _create_vec_read_write(
             emitter,
             output_shape,
             kb_dest,
             insert_vector,
+            None,
             start_indices,
             start_indices_wg,
             start_indices_th,
@@ -787,11 +724,12 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             memory=get_custom(memory),
         )
 
-        _create_vec_write(
+        _create_vec_read_write(
             emitter,
             output_shape,
             kb_dest,
             insert_vector,
+            None,
             start_indices,
             start_indices_wg,
             start_indices_th,
