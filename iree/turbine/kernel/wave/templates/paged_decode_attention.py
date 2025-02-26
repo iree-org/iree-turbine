@@ -59,7 +59,8 @@ def get_paged_decode_attention_kernels(
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+    LOAD_ELEMS_PER_THREAD_QK = index_symbol("LOAD_ELEMS_PER_THREAD_QK")
+    LOAD_ELEMS_PER_THREAD_V = index_symbol("LOAD_ELEMS_PER_THREAD_V")
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     class Phase(Enum):
@@ -245,7 +246,7 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, N, B, tkl.f32],
         ):
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             block_indices_v = tkw.read(
                 block_table,
                 elements_per_thread=1,
@@ -260,7 +261,7 @@ def get_paged_decode_attention_kernels(
             )
             k_reg = tkw.read(
                 k,
-                elements_per_thread=LOAD_ELEMS_PER_THREAD,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=k_mapping,
                 mapping_dynamic_vals=(block_indices_k,),
             )
@@ -275,7 +276,7 @@ def get_paged_decode_attention_kernels(
             imm_f16 = tkw.cast(e_delta, tkl.f16)
             v_reg = tkw.read(
                 v,
-                elements_per_thread=LOAD_ELEMS_PER_THREAD,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_V,
                 mapping=v_mapping,
                 mapping_dynamic_vals=(block_indices_v,),
             )
@@ -333,7 +334,8 @@ def get_paged_decode_attention_kernels(
 
     symbols_0 = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
+        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant),
+        LOAD_ELEMS_PER_THREAD_V: get_mfma_load_elems_per_thread(mfma_variant),
         STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_BH: 1,
         BLOCK_B: HEAD_BLOCK_SIZE,
