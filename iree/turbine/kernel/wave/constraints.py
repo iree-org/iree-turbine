@@ -14,7 +14,6 @@ from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from ..lang.global_symbols import *
 
-
 """
 Formatting for different target intrinsics:
     <kind>_<elem-type-C>_<M>x<N>x<K>_<elem-type-A>[_<elem-type-B>]
@@ -497,6 +496,27 @@ class WaveConstraint(Constraint):
         if self.wave_id is None:
             raise ValueError("Index is being computed without setting wave id")
         return IndexSequence(self.tile_size * self.wave_id, 1)
+
+    def set_wave_id_from_hardware_and_workgroup_constraint(
+        self,
+        hardware_constraint: HardwareConstraint,
+        workgroup_constraint: WorkgroupConstraint,
+    ):
+        """
+        The wave_id is the same as the thread_id, with the exception of
+          wave_id[0] = thread_id[0] / threads_per_wave
+        This is a convention that we adopt.
+        """
+        old_wave_id = self.wave_id
+        assert self.dim == workgroup_constraint.dim, "Dimension mismatch"
+        self.wave_id = hardware_constraint.get_thread_id_from_workgroup_dim(
+            workgroup_constraint.workgroup_dim
+        )
+        if workgroup_constraint.workgroup_dim == 0:
+            self.wave_id = floor(self.wave_id / hardware_constraint.threads_per_wave)
+        assert (
+            old_wave_id is None or self.wave_id == old_wave_id
+        ), f"Conflicting preset wave_id old: {old_wave_id} new: {self.wave_id}"
 
 
 def get_constrained_shape(
