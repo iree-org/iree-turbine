@@ -231,7 +231,12 @@ def get_paged_decode_attention_kernels(
         new_acc = tkl.Register[S, N, B, tkl.f32](0.0)
 
         # The request index is used to load the appropriate entries from the block table.
-        req_index = tkw.read(request_indices, elements_per_thread=1)
+        req_index_v = tkw.read(
+            request_indices, elements_per_thread=LOAD_ELEMS_PER_THREAD_V
+        )
+        req_index_k = tkw.read(
+            request_indices, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
+        )
         # The sequence length is used to control the bounds of the loop over T.
         seq_length = tkw.read(sequence_lengths, elements_per_thread=1)
         tkw.set_symbol(T, seq_length)
@@ -249,15 +254,15 @@ def get_paged_decode_attention_kernels(
             q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
             block_indices_v = tkw.read(
                 block_table,
-                elements_per_thread=1,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_V,
                 mapping=block_table_mapping,
-                mapping_dynamic_vals=(req_index,),
+                mapping_dynamic_vals=(req_index_v,),
             )
             block_indices_k = tkw.read(
                 block_table,
-                elements_per_thread=1,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=block_table_mapping,
-                mapping_dynamic_vals=(req_index,),
+                mapping_dynamic_vals=(req_index_k,),
             )
             k_reg = tkw.read(
                 k,
