@@ -213,6 +213,15 @@ def testSameConfig(request):
         assert (
             len(cache_manager.session_cache) == 1
         ), "Expected len == 1, after caching first kernel."
+        assert (
+            cache_manager.get_hash.cache_info().hits == 0
+        ), "Expected to get no LRU cache hits"
+        assert (
+            cache_manager.get_hash.cache_info().misses == 1
+        ), "Expected to get 1 LRU cache miss"
+        assert (
+            cache_manager.get_hash.cache_info().currsize == 1
+        ), "Expected to get 1 element in cache"
 
         # Subsequent run/call to kernel, this should be using cached.
         output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
@@ -226,6 +235,15 @@ def testSameConfig(request):
         assert isinstance(
             cached_kernel, WaveCache
         ), "Expected subsequent call to be cached."
+        assert (
+            cache_manager.get_hash.cache_info().hits == 1
+        ), "Expected to get 1 LRU cache hit"
+        assert (
+            cache_manager.get_hash.cache_info().misses == 1
+        ), "Expected to get 1 LRU cache miss"
+        assert (
+            cache_manager.get_hash.cache_info().currsize == 1
+        ), "Expected to get 1 element in cache"
 
 
 @require_e2e

@@ -59,6 +59,7 @@ from .utils import (
     canonicalize_module,
     compile_to_vmfb,
     invoke_vmfb,
+    safe_dict_to_tuple,
     safe_subs,
     remove_chained_getresult,
     remove_chained_extractslice,
@@ -69,7 +70,12 @@ from .utils import (
     partial,
     print_trace,
 )
-from .cache import is_cache_enabled, get_cache_manager, invoke_cached_kernel
+from .cache import (
+    is_cache_enabled,
+    get_cache_manager,
+    invoke_cached_kernel,
+    anonymize_constraints,
+)
 
 # Others
 from typing import Any, Callable, Optional
@@ -521,12 +527,13 @@ class LaunchableWave(Launchable):
         if cache_enabled:
             cache_manager = get_cache_manager()
             # TODO: Move use_scheduling, use_scheduling_barriers, etc. into the config so everything is contained there.
+            processed_constraints = anonymize_constraints(self.constraints)
             kernel_hash = cache_manager.get_hash(
-                self.constraints,
+                processed_constraints,
                 self._f,
-                IndexingContext.current().subs,
-                dynamic_symbols,
-                config,
+                safe_dict_to_tuple(IndexingContext.current().subs),
+                tuple(dynamic_symbols),
+                safe_dict_to_tuple(config),
                 use_scheduling=use_scheduling,
                 use_scheduling_barriers=use_scheduling_barriers,
                 run_bench=run_bench,

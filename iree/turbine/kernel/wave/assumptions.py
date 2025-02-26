@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .._support.indexing import IndexExpr
 
 
-@dataclass
+@dataclass(frozen=True)
 class Assumption:
     """
     Assumptions are sympy assumptions that can be used to
