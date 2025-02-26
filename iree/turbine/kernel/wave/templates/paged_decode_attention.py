@@ -33,7 +33,7 @@ paged_decode_attention_shape = namedtuple(
 
 def get_paged_decode_attention_kernels(
     shape: paged_decode_attention_shape,
-    mfma_variant: MMAType,
+    mfma_variant: tuple[MMAType, MMAType],
     num_kv_splits: int,
     k_shape: tuple[int],
     v_shape: tuple[int],
@@ -124,7 +124,7 @@ def get_paged_decode_attention_kernels(
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
                 waves_per_block=waves_per_block,
-                mma_type=mfma_variant,
+                mma_type=mfma_variant[1],
                 vector_shapes=vector_shapes,
             )
         ]
@@ -266,7 +266,7 @@ def get_paged_decode_attention_kernels(
                 mapping_dynamic_vals=(block_indices_k,),
             )
             imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
-            inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
+            inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
@@ -334,9 +334,9 @@ def get_paged_decode_attention_kernels(
 
     symbols_0 = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant),
-        LOAD_ELEMS_PER_THREAD_V: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
+        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
+        LOAD_ELEMS_PER_THREAD_V: get_mfma_load_elems_per_thread(mfma_variant[1]),
+        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_BH: 1,
         BLOCK_B: HEAD_BLOCK_SIZE,
         BLOCK_S: 1,
