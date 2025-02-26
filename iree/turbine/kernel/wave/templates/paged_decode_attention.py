@@ -246,7 +246,13 @@ def get_paged_decode_attention_kernels(
             acc: tkl.Register[S, N, B, tkl.f32],
         ):
             q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            block_indices = tkw.read(
+            block_indices_v = tkw.read(
+                block_table,
+                elements_per_thread=1,
+                mapping=block_table_mapping,
+                mapping_dynamic_vals=(req_index,),
+            )
+            block_indices_k = tkw.read(
                 block_table,
                 elements_per_thread=1,
                 mapping=block_table_mapping,
@@ -256,7 +262,7 @@ def get_paged_decode_attention_kernels(
                 k,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD,
                 mapping=k_mapping,
-                mapping_dynamic_vals=(block_indices,),
+                mapping_dynamic_vals=(block_indices_k,),
             )
             imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
@@ -271,7 +277,7 @@ def get_paged_decode_attention_kernels(
                 v,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD,
                 mapping=v_mapping,
-                mapping_dynamic_vals=(block_indices,),
+                mapping_dynamic_vals=(block_indices_v,),
             )
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
