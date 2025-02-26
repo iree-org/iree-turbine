@@ -16,7 +16,7 @@ from .constraints import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class SymbolicAlias:
     """
     A constraint of the form `tkw.SymbolicConstraint(K, SYMBOLIC_K)` specifies

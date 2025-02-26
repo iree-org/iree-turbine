@@ -8,6 +8,7 @@ import math
 import pytest
 import torch
 from torch.nn import functional as F
+from dataclasses import replace
 
 
 import iree.turbine.kernel as tk
@@ -291,7 +292,7 @@ def create_inputs(
     ],
 )
 def testExtendAttention(
-    shape: list[AttentionShape],
+    shape: AttentionShape,
     dtype: torch.dtype,
     enable_scheduling: bool,
     is_causal: bool,
@@ -322,7 +323,7 @@ def testExtendAttention(
         _,
         _,
     ) = create_inputs(shape, dtype)
-    shape.max_seq_len = max_len_extend
+    shape = replace(shape, max_seq_len=max_len_extend)
 
     if mfma_variant[0] == MMAType.F32_16x16x16_F16:
         num_waves = 4
@@ -434,7 +435,7 @@ def testExtendAttention(
     ],
 )
 def testExtendRpeAttention(
-    shape: list[AttentionShape],
+    shape: AttentionShape,
     dtype: torch.dtype,
     enable_scheduling: bool,
     is_causal: bool,
@@ -464,7 +465,7 @@ def testExtendRpeAttention(
         rpe_bias,
         max_rpe_context_length,
     ) = create_inputs(shape, dtype)
-    shape.max_seq_len = max_len_extend
+    shape = replace(shape, max_seq_len=max_len_extend)
 
     if mfma_variant[0] == MMAType.F32_16x16x16_F16:
         num_waves = 4

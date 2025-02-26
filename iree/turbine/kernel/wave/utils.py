@@ -651,6 +651,10 @@ def compile_to_vmfb(
     return res
 
 
+# Cache for the system context and vm function.
+RUNTIME_CACHE: dict[str, tuple[rt.SystemContext, rt.VmFunction]] = {}
+
+
 def invoke_vmfb(
     vmfb: bytes,
     func_name: str,
@@ -661,6 +665,7 @@ def invoke_vmfb(
     run: bool = False,
     run_bench: bool = False,
     inplace: bool = False,
+    kernel_hash: Optional[str] = None,
 ):
 
     device = config["device"]
@@ -688,19 +693,24 @@ def invoke_vmfb(
     rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
-    mod = rt.VmModule.copy_buffer(vm_instance, vmfb)
 
-    vm_modules = [
-        mod,
-        rt.create_hal_module(vm_instance, device),
-    ]
-    ctx = rt.SystemContext(
-        vm_modules=vm_modules,
-        config=rt_config,
-    )
+    if kernel_hash and kernel_hash in RUNTIME_CACHE:
+        ctx, func = RUNTIME_CACHE[kernel_hash]
+    else:
+        mod = rt.VmModule.copy_buffer(vm_instance, vmfb)
+        vm_modules = [
+            mod,
+            rt.create_hal_module(vm_instance, device),
+        ]
+        ctx = rt.SystemContext(
+            vm_modules=vm_modules,
+            config=rt_config,
+        )
+        func = mod.lookup_function(func_name)
+        if kernel_hash:
+            RUNTIME_CACHE[kernel_hash] = (ctx, func)
 
     if run:
-        func = mod.lookup_function(func_name)
         if inplace:
             _inplace_invoke(
                 ctx.vm_context,
@@ -1624,13 +1634,3 @@ def print_live_tensors():
         except:
             pass
     print("-----------------------------")
-
-
-def safe_dict_to_tuple(d: dict) -> tuple:
-    """
-    Convert a dictionary to a tuple if not None,
-    else return None.
-    """
-    if d is None:
-        return None
-    return tuple(d.items())
