@@ -14,18 +14,20 @@ from ...compiler.ir import (
     Attribute,
     DenseElementsAttr,
     IndexType,
+    InsertionPoint,
     IntegerAttr,
     IntegerType,
     IrType,
+    MemRefType,
     OpResult,
+    ShapedType,
     Value,
     VectorType,
-    arith_d,
-    vector_d,
-    memref_d,
-    ShapedType,
-    MemRefType,
     amdgpu_d,
+    arith_d,
+    memref_d,
+    scf_d,
+    vector_d,
 )
 
 from ...compiler.utils import strides_from_symbolic_shape
@@ -545,7 +547,26 @@ def _create_vec_read_write(
                 return
 
     else:
-        if offsets_vec is None:
+        if offsets_vec is None and mask_splat is not None:
+            if is_read:
+                passthru = vector_d.splat(vector_type, zero)
+                if_op = scf_d.IfOp(mask_splat, [vector_type], hasElse=True)
+                with InsertionPoint(if_op.then_block) as ip:
+                    res = vector_d.load(vector_type, mem, start_indices)
+                    scf_d.YieldOp([res])
+
+                with InsertionPoint(if_op.else_block) as ip:
+                    scf_d.YieldOp([passthru])
+
+                return if_op.results[0]
+            else:
+                if_op = scf_d.IfOp(mask_splat)
+                with InsertionPoint(if_op.then_block) as ip:
+                    vector_d.store(value, mem, start_indices)
+                    scf_d.YieldOp([])
+
+                return
+        elif offsets_vec is None:
             offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
             vals = [
                 IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)
