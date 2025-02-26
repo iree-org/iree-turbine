@@ -149,7 +149,7 @@ def load_inputs(directory):
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        MMAType.F32_16x16x16_F16,
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
     ],
 )
 def testPagedFlashDecoding(
