@@ -520,15 +520,18 @@ class LaunchableWave(Launchable):
         use_scheduling = kwargs.get("schedule", False)
         use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
         # When this is passed in from the user, we will populate it with the kernel hash.
+        # It will always be returned with just one entry which is the hash of the kernel.
         cached_kernel_hash = kwargs.get("kernel_hash", [])
 
         # Get cached kernel when available.
         cache_enabled = is_cache_enabled()
         kernel_hash = None
         if cache_enabled:
-            cache_manager = get_cache_manager()
             # TODO: Move use_scheduling, use_scheduling_barriers, etc. into the config so everything is contained there.
+            cache_manager = get_cache_manager()
             if cached_kernel_hash:
+                # If a cached_kernel_hash is passed in, we assume it was generated in a previous run
+                # and since we always return a list of size 1, we can just grab the first element.
                 kernel_hash = cached_kernel_hash[0]
             if not kernel_hash:
                 kernel_hash = cache_manager.get_hash(
@@ -541,7 +544,7 @@ class LaunchableWave(Launchable):
                     use_scheduling_barriers=use_scheduling_barriers,
                     run_bench=run_bench,
                 )
-                cached_kernel_hash.append(kernel_hash)
+                cached_kernel_hash[:] = [kernel_hash]
 
             cached_kernel = cache_manager.load_kernel(kernel_hash)
             if cached_kernel and (run or run_bench):
