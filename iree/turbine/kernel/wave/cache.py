@@ -103,7 +103,6 @@ def anonymize_constraints(input_constraints: list[Constraint]):
             constraint.wave_id = None
         else:
             continue
-    return tuple(processed_constraints)
 
 
 class WaveCacheManager(object):
@@ -126,10 +125,9 @@ class WaveCacheManager(object):
         self.lock = threading.Lock()
         self.update_file_cache()
 
-    @staticmethod
-    @functools.lru_cache(maxsize=MAX_LRU_CACHE_SIZE)
     def get_hash(
-        processed_constraints: list[Constraint],
+        self,
+        constraints: list[Constraint],
         kernel_fn: Callable,
         hyperparams: dict[IndexExpr, Any],
         dynamic_symbols: list[IndexExpr, Any],
@@ -151,6 +149,7 @@ class WaveCacheManager(object):
             # We also taught load_kernel and store_kernel to skip
             # if kernel_hash is None.
             return None
+        processed_constraints = anonymize_constraints(constraints)
         key = [
             kernel_src,
             processed_constraints,
@@ -299,6 +298,7 @@ def invoke_cached_kernel(
     dynamic_symbols_map: dict[IndexExpr, int],
     run: bool,
     run_bench: bool,
+    kernel_hash: str,
 ):
     kernel_inputs = []
     kernel_outputs = []
@@ -326,4 +326,5 @@ def invoke_cached_kernel(
         run,
         run_bench,
         inplace=True,
+        kernel_hash=kernel_hash,
     )

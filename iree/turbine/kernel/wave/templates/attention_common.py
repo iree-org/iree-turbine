@@ -10,7 +10,7 @@ from typing import Optional
 import iree.turbine.kernel.lang as tkl
 
 
-@dataclass
+@dataclass(frozen=True)
 class AttentionShape:
     num_query_heads: int
     num_kv_heads: int

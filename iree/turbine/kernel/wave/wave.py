@@ -59,7 +59,6 @@ from .utils import (
     canonicalize_module,
     compile_to_vmfb,
     invoke_vmfb,
-    safe_dict_to_tuple,
     safe_subs,
     remove_chained_getresult,
     remove_chained_extractslice,
@@ -74,7 +73,6 @@ from .cache import (
     is_cache_enabled,
     get_cache_manager,
     invoke_cached_kernel,
-    anonymize_constraints,
 )
 
 # Others
@@ -521,23 +519,33 @@ class LaunchableWave(Launchable):
         config = kwargs.get("run_config", None)
         use_scheduling = kwargs.get("schedule", False)
         use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
+        # When this is passed in from the user, we will populate it with the kernel hash.
+        # It will always be returned with just one entry which is the hash of the kernel.
+        cached_kernel_hash = kwargs.get("kernel_hash", [])
 
         # Get cached kernel when available.
         cache_enabled = is_cache_enabled()
+        kernel_hash = None
         if cache_enabled:
-            cache_manager = get_cache_manager()
             # TODO: Move use_scheduling, use_scheduling_barriers, etc. into the config so everything is contained there.
-            processed_constraints = anonymize_constraints(self.constraints)
-            kernel_hash = cache_manager.get_hash(
-                processed_constraints,
-                self._f,
-                safe_dict_to_tuple(IndexingContext.current().subs),
-                tuple(dynamic_symbols),
-                safe_dict_to_tuple(config),
-                use_scheduling=use_scheduling,
-                use_scheduling_barriers=use_scheduling_barriers,
-                run_bench=run_bench,
-            )
+            cache_manager = get_cache_manager()
+            if cached_kernel_hash:
+                # If a cached_kernel_hash is passed in, we assume it was generated in a previous run
+                # and since we always return a list of size 1, we can just grab the first element.
+                kernel_hash = cached_kernel_hash[0]
+            if not kernel_hash:
+                kernel_hash = cache_manager.get_hash(
+                    self.constraints,
+                    self._f,
+                    IndexingContext.current().subs,
+                    dynamic_symbols,
+                    config,
+                    use_scheduling=use_scheduling,
+                    use_scheduling_barriers=use_scheduling_barriers,
+                    run_bench=run_bench,
+                )
+                cached_kernel_hash[:] = [kernel_hash]
+
             cached_kernel = cache_manager.load_kernel(kernel_hash)
             if cached_kernel and (run or run_bench):
                 invoke_cached_kernel(
@@ -548,6 +556,7 @@ class LaunchableWave(Launchable):
                     dynamic_symbols_map,
                     run,
                     run_bench,
+                    kernel_hash,
                 )
                 return cached_kernel
 
@@ -611,6 +620,7 @@ class LaunchableWave(Launchable):
                 run,
                 run_bench,
                 inplace=True,
+                kernel_hash=kernel_hash,
             )
 
         return mb

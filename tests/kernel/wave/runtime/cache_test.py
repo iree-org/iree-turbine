@@ -213,15 +213,6 @@ def testSameConfig(request):
         assert (
             len(cache_manager.session_cache) == 1
         ), "Expected len == 1, after caching first kernel."
-        assert (
-            cache_manager.get_hash.cache_info().hits == 0
-        ), "Expected to get no LRU cache hits"
-        assert (
-            cache_manager.get_hash.cache_info().misses == 1
-        ), "Expected to get 1 LRU cache miss"
-        assert (
-            cache_manager.get_hash.cache_info().currsize == 1
-        ), "Expected to get 1 element in cache"
 
         # Subsequent run/call to kernel, this should be using cached.
         output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
@@ -235,15 +226,6 @@ def testSameConfig(request):
         assert isinstance(
             cached_kernel, WaveCache
         ), "Expected subsequent call to be cached."
-        assert (
-            cache_manager.get_hash.cache_info().hits == 1
-        ), "Expected to get 1 LRU cache hit"
-        assert (
-            cache_manager.get_hash.cache_info().misses == 1
-        ), "Expected to get 1 LRU cache miss"
-        assert (
-            cache_manager.get_hash.cache_info().currsize == 1
-        ), "Expected to get 1 element in cache"
 
 
 @require_e2e
@@ -508,6 +490,7 @@ def testSameSizeDifferentBlock(request):
     # a different block size/config.
     hyperparams[BLOCK_N] = 32
     hyperparams[BLOCK_K2] = 32
+    kernel_hash = []
     with tk.gen.TestLaunchContext(
         copy.deepcopy(hyperparams),
         canonicalize=True,
@@ -515,6 +498,7 @@ def testSameSizeDifferentBlock(request):
         run_bench=False,
         run_config=config,
         compile_config=compile_config,
+        kernel_hash=kernel_hash,
     ):
         output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         mb_config_1 = base_attention(
@@ -527,6 +511,33 @@ def testSameSizeDifferentBlock(request):
         assert isinstance(
             mb_config_1, tk.compiler.builder.ModuleBuilder
         ), "Expected subsequent call to be cached."
+        assert len(kernel_hash) == 1, "Expected to have one kernel hash returned."
+
+    # Subsequent run/call to kernel, this will not trigger a hash computation
+    # because we are passing in the kernel hash from the last call.
+    hyperparams[BLOCK_N] = 32
+    hyperparams[BLOCK_K2] = 32
+    with tk.gen.TestLaunchContext(
+        copy.deepcopy(hyperparams),
+        canonicalize=True,
+        run=True,
+        run_bench=False,
+        run_config=config,
+        compile_config=compile_config,
+        kernel_hash=kernel_hash,
+    ):
+        output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+        mb_config_2 = base_attention(
+            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
+        )
+        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
+        assert (
+            len(cache_manager.session_cache) == 2
+        ), "Expected cache size to increment, because we use different block size/config."
+        assert isinstance(
+            mb_config_2, WaveCache
+        ), "Expected subsequent call to be cached."
+        assert len(kernel_hash) == 1, "Expected to still have only one kernel hash."
 
 
 # Free vars are variables defined outside the kernels that would impact the
