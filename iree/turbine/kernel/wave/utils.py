@@ -105,6 +105,8 @@ def canonicalize_module(module: Operation):
 
 def run_test(func: Callable[[], None]) -> Callable[[], None]:
     """Run a function as part of the test suite."""
+    # Print func name before running
+    print(f"{func.__name__}")
     func()
     # Print a separator between tests
     print("-----")

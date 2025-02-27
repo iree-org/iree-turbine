@@ -19,7 +19,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
-from ..compiler.ir import Context, Operation
+from ..compiler.ir import Context, Module, Operation
 from .codegen import WaveEmitter
 from .constraints import (
     Constraint,
@@ -76,7 +76,7 @@ from .cache import (
 )
 
 # Others
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional, Sequence
 import torch.fx as fx
 import inspect
 import sympy
@@ -319,6 +319,130 @@ class LaunchableWave(Launchable):
                     subs_idxc(constraint.source_to_target(constraint.target)),
                 )
 
+    def infer_grid_shape(self, idxc: IndexingContext):
+        self.grid_type.dims = [1, 1, 1]
+        max_workgroup_dim = 2
+        aliases = [x.source for x in self.constraints if isinstance(x, SymbolicAlias)]
+        for constraint in self.workgroup_constraints:
+            if constraint.dim in aliases:
+                continue
+            if not constraint.primary:
+                continue
+            dim = (
+                constraint.workgroup_dim
+                if constraint.workgroup_dim < max_workgroup_dim
+                else max_workgroup_dim
+            )
+            self.grid_type.dims[dim] *= safe_subs(constraint.count, idxc.subs)
+
+    def try_apply_pass(
+        self,
+        p,
+        trace: CapturedTrace,
+        print_ir_before: Sequence[str] = [],
+        print_ir_after: Sequence[str] = [],
+    ):
+        if "all" in print_ir_before or p.__name__ in print_ir_before:
+            print(f"***Before {p.__name__}***\n")
+            print_trace(trace)
+        try:
+            p()
+        except Exception:
+            print(f"Error in pass: {p.__name__}\n")
+            print_trace(trace)
+            raise
+        if "all" in print_ir_after or p.__name__ in print_ir_after:
+            print(f"***After {p.__name__}***\n")
+            print_trace(trace)
+
+    def compile_to_mlir(
+        self,
+        trace: CapturedTrace,
+        context: Context,
+        module_op: Optional[Module] = None,
+        *args,
+        **kwargs,
+    ):
+        compile_config = kwargs.get("compile_config", {})
+        entrypoint_name = self._name
+        root_graph = trace.get_root_graph()
+        kernel_sig = kernel_codegen.KernelSignature()
+        kernel_sig.add_from_graph_placeholders(root_graph)
+        dynamic_symbols = kwargs.get("dynamic_symbols", [])
+        kernel_sig.add_from_dynamic_symbols(dynamic_symbols)
+        kernel_sig.add_grid(self.grid_type)
+        kernel_sig.determine_input_output_buffers(root_graph)
+        if compile_config.get("print_signature", False):
+            print(kernel_sig)
+
+        mb = builder.ModuleBuilder(context=context, module_op=module_op)
+        exe = dispatch_codegen.StreamExecutable(mb, name=entrypoint_name)
+        workgroup_size = self.hardware_constraints[0].threads_per_block
+        subgroup_size = self.hardware_constraints[0].threads_per_wave
+
+        # Setup LLVM func compilation configs.
+        llvm_func_config = {}
+        denorm_fp_math_f32 = compile_config.get("denorm_fp_math_f32", None)
+        if denorm_fp_math_f32 != None:
+            llvm_func_config["denormal-fp-math-f32"] = denorm_fp_math_f32
+
+        waves_per_eu = compile_config.get("waves_per_eu", None)
+        if waves_per_eu != None:
+            llvm_func_config["amdgpu-waves-per-eu"] = waves_per_eu
+
+        dispatch_entrypoint = exe.define_entrypoint(
+            entrypoint_name,
+            kernel_sig,
+            self.grid_type,
+            workgroup_size,
+            subgroup_size,
+            dynamic_symbols,
+            llvm_func_config,
+        )
+
+        emitter = WaveEmitter(
+            dispatch_entrypoint, trace, self.constraints, dynamic_symbols, kwargs
+        )
+        try:
+            emitter.emit(trace.get_root_graph())
+        except:
+            print("Error in emitter")
+            asm = mb.module_op.get_asm()
+            print(asm)
+            raise
+        emitter.finish()
+
+        if kwargs.get("canonicalize", False):
+            canonicalize_module(mb.module_op)
+
+        return mb, trace, exe, kernel_sig, entrypoint_name
+
+    def build_initial_pass_pipeline(self, trace: CapturedTrace):
+        idxc = IndexingContext.current()
+
+        def finalize_indices():
+            idxc.finalize()
+
+        def substitute_vector_shapes():
+            self.hardware_constraints[0].subs_vector_shapes(idxc.subs)
+
+        return [
+            partial(initialize_iter_args, trace),
+            partial(self.create_induction_vars, trace),
+            partial(self.initialize_wave_constraints, trace),
+            partial(self.initialize_reductions, trace),
+            partial(self.initialize_symbolic_constraints, trace),
+            partial(self.initialize_workgroup_constraints, trace),
+            finalize_indices,
+            substitute_vector_shapes,
+            partial(infer_types, trace),
+            partial(promote_placeholders, trace, self.constraints),
+            partial(set_node_indices, trace, self.constraints),
+            partial(expand_graph, trace, self.constraints),
+            partial(set_post_expansion_indices, trace, self.constraints),
+            partial(remove_chained_getresult, trace),
+        ]
+
     def _trace_and_get_kernel_signature(
         self,
         args,
@@ -348,30 +472,8 @@ class LaunchableWave(Launchable):
             print(f"***After trace/Before first pass***\n")
             print_trace(trace)
 
-        idxc = IndexingContext.current()
-
-        def finalize_indices():
-            idxc.finalize()
-
-        def substitute_vector_shapes():
-            self.hardware_constraints[0].subs_vector_shapes(idxc.subs)
-
-        graph_passes = [
-            partial(initialize_iter_args, trace),
-            partial(self.create_induction_vars, trace),
-            partial(self.initialize_wave_constraints, trace),
-            partial(self.initialize_reductions, trace),
-            partial(self.initialize_symbolic_constraints, trace),
-            partial(self.initialize_workgroup_constraints, trace),
-            finalize_indices,
-            substitute_vector_shapes,
-            partial(infer_types, trace),
-            partial(promote_placeholders, trace, self.constraints),
-            partial(set_node_indices, trace, self.constraints),
-            partial(expand_graph, trace, self.constraints),
-            partial(set_post_expansion_indices, trace, self.constraints),
-            partial(remove_chained_getresult, trace),
-        ]
+        # Initial passes, pre-optimization.
+        graph_passes = self.build_initial_pass_pipeline(trace)
 
         # Optimizations.
         graph_passes += [
@@ -390,6 +492,7 @@ class LaunchableWave(Launchable):
             partial(remove_chained_extractslice, trace),
         ]
 
+        idxc = IndexingContext.current()
         graph_passes += [
             partial(decompose_reduce_ops, trace, self.constraints, idxc.subs)
         ]
@@ -420,18 +523,7 @@ class LaunchableWave(Launchable):
         ]
 
         for p in graph_passes:
-            if "all" in print_ir_before or p.__name__ in print_ir_before:
-                print(f"***Before {p.__name__}***\n")
-                print_trace(trace)
-            try:
-                p()
-            except Exception:
-                print(f"Error in pass: {p.__name__}\n")
-                print_trace(trace)
-                raise
-            if "all" in print_ir_after or p.__name__ in print_ir_after:
-                print(f"***After {p.__name__}***\n")
-                print_trace(trace)
+            self.try_apply_pass(p, trace, print_ir_before, print_ir_after)
 
         if "all" in print_ir_after or "last" in print_ir_after:
             # Take advantage of Python leaking loop variables
@@ -439,76 +531,11 @@ class LaunchableWave(Launchable):
             print_trace(trace)
 
         # Determine grid shape.
-        self.grid_type.dims = [1, 1, 1]
-        max_workgroup_dim = 2
-        aliases = [x.source for x in self.constraints if isinstance(x, SymbolicAlias)]
-        for constraint in self.workgroup_constraints:
-            if constraint.dim in aliases:
-                continue
-            if not constraint.primary:
-                continue
-            dim = (
-                constraint.workgroup_dim
-                if constraint.workgroup_dim < max_workgroup_dim
-                else max_workgroup_dim
-            )
-            self.grid_type.dims[dim] *= safe_subs(constraint.count, idxc.subs)
-        grid = self.grid_type
+        self.infer_grid_shape(idxc)
         if compile_config.get("print_grid", False):
-            print(f"Grid: {grid}")
+            print(f"Grid: {self.grid_type}")
 
-        root_graph = trace.get_root_graph()
-        kernel_sig = kernel_codegen.KernelSignature()
-        kernel_sig.add_from_graph_placeholders(root_graph)
-        dynamic_symbols = kwargs.get("dynamic_symbols", [])
-        kernel_sig.add_from_dynamic_symbols(dynamic_symbols)
-        kernel_sig.add_grid(self.grid_type)
-        kernel_sig.determine_input_output_buffers(root_graph)
-        if compile_config.get("print_signature", False):
-            print(kernel_sig)
-
-        mb = builder.ModuleBuilder(context=context, module_op=module_op)
-        entrypoint_name = self._name
-        exe = dispatch_codegen.StreamExecutable(mb, name=entrypoint_name)
-        workgroup_size = self.hardware_constraints[0].threads_per_block
-        subgroup_size = self.hardware_constraints[0].threads_per_wave
-
-        # Setup LLVM func compilation configs.
-        llvm_func_config = {}
-        denorm_fp_math_f32 = compile_config.get("denorm_fp_math_f32", None)
-        if denorm_fp_math_f32 != None:
-            llvm_func_config["denormal-fp-math-f32"] = denorm_fp_math_f32
-
-        waves_per_eu = compile_config.get("waves_per_eu", None)
-        if waves_per_eu != None:
-            llvm_func_config["amdgpu-waves-per-eu"] = waves_per_eu
-
-        dispatch_entrypoint = exe.define_entrypoint(
-            entrypoint_name,
-            kernel_sig,
-            grid,
-            workgroup_size,
-            subgroup_size,
-            dynamic_symbols,
-            llvm_func_config,
-        )
-
-        emitter = WaveEmitter(
-            dispatch_entrypoint, trace, self.constraints, dynamic_symbols, kwargs
-        )
-        try:
-            emitter.emit(trace.get_root_graph())
-        except:
-            print("Error in emitter")
-            asm = mb.module_op.get_asm()
-            print(asm)
-            raise
-        emitter.finish()
-
-        if kwargs.get("canonicalize", False):
-            canonicalize_module(mb.module_op)
-
-        return mb, trace, exe, kernel_sig, entrypoint_name
+        return self.compile_to_mlir(trace, context, module_op, *args, **kwargs)
 
     def test_execute(self, args, kwargs):
         run = kwargs.get("run", False)
