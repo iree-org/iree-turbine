@@ -355,7 +355,7 @@ class LaunchableWave(Launchable):
             print(f"***After {p.__name__}***\n")
             print_trace(trace)
 
-    def compile_to_scf_dialect(
+    def compile_to_mlir(
         self,
         trace: CapturedTrace,
         context: Context,
@@ -535,7 +535,7 @@ class LaunchableWave(Launchable):
         if compile_config.get("print_grid", False):
             print(f"Grid: {self.grid_type}")
 
-        return self.compile_to_scf_dialect(trace, context, module_op, *args, **kwargs)
+        return self.compile_to_mlir(trace, context, module_op, *args, **kwargs)
 
     def test_execute(self, args, kwargs):
         run = kwargs.get("run", False)
