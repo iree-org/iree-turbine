@@ -561,10 +561,15 @@ class LaunchableWave(Launchable):
         ) = self._trace_and_get_kernel_signature(args, kwargs)
 
         if run or run_bench or create_vmfb_file:
+            if not config:
+                raise ValueError("no config provided")
+
             host_codegen.isolated_test_call(
                 mb, exe, kernel_sig, entrypoint_name, dynamic_symbols
             )
             asm = mb.module_op.get_asm()
+            if override_mlir := config.get("override_mlir", None):
+                asm = override_mlir
 
             kernel_inputs = []
             kernel_outputs = []
@@ -580,9 +585,6 @@ class LaunchableWave(Launchable):
             kernel_dynamic_dims = []
             if dynamic_symbols:
                 kernel_dynamic_dims = dynamic_symbols_map.values()
-
-            if not config:
-                raise ValueError("no config provided")
 
             compiled_wave_vmfb = compile_to_vmfb(asm, config, run_bench)
             if create_vmfb_file is not None:
