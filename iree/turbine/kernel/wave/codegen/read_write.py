@@ -585,7 +585,7 @@ def _create_vec_read_write(
                     mask_elem = extract(mask, i)
                     mask_elem = vector_d.splat(vec1_mask, mask_elem)
 
-                    offset = vector_d.extract(offsets_vec, i)
+                    offset = extract(offsets_vec, i)
 
                     elem = vector_d.maskedload(
                         vec1, data, [offset], mask_elem, passthru
@@ -596,12 +596,12 @@ def _create_vec_read_write(
                 return vector_d.from_elements(vector_type, elements)
             else:
                 for i in range(elements_per_thread):
-                    mask_elem = vector_d.extract(mask, i)
+                    mask_elem = extract(mask, i)
                     mask_elem = vector_d.splat(vec1_mask, mask_elem)
 
-                    offset = vector_d.extract(offsets_vec, i)
+                    offset = extract(offsets_vec, i)
 
-                    elem = vector_d.extract(value, i)
+                    elem = extract(value, i)
 
                     vector_d.maskedstore(data, elem, [offset], mask_elem)
 
