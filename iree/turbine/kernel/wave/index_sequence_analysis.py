@@ -461,9 +461,14 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
 
 
 def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
-    mma_index = get_mma_dimensional_mapping(trace, get_hardware_constraint(constraints))
+    mma_mapping = get_mma_dimensional_mapping(
+        trace, get_hardware_constraint(constraints)
+    )
     trace.walk(partial(set_thread_independent_index, constraints))
-    set_thread_dependent_index(constraints, mma_index, trace)
+    if mma_mapping != {}:
+        set_thread_dependent_index_from_mma(constraints, mma_mapping, trace)
+    else:
+        set_thread_dependent_index_from_read_write(constraints, trace)
     set_derived_index(trace)
     resolve_thread_shapes(trace, constraints)
     verify_nodes(trace, constraints)
@@ -619,8 +624,8 @@ def populate_mma_sources(
     index: dict[IndexSymbol, IndexSequence] = {}
     mapping = mma_index[node]
     for dim, dim_index in mapping.items():
-        index[dim] = hardware_constraint.apply(
-            dim, dim_index, None, None, True, node.mma_type
+        index[dim] = hardware_constraint.apply_mma_mapping(
+            dim, dim_index, node.mma_type
         )
     node.index = combine_indices(node.index, index)
     return [
@@ -647,7 +652,7 @@ def populate_mma_sources(
     ]
 
 
-def populate_non_mma_sources(
+def populate_read_write_sources(
     node: Read | Write,
     hardware_constraint: HardwareConstraint,
     workgroup_constraints: list[WorkgroupConstraint],
@@ -672,13 +677,8 @@ def populate_non_mma_sources(
         wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
         if not wg_constraint:
             continue
-        index[dim] = hardware_constraint.apply(
-            dim,
-            wg_constraint[0].workgroup_dim,
-            elements_per_thread,
-            stride,
-            False,
-            None,
+        index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+            dim, wg_constraint[0].workgroup_dim, elements_per_thread, stride
         )
     return [(node, index, hardware_constraint.vector_shapes)]
 
@@ -779,10 +779,7 @@ def append_aliased_shapes(source: CustomOp, symbolic_constraints: list[SymbolicA
 
 
 def propagate_index(
-    node: CustomOp,
-    hardware_constraint: HardwareConstraint,
-    workgroup_constraints: list[WorkgroupConstraint],
-    mma_index: dict[MMA, dict[IndexSymbol, int]],
+    sources: set[CustomOp],
     visited: set[CustomOp],
     symbolic_constraints: list[SymbolicAlias],
 ):
@@ -790,13 +787,6 @@ def propagate_index(
     Propagate the index and vector shapes through the graph
     starting with priveleged nodes (like MMA, Read, Write).
     """
-    sources = set()
-    if isinstance(node, MMA):
-        sources = populate_mma_sources(node, mma_index, hardware_constraint)
-    else:
-        sources = populate_non_mma_sources(
-            node, hardware_constraint, workgroup_constraints
-        )
     reduction = None
     while sources:
         source, source_index, source_vector_shapes = sources.pop(0)
@@ -824,20 +814,46 @@ def propagate_index(
     return visited
 
 
-def set_thread_dependent_index(
+def set_thread_dependent_index_from_mma(
     constraints: Sequence[Constraint],
-    mma_index: dict[MMA, dict[IndexSymbol, int]],
+    mma_mapping: dict[MMA, dict[IndexSymbol, int]],
     trace: CapturedTrace,
 ):
     """
     Set the thread dependent index based on the hardware constraint.
     """
     hardware_constraint = get_hardware_constraint(constraints)
-    sources: list[MMA] = list(mma_index.keys())
+    sources: list[MMA] = list(mma_mapping.keys())
+    assert sources and len(sources) >= 1, "Unexpected empty MMA mapping."
     if not sources:
         sources = trace.walk(lambda node: isinstance(get_custom(node), (Read, Write)))
         sources = [get_custom(x) for x in sources]
         assert sources, "No read or mma nodes found in the graph."
+
+    visited = set()
+    symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
+    for source in sources:
+        visited = visited.union(set([x for x in sources]))
+        visited.remove(source)
+        new_sources = populate_mma_sources(source, mma_mapping, hardware_constraint)
+        visited = propagate_index(
+            new_sources,
+            visited,
+            symbolic_constraints,
+        )
+
+
+def set_thread_dependent_index_from_read_write(
+    constraints: Sequence[Constraint],
+    trace: CapturedTrace,
+):
+    """
+    Set the thread dependent index based on the hardware constraint.
+    """
+    hardware_constraint = get_hardware_constraint(constraints)
+    sources = trace.walk(lambda node: isinstance(get_custom(node), (Read, Write)))
+    sources = [get_custom(x) for x in sources]
+    assert sources, "No read nodes found in the graph."
 
     visited = set()
     workgroup_constraints = [
@@ -847,11 +863,11 @@ def set_thread_dependent_index(
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)
+        new_sources = populate_read_write_sources(
+            source, hardware_constraint, workgroup_constraints
+        )
         visited = propagate_index(
-            source,
-            hardware_constraint,
-            workgroup_constraints,
-            mma_index,
+            new_sources,
             visited,
             symbolic_constraints,
         )
