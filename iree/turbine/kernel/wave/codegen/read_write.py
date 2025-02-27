@@ -567,13 +567,65 @@ def _create_vec_read_write(
 
                 return
         elif offsets_vec is None:
-            offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
-            vals = [
-                IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)
-            ]
-            offsets_vec = arith_d.constant(
-                offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
+            if is_read:
+                passthru = vector_d.splat(vector_type, zero)
+                return vector_d.maskedload(
+                    vector_type, mem, start_indices, mask, passthru
+                )
+            else:
+                vector_d.maskedstore(mem, start_indices, mask, value)
+                return
+
+        if has_int_strides:
+            vec1 = VectorType.get([1], element_type)
+            vec1_mask = VectorType.get([1], IntegerType.get_signless(1))
+            strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
+            data, _ = _linearize_memref(
+                mem, start_indices, (0,) * len(start_indices), strides
             )
+            if is_read:
+                passthru = vector_d.splat(vec1, zero)
+                result = vector_d.splat(vector_type, zero)
+                for i in range(elements_per_thread):
+                    mask_elem = vector_d.extract(
+                        mask, static_position=[i], dynamic_position=[]
+                    )
+                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
+
+                    offset = vector_d.extract(
+                        offsets_vec, static_position=[i], dynamic_position=[]
+                    )
+
+                    elem = vector_d.maskedload(
+                        vec1, data, [offset], mask_elem, passthru
+                    )
+                    elem = vector_d.extract(
+                        elem, static_position=[0], dynamic_position=[]
+                    )
+
+                    result = vector_d.insert(
+                        elem, result, static_position=[i], dynamic_position=[]
+                    )
+
+                return result
+            else:
+                for i in range(elements_per_thread):
+                    mask_elem = vector_d.extract(
+                        mask, static_position=[i], dynamic_position=[]
+                    )
+                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
+
+                    offset = vector_d.extract(
+                        offsets_vec, static_position=[i], dynamic_position=[]
+                    )
+
+                    elem = vector_d.extract(
+                        value, static_position=[i], dynamic_position=[]
+                    )
+
+                    vector_d.maskedstore(data, elem, [offset], mask_elem)
+
+                return
 
         if mask is None:
             mask_vec_type = VectorType.get(
