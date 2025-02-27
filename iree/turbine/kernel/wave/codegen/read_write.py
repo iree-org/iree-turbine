@@ -468,9 +468,11 @@ def _create_vec_read_write(
     def extract(vec, ind):
         return vector_d.extract(vec, static_position=[ind], dynamic_position=[])
 
+    # TODO: If strides cannot be converted into integers, means they are dynamic
+    # and linearize breaks, need to investigate later.
+    has_int_strides = all(isinstance(s, int) for s in strides)
     optname = "use_buffer_load_ops" if is_read else "use_buffer_store_ops"
     buffer_ops_enabled = emitter.params.get(optname, False)
-    has_int_strides = all(isinstance(s, int) for s in strides)
     if buffer_ops_enabled and has_int_strides and use_buffer_ops:
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
         data, offset_th = _linearize_memref(
@@ -542,6 +544,8 @@ def _create_vec_read_write(
 
     else:
         masked_splat_opt = emitter.params.get("masked_splat_opt", False)
+        # TODO: This conversion is actually degrades perf on attention, hide it
+        # behind option.
         if masked_splat_opt and offsets_vec is None and mask_splat is not None:
             if is_read:
                 passthru = vector_d.splat(vector_type, zero)
@@ -571,6 +575,13 @@ def _create_vec_read_write(
                 vector_d.maskedstore(mem, start_indices, mask, value)
                 return
 
+        if mask is None:
+            mask_vec_type = VectorType.get(
+                [elements_per_thread], IntegerType.get_signless(1)
+            )
+            mask = _constant_mask(mask_vec_type)
+
+        # TODO: Need static strides for linearize to work.
         if has_int_strides:
             vec1 = VectorType.get([1], element_type)
             vec1_mask = VectorType.get([1], IntegerType.get_signless(1))
@@ -578,6 +589,10 @@ def _create_vec_read_write(
             data, _ = _linearize_memref(
                 mem, start_indices, (0,) * len(start_indices), strides
             )
+
+            # Unroll gather/scatter into individual masked ops.
+            # Vector canonicalizations will convert them into unmasked later if
+            # mask is constant.
             if is_read:
                 passthru = vector_d.splat(vec1, zero)
                 elements = []
@@ -607,12 +622,6 @@ def _create_vec_read_write(
                     vector_d.maskedstore(data, [offset], mask_elem, elem)
 
                 return
-
-        if mask is None:
-            mask_vec_type = VectorType.get(
-                [elements_per_thread], IntegerType.get_signless(1)
-            )
-            mask = _constant_mask(mask_vec_type)
 
         if is_read:
             passthru = vector_d.splat(vector_type, zero)
