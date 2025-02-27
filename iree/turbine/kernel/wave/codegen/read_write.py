@@ -583,8 +583,13 @@ def _create_vec_read_write(
             vec1 = VectorType.get([1], element_type)
             vec1_mask = VectorType.get([1], IntegerType.get_signless(1))
             strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
-            data, _ = _linearize_memref(
-                mem, start_indices, (0,) * len(start_indices), strides
+            data, offset = _linearize_memref(
+                mem, start_indices_wg, start_indices_th, strides
+            )
+            offset = vector_d.splat(offsets_vec.type, offset)
+            overflow_flags = arith_d.IntegerOverflowFlags.nsw
+            offsets_vec = arith_d.addi(
+                offsets_vec, offset, overflow_flags=overflow_flags
             )
             if is_read:
                 passthru = vector_d.splat(vec1, zero)
