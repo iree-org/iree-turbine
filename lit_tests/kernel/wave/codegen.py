@@ -156,10 +156,7 @@ def test_read_mapped():
         # CHECK:            %[[D8:.+]] = arith.addi %[[D7]], %[[D6]] overflow<nsw, nuw> : index
         # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240]> : vector<16xindex>
         # CHECK-DAG:        %[[CST_2:.+]] = arith.constant 0.000000e+00 : f16
-        # CHECK:            %[[D9:.+]] = vector.splat %[[CST_2]] : vector<16xf16>
-        # CHECK:            %[[D10:.+]] = vector.gather %[[ARR]][%[[D5]], %[[D8]]] [%[[CST]]], %[[MASK]], %[[D9]] :
-        # CHECK-SAME:         memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16>
-        # CHECK-SAME:         into vector<16xf16>
+        # CHECK-COUNT-16:   vector.maskedload
 
 
 @run_test
@@ -473,9 +470,6 @@ def test_read_write_mapping():
 
         # CHECK-LABEL:    func.func @read_write_mapping
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
-        # CHECK:            %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208,
-        # CHECK-SAME:         224, 240]> : vector<16xindex>
-        # CHECK-DAG:        %[[D11:.+]] = arith.constant dense<true> : vector<16xi1>
         # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
         # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
         # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
@@ -498,8 +492,7 @@ def test_read_write_mapping():
         # CHECK-SAME:         vector<16xf16>
         # CHECK:            %[[D10:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>
-        # CHECK:            vector.scatter %[[D10]][%[[D8]], %[[D5]]] [%[[CST]]], %[[D11]], %[[D9]] : memref<16x16xf16,
-        # CHECK-SAME:         strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16>
+        # CHECK-COUNT-16:   vector.store
 
 
 @run_test
@@ -547,13 +540,11 @@ def test_read_write_dynamic_mapping():
 
         # CHECK-LABEL:    func.func @read_write_dynamic_mapping
         # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
-        # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
         # CHECK-DAG:        %[[D0:.*]] = arith.constant 0 : index
         # CHECK-DAG:        %[[C16:.*]] = arith.constant 16 : index
         # CHECK-DAG:        %[[C32:.*]] = arith.constant 32 : index
         # CHECK-DAG:        %[[C64:.*]] = arith.constant 64 : index
         # CHECK-DAG:        %[[C256:.*]] = arith.constant 256 : index
-        # CHECK-DAG:        %[[D12:.*]] = arith.constant dense<true> : vector<16xi1>
         # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
         # CHECK:            %[[D9:.*]] = vector.load %[[D0]][%[[D5:.*]], %[[D8:.*]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>, vector<16xi32>
         # CHECK:            %[[D10:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
@@ -565,9 +556,9 @@ def test_read_write_dynamic_mapping():
         # CHECK:            %[[D17:.*]] = arith.addi %[[D16]], %[[D13]] overflow<nsw, nuw> : index
         # CHECK:            %[[D18:.*]] = vector.splat %[[D17]] : vector<16xindex>
         # CHECK:            %[[D19:.*]] = arith.addi %[[D18]], %[[D11]] overflow<nsw, nuw> : vector<16xindex>
-        # CHECK:            %[[D20:.*]] = vector.gather %[[D10]][%[[C0]], %[[C0]]] [%[[D19]]], %[[D12]], %[[CST]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16> into vector<16xf16>
+        # CHECK-COUNT-16:   vector.load
         # CHECK:            %[[D21:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-        # CHECK:            vector.store %[[D20]], %[[D21]][%[[D5]], %[[D8]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+        # CHECK:            vector.store %{{.*}}, %[[D21]][%[[D5]], %[[D8]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
 @run_test
