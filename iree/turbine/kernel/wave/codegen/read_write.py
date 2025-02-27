@@ -602,6 +602,7 @@ def _create_vec_read_write(
                     offset = extract(offsets_vec, i)
 
                     elem = extract(value, i)
+                    elem = vector_d.splat(vec1, elem)
 
                     vector_d.maskedstore(data, [offset], mask_elem, elem)
 
