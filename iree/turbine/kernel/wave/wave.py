@@ -568,6 +568,9 @@ class LaunchableWave(Launchable):
                 mb, exe, kernel_sig, entrypoint_name, dynamic_symbols
             )
             asm = mb.module_op.get_asm()
+            if config.get("print_mlir", False):
+                print(asm)
+
             if override_mlir := config.get("override_mlir", None):
                 asm = override_mlir
 
