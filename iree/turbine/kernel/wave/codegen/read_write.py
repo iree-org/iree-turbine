@@ -541,7 +541,7 @@ def _create_vec_read_write(
                 return
 
     else:
-        masked_splat_opt = emitter.params.get("masked_splt_opt", False)
+        masked_splat_opt = emitter.params.get("masked_splat_opt", False)
         if masked_splat_opt and offsets_vec is None and mask_splat is not None:
             if is_read:
                 passthru = vector_d.splat(vector_type, zero)
