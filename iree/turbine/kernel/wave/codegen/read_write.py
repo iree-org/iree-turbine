@@ -465,11 +465,13 @@ def _create_vec_read_write(
         IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
     )
 
+    def extract(vec, ind):
+        return vector_d.extract(vec, static_position=[ind], dynamic_position=[])
+
     optname = "use_buffer_load_ops" if is_read else "use_buffer_store_ops"
     buffer_ops_enabled = emitter.params.get(optname, False)
     has_int_strides = all(isinstance(s, int) for s in strides)
     if buffer_ops_enabled and has_int_strides and use_buffer_ops:
-
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
         data, offset_th = _linearize_memref(
             mem, start_indices_wg, start_indices_th, strides
@@ -586,7 +588,7 @@ def _create_vec_read_write(
             )
             if is_read:
                 passthru = vector_d.splat(vec1, zero)
-                result = vector_d.splat(vector_type, zero)
+                elements = []
                 for i in range(elements_per_thread):
                     mask_elem = vector_d.extract(
                         mask, static_position=[i], dynamic_position=[]
@@ -600,15 +602,10 @@ def _create_vec_read_write(
                     elem = vector_d.maskedload(
                         vec1, data, [offset], mask_elem, passthru
                     )
-                    elem = vector_d.extract(
-                        elem, static_position=[0], dynamic_position=[]
-                    )
+                    elements.append(elem)
 
-                    result = vector_d.insert(
-                        elem, result, static_position=[i], dynamic_position=[]
-                    )
-
-                return result
+                elements = [extract(v, 0) for v in elements]
+                return vector_d.from_elements(vector_type, elements)
             else:
                 for i in range(elements_per_thread):
                     mask_elem = vector_d.extract(
