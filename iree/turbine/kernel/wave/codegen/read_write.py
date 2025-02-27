@@ -515,31 +515,23 @@ def _create_vec_read_write(
                 offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
 
             if is_read:
-                result = vector_d.splat(vector_type, zero)
+                elements = []
                 for i in range(elements_per_thread):
-                    offset = vector_d.extract(
-                        offsets_vec, static_position=[i], dynamic_position=[]
-                    )
+                    offset = extract(offsets_vec, i)
 
                     if mask is None:
                         elem = memref_d.load(element_type, data, indices=[offset])
                     else:
                         elem = _create_buffer_read_write(element_type, data, offset)
 
-                    result = vector_d.insert(
-                        elem, result, static_position=[i], dynamic_position=[]
-                    )
+                    elements.append(elem)
 
-                return result
+                return vector_d.from_elements(vector_type, elements)
             else:
                 for i in range(elements_per_thread):
-                    offset = vector_d.extract(
-                        offsets_vec, static_position=[i], dynamic_position=[]
-                    )
+                    offset = extract(offsets_vec, i)
 
-                    elem = vector_d.extract(
-                        value, static_position=[i], dynamic_position=[]
-                    )
+                    elem = extract(value, i)
 
                     if mask is None:
                         memref_d.store(elem, data, indices=[offset])
@@ -590,14 +582,10 @@ def _create_vec_read_write(
                 passthru = vector_d.splat(vec1, zero)
                 elements = []
                 for i in range(elements_per_thread):
-                    mask_elem = vector_d.extract(
-                        mask, static_position=[i], dynamic_position=[]
-                    )
+                    mask_elem = extract(mask, i)
                     mask_elem = vector_d.splat(vec1_mask, mask_elem)
 
-                    offset = vector_d.extract(
-                        offsets_vec, static_position=[i], dynamic_position=[]
-                    )
+                    offset = vector_d.extract(offsets_vec, i)
 
                     elem = vector_d.maskedload(
                         vec1, data, [offset], mask_elem, passthru
@@ -608,18 +596,12 @@ def _create_vec_read_write(
                 return vector_d.from_elements(vector_type, elements)
             else:
                 for i in range(elements_per_thread):
-                    mask_elem = vector_d.extract(
-                        mask, static_position=[i], dynamic_position=[]
-                    )
+                    mask_elem = vector_d.extract(mask, i)
                     mask_elem = vector_d.splat(vec1_mask, mask_elem)
 
-                    offset = vector_d.extract(
-                        offsets_vec, static_position=[i], dynamic_position=[]
-                    )
+                    offset = vector_d.extract(offsets_vec, i)
 
-                    elem = vector_d.extract(
-                        value, static_position=[i], dynamic_position=[]
-                    )
+                    elem = vector_d.extract(value, i)
 
                     vector_d.maskedstore(data, elem, [offset], mask_elem)
 
