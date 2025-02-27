@@ -603,7 +603,7 @@ def _create_vec_read_write(
 
                     elem = extract(value, i)
 
-                    vector_d.maskedstore(data, elem, [offset], mask_elem)
+                    vector_d.maskedstore(data, [offset], mask_elem, elem)
 
                 return
 
