@@ -80,6 +80,30 @@ from typing import Any, Callable, Dict, Optional, Sequence
 import torch.fx as fx
 import inspect
 import sympy
+import warnings
+
+try:
+    from packaging.version import Version
+    from importlib.metadata import version
+except ImportError:
+    Version = None
+
+if Version:
+    _iree_compiler_ver = Version(version("iree-base-compiler"))
+    _iree_runtime_ver = Version(version("iree-base-runtime"))
+    if _iree_compiler_ver != _iree_runtime_ver:
+        warnings.warn(
+            f"IREE compiler and runtime versions mismatch: {_iree_compiler_ver} and {_iree_runtime_ver}"
+        )
+
+    # Increment only when IREE has breaking changes.
+    # We don't want to enforce it on package level or make it a hard error just yet.
+    _min_iree_version = Version("3.3.0rc20250228")
+    if _iree_compiler_ver < _min_iree_version:
+        warnings.warn(
+            f"IREE version is too old: {_iree_compiler_ver}, min version: {_min_iree_version}"
+        )
+
 
 __all__ = ["wave", "wave_trace_only"]
 
