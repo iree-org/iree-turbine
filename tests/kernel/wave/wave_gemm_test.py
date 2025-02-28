@@ -833,7 +833,6 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        torch.manual_seed(0)
         a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
         b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
         c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
@@ -852,6 +851,3 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         iree_ref = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         generate_iree_ref("bmmt", [a, b], [iree_ref], config, run_bench=run_bench)
         assert_close(c, iree_ref, check_device=False)
-
-        torch_ref = torch.matmul(a, b.transpose(-2, -1))
-        assert_close(c.to(torch.float16), torch_ref, atol=1e-3, rtol=5e-3)

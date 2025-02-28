@@ -206,9 +206,7 @@ def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
     ...
 
 
-def reshape(
-    inputs: Sequence["Register"], target_vector_shape: dict[IndexSymbol, int]
-) -> "Register":
+def reshape(inputs: Sequence["Register"]) -> "Register":
     ...
 
 
