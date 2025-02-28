@@ -209,20 +209,10 @@ class LaunchableWave(Launchable):
         hardware_constraint = self.hardware_constraints[0]
         for wave_constraint in self.wave_constraints:
             for workgroup_constraint in self.workgroup_constraints:
-                # The wave_id is the same as the thread_id, with the exception
-                # of wave_id[0] = thread_id[0] / threads_per_wave. This is
-                # a convention that we adopt.
                 if wave_constraint.dim == workgroup_constraint.dim:
-                    wave_constraint.wave_id = (
-                        hardware_constraint.get_thread_id_from_workgroup_dim(
-                            workgroup_constraint.workgroup_dim
-                        )
+                    wave_constraint.set_wave_id_from_hardware_and_workgroup_constraint(
+                        hardware_constraint, workgroup_constraint
                     )
-                    if workgroup_constraint.workgroup_dim == 0:
-                        wave_constraint.wave_id = sympy.floor(
-                            wave_constraint.wave_id
-                            / hardware_constraint.threads_per_wave
-                        )
 
     def initialize_reductions(self, trace: CapturedTrace) -> None:
         """
