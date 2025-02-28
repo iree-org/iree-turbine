@@ -482,10 +482,7 @@ class LaunchableWave(Launchable):
             partial(remove_chained_extractslice, trace),
         ]
 
-        idxc = IndexingContext.current()
-        graph_passes += [
-            partial(decompose_reduce_ops, trace, self.constraints, idxc.subs)
-        ]
+        graph_passes += [partial(decompose_reduce_ops, trace, self.constraints)]
 
         # Schedule the reduction ops.
         # Scheduling should always be used with use_scheduling_barriers=True,
