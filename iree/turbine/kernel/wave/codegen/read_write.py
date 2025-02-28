@@ -14,18 +14,20 @@ from ...compiler.ir import (
     Attribute,
     DenseElementsAttr,
     IndexType,
+    InsertionPoint,
     IntegerAttr,
     IntegerType,
     IrType,
+    MemRefType,
     OpResult,
+    ShapedType,
     Value,
     VectorType,
-    arith_d,
-    vector_d,
-    memref_d,
-    ShapedType,
-    MemRefType,
     amdgpu_d,
+    arith_d,
+    memref_d,
+    scf_d,
+    vector_d,
 )
 
 from ...compiler.utils import strides_from_symbolic_shape
@@ -463,11 +465,15 @@ def _create_vec_read_write(
         IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
     )
 
+    def extract(vec, ind):
+        return vector_d.extract(vec, static_position=[ind], dynamic_position=[])
+
+    # TODO: If strides cannot be converted into integers, means they are dynamic
+    # and linearize breaks, need to investigate later.
+    has_int_strides = all(isinstance(s, int) for s in strides)
     optname = "use_buffer_load_ops" if is_read else "use_buffer_store_ops"
     buffer_ops_enabled = emitter.params.get(optname, False)
-    has_int_strides = all(isinstance(s, int) for s in strides)
     if buffer_ops_enabled and has_int_strides and use_buffer_ops:
-
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
         data, offset_th = _linearize_memref(
             mem, start_indices_wg, start_indices_th, strides
@@ -511,31 +517,23 @@ def _create_vec_read_write(
                 offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
 
             if is_read:
-                result = vector_d.splat(vector_type, zero)
+                elements = []
                 for i in range(elements_per_thread):
-                    offset = vector_d.extract(
-                        offsets_vec, static_position=[i], dynamic_position=[]
-                    )
+                    offset = extract(offsets_vec, i)
 
                     if mask is None:
                         elem = memref_d.load(element_type, data, indices=[offset])
                     else:
                         elem = _create_buffer_read_write(element_type, data, offset)
 
-                    result = vector_d.insert(
-                        elem, result, static_position=[i], dynamic_position=[]
-                    )
+                    elements.append(elem)
 
-                return result
+                return vector_d.from_elements(vector_type, elements)
             else:
                 for i in range(elements_per_thread):
-                    offset = vector_d.extract(
-                        offsets_vec, static_position=[i], dynamic_position=[]
-                    )
+                    offset = extract(offsets_vec, i)
 
-                    elem = vector_d.extract(
-                        value, static_position=[i], dynamic_position=[]
-                    )
+                    elem = extract(value, i)
 
                     if mask is None:
                         memref_d.store(elem, data, indices=[offset])
@@ -545,20 +543,64 @@ def _create_vec_read_write(
                 return
 
     else:
+
         if offsets_vec is None:
-            offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
-            vals = [
-                IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)
-            ]
-            offsets_vec = arith_d.constant(
-                offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
-            )
+            if is_read:
+                passthru = vector_d.splat(vector_type, zero)
+                return vector_d.maskedload(
+                    vector_type, mem, start_indices, mask, passthru
+                )
+            else:
+                vector_d.maskedstore(mem, start_indices, mask, value)
+                return
 
         if mask is None:
             mask_vec_type = VectorType.get(
                 [elements_per_thread], IntegerType.get_signless(1)
             )
             mask = _constant_mask(mask_vec_type)
+
+        # TODO: Need static strides for linearize to work.
+        if has_int_strides:
+            vec1 = VectorType.get([1], element_type)
+            vec1_mask = VectorType.get([1], IntegerType.get_signless(1))
+            strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
+            data, _ = _linearize_memref(
+                mem, start_indices, (0,) * len(start_indices), strides
+            )
+
+            # Unroll gather/scatter into individual masked ops.
+            # Vector canonicalizations will convert them into unmasked later if
+            # mask is constant.
+            if is_read:
+                passthru = vector_d.splat(vec1, zero)
+                elements = []
+                for i in range(elements_per_thread):
+                    mask_elem = extract(mask, i)
+                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
+
+                    offset = extract(offsets_vec, i)
+
+                    elem = vector_d.maskedload(
+                        vec1, data, [offset], mask_elem, passthru
+                    )
+                    elements.append(elem)
+
+                elements = [extract(v, 0) for v in elements]
+                return vector_d.from_elements(vector_type, elements)
+            else:
+                for i in range(elements_per_thread):
+                    mask_elem = extract(mask, i)
+                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
+
+                    offset = extract(offsets_vec, i)
+
+                    elem = extract(value, i)
+                    elem = vector_d.splat(vec1, elem)
+
+                    vector_d.maskedstore(data, [offset], mask_elem, elem)
+
+                return
 
         if is_read:
             passthru = vector_d.splat(vector_type, zero)
