@@ -253,6 +253,8 @@ class IndexingContext:
         return sympy.sympify(expr).subs(self.frozen_subs).simplify()
 
     def get_static_value(self, expr: IndexExpr | int) -> Optional[int]:
+        if not expr:
+            return None
         expr = self.simplify_expr(expr)
         try:
             return int(expr)

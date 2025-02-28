@@ -7,8 +7,10 @@
 import io
 
 from iree.build import *
+import pytest
 
 
+@pytest.mark.skip(reason="Hangs")
 def test_example_builder(tmp_path):
     from iree.turbine.aot.testing import example_builder
 

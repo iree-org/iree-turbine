@@ -18,6 +18,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+import functools
 
 from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
@@ -30,6 +31,7 @@ CACHE_BASE_DIR = Path(os.environ.get("WAVE_CACHE_DIR", default_cache_base_dir))
 WAVE_ALWAYS_COMPILE = int(os.environ.get("WAVE_ALWAYS_COMPILE", 0))
 WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 1))
 WAVE_CACHE_LIMIT = int(os.environ.get("WAVE_CACHE_LIMIT", 16))
+MAX_LRU_CACHE_SIZE = int(os.environ.get("WAVE_MAX_LRU_CACHE_SIZE", 128))
 
 
 def is_cache_enabled() -> bool:
@@ -66,7 +68,19 @@ def extract_mappings(kernel_fn: Callable):
 
 def extract_arg_types(kernel_fn: Callable):
     """Look for arg types used in the kernel by iterating over arg signature."""
-    return [arg.annotation for arg in inspect.signature(kernel_fn).parameters.values()]
+    return [
+        (arg.annotation, arg.annotation.physical_layout)
+        for arg in inspect.signature(kernel_fn).parameters.values()
+    ]
+
+
+def extract_free_vars(kernel_fn: Callable):
+    """Look for variables that are defined outside the kernel but impact kernel generated. (e.g is_causal, logit_cap, or mfma_variants)"""
+    return [
+        (k, v)
+        for k, v in inspect.getclosurevars(kernel_fn).nonlocals.items()
+        if not isinstance(v, IndexMapping)
+    ]
 
 
 def anonymize_constraints(input_constraints: list[Constraint]):
@@ -129,6 +143,7 @@ class WaveCacheManager(object):
             kernel_src = inspect.getsource(kernel_fn)
             index_mappings = extract_mappings(kernel_fn)
             arg_dtypes = extract_arg_types(kernel_fn)
+            free_vars = extract_free_vars(kernel_fn)
         except:
             # sets kernel_hash as None if fail to inspect source.
             # We also taught load_kernel and store_kernel to skip
@@ -144,6 +159,7 @@ class WaveCacheManager(object):
             use_scheduling_barriers,
             index_mappings,
             arg_dtypes,
+            free_vars,
         ]
 
         # Benchmark related hash
@@ -179,8 +195,7 @@ class WaveCacheManager(object):
         including it's MLIR, VMFB, and kernel signature.
         """
         cur_cache_dir = CACHE_BASE_DIR / kernel_hash
-        if not os.path.exists(cur_cache_dir):
-            os.makedirs(cur_cache_dir)
+        os.makedirs(cur_cache_dir, exist_ok=True)
         cur_cache_basefile = cur_cache_dir / kernel_hash
         cur_vmfb_path = cur_cache_basefile.with_suffix(".vmfb")
         cur_module_path = cur_cache_basefile.with_suffix(".mlir")
@@ -283,6 +298,7 @@ def invoke_cached_kernel(
     dynamic_symbols_map: dict[IndexExpr, int],
     run: bool,
     run_bench: bool,
+    kernel_hash: str,
 ):
     kernel_inputs = []
     kernel_outputs = []
@@ -310,4 +326,5 @@ def invoke_cached_kernel(
         run,
         run_bench,
         inplace=True,
+        kernel_hash=kernel_hash,
     )

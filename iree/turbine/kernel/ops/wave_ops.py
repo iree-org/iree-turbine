@@ -20,7 +20,7 @@ import torch.fx as fx
 from ..lang.wave_types import Memory, Register, IndexMapping
 from ..lang.global_symbols import *
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
-from .._support.dtype import DataType
+from .._support.dtype import DataType, i1
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
 import numpy as np
@@ -42,6 +42,14 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 def allocate(
     shape: tuple[IndexExpr], dtype: DataType, address_space: IndexSymbol
 ) -> "Memory":
+    ...
+
+
+def self_index(
+    dim: IndexExpr,
+    dtype: DataType,
+    elements_per_thread: Optional[IndexExpr | int] = None,
+) -> "Register":
     ...
 
 
@@ -136,6 +144,10 @@ def maximum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
+def minimum(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
 def broadcast(
     arg: "Register", target_shape: Optional[Sequence[IndexExpr | int]] = None
 ) -> "Register":
@@ -158,7 +170,31 @@ def max(
     ...
 
 
+def min(
+    src: "Register",
+    acc: Optional["Register"] = None,
+    dim: Optional[IndexExpr | int] = None,
+) -> "Register":
+    ...
+
+
 def shuffle(src: "Register", offset: int, width: int) -> "Register":
+    ...
+
+
+def gt(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def ge(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def lt(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def le(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
@@ -173,6 +209,10 @@ def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
 def reshape(
     inputs: Sequence["Register"], target_vector_shape: dict[IndexSymbol, int]
 ) -> "Register":
+    ...
+
+
+def select(cond: "Register", if_true: "Register", if_false: "Register") -> "Register":
     ...
 
 
@@ -223,8 +263,12 @@ def define_py_op(py_op: Callable) -> Callable[[T], T]:
         setattr(current_module, NewSubclass.__name__, NewSubclass)
 
         original_handler = None
-        if hasattr(fx.Proxy, f"__{op_name}__"):
-            original_handler = getattr(fx.Proxy, f"__{op_name}__")
+        # Some py operator has trailing "_", which needs to be removed
+        # before reformatting to torch.fx.Proxy formats.
+        # i.e `and_` -> `and`, `or_` -> `or`.
+        fx_op_name = op_name.replace("_", "")
+        if hasattr(fx.Proxy, f"__{fx_op_name}__"):
+            original_handler = getattr(fx.Proxy, f"__{fx_op_name}__")
 
         def new_function(*args: Any, **kwargs: dict[str, Any]):
             dispatcher = None
@@ -244,7 +288,7 @@ def define_py_op(py_op: Callable) -> Callable[[T], T]:
         if original_handler:
             new_function.__name__ = op_name
             NewSubclass._tracing_function = new_function
-            setattr(fx.Proxy, f"__{op_name}__", new_function)
+            setattr(fx.Proxy, f"__{fx_op_name}__", new_function)
 
         # Return cls unchanged so we can reuse the decorator to register more ops
         return cls
@@ -369,7 +413,7 @@ class CustomOp(ABC):
         if hasattr(self.fx_node, "index") and self.fx_node.index:
             vars_list.append(f"index={self.fx_node.index}")
         vars_str = ", ".join(vars_list)
-        return f"{self.tkw_op_name}({vars_str})"
+        return f"{self.tkw_op_name}({vars_str}) type({self.fx_node.type})"
 
     def add_to_graph(self, region_graph: RegionGraph, type: Any = None) -> fx.Node:
         arg_list = tuple([value for _, value in vars(self).items()])
@@ -525,7 +569,7 @@ class CustomOp(ABC):
         for i, arg in enumerate(self.fx_node.args):
             if isinstance(arg, fx.Node):
                 custom_args[i] = propagate(arg)
-            if isinstance(arg, list) and all(isinstance(x, fx.Node) for x in arg):
+            if isinstance(arg, Sequence) and all(isinstance(x, fx.Node) for x in arg):
                 custom_args[i] = [propagate(x) for x in arg]
         return custom_args
 
@@ -677,13 +721,8 @@ class CustomOp(ABC):
         return index
 
 
-@define_py_op(operator.add)
-@define_py_op(operator.sub)
-@define_py_op(operator.mul)
-@define_py_op(operator.truediv)
-@define_interface_op("maximum")
 @dataclass
-class BinaryPyOp(CustomOp, ABC):
+class BinaryOpBase(CustomOp, ABC):
     """
     Represents an elementwise binary python operator.
 
@@ -711,21 +750,52 @@ class BinaryPyOp(CustomOp, ABC):
     def py_operator(self) -> str:
         return self.tkw_op_name
 
-    def infer_type(self):
+    def infer_shape(self) -> Any:
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
         has_same_type = has_same_custom_type(lhs_type, rhs_type)
         if has_same_type:
-            self.type = lhs_type
-            return
+            return lhs_type.symbolic_shape
+
         lhs_dim_set = set(lhs_type.symbolic_shape)
         rhs_dim_set = set(rhs_type.symbolic_shape)
         if lhs_dim_set.isdisjoint(rhs_dim_set):
             raise ValueError(
                 "BinaryPyOp requires lhs and rhs shape to be at least broadcastable."
+                f" got {lhs_type.symbolic_shape} vs {rhs_type.symbolic_shape}"
             )
+
+        # TODO: this logic looks suspicious. Specifically, there's no check that
+        # rhs_dim_set subsumes lhs_dim_set, they may partially overlap.
         broadcasted_type = lhs_type if lhs_dim_set > rhs_dim_set else rhs_type
-        self.type = broadcasted_type
+        return broadcasted_type.symbolic_shape
+
+
+@define_py_op(operator.add)
+@define_py_op(operator.sub)
+@define_py_op(operator.mul)
+@define_py_op(operator.and_)
+@define_py_op(operator.truediv)
+@define_interface_op("maximum")
+@define_interface_op("minimum")
+@dataclass
+class BinaryPyOp(BinaryOpBase, ABC):
+    def infer_type(self):
+        self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
+
+
+@define_py_op(operator.gt)
+@define_py_op(operator.ge)
+@define_py_op(operator.lt)
+@define_py_op(operator.le)
+@define_interface_op("gt")
+@define_interface_op("ge")
+@define_interface_op("lt")
+@define_interface_op("le")
+@dataclass
+class ComparisonPyOp(BinaryOpBase, ABC):
+    def infer_type(self):
+        self.type = Register[(*self.infer_shape(), i1)]
 
 
 @define_interface_op("log2")
@@ -755,6 +825,42 @@ class UnaryPyOp(CustomOp, ABC):
         self.type = src_type
 
 
+@define_op("select")
+@dataclass
+class SelectOp(CustomOp):
+    cond: fx.Node
+    if_true: fx.Node
+    if_false: fx.Node
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        combined_dims = []
+        combined_dims += get_custom(self.cond).indexing_dims
+        combined_dims += get_custom(self.if_true).indexing_dims
+        combined_dims += get_custom(self.if_false).indexing_dims
+        return list(dict.fromkeys(combined_dims))
+
+    def infer_type(self):
+        cond_type = get_custom(self.cond).type
+        if_true_type = get_custom(self.if_true).type
+        if_false_type = get_custom(self.if_false).type
+
+        if cond_type.dtype != i1:
+            raise ValueError("SelectOp expects condition type to be i1.")
+
+        if if_true_type.dtype != if_false_type.dtype:
+            raise ValueError("SelectOp expects lhs and rhs dtype to match.")
+
+        # TODO: support broadcasting behavior.
+        if (
+            cond_type.symbolic_shape != if_true_type.symbolic_shape
+            or cond_type.symbolic_shape != if_false_type.symbolic_shape
+        ):
+            raise ValueError("SelectOp doesn't support broadcasting. (yet?)")
+
+        self.type = if_true_type
+
+
 @final
 @dataclass
 class Unknown(CustomOp):
@@ -776,7 +882,7 @@ class Unknown(CustomOp):
         # print all variables of the node apart from graph and op
         vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
         vars_str = ", ".join(vars_list)
-        return f"unknown: {self.fx_node.name}({vars_str})"
+        return f"unknown: {self.fx_node.name}({vars_str}) type({self.fx_node.type})"
 
 
 @dataclass
@@ -837,15 +943,16 @@ class Placeholder(CustomOp):
         # print all variables of the node apart from graph and op
         vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
         vars_str = ", ".join(vars_list)
-        return f"{self.tkw_op_name}({vars_str})"
+        return f"{self.tkw_op_name}({vars_str}) type({self.fx_node.type})"
 
     def erase(self):
         """Erase the current node from the graph where it exists."""
-        parent = self.graph.parent_op
+
         super().erase()
-        if not parent:
+        if not hasattr(self.graph, "parent_op"):
             return
 
+        parent = self.graph.parent_op
         custom = get_custom(parent)
         if not isinstance(custom, NestedRegionOp):
             return
@@ -925,6 +1032,7 @@ class Allocate(CustomOp):
     distributed_shape: tuple[IndexExpr]
     dtype: DataType
     address_space: AddressSpace
+    padding: int = 0
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -933,6 +1041,22 @@ class Allocate(CustomOp):
     @property
     def type(self) -> "Memory":
         return Memory[(*self.shape, self.address_space, self.dtype)]
+
+
+@define_op("self_index")
+@dataclass
+class SelfIndex(CustomOp):
+    dim: IndexExpr
+    dtype: DataType
+    elements_per_thread: Optional[IndexExpr | int] = None
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return [self.dim]
+
+    @property
+    def type(self) -> "Register":
+        return Register[(self.dim, self.dtype)]
 
 
 @define_op("shared_memory_barrier")
@@ -1063,6 +1187,7 @@ class MMA(CustomOp):
         custom_str += f"lhs={self.lhs} (index = {self.lhs_index}), "
         custom_str += f"rhs={self.rhs} (index = {self.rhs_index}), "
         custom_str += f"acc={self.acc} (index = {self.acc_index}))"
+        custom_str += f" type({self.fx_node.type})"
         return custom_str
 
     def align_index(self, constraints: list["Constraint"]) -> None:
@@ -1145,7 +1270,7 @@ class Read(CustomOp):
             }
             return {
                 k: IndexSequence.from_expr(mapping[k], subs)
-                for k in arg.type.symbolic_shape
+                for k in get_custom(arg).type.symbolic_shape
                 if k in mapping
             }
 
@@ -1174,7 +1299,7 @@ class Read(CustomOp):
         if mapping is None:
             return True
 
-        mem_shape = self.memory.type.symbolic_shape
+        mem_shape = get_custom(self.memory).type.symbolic_shape
         if mapping.is_identity() and mapping.input_shape == mem_shape:
             return True
 
@@ -1189,7 +1314,7 @@ class Read(CustomOp):
 
         mapping = self.mapping
 
-        mem_shape = self.memory.type.symbolic_shape
+        mem_shape = get_custom(self.memory).type.symbolic_shape
 
         from ..wave.utils import check_is_mapping_contiguous
 
@@ -1479,7 +1604,7 @@ class Write(CustomOp):
         if mapping is None:
             return True
 
-        mem_shape = self.memory.type.symbolic_shape
+        mem_shape = get_custom(self.memory).type.symbolic_shape
         if mapping.is_identity() and mapping.output_shape == mem_shape:
             return True
 
@@ -1493,7 +1618,7 @@ class Write(CustomOp):
             return True
         mapping = self.mapping
 
-        mem_shape = self.memory.type.symbolic_shape
+        mem_shape = get_custom(self.memory).type.symbolic_shape
 
         from ..wave.utils import check_is_mapping_contiguous
 
@@ -1663,6 +1788,25 @@ class Broadcast(CustomOp, ABC):
     arg: fx.Node
     target_shape: Sequence[IndexSymbol] = None
 
+    def __post_init__(self):
+        # Required for setting up hash.
+        super().__post_init__()
+        # Verify for valid src type.
+        if isinstance(self.arg, fx.Node):
+            src = self.arg
+        elif isinstance(self.arg, fx.Proxy):
+            src = self.arg.node
+        else:
+            raise ValueError(f"Unexpected broadcast src type of {type(self.arg)}")
+
+        # Verifies target broadcast shape is valid.
+        src_type = get_custom(src).type
+        src_shape = set(getattr(src_type, "symbolic_shape", []))
+        dst_shape = set(self.target_shape)
+        assert src_shape.issubset(
+            dst_shape
+        ), "Fail to initialize broadcast because of invalid target_shape."
+
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         return self.target_shape
@@ -1673,6 +1817,7 @@ class Broadcast(CustomOp, ABC):
 
 
 @define_interface_op("max")
+@define_interface_op("min")
 @define_interface_op("sum")
 @dataclass
 class ReduceOp(CustomOp, ABC):

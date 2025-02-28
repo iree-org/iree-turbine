@@ -89,7 +89,7 @@ def test_dump_vmfb(shape, tmp_path, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -131,7 +131,8 @@ def test_dump_vmfb(shape, tmp_path, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-def test_copy(shape, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_copy(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
@@ -145,7 +146,7 @@ def test_copy(shape, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -181,6 +182,8 @@ def test_copy(shape, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         test(a, b)
         assert_close(a, b)
@@ -188,7 +191,8 @@ def test_copy(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-def test_dynamic_copy(shape, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_dynamic_copy(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
@@ -202,7 +206,7 @@ def test_dynamic_copy(shape, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -238,6 +242,8 @@ def test_dynamic_copy(shape, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         test(a, b)
         assert_close(a, b)
@@ -245,7 +251,8 @@ def test_dynamic_copy(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_transpose_read"))
-def test_transpose_read(shape, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_transpose_read(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     shape = shape[::-1]
     M = tkl.sym.M
@@ -255,7 +262,7 @@ def test_transpose_read(shape, request):
     wave_size = 64
     BLOCK_N = 1
     BLOCK_M = sympy.Max(sympy.Min(M, 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_M / wave_size
+    ELEMS_PER_THREAD = BLOCK_M // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -297,6 +304,8 @@ def test_transpose_read(shape, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         test(a, b)
         assert_close(a.T, b)
@@ -304,7 +313,8 @@ def test_transpose_read(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_transpose_write"))
-def test_transpose_write(shape, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_transpose_write(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
@@ -313,7 +323,7 @@ def test_transpose_write(shape, request):
     wave_size = 64
     BLOCK_M = 1
     BLOCK_N = sympy.Max(sympy.Min(N, 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -355,6 +365,8 @@ def test_transpose_write(shape, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         test(a, b)
         assert_close(a.T, b)
@@ -362,7 +374,8 @@ def test_transpose_write(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-def test_offset_read(shape, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_offset_read(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
@@ -376,7 +389,7 @@ def test_offset_read(shape, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -430,6 +443,8 @@ def test_offset_read(shape, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         test(a, off, out)
         out_ref = torch.take_along_dim(a, off.to(torch.long), dim=0)
@@ -438,7 +453,8 @@ def test_offset_read(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-def test_offset_read_one(shape, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_offset_read_one(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
@@ -453,7 +469,7 @@ def test_offset_read_one(shape, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -510,6 +526,8 @@ def test_offset_read_one(shape, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         test(a, off, out)
         off_expanded = off.repeat_interleave(count, dim=1)[:, : shape[1]].to(torch.long)
@@ -519,7 +537,8 @@ def test_offset_read_one(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-def test_read_write_same(shape, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_read_write_same(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
@@ -533,7 +552,7 @@ def test_read_write_same(shape, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -567,6 +586,8 @@ def test_read_write_same(shape, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         double(a)
         assert_close(a, ref)
@@ -785,6 +806,8 @@ def test_conditional(shape, request):
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         cond = tkw.read(mask, elements_per_thread=ELEMS_PER_THREAD)
 
+        cond = tkw.apply_expr(cond, lambda a: a > 0)
+
         @tkw.conditional(cond)
         def then():
             tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
@@ -811,7 +834,8 @@ def test_conditional(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-def test_offset_write(shape, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_offset_write(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
@@ -825,7 +849,7 @@ def test_offset_write(shape, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -884,6 +908,8 @@ def test_offset_write(shape, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         test(a, off, out)
         out_ref = torch.zeros_like(out)
@@ -895,7 +921,8 @@ def test_offset_write(shape, request):
 @pytest.mark.parametrize(
     "shape", mark_shapes_xfail(get_test_shapes("test_copy"), [(111, 813)])
 )
-def test_offset_write_one(shape, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_offset_write_one(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
@@ -971,6 +998,8 @@ def test_offset_write_one(shape, request):
         run=True,
         run_bench=run_bench,
         run_config=config,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         test(a, off, out)
         out_ref = torch.zeros_like(out)
@@ -1430,7 +1459,10 @@ _layouts = [
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
 @pytest.mark.parametrize("mem_space", _mem_spaces)
 @pytest.mark.parametrize("layout", _layouts)
-def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
+@pytest.mark.parametrize("use_buffer_ops", [False, True])
+def test_igemm_conv(
+    n, h, w, c, hf, wf, nf, stride, mem_space, layout, use_buffer_ops, request
+):
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
 
@@ -1489,6 +1521,8 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         run_bench=run_bench,
         run_config=config,
         schedule=False,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
     ):
         out = torch.zeros_like(out_ref)
         conv(x, we, out)
@@ -1530,7 +1564,7 @@ def test_cast(shape, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N / wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(

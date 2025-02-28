@@ -66,7 +66,12 @@ def remove_unused_captured_vars(reduction: CustomOp, subgraph: fx.Graph):
     for captured_idx in reversed(range(len(captured_vars))):
         if len(captured_vars[captured_idx].users) == 0:
             get_custom(captured_vars[captured_idx]).erase()
-            new_implicit_captures.pop(captured_idx)
+            # Order of captured_vars in subgraph do not necessarily match order of root
+            # implicit_capture. Especially if we introduce instruction reoderings.
+            root_capture_idx = new_implicit_captures.index(
+                captured_vars[captured_idx].meta["lifted"]
+            )
+            new_implicit_captures.pop(root_capture_idx)
             reduction.update_arg("implicit_captures", new_implicit_captures)
 
 
@@ -94,8 +99,8 @@ def hoist_loop_invariant_ops(trace: CapturedTrace, constraints: list[Constraint]
                         hoistable_op.replace_all_uses_with(new_op)
                         hoistable_op.erase()
                         if isinstance(hoistable_op, Read):
-                            capture_arg = captured_vars.index(hoistable_op.memory)
-                            new_op.update_arg("memory", implicit_captures[capture_arg])
+                            root_var = hoistable_op.memory.meta["lifted"]
+                            new_op.update_arg("memory", root_var)
                     # Clear/Remove unused captured var to correct codegen. Ops inside
                     # scf.for will be indexing/loading from the wrong bindings otherwise.
                     remove_unused_captured_vars(custom_node, subgraph)

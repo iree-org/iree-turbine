@@ -10,7 +10,6 @@ from ..ops.wave_ops import (
     Broadcast,
     CustomOp,
     ExtractSlice,
-    get_custom,
     IterArg,
     MMA,
     NestedRegionOp,
@@ -20,11 +19,14 @@ from ..ops.wave_ops import (
     ReduceOp,
     Reduction,
     Reshape,
+    SelfIndex,
     Write,
+    get_custom,
 )
 from .constraints import (
     Constraint,
     HardwareConstraint,
+    TilingConstraint,
     WorkgroupConstraint,
 )
 from .assumptions import Assumption
@@ -127,6 +129,65 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
             key=lambda item: item[1],
         )
+
+        # Compute offsets we will aplly to each index element for each partitioned
+        # write.
+        offsets = np.array(
+            [
+                np.unravel_index(int(i * max_stride), shape)
+                for i in range(elements_per_thread)
+            ]
+        )
+
+        def check_contiguous_index():
+            """
+            Check if resulted partitioned write is equivalent to contiguous write.
+
+            Write is contiguous if offsets has form `[0,1,2...N]` for
+            the fastest mem dim and 0s for all others dims.
+            """
+            fastest_mem_dim = custom.memory.type.symbolic_shape[-1]
+
+            # Find fastest mem dim index in the register symbolic shape.
+            # If we have write with mapping, order of dims between register and
+            # mem may differ or mem dims may not even present in reg index.
+            if fastest_mem_dim not in symbolic_shape:
+                return False
+
+            fastest_mem_dim_idx = symbolic_shape.index(fastest_mem_dim)
+
+            # Construct expected offsets in the form:
+            # [[0 0 0]
+            #  [0 1 0]
+            #  [0 2 0]
+            #  [0 3 0]]
+            expected_offsets = np.array(
+                [
+                    [
+                        (j if i == fastest_mem_dim_idx else 0)
+                        for j in range(elements_per_thread)
+                    ]
+                    for i in range(len(shape))
+                ]
+            ).T
+            if not np.array_equal(offsets, expected_offsets):
+                return False
+
+            mapping = custom.mapping
+            # For writes without mapping this is enough.
+            if mapping is None:
+                return True
+
+            # If we have mapping, check that fastest dim mapping is trivial, i.e.:
+            # IndexMapping(inputs={X: i, ...}, outputs={X: i, ...})
+            return (
+                mapping.input_mapping.get(fastest_mem_dim, None)
+                == mapping.output_mapping[fastest_mem_dim]
+            )
+
+        if check_contiguous_index():
+            continue
+
         ops_to_combine = []
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):
@@ -135,7 +196,8 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                 extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
                     custom.graph
                 )
-                offset = np.unravel_index(int(i * max_stride), shape)
+
+                offset = offsets[i]
                 write = Write(
                     extract,
                     custom.memory,
@@ -178,7 +240,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
         read more than a single element.
         """
         custom = get_custom(node)
-        if not isinstance(custom, (Read, Write)):
+        if not isinstance(custom, (Read, Write, SelfIndex)):
             return False
         num_dims_with_gpr = sum(
             1 for v in custom.index.values() if sympy.sympify(v.start).has(GPR_NUM)
@@ -196,7 +258,13 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
             dim: simplify_index(custom.index.get(dim, custom.index[dim]))
             for dim in custom.index
         }
-        elements_per_thread = subs_idxc(custom.elements_per_thread)
+        if isinstance(custom, SelfIndex):
+            # If specified use element_per_thread instead of IndexExpr size.
+            elements_per_thread = subs_idxc(
+                custom.elements_per_thread or custom.index[custom.dim].size
+            )
+        else:
+            elements_per_thread = subs_idxc(custom.elements_per_thread)
         dim_with_gpr_offsets = [
             (k, v.start) for k, v in simplified_index.items() if v.start.has(GPR_NUM)
         ]
@@ -232,7 +300,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                 cur_gpr_start_id = chunk_id * gpr_size
                 # Get updated index with VGPR offset.
                 output_mapping = list(custom.index)
-                if custom.mapping is not None:
+                if hasattr(custom, "mapping") and custom.mapping is not None:
                     output_mapping = list(custom.mapping.output_mapping.keys())
                 # Modify stride to 1 S.T we can have vectorized read/write
                 # iff gpr_offset_dim is or will be (after mapping) fastest dim.
@@ -252,6 +320,25 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                     gpr_offset_dim
                 ] = updated_dim_with_gpr_offset
 
+                if hasattr(custom, "mapping_dynamic_vals"):
+                    # If we are partitioning read/write ops, dynamic_vals can be
+                    # potentially partitioned as well. Partitioned dyn vals are
+                    # are merged into single value using Reshape op which still
+                    # holds the original index containing `GPR_NUM`.
+                    # Extract corresponding partitioned chunk from such ops.
+                    new_dynamic_vals = []
+                    for dyn_val in custom.mapping_dynamic_vals:
+                        if any(
+                            sympy.sympify(v.start).has(GPR_NUM)
+                            for v in get_custom(dyn_val).index.values()
+                        ):
+                            extract = ExtractSlice(
+                                dyn_val, [cur_gpr_start_id], [gpr_size], [1]
+                            ).add_to_graph(custom.graph)
+                            new_dynamic_vals.append(extract)
+                        else:
+                            new_dynamic_vals.append(dyn_val)
+
                 # Generate new Read/Write that has contiguous VGPR elements.
                 if isinstance(custom, Write):
                     extract = ExtractSlice(
@@ -262,6 +349,7 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         extract,
                         custom.memory,
                         mapping=custom.mapping,
+                        mapping_dynamic_vals=new_dynamic_vals,
                         elements_per_thread=gpr_size,
                     ).add_to_graph(custom.graph)
                 elif isinstance(custom, Read):
@@ -270,7 +358,15 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         custom.memory,
                         elements_per_thread=gpr_size,
                         mapping=custom.mapping,
+                        mapping_dynamic_vals=new_dynamic_vals,
                         _write_dependency=custom._write_dependency,
+                    ).add_to_graph(custom.graph)
+                elif isinstance(custom, SelfIndex):
+                    # iff elements_per_thread is specified, we update
+                    # elements_per_thread to chunk size, else return None.
+                    self_index_size = gpr_size if custom.elements_per_thread else None
+                    new_node = SelfIndex(
+                        custom.dim, custom.dtype, self_index_size
                     ).add_to_graph(custom.graph)
 
                 # Update new_node information
@@ -282,13 +378,18 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
             if isinstance(custom, Write):
                 # Useful to handle write/read dependency
                 custom.replace_all_uses_with(ops_to_combine)
-            elif isinstance(custom, Read):
+            elif isinstance(custom, (Read, SelfIndex)):
                 reshape = Reshape(ops_to_combine, custom.vector_shapes).add_to_graph(
                     custom.graph
                 )
                 reshape.expanded_dims = custom.expanded_dims
                 reshape.vector_shapes = custom.vector_shapes
+
+                # Save the original index on the reshape op so later we can
+                # detect if op was part of `gpr_offset` partition.
+                reshape.index = custom.index
                 custom.replace_all_uses_with(reshape)
+
             custom.graph.erase_node(custom.fx_node)
 
 
@@ -479,6 +580,12 @@ def set_thread_independent_index(
         index_seq = None
         for constraint in constraints:
             if constraint.dim == dim:
+                # If the constraint is a tiling constraint, and the node
+                # is outside a reduction, we don't apply the constraint.
+                if isinstance(constraint, TilingConstraint):
+                    if not hasattr(custom.graph, "parent_op"):
+                        continue
+
                 if index_seq is None:
                     index_seq = constraint.apply()
                 else:

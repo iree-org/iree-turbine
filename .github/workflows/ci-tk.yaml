@@ -37,7 +37,7 @@ jobs:
 
       - name: "Setting up Python"
         id: setup_python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: ${{matrix.version}}
 
@@ -85,7 +85,7 @@ jobs:
       - name: Run e2e tests on AMD GPU MI300
         if: "contains(matrix.os, 'mi300') && !cancelled()"
         run: |
-          WAVE_CACHE_ON=0 pytest -n 8 --capture=tee-sys -vv --run-e2e --gpu-distribute 8 ./tests/kernel/wave/
+          WAVE_CACHE_ON=0 pytest -n 4 --capture=tee-sys -vv --run-e2e --gpu-distribute 8 ./tests/kernel/wave/
 
       - name: Run e2e tests on AMD GPU MI250
         if: "contains(matrix.os, 'mi250') && !cancelled()"

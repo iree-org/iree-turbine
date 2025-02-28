@@ -37,7 +37,10 @@ from iree.turbine.kernel.wave.utils import (
     device_zeros,
 )
 from iree.turbine.kernel.wave.constraints import Constraint, MMAType
-import os
+from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
+from iree.turbine.kernel.wave.templates.vanilla_attention import (
+    get_vanilla_attention_kernel,
+)
 
 require_e2e = pytest.mark.require_e2e
 
@@ -487,6 +490,7 @@ def testSameSizeDifferentBlock(request):
     # a different block size/config.
     hyperparams[BLOCK_N] = 32
     hyperparams[BLOCK_K2] = 32
+    kernel_hash = []
     with tk.gen.TestLaunchContext(
         copy.deepcopy(hyperparams),
         canonicalize=True,
@@ -494,6 +498,7 @@ def testSameSizeDifferentBlock(request):
         run_bench=False,
         run_config=config,
         compile_config=compile_config,
+        kernel_hash=kernel_hash,
     ):
         output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         mb_config_1 = base_attention(
@@ -506,3 +511,128 @@ def testSameSizeDifferentBlock(request):
         assert isinstance(
             mb_config_1, tk.compiler.builder.ModuleBuilder
         ), "Expected subsequent call to be cached."
+        assert len(kernel_hash) == 1, "Expected to have one kernel hash returned."
+
+    # Subsequent run/call to kernel, this will not trigger a hash computation
+    # because we are passing in the kernel hash from the last call.
+    hyperparams[BLOCK_N] = 32
+    hyperparams[BLOCK_K2] = 32
+    with tk.gen.TestLaunchContext(
+        copy.deepcopy(hyperparams),
+        canonicalize=True,
+        run=True,
+        run_bench=False,
+        run_config=config,
+        compile_config=compile_config,
+        kernel_hash=kernel_hash,
+    ):
+        output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+        mb_config_2 = base_attention(
+            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
+        )
+        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
+        assert (
+            len(cache_manager.session_cache) == 2
+        ), "Expected cache size to increment, because we use different block size/config."
+        assert isinstance(
+            mb_config_2, WaveCache
+        ), "Expected subsequent call to be cached."
+        assert len(kernel_hash) == 1, "Expected to still have only one kernel hash."
+
+
+# Free vars are variables defined outside the kernels that would impact the
+# kernel being generated. For example values of is_causal, sm_scales, and logit_cap.
+# This test help ensure WaveCacher do not re-use kernels when free vars are different,
+# despite having exact same configurations.
+
+
+@require_e2e
+@require_cache
+def testSameConfigDifferentFreeVar(request):
+    reset_cache_manager()
+    mfma_variant = (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)
+    # Order of shapes: (B, M, N, K1, K2)
+    input_shape = (8, 128, 128, 64, 256)
+    dynamic_dims = False
+    shape = AttentionShape(
+        num_query_heads=input_shape[0],
+        num_kv_heads=input_shape[0],
+        query_seq_len=input_shape[1],
+        head_size_kv=input_shape[2],
+        head_size=input_shape[3],
+        kv_seq_len=input_shape[4],
+    )
+    (
+        base_attention,
+        hyperparams,
+        dynamic_symbols,
+        dynamic_symbols_map,
+    ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims)
+    q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
+    k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
+    v_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
+    o_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)
+    hyperparams.update(get_default_scheduling_params())
+    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
+    cache_manager = get_cache_manager()
+    with tk.gen.TestLaunchContext(
+        hyperparams,
+        canonicalize=True,
+        run=True,
+        run_config=get_default_run_config(),
+        compile_config=compile_config,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+    ):
+        torch.manual_seed(0)
+        q = device_randn(q_shape, dtype=torch.float16)
+        k = device_randn(k_shape, dtype=torch.float16)
+        v = device_randn(v_shape, dtype=torch.float16)
+        output = device_zeros(o_shape, dtype=torch.float32)
+        log2e = 1.44269504089
+        dk_sqrt = math.sqrt(1.0 / shape.head_size)
+        # TODO: Add scaling of QK as part of kernel.
+        # TODO: Add variant of non-transposed V attention kernel.
+        non_causal_mb = base_attention(
+            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
+        )
+        assert isinstance(
+            non_causal_mb, tk.compiler.builder.ModuleBuilder
+        ), "Expected first call to not be cached."
+        assert (
+            len(cache_manager.session_cache) == 1
+        ), "Expected len == 1, after caching first kernel."
+
+    (
+        causal_attention,
+        hyperparams,
+        dynamic_symbols,
+        dynamic_symbols_map,
+    ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims, is_causal=True)
+    with tk.gen.TestLaunchContext(
+        hyperparams,
+        canonicalize=True,
+        run=True,
+        run_config=get_default_run_config(),
+        compile_config=compile_config,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+    ):
+        torch.manual_seed(0)
+        q = device_randn(q_shape, dtype=torch.float16)
+        k = device_randn(k_shape, dtype=torch.float16)
+        v = device_randn(v_shape, dtype=torch.float16)
+        output = device_zeros(o_shape, dtype=torch.float32)
+        log2e = 1.44269504089
+        dk_sqrt = math.sqrt(1.0 / shape.head_size)
+        # TODO: Add scaling of QK as part of kernel.
+        # TODO: Add variant of non-transposed V attention kernel.
+        causal_mb = causal_attention(
+            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
+        )
+        assert isinstance(
+            causal_mb, tk.compiler.builder.ModuleBuilder
+        ), "Expected to not be cached despite same config, since it has different values for is_causal."
+        assert (
+            len(cache_manager.session_cache) == 2
+        ), "Expected len == 2, after caching second kernel."

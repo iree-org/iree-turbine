@@ -376,7 +376,7 @@ class WorkgroupConstraint(Constraint):
     workgroup_dim: int
     apply_fn: Optional[Callable] = None
     primary: Optional[bool] = True
-    iters: Optional[IndexExpr] = None
+    iters: Optional[IndexExpr | int] = None
 
     def __post_init__(self):
         self.wg_dim = None
@@ -433,6 +433,16 @@ class TilingConstraint(Constraint):
     tile_size: IndexExpr
     induction_var: Optional[IndexExpr] = None
     iters: Optional[IndexExpr] = None
+
+    def __eq__(self, value):
+        if not isinstance(value, TilingConstraint):
+            return False
+        return (
+            self.dim == value.dim
+            and self.tile_size == value.tile_size
+            and self.induction_var == value.induction_var
+            and self.iters == value.iters
+        )
 
     @property
     def count(self) -> IndexExpr:

@@ -1,5 +1,5 @@
 # Build/test requirements.
-Jinja2==3.1.3
+Jinja2==3.1.4
 filecheck==1.0.0
 lit==18.1.7
 ml_dtypes==0.5.0
@@ -14,7 +14,7 @@ wheel
 
 # It is expected that you have installed a PyTorch version/variant specific
 # to your needs, so we only include a minimum version spec.
-torch>=2.3.0
+torch>=2.3.0,<2.6.0
 torchaudio
 torchvision
 
