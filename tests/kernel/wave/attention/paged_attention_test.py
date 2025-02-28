@@ -292,10 +292,10 @@ def testPagedFlashDecoding(
     if dump_generated_mlir:
         filename = f"wave_paged_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(mb_qk.module_op)
         filename = f"wave_paged_phase_1_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_sv.module_op.get_asm())
+            f.write(mb_sv.module_op)
 
     if not artifact_directory:
         # Run the reference implementation.
