@@ -80,8 +80,48 @@ from typing import Any, Callable, Dict, Optional, Sequence
 import torch.fx as fx
 import inspect
 import sympy
+import warnings
 
 __all__ = ["wave", "wave_trace_only"]
+
+
+# Warn only once
+_warned = False
+
+
+def _warn_iree_is_too_old():
+    """
+    Issue a warning if IREE runtime and compiler versions mismatch or IREE
+    version is too low.
+
+    Warning is issued only once.
+    """
+    global _warned
+    if _warned:
+        return
+
+    _warned = True
+
+    try:
+        from packaging.version import Version
+        from importlib.metadata import version
+    except ImportError:
+        return
+
+    iree_compiler_ver = Version(version("iree-base-compiler"))
+    iree_runtime_ver = Version(version("iree-base-runtime"))
+    if iree_compiler_ver != iree_runtime_ver:
+        warnings.warn(
+            f"IREE compiler and runtime versions mismatch: {iree_compiler_ver} and {iree_runtime_ver}"
+        )
+
+    # Increment only when IREE has breaking changes.
+    # We don't want to enforce it on package level or make it a hard error just yet.
+    min_iree_version = Version("3.3.0rc20250228")
+    if iree_compiler_ver < min_iree_version:
+        warnings.warn(
+            f"IREE version is too old: {iree_compiler_ver}, min version: {min_iree_version}"
+        )
 
 
 def wave(constraints: Optional[list[Constraint]] = None):
@@ -446,6 +486,12 @@ class LaunchableWave(Launchable):
         kernel_codegen.KernelSignature,
         str,
     ]:
+        # Issue a warning if IREE ver is too low.
+        # Warning will only be issued if we are compileing the kernel and won't
+        # if we are using cached kernel as we don't want to add any additional
+        # overhead to 'happy' path.
+        _warn_iree_is_too_old()
+
         compile_config = kwargs.get("compile_config", {})
         print_ir_after = compile_config.get("print_ir_after", [])
         print_ir_before = compile_config.get("print_ir_before", [])
