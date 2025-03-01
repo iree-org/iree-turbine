@@ -82,30 +82,40 @@ import inspect
 import sympy
 import warnings
 
-try:
-    from packaging.version import Version
-    from importlib.metadata import version
-except ImportError:
-    Version = None
+__all__ = ["wave", "wave_trace_only"]
 
-if Version:
-    _iree_compiler_ver = Version(version("iree-base-compiler"))
-    _iree_runtime_ver = Version(version("iree-base-runtime"))
-    if _iree_compiler_ver != _iree_runtime_ver:
+
+# Warn only once
+_warned = False
+
+
+def _warn_iree_is_too_old():
+    global _warned
+    if _warned:
+        return
+
+    _warned = True
+
+    try:
+        from packaging.version import Version
+        from importlib.metadata import version
+    except ImportError:
+        return
+
+    iree_compiler_ver = Version(version("iree-base-compiler"))
+    iree_runtime_ver = Version(version("iree-base-runtime"))
+    if iree_compiler_ver != iree_runtime_ver:
         warnings.warn(
-            f"IREE compiler and runtime versions mismatch: {_iree_compiler_ver} and {_iree_runtime_ver}"
+            f"IREE compiler and runtime versions mismatch: {iree_compiler_ver} and {iree_runtime_ver}"
         )
 
     # Increment only when IREE has breaking changes.
     # We don't want to enforce it on package level or make it a hard error just yet.
-    _min_iree_version = Version("3.3.0rc20250228")
-    if _iree_compiler_ver < _min_iree_version:
+    min_iree_version = Version("3.3.0rc20250228")
+    if iree_compiler_ver < min_iree_version:
         warnings.warn(
-            f"IREE version is too old: {_iree_compiler_ver}, min version: {_min_iree_version}"
+            f"IREE version is too old: {iree_compiler_ver}, min version: {min_iree_version}"
         )
-
-
-__all__ = ["wave", "wave_trace_only"]
 
 
 def wave(constraints: Optional[list[Constraint]] = None):
@@ -470,6 +480,8 @@ class LaunchableWave(Launchable):
         kernel_codegen.KernelSignature,
         str,
     ]:
+        _warn_iree_is_too_old()
+
         compile_config = kwargs.get("compile_config", {})
         print_ir_after = compile_config.get("print_ir_after", [])
         print_ir_before = compile_config.get("print_ir_before", [])
