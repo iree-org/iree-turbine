@@ -90,6 +90,12 @@ _warned = False
 
 
 def _warn_iree_is_too_old():
+    """
+    Issue a warning if IREE runtime and compiler versions mismatch or IREE
+    version is too low.
+
+    Warning is issued only once.
+    """
     global _warned
     if _warned:
         return
@@ -480,6 +486,10 @@ class LaunchableWave(Launchable):
         kernel_codegen.KernelSignature,
         str,
     ]:
+        # Issue a warning if IREE ver is too low.
+        # Warning will only be issued if we are compileing the kernel and won't
+        # if we are using cached kernel as we don't want to add any additional
+        # overhead to 'happy' path.
         _warn_iree_is_too_old()
 
         compile_config = kwargs.get("compile_config", {})
