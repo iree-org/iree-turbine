@@ -495,7 +495,7 @@ class LaunchableWave(Launchable):
         str,
     ]:
         # Issue a warning if IREE ver is too low.
-        # Warning will only be issued if we are compileing the kernel and won't
+        # Warning will only be issued if we are compiling the kernel and won't
         # if we are using cached kernel as we don't want to add any additional
         # overhead to 'happy' path.
         _warn_iree_is_too_old()
