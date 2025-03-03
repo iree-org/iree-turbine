@@ -89,6 +89,14 @@ __all__ = ["wave", "wave_trace_only"]
 _warned = False
 
 
+def _are_versions_compatible(ver1: "Version", ver2: "Version") -> bool:
+    if ver1.is_prerelease or ver2.is_prerelease:
+        return ver1 == ver2
+    else:
+        # For stable releases, it is fine if the patch level mismatches.
+        return (ver1.major == ver2.major) and (ver1.minor == ver2.minor)
+
+
 def _warn_iree_is_too_old():
     """
     Issue a warning if IREE runtime and compiler versions mismatch or IREE
@@ -110,7 +118,7 @@ def _warn_iree_is_too_old():
 
     iree_compiler_ver = Version(version("iree-base-compiler"))
     iree_runtime_ver = Version(version("iree-base-runtime"))
-    if iree_compiler_ver != iree_runtime_ver:
+    if not _are_versions_compatible(iree_compiler_ver, iree_runtime_ver):
         warnings.warn(
             f"IREE compiler and runtime versions mismatch: {iree_compiler_ver} and {iree_runtime_ver}"
         )
