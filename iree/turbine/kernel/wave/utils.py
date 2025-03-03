@@ -124,7 +124,7 @@ def get_default_arch() -> str:
 def get_default_run_config() -> dict[Any, Any]:
     """Return default config for running."""
     arch = get_default_arch()
-    return {"backend": "rocm", "device": "hip", "target": arch}
+    return {"backend": "rocm", "device": "hip", "target": "gfx942"}
 
 
 def get_default_compile_config() -> dict[Any, Any]:
