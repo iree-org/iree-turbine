@@ -289,6 +289,7 @@ def create_inputs(
     [
         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
         (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+        (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
     ],
 )
 def testExtendAttention(
@@ -325,7 +326,7 @@ def testExtendAttention(
     ) = create_inputs(shape, dtype)
     shape = replace(shape, max_seq_len=max_len_extend)
 
-    if mfma_variant[0] == MMAType.F32_16x16x16_F16:
+    if mfma_variant[1] == MMAType.F32_16x16x16_F16:
         num_waves = 4
     if mfma_variant[1] == MMAType.F32_32x32x8_F16:
         num_waves = 2

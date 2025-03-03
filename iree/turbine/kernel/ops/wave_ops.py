@@ -24,6 +24,7 @@ from .._support.dtype import DataType, i1
 from .._support.regions import RegionGraph
 from .base import OpDispatcher
 import numpy as np
+import sympy
 
 if TYPE_CHECKING:
     from ..wave.constraints import Constraint
@@ -1981,3 +1982,10 @@ class Reshape(CustomOp, ABC):
 
     def infer_type(self):
         self.type = get_custom(_to_sequence(self.args)[0]).type
+
+
+# Sympy custom functions
+
+
+class wave_xor(sympy.Function):
+    pass

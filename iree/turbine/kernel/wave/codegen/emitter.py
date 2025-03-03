@@ -49,6 +49,7 @@ from ...compiler.base import CodegenError, NDEBUG
 from ...lang.wave_types import IndexSymbol
 from ..constraints import Constraint, TilingConstraint
 from ..._support.indexing import IndexingContext, IndexExpr
+from ...ops.wave_ops import wave_xor
 
 
 @dataclass
@@ -542,6 +543,11 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 last_expr = select_stack.pop()
                 last_cond = select_stack.pop()
                 res = arith_d.select(last_cond, *_broadcast(last_expr, expr))
+                stack.append(res)
+            case wave_xor():
+                lhs = stack.pop()
+                rhs = stack.pop()
+                res = arith_d.xori(*_broadcast(lhs, rhs))
                 stack.append(res)
             case _:
                 raise CodegenError(f"Can not handle {type(term)} : {term}")

@@ -44,3 +44,6 @@ GLOBAL_MEMORY_UNITS = index_symbol("$GLOBAL_MEMORY_UNITS")
 MMA_UNITS = index_symbol("$MMA_UNITS")
 VALU_UNITS = index_symbol("$VALU_UNITS")
 SHUFFLE_UNITS = index_symbol("$SHUFFLE_UNITS")
+
+# Symbol to represent element index in an index sequence.
+ELEMENT_INDEX = index_symbol("$ELEMENT_INDEX")

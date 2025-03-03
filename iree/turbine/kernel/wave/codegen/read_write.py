@@ -104,6 +104,7 @@ def _build_start_indices(
     start_indices = _get_start_indices(src_indices)
     split_indices = [_split_index(i) for i in start_indices]
     subs = add_emitter_subs(emitter, dynamic_values)
+    subs.update({ELEMENT_INDEX: arith_d.constant(IndexType.get(), 0)})
     indices = [gen_sympy_index(subs, i) for i in start_indices]
     indices_wg = [gen_sympy_index(subs, i[0]) for i in split_indices]
     indices_th = [gen_sympy_index(subs, i[1]) for i in split_indices]
@@ -235,11 +236,22 @@ def _construct_gather_scatter_indices(
         symbolic_shape = memory.distributed_shape
     strides = strides_from_symbolic_shape(idxc, symbolic_shape, allow_mixed_shapes=True)
     start_indices_offset = _compute_offset(start_indices, strides)
+    subs = {ELEMENT_INDEX: 0}
+    start_indices_offset_subs = start_indices_offset.subs(subs)
+    # if start_indices_offset_subs != start_indices_offset:
+    #    breakpoint()
     for i in range(elements_per_thread):
+        # Substitute element index in all expressions.
+        subs = {ELEMENT_INDEX: i}
+        start_indices_orig_subs = [i.subs(subs) for i in start_indices_orig]
+
         # Update fastest dim, i.e. in case of identity mapping it will
         # be equivalent to just vector.load
-        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
-        subs[fastest_dim] = (subs[fastest_dim][0], start_indices_orig[fastest_dim] + i)
+        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig_subs)]
+        subs[fastest_dim] = (
+            subs[fastest_dim][0],
+            start_indices_orig_subs[fastest_dim] + i,
+        )
         indices = [i.subs(subs) for i in index_mapping]
 
         # First, we build indices as if resulting gather/scatter `start_indices`
@@ -249,7 +261,7 @@ def _construct_gather_scatter_indices(
         # simple cases like transpose, the resulting expression should fold into
         # simple constant while more complex expressions may requires actual
         # arith ops on dynamic values.
-        offset = _compute_offset(indices, strides) - start_indices_offset
+        offset = _compute_offset(indices, strides) - start_indices_offset_subs
         offset = subs_idxc(offset)
 
         if offset.is_number:
@@ -282,6 +294,14 @@ def _construct_gather_scatter_indices(
             subs[-1][0],
             start_indices_orig[-1] + idxc.iota(elements_per_thread),
         )
+        for j in range(len(subs)):
+            if ELEMENT_INDEX in subs[j][1].free_symbols:
+                subs[j] = (
+                    subs[j][0],
+                    subs[j][1].subs({ELEMENT_INDEX: idxc.iota(elements_per_thread)}),
+                )
+                # breakpoint()
+
         dynamic_vals_map = {
             sym: val
             for sym, val in zip(mapping.dynamic_val_indices.keys(), dynamic_vals)
