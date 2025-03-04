@@ -68,6 +68,7 @@ from .utils import (
     initialize_iter_args,
     partial,
     print_trace,
+    try_apply_pass,
 )
 from .cache import (
     is_cache_enabled,
@@ -373,26 +374,6 @@ class LaunchableWave(Launchable):
             )
             self.grid_type.dims[dim] *= safe_subs(constraint.count, idxc.subs)
 
-    def try_apply_pass(
-        self,
-        p,
-        trace: CapturedTrace,
-        print_ir_before: Sequence[str] = [],
-        print_ir_after: Sequence[str] = [],
-    ):
-        if "all" in print_ir_before or p.__name__ in print_ir_before:
-            print(f"***Before {p.__name__}***\n")
-            print_trace(trace)
-        try:
-            p()
-        except Exception:
-            print(f"Error in pass: {p.__name__}\n")
-            print_trace(trace)
-            raise
-        if "all" in print_ir_after or p.__name__ in print_ir_after:
-            print(f"***After {p.__name__}***\n")
-            print_trace(trace)
-
     def compile_to_mlir(
         self,
         trace: CapturedTrace,
@@ -455,7 +436,12 @@ class LaunchableWave(Launchable):
 
         return mb, trace, exe, kernel_sig, entrypoint_name
 
-    def build_initial_pass_pipeline(self, trace: CapturedTrace):
+    def build_initial_pass_pipeline(
+        self,
+        trace: CapturedTrace,
+        print_ir_before: Sequence[str] = [],
+        print_ir_after: Sequence[str] = [],
+    ):
         idxc = IndexingContext.current()
 
         def finalize_indices():
@@ -475,7 +461,13 @@ class LaunchableWave(Launchable):
             substitute_vector_shapes,
             partial(infer_types, trace),
             partial(promote_placeholders, trace, self.constraints),
-            partial(set_node_indices, trace, self.constraints),
+            partial(
+                set_node_indices,
+                trace,
+                self.constraints,
+                print_ir_before,
+                print_ir_after,
+            ),
             partial(expand_graph, trace, self.constraints),
             partial(set_post_expansion_indices, trace, self.constraints),
             partial(remove_chained_getresult, trace),
@@ -517,7 +509,9 @@ class LaunchableWave(Launchable):
             print_trace(trace)
 
         # Initial passes, pre-optimization.
-        graph_passes = self.build_initial_pass_pipeline(trace)
+        graph_passes = self.build_initial_pass_pipeline(
+            trace, print_ir_before, print_ir_after
+        )
 
         # Optimizations.
         graph_passes += [
@@ -567,7 +561,7 @@ class LaunchableWave(Launchable):
         ]
 
         for p in graph_passes:
-            self.try_apply_pass(p, trace, print_ir_before, print_ir_after)
+            try_apply_pass(p, trace, print_ir_before, print_ir_after)
 
         if "all" in print_ir_after or "last" in print_ir_after:
             # Take advantage of Python leaking loop variables
