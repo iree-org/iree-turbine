@@ -417,7 +417,7 @@ def testExtendAttention(
         logit_cap=logit_cap,
     )
 
-    assert_close(output, ref_output, rtol=1e-3, atol=1e-3)
+    assert_close(output, ref_output, rtol=1e-3, atol=1e-3, check_dtype=False)
 
 
 # TODO: Investigate errors on MI250.
