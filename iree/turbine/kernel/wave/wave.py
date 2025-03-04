@@ -566,7 +566,7 @@ class LaunchableWave(Launchable):
             print_trace(trace)
 
         # Determine grid shape.
-        self.infer_grid_shape(idxc)
+        self.infer_grid_shape(IndexingContext.current())
         if compile_config.get("print_grid", False):
             print(f"Grid: {self.grid_type}")
 
