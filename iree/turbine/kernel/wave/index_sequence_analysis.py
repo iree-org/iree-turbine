@@ -513,53 +513,6 @@ def is_contiguous_dim(
     return is_innermost_dim or all_unit_dims
 
 
-def set_vector_shapes(
-    constraints: Sequence[Constraint],
-    mma_index: dict[MMA, dict[IndexSymbol, int]],
-    mma_slices: dict[MMA, dict[IndexSymbol, list[fx.Node]]],
-    node: fx.Node,
-):
-    """
-    Set the vector shapes for the specific op based on whether the op lies in
-    an MMA slice as well as the anchor node.
-    """
-    custom = get_custom(node)
-    # MMA, Reduction & Reshape nodes already have their vector shapes set.
-    if isinstance(custom, (MMA, Reduction, Reshape)):
-        return
-    # Add vector shapes from constraints to all ops. These are global constraints.
-    custom.vector_shapes = {}
-    hw_constraint = get_hardware_constraint(constraints)
-    if hw_constraint.vector_shapes:
-        custom.vector_shapes = hw_constraint.vector_shapes
-
-    if len(mma_slices) == 1:
-        # If there is just one MMA slice, there is no ambiguity in the vector shapes
-        # and we set that singular MMA op as the anchor for all ops.
-        mma = list(mma_slices.keys())[0]
-        custom.anchor = mma
-        custom.vector_shapes = custom.vector_shapes | mma.vector_shapes
-        return
-
-    for mma in mma_slices:
-        if (
-            node in mma_slices[mma][MMA_ACC]
-            or node in mma_slices[mma][MMA_LHS]
-            or node in mma_slices[mma][MMA_RHS]
-        ):
-            # Ensure that the operators indexing dims are present in the anchor.
-            # For example, say we have a write node with indexing dimensions [B, M, N]
-            # and there are two potential options for anchors: an MMA with
-            # indexing dimensions [B, M, K1, K2] and another with indexing dimensions
-            # [B, M, N, K2], we want to pick the second one otherwise the index
-            # that is set from the anchor will not be accurate.
-            if not set(custom.indexing_dims).issubset(mma.indexing_dims):
-                continue
-            custom.anchor = mma
-            custom.vector_shapes = custom.vector_shapes | mma.vector_shapes
-            return
-
-
 def set_thread_independent_index(
     constraints: Sequence[Constraint],
     node: fx.Node,
@@ -582,17 +535,19 @@ def set_thread_independent_index(
     for dim in custom.indexing_dims:
         index_seq = None
         for constraint in constraints:
-            if constraint.dim == dim:
-                # If the constraint is a tiling constraint, and the node
-                # is outside a reduction, we don't apply the constraint.
-                if isinstance(constraint, TilingConstraint):
-                    if not hasattr(custom.graph, "parent_op"):
-                        continue
+            if constraint.dim != dim:
+                continue
 
-                if index_seq is None:
-                    index_seq = constraint.apply()
-                else:
-                    index_seq.start += constraint.apply().start
+            # If the constraint is a tiling constraint, and the node
+            # is outside a reduction, we don't apply the constraint.
+            if isinstance(constraint, TilingConstraint):
+                if not hasattr(custom.graph, "parent_op"):
+                    continue
+
+            if index_seq is None:
+                index_seq = constraint.apply()
+            else:
+                index_seq.start += constraint.apply().start
 
         if index_seq is not None:
             index.update({dim: index_seq})
@@ -611,7 +566,7 @@ def specialize_index(
     return {dim: seq.subs(subs) for dim, seq in index.items()}
 
 
-def populate_mma_sources(
+def populate_mma_source_indices(
     node: MMA,
     mma_index: dict[MMA, dict[IndexSymbol, int]],
     hardware_constraint: HardwareConstraint,
@@ -652,7 +607,7 @@ def populate_mma_sources(
     ]
 
 
-def populate_read_write_sources(
+def populate_read_write_source_indices(
     node: Read | Write,
     hardware_constraint: HardwareConstraint,
     workgroup_constraints: list[WorkgroupConstraint],
@@ -778,7 +733,7 @@ def append_aliased_shapes(source: CustomOp, symbolic_constraints: list[SymbolicA
             )
 
 
-def propagate_index(
+def propagate_indices(
     sources: set[CustomOp],
     visited: set[CustomOp],
     symbolic_constraints: list[SymbolicAlias],
@@ -835,8 +790,10 @@ def set_thread_dependent_index_from_mma(
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)
-        new_sources = populate_mma_sources(source, mma_mapping, hardware_constraint)
-        visited = propagate_index(
+        new_sources = populate_mma_source_indices(
+            source, mma_mapping, hardware_constraint
+        )
+        visited = propagate_indices(
             new_sources,
             visited,
             symbolic_constraints,
@@ -863,10 +820,10 @@ def set_thread_dependent_index_from_read_write(
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)
-        new_sources = populate_read_write_sources(
+        new_sources = populate_read_write_source_indices(
             source, hardware_constraint, workgroup_constraints
         )
-        visited = propagate_index(
+        visited = propagate_indices(
             new_sources,
             visited,
             symbolic_constraints,
