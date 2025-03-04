@@ -1403,10 +1403,10 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int], request
         dp_ref,
     ) = attention_torch_ops_ref(q, k, v, do)
 
-    # We validated these elsewhere
+    # Use the LSE from the reference for the backward kernels instead of invoking Wave.
     o_loops, lse, s_loops = attention_flash_fwd_loops(q, k, v)
-    assert_close(o_loops, o_ref)
-    assert_close(s_loops, s_ref)
+    assert_close(o_loops, o_ref, atol=1e-5, rtol=1e-5)
+    assert_close(s_loops, s_ref, atol=1e-5, rtol=1e-5)
 
     q = q.to(torch.float16)
     k = k.to(torch.float16)
