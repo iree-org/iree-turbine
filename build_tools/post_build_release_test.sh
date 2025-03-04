@@ -22,4 +22,4 @@ pip install --no-index -f "${WHEELHOUSE_DIR}" torchvision
 pip freeze
 
 # Run tests
-pytest -n 1 "${REPO_ROOT}"
+pytest "${REPO_ROOT}"
