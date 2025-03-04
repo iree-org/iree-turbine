@@ -42,6 +42,7 @@ from .minimize_global_loads import minimize_global_loads
 from .promotion import promote_placeholders
 from .reuse_shared_allocs import reuse_shared_allocs
 from .scheduling.schedule import schedule_graph
+from .shared_memory_swizzle import swizzle_shared_memory
 from .type_inference import infer_types
 from .index_sequence_analysis import (
     partition_ops_with_gpr_offsets,
@@ -532,7 +533,8 @@ class LaunchableWave(Launchable):
 
         idxc = IndexingContext.current()
         graph_passes += [
-            partial(decompose_reduce_ops, trace, self.constraints, idxc.subs)
+            partial(decompose_reduce_ops, trace, self.constraints, idxc.subs),
+            partial(swizzle_shared_memory, trace, self.constraints),
         ]
 
         # Schedule the reduction ops.
