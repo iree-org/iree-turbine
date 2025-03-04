@@ -275,19 +275,27 @@ class HardwareConstraint(Constraint):
             thread_id * elements_per_thread, elements_per_thread, stride
         )
 
-    def apply(
+    def apply(self):
+        assert False, "Call either apply_read_write_thread_mapping or apply_mma_mapping"
+
+    def apply_read_write_thread_mapping(
+        self,
+        dim: IndexSymbol,
+        workgroup_dim: int,
+        elements_per_thread: int | IndexSymbol,
+        stride: int,
+    ) -> IndexSequence:
+        thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
+        return IndexSequence(
+            thread_id * elements_per_thread, elements_per_thread, stride
+        )
+
+    def apply_mma_mapping(
         self,
         dim: IndexSymbol,
         constraint_index: int | MMAOperand,
-        elements_per_thread: int | IndexSymbol,
-        stride: int,
-        is_mma_dim: bool,
         mma_type: MMAType,
     ) -> IndexSequence:
-        if not is_mma_dim:
-            return self.compute_access_pattern_using_vector_shapes(
-                dim, constraint_index, elements_per_thread, stride
-            )
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
@@ -350,6 +358,7 @@ class HardwareConstraint(Constraint):
                 ]
             case _:
                 raise ValueError("Unsupported MMA type")
+
         assert isinstance(
             constraint_index, MMAOperand
         ), f"Invalid MMA operand {constraint_index}"
