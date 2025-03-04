@@ -68,6 +68,7 @@ from .utils import (
     initialize_iter_args,
     partial,
     print_trace,
+    try_apply_pass,
 )
 from .cache import (
     is_cache_enabled,
@@ -80,8 +81,56 @@ from typing import Any, Callable, Dict, Optional, Sequence
 import torch.fx as fx
 import inspect
 import sympy
+import warnings
 
 __all__ = ["wave", "wave_trace_only"]
+
+
+# Warn only once
+_warned = False
+
+
+def _are_versions_compatible(ver1: "Version", ver2: "Version") -> bool:
+    if ver1.is_prerelease or ver2.is_prerelease:
+        return ver1 == ver2
+    else:
+        # For stable releases, it is fine if the patch level mismatches.
+        return (ver1.major == ver2.major) and (ver1.minor == ver2.minor)
+
+
+def _warn_iree_is_too_old():
+    """
+    Issue a warning if IREE runtime and compiler versions mismatch or IREE
+    version is too low.
+
+    Warning is issued only once.
+    """
+    global _warned
+    if _warned:
+        return
+
+    _warned = True
+
+    try:
+        from packaging.version import Version
+        from importlib.metadata import version
+    except ImportError:
+        return
+
+    iree_compiler_ver = Version(version("iree-base-compiler"))
+    iree_runtime_ver = Version(version("iree-base-runtime"))
+    if not _are_versions_compatible(iree_compiler_ver, iree_runtime_ver):
+        warnings.warn(
+            f"IREE compiler and runtime versions mismatch: {iree_compiler_ver} and {iree_runtime_ver}"
+        )
+
+    # Increment only when IREE has breaking changes.
+    # We don't want to enforce it on package level or make it a hard error just yet.
+    min_iree_version = Version("3.3.0rc20250228")
+    if iree_compiler_ver < min_iree_version:
+        warnings.warn(
+            f"IREE version is too old: {iree_compiler_ver}, min version: {min_iree_version}"
+        )
 
 
 def wave(constraints: Optional[list[Constraint]] = None):
@@ -209,20 +258,10 @@ class LaunchableWave(Launchable):
         hardware_constraint = self.hardware_constraints[0]
         for wave_constraint in self.wave_constraints:
             for workgroup_constraint in self.workgroup_constraints:
-                # The wave_id is the same as the thread_id, with the exception
-                # of wave_id[0] = thread_id[0] / threads_per_wave. This is
-                # a convention that we adopt.
                 if wave_constraint.dim == workgroup_constraint.dim:
-                    wave_constraint.wave_id = (
-                        hardware_constraint.get_thread_id_from_workgroup_dim(
-                            workgroup_constraint.workgroup_dim
-                        )
+                    wave_constraint.set_wave_id_from_hardware_and_workgroup_constraint(
+                        hardware_constraint, workgroup_constraint
                     )
-                    if workgroup_constraint.workgroup_dim == 0:
-                        wave_constraint.wave_id = sympy.floor(
-                            wave_constraint.wave_id
-                            / hardware_constraint.threads_per_wave
-                        )
 
     def initialize_reductions(self, trace: CapturedTrace) -> None:
         """
@@ -335,26 +374,6 @@ class LaunchableWave(Launchable):
             )
             self.grid_type.dims[dim] *= safe_subs(constraint.count, idxc.subs)
 
-    def try_apply_pass(
-        self,
-        p,
-        trace: CapturedTrace,
-        print_ir_before: Sequence[str] = [],
-        print_ir_after: Sequence[str] = [],
-    ):
-        if "all" in print_ir_before or p.__name__ in print_ir_before:
-            print(f"***Before {p.__name__}***\n")
-            print_trace(trace)
-        try:
-            p()
-        except Exception:
-            print(f"Error in pass: {p.__name__}\n")
-            print_trace(trace)
-            raise
-        if "all" in print_ir_after or p.__name__ in print_ir_after:
-            print(f"***After {p.__name__}***\n")
-            print_trace(trace)
-
     def compile_to_mlir(
         self,
         trace: CapturedTrace,
@@ -417,7 +436,12 @@ class LaunchableWave(Launchable):
 
         return mb, trace, exe, kernel_sig, entrypoint_name
 
-    def build_initial_pass_pipeline(self, trace: CapturedTrace):
+    def build_initial_pass_pipeline(
+        self,
+        trace: CapturedTrace,
+        print_ir_before: Sequence[str] = [],
+        print_ir_after: Sequence[str] = [],
+    ):
         idxc = IndexingContext.current()
 
         def finalize_indices():
@@ -437,7 +461,13 @@ class LaunchableWave(Launchable):
             substitute_vector_shapes,
             partial(infer_types, trace),
             partial(promote_placeholders, trace, self.constraints),
-            partial(set_node_indices, trace, self.constraints),
+            partial(
+                set_node_indices,
+                trace,
+                self.constraints,
+                print_ir_before,
+                print_ir_after,
+            ),
             partial(expand_graph, trace, self.constraints),
             partial(set_post_expansion_indices, trace, self.constraints),
             partial(remove_chained_getresult, trace),
@@ -456,6 +486,12 @@ class LaunchableWave(Launchable):
         kernel_codegen.KernelSignature,
         str,
     ]:
+        # Issue a warning if IREE ver is too low.
+        # Warning will only be issued if we are compiling the kernel and won't
+        # if we are using cached kernel as we don't want to add any additional
+        # overhead to 'happy' path.
+        _warn_iree_is_too_old()
+
         compile_config = kwargs.get("compile_config", {})
         print_ir_after = compile_config.get("print_ir_after", [])
         print_ir_before = compile_config.get("print_ir_before", [])
@@ -473,7 +509,9 @@ class LaunchableWave(Launchable):
             print_trace(trace)
 
         # Initial passes, pre-optimization.
-        graph_passes = self.build_initial_pass_pipeline(trace)
+        graph_passes = self.build_initial_pass_pipeline(
+            trace, print_ir_before, print_ir_after
+        )
 
         # Optimizations.
         graph_passes += [
@@ -523,7 +561,7 @@ class LaunchableWave(Launchable):
         ]
 
         for p in graph_passes:
-            self.try_apply_pass(p, trace, print_ir_before, print_ir_after)
+            try_apply_pass(p, trace, print_ir_before, print_ir_after)
 
         if "all" in print_ir_after or "last" in print_ir_after:
             # Take advantage of Python leaking loop variables
