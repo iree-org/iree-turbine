@@ -43,10 +43,12 @@ from .utils import (
     get_inputs,
     get_users,
     get_largest_index_and_size,
+    partial,
+    print_trace,
+    try_apply_pass,
 )
 import torch.fx as fx
 import numpy as np
-from functools import partial
 from typing import Sequence, Callable, Optional
 from ...support.logging import get_logger
 import sympy
@@ -460,18 +462,46 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
         assert custom.vector_shapes, f"Vector shapes not set for node {custom.fx_node}"
 
 
-def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
+def set_node_indices(
+    trace: CapturedTrace,
+    constraints: list[Constraint],
+    print_ir_before: Sequence[str] = [],
+    print_ir_after: Sequence[str] = [],
+):
     mma_mapping = get_mma_dimensional_mapping(
         trace, get_hardware_constraint(constraints)
     )
     trace.walk(partial(set_thread_independent_index, constraints))
+
+    if (
+        "all" in print_ir_after
+        or "all" in print_ir_before
+        or "trace" in print_ir_after
+        or "first" in print_ir_before
+    ):
+        print(
+            f"***After set_thread_independent_index/Before set_thread_dependent_index pass***\n"
+        )
+        print_trace(trace)
+
+    graph_passes = []
     if mma_mapping != {}:
-        set_thread_dependent_index_from_mma(constraints, mma_mapping, trace)
+        graph_passes += [
+            partial(
+                set_thread_dependent_index_from_mma, constraints, mma_mapping, trace
+            )
+        ]
     else:
-        set_thread_dependent_index_from_read_write(constraints, trace)
-    set_derived_index(trace)
-    resolve_thread_shapes(trace, constraints)
-    verify_nodes(trace, constraints)
+        graph_passes += [
+            partial(set_thread_dependent_index_from_read_write, constraints, trace)
+        ]
+    graph_passes += [
+        partial(set_derived_index, trace),
+        partial(resolve_thread_shapes, trace, constraints),
+        partial(verify_nodes, trace, constraints),
+    ]
+    for p in graph_passes:
+        try_apply_pass(p, trace, print_ir_before, print_ir_after)
 
 
 def compute_stride(
