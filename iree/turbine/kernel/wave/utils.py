@@ -76,6 +76,26 @@ import ctypes
 bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
 
+def try_apply_pass(
+    p,
+    trace: CapturedTrace,
+    print_ir_before: Sequence[str] = [],
+    print_ir_after: Sequence[str] = [],
+):
+    if "all" in print_ir_before or p.__name__ in print_ir_before:
+        print(f"***Before {p.__name__}***\n")
+        print_trace(trace)
+    try:
+        p()
+    except Exception:
+        print(f"Error in pass: {p.__name__}\n")
+        print_trace(trace)
+        raise
+    if "all" in print_ir_after or p.__name__ in print_ir_after:
+        print(f"***After {p.__name__}***\n")
+        print_trace(trace)
+
+
 def canonicalize_module(module: Operation):
     with module.context, Location.unknown():
         transform_module = builtin_d.Module.create()
