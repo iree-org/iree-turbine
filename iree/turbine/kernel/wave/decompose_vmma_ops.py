@@ -30,23 +30,43 @@ VMMA_TO_NATIVE_MAP = {
 }
 
 
-def get_m_dim(mma_op):
-    m_dims = set(mma_op.lhs_type.symbolic_shape).difference(
+def get_m_dim(mma_op, vmma_expr):
+    m_sets = set(mma_op.lhs_type.symbolic_shape).difference(
         mma_op.rhs_type.symbolic_shape
+    )
+    # Filters candidate for M-dims. Adds candidate dim to list iff we find any occurrence
+    # of the reference MMA template expression in the candidate dim's index expression
+    vmma_expr = vmma_expr.subs({MMA_ACC: 0})
+    m_dims = set(
+        [
+            m_candidate
+            for m_candidate in m_sets
+            if mma_op.lhs.index[m_candidate].start.find(vmma_expr)
+        ]
     )
     assert len(m_dims) == 1, "Expect to have single M-dim."
     return m_dims.pop()
 
 
-def get_n_dim(mma_op):
-    n_dims = set(mma_op.rhs_type.symbolic_shape).difference(
+def get_n_dim(mma_op, vmma_expr):
+    n_sets = set(mma_op.rhs_type.symbolic_shape).difference(
         mma_op.lhs_type.symbolic_shape
+    )
+    # Filters candidate for N-dims. Adds candidate dim to list iff we find any occurrence
+    # of the reference MMA template expression in the candidate dim's index expression
+    vmma_expr = vmma_expr.subs({MMA_ACC: 0})
+    n_dims = set(
+        [
+            n_candidate
+            for n_candidate in n_sets
+            if mma_op.rhs.index[n_candidate].start.find(vmma_expr)
+        ]
     )
     assert len(n_dims) == 1, "Expect to have single N-dim."
     return n_dims.pop()
 
 
-def get_k_dim(mma_op):
+def get_k_dim(mma_op, vmma_expr):
     k_dims = set(mma_op.lhs_type.symbolic_shape).intersection(
         mma_op.rhs_type.symbolic_shape
     )
@@ -137,9 +157,9 @@ def decompose_vmma_ops(
                     slice_lhs, slice_rhs, mma_acc, native_mma_type
                 ).add_to_graph(mma_op.graph)
                 mma_acc.index = copy.deepcopy(mma_op.index)
-                m_dim = get_m_dim(mma_op)
-                n_dim = get_n_dim(mma_op)
-                k_dim = get_k_dim(mma_op)
+                m_dim = get_m_dim(mma_op, vmma_expr[MMAOperand.M.value])
+                n_dim = get_n_dim(mma_op, vmma_expr[MMAOperand.N.value])
+                k_dim = get_k_dim(mma_op, vmma_expr[MMAOperand.K.value])
                 # Replace expression based on virtual with it's equivalence in the native layout.
                 replace_subexpr(
                     mma_acc.index[m_dim].start,

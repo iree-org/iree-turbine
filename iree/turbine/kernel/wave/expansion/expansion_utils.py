@@ -259,7 +259,7 @@ def remove_original_nodes(leaf_nodes: list[CustomOp]):
         for input in inputs:
             queue.append(get_custom(input))
         if not custom.users:
-            custom.graph.erase_node(custom.fx_node)
+            custom.erase()
 
 
 def remove_unused_registers(trace: CapturedTrace):

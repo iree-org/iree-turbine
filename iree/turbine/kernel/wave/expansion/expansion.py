@@ -440,7 +440,7 @@ def populate_inputs(
                         mma_metadata.last_mma_node = True
                     new_nodes_to_expand.append((arg, mma_metadata))
                 continue
-            case Allocate() | SetSymbol() | ApplyExpr():
+            case Allocate() | SetSymbol():
                 alloc_metadata = deepcopy(metadata)
                 alloc_metadata.do_not_expand = True
                 new_nodes_to_expand.append((arg, alloc_metadata))
@@ -631,8 +631,20 @@ def fixup_reduction_nodes(
     trace: CapturedTrace,
     expansion_context: ExpansionContext,
 ):
+    """
+    This function fixes up the reduction nodes by updating the outputs,
+    init_args and get_results of the reduction nodes. It also removes the
+    original nodes from the graph.
+
+    In situations where we have multiple reductions, and the outputs of a
+    reduction are used as inputs to another reduction, we need to ensure
+    the fixup is done in the correct order, specifically from the last
+    reduction to the first reduction since that is the order in
+    which expansion proceeds.
+    """
     reduction_context = expansion_context.reduction_context
-    for reduction in trace.walk(lambda x: isinstance(get_custom(x), Reduction)):
+    reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Reduction))
+    for reduction in reversed(reduction_nodes):
         reduction = get_custom(reduction)
         reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
         output = get_custom(get_last(reduction_subgraph.nodes))
@@ -667,7 +679,7 @@ def fixup_reduction_nodes(
             )
             get_result.name = get_item.fx_node.name
             get_item.replace_all_uses_with(get_custom(get_result))
-            get_item.graph.erase_node(get_item.fx_node)
+            get_item.erase()
 
         remove_original_nodes(return_vals)
 

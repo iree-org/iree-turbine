@@ -19,7 +19,6 @@ from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
 from ..lang.global_symbols import *
 from ..ops.wave_ops import (
-    ApplyExpr,
     Conditional,
     CustomOp,
     ExtractSlice,
@@ -33,6 +32,7 @@ from ..ops.wave_ops import (
     Reduction,
     Reshape,
     SetSymbol,
+    SharedMemoryBarrier,
     Write,
     get_custom,
 )
@@ -71,7 +71,29 @@ import iree.runtime.benchmark as bench
 import numpy
 import ml_dtypes
 
+import ctypes
+
 bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
+
+
+def try_apply_pass(
+    p,
+    trace: CapturedTrace,
+    print_ir_before: Sequence[str] = [],
+    print_ir_after: Sequence[str] = [],
+):
+    if "all" in print_ir_before or p.__name__ in print_ir_before:
+        print(f"***Before {p.__name__}***\n")
+        print_trace(trace)
+    try:
+        p()
+    except Exception:
+        print(f"Error in pass: {p.__name__}\n")
+        print_trace(trace)
+        raise
+    if "all" in print_ir_after or p.__name__ in print_ir_after:
+        print(f"***After {p.__name__}***\n")
+        print_trace(trace)
 
 
 def canonicalize_module(module: Operation):
@@ -103,6 +125,8 @@ def canonicalize_module(module: Operation):
 
 def run_test(func: Callable[[], None]) -> Callable[[], None]:
     """Run a function as part of the test suite."""
+    # Print func name before running
+    print(f"{func.__name__}")
     func()
     # Print a separator between tests
     print("-----")
@@ -214,7 +238,7 @@ def DCE(trace: CapturedTrace):
 
         if (
             custom.users
-            or isinstance(custom, (Output, SetSymbol, ApplyExpr))
+            or isinstance(custom, (Output, SetSymbol, SharedMemoryBarrier))
             or is_global_write(node)
         ):
             return False
@@ -389,11 +413,11 @@ def get_mma_dimensional_mapping(
             arg = get_custom(arg)
             if is_reshape_needed(arg, mma.vector_shapes, prev_mma.vector_shapes):
                 reshape = Reshape(arg.fx_node, prev_mma.vector_shapes).add_to_graph(
-                    custom.graph
+                    mma.graph
                 )
                 custom_reshape = get_custom(reshape)
-                custom_reshape.vector_shapes = custom.vector_shapes
-                custom.update_arg(arg_index, reshape)
+                custom_reshape.vector_shapes = mma.vector_shapes
+                mma.update_arg(arg_index, reshape)
 
     def find_mma_in_slice(node: CustomOp) -> Optional[MMA]:
         """
@@ -520,6 +544,10 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
         ret[:] = type(ret)(host_array)
 
 
+_dl_tensor_name = ctypes.create_string_buffer(b"dltensor")
+_set_capsule_name = ctypes.pythonapi.PyCapsule_SetName
+
+
 def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
     linearized_arg_len = len(inputs) + len(outputs) + len(dynamic_dims)
     # ret_list is 0 because we modify/write result in place.
@@ -531,6 +559,11 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
             arg_tensor = arg_tensor.contiguous()
         capsule = arg_tensor.__dlpack__(None)
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
+
+        # IREE runtime renames capsule to "dltensor_used" for some reason, but
+        # only deletes capsules with "dltensor" name, which is causing a memory
+        # leak.
+        _set_capsule_name(ctypes.py_object(capsule), _dl_tensor_name)
         arg_list.push_ref(arg_tensor_bv)
 
     # Linearize arguments, In linearized arg_list, we first push in all inputs,
@@ -610,6 +643,12 @@ def compile_to_vmfb(
         target = config["target"]
         flags.append(f"--iree-hip-target={target}")
 
+    if config.get("gpu-native-math-precision", False):
+        # Polynomial approximation passes in MLIR/IREE often generate
+        # suboptimal code with redundant clamps and fptosi. This flag
+        # allows us to skip unnecessary approx for GPU.
+        flags.append("--iree-codegen-gpu-native-math-precision=true")
+
     if config.get("print_ir_after_all", False):
         flags.append("--mlir-print-ir-after-all")
 
@@ -634,6 +673,10 @@ def compile_to_vmfb(
     return res
 
 
+# Cache for the system context and vm function.
+RUNTIME_CACHE: dict[str, tuple[rt.SystemContext, rt.VmFunction]] = {}
+
+
 def invoke_vmfb(
     vmfb: bytes,
     func_name: str,
@@ -644,6 +687,7 @@ def invoke_vmfb(
     run: bool = False,
     run_bench: bool = False,
     inplace: bool = False,
+    kernel_hash: Optional[str] = None,
 ):
 
     device = config["device"]
@@ -654,8 +698,9 @@ def invoke_vmfb(
 
         benchmark_flags = {}
 
-        if bench_batch_size is not None:
-            benchmark_flags["batch_size"] = int(bench_batch_size)
+        # If we use 1000 for bench_batch_size during compilation, and set this batch size to 1,
+        # then the latency is in milliseconds.
+        benchmark_flags["batch_size"] = 1
 
         if bench_repetitions is not None:
             benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
@@ -670,19 +715,24 @@ def invoke_vmfb(
     rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
-    mod = rt.VmModule.copy_buffer(vm_instance, vmfb)
 
-    vm_modules = [
-        mod,
-        rt.create_hal_module(vm_instance, device),
-    ]
-    ctx = rt.SystemContext(
-        vm_modules=vm_modules,
-        config=rt_config,
-    )
+    if kernel_hash and kernel_hash in RUNTIME_CACHE:
+        ctx, func = RUNTIME_CACHE[kernel_hash]
+    else:
+        mod = rt.VmModule.copy_buffer(vm_instance, vmfb)
+        vm_modules = [
+            mod,
+            rt.create_hal_module(vm_instance, device),
+        ]
+        ctx = rt.SystemContext(
+            vm_modules=vm_modules,
+            config=rt_config,
+        )
+        func = mod.lookup_function(func_name)
+        if kernel_hash:
+            RUNTIME_CACHE[kernel_hash] = (ctx, func)
 
     if run:
-        func = mod.lookup_function(func_name)
         if inplace:
             _inplace_invoke(
                 ctx.vm_context,
@@ -707,6 +757,7 @@ def invoke_vmfb(
         tempfiles = []
         inputs = []
         all_inputs = kernel_inputs + kernel_outputs if inplace else kernel_inputs
+        all_inputs += kernel_dynamic_dims
         if bench_with_constant_weights:
             for inp in all_inputs:
                 if isinstance(inp, torch.Tensor):
@@ -723,7 +774,6 @@ def invoke_vmfb(
         else:
             for inp in all_inputs:
                 if isinstance(inp, torch.Tensor):
-                    tf = tempfile.NamedTemporaryFile(suffix=".npy")
                     inp = inp.cpu()
                     if inp.dtype == torch.bfloat16:
                         inp = (
@@ -733,9 +783,10 @@ def invoke_vmfb(
                         )
                     else:
                         inp = inp.numpy()
-                    numpy.save(tf, inp)
-                    tempfiles.append(tf)
-                    inputs.append("@" + tf.name)
+                    with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as tf:
+                        numpy.save(tf, inp)
+                        tempfiles.append(tf)
+                        inputs.append("@" + tf.name)
                 elif isinstance(inp, int):
                     inputs.append(f"1xi32={inp}")
                 else:
@@ -749,6 +800,8 @@ def invoke_vmfb(
             **benchmark_flags,
         )
         _print_bench_result(benchmark_results, bench_file)
+        for file in tempfiles:
+            Path.unlink(file.name)
 
 
 def compile_and_invoke(
@@ -882,6 +935,18 @@ def get_users(
     return users, reduction
 
 
+def propagate_placeholders(n):
+    """
+    Returns the captured node of a placeholder if it exists.
+    """
+    c = get_custom(n)
+    if isinstance(c, Placeholder):
+        p = c.get_captured_fx_node()
+        if p is not None:
+            return p
+    return n
+
+
 def get_inputs(
     node: fx.Node, reduction: fx.Node = None
 ) -> tuple[list[fx.Node], fx.Node]:
@@ -918,16 +983,7 @@ def get_inputs(
         for input in node.all_input_nodes:
             inputs.append(input)
 
-    def propagate(n):
-        c = get_custom(n)
-        if isinstance(c, Placeholder):
-            p = c.get_captured_fx_node()
-            if p is not None:
-                return p
-
-        return n
-
-    inputs = [propagate(i) for i in inputs]
+    inputs = [propagate_placeholders(i) for i in inputs]
     return inputs, reduction
 
 
@@ -1164,6 +1220,10 @@ def device_arange(*args, **kwargs):
     return to_default_device(torch.arange(*args, **kwargs))
 
 
+def device_empty(*args, **kwargs):
+    return to_default_device(torch.empty(*args, **kwargs))
+
+
 def device_full(*args, **kwargs):
     return to_default_device(torch.full(*args, **kwargs))
 
@@ -1222,6 +1282,20 @@ def _get_start_indices(
         start_indices.append(i)
 
     return start_indices
+
+
+def get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
+    """
+    This function takes in indices of a Node, extract their sizes
+    into a list, and then try do an argmax on it. In the case where
+    there are multipled max_vals we pick the fastest/most minor one.
+    """
+
+    index_sizes = [subs_idxc(i.size) for i in indices.values()]
+    # Find the maximum value
+    max_size = max(index_sizes)
+    # Find the fastest/most minor index of the maximum value.
+    return max(i for i, size in enumerate(index_sizes) if size == max_size)
 
 
 def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
@@ -1512,3 +1586,73 @@ def partial(func, *args, **kwargs):
     partial_func = functools.partial(func, *args, **kwargs)
     functools.update_wrapper(partial_func, func)
     return partial_func
+
+
+TORCH_DTYPE_TO_WAVE = {
+    torch.bfloat16: tkl.bf16,
+    torch.float8_e5m2: tkl.f8e5m2,
+    torch.float8_e5m2fnuz: tkl.f8e5m2fnuz,
+    torch.float8_e4m3fn: tkl.f8e4m3fn,
+    torch.torch.float8_e4m3fnuz: tkl.f8e4m3fnuz,
+    torch.float16: tkl.f16,
+    torch.float32: tkl.f32,
+    torch.float64: tkl.f64,
+    torch.int16: tkl.i16,
+    torch.int32: tkl.i32,
+    torch.int64: tkl.i64,
+    torch.bool: tkl.bool,
+}
+
+
+def torch_dtype_to_wave(torch_dtype: torch.dtype) -> Any:
+    try:
+        return TORCH_DTYPE_TO_WAVE[torch_dtype]
+    except KeyError:
+        raise ValueError(f"Unable to map torch dtype {torch_dtype} to Wave.")
+
+
+def is_shared_write(node: CustomOp) -> bool:
+    return (
+        isinstance(node, Write)
+        and subs_idxc(node.memory_type.address_space) == SHARED_ADDRESS_SPACE
+    )
+
+
+def is_shared_read(node: CustomOp) -> bool:
+    return (
+        isinstance(node, Read)
+        and subs_idxc(node.memory_type.address_space) == SHARED_ADDRESS_SPACE
+    )
+
+
+def is_gather(custom: CustomOp) -> bool:
+    if not isinstance(custom, Read):
+        return False
+    assert custom.index, f"Read node {custom} does not have an index."
+    return any(
+        custom.index[x].size > 1
+        for x in custom.memory_type.symbolic_shape[:-1]
+        if x in custom.index
+    )
+
+
+def print_live_tensors():
+    """
+    Print all alive torch tensors in program.
+
+    Use for debugging memory leaks.
+    """
+    import gc
+
+    gc.collect()
+
+    print("------ live tensors ---------")
+    for obj in gc.get_objects():
+        try:
+            if torch.is_tensor(obj) or (
+                hasattr(obj, "data") and torch.is_tensor(obj.data)
+            ):
+                print(hex(id(obj)), type(obj), obj.size())
+        except:
+            pass
+    print("-----------------------------")

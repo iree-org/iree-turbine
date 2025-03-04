@@ -72,6 +72,7 @@ class DataType:
 
 bf16 = DataType("bf16")
 bool = DataType("bool", "i1")
+i1 = bool
 i4 = DataType("i4")
 i8 = DataType("i8")
 i16 = DataType("i16")

@@ -489,6 +489,10 @@ def _is_float_type(type):
     return isinstance(type, (BF16Type, F16Type, F32Type, F64Type, Float8E4M3FNUZType))
 
 
+def _is_index_type(type):
+    return isinstance(type, (IndexType))
+
+
 def _is_integer_like_type(type):
     return isinstance(type, (IntegerType, IndexType))
 

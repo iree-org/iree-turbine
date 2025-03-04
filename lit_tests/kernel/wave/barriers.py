@@ -94,7 +94,7 @@ def test_read_write_equal_sizes():
         add_shared_memory_barriers(trace)
         print_trace(trace, False)
         # CHECK: %allocate
-        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, N), (BLOCK_M, BLOCK_N + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read_M:0_N:0
@@ -192,9 +192,9 @@ def test_gemm():
         # CHECK-NEXT: %register_M:1_N:0_K:0
         # CHECK-NEXT: %register_M:1_N:1_K:0
         # CHECK-NEXT: %allocate_1
-        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE)
+        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: reduction
         # CHECK-SAME: (K, [%register_M:0_N:0_K:0, %register_M:0_N:1_K:0, %register_M:1_N:0_K:0, %register_M:1_N:1_K:0]
         # CHECK-NEXT: %get_result_M:0_N:0_K:0

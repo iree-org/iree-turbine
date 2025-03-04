@@ -4,6 +4,10 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import math
+import torch
+from typing import Optional
+
 import iree.turbine.kernel.wave as tkw
 import iree.turbine.kernel.lang as tkl
 from iree.turbine.kernel.lang.global_symbols import *
@@ -11,8 +15,8 @@ from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
+    torch_dtype_to_wave,
 )
-import math
 from iree.turbine.kernel.wave.templates.attention_common import *
 
 
@@ -23,7 +27,25 @@ def get_prefill_attention_kernel(
     k_shape: tuple[int],
     v_shape: tuple[int],
     o_shape: tuple[int],
+    input_dtype: Optional[torch.dtype] = torch.float16,
+    output_dtype: Optional[torch.dtype] = torch.float32,
+    size_dtype: Optional[torch.dtype] = torch.int32,
 ):
+    # Determine dtype of operands.
+    wave_input_dtype = torch_dtype_to_wave(input_dtype)
+    wave_output_dtype = torch_dtype_to_wave(output_dtype)
+    wave_size_dtype = torch_dtype_to_wave(size_dtype)
+    assert wave_input_dtype in [
+        tkl.f16,
+        tkl.bf16,
+    ], f"Unsupported input datatype: {wave_input_dtype}"
+    assert (
+        wave_output_dtype.is_float_asm()
+    ), f"Unsupported output datatype: {wave_output_dtype}"
+    assert (
+        wave_size_dtype.is_int_asm()
+    ), f"Expected seq to be int but got: {wave_size_dtype}"
+
     S = tkl.sym.S
     OFFSET = tkl.sym.OFFSET
     # Workgroup tile sizes
@@ -47,6 +69,7 @@ def get_prefill_attention_kernel(
     ]
     constraints += [tkw.WorkgroupConstraint(D_KV, BLOCK_D_KV, 1)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 2)]
+    constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 2, primary=False)]
     constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3)]
     constraints += [tkw.TilingConstraint(N_KV, BLOCK_N_KV)]
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / M_WAVES)]
@@ -64,7 +87,7 @@ def get_prefill_attention_kernel(
             threads_per_wave=64,
             waves_per_block=(M_WAVES, N_WAVES, 1),
             mma_type=mfma_variant[1],
-            vector_shapes={H: 0, N_Q: Mvec, D_KV: Nvec, S: 0},
+            vector_shapes={H: 0, H_KV: 0, N_Q: Mvec, D_KV: Nvec, S: 0},
         )
     ]
 
@@ -87,14 +110,14 @@ def get_prefill_attention_kernel(
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     k_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H: i // head_ratio, N_KV: j + OFFSET, D_Q: k},
-        outputs={H: i, N_KV: j, D_Q: k},
+        inputs={H_KV: i // head_ratio, N_KV: j + OFFSET, D_Q: k},
+        outputs={H_KV: i, N_KV: j, D_Q: k},
     )
 
     v_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={H: i // head_ratio, D_KV: j, N_KV: k + OFFSET},
-        outputs={H: i, D_KV: j, N_KV: k},
+        inputs={H_KV: i // head_ratio, D_KV: j, N_KV: k + OFFSET},
+        outputs={H_KV: i, D_KV: j, N_KV: k},
     )
 
     q_layout = tkl.MemoryLayout(shape=q_shape)
@@ -104,12 +127,12 @@ def get_prefill_attention_kernel(
 
     @tkw.wave(constraints)
     def prefill_attention(
-        q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, tkl.f16, q_layout],
-        k: tkl.Memory[N_KV, H, D_Q, ADDRESS_SPACE, tkl.f16, k_layout],
-        v: tkl.Memory[H, D_KV, N_KV, ADDRESS_SPACE, tkl.f16, v_layout],
-        offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, o_layout],
+        q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, wave_input_dtype, q_layout],
+        k: tkl.Memory[N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_layout],
+        v: tkl.Memory[N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_layout],
+        offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, wave_size_dtype],
+        c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
@@ -147,7 +170,7 @@ def get_prefill_attention_kernel(
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
-            imm_f16 = tkw.cast(e_delta, tkl.f16)
+            imm_f16 = tkw.cast(e_delta, wave_input_dtype)
             v_reg = tkw.read(
                 v,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
@@ -161,6 +184,8 @@ def get_prefill_attention_kernel(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
+        if wave_output_dtype != tkl.f32:
+            res = tkw.cast(res, wave_output_dtype)
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     hyperparams = {
@@ -174,6 +199,7 @@ def get_prefill_attention_kernel(
         BLOCK_N_KV: SEQ_TILE_SIZE,
         BLOCK_S: 1,
         H: shape.num_query_heads,
+        H_KV: shape.num_kv_heads,
         D_KV: shape.head_size_kv,
         D_Q: shape.head_size,
         S: shape.num_seqs,

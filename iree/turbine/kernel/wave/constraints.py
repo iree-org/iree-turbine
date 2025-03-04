@@ -14,7 +14,6 @@ from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from ..lang.global_symbols import *
 
-
 """
 Formatting for different target intrinsics:
     <kind>_<elem-type-C>_<M>x<N>x<K>_<elem-type-A>[_<elem-type-B>]
@@ -276,19 +275,27 @@ class HardwareConstraint(Constraint):
             thread_id * elements_per_thread, elements_per_thread, stride
         )
 
-    def apply(
+    def apply(self):
+        assert False, "Call either apply_read_write_thread_mapping or apply_mma_mapping"
+
+    def apply_read_write_thread_mapping(
+        self,
+        dim: IndexSymbol,
+        workgroup_dim: int,
+        elements_per_thread: int | IndexSymbol,
+        stride: int,
+    ) -> IndexSequence:
+        thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
+        return IndexSequence(
+            thread_id * elements_per_thread, elements_per_thread, stride
+        )
+
+    def apply_mma_mapping(
         self,
         dim: IndexSymbol,
         constraint_index: int | MMAOperand,
-        elements_per_thread: int | IndexSymbol,
-        stride: int,
-        is_mma_dim: bool,
         mma_type: MMAType,
     ) -> IndexSequence:
-        if not is_mma_dim:
-            return self.compute_access_pattern_using_vector_shapes(
-                dim, constraint_index, elements_per_thread, stride
-            )
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
@@ -351,6 +358,7 @@ class HardwareConstraint(Constraint):
                 ]
             case _:
                 raise ValueError("Unsupported MMA type")
+
         assert isinstance(
             constraint_index, MMAOperand
         ), f"Invalid MMA operand {constraint_index}"
@@ -434,6 +442,16 @@ class TilingConstraint(Constraint):
     induction_var: Optional[IndexExpr] = None
     iters: Optional[IndexExpr] = None
 
+    def __eq__(self, value):
+        if not isinstance(value, TilingConstraint):
+            return False
+        return (
+            self.dim == value.dim
+            and self.tile_size == value.tile_size
+            and self.induction_var == value.induction_var
+            and self.iters == value.iters
+        )
+
     @property
     def count(self) -> IndexExpr:
         """
@@ -487,6 +505,27 @@ class WaveConstraint(Constraint):
         if self.wave_id is None:
             raise ValueError("Index is being computed without setting wave id")
         return IndexSequence(self.tile_size * self.wave_id, 1)
+
+    def set_wave_id_from_hardware_and_workgroup_constraint(
+        self,
+        hardware_constraint: HardwareConstraint,
+        workgroup_constraint: WorkgroupConstraint,
+    ):
+        """
+        The wave_id is the same as the thread_id, with the exception of
+          wave_id[0] = thread_id[0] / threads_per_wave
+        This is a convention that we adopt.
+        """
+        old_wave_id = self.wave_id
+        assert self.dim == workgroup_constraint.dim, "Dimension mismatch"
+        self.wave_id = hardware_constraint.get_thread_id_from_workgroup_dim(
+            workgroup_constraint.workgroup_dim
+        )
+        if workgroup_constraint.workgroup_dim == 0:
+            self.wave_id = floor(self.wave_id / hardware_constraint.threads_per_wave)
+        assert (
+            old_wave_id is None or self.wave_id == old_wave_id
+        ), f"Conflicting preset wave_id old: {old_wave_id} new: {self.wave_id}"
 
 
 def get_constrained_shape(

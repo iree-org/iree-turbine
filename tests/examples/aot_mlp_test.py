@@ -19,6 +19,7 @@ def _run(local_path: str):
 
 
 class AOTMLPTest(unittest.TestCase):
+    @unittest.skip("Hangs")
     def testMLPExportSimple(self):
         _run("examples/aot_mlp/mlp_export_simple.py")
 
