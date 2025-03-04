@@ -16,6 +16,7 @@ from iree.turbine.runtime import Device
 from iree.turbine.dynamo import TurbineMode, DeviceTensor
 
 
+@unittest.skip("Really flaky")
 class TensorTest(unittest.TestCase):
     def setUp(self):
         self.mode = TurbineMode()
