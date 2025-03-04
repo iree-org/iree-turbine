@@ -269,16 +269,13 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-def emit_mfma(
-    m: int, n: int, k: int, vector_type: VectorType, acc: Value, values: list[Value]
-):
+def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]):
     m = get_constant_attr(m, IntegerType.get_signless(32))
     n = get_constant_attr(n, IntegerType.get_signless(32))
     k = get_constant_attr(k, IntegerType.get_signless(32))
     blocks = get_constant_attr(1, IntegerType.get_signless(32))
 
     result = amdgpu_d.mfma(
-        dest_d=vector_type,
         m=m,
         n=n,
         k=k,
@@ -310,7 +307,7 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
         raise CodegenError("No hardware constraints found.")
 
     m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
-    result = emit_mfma(m, n, k, vector_type, acc, values)
+    result = emit_mfma(m, n, k, acc, values)
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 

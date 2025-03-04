@@ -35,7 +35,7 @@ from iree.turbine.kernel.wave.templates.attention_common import (
 )
 import os
 from enum import Enum
-from torch.testing import assert_allclose
+from torch.testing import assert_close
 
 from ..common.utils import (
     require_e2e,
@@ -417,7 +417,7 @@ def testExtendAttention(
         logit_cap=logit_cap,
     )
 
-    assert_allclose(output, ref_output, rtol=1e-3, atol=1e-3)
+    assert_close(output, ref_output, rtol=1e-3, atol=1e-3, check_dtype=False)
 
 
 # TODO: Investigate errors on MI250.
