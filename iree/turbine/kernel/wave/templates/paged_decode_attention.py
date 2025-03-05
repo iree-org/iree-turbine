@@ -47,6 +47,9 @@ def get_paged_decode_attention_kernels(
     N = tkl.sym.N
     K1 = tkl.sym.K1
     K2 = tkl.sym.K2
+    DK2 = tkl.sym.DK2
+    SEQ_LEN = tkl.sym.SEQ_LEN
+    SPLIT_OFF = tkl.sym.SPLIT_OFF
     U = tkl.sym.U  # Num splits
     BH = tkl.sym.BH
     # Workgroup tile sizes
@@ -226,8 +229,10 @@ def get_paged_decode_attention_kernels(
 
         # The request index is used to load the appropriate entries from the block table.
         req_index = tkw.read(request_indices, elements_per_thread=1)
-        # The sequence length is used to control the bounds of the loop over T.
+        # The sequence length is used to control the bounds of the loop over K2.
         seq_length = tkw.read(sequence_lengths, elements_per_thread=1)
+        tkw.set_symbol(SEQ_LEN, seq_length)
+
         seq_length_per_split = tkw.apply_expr(
             seq_length, lambda x: sympy.ceiling(x / U)
         )
@@ -235,6 +240,11 @@ def get_paged_decode_attention_kernels(
         split_offset = tkw.self_index(U, tkl.i32)
         split_offset = tkw.broadcast(split_offset, target_shape=[S, U])
         split_offset = split_offset * seq_length_per_split
+        tkw.set_symbol(SPLIT_OFF, split_offset)
+
+        seq_length_per_split = tkw.apply_expr(
+            seq_length, lambda x: sympy.Min(x, SEQ_LEN - SPLIT_OFF)
+        )
         tkw.set_symbol(K2, seq_length_per_split)
 
         @tkw.reduction(K2, init_args=[init_max, init_sum, new_acc])
@@ -283,7 +293,10 @@ def get_paged_decode_attention_kernels(
 
         res_max, res_sum, res_mm = loop
 
-        @tkw.conditional(T > 0)
+        # Cannot use K2 as it folded to constant
+        tkw.set_symbol(DK2, seq_length_per_split)
+
+        @tkw.conditional(DK2 > 0)
         def then():
             reciprocal_sum = tkw.reciprocal(res_sum)
             res = res_mm * reciprocal_sum
