@@ -43,8 +43,6 @@ jobs:
 
       - name: Create Python venv
         run: |
-          sudo apt update
-          sudo apt install -y rocm-dev rocm-libs miopen-hip hip-runtime-amd
           python -m venv ${VENV_DIR}
           source ${VENV_DIR}/bin/activate
           echo VIRTUAL_ENV=$VIRTUAL_ENV >> "$GITHUB_ENV"
@@ -60,7 +58,6 @@ jobs:
           pip install --no-compile -r pytorch-cpu-requirements.txt
           pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
           pip install -r requirements.txt -e .
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2
 
       - name: Install GPU pip deps
         if: "contains(matrix.os, 'amdgpu') && !cancelled()"
