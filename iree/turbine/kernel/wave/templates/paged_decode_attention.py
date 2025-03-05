@@ -40,14 +40,14 @@ def get_paged_decode_attention_kernels(
     block_table_shape: tuple[int],
 ):
     # Input sizes
-    T = tkl.sym.T
-    S = tkl.sym.S
+    T = tkl.sym.T  # Reduction iter
+    S = tkl.sym.S  # Num seqs
     B = tkl.sym.B
     M = tkl.sym.M
     N = tkl.sym.N
     K1 = tkl.sym.K1
     K2 = tkl.sym.K2
-    U = tkl.sym.U
+    U = tkl.sym.U  # Num splits
     BH = tkl.sym.BH
     # Workgroup tile sizes
     BLOCK_B = tkl.sym.BLOCK_B
@@ -75,13 +75,6 @@ def get_paged_decode_attention_kernels(
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     B_WAVES = 1
 
-    # T represents the indices of the sequence tokens.
-    # T is dynamic and is distributed across workgroups and is tiled.
-    iter_count = sympy.Piecewise(
-        (sympy.ceiling(T / U), WORKGROUP_0 < sympy.Mod(T, U)),
-        (sympy.floor(T / U), True),
-    )
-
     def phase_0_constraints():
         # K1, K2 are reduction dimensions that are fixed (not distributed) so
         # they are not part of the constraints.
@@ -89,13 +82,13 @@ def get_paged_decode_attention_kernels(
         constraints: list[tkw.Constraint] = []
         # U represents the number of splits of the key-value sequence.
         # U is parallelizable and is distributed across workgroups.
-        constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 0)]
+        constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
 
-        wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
-        constraints += [
-            tkw.WorkgroupConstraint(T, BLOCK_T, 0, apply_fn=wg_func, primary=False)
-        ]
-        constraints += [tkw.TilingConstraint(T, 1, iters=iter_count)]
+        # wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
+        # constraints += [
+        #     tkw.WorkgroupConstraint(T, BLOCK_T, 0, apply_fn=wg_func, primary=False)
+        # ]
+        constraints += [tkw.TilingConstraint(T, BLOCK_T)]
 
         # BH is the kv-head index and is distributed across workgroups.
         # B is the query index and is distributed like BH but with a different
@@ -116,7 +109,7 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1, primary=False)]
         constraints += [tkw.WaveConstraint(B, BLOCK_B / B_WAVES)]
 
-        constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
+        constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
 
         vector_shapes = {BH: 0, T: 0, S: 0, U: 1}
         waves_per_block = (1, B_WAVES, 1)
@@ -165,6 +158,7 @@ def get_paged_decode_attention_kernels(
     k = tkw.IndexMapping.iterator(2)
     l = tkw.IndexMapping.iterator(3)
     d0 = tkw.IndexMapping.dynamic_val(0)
+    d1 = tkw.IndexMapping.dynamic_val(1)
 
     mapping = tkw.IndexMapping(
         num_iterators=3,
@@ -192,9 +186,9 @@ def get_paged_decode_attention_kernels(
     # Returns token indices into the k-v cache for the given sequence (d0).
     block_table_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={S: d0, T: j},
+        inputs={S: d0, T: d1 + j},
         outputs={S: i, T: j},
-        dynamic_val_mappings={S: i},
+        dynamic_val_mappings=({S: i}, {S: i}),
     )
 
     k_layout = tkl.MemoryLayout(shape=k_shape)
@@ -234,11 +228,14 @@ def get_paged_decode_attention_kernels(
         req_index = tkw.read(request_indices, elements_per_thread=1)
         # The sequence length is used to control the bounds of the loop over T.
         seq_length = tkw.read(sequence_lengths, elements_per_thread=1)
-        tkw.set_symbol(T, seq_length)
-
-        # TODO: Add if statement here in cases where T is 0 to avoid writing nans for the output.
-        # While the for loop will be skipped, the calculations and writes outside the for
-        # loop will still be executed.
+        seq_length_per_split = tkw.apply_expr(
+            seq_length, lambda x: sympy.ceiling(x / U)
+        )
+        seq_length_per_split = tkw.cast(seq_length_per_split, tkl.i32)
+        split_offset = tkw.self_index(U, tkl.i32)
+        split_offset = tkw.broadcast(split_offset, target_shape=[S, U])
+        split_offset = split_offset * seq_length_per_split
+        tkw.set_symbol(T, seq_length_per_split)
 
         @tkw.reduction(T, init_args=[init_max, init_sum, new_acc])
         def loop(
@@ -251,13 +248,13 @@ def get_paged_decode_attention_kernels(
                 block_table,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_V,
                 mapping=block_table_mapping,
-                mapping_dynamic_vals=(req_index,),
+                mapping_dynamic_vals=(req_index, split_offset),
             )
             block_indices_k = tkw.read(
                 block_table,
                 elements_per_thread=1,
                 mapping=block_table_mapping,
-                mapping_dynamic_vals=(req_index,),
+                mapping_dynamic_vals=(req_index, split_offset),
             )
             k_reg = tkw.read(
                 k,
@@ -286,7 +283,7 @@ def get_paged_decode_attention_kernels(
 
         res_max, res_sum, res_mm = loop
 
-        @tkw.conditional(iter_count > 0)
+        @tkw.conditional(T > 0)
         def then():
             reciprocal_sum = tkw.reciprocal(res_sum)
             res = res_mm * reciprocal_sum
@@ -341,6 +338,7 @@ def get_paged_decode_attention_kernels(
         BLOCK_B: HEAD_BLOCK_SIZE,
         BLOCK_S: 1,
         BLOCK_U: 1,
+        BLOCK_T: 32,
         B: shape.num_query_heads,
         M: 1,
         N: shape.head_size_kv,
