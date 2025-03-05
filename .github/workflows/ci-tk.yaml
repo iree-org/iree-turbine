@@ -69,6 +69,7 @@ jobs:
           pip install --no-compile -r pytorch-rocm-requirements.txt
           pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
           pip install -r requirements.txt -e .
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
 
       - name: Run unit tests
         if: ${{ !cancelled() }}
