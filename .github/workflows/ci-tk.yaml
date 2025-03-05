@@ -85,6 +85,7 @@ jobs:
       - name: Run e2e tests on AMD GPU MI300
         if: "contains(matrix.os, 'mi300') && !cancelled()"
         run: |
+          python -c "import torch; print(torch.cuda.is_available())"
           WAVE_CACHE_ON=0 pytest -n 4 --capture=tee-sys -vv --run-e2e --gpu-distribute 1 ./tests/kernel/wave/
 
       - name: Run e2e tests on AMD GPU MI250
