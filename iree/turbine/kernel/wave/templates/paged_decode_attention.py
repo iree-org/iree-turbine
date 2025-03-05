@@ -40,7 +40,7 @@ def get_paged_decode_attention_kernels(
     block_table_shape: tuple[int],
 ):
     # Input sizes
-    T = tkl.sym.T  # Reduction iter
+    T = tkl.sym.T
     S = tkl.sym.S  # Num seqs
     B = tkl.sym.B
     M = tkl.sym.M
@@ -54,7 +54,7 @@ def get_paged_decode_attention_kernels(
     BLOCK_BH = tkl.sym.BLOCK_BH
     BLOCK_N = tkl.sym.BLOCK_N
     BLOCK_U = tkl.sym.BLOCK_U
-    BLOCK_T = tkl.sym.BLOCK_T
+    BLOCK_K2 = tkl.sym.BLOCK_K2
     BLOCK_S = tkl.sym.BLOCK_S
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -84,11 +84,11 @@ def get_paged_decode_attention_kernels(
         # U is parallelizable and is distributed across workgroups.
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
 
-        # wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
-        # constraints += [
-        #     tkw.WorkgroupConstraint(T, BLOCK_T, 0, apply_fn=wg_func, primary=False)
-        # ]
-        constraints += [tkw.TilingConstraint(T, BLOCK_T)]
+        wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
+        constraints += [
+            tkw.WorkgroupConstraint(T, 1, 0, apply_fn=wg_func, primary=False)
+        ]
+        constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
 
         # BH is the kv-head index and is distributed across workgroups.
         # B is the query index and is distributed like BH but with a different
@@ -187,7 +187,7 @@ def get_paged_decode_attention_kernels(
     block_table_mapping = tkw.IndexMapping(
         num_iterators=2,
         inputs={S: d0, T: d1 + j},
-        outputs={S: i, T: j},
+        outputs={S: i, K2: j},
         dynamic_val_mappings=({S: i}, {S: i}),
     )
 
@@ -235,9 +235,9 @@ def get_paged_decode_attention_kernels(
         split_offset = tkw.self_index(U, tkl.i32)
         split_offset = tkw.broadcast(split_offset, target_shape=[S, U])
         split_offset = split_offset * seq_length_per_split
-        tkw.set_symbol(T, seq_length_per_split)
+        tkw.set_symbol(K2, seq_length_per_split)
 
-        @tkw.reduction(T, init_args=[init_max, init_sum, new_acc])
+        @tkw.reduction(K2, init_args=[init_max, init_sum, new_acc])
         def loop(
             partial_max: tkl.Register[S, B, tkl.f32],
             partial_sum: tkl.Register[S, B, tkl.f32],
@@ -338,7 +338,7 @@ def get_paged_decode_attention_kernels(
         BLOCK_B: HEAD_BLOCK_SIZE,
         BLOCK_S: 1,
         BLOCK_U: 1,
-        BLOCK_T: 32,
+        BLOCK_K2: 32,
         B: shape.num_query_heads,
         M: 1,
         N: shape.head_size_kv,
@@ -346,6 +346,7 @@ def get_paged_decode_attention_kernels(
         K2: shape.block_size,
         BH: shape.num_kv_heads,
         S: shape.num_seqs,
+        T: shape.kv_lens,
         U: num_kv_splits,
     }
     symbols_1 = dict(symbols_0)

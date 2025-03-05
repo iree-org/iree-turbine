@@ -697,10 +697,13 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
 
     # For now, we assume that dimensions that have tiling constraints on them,
     # do not have any other constraints.
-    if isinstance(node.count, sympy.Expr):
-        end = gen_sympy_index(add_emitter_subs(emitter), node.count)
+    count = node.count
+    if dyn_count := emitter.dynamic_dims.get(axis, None):
+        end = dyn_count
+    elif isinstance(count, sympy.Expr):
+        end = gen_sympy_index(add_emitter_subs(emitter), count)
     else:
-        end = arith_d.constant(IndexType.get(), int(node.count))
+        end = arith_d.constant(IndexType.get(), int(count))
 
     # Since we divide the end by the tile size, we need to make sure that the
     # step is 1.
