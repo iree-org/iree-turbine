@@ -114,11 +114,12 @@ def _warn_iree_is_too_old():
     try:
         from packaging.version import Version
         from importlib.metadata import version
-    except ImportError:
+
+        iree_compiler_ver = Version(version("iree-base-compiler"))
+        iree_runtime_ver = Version(version("iree-base-runtime"))
+    except:
         return
 
-    iree_compiler_ver = Version(version("iree-base-compiler"))
-    iree_runtime_ver = Version(version("iree-base-runtime"))
     if not _are_versions_compatible(iree_compiler_ver, iree_runtime_ver):
         warnings.warn(
             f"IREE compiler and runtime versions mismatch: {iree_compiler_ver} and {iree_runtime_ver}"
