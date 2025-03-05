@@ -104,6 +104,7 @@ class TensorTest(unittest.TestCase):
             turbine_output.cpu(), ref_output.detach().numpy(), atol=1e-6
         )
 
+    @unittest.skip("Errors, see https://github.com/iree-org/iree-turbine/issues/317")
     def test_nn_MLP(self):
         class MLP(torch.nn.Module):
             def __init__(self):

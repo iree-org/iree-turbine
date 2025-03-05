@@ -48,11 +48,10 @@ from .constraints import (
 from .assumptions import Assumption
 import torch.fx as fx
 import iree.turbine.kernel.lang as tkl
-from pathlib import Path
 
 
-import tempfile
 from ...support.conversions import TORCH_DTYPE_TO_SIGNED_MLIR_TYPE_ASM
+from .profiling import benchmark_module
 from iree.compiler.dialects.transform import (
     interpreter as transform_interpreter,
     any_op_t,
@@ -65,15 +64,10 @@ import sympy
 import torch
 from iree.compiler import compile_str
 import iree.runtime as rt
-import iree.runtime.benchmark as bench
 
 # TODO: Monkey-patching f16 support, need to fix in iree.
 import numpy
-import ml_dtypes
-
 import ctypes
-
-bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
 
 
 def try_apply_pass(
@@ -771,55 +765,18 @@ def invoke_vmfb(
             )
 
     if run_bench:
-        bench_with_constant_weights = config.get("bench_with_constant_weights", False)
-        tempfiles = []
-        inputs = []
-        all_inputs = kernel_inputs + kernel_outputs if inplace else kernel_inputs
-        all_inputs += kernel_dynamic_dims
-        if bench_with_constant_weights:
-            for inp in all_inputs:
-                if isinstance(inp, torch.Tensor):
-                    inputs.append(
-                        "x".join(
-                            [str(x) for x in inp.shape]
-                            + [TORCH_DTYPE_TO_SIGNED_MLIR_TYPE_ASM[inp.dtype]]
-                        )
-                    )
-                elif isinstance(inp, int):
-                    inputs.append(f"1xi32={inp}")
-                else:
-                    raise NotImplementedError("Unsupported input type.")
-        else:
-            for inp in all_inputs:
-                if isinstance(inp, torch.Tensor):
-                    inp = inp.cpu()
-                    if inp.dtype == torch.bfloat16:
-                        inp = (
-                            inp.view(dtype=torch.uint16)
-                            .numpy()
-                            .view(dtype=ml_dtypes.bfloat16)
-                        )
-                    else:
-                        inp = inp.numpy()
-                    with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as tf:
-                        numpy.save(tf, inp)
-                        tempfiles.append(tf)
-                        inputs.append("@" + tf.name)
-                elif isinstance(inp, int):
-                    inputs.append(f"1xi32={inp}")
-                else:
-                    raise NotImplementedError("Unsupported input type.")
-
-        benchmark_results = bench.benchmark_module(
+        benchmark_results = benchmark_module(
+            kernel_inputs,
+            kernel_outputs,
+            kernel_dynamic_dims,
+            config,
+            inplace,
             mod,
             entry_function=func_name,
             device=device,
-            inputs=inputs,
             **benchmark_flags,
         )
         _print_bench_result(benchmark_results, bench_file)
-        for file in tempfiles:
-            Path.unlink(file.name)
 
 
 def compile_and_invoke(
