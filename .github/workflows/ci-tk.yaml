@@ -85,7 +85,7 @@ jobs:
       - name: Run e2e tests on AMD GPU MI300
         if: "contains(matrix.os, 'mi300') && !cancelled()"
         run: |
-          WAVE_CACHE_ON=0 pytest -n 4 --capture=tee-sys -vv --run-e2e --gpu-distribute 1 ./tests/kernel/wave/
+          WAVE_CACHE_ON=0 pytest -n 4 --capture=tee-sys -vv --run-e2e --gpu-distribute 8 ./tests/kernel/wave/
 
       - name: Run e2e tests on AMD GPU MI250
         if: "contains(matrix.os, 'mi250') && !cancelled()"
