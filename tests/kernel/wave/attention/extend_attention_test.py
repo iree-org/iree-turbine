@@ -19,6 +19,8 @@ from iree.turbine.kernel.wave.utils import (
     device_randn,
     device_zeros,
     device_empty,
+    device_arange,
+    device_randint,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.extend_attention import (
@@ -35,7 +37,7 @@ from iree.turbine.kernel.wave.templates.attention_common import (
 )
 import os
 from enum import Enum
-from torch.testing import assert_allclose
+from torch.testing import assert_close
 
 from ..common.utils import (
     require_e2e,
@@ -192,24 +194,20 @@ def create_inputs(
     H_Q = shape.num_query_heads
     D = shape.head_size
     torch.manual_seed(0)
-    b_seq_len_prefix = torch.randint(
-        1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
-    )
+    b_seq_len_prefix = device_randint(1, N_CTX // 2, (B,), dtype=torch.int32)
     if shape.fixed_seq_len_prefix:
         b_seq_len_prefix.fill_(shape.fixed_seq_len_prefix)
-    b_seq_len_extend = torch.randint(
-        1, N_CTX // 2, (B,), dtype=torch.int32, device="cuda"
-    )
+    b_seq_len_extend = device_randint(1, N_CTX // 2, (B,), dtype=torch.int32)
     if shape.fixed_seq_len_extend:
         b_seq_len_extend.fill_(shape.fixed_seq_len_extend)
     b_seq_len = b_seq_len_prefix + b_seq_len_extend
     max_len_in_batch = torch.max(b_seq_len, 0)[0].item()
 
-    b_req_idx = torch.arange(B, dtype=torch.int32, device="cuda")
-    req_to_tokens = torch.empty((B, max_len_in_batch), dtype=torch.int32, device="cuda")
-    b_start_loc = torch.zeros((B,), dtype=torch.int32, device="cuda")
+    b_req_idx = device_arange(B, dtype=torch.int32)
+    req_to_tokens = device_empty((B, max_len_in_batch), dtype=torch.int32)
+    b_start_loc = device_zeros((B,), dtype=torch.int32)
     b_start_loc[1:] = torch.cumsum(b_seq_len[:-1], 0)
-    b_start_loc_extend = torch.zeros((B,), dtype=torch.int32, device="cuda")
+    b_start_loc_extend = device_zeros((B,), dtype=torch.int32)
     b_start_loc_extend[1:] = torch.cumsum(b_seq_len_extend[:-1], 0)
     for i in range(B):
         req_to_tokens[i, : b_seq_len[i]] = torch.arange(
@@ -218,16 +216,16 @@ def create_inputs(
 
     total_token_num = torch.sum(b_seq_len).item()
     extend_token_num = torch.sum(b_seq_len_extend).item()
-    k_buffer = torch.empty(
-        (total_token_num, H_KV, D), dtype=dtype, device="cuda"
-    ).normal_(mean=0.1, std=0.2)
-    v_buffer = torch.empty(
-        (total_token_num, H_KV, D), dtype=dtype, device="cuda"
-    ).normal_(mean=0.1, std=0.2)
+    k_buffer = device_empty((total_token_num, H_KV, D), dtype=dtype).normal_(
+        mean=0.1, std=0.2
+    )
+    v_buffer = device_empty((total_token_num, H_KV, D), dtype=dtype).normal_(
+        mean=0.1, std=0.2
+    )
 
-    k_extend = torch.empty((extend_token_num, H_KV, D), dtype=dtype, device="cuda")
-    v_extend = torch.empty((extend_token_num, H_KV, D), dtype=dtype, device="cuda")
-    q_extend = torch.empty((extend_token_num, H_Q, D), dtype=dtype, device="cuda")
+    k_extend = device_empty((extend_token_num, H_KV, D), dtype=dtype)
+    v_extend = device_empty((extend_token_num, H_KV, D), dtype=dtype)
+    q_extend = device_empty((extend_token_num, H_Q, D), dtype=dtype)
     for i in range(B):
         extend_start_in_buffer = b_start_loc[i] + b_seq_len_prefix[i]
         extend_end_in_buffer = b_start_loc[i] + b_seq_len[i]
@@ -239,8 +237,8 @@ def create_inputs(
         v_extend[extend_start:extend_end] = v_buffer[
             extend_start_in_buffer:extend_end_in_buffer
         ]
-        q_extend[extend_start:extend_end] = torch.empty(
-            (b_seq_len_extend[i], H_Q, D), dtype=dtype, device="cuda"
+        q_extend[extend_start:extend_end] = device_empty(
+            (b_seq_len_extend[i], H_Q, D), dtype=dtype
         ).normal_(mean=0.1, std=0.2)
 
     b_seq_len_extend = b_seq_len - b_seq_len_prefix
@@ -417,7 +415,7 @@ def testExtendAttention(
         logit_cap=logit_cap,
     )
 
-    assert_allclose(output, ref_output, rtol=1e-3, atol=1e-3)
+    assert_close(output, ref_output, rtol=1e-3, atol=1e-3, check_dtype=False)
 
 
 # TODO: Investigate errors on MI250.
