@@ -47,9 +47,10 @@ def get_paged_decode_attention_kernels(
     N = tkl.sym.N
     K1 = tkl.sym.K1
     K2 = tkl.sym.K2
-    DK2 = tkl.sym.DK2
     SEQ_LEN = tkl.sym.SEQ_LEN
     SPLIT_OFF = tkl.sym.SPLIT_OFF
+    SPLIT_LEN = tkl.sym.SPLIT_LEN
+    ZERO = tkl.sym.ZERO  # Hack
     U = tkl.sym.U  # Num splits
     BH = tkl.sym.BH
     # Workgroup tile sizes
@@ -91,7 +92,11 @@ def get_paged_decode_attention_kernels(
         constraints += [
             tkw.WorkgroupConstraint(T, 1, 0, apply_fn=wg_func, primary=False)
         ]
-        constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
+        constraints += [
+            tkw.TilingConstraint(
+                K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2)
+            )
+        ]
 
         # BH is the kv-head index and is distributed across workgroups.
         # B is the query index and is distributed like BH but with a different
@@ -189,9 +194,9 @@ def get_paged_decode_attention_kernels(
     # Returns token indices into the k-v cache for the given sequence (d0).
     block_table_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={S: d0, T: d1 + j},
+        inputs={S: d0, T: j + ZERO},
         outputs={S: i, K2: j},
-        dynamic_val_mappings=({S: i}, {S: i}),
+        dynamic_val_mappings={S: i},
     )
 
     k_layout = tkl.MemoryLayout(shape=k_shape)
@@ -245,7 +250,7 @@ def get_paged_decode_attention_kernels(
         seq_length_per_split = tkw.apply_expr(
             seq_length, lambda x: sympy.Min(x, sympy.Max(SEQ_LEN - SPLIT_OFF, 0))
         )
-        tkw.set_symbol(K2, seq_length_per_split)
+        tkw.set_symbol(SPLIT_LEN, seq_length_per_split)
 
         @tkw.reduction(K2, init_args=[init_max, init_sum, new_acc])
         def loop(
@@ -258,13 +263,13 @@ def get_paged_decode_attention_kernels(
                 block_table,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_V,
                 mapping=block_table_mapping,
-                mapping_dynamic_vals=(req_index, split_offset),
+                mapping_dynamic_vals=(req_index,),
             )
             block_indices_k = tkw.read(
                 block_table,
                 elements_per_thread=1,
                 mapping=block_table_mapping,
-                mapping_dynamic_vals=(req_index, split_offset),
+                mapping_dynamic_vals=(req_index,),
             )
             k_reg = tkw.read(
                 k,
@@ -293,10 +298,7 @@ def get_paged_decode_attention_kernels(
 
         res_max, res_sum, res_mm = loop
 
-        # Cannot use K2 as it folded to constant
-        tkw.set_symbol(DK2, seq_length_per_split)
-
-        @tkw.conditional(DK2 > 0)
+        @tkw.conditional(SPLIT_LEN > 0)
         def then():
             reciprocal_sum = tkw.reciprocal(res_sum)
             res = res_mm * reciprocal_sum
@@ -361,6 +363,7 @@ def get_paged_decode_attention_kernels(
         S: shape.num_seqs,
         T: shape.kv_lens,
         U: num_kv_splits,
+        ZERO: 0,
     }
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
