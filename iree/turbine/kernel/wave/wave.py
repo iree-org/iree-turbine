@@ -31,6 +31,14 @@ from .constraints import (
 )
 
 # Passes
+from .analysis.index_sequence_analysis import (
+    set_node_indices,
+    set_post_expansion_indices,
+)
+from .analysis.partition_strided_operators import (
+    partition_ops_with_gpr_offsets,
+    partition_strided_operators,
+)
 from .barriers import add_shared_memory_barriers
 from .codegen import WaveEmitter
 from .decompose_reduce_ops import decompose_reduce_ops
@@ -43,12 +51,6 @@ from .promotion import promote_placeholders
 from .reuse_shared_allocs import reuse_shared_allocs
 from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
-from .index_sequence_analysis import (
-    partition_ops_with_gpr_offsets,
-    partition_strided_operators,
-    set_node_indices,
-    set_post_expansion_indices,
-)
 from .shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
     align_index_sizes,

@@ -19,7 +19,7 @@ from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.ops.wave_ops import get_custom
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.visualization import visualize_graph
-from iree.turbine.kernel.wave.index_sequence_analysis import (
+from iree.turbine.kernel.wave.analysis.index_sequence_analysis import (
     set_node_indices,
     set_post_expansion_indices,
 )

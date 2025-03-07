@@ -34,7 +34,7 @@ from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
 from iree.turbine.kernel.wave.scheduling.schedule import schedule_graph
 from iree.turbine.kernel.ops.wave_ops import get_custom
-from iree.turbine.kernel.wave.index_sequence_analysis import (
+from iree.turbine.kernel.wave.analysis.index_sequence_analysis import (
     set_node_indices,
     set_post_expansion_indices,
 )
