@@ -65,7 +65,7 @@ def testAttentionPure(
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     if run_bench:
-        config["benchmark_batch_size"] = 1
+        config["benchmark_batch_size"] = 100
         config["benchmark_repetitions"] = 3
     if dump_perf is not None:
         perf_filename = str(input_shape)[1:-1].replace(", ", "x") + "_mfma_" + str(INTRINSIC_ID) + "_dyn-dims_" + str(dynamic_dims) + ".json"
