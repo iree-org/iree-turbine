@@ -20,6 +20,8 @@ from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel.wave.utils import (
     get_default_compile_config,
+    get_mfma_load_elems_per_thread,
+    get_mfma_store_elems_per_thread,
     print_trace,
     run_test,
     try_apply_pass,
@@ -82,7 +84,6 @@ def build_block_constraints(*args, **kwargs) -> Sequence[tkw.Constraint]:
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
-    # constraints += [tkw.WorkgroupConstraint(TOKENS_IN_CHUNK, BLOCK_TOKENS_IN_CHUNK, 2)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [
@@ -97,29 +98,23 @@ def build_block_constraints(*args, **kwargs) -> Sequence[tkw.Constraint]:
     return constraints
 
 
-def config():
+def config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
     return {
         "static_symbols": {
             TOKENS_IN_CHUNK: 33,
             E: 2,
-            M: 16,
-            N: 16,
+            M: 32,
+            N: 32,
             K: 32,
             TOPK: 33,
             BLOCK_M: 16,
             BLOCK_N: 16,
             BLOCK_K: 16,
-            # BLOCK_TOKENS_IN_CHUNK: 16,
-            LOAD_TOKS_PER_THREAD: 1,
-            LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 1,
+            LOAD_TOKS_PER_THREAD: 4,
+            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mma_variant),
+            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mma_variant),
         },
         "vector_shapes": {
-            TOKENS_IN_CHUNK: 1,
-            E: 1,
-            M: 16,
-            N: 16,
-            K: 16,
             TOPK: 0,
         },
         "canonicalize": {True},
@@ -131,23 +126,25 @@ d0 = tkw.IndexMapping.dynamic_val(0)
 
 offset_mapping_a = tkw.IndexMapping(
     num_iterators=2,
-    inputs={TOKENS_IN_CHUNK: d0, K: j},
-    outputs={TOKENS_IN_CHUNK: i, K: j},
-    dynamic_val_mappings=({TOKENS_IN_CHUNK: i}),
+    inputs={M: d0, K: j},
+    outputs={M: i, K: j},
+    dynamic_val_mappings=({M: i}),
 )
 
 offset_mapping_b = tkw.IndexMapping(
     num_iterators=3,
-    inputs={E: d0, N: j, K: k},
-    outputs={E: i, N: j, K: k},
-    dynamic_val_mappings=({E: i}),
+    inputs={M: d0, N: j, K: k},
+    outputs={M: i, N: j, K: k},
+    dynamic_val_mappings=({M: i}),
 )
 
 
 def fused_moe_kernel(
-    A: tkl.Memory[TOKENS_IN_CHUNK, K, ADDRESS_SPACE, tkl.f16],
-    B: tkl.Memory[E, N, K, ADDRESS_SPACE, tkl.f16],
-    C: tkl.Memory[M, TOPK, N, ADDRESS_SPACE, tkl.f32],
+    # A: tkl.Memory[TOKENS_IN_CHUNK, K, ADDRESS_SPACE, tkl.f16],
+    # B: tkl.Memory[E, N, K, ADDRESS_SPACE, tkl.f16],
+    A: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+    B: tkl.Memory[M, N, K, ADDRESS_SPACE, tkl.f16],
+    C: tkl.Memory[TOPK, M, N, ADDRESS_SPACE, tkl.f32],
     # Quantization parameters.
     # a_scale_ptr,
     # b_scale_ptr,
@@ -189,29 +186,27 @@ def fused_moe_kernel(
     # if pid_m * BLOCK_SIZE_M >= num_tokens_post_padded:
     #     return
 
-    c_reg = tkl.Register[TOKENS_IN_CHUNK, K, E, N, M, TOPK, tkl.f32](0.0)
+    c_reg = tkl.Register[TOPK, M, N, tkl.f32](0.0)
 
     tok_id = tkw.read(sorted_token_ids, elements_per_thread=LOAD_TOKS_PER_THREAD)
     expert_id = tkw.read(expert_ids, elements_per_thread=LOAD_TOKS_PER_THREAD)
 
     @tkw.reduction(K, init_args=[c_reg])
     def repeat(
-        acc: tkl.Register[TOKENS_IN_CHUNK, K, E, N, M, TOPK, tkl.f32]
-    ) -> tkl.Register[TOKENS_IN_CHUNK, K, E, N, M, TOPK, tkl.f32]:
+        acc: tkl.Register[TOPK, M, N, tkl.f32]
+    ) -> tkl.Register[TOPK, M, N, tkl.f32]:
         a_reg = tkw.read(
             A,
             mapping=offset_mapping_a,
             mapping_dynamic_vals=(tok_id,),
             elements_per_thread=LOAD_ELEMS_PER_THREAD,
         )
-
         b_reg = tkw.read(
             B,
             mapping=offset_mapping_b,
             mapping_dynamic_vals=(expert_id,),
             elements_per_thread=LOAD_ELEMS_PER_THREAD,
         )
-
         acc = tkw.mma(a_reg, b_reg, acc)
         return acc
 
