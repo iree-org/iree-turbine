@@ -164,7 +164,7 @@ class WaveCacheManager(object):
 
         # Benchmark related hash
         if run_bench and config != None:
-            key += config.get("benchmark_batch_size", "")
+            key += [config.get("benchmark_batch_size", "")]
         return hashlib.sha256(str(key).encode("utf-8")).hexdigest()
 
     ###############################################################################
