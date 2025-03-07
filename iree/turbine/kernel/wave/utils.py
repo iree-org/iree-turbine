@@ -48,11 +48,10 @@ from .constraints import (
 from .assumptions import Assumption
 import torch.fx as fx
 import iree.turbine.kernel.lang as tkl
-from pathlib import Path
 
 
-import tempfile
 from ...support.conversions import TORCH_DTYPE_TO_SIGNED_MLIR_TYPE_ASM
+from .profiling import benchmark_module
 from iree.compiler.dialects.transform import (
     interpreter as transform_interpreter,
     any_op_t,
@@ -65,13 +64,30 @@ import sympy
 import torch
 from iree.compiler import compile_str
 import iree.runtime as rt
-import iree.runtime.benchmark as bench
 
 # TODO: Monkey-patching f16 support, need to fix in iree.
 import numpy
-import ml_dtypes
+import ctypes
 
-bench.DTYPE_TO_ABI_TYPE[numpy.dtype(numpy.float16)] = "f16"
+
+def try_apply_pass(
+    p,
+    trace: CapturedTrace,
+    print_ir_before: Sequence[str] = [],
+    print_ir_after: Sequence[str] = [],
+):
+    if "all" in print_ir_before or p.__name__ in print_ir_before:
+        print(f"***Before {p.__name__}***\n")
+        print_trace(trace)
+    try:
+        p()
+    except Exception:
+        print(f"Error in pass: {p.__name__}\n")
+        print_trace(trace)
+        raise
+    if "all" in print_ir_after or p.__name__ in print_ir_after:
+        print(f"***After {p.__name__}***\n")
+        print_trace(trace)
 
 
 def canonicalize_module(module: Operation):
@@ -103,6 +119,8 @@ def canonicalize_module(module: Operation):
 
 def run_test(func: Callable[[], None]) -> Callable[[], None]:
     """Run a function as part of the test suite."""
+    # Print func name before running
+    print(f"{func.__name__}")
     func()
     # Print a separator between tests
     print("-----")
@@ -520,6 +538,10 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
         ret[:] = type(ret)(host_array)
 
 
+_dl_tensor_name = ctypes.create_string_buffer(b"dltensor")
+_set_capsule_name = ctypes.pythonapi.PyCapsule_SetName
+
+
 def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
     linearized_arg_len = len(inputs) + len(outputs) + len(dynamic_dims)
     # ret_list is 0 because we modify/write result in place.
@@ -531,6 +553,11 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
             arg_tensor = arg_tensor.contiguous()
         capsule = arg_tensor.__dlpack__(None)
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
+
+        # IREE runtime renames capsule to "dltensor_used" for some reason, but
+        # only deletes capsules with "dltensor" name, which is causing a memory
+        # leak.
+        _set_capsule_name(ctypes.py_object(capsule), _dl_tensor_name)
         arg_list.push_ref(arg_tensor_bv)
 
     # Linearize arguments, In linearized arg_list, we first push in all inputs,
@@ -610,6 +637,12 @@ def compile_to_vmfb(
         target = config["target"]
         flags.append(f"--iree-hip-target={target}")
 
+    if config.get("gpu-native-math-precision", False):
+        # Polynomial approximation passes in MLIR/IREE often generate
+        # suboptimal code with redundant clamps and fptosi. This flag
+        # allows us to skip unnecessary approx for GPU.
+        flags.append("--iree-codegen-gpu-native-math-precision=true")
+
     if config.get("print_ir_after_all", False):
         flags.append("--mlir-print-ir-after-all")
 
@@ -634,6 +667,10 @@ def compile_to_vmfb(
     return res
 
 
+# Cache for the system context and vm function.
+RUNTIME_CACHE: dict[str, tuple[rt.SystemContext, rt.VmFunction]] = {}
+
+
 def invoke_vmfb(
     vmfb: bytes,
     func_name: str,
@@ -644,6 +681,7 @@ def invoke_vmfb(
     run: bool = False,
     run_bench: bool = False,
     inplace: bool = False,
+    kernel_hash: Optional[str] = None,
 ):
 
     device = config["device"]
@@ -671,19 +709,24 @@ def invoke_vmfb(
     rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
-    mod = rt.VmModule.copy_buffer(vm_instance, vmfb)
 
-    vm_modules = [
-        mod,
-        rt.create_hal_module(vm_instance, device),
-    ]
-    ctx = rt.SystemContext(
-        vm_modules=vm_modules,
-        config=rt_config,
-    )
+    if kernel_hash and kernel_hash in RUNTIME_CACHE:
+        ctx, func = RUNTIME_CACHE[kernel_hash]
+    else:
+        mod = rt.VmModule.copy_buffer(vm_instance, vmfb)
+        vm_modules = [
+            mod,
+            rt.create_hal_module(vm_instance, device),
+        ]
+        ctx = rt.SystemContext(
+            vm_modules=vm_modules,
+            config=rt_config,
+        )
+        func = mod.lookup_function(func_name)
+        if kernel_hash:
+            RUNTIME_CACHE[kernel_hash] = (ctx, func)
 
     if run:
-        func = mod.lookup_function(func_name)
         if inplace:
             _inplace_invoke(
                 ctx.vm_context,
@@ -704,55 +747,18 @@ def invoke_vmfb(
             )
 
     if run_bench:
-        bench_with_constant_weights = config.get("bench_with_constant_weights", False)
-        tempfiles = []
-        inputs = []
-        all_inputs = kernel_inputs + kernel_outputs if inplace else kernel_inputs
-        all_inputs += kernel_dynamic_dims
-        if bench_with_constant_weights:
-            for inp in all_inputs:
-                if isinstance(inp, torch.Tensor):
-                    inputs.append(
-                        "x".join(
-                            [str(x) for x in inp.shape]
-                            + [TORCH_DTYPE_TO_SIGNED_MLIR_TYPE_ASM[inp.dtype]]
-                        )
-                    )
-                elif isinstance(inp, int):
-                    inputs.append(f"1xi32={inp}")
-                else:
-                    raise NotImplementedError("Unsupported input type.")
-        else:
-            for inp in all_inputs:
-                if isinstance(inp, torch.Tensor):
-                    inp = inp.cpu()
-                    if inp.dtype == torch.bfloat16:
-                        inp = (
-                            inp.view(dtype=torch.uint16)
-                            .numpy()
-                            .view(dtype=ml_dtypes.bfloat16)
-                        )
-                    else:
-                        inp = inp.numpy()
-                    with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as tf:
-                        numpy.save(tf, inp)
-                        tempfiles.append(tf)
-                        inputs.append("@" + tf.name)
-                elif isinstance(inp, int):
-                    inputs.append(f"1xi32={inp}")
-                else:
-                    raise NotImplementedError("Unsupported input type.")
-
-        benchmark_results = bench.benchmark_module(
+        benchmark_results = benchmark_module(
+            kernel_inputs,
+            kernel_outputs,
+            kernel_dynamic_dims,
+            config,
+            inplace,
             mod,
             entry_function=func_name,
             device=device,
-            inputs=inputs,
             **benchmark_flags,
         )
         _print_bench_result(benchmark_results, bench_file)
-        for file in tempfiles:
-            Path.unlink(file.name)
 
 
 def compile_and_invoke(
@@ -1235,6 +1241,20 @@ def _get_start_indices(
     return start_indices
 
 
+def get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
+    """
+    This function takes in indices of a Node, extract their sizes
+    into a list, and then try do an argmax on it. In the case where
+    there are multipled max_vals we pick the fastest/most minor one.
+    """
+
+    index_sizes = [subs_idxc(i.size) for i in indices.values()]
+    # Find the maximum value
+    max_size = max(index_sizes)
+    # Find the fastest/most minor index of the maximum value.
+    return max(i for i, size in enumerate(index_sizes) if size == max_size)
+
+
 def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
     """Apply custom sympy simplifications"""
 
@@ -1571,3 +1591,25 @@ def is_gather(custom: CustomOp) -> bool:
         for x in custom.memory_type.symbolic_shape[:-1]
         if x in custom.index
     )
+
+
+def print_live_tensors():
+    """
+    Print all alive torch tensors in program.
+
+    Use for debugging memory leaks.
+    """
+    import gc
+
+    gc.collect()
+
+    print("------ live tensors ---------")
+    for obj in gc.get_objects():
+        try:
+            if torch.is_tensor(obj) or (
+                hasattr(obj, "data") and torch.is_tensor(obj.data)
+            ):
+                print(hex(id(obj)), type(obj), obj.size())
+        except:
+            pass
+    print("-----------------------------")

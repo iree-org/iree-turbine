@@ -43,10 +43,12 @@ from .utils import (
     get_inputs,
     get_users,
     get_largest_index_and_size,
+    partial,
+    print_trace,
+    try_apply_pass,
 )
 import torch.fx as fx
 import numpy as np
-from functools import partial
 from typing import Sequence, Callable, Optional
 from ...support.logging import get_logger
 import sympy
@@ -129,6 +131,65 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
             key=lambda item: item[1],
         )
+
+        # Compute offsets we will aplly to each index element for each partitioned
+        # write.
+        offsets = np.array(
+            [
+                np.unravel_index(int(i * max_stride), shape)
+                for i in range(elements_per_thread)
+            ]
+        )
+
+        def check_contiguous_index():
+            """
+            Check if resulted partitioned write is equivalent to contiguous write.
+
+            Write is contiguous if offsets has form `[0,1,2...N]` for
+            the fastest mem dim and 0s for all others dims.
+            """
+            fastest_mem_dim = custom.memory.type.symbolic_shape[-1]
+
+            # Find fastest mem dim index in the register symbolic shape.
+            # If we have write with mapping, order of dims between register and
+            # mem may differ or mem dims may not even present in reg index.
+            if fastest_mem_dim not in symbolic_shape:
+                return False
+
+            fastest_mem_dim_idx = symbolic_shape.index(fastest_mem_dim)
+
+            # Construct expected offsets in the form:
+            # [[0 0 0]
+            #  [0 1 0]
+            #  [0 2 0]
+            #  [0 3 0]]
+            expected_offsets = np.array(
+                [
+                    [
+                        (j if i == fastest_mem_dim_idx else 0)
+                        for j in range(elements_per_thread)
+                    ]
+                    for i in range(len(shape))
+                ]
+            ).T
+            if not np.array_equal(offsets, expected_offsets):
+                return False
+
+            mapping = custom.mapping
+            # For writes without mapping this is enough.
+            if mapping is None:
+                return True
+
+            # If we have mapping, check that fastest dim mapping is trivial, i.e.:
+            # IndexMapping(inputs={X: i, ...}, outputs={X: i, ...})
+            return (
+                mapping.input_mapping.get(fastest_mem_dim, None)
+                == mapping.output_mapping[fastest_mem_dim]
+            )
+
+        if check_contiguous_index():
+            continue
+
         ops_to_combine = []
         with custom.graph.inserting_before(operator):
             for i in range(elements_per_thread):
@@ -137,7 +198,8 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                 extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
                     custom.graph
                 )
-                offset = np.unravel_index(int(i * max_stride), shape)
+
+                offset = offsets[i]
                 write = Write(
                     extract,
                     custom.memory,
@@ -400,13 +462,46 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
         assert custom.vector_shapes, f"Vector shapes not set for node {custom.fx_node}"
 
 
-def set_node_indices(trace: CapturedTrace, constraints: list[Constraint]):
-    mma_index = get_mma_dimensional_mapping(trace, get_hardware_constraint(constraints))
+def set_node_indices(
+    trace: CapturedTrace,
+    constraints: list[Constraint],
+    print_ir_before: Sequence[str] = [],
+    print_ir_after: Sequence[str] = [],
+):
+    mma_mapping = get_mma_dimensional_mapping(
+        trace, get_hardware_constraint(constraints)
+    )
     trace.walk(partial(set_thread_independent_index, constraints))
-    set_thread_dependent_index(constraints, mma_index, trace)
-    set_derived_index(trace)
-    resolve_thread_shapes(trace, constraints)
-    verify_nodes(trace, constraints)
+
+    if (
+        "all" in print_ir_after
+        or "all" in print_ir_before
+        or "trace" in print_ir_after
+        or "first" in print_ir_before
+    ):
+        print(
+            f"***After set_thread_independent_index/Before set_thread_dependent_index pass***\n"
+        )
+        print_trace(trace)
+
+    graph_passes = []
+    if mma_mapping != {}:
+        graph_passes += [
+            partial(
+                set_thread_dependent_index_from_mma, constraints, mma_mapping, trace
+            )
+        ]
+    else:
+        graph_passes += [
+            partial(set_thread_dependent_index_from_read_write, constraints, trace)
+        ]
+    graph_passes += [
+        partial(set_derived_index, trace),
+        partial(resolve_thread_shapes, trace, constraints),
+        partial(verify_nodes, trace, constraints),
+    ]
+    for p in graph_passes:
+        try_apply_pass(p, trace, print_ir_before, print_ir_after)
 
 
 def compute_stride(
@@ -448,53 +543,6 @@ def is_contiguous_dim(
     return is_innermost_dim or all_unit_dims
 
 
-def set_vector_shapes(
-    constraints: Sequence[Constraint],
-    mma_index: dict[MMA, dict[IndexSymbol, int]],
-    mma_slices: dict[MMA, dict[IndexSymbol, list[fx.Node]]],
-    node: fx.Node,
-):
-    """
-    Set the vector shapes for the specific op based on whether the op lies in
-    an MMA slice as well as the anchor node.
-    """
-    custom = get_custom(node)
-    # MMA, Reduction & Reshape nodes already have their vector shapes set.
-    if isinstance(custom, (MMA, Reduction, Reshape)):
-        return
-    # Add vector shapes from constraints to all ops. These are global constraints.
-    custom.vector_shapes = {}
-    hw_constraint = get_hardware_constraint(constraints)
-    if hw_constraint.vector_shapes:
-        custom.vector_shapes = hw_constraint.vector_shapes
-
-    if len(mma_slices) == 1:
-        # If there is just one MMA slice, there is no ambiguity in the vector shapes
-        # and we set that singular MMA op as the anchor for all ops.
-        mma = list(mma_slices.keys())[0]
-        custom.anchor = mma
-        custom.vector_shapes = custom.vector_shapes | mma.vector_shapes
-        return
-
-    for mma in mma_slices:
-        if (
-            node in mma_slices[mma][MMA_ACC]
-            or node in mma_slices[mma][MMA_LHS]
-            or node in mma_slices[mma][MMA_RHS]
-        ):
-            # Ensure that the operators indexing dims are present in the anchor.
-            # For example, say we have a write node with indexing dimensions [B, M, N]
-            # and there are two potential options for anchors: an MMA with
-            # indexing dimensions [B, M, K1, K2] and another with indexing dimensions
-            # [B, M, N, K2], we want to pick the second one otherwise the index
-            # that is set from the anchor will not be accurate.
-            if not set(custom.indexing_dims).issubset(mma.indexing_dims):
-                continue
-            custom.anchor = mma
-            custom.vector_shapes = custom.vector_shapes | mma.vector_shapes
-            return
-
-
 def set_thread_independent_index(
     constraints: Sequence[Constraint],
     node: fx.Node,
@@ -517,17 +565,19 @@ def set_thread_independent_index(
     for dim in custom.indexing_dims:
         index_seq = None
         for constraint in constraints:
-            if constraint.dim == dim:
-                # If the constraint is a tiling constraint, and the node
-                # is outside a reduction, we don't apply the constraint.
-                if isinstance(constraint, TilingConstraint):
-                    if not hasattr(custom.graph, "parent_op"):
-                        continue
+            if constraint.dim != dim:
+                continue
 
-                if index_seq is None:
-                    index_seq = constraint.apply()
-                else:
-                    index_seq.start += constraint.apply().start
+            # If the constraint is a tiling constraint, and the node
+            # is outside a reduction, we don't apply the constraint.
+            if isinstance(constraint, TilingConstraint):
+                if not hasattr(custom.graph, "parent_op"):
+                    continue
+
+            if index_seq is None:
+                index_seq = constraint.apply()
+            else:
+                index_seq.start += constraint.apply().start
 
         if index_seq is not None:
             index.update({dim: index_seq})
@@ -546,7 +596,7 @@ def specialize_index(
     return {dim: seq.subs(subs) for dim, seq in index.items()}
 
 
-def populate_mma_sources(
+def populate_mma_source_indices(
     node: MMA,
     mma_index: dict[MMA, dict[IndexSymbol, int]],
     hardware_constraint: HardwareConstraint,
@@ -559,8 +609,8 @@ def populate_mma_sources(
     index: dict[IndexSymbol, IndexSequence] = {}
     mapping = mma_index[node]
     for dim, dim_index in mapping.items():
-        index[dim] = hardware_constraint.apply(
-            dim, dim_index, None, None, True, node.mma_type
+        index[dim] = hardware_constraint.apply_mma_mapping(
+            dim, dim_index, node.mma_type
         )
     node.index = combine_indices(node.index, index)
     return [
@@ -587,7 +637,7 @@ def populate_mma_sources(
     ]
 
 
-def populate_non_mma_sources(
+def populate_read_write_source_indices(
     node: Read | Write,
     hardware_constraint: HardwareConstraint,
     workgroup_constraints: list[WorkgroupConstraint],
@@ -612,13 +662,8 @@ def populate_non_mma_sources(
         wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
         if not wg_constraint:
             continue
-        index[dim] = hardware_constraint.apply(
-            dim,
-            wg_constraint[0].workgroup_dim,
-            elements_per_thread,
-            stride,
-            False,
-            None,
+        index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+            dim, wg_constraint[0].workgroup_dim, elements_per_thread, stride
         )
     return [(node, index, hardware_constraint.vector_shapes)]
 
@@ -718,11 +763,8 @@ def append_aliased_shapes(source: CustomOp, symbolic_constraints: list[SymbolicA
             )
 
 
-def propagate_index(
-    node: CustomOp,
-    hardware_constraint: HardwareConstraint,
-    workgroup_constraints: list[WorkgroupConstraint],
-    mma_index: dict[MMA, dict[IndexSymbol, int]],
+def propagate_indices(
+    sources: set[CustomOp],
     visited: set[CustomOp],
     symbolic_constraints: list[SymbolicAlias],
 ):
@@ -730,13 +772,6 @@ def propagate_index(
     Propagate the index and vector shapes through the graph
     starting with priveleged nodes (like MMA, Read, Write).
     """
-    sources = set()
-    if isinstance(node, MMA):
-        sources = populate_mma_sources(node, mma_index, hardware_constraint)
-    else:
-        sources = populate_non_mma_sources(
-            node, hardware_constraint, workgroup_constraints
-        )
     reduction = None
     while sources:
         source, source_index, source_vector_shapes = sources.pop(0)
@@ -764,20 +799,48 @@ def propagate_index(
     return visited
 
 
-def set_thread_dependent_index(
+def set_thread_dependent_index_from_mma(
     constraints: Sequence[Constraint],
-    mma_index: dict[MMA, dict[IndexSymbol, int]],
+    mma_mapping: dict[MMA, dict[IndexSymbol, int]],
     trace: CapturedTrace,
 ):
     """
     Set the thread dependent index based on the hardware constraint.
     """
     hardware_constraint = get_hardware_constraint(constraints)
-    sources: list[MMA] = list(mma_index.keys())
+    sources: list[MMA] = list(mma_mapping.keys())
+    assert sources and len(sources) >= 1, "Unexpected empty MMA mapping."
     if not sources:
         sources = trace.walk(lambda node: isinstance(get_custom(node), (Read, Write)))
         sources = [get_custom(x) for x in sources]
         assert sources, "No read or mma nodes found in the graph."
+
+    visited = set()
+    symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
+    for source in sources:
+        visited = visited.union(set([x for x in sources]))
+        visited.remove(source)
+        new_sources = populate_mma_source_indices(
+            source, mma_mapping, hardware_constraint
+        )
+        visited = propagate_indices(
+            new_sources,
+            visited,
+            symbolic_constraints,
+        )
+
+
+def set_thread_dependent_index_from_read_write(
+    constraints: Sequence[Constraint],
+    trace: CapturedTrace,
+):
+    """
+    Set the thread dependent index based on the hardware constraint.
+    """
+    hardware_constraint = get_hardware_constraint(constraints)
+    sources = trace.walk(lambda node: isinstance(get_custom(node), (Read, Write)))
+    sources = [get_custom(x) for x in sources]
+    assert sources, "No read nodes found in the graph."
 
     visited = set()
     workgroup_constraints = [
@@ -787,11 +850,11 @@ def set_thread_dependent_index(
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)
-        visited = propagate_index(
-            source,
-            hardware_constraint,
-            workgroup_constraints,
-            mma_index,
+        new_sources = populate_read_write_source_indices(
+            source, hardware_constraint, workgroup_constraints
+        )
+        visited = propagate_indices(
+            new_sources,
             visited,
             symbolic_constraints,
         )

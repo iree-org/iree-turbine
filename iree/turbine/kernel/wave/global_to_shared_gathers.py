@@ -190,8 +190,6 @@ def add_optimized_nodes(
     optimizable_loads: dict[fx.Node, tuple[int, Read]],
     constraint_tile_size: dict[IndexSymbol, int],
     hardware_constraint: HardwareConstraint,
-    max_elements_per_load: int,
-    load_elems_per_thread: int,
 ) -> dict[fx.Node, list[fx.Node]]:
     """
     Add optimized global read nodes and shared write nodes to the graph.
@@ -202,7 +200,13 @@ def add_optimized_nodes(
     """
     optimized_writes = defaultdict(list)
     shared_read_metadata: dict[Write, SharedReadMetadata] = {}
-    for memory, (expected_number_of_loads, custom_loads) in optimizable_loads.items():
+    for memory, (
+        expected_number_of_loads,
+        custom_loads,
+        _,
+        load_elems_per_thread,
+        max_elements_per_load,
+    ) in optimizable_loads.items():
         original_access_pattern = deepcopy(custom_loads[0].index)
         access_pattern = make_contiguous_index(custom_loads[0])
         for i in range(expected_number_of_loads):
@@ -283,8 +287,9 @@ def global_to_shared_gathers(trace: CapturedTrace, constraints: list[Constraint]
     optimizable_loads = identify_optimizable_loads(
         global_gathers,
         constraint_tile_size,
+        load_elems_per_thread,
         max_elements_per_load,
-        allow_mapping_dynamic_values=True,
+        allow_dynamic_transposed=True,
         use_memory_type=True,
     )
 
@@ -293,8 +298,6 @@ def global_to_shared_gathers(trace: CapturedTrace, constraints: list[Constraint]
         optimizable_loads,
         constraint_tile_size,
         hardware_constraint,
-        max_elements_per_load,
-        load_elems_per_thread,
     )
 
     # Update all write dependencies.

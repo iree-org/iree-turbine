@@ -20,7 +20,7 @@ import sympy
 from typing import Optional
 
 
-def get_extend_attention_kernel(
+def get_extend_attention_rpe_kernel(
     shape: AttentionShape,
     mfma_variant: MMAType,
     q_shape: tuple[int],
@@ -34,9 +34,9 @@ def get_extend_attention_kernel(
     output_dtype: Optional[torch.dtype] = torch.float32,
     size_dtype: Optional[torch.dtype] = torch.int32,
     is_causal: Optional[bool] = False,
-    logit_cap: Optional[float] = 0.0,
     layer_scaling: Optional[float] = None,
     num_waves: Optional[int] = 4,
+    max_rpe_context_length: Optional[int] = 0,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
@@ -69,23 +69,12 @@ def get_extend_attention_kernel(
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     SEQ_TILE_SIZE = shape.block_size
-    N_KV_SCALE = 2
-
-    if SEQ_TILE_SIZE is None:
-        # Apply tile heuristic.
-        if shape.max_seq_len <= 128:
-            SEQ_TILE_SIZE = 64
-            N_KV_SCALE = 2
-        else:
-            SEQ_TILE_SIZE = 128
-            N_KV_SCALE = 4
-
     M_WAVES = num_waves
     N_WAVES = 1
     LOG2E = 1.44269504089
-    logit_cap *= LOG2E
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
     layer_scaling = (layer_scaling or dk_sqrt) * LOG2E
+    rpe_scaling = LOG2E
 
     constraints: list[tkw.Constraint] = []
     constraints += [
@@ -120,7 +109,7 @@ def get_extend_attention_kernel(
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     k = tkw.IndexMapping.iterator(2)
-    d0 = tkw.IndexMapping.dynamic_val(0)
+    d0, d1 = [tkw.IndexMapping.dynamic_val(i) for i in range(2)]
 
     mapping = tkw.IndexMapping(
         num_iterators=3,
@@ -166,6 +155,17 @@ def get_extend_attention_kernel(
         outputs={N_KV: i},
     )
 
+    clip = sympy.Piecewise(
+        (d0 - d1, (d0 - d1 < max_rpe_context_length) & (d0 - d1 >= 0)),
+        (max_rpe_context_length, True),
+    )
+    rpe_mapping = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={H: i, N_Q: j, N_KV: clip},
+        outputs={H: i, N_Q: j, N_KV: k},
+        dynamic_val_mappings=({H: i, N_Q: j, N_KV: k}, {N_KV: k}),
+    )
+
     # Set the dynamic shapes for the kernel. Here we set it to N_Q
     # which is the first argument of the query and output.
     set_dynamic_dim = lambda shape: [x if i != 0 else None for i, x in enumerate(shape)]
@@ -177,9 +177,10 @@ def get_extend_attention_kernel(
     k_cache_layout = tkl.MemoryLayout(shape=k_cache_shape)
     v_cache_layout = tkl.MemoryLayout(shape=v_cache_shape)
     num_seqs_layout = tkl.MemoryLayout(shape=[None])
+    rpe_layout = tkl.MemoryLayout(shape=[max_rpe_context_length + 1])
 
     @tkw.wave(constraints)
-    def extend_attention(
+    def extend_attention_rpe(
         q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, wave_input_dtype, q_layout],
         k: tkl.Memory[N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_layout],
         v: tkl.Memory[N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_layout],
@@ -204,6 +205,7 @@ def get_extend_attention_kernel(
         start_indices_extend: tkl.Memory[
             S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout
         ],
+        rpe: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
@@ -212,8 +214,7 @@ def get_extend_attention_kernel(
         zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
         neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
         layer_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](layer_scaling)
-        if logit_cap > 0:
-            logit_cap_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](logit_cap)
+        rpe_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](rpe_scaling)
 
         req_idx = tkw.read(request_indices, elements_per_thread=1)
         tkw.set_symbol(REQ_IDX, req_idx)
@@ -258,14 +259,14 @@ def get_extend_attention_kernel(
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
             x_j = x_j * layer_scale_reg
-            if logit_cap > 0:
-                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, zero, neg_infinity)
             x_j = x_j + bias
+
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
@@ -284,10 +285,6 @@ def get_extend_attention_kernel(
 
         res_max, res_sum, res_mm = first_loop
 
-        if is_causal:
-            seq_len_extend = tkw.apply_expr(
-                seq_len_extend, lambda x: sympy.Min(x, (WORKGROUP_0 + 1) * BLOCK_N_Q)
-            )
         tkw.set_symbol(N_KV, seq_len_extend)
 
         @tkw.reduction(N_KV, init_args=[res_max, res_sum, res_mm])
@@ -309,9 +306,26 @@ def get_extend_attention_kernel(
             )
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
-            x_j = x_j * layer_scale_reg
-            if logit_cap > 0:
-                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+            ####################################################################
+            # T5 RPE
+            ####################################################################
+            # Fused T5 RPE adds attention bias pre-softmax normalization.
+            # When fusing into the FA variant, adding locally before the max and
+            # the partial softmax should be equivalent.
+            i = tkw.self_index(N_Q, tkl.i64, elements_per_thread=1)
+            i = tkw.broadcast(i, target_shape=[H, N_Q, N_KV])
+            j = tkw.self_index(
+                N_KV, tkl.i64, elements_per_thread=STORE_ELEMS_PER_THREAD
+            )
+            rpe_reg = tkw.read(
+                rpe,
+                mapping=rpe_mapping,
+                mapping_dynamic_vals=(i, j),
+                elements_per_thread=STORE_ELEMS_PER_THREAD,
+            )
+            # Layer and RPE scaling since we use log2 instead of ln
+            x_j = x_j * layer_scale_reg + rpe_reg * rpe_scale_reg
+
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
@@ -322,6 +336,7 @@ def get_extend_attention_kernel(
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, zero, neg_infinity)
             x_j = x_j + bias
+
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
@@ -352,8 +367,8 @@ def get_extend_attention_kernel(
         STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_H: 1,
         BLOCK_N_Q: SEQ_TILE_SIZE,
-        BLOCK_D_KV: shape.head_size_kv,
-        BLOCK_N_KV: SEQ_TILE_SIZE // N_KV_SCALE,
+        BLOCK_D_KV: SEQ_TILE_SIZE,
+        BLOCK_N_KV: SEQ_TILE_SIZE // 2,
         BLOCK_S: 1,
         H: shape.num_query_heads,
         H_KV: shape.num_kv_heads,
@@ -369,4 +384,4 @@ def get_extend_attention_kernel(
         MAX_EXTEND_SEQ_LEN: shape.max_seq_len,
     }
 
-    return extend_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return extend_attention_rpe, hyperparams, dynamic_symbols, dynamic_symbols_map

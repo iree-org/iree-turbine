@@ -18,6 +18,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+import functools
 
 from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
@@ -30,6 +31,7 @@ CACHE_BASE_DIR = Path(os.environ.get("WAVE_CACHE_DIR", default_cache_base_dir))
 WAVE_ALWAYS_COMPILE = int(os.environ.get("WAVE_ALWAYS_COMPILE", 0))
 WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 1))
 WAVE_CACHE_LIMIT = int(os.environ.get("WAVE_CACHE_LIMIT", 16))
+MAX_LRU_CACHE_SIZE = int(os.environ.get("WAVE_MAX_LRU_CACHE_SIZE", 128))
 
 
 def is_cache_enabled() -> bool:
@@ -296,6 +298,7 @@ def invoke_cached_kernel(
     dynamic_symbols_map: dict[IndexExpr, int],
     run: bool,
     run_bench: bool,
+    kernel_hash: str,
 ):
     kernel_inputs = []
     kernel_outputs = []
@@ -323,4 +326,5 @@ def invoke_cached_kernel(
         run,
         run_bench,
         inplace=True,
+        kernel_hash=kernel_hash,
     )

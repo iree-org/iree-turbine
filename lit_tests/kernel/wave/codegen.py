@@ -156,10 +156,7 @@ def test_read_mapped():
         # CHECK:            %[[D8:.+]] = arith.addi %[[D7]], %[[D6]] overflow<nsw, nuw> : index
         # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240]> : vector<16xindex>
         # CHECK-DAG:        %[[CST_2:.+]] = arith.constant 0.000000e+00 : f16
-        # CHECK:            %[[D9:.+]] = vector.splat %[[CST_2]] : vector<16xf16>
-        # CHECK:            %[[D10:.+]] = vector.gather %[[ARR]][%[[D5]], %[[D8]]] [%[[CST]]], %[[MASK]], %[[D9]] :
-        # CHECK-SAME:         memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16>
-        # CHECK-SAME:         into vector<16xf16>
+        # CHECK-COUNT-16:   vector.maskedload
 
 
 @run_test
@@ -473,9 +470,6 @@ def test_read_write_mapping():
 
         # CHECK-LABEL:    func.func @read_write_mapping
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
-        # CHECK:            %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208,
-        # CHECK-SAME:         224, 240]> : vector<16xindex>
-        # CHECK-DAG:        %[[D11:.+]] = arith.constant dense<true> : vector<16xi1>
         # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
         # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
         # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
@@ -498,8 +492,7 @@ def test_read_write_mapping():
         # CHECK-SAME:         vector<16xf16>
         # CHECK:            %[[D10:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xf16,
         # CHECK-SAME:         strided<[16, 1], offset: ?>>
-        # CHECK:            vector.scatter %[[D10]][%[[D8]], %[[D5]]] [%[[CST]]], %[[D11]], %[[D9]] : memref<16x16xf16,
-        # CHECK-SAME:         strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16>
+        # CHECK-COUNT-16:   vector.store
 
 
 @run_test
@@ -547,13 +540,11 @@ def test_read_write_dynamic_mapping():
 
         # CHECK-LABEL:    func.func @read_write_dynamic_mapping
         # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
-        # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
         # CHECK-DAG:        %[[D0:.*]] = arith.constant 0 : index
         # CHECK-DAG:        %[[C16:.*]] = arith.constant 16 : index
         # CHECK-DAG:        %[[C32:.*]] = arith.constant 32 : index
         # CHECK-DAG:        %[[C64:.*]] = arith.constant 64 : index
         # CHECK-DAG:        %[[C256:.*]] = arith.constant 256 : index
-        # CHECK-DAG:        %[[D12:.*]] = arith.constant dense<true> : vector<16xi1>
         # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
         # CHECK:            %[[D9:.*]] = vector.load %[[D0]][%[[D5:.*]], %[[D8:.*]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>, vector<16xi32>
         # CHECK:            %[[D10:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
@@ -565,9 +556,9 @@ def test_read_write_dynamic_mapping():
         # CHECK:            %[[D17:.*]] = arith.addi %[[D16]], %[[D13]] overflow<nsw, nuw> : index
         # CHECK:            %[[D18:.*]] = vector.splat %[[D17]] : vector<16xindex>
         # CHECK:            %[[D19:.*]] = arith.addi %[[D18]], %[[D11]] overflow<nsw, nuw> : vector<16xindex>
-        # CHECK:            %[[D20:.*]] = vector.gather %[[D10]][%[[C0]], %[[C0]]] [%[[D19]]], %[[D12]], %[[CST]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xindex>, vector<16xi1>, vector<16xf16> into vector<16xf16>
+        # CHECK-COUNT-16:   vector.load
         # CHECK:            %[[D21:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-        # CHECK:            vector.store %[[D20]], %[[D21]][%[[D5]], %[[D8]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+        # CHECK:            vector.store %{{.*}}, %[[D21]][%[[D5]], %[[D8]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
 @run_test
@@ -1367,6 +1358,102 @@ def test_tiled_reduce_max():
         # CHECK: %[[GLOBAL_REDUCE:.+]] = arith.maximumf {{.*}} : vector<1xf16>
         # Accumulator Reduction
         # CHECK: %[[ACC_REDUCE:.+]] = arith.maximumf %[[ACC]], %[[GLOBAL_REDUCE]]
+        # CHECK: scf.yield %[[ACC_REDUCE]] : vector<1xf16>
+
+
+@run_test
+def test_tiled_reduce_min():
+    M = tkl.sym.M
+    N = tkl.sym.N
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+    ):
+        init_min = tkl.Register[M, tkl.f16](1e6)
+
+        @tkw.reduction(N, init_args=[init_min])
+        def repeat(
+            partial_min: tkl.Register[M, tkl.f16],
+        ) -> tkl.Register[M, tkl.f16]:
+            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            res = lhs * rhs
+            partial_min = tkw.min(res, partial_min, dim=N)
+            return partial_min
+
+        tkw.write(repeat, c, elements_per_thread=1)
+
+    config = get_default_compile_config()
+
+    shape = (256, 512)
+    a = torch.randn(shape, dtype=torch.float16)
+    b = torch.randn(shape, dtype=torch.float16)
+    c = torch.zeros((shape[0],), dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            M: shape[0],
+            N: shape[1],
+            BLOCK_M: 1,
+            BLOCK_N: 128,
+            ELEMS_PER_THREAD: 2,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+    ):
+        print(test(a, b, c).module_op)
+        # CHECK-LABEL: func @test
+        # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i32
+        # CHECK-DAG: %[[C2:.+]] = arith.constant 2 : i32
+        # CHECK-DAG: %[[C4:.+]] = arith.constant 4 : i32
+        # CHECK-DAG: %[[C8:.+]] = arith.constant 8 : i32
+        # CHECK-DAG: %[[C16:.+]] = arith.constant 16 : i32
+        # CHECK-DAG: %[[C32:.+]] = arith.constant 32 : i32
+        # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
+        # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
+        # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
+        # CHECK-DAG: %[[INIT:.+]] = arith.constant dense<0x7C00> : vector<1xf16>
+        # Tile Reduction Loop
+        # CHECK: scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
+        # CHECK-SAME: iter_args(%[[ACC:.+]] = %[[INIT]]) -> (vector<1xf16>) {
+        # Elementwise
+        # CHECK: arith.mulf {{.*}} : vector<2xf16>
+        # Local Reduction
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # Global Reduction
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C2]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C4]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C8]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C16]], %{{.+}} : f32
+        # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+        # CHECK: gpu.shuffle  xor %{{.+}}, %[[C32]], %{{.+}} : f32
+        # CHECK: %[[GLOBAL_REDUCE:.+]] = arith.minimumf {{.*}} : vector<1xf16>
+        # Accumulator Reduction
+        # CHECK: %[[ACC_REDUCE:.+]] = arith.minimumf %[[ACC]], %[[GLOBAL_REDUCE]]
         # CHECK: scf.yield %[[ACC_REDUCE]] : vector<1xf16>
 
 

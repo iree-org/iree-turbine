@@ -170,6 +170,14 @@ def max(
     ...
 
 
+def min(
+    src: "Register",
+    acc: Optional["Register"] = None,
+    dim: Optional[IndexExpr | int] = None,
+) -> "Register":
+    ...
+
+
 def shuffle(src: "Register", offset: int, width: int) -> "Register":
     ...
 
@@ -198,7 +206,9 @@ def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
     ...
 
 
-def reshape(inputs: Sequence["Register"]) -> "Register":
+def reshape(
+    inputs: Sequence["Register"], target_vector_shape: dict[IndexSymbol, int]
+) -> "Register":
     ...
 
 
@@ -404,7 +414,7 @@ class CustomOp(ABC):
         if hasattr(self.fx_node, "index") and self.fx_node.index:
             vars_list.append(f"index={self.fx_node.index}")
         vars_str = ", ".join(vars_list)
-        return f"{self.tkw_op_name}({vars_str})"
+        return f"{self.tkw_op_name}({vars_str}) type({self.fx_node.type})"
 
     def add_to_graph(self, region_graph: RegionGraph, type: Any = None) -> fx.Node:
         arg_list = tuple([value for _, value in vars(self).items()])
@@ -873,7 +883,7 @@ class Unknown(CustomOp):
         # print all variables of the node apart from graph and op
         vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
         vars_str = ", ".join(vars_list)
-        return f"unknown: {self.fx_node.name}({vars_str})"
+        return f"unknown: {self.fx_node.name}({vars_str}) type({self.fx_node.type})"
 
 
 @dataclass
@@ -934,7 +944,7 @@ class Placeholder(CustomOp):
         # print all variables of the node apart from graph and op
         vars_list = [f"{key}={value}" for key, value in vars(self).items()][:-2]
         vars_str = ", ".join(vars_list)
-        return f"{self.tkw_op_name}({vars_str})"
+        return f"{self.tkw_op_name}({vars_str}) type({self.fx_node.type})"
 
     def erase(self):
         """Erase the current node from the graph where it exists."""
@@ -1178,6 +1188,7 @@ class MMA(CustomOp):
         custom_str += f"lhs={self.lhs} (index = {self.lhs_index}), "
         custom_str += f"rhs={self.rhs} (index = {self.rhs_index}), "
         custom_str += f"acc={self.acc} (index = {self.acc_index}))"
+        custom_str += f" type({self.fx_node.type})"
         return custom_str
 
     def align_index(self, constraints: list["Constraint"]) -> None:
@@ -1796,6 +1807,7 @@ class Broadcast(CustomOp, ABC):
 
 
 @define_interface_op("max")
+@define_interface_op("min")
 @define_interface_op("sum")
 @dataclass
 class ReduceOp(CustomOp, ABC):
