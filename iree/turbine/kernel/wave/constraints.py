@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Callable
-from sympy import ceiling, Piecewise, floor
+from sympy import ceiling, Piecewise, floor, Integer
 
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
@@ -441,6 +441,7 @@ class TilingConstraint(Constraint):
     tile_size: IndexExpr
     induction_var: Optional[IndexExpr] = None
     iters: Optional[IndexExpr] = None
+    start: IndexExpr = Integer(0)
 
     def __eq__(self, value):
         if not isinstance(value, TilingConstraint):
@@ -466,7 +467,7 @@ class TilingConstraint(Constraint):
             raise ValueError(
                 "Index is being computed without setting induction variable"
             )
-        return IndexSequence(self.induction_var * self.tile_size, 1)
+        return IndexSequence(self.start + self.induction_var * self.tile_size, 1)
 
 
 @dataclass

@@ -94,7 +94,7 @@ def get_paged_decode_attention_kernels(
         ]
         constraints += [
             tkw.TilingConstraint(
-                K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2)
+                K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
             )
         ]
 
