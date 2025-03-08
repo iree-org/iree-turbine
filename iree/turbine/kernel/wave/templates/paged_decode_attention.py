@@ -50,6 +50,7 @@ def get_paged_decode_attention_kernels(
     SEQ_LEN = tkl.sym.SEQ_LEN
     SPLIT_OFF = tkl.sym.SPLIT_OFF
     SPLIT_LEN = tkl.sym.SPLIT_LEN
+    SPLITS_ACTIVE = tkl.sym.SPLITS_ACTIVE
     ZERO = tkl.sym.ZERO  # Hack
     U = tkl.sym.U  # Num splits
     BH = tkl.sym.BH
@@ -87,7 +88,7 @@ def get_paged_decode_attention_kernels(
         # U represents the number of splits of the key-value sequence.
         # U is parallelizable and is distributed across workgroups.
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 0)]
-        constraints += [tkw.WaveConstraint(U, BLOCK_U)]
+        # constraints += [tkw.WaveConstraint(U, BLOCK_U)]
 
         wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
         constraints += [
@@ -119,7 +120,7 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WaveConstraint(B, BLOCK_B / B_WAVES)]
 
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
-        constraints += [tkw.WaveConstraint(S, BLOCK_S)]
+        # constraints += [tkw.WaveConstraint(S, BLOCK_S)]
 
         vector_shapes = {BH: 0, T: 0, S: 0, U: 1}
         waves_per_block = (1, B_WAVES, 1)
@@ -139,7 +140,7 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
         constraints += [tkw.WaveConstraint(N, BLOCK_N)]
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
-        constraints += [tkw.TilingConstraint(U, BLOCK_U)]
+        constraints += [tkw.TilingConstraint(U, BLOCK_U, iters=SPLITS_ACTIVE)]
         vector_shapes = {
             S: 0,
             B: BLOCK_B,
@@ -238,7 +239,6 @@ def get_paged_decode_attention_kernels(
         req_index = tkw.read(request_indices, elements_per_thread=1)
         # The sequence length is used to control the bounds of the loop over K2.
         seq_length = tkw.read(sequence_lengths, elements_per_thread=1)
-        tkw.set_symbol(SEQ_LEN, seq_length)
 
         seq_length_per_split = tkw.apply_expr(
             seq_length, lambda x: sympy.ceiling(x / U)
@@ -313,8 +313,13 @@ def get_paged_decode_attention_kernels(
     def phase_1(
         logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
+        seq_length = tkw.read(sequence_lengths, elements_per_thread=1)
+        splits_active = tkw.apply_expr(seq_length, lambda x: sympy.Min(x, U))
+        tkw.set_symbol(SPLITS_ACTIVE, splits_active)
+
         c_reg = tkl.Register[S, B, N, tkl.f32](0.0)
         init_sum = tkl.Register[S, B, tkl.f32](0.0)
         init_max = tkl.Register[S, B, tkl.f32](-1e6)
@@ -334,6 +339,7 @@ def get_paged_decode_attention_kernels(
             new_acc = acc * old_scale
             term = new_scale * x_j
             new_acc = new_acc + term
+
             return m_j, d_j, new_acc
 
         res_max, res_sum, res_mm = repeat
