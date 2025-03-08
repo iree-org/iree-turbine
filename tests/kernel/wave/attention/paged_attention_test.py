@@ -293,7 +293,7 @@ def testPagedFlashDecoding(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        asm_sv = phase_1(phase_0_output, phase_0_output_max, output)
+        asm_sv = phase_1(phase_0_output, phase_0_output_max, kv_lens_tensor, output)
 
     if dump_generated_mlir:
         filename = f"wave_paged_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
