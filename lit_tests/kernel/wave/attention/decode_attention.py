@@ -77,7 +77,7 @@ def test_paged_flash_decoding():
     # CHECK-COUNT-4:                vector.maskedload
     # CHECK-NEXT:                   vector.store
     # CHECK:                        amdgpu.lds_barrier
-    # CHECK-COUNT-32:               vector.load
+    # CHECK-COUNT-8:                vector.gather
     # CHECK-COUNT-8:                vector.load
     # CHECK-COUNT-8:                amdgpu.mfma
     # CHECK:                  %[[COND:.*]] = arith.cmpi sgt, %[[COUNT]], %[[C0]] : index

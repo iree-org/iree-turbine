@@ -414,7 +414,10 @@ class CustomOp(ABC):
         if hasattr(self.fx_node, "index") and self.fx_node.index:
             vars_list.append(f"index={self.fx_node.index}")
         vars_str = ", ".join(vars_list)
-        return f"{self.tkw_op_name}({vars_str}) type({self.fx_node.type})"
+        return f"""{self.tkw_op_name}({vars_str})
+        type({self.fx_node.type})
+        indexing_dims({self.indexing_dims if hasattr(self, 'indexing_dims') else None})
+        vector_shapes({self.vector_shapes if hasattr(self, 'vector_shapes') else None})"""
 
     def add_to_graph(self, region_graph: RegionGraph, type: Any = None) -> fx.Node:
         arg_list = tuple([value for _, value in vars(self).items()])
@@ -1188,7 +1191,9 @@ class MMA(CustomOp):
         custom_str += f"lhs={self.lhs} (index = {self.lhs_index}), "
         custom_str += f"rhs={self.rhs} (index = {self.rhs_index}), "
         custom_str += f"acc={self.acc} (index = {self.acc_index}))"
-        custom_str += f" type({self.fx_node.type})"
+        custom_str += f"\n\ttype({self.fx_node.type})"
+        custom_str += f"\n\tindexing_dims({self.indexing_dims if hasattr(self, 'indexing_dims') else None})"
+        custom_str += f"\n\tvector_shapes({self.vector_shapes if hasattr(self, 'vector_shapes') else None})"
         return custom_str
 
     def align_index(self, constraints: list["Constraint"]) -> None:

@@ -497,7 +497,7 @@ def set_node_indices(
         ]
     graph_passes += [
         partial(set_derived_index, trace),
-        partial(resolve_thread_shapes, trace, constraints),
+        # partial(resolve_thread_shapes, trace, constraints),
         partial(verify_nodes, trace, constraints),
     ]
     for p in graph_passes:
