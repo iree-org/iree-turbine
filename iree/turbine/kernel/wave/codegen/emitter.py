@@ -33,6 +33,7 @@ from ...compiler.ir import (
     ShapedType,
     Value,
     VectorType,
+    affine_d,
     arith_d,
     func_d,
     gpu_d,
@@ -196,12 +197,18 @@ def add_emitter_subs(
 _emulate_ceildiv = False
 
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
+_ApplyExpr = namedtuple("__ApplyExpr", ["expr", "args"])
 
 
 def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpResult:
     stack: list[OpResult] = []
 
     def _get_ir_value(arg):
+        if isinstance(arg, _ApplyExpr):
+            args = _broadcast(*arg.args)
+
+            return affine_d.apply(arg.expr, args).result
+
         if not isinstance(arg, (Value, OpResult)):
             arg = arg.result
 
