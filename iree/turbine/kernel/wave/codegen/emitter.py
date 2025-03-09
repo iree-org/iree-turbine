@@ -320,6 +320,9 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         else:
             return muli(*_broadcast(lhs, rhs))
 
+    def _rem(lhs, rhs):
+        return arith_d.remsi(*_broadcast(lhs, rhs))
+
     def _floor(value):
         if isinstance(value, _Rational):
             value = arith_d.divsi(*_broadcast(value.numerator, value.denominator))
@@ -436,8 +439,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
-                mod = arith_d.remsi(*_broadcast(lhs, rhs))
-                stack.append(mod)
+                stack.append(_rem(lhs, rhs))
             case sympy.floor():
                 stack.append(_floor(stack.pop()))
             case sympy.ceiling():
