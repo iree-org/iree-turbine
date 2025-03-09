@@ -250,7 +250,7 @@ def get_paged_decode_attention_kernels(
         tkw.set_symbol(SPLIT_OFF, split_offset)
 
         seq_length_per_split = tkw.apply_expr(
-            seq_length, lambda x: sympy.Min(x, sympy.Max(x - SPLIT_OFF, 0))
+            seq_length_per_split, lambda x: sympy.Min(x, sympy.Max(x - SPLIT_OFF, 0))
         )
         tkw.set_symbol(SPLIT_LEN, seq_length_per_split)
 
