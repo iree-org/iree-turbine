@@ -677,7 +677,7 @@ class LaunchableWave(Launchable):
                 cache_manager.store_kernel(
                     compiled_wave_vmfb,
                     kernel_usages,
-                    mb.module_op.get_asm(),
+                    asm,
                     kernel_hash,
                 )
 
@@ -694,7 +694,7 @@ class LaunchableWave(Launchable):
                 kernel_hash=kernel_hash,
             )
 
-        return mb
+        return asm
 
     def aot_execute(self, args, kwargs):
         raise NotImplementedError("AOT execution for wave not implemented yet.")
