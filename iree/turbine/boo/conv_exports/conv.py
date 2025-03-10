@@ -291,8 +291,16 @@ def get_func_name(signature: InputConvSignature):
     return "_".join(name_items)
 
 
+DEFAULT_TORCH_TO_LINALG_PIPELINE = [
+    "torch-backend-to-linalg-on-tensors-backend-pipeline"
+]
+
+
 def generate_mlir(
-    signature: InputConvSignature, output_path: Optional[Union[str, Path]] = None
+    signature: InputConvSignature,
+    output_path: Optional[Union[str, Path]] = None,
+    *,
+    import_pipeline: List[str] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
 ):
     args = get_sample_conv_args(signature)
     # func_name = get_func_name(signature)
@@ -300,8 +308,9 @@ def generate_mlir(
     e = torch.export.export(m, args=args)
     importer = FxImporter()
     importer.import_program(e, func_name=get_func_name(signature))
+    pipeline_str = "builtin.module(" + ",".join(import_pipeline) + ")"
     pm = PassManager.parse(
-        "builtin.module(torch-backend-to-linalg-on-tensors-backend-pipeline)",
+        pipeline_str,
         context=importer.module.context,
     )
     pm.run(importer.module.operation)
@@ -311,7 +320,12 @@ def generate_mlir(
     print(importer.module)
 
 
-def batch_generate_mlir(signatures: Dict[str, InputConvSignature], save_dir: Path):
+def batch_generate_mlir(
+    signatures: Dict[str, InputConvSignature],
+    save_dir: Path,
+    *,
+    import_pipeline: List[str] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
+):
     save_dir.mkdir(parents=True, exist_ok=True)
     total = 0
     err = 0
@@ -320,7 +334,7 @@ def batch_generate_mlir(signatures: Dict[str, InputConvSignature], save_dir: Pat
         path = save_dir / f"{name}.mlir"
         total += 1
         try:
-            generate_mlir(s, path)
+            generate_mlir(s, path, import_pipeline=import_pipeline)
         except Exception as e:
             err += 1
             path = save_dir / f"ERR_{name}.log"
@@ -477,10 +491,13 @@ if __name__ == "__main__":
     # TODO: argparse for filtering
     commands = load_commands()
     signatures = {
-        get_safe_name(c): command_to_signature(c, ignore_layouts=True) for c in commands
+        get_safe_name(c): command_to_signature(c, ignore_layouts=False)
+        for c in commands
     }
     filtered = filter_signatures(signatures, forward=True)
     base_dir = Path(__file__).parent / "conv_ir"
+    # pipeline = ["torch-to-iree","iree-preprocessing-transpose-convolution-pipeline"]
+    # batch_generate_mlir(filtered, base_dir, import_pipeline=pipeline)
     batch_generate_mlir(filtered, base_dir)
 
 # MiOpen args
