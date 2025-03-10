@@ -69,7 +69,7 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @param_bool("enable_scheduling", "sched")
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -216,7 +216,7 @@ def testGemm(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @param_bool("enable_scheduling", "sched")
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -364,7 +364,7 @@ def testVMFMAGemm(
 @require_cdna2
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @param_bool("enable_scheduling", "sched")
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [

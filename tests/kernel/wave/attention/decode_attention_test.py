@@ -33,7 +33,7 @@ from ..common.shapes import get_test_shapes
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("decode_attention"))
 @param_bool("enable_scheduling", "sched", [False])
-@pytest.mark.parametrize("dynamic_dims", [True, False])
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [

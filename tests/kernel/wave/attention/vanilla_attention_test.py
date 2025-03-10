@@ -40,7 +40,7 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
 @param_bool("enable_scheduling", "sched")
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -125,7 +125,7 @@ def testAttentionPure(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
 @param_bool("enable_scheduling", "sched", [False])
-@pytest.mark.parametrize("dynamic_dims", [False])
+@param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -208,7 +208,7 @@ def testAttentionCausal(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
 @param_bool("enable_scheduling", "sched", [False])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -412,7 +412,7 @@ def testAttentionBias(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
 @param_bool("enable_scheduling", "sched", [False])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
