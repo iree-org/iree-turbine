@@ -28,6 +28,7 @@ from ..common.utils import (
     require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
+    param_bool,
 )
 from ..common.shapes import get_test_shapes
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
@@ -38,7 +39,7 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
+@param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize("dynamic_dims", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -123,7 +124,7 @@ def testAttentionPure(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
-@pytest.mark.parametrize("enable_scheduling", [False])
+@param_bool("enable_scheduling", "sched", [False])
 @pytest.mark.parametrize("dynamic_dims", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -206,7 +207,7 @@ def testAttentionCausal(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
-@pytest.mark.parametrize("enable_scheduling", [False])
+@param_bool("enable_scheduling", "sched", [False])
 @pytest.mark.parametrize("dynamic_dims", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -410,7 +411,7 @@ def testAttentionBias(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
-@pytest.mark.parametrize("enable_scheduling", [False])
+@param_bool("enable_scheduling", "sched", [False])
 @pytest.mark.parametrize("dynamic_dims", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -617,7 +618,7 @@ def testAttentionSoftCap(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
+@param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize(
     "mfma_variant",
     [

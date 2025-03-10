@@ -23,6 +23,7 @@ import os
 from torch.testing import assert_close
 from ..common.utils import (
     require_e2e,
+    param_bool,
     enable_scheduling_barriers,
     dump_generated_mlir,
 )
@@ -31,7 +32,7 @@ from ..common.shapes import get_test_shapes
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("decode_attention"))
-@pytest.mark.parametrize("enable_scheduling", [False])
+@param_bool("enable_scheduling", "sched", [False])
 @pytest.mark.parametrize("dynamic_dims", [True, False])
 @pytest.mark.parametrize(
     "mfma_variant",
