@@ -531,10 +531,7 @@ class LaunchableWave(Launchable):
             partial(remove_chained_extractslice, trace),
         ]
 
-        idxc = IndexingContext.current()
-        graph_passes += [
-            partial(decompose_reduce_ops, trace, self.constraints, idxc.subs)
-        ]
+        graph_passes += [partial(decompose_reduce_ops, trace, self.constraints)]
 
         # Schedule the reduction ops.
         # Scheduling should always be used with use_scheduling_barriers=True,
@@ -570,7 +567,7 @@ class LaunchableWave(Launchable):
             print_trace(trace)
 
         # Determine grid shape.
-        self.infer_grid_shape(idxc)
+        self.infer_grid_shape(IndexingContext.current())
         if compile_config.get("print_grid", False):
             print(f"Grid: {self.grid_type}")
 
