@@ -17,7 +17,7 @@ import torch
 from iree.compiler.extras.fx_importer import FxImporter
 from iree.compiler.passmanager import PassManager
 
-from iree.turbine.boo.auto_kernel.alias import get_aliases_and_defaults
+from iree.turbine.boo.conv_exports.alias import get_aliases_and_defaults
 
 ALIAS_MAP, DEFAULT_MAP = get_aliases_and_defaults()
 
@@ -341,7 +341,7 @@ def filter_signatures(signatures: Dict[str, InputConvSignature], **kwargs):
     return filtered
 
 
-def command_to_signature(command: str):
+def command_to_signature(command: str, ignore_layouts: bool = False):
     comm_list = command.split(" ")
 
     def find(flag, *, default=None):
@@ -364,10 +364,15 @@ def command_to_signature(command: str):
     n = len(in_layout) - 2
 
     pytorch_layout = [
-        "NCD",
+        "NCH",
         "NCHW",
         "NCDHW",
     ][n - 1]
+
+    if ignore_layouts:
+        in_layout = pytorch_layout
+        fil_layout = pytorch_layout
+        out_layout = pytorch_layout
 
     in_perms = get_permutation(in_layout, pytorch_layout)
     kernel_perms = get_permutation(fil_layout, pytorch_layout)
@@ -471,9 +476,11 @@ def get_safe_name(command: str) -> str:
 if __name__ == "__main__":
     # TODO: argparse for filtering
     commands = load_commands()
-    signatures = {get_safe_name(c): command_to_signature(c) for c in commands}
-    filtered = filter_signatures(signatures, input_backward=True, groups=3)
-    base_dir = Path(__file__).parent / "group_conv_ir"
+    signatures = {
+        get_safe_name(c): command_to_signature(c, ignore_layouts=True) for c in commands
+    }
+    filtered = filter_signatures(signatures, forward=True)
+    base_dir = Path(__file__).parent / "conv_ir"
     batch_generate_mlir(filtered, base_dir)
 
 # MiOpen args
