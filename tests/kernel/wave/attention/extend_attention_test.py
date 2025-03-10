@@ -281,8 +281,8 @@ def create_inputs(
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @param_bool("enable_scheduling", "sched", [False])
-@pytest.mark.parametrize("is_causal", [False, True])
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("is_causal", "causal")
+@param_bool("use_buffer_ops", "buf_ops")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -425,7 +425,7 @@ def testExtendAttention(
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @param_bool("enable_scheduling", "sched", [False])
-@pytest.mark.parametrize("is_causal", [True])
+@param_bool("is_causal", "causal", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
