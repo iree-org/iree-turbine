@@ -23,26 +23,21 @@ from iree.turbine.kernel.wave.utils import (
     device_randint,
     device_zeros,
 )
+from .common.utils import (
+    require_e2e,
+    require_cdna2,
+    require_cdna3,
+    perf_test,
+    enable_scheduling_barriers,
+    dump_generated_mlir,
+)
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
 import json
 from torch.testing import assert_close
 from enum import Enum
 
-require_e2e = pytest.mark.require_e2e
-require_cdna2 = pytest.mark.skipif(
-    "gfx90" not in get_default_arch(), reason="Default device is not CDNA2"
-)
-require_cdna3 = pytest.mark.skipif(
-    "gfx94" not in get_default_arch(), reason="Default device is not CDNA3"
-)
-# Whether to dump the generated MLIR module.
-test_dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
-# Whether to use scheduling group barriers (needs LLVM fix).
-enable_scheduling_barriers = int(os.environ.get("WAVE_USE_SCHED_BARRIERS", 0))
-
 # Add test shapes for validation and performance testing.
-perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
 default_test_shapes = {}
 default_test_shapes["test_gemm"] = [
     (1024, 5120, 640),
@@ -202,7 +197,7 @@ def testGemm(
         c = device_zeros(shape[0], shape[1], dtype=torch.float32)
         mb = gemm(a, b, c)
 
-        if test_dump_generated_mlir:
+        if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
@@ -349,7 +344,7 @@ def testVMFMAGemm(
         c = device_zeros(shape[0], shape[1], dtype=torch.float32)
         mb = gemm(a, b, c)
 
-        if test_dump_generated_mlir:
+        if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
@@ -498,7 +493,7 @@ def testCDNA2IntGemm(
         c = device_zeros(shape[0], shape[1], dtype=torch.int32)
         mb = gemm(a, b, c)
 
-        if test_dump_generated_mlir:
+        if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
@@ -615,7 +610,7 @@ def testCDNA3IntGemm(
         c = device_zeros(shape[0], shape[1], dtype=torch.int32)
         mb = gemm(a, b, c)
 
-        if test_dump_generated_mlir:
+        if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
@@ -730,7 +725,7 @@ def testF8Gemm(
         c = device_zeros(shape[0], shape[1], dtype=torch.float32)
         mb = gemm(a, b, c)
 
-        if test_dump_generated_mlir:
+        if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())
@@ -839,7 +834,7 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         mb = batched_gemm(a, b, c)
 
-        if test_dump_generated_mlir:
+        if dump_generated_mlir:
             filename = f"wave_batched_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
                 f.write(mb.module_op.get_asm())

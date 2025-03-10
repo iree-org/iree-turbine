@@ -41,8 +41,9 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
     get_vanilla_attention_kernel,
 )
-
-require_e2e = pytest.mark.require_e2e
+from ..common.utils import (
+    require_e2e,
+)
 
 require_cache = pytest.mark.skipif(
     not is_cache_enabled(), reason="filesystem cache is disabled"
