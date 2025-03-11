@@ -624,7 +624,7 @@ class LaunchableWave(Launchable):
                     run_bench,
                     kernel_hash,
                 )
-                return cached_kernel
+                return cached_kernel.asm
 
         # Recompile kernel from scratch if not found in cache.
         (

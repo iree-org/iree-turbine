@@ -50,7 +50,7 @@ class WaveCache:
     vmfb: bytes
 
     @property
-    def module_op(self):
+    def asm(self):
         filepath = (CACHE_BASE_DIR / self.cache_id / self.cache_id).with_suffix(".mlir")
         with open(filepath, "r") as f:
             module_str = f.read()
