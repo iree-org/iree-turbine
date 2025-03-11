@@ -190,5 +190,6 @@ def test_igemm():
         # Input load must be contiguous.
         #      CHECK: %{{.*}} = vector.maskedload %{{.*}}[%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}], %{{.*}}, %{{.*}} : memref<2x64x64x640xf16
 
-        # Unrolled result store
-        #      CHECK-COUNT-32: vector.maskedstore %{{.*}}[%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}], %{{.*}}, %{{.*}} : memref<2x62x62x640xf32
+        # Weights are done via gather, check we are setting gather start indices to 0.
+        #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<3x3x640x640xf16
+        #      CHECK: %{{.*}} = vector.gather %{{.*}}[%[[C0]], %[[C0]], %[[C0]], %[[C0]]] [%{{.*}}], %{{.*}}, %{{.*}} : memref<3x3x640x640xf16
