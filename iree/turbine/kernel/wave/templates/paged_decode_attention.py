@@ -381,7 +381,7 @@ def get_paged_decode_attention_kernels(
 
     dynamic_symbols = [K2]
     dynamic_symbols_map = {
-        K2: shape.block_size,
+        K2: shape.kv_lens,
     }
 
     return (
