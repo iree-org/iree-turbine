@@ -11,6 +11,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import copy
+import tempfile
 import pytest
 import torch
 from torch.testing import assert_close
@@ -23,7 +24,6 @@ from iree.turbine.kernel.wave.cache import (
     is_cache_enabled,
     get_cache_manager,
     reset_cache_manager,
-    WaveCache,
 )
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
@@ -123,8 +123,8 @@ def generate_attention_kernel(constraints: list[Constraint]):
 
 @require_e2e
 @require_cache
-def testSameConfig(request):
-    reset_cache_manager()
+def testSameConfig(tmp_path):
+    reset_cache_manager(tmp_path)
     shape = (8, 128, 128, 64, 256)
     # Input sizes
     B = tkl.sym.B
@@ -231,8 +231,8 @@ def testSameConfig(request):
 
 @require_e2e
 @require_cache
-def testDifferentDynamicSameBlock(request):
-    reset_cache_manager()
+def testDifferentDynamicSameBlock(tmp_path):
+    reset_cache_manager(tmp_path)
     # Input sizes
     B = tkl.sym.B
     M = tkl.sym.M
@@ -393,8 +393,8 @@ def testDifferentDynamicSameBlock(request):
 
 @require_e2e
 @require_cache
-def testSameSizeDifferentBlock(request):
-    reset_cache_manager()
+def testSameSizeDifferentBlock(tmp_path):
+    reset_cache_manager(tmp_path)
     shape = (8, 128, 128, 64, 256)
     # Input sizes
     B = tkl.sym.B
@@ -549,8 +549,8 @@ def testSameSizeDifferentBlock(request):
 
 @require_e2e
 @require_cache
-def testSameConfigDifferentFreeVar(request):
-    reset_cache_manager()
+def testSameConfigDifferentFreeVar(tmp_path):
+    reset_cache_manager(tmp_path)
     mfma_variant = (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)
     # Order of shapes: (B, M, N, K1, K2)
     input_shape = (8, 128, 128, 64, 256)
