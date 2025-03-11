@@ -124,6 +124,8 @@ class WaveCacheManager(object):
         self.session_cache: OrderedDict[str, WaveCache] = OrderedDict()
         self.lock = threading.Lock()
         self.update_file_cache()
+        self.cache_hits = 0
+        self.cache_misses = 0
 
     def get_hash(
         self,
@@ -268,9 +270,13 @@ class WaveCacheManager(object):
         with self.lock:
             if kernel_hash in self.session_cache:
                 self.session_cache.move_to_end(kernel_hash)
+                self.cache_hits += 1
             elif kernel_hash in self.file_cache:
                 cached_kernel = self.load_kernel_from_file(kernel_hash)
                 self.store_kernel_to_session(kernel_hash, cached_kernel)
+                self.cache_hits += 1
+            else:
+                self.cache_misses += 1
             return self.session_cache.get(kernel_hash, None)
 
 
