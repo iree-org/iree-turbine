@@ -181,16 +181,16 @@ def get_paged_decode_attention_kernels(
     # Returns the key for the given token index.
     k_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={T: d0 // K2_dim, BH: j, K2: d0 % K2_dim, K1: l},
-        outputs={T: i, BH: j, K2: k, K1: l},
+        inputs={S: d0 // K2_dim, BH: j, K2: d0 % K2_dim, K1: l},
+        outputs={S: i, BH: j, K2: k, K1: l},
         dynamic_val_mappings={T: i},
     )
 
     # Returns the value for the given token index.
     v_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={T: d0 // K2_dim, BH: j, N: k, K2: d0 % K2_dim},
-        outputs={T: i, BH: j, N: k, K2: l},
+        inputs={S: d0 // K2_dim, BH: j, N: k, K2: d0 % K2_dim},
+        outputs={S: i, BH: j, N: k, K2: l},
         dynamic_val_mappings={T: i},
     )
 
@@ -210,8 +210,8 @@ def get_paged_decode_attention_kernels(
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
         q: tkl.Memory[S, B, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[T, K2, BH, K1, ADDRESS_SPACE, tkl.f16, k_layout],
-        v: tkl.Memory[T, K2, BH, N, ADDRESS_SPACE, tkl.f16, v_layout],
+        k: tkl.Memory[S, K2, BH, K1, ADDRESS_SPACE, tkl.f16, k_layout],
+        v: tkl.Memory[S, K2, BH, N, ADDRESS_SPACE, tkl.f16, v_layout],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         block_table: tkl.Memory[
