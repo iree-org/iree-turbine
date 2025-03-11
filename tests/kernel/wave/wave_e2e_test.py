@@ -22,6 +22,11 @@ from iree.turbine.kernel.wave.utils import (
     device_randperm,
     device_zeros,
 )
+from .common.utils import (
+    require_e2e,
+    require_cdna3,
+    perf_test,
+)
 import torch
 from torch.testing import assert_close
 import pytest
@@ -30,10 +35,6 @@ import os
 import torch
 import json
 
-require_e2e = pytest.mark.require_e2e
-require_cdna3 = pytest.mark.skipif(
-    "gfx94" not in get_default_arch(), reason="Default device is not CDNA3"
-)
 default_test_shapes = [
     (1, 27),
     (111, 813),
@@ -1417,7 +1418,6 @@ _igemm_cases = [
     (1, 5, 5, 1, 3, 3, 1, 1),
 ]
 
-perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
 validation_test = lambda *a: pytest.param(*a, marks=pytest.mark.validate_only)
 
 _igemm_cases += [
