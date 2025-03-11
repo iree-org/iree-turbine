@@ -635,6 +635,7 @@ class LaunchableWave(Launchable):
             entrypoint_name,
         ) = self._trace_and_get_kernel_signature(args, kwargs)
 
+        asm = mb.module_op.get_asm()
         if run or run_bench or create_vmfb_file:
             if not config:
                 raise ValueError("no config provided")
@@ -642,7 +643,6 @@ class LaunchableWave(Launchable):
             host_codegen.isolated_test_call(
                 mb, exe, kernel_sig, entrypoint_name, dynamic_symbols
             )
-            asm = mb.module_op.get_asm()
             if config.get("print_mlir", False):
                 print(asm)
 
