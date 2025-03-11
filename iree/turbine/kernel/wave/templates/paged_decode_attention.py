@@ -90,10 +90,10 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 0)]
         # constraints += [tkw.WaveConstraint(U, BLOCK_U)]
 
-        wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
-        constraints += [
-            tkw.WorkgroupConstraint(T, 1, 0, apply_fn=wg_func, primary=False)
-        ]
+        # wg_func = lambda wg: wg * sympy.floor(T / U) + sympy.Min(wg, sympy.Mod(T, U))
+        # constraints += [
+        #     tkw.WorkgroupConstraint(T, 1, 0, apply_fn=wg_func, primary=False)
+        # ]
         constraints += [
             tkw.TilingConstraint(
                 K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
