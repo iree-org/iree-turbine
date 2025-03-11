@@ -40,7 +40,6 @@ def get_paged_decode_attention_kernels(
     block_table_shape: tuple[int],
 ):
     # Input sizes
-    T = tkl.sym.T
     S = tkl.sym.S  # Num seqs
     B = tkl.sym.B
     M = tkl.sym.M
@@ -182,7 +181,7 @@ def get_paged_decode_attention_kernels(
         num_iterators=4,
         inputs={S: d0 // K2_dim, BH: j, K2: d0 % K2_dim, K1: l},
         outputs={S: i, BH: j, K2: k, K1: l},
-        dynamic_val_mappings={T: i},
+        dynamic_val_mappings={K2: k},
     )
 
     # Returns the value for the given token index.
@@ -190,15 +189,15 @@ def get_paged_decode_attention_kernels(
         num_iterators=4,
         inputs={S: d0 // K2_dim, BH: j, N: k, K2: d0 % K2_dim},
         outputs={S: i, BH: j, N: k, K2: l},
-        dynamic_val_mappings={T: i},
+        dynamic_val_mappings={K2: l},
     )
 
     # Returns token indices into the k-v cache for the given sequence (d0).
     block_table_mapping = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={S: d0, T: j + ZERO},
-        outputs={S: i, K2: j},
-        dynamic_val_mappings={S: i},
+        num_iterators=1,
+        inputs={S: d0, K2: i},
+        outputs={K2: i},
+        dynamic_val_mappings={S: 0},
     )
 
     k_layout = tkl.MemoryLayout(shape=k_shape)
@@ -214,7 +213,7 @@ def get_paged_decode_attention_kernels(
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         block_table: tkl.Memory[
-            S, T, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
+            S, K2, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
         ],
         output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
@@ -367,27 +366,18 @@ def get_paged_decode_attention_kernels(
         M: 1,
         N: shape.head_size_kv,
         K1: shape.head_size,
-        # K2: shape.block_size,
+        K2: shape.kv_lens,
         BH: shape.num_kv_heads,
         S: shape.num_seqs,
-        T: shape.kv_lens,
         U: num_kv_splits,
-        ZERO: 0,
     }
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
-
-    dynamic_symbols = [K2]
-    dynamic_symbols_map = {
-        K2: shape.kv_lens,
-    }
 
     return (
         phase_0,
         phase_1,
         symbols_0,
         symbols_1,
-        dynamic_symbols,
-        dynamic_symbols_map,
     )
