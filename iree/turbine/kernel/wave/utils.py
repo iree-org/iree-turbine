@@ -551,7 +551,7 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     def push_tensor_to_arg_list(arg_tensor: torch.Tensor):
         if not arg_tensor.is_contiguous():
             arg_tensor = arg_tensor.contiguous()
-        capsule = arg_tensor.__dlpack__(None)
+        capsule = torch.to_dlpack(arg_tensor)
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
 
         # IREE runtime renames capsule to "dltensor_used" for some reason, but
@@ -602,20 +602,19 @@ def _print_bench_result(result, filename):
         print(res)
 
 
-def get_device_uuid(input_tensors: list[torch.Tensor]) -> tuple[int, str]:
+@functools.lru_cache
+def get_device_uuid(device_list: list[str], device_str: str) -> tuple[int, str]:
     """
     Checks all torch.Tensor are on the same device, and get UUID from Torch device.
     """
-    device_list = [
-        input.device for input in input_tensors if isinstance(input, torch.Tensor)
-    ]
     if len(set(device_list)) != 1:
         raise ValueError(f"Found multiple device on input tensors:{set(device_list)}")
     device = device_list[0]
     if device.type != "cuda":
         raise ValueError("Expected all argument tensors to be in GPU.")
     uuid = str(torch.cuda.get_device_properties(device).uuid)
-    return uuid
+    device_str = f"{device_str}://GPU-{uuid}"
+    return device_str
 
 
 def compile_to_vmfb(
@@ -683,7 +682,6 @@ def invoke_vmfb(
     inplace: bool = False,
     kernel_hash: Optional[str] = None,
 ):
-
     device = config["device"]
     if run_bench:
         bench_batch_size = config.get("benchmark_batch_size", None)
@@ -704,8 +702,12 @@ def invoke_vmfb(
 
     if inplace:
         # Select device as the GPU, where input tensors are coming from.
-        device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
-        device = f"{device}://GPU-{device_uuid}"
+        device_list = tuple(
+            input.device
+            for input in kernel_inputs + kernel_outputs
+            if isinstance(input, torch.Tensor)
+        )
+        device = get_device_uuid(device_list, device)
     rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
@@ -1231,7 +1233,7 @@ def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
 
 
 def _get_start_indices(
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
 ) -> list[IndexExpr]:
     start_indices = []
     for dim_indexing in src_indices:

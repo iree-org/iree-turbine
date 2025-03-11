@@ -205,7 +205,9 @@ class WaveCacheManager(object):
         kernel_sig_str = json.dumps([usage.name for usage in kernel_sig])
         _write_file(cur_kernelsig_path, "w", kernel_sig_str)
 
-    def load_kernel_from_file(self, kernel_hash):
+    @staticmethod
+    @functools.lru_cache
+    def load_kernel_from_file(kernel_hash):
         """
         Loads the queried kernel(including VMFB, and kernel signature)
         from local cache file/directory.
