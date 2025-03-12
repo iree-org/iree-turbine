@@ -105,7 +105,7 @@ def get_aliases_and_defaults() -> Tuple[Dict[str, str], Dict[str, str]]:
     lines = _load_miopen_args()
     alias_dict = {}
     default_dict = {
-        "-F": "0",
+        "-F": "1",
         "-T": None,
         "-U": None,
         "-R": None,
@@ -121,6 +121,6 @@ def get_aliases_and_defaults() -> Tuple[Dict[str, str], Dict[str, str]]:
         long = items[0]
         alias_dict[short] = long
         if items[-1].startswith("(Default="):
-            default = items[-1].removeprefix("(Default").removesuffix(")")
+            default = items[-1].removeprefix("(Default=").removesuffix(")")
             default_dict[short] = default
     return alias_dict, default_dict

@@ -52,24 +52,102 @@ class Mode(IntEnum):
 DEFAULT_LAYOUTS = {1: "NCH", 2: "NCHW", 3: "NCDHW"}
 
 
-class ConvSignature(NamedTuple):
-    """A named tuple specifying some convolution configuration. Includes helper methods for getting useful information."""
+class ConvSignatureStorage(NamedTuple):
+    """A named tuple specifying some convolution configuration."""
 
     input_shape: List[int]
     kernel_shape: List[int]
-    num_spatial_dims: int = 2
-    dtype: torch.dtype = torch.bfloat16
-    input_layout: str = DEFAULT_LAYOUTS[num_spatial_dims]
-    kernel_layout: str = DEFAULT_LAYOUTS[num_spatial_dims]
-    output_layout: str = DEFAULT_LAYOUTS[num_spatial_dims]
-    bias: bool = False
-    stride: List[int] = num_spatial_dims * [1]
-    padding: List[int] = num_spatial_dims * [0]
-    dilation: List[int] = num_spatial_dims * [1]
-    transposed: bool = False
-    output_padding: List[int] = num_spatial_dims * [0]
-    groups: int = 1
-    mode: Mode = Mode.FORWARD
+    num_spatial_dims: int
+    dtype: torch.dtype
+    input_layout: str
+    kernel_layout: str
+    output_layout: str
+    bias: bool
+    stride: List[int]
+    padding: List[int]
+    dilation: List[int]
+    transposed: bool
+    output_padding: List[int]
+    groups: int
+    mode: Mode
+
+
+class ConvSignature:
+    """Wraps ConvSignatureStorage with some additional helper methods and easier instantiaion."""
+
+    def __init__(
+        self,
+        *,
+        input_shape: List[int],
+        kernel_shape: List[int],
+        shared_layout: Optional[str] = None,
+        input_layout: Optional[str] = None,
+        kernel_layout: Optional[str] = None,
+        output_layout: Optional[str] = None,
+        bias: bool = False,
+        dtype: torch.dtype = torch.bfloat16,
+        stride: Union[int, List[int]] = 1,
+        padding: Union[int, List[int]] = 0,
+        dilation: Union[int, List[int]] = 1,
+        transposed: bool = False,
+        output_padding: Union[int, List[int]] = 0,
+        groups: int = 1,
+        mode: Union[str, Mode] = Mode.FORWARD,
+    ):
+        if len(input_shape) != len(kernel_shape):
+            raise ValueError(
+                f"Expected same rank for input and kernel, got {input_shape=}, {kernel_shape=}"
+            )
+        num_spatial_dims = len(input_shape) - 2
+        layouts = {
+            "input_layout": input_layout,
+            "kernel_layout": kernel_layout,
+            "output_layout": output_layout,
+        }
+        default_layout = DEFAULT_LAYOUTS[num_spatial_dims]
+        for name in layouts.keys():
+            if shared_layout:
+                layouts[name] = shared_layout
+            elif not layouts[name]:
+                layouts[name] = default_layout
+            assert (
+                len(layouts[name]) == num_spatial_dims + 2
+            ), f"Expected layout of length {num_spatial_dims + 2}, got {name} = {layouts[name]}."
+        parameters = {}
+
+        def add_param(name, value):
+            if isinstance(value, int):
+                parameters[name] = [value] * num_spatial_dims
+                return
+            assert (
+                len(value) == num_spatial_dims
+            ), f"{name} value, {value}, must be a list or tuple of size {num_spatial_dims=}."
+            assert isinstance(
+                value[0], int
+            ), f"{name} value, {value}, must contain ints."
+            parameters[name] = list(value)
+
+        add_param("stride", stride)
+        add_param("padding", padding)
+        add_param("dilation", dilation)
+        add_param("output_padding", output_padding)
+        if isinstance(mode, str):
+            mode = Mode.parse(mode)
+        self._signature = ConvSignatureStorage(
+            input_shape=input_shape,
+            kernel_shape=kernel_shape,
+            num_spatial_dims=num_spatial_dims,
+            dtype=dtype,
+            **layouts,
+            **parameters,
+            bias=bias,
+            transposed=transposed,
+            groups=groups,
+            mode=mode,
+        )
+
+    def __getattr__(self, name):
+        return self._signature.__getattribute__(name)
 
     @property
     def input_perms(self) -> Permutation:
@@ -120,7 +198,6 @@ class ConvSignature(NamedTuple):
         return ConvSignature(
             input_shape=input.shape,
             kernel_shape=weight.shape,
-            num_spatial_dims=len(input.shape) - 2,
             dtype=input.dtype,
             bias=bool(bias),
             **kwargs,
@@ -138,15 +215,21 @@ class ConvSignature(NamedTuple):
         ]
         return {name: self._asdict()[name] for name in conv_extra_args}
 
-    def get_sample_conv_args(self):
+    def get_sample_conv_args(self, *, splat_value=None, seed: Optional[int] = None):
         """Gets example args for the convolution (mode-dependent)"""
         out_channels = self.kernel_shape[self.kernel_perms[0]]
-        x = torch.randn(self.input_shape, dtype=self.dtype)
-        w = torch.randn(self.kernel_shape, dtype=self.dtype)
-        b = torch.randn(out_channels, dtype=self.dtype)
+        if splat_value:
+            x = torch.ones(self.input_shape, dtype=self.dtype) * splat_value
+            w = torch.ones(self.kernel_shape, dtype=self.dtype) * splat_value
+            b = torch.ones(out_channels, dtype=self.dtype) * splat_value
+        else:
+            gen = None if not seed else torch.random.manual_seed(seed)
+            x = torch.randn(self.input_shape, generator=gen, dtype=self.dtype)
+            w = torch.randn(self.kernel_shape, generator=gen, dtype=self.dtype)
+            b = torch.randn(out_channels, generator=gen, dtype=self.dtype)
         if self.mode == Mode.FORWARD:
             return (x, w, b) if self.bias else (x, w)
-        dLdy = torch.randn(self.output_shape, dtype=self.dtype)
+        dLdy = torch.randn(self.output_shape, generator=gen, dtype=self.dtype)
         if self.mode == Mode.WEIGHT_BACKWARD:
             return (dLdy, x)
         if self.mode == Mode.INPUT_BACKWARD:
@@ -265,7 +348,7 @@ class ConvBackwardWeight(torch.nn.Module):
                 "unimplemented input grad decomposition: transposed conv"
             )
         self.ND = sig.num_spatial_dims
-        self.K = sig.kernel_shape[-self.ND :]
+        self.K = sig.kernel_perms(sig.kernel_shape)[-self.ND :]
         self.kwargs = {
             "stride": sig.dilation,
             "padding": sig.padding,

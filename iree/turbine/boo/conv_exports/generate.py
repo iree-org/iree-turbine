@@ -20,7 +20,12 @@ from iree.compiler.extras.fx_importer import FxImporter
 from iree.compiler.passmanager import PassManager
 
 from iree.turbine.boo.conv_exports.utils import get_aliases_and_defaults
-from iree.turbine.boo.conv_exports.conv import get_nn_module, ConvSignature, Mode
+from iree.turbine.boo.conv_exports.conv import (
+    get_nn_module,
+    ConvSignature,
+    Mode,
+    DEFAULT_LAYOUTS,
+)
 
 ALIAS_MAP, DEFAULT_MAP = get_aliases_and_defaults()
 
@@ -33,24 +38,31 @@ def generate_mlir(
     signature: ConvSignature,
     output_path: Optional[Union[str, Path]] = None,
     *,
-    import_pipeline: List[str] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
-) -> None:
+    import_pipeline: Union[None, str, List[str]] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
+    print_ir: bool = False,
+):
     """For a given ConvSignature, imports the conv to mlir"""
     args = signature.get_sample_conv_args()
     m = get_nn_module(signature)
     e = torch.export.export(m, args=args)
     importer = FxImporter()
     importer.import_program(e, func_name=signature.get_func_name())
-    pipeline_str = "builtin.module(" + ",".join(import_pipeline) + ")"
-    pm = PassManager.parse(
-        pipeline_str,
-        context=importer.module.context,
-    )
-    pm.run(importer.module.operation)
+    if import_pipeline:
+        pipeline_str = (
+            import_pipeline
+            if isinstance(import_pipeline, str)
+            else "builtin.module(" + ",".join(import_pipeline) + ")"
+        )
+        pm = PassManager.parse(
+            pipeline_str,
+            context=importer.module.context,
+        )
+        pm.run(importer.module.operation)
     if output_path:
         Path(output_path).write_text(str(importer.module))
-        return
-    print(importer.module)
+    if print_ir:
+        print(str(importer.module))
+    return importer.module
 
 
 def batch_generate_mlir(
@@ -58,7 +70,9 @@ def batch_generate_mlir(
     save_dir: Path,
     *,
     import_pipeline: List[str] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
+    print_ir: bool = False,
 ) -> Tuple[int, int]:
+    """prints or saves mlir for each signature provided. Returns tuple: (#failed, #total)"""
     save_dir.mkdir(parents=True, exist_ok=True)
     total = 0
     err = 0
@@ -67,7 +81,7 @@ def batch_generate_mlir(
         path = save_dir / f"{name}.mlir"
         total += 1
         try:
-            generate_mlir(s, path, import_pipeline=import_pipeline)
+            generate_mlir(s, path, import_pipeline=import_pipeline, print_ir=print_ir)
         except Exception as e:
             err += 1
             path = save_dir / f"ERR_{name}.log"
@@ -88,88 +102,93 @@ def filter_signatures(signatures: Dict[str, ConvSignature], **kwargs):
     return filtered
 
 
-def command_to_signature(command: str, ignore_layouts: bool = False):
+def command_to_signature(command: str):
     comm_list = command.split(" ")
 
-    def find(flag, *, default=None):
+    def find(flag, use_default: bool = False):
         for (i, item) in enumerate(comm_list):
             if flag == item or ALIAS_MAP[flag] == item:
                 try:
                     return comm_list[i + 1]
                 except IndexError:
                     pass
-        return default
+        if use_default:
+            try:
+                return DEFAULT_MAP[flag]
+            except KeyError:
+                pass
+        return None
 
-    in_layout = find("-I")
-    fil_layout = find("-f")
-    out_layout = find("-O")
+    layouts = {
+        "input_layout": find("-I"),
+        "kernel_layout": find("-f"),
+        "output_layout": find("-O"),
+    }
 
-    assert in_layout is not None
-    assert fil_layout is not None
-    assert out_layout is not None
+    n = int(find("-_", use_default=True))  # default = 2
+    # check provided layouts for a different number of spatial dims
+    updated_n = False
+    for key, value in layouts.items():
+        if value is not None:
+            same_n = len(value) - 2 == n
+            assert (
+                same_n or not updated_n
+            ), f"provided layouts have inconsistent rank, see {layouts}"
+            if not same_n:
+                n = len(value) - 2
+                updated_n = True
 
-    n = len(in_layout) - 2
+    # now that n is correct, add default layouts
+    for key, value in layouts.items():
+        if not value:
+            layouts[key] = DEFAULT_LAYOUTS[n]
 
-    pytorch_layout = [
-        "NCH",
-        "NCHW",
-        "NCDHW",
-    ][n - 1]
-
-    if ignore_layouts:
-        in_layout = pytorch_layout
-        fil_layout = pytorch_layout
-        out_layout = pytorch_layout
-
-    batch = find("-n")
-    assert batch is not None
-    in_channels = find("-c")
-    assert in_channels is not None
-    groups = find("-g")
-    assert groups is not None
-    out_channels = find("-k")
-    assert out_channels is not None
+    batch = find("-n", use_default=True)
+    in_channels = find("-c", use_default=True)
+    groups = find("-g", use_default=True)
+    out_channels = find("-k", use_default=True)
 
     in_dims = {
         "N": batch,
-        "C": find("-c"),
-        "D": find("-!"),
-        "H": find("-H"),
-        "W": find("-W"),
+        "C": in_channels,
+        "D": find("-!", True),
+        "H": find("-H", True),
+        "W": find("-W", True),
     }
     w_dims = {
         "N": out_channels,
         "C": int(in_channels) // int(groups),
-        "D": find("-@"),
-        "H": find("-y"),
-        "W": find("-x"),
+        "D": find("-@", True),
+        "H": find("-y", True),
+        "W": find("-x", True),
     }
     conv_config_dicts = {
         "stride": {
-            "D": find("-#"),
-            "H": find("-u"),
-            "W": find("-v"),
+            "D": find("-#", True),
+            "H": find("-u", True),
+            "W": find("-v", True),
         },
         "padding": {
-            "D": find("-$"),
-            "H": find("-p"),
-            "W": find("-q"),
+            "D": find("-$", True),
+            "H": find("-p", True),
+            "W": find("-q", True),
         },
         "dilation": {
-            "D": find("-^"),
-            "H": find("-l"),
-            "W": find("-j"),
+            "D": find("-^", True),
+            "H": find("-l", True),
+            "W": find("-j", True),
         },
         "output_padding": {
-            "D": find("-%", default=0),
-            "H": find("-Y", default=0),
-            "W": find("-X", default=0),
+            "D": find("-%", True),
+            "H": find("-Y", True),
+            "W": find("-X", True),
         },
     }
-    in_shape = [int(in_dims[char]) for char in in_layout]
-    ker_shape = [int(w_dims[char]) for char in fil_layout]
+    in_shape = [int(in_dims[char]) for char in layouts["input_layout"]]
+    ker_shape = [int(w_dims[char]) for char in layouts["kernel_layout"]]
     bias = find("-b") == "1"
-    order = list(set(in_layout).intersection(["D", "H", "W"]))
+    order = list(set(layouts["input_layout"]).intersection(["D", "H", "W"]))
+    # luckily the order is alphabetical regardless of num_spatial_dims
     order.sort()
 
     conv_config = {
@@ -178,16 +197,18 @@ def command_to_signature(command: str, ignore_layouts: bool = False):
         "dilation": [],
         "output_padding": [],
     }
+    # get the parameters as lists of ints
     for dim in order:
         for key in conv_config.keys():
             item = conv_config_dicts[key][dim]
             if item is not None:
                 conv_config[key].append(int(item))
+    # verify the number of elements is correct
     for value in conv_config.values():
         assert len(value) == n
 
     conv_config["groups"] = int(groups)
-    fwd = find("-F")
+    fwd = find("-F", use_default=True)
     if fwd == "1":
         conv_config["mode"] = Mode.FORWARD
     elif fwd == "2":
@@ -205,12 +226,9 @@ def command_to_signature(command: str, ignore_layouts: bool = False):
         "convfp16": torch.float16,
     }
     dtype = dtype_dict[comm_list[0]]
+    conv_config.update(layouts)
     return ConvSignature(
-        num_spatial_dims=n,
         dtype=dtype,
-        input_layout=in_layout,
-        kernel_layout=fil_layout,
-        output_layout=out_layout,
         input_shape=in_shape,
         kernel_shape=ker_shape,
         bias=bias,
@@ -277,10 +295,12 @@ def main(args: argparse.Namespace):
     if args.output_dir:
         path = Path.cwd() / args.output_dir
         path.mkdir(exist_ok=True, parents=True)
+    print_ir = not bool(path)
     pipeline = args.pipeline if args.pipeline else DEFAULT_TORCH_TO_LINALG_PIPELINE
     if args.command:
         sig = command_to_signature(args.command)
-        return generate_mlir(sig, path, import_pipeline=pipeline)
+        generate_mlir(sig, path, import_pipeline=pipeline, print_ir=print_ir)
+        return
     commands = load_commands()
     signatures = {get_safe_name(c): command_to_signature(c) for c in commands}
     filters = {}
@@ -289,10 +309,14 @@ def main(args: argparse.Namespace):
     if args.num_spatial_dims:
         filters["num_spatial_dims"] = int(args.num_spatial_dims)
     if args.all:
-        return batch_generate_mlir(signatures, path, import_pipeline=pipeline)
+        return batch_generate_mlir(
+            signatures, path, import_pipeline=pipeline, print_ir=print_ir
+        )
     if len(filters.keys()) != 0:
         signatures = filter_signatures(signatures, **filters)
-        return batch_generate_mlir(signatures, path, import_pipeline=pipeline)
+        return batch_generate_mlir(
+            signatures, path, import_pipeline=pipeline, print_ir=print_ir
+        )
     raise ValueError(
         "At least one of `--command`, `--forw`, `--num-spatial-dims`, or `--all` should be set"
     )

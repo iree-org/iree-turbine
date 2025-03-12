@@ -1,3 +1,4 @@
+--spatial_dim        -_        convolution spatial dimension (Default=2)
 --batchsize          -n        Mini-batch size (Default=100)
 --in_channels        -c        Number of Input Channels (Default=3)
 --in_d               -!        Input Depth (Default=32)
