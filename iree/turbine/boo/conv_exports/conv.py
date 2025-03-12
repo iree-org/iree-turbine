@@ -177,9 +177,9 @@ class ConvForward(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
         super().__init__()
         self.perms = [
-            sig.input_perms.items,
-            sig.kernel_perms.items,
-            sig.output_perms.items,
+            sig.input_perms,
+            sig.kernel_perms,
+            sig.output_perms,
         ]
         self.kwargs = sig.get_conv_kwargs()
         if not sig.bias:
@@ -187,13 +187,13 @@ class ConvForward(torch.nn.Module):
 
     def forward(self, *args):
         mod_args = [
-            torch.permute(args[0], self.perms[0]),
-            torch.permute(args[1], self.perms[1]),
+            self.perms[0](args[0]),
+            self.perms[1](args[1]),
         ]
         if "bias" not in self.kwargs.keys():
             mod_args.append(args[2])
         output = torch.convolution(*mod_args, **self.kwargs)
-        return torch.permute(output, self.perms[2])
+        return self.perms[2](output)
 
 
 class ConvBackwardInput(torch.nn.Module):
@@ -209,16 +209,21 @@ class ConvBackwardInput(torch.nn.Module):
                 "unimplemented input grad decomposition: transposed conv"
             )
         self.perms = [
-            sig.output_perms.inv().items,
-            sig.kernel_perms.items,
-            sig.input_perms.inv().items,
+            sig.output_perms.inv(),
+            sig.kernel_perms,
+            sig.input_perms.inv(),
         ]
+        # remainder from forward output_shape calculation needs to be accounted for
         pad_correction = []
+        in_shape_p = sig.input_perms(sig.input_shape)
+        ker_shape_p = sig.kernel_perms(sig.kernel_shape)
         for i in range(sig.num_spatial_dims):
-            in_dim = sig.input_shape[sig.input_perms[i + 2]]
-            ker_dim = sig.kernel_shape[sig.kernel_perms[i + 2]]
             pad_correction.append(
-                ((in_dim - 1) + 2 * sig.padding[i] - sig.dilation[i] * (ker_dim - 1))
+                (
+                    (in_shape_p[i + 2] - 1)
+                    + 2 * sig.padding[i]
+                    - sig.dilation[i] * (ker_shape_p[i + 2] - 1)
+                )
                 % sig.stride[i]
             )
         # get arguments for substitute conv
@@ -227,15 +232,15 @@ class ConvBackwardInput(torch.nn.Module):
         self.kwargs["output_padding"] = pad_correction
 
     def forward(self, dLdy, w):
-        dLdy = torch.permute(dLdy, self.perms[0])
-        w = torch.permute(w, self.perms[1])
+        dLdy = self.perms[0](dLdy)
+        w = self.perms[1](w)
         dLdx = torch.convolution(
             dLdy,
             w,
             bias=None,
             **self.kwargs,
         )
-        return torch.permute(dLdx, self.perms[2])
+        return self.perms[2](dLdx)
 
 
 class ConvBackwardWeight(torch.nn.Module):
@@ -283,23 +288,25 @@ class ConvBackwardWeight(torch.nn.Module):
         #    note: (1,0,2,3) is it's own inverse.
         NC_perm = Permutation([1, 0] + list(range(2, sig.num_spatial_dims + 2)))
         self.perms = [
-            (NC_perm * sig.input_perms).items,
-            (NC_perm / sig.output_perms).items,
-            (sig.kernel_perms.inv() * NC_perm).items,
+            NC_perm * sig.input_perms,
+            NC_perm / sig.output_perms,
+            sig.kernel_perms.inv() * NC_perm,
         ]
 
     def forward(self, dLdy, x):
-        # Slice out unneccessary values after convolution.
-        # One can instead pre-pad spatial dims:
-        #  1. x by (stride - pad_correction)
-        #  2. dLdy by 1
         conv = torch.convolution(
-            torch.permute(x, self.perms[0]),
-            torch.permute(dLdy, self.perms[1]),
+            self.perms[0](x),
+            self.perms[1](dLdy),
             bias=None,
             **self.kwargs,
         )
 
+        # The forward conv's output_shape calculation is subtractive w.r.t. kernel_shape.
+        # Therefore, we need to remove unneccessary values from the backward conv.
+        # We choose to slice them out after the conv in this impl.
+        # One could instead pre-pad spatial dims:
+        #  1. x by stride - pad_correction (see ConvBackwardInput)
+        #  2. dLdy by 1
         if self.ND == 1:
             sliced = conv[..., : self.K[0]]
         if self.ND == 2:
@@ -307,7 +314,7 @@ class ConvBackwardWeight(torch.nn.Module):
         if self.ND == 3:
             sliced = conv[..., : self.K[0], : self.K[1], : self.K[2]]
 
-        return torch.permute(sliced, self.perms[2])
+        return self.perms[2](sliced)
 
 
 def get_nn_module(signature: ConvSignature):
