@@ -40,7 +40,7 @@ class Mode(IntEnum):
         spec = spec.upper().replace("-", "_")
         if spec not in Mode.__members__:
             raise ValueError(
-                f"For import_phase= argument, expected one of: "
+                f"For mode= argument, expected one of: "
                 f"{', '.join(Mode.__members__.keys())}"
             )
         return Mode[spec]
