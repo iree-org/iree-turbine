@@ -483,7 +483,11 @@ def remove_global_indexing(
     new_index = {key: safe_subs(index[key], subs) for key in index}
     for key in new_index:
         for constraint in tiling_constraints:
-            new_index[key] = new_index[key].subs({constraint.induction_var: 0})
+            new_dim = new_index[key]
+            if new_dim.start.has(constraint.induction_var):
+                new_dim = new_dim.subs({constraint.induction_var: 0})
+                new_dim.start = new_dim.start - constraint.start
+                new_index[key] = new_dim
     return new_index
 
 
