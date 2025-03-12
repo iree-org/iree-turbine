@@ -151,7 +151,7 @@ def test_attention_32x32x8():
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         print(base_attention_32x32x8(q, k, v, output).module_op)
 
-        # CHECK-DAG:        #iree_codegen.translation_info
+        # CHECK:          #iree_codegen.translation_info
         # CHECK-SAME:       {llvm_func_attrs = {"amdgpu-waves-per-eu" = "2", "denormal-fp-math-f32" = "preserve-sign"}
         # CHECK-LABEL:      func.func @base_attention_32x32x8
         # CHECK:                {{.*}} = scf.for
