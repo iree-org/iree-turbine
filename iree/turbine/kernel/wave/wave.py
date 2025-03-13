@@ -549,7 +549,7 @@ class LaunchableWave(Launchable):
         # [Manually resolve conflicts consistent with the PR]
         scheduling_type = options.schedule
         use_scheduling_barriers = options.use_scheduling_barriers
-        do_multi_buffering = options.do_multi_buffering
+        enable_multi_buffering = options.enable_multi_buffering
         graph_passes.append(
             partial(
                 schedule_graph,
@@ -557,7 +557,7 @@ class LaunchableWave(Launchable):
                 self.constraints,
                 use_scheduling_barriers,
                 scheduling_type,
-                do_multi_buffering
+                enable_multi_buffering
             )
         )
 

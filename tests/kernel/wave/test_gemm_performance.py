@@ -191,7 +191,7 @@ if __name__ == "__main__":
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-        do_multi_buffering=True,
+        enable_multi_buffering=True,
     ):
         a = device_randn(shape[0], shape[2], dtype=torch.float16)
         b = device_randn(shape[1], shape[2], dtype=torch.float16)

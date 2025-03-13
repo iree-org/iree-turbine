@@ -48,7 +48,7 @@ def schedule_reduction(
     constraints: list[Constraint],
     use_scheduling_barriers: bool = False,
     scheduling_type: SchedulingType = SchedulingType.NONE,
-    do_multi_buffering: bool = False,
+    enable_multi_buffering: bool = False,
 ):
     """
     Clones the reduction graph and does the following:
@@ -171,7 +171,7 @@ def schedule_reduction(
     # Update new reduction count.
     new_reduction.count = max_induction_variable - (scheduler.num_stages - 1)
 
-    if do_multi_buffering:
+    if enable_multi_buffering:
         multi_buffer(trace)
 
 
@@ -180,7 +180,7 @@ def schedule_graph(
     constraints: list[Constraint],
     use_scheduling_barriers: bool = False,
     scheduling_type: SchedulingType = SchedulingType.NONE,
-    do_multi_buffering: bool = False,
+    enable_multi_buffering: bool = False,
 ):
     """
     Given a graph, pipelines the reductions in the graph.
@@ -203,5 +203,5 @@ def schedule_graph(
             constraints,
             use_scheduling_barriers,
             scheduling_type,
-            do_multi_buffering,
+            enable_multi_buffering,
         )
