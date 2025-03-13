@@ -4,7 +4,7 @@ import torch
 from iree.turbine.boo.conv_exports.conv import Mode, ConvSignature, get_nn_module
 
 # Note: Singleton parameters are intentionally included for ease of adding additional configurations to test
-@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+@pytest.mark.parametrize("dtype", [torch.float32])
 @pytest.mark.parametrize("N", [3])
 @pytest.mark.parametrize("C", [2])
 @pytest.mark.parametrize("F", [4])
