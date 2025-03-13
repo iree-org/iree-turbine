@@ -149,7 +149,7 @@ def test_attention_32x32x8():
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(base_attention_32x32x8(q, k, v, output).module_op)
+        print(base_attention_32x32x8(q, k, v, output))
 
         # CHECK:            #iree_codegen.translation_info
         # CHECK-SAME:       {llvm_func_attrs = {"amdgpu-waves-per-eu" = "2", "denormal-fp-math-f32" = "preserve-sign"}
@@ -291,7 +291,7 @@ def test_dynamic_attention_32x32x8():
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(dynamic_attention_32x32x8(q, k, v, output).module_op)
+        print(dynamic_attention_32x32x8(q, k, v, output))
 
         # CHECK-LABEL:      func.func @dynamic_attention_32x32x8
         # CHECK-DAG:            %[[IOTA:.+]] = arith.constant dense<[0, 1, 2, 3]> : vector<4xindex>
@@ -359,7 +359,7 @@ def test_attention():
             shape.head_size_kv,
             dtype=torch.float32,
         )
-        print(base_attention(q, k, v, output).module_op)
+        print(base_attention(q, k, v, output))
 
         # CHECK-LABEL:       func.func @base_attention
         # CHECK:                {{.*}} = scf.for
@@ -416,7 +416,7 @@ def test_attention_causal():
             shape.head_size_kv,
             dtype=torch.float32,
         )
-        print(base_attention(q, k, v, output).module_op)
+        print(base_attention(q, k, v, output))
 
         # CHECK-LABEL:       func.func @base_attention
         # CHECK:                %[[NEG_INF:.+]] = arith.constant dense<-1.000000e+06> : vector<4xf32>

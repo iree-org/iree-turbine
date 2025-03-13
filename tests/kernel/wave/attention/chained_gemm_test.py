@@ -25,6 +25,7 @@ from torch.testing import assert_close
 from ..common.utils import (
     require_e2e,
     require_cdna3,
+    param_bool,
     enable_scheduling_barriers,
     dump_generated_mlir,
 )
@@ -33,7 +34,7 @@ from ..common.shapes import get_test_shapes
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("chained_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False])
+@param_bool("enable_scheduling", "sched", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -156,12 +157,12 @@ def testChainedGemm(
         k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
         v = device_randn(batch, v_head_dim, kv_seq_len, dtype=torch.float16)
         output = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
-        mb = chained_gemm(q, k, v, output)
+        asm = chained_gemm(q, k, v, output)
 
         if dump_generated_mlir:
             filename = f"wave_cgemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
                 print(f"IR dumped to {filename}")
 
         iree_ref = torch.zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
@@ -179,7 +180,7 @@ def testChainedGemm(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("chained_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False])
+@param_bool("enable_scheduling", "sched", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -312,12 +313,12 @@ def testChainedGemmF8(
         k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
         v = device_randn(batch, v_head_dim, kv_seq_len, dtype=torch.float16)
         output = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
-        mb = chained_gemm_f8(q, k, v, output)
+        asm = chained_gemm_f8(q, k, v, output)
 
         if dump_generated_mlir:
             filename = f"wave_cgemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         iree_ref = torch.zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
         generate_iree_ref(

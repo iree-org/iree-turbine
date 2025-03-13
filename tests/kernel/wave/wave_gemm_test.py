@@ -30,6 +30,7 @@ from .common.utils import (
     perf_test,
     enable_scheduling_barriers,
     dump_generated_mlir,
+    param_bool,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
@@ -67,8 +68,8 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("enable_scheduling", "sched")
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -195,12 +196,12 @@ def testGemm(
         a = device_randn(shape[0], shape[2], dtype=torch.float16)
         b = device_randn(shape[1], shape[2], dtype=torch.float16)
         c = device_zeros(shape[0], shape[1], dtype=torch.float32)
-        mb = gemm(a, b, c)
+        asm = gemm(a, b, c)
 
         if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         if run_bench:
             if dump_perf is not None:
@@ -214,8 +215,8 @@ def testGemm(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("enable_scheduling", "sched")
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -342,12 +343,12 @@ def testVMFMAGemm(
         a = device_randn(shape[0], shape[2], dtype=torch.float16)
         b = device_randn(shape[1], shape[2], dtype=torch.float16)
         c = device_zeros(shape[0], shape[1], dtype=torch.float32)
-        mb = gemm(a, b, c)
+        asm = gemm(a, b, c)
 
         if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         if run_bench:
             if dump_perf is not None:
@@ -362,8 +363,8 @@ def testVMFMAGemm(
 @require_e2e
 @require_cdna2
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("enable_scheduling", "sched")
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -491,12 +492,12 @@ def testCDNA2IntGemm(
         a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
         b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
         c = device_zeros(shape[0], shape[1], dtype=torch.int32)
-        mb = gemm(a, b, c)
+        asm = gemm(a, b, c)
 
         if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         if run_bench:
             if dump_perf is not None:
@@ -511,7 +512,7 @@ def testCDNA2IntGemm(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
+@param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -608,12 +609,12 @@ def testCDNA3IntGemm(
         a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
         b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
         c = device_zeros(shape[0], shape[1], dtype=torch.int32)
-        mb = gemm(a, b, c)
+        asm = gemm(a, b, c)
 
         if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         if run_bench:
             if dump_perf is not None:
@@ -628,7 +629,7 @@ def testCDNA3IntGemm(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
+@param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -723,12 +724,12 @@ def testF8Gemm(
         a = device_randn(shape[0], shape[2], dtype=torch.float16)
         b = device_randn(shape[1], shape[2], dtype=torch.float16)
         c = device_zeros(shape[0], shape[1], dtype=torch.float32)
-        mb = gemm(a, b, c)
+        asm = gemm(a, b, c)
 
         if dump_generated_mlir:
             filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         if run_bench:
             if dump_perf is not None:
@@ -742,7 +743,7 @@ def testF8Gemm(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_batched_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
+@param_bool("enable_scheduling", "sched")
 def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
@@ -832,12 +833,12 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
         a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
         b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
         c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        mb = batched_gemm(a, b, c)
+        asm = batched_gemm(a, b, c)
 
         if dump_generated_mlir:
             filename = f"wave_batched_gemm_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         if run_bench:
             if dump_perf is not None:

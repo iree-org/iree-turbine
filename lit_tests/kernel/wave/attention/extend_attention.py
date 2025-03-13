@@ -88,7 +88,7 @@ def test_extend_attention():
                 sequence_lengths_extend,
                 start_indices_extend,
                 output,
-            ).module_op
+            )
         )
         # This part ensure correctness of WG distribution for extend attention.
         # CHECK:              stream.executable.export public @extend_attention workgroups(%[[ARG0:.+]]: index, %[[ARG1:.+]]: index, %[[ARG2:.+]]: index, %[[ARG3:.+]]: index)
@@ -215,7 +215,7 @@ def test_causal_extend_attention():
                 sequence_lengths_extend,
                 start_indices_extend,
                 output,
-            ).module_op
+            )
         )
 
         # CHECK-LABEL:       func.func @extend_attention
@@ -361,7 +361,7 @@ def test_causal_extend_attention_32x32x8():
                 sequence_lengths_extend,
                 start_indices_extend,
                 output,
-            ).module_op
+            )
         )
 
         # CHECK-LABEL:       func.func @extend_attention

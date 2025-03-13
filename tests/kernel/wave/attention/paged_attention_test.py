@@ -29,6 +29,7 @@ from ..common.utils import (
     require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
+    param_bool,
 )
 from ..common.shapes import get_test_shapes
 from typing import List, Optional
@@ -142,7 +143,7 @@ def load_inputs(directory):
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize("enable_scheduling", [False])
+@param_bool("enable_scheduling", "sched", [False])
 @pytest.mark.parametrize("num_kv_splits", [8])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -267,7 +268,7 @@ def testPagedFlashDecoding(
     ):
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
-        mb_qk = phase_0(
+        asm_qk = phase_0(
             query * dk_sqrt * log2e,
             key_cache_4d,
             value_cache_4d,
@@ -287,15 +288,15 @@ def testPagedFlashDecoding(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        mb_sv = phase_1(phase_0_output, phase_0_output_max, output)
+        asm_sv = phase_1(phase_0_output, phase_0_output_max, output)
 
     if dump_generated_mlir:
         filename = f"wave_paged_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(asm_qk)
         filename = f"wave_paged_phase_1_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_sv.module_op.get_asm())
+            f.write(asm_sv)
 
     if not artifact_directory:
         # Run the reference implementation.

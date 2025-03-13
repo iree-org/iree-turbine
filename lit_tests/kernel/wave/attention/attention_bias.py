@@ -146,7 +146,7 @@ def test_attention_bias():
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(base_attention_bias(q, k, v, output).module_op)
+        print(base_attention_bias(q, k, v, output))
 
         # CHECK:            func.func @base_attention_bias
         # CHECK:                {{.*}} = scf.for
