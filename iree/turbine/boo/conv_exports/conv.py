@@ -189,7 +189,7 @@ class ConvSignature:
 
     @property
     def explicit_padding(self) -> List[int]:
-        """Padding of input tensor compatible with torch.nn.functional.pad."""
+        """Padding of input tensor compatible with torch.constant_pad_nd."""
         torch_pads_NCHW = [[0, 0], [0, 0]] + [[p, p] for p in self.padding]
         # permute back to input ordering
         permuted_pads = self.input_perms.inv()(torch_pads_NCHW)
@@ -283,7 +283,9 @@ class ConvForward(torch.nn.Module):
 
     def forward(self, *args):
         mod_args = [
-            self.perms[0](torch.nn.functional.pad(args[0], self.explicit_padding)),
+            self.perms[0](
+                torch.constant_pad_nd(args[0], self.explicit_padding, value=0)
+            ),
             self.perms[1](args[1]),
         ]
         if "bias" not in self.kwargs.keys():
@@ -392,7 +394,7 @@ class ConvBackwardWeight(torch.nn.Module):
         self.kwargs["padding"] = sig.num_spatial_dims * [0]
 
     def forward(self, dLdy, x):
-        x = torch.nn.functional.pad(x, self.explicit_padding)
+        x = torch.constant_pad_nd(x, self.explicit_padding, 0)
         conv = torch.convolution(
             self.perms[0](x),
             self.perms[1](dLdy),
