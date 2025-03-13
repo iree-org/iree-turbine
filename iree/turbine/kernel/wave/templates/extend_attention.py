@@ -69,6 +69,17 @@ def get_extend_attention_kernel(
     STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     SEQ_TILE_SIZE = shape.block_size
+    N_KV_SCALE = 2
+
+    if SEQ_TILE_SIZE is None:
+        # Apply tile heuristic.
+        if shape.max_seq_len <= 128:
+            SEQ_TILE_SIZE = 64
+            N_KV_SCALE = 2
+        else:
+            SEQ_TILE_SIZE = 128
+            N_KV_SCALE = 4
+
     M_WAVES = num_waves
     N_WAVES = 1
     LOG2E = 1.44269504089
@@ -342,7 +353,7 @@ def get_extend_attention_kernel(
         BLOCK_H: 1,
         BLOCK_N_Q: SEQ_TILE_SIZE,
         BLOCK_D_KV: shape.head_size_kv,
-        BLOCK_N_KV: SEQ_TILE_SIZE // 2,
+        BLOCK_N_KV: SEQ_TILE_SIZE // N_KV_SCALE,
         BLOCK_S: 1,
         H: shape.num_query_heads,
         H_KV: shape.num_kv_heads,

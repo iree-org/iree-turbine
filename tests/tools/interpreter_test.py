@@ -77,7 +77,6 @@ def testGemm():
         a = torch.randn(2048, 1280, dtype=torch.float16)
         b = torch.randn(10240, 1280, dtype=torch.float16)
         c = torch.zeros(2048, 10240, dtype=torch.float32)
-        mb = gemm(a, b, c)
-        asm = mb.module_op.get_asm()
+        asm = gemm(a, b, c)
         interpreter = Interpreter([0, 0, 0], [0, 0, 0])
         interpreter.interpret(asm)

@@ -22,7 +22,7 @@ from iree.turbine.kernel.wave.shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import schedule_graph
-from iree.turbine.kernel.wave.index_sequence_analysis import (
+from iree.turbine.kernel.wave.analysis.index_sequence_analysis import (
     set_node_indices,
     set_post_expansion_indices,
 )

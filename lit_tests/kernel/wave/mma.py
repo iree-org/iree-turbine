@@ -65,7 +65,7 @@ def test_mma():
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(mma(a, b, c).module_op)
+        print(mma(a, b, c))
 
         # CHECK:          func.func @mma
         # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<4xf32>
@@ -145,7 +145,7 @@ def test_mma_32x32x8():
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(mma_32x32x8(a, b, c).module_op)
+        print(mma_32x32x8(a, b, c))
 
         # CHECK:          func.func @mma_32x32x8
         # CHECK-DAG:        %[[C27:.+]] = arith.constant 27 : index
@@ -299,7 +299,7 @@ def test_mma_32x32x16():
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(mma_32x32x16(a, b, c).module_op)
+        print(mma_32x32x16(a, b, c))
 
         # CHECK:          func.func @mma_32x32x16
         # CHECK-DAG:        %[[C27:.+]] = arith.constant 27 : index
@@ -453,7 +453,7 @@ def test_mma_16x16x32():
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(mma_16x16x32(a, b, c).module_op)
+        print(mma_16x16x32(a, b, c))
 
         # CHECK:          func.func @mma_16x16x32
         # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<4xf32>
