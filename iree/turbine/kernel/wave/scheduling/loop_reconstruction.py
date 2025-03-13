@@ -88,6 +88,7 @@ def add_nodes_by_schedule(
                     )
                     continue
             new_node = custom_node.copy(
+                new_name=node.name,
                 new_graph=reduction_graph,
                 arg_transform=lambda x: (
                     arg_context.get_from_iteration(iteration, x, preferred_stage)
