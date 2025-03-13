@@ -40,6 +40,7 @@ def generate_mlir(
     *,
     import_pipeline: Union[None, str, List[str]] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
     print_ir: bool = False,
+    print_ir_after_all: bool = False,
 ):
     """For a given ConvSignature, imports the conv to mlir"""
     args = signature.get_sample_conv_args()
@@ -57,6 +58,8 @@ def generate_mlir(
             pipeline_str,
             context=importer.module.context,
         )
+        if print_ir_after_all:
+            pm.enable_ir_printing()
         pm.run(importer.module.operation)
     if output_path:
         Path(output_path).write_text(str(importer.module))
@@ -71,6 +74,7 @@ def batch_generate_mlir(
     *,
     import_pipeline: List[str] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
     print_ir: bool = False,
+    print_ir_after_all: bool = False,
 ) -> Tuple[int, int]:
     """prints or saves mlir for each signature provided. Returns tuple: (#failed, #total)"""
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -81,7 +85,13 @@ def batch_generate_mlir(
         path = save_dir / f"{name}.mlir"
         total += 1
         try:
-            generate_mlir(s, path, import_pipeline=import_pipeline, print_ir=print_ir)
+            generate_mlir(
+                s,
+                path,
+                import_pipeline=import_pipeline,
+                print_ir=print_ir,
+                print_ir_after_all=print_ir_after_all,
+            )
         except Exception as e:
             err += 1
             path = save_dir / f"ERR_{name}.log"
@@ -287,6 +297,12 @@ def _get_argparse() -> argparse.Namespace:
         "-p",
         help="Provide an explicit pipeline to lower from torch-ir to iree-input. Defaults to `builtin.module(torch-backend-to-linalg-on-tensors-backend-pipeline)`.",
     )
+    parser.add_argument(
+        "--mlir-print-ir-after-all",
+        action="store_true",
+        default=False,
+        help="Enables ir printing for the pass manager. This will dump IR after each pass applied.",
+    )
     return parser.parse_args()
 
 
@@ -299,7 +315,13 @@ def main(args: argparse.Namespace):
     pipeline = args.pipeline if args.pipeline else DEFAULT_TORCH_TO_LINALG_PIPELINE
     if args.command:
         sig = command_to_signature(args.command)
-        generate_mlir(sig, path, import_pipeline=pipeline, print_ir=print_ir)
+        generate_mlir(
+            sig,
+            path,
+            import_pipeline=pipeline,
+            print_ir=print_ir,
+            print_ir_after_all=args.mlir_print_ir_after_all,
+        )
         return
     commands = load_commands()
     signatures = {get_safe_name(c): command_to_signature(c) for c in commands}
@@ -310,12 +332,20 @@ def main(args: argparse.Namespace):
         filters["num_spatial_dims"] = int(args.num_spatial_dims)
     if args.all:
         return batch_generate_mlir(
-            signatures, path, import_pipeline=pipeline, print_ir=print_ir
+            signatures,
+            path,
+            import_pipeline=pipeline,
+            print_ir=print_ir,
+            print_ir_after_all=args.mlir_print_ir_after_all,
         )
     if len(filters.keys()) != 0:
         signatures = filter_signatures(signatures, **filters)
         return batch_generate_mlir(
-            signatures, path, import_pipeline=pipeline, print_ir=print_ir
+            signatures,
+            path,
+            import_pipeline=pipeline,
+            print_ir=print_ir,
+            print_ir_after_all=args.mlir_print_ir_after_all,
         )
     raise ValueError(
         "At least one of `--command`, `--forw`, `--num-spatial-dims`, or `--all` should be set"
