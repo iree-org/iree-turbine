@@ -24,6 +24,7 @@ from iree.turbine.kernel.wave.templates.prefill_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import os
 from torch.testing import assert_close
 from ..common.utils import (
@@ -96,7 +97,7 @@ def create_inputs(
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("dtype", [torch.float16])
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @pytest.mark.parametrize(
     "mfma_variant",
     [(MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)],
@@ -104,7 +105,7 @@ def create_inputs(
 def testPrefillAttention(
     shape: tuple[int],
     dtype: torch.dtype,
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     mfma_variant: MMAType,
     request,
 ):

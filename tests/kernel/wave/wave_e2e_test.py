@@ -1521,7 +1521,6 @@ def test_igemm_conv(
         run=True,
         run_bench=run_bench,
         run_config=config,
-        schedule=False,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
     ):

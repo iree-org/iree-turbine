@@ -8,6 +8,7 @@ from iree.turbine.kernel.wave.promotion import promote_placeholders
 from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
 from iree.turbine.kernel.wave.expansion.expansion import expand_graph
 from iree.turbine.kernel.wave.type_inference import infer_types
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel._support.indexing import IndexingContext
@@ -109,7 +110,7 @@ def test_gemm_pipelined():
         hoist_loop_invariant_ops(trace, constraints)
         minimize_global_loads(trace, constraints)
         apply_shared_memory_indexing_corrections(trace, constraints)
-        schedule_graph(trace, constraints, True)
+        schedule_graph(trace, constraints, True, SchedulingType.MODULO)
 
         print_subgraph(trace, "pipelined_reduction", False)
         # CHECK: %acc_m_0_n_0_k_0
