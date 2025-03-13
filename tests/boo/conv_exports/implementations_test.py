@@ -38,15 +38,17 @@ def test_conv_impl(
     }
     fwd_sig = ConvSignature(**kwargs)
     x, w = fwd_sig.get_sample_conv_args(seed=1)
+    x = x.to(device="cpu")
+    w = w.to(device="cpu")
     x.requires_grad_(True)
     w.requires_grad_(True)
-    fwd = get_nn_module(fwd_sig)
+    fwd = get_nn_module(fwd_sig).to(device="cpu")
     kwargs["mode"] = Mode.INPUT_BACKWARD
     bwd_sig = ConvSignature(**kwargs)
-    bwd = get_nn_module(bwd_sig)
+    bwd = get_nn_module(bwd_sig).to(device="cpu")
     kwargs["mode"] = Mode.WEIGHT_BACKWARD
     wrw_sig = ConvSignature(**kwargs)
-    wrw = get_nn_module(wrw_sig)
+    wrw = get_nn_module(wrw_sig).to(device="cpu")
     y = fwd(x, w)
     y.retain_grad()
     s = y.sum()
@@ -61,11 +63,9 @@ def test_conv_impl(
     if bwd_match and wrw_match:
         return
     if not bwd_match:
-        print(dsdx)
-        print(x.grad)
-        print(dsdx - x.grad)
+        print(f"{dsdx=}")
+        print(f"{x.grad=}")
     if not wrw_match:
-        print(dsdw)
-        print(w.grad)
-        print(dsdw - w.grad)
+        print(f"{dsdw=}")
+        print(f"{w.grad=}")
     raise RuntimeError(f"{bwd_match=}; {wrw_match=};")
