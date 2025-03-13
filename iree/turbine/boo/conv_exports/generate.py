@@ -224,12 +224,13 @@ def command_to_signature(command: str):
 
     fwd = find("-F", use_default=True)
     if fwd == "1":
-        mode = Mode.FORWARD
+        mode = "fwd"
     elif fwd == "2":
-        mode = Mode.INPUT_BACKWARD
+        mode = "bwd"
     elif fwd == "4":
-        mode = Mode.WEIGHT_BACKWARD
+        mode = "wrw"
     else:
+        mode = "fwd"
         warnings.warn(
             f"Only one of fwd, bwd, wrw conv supported at one time. Got {command}."
         )
@@ -240,13 +241,18 @@ def command_to_signature(command: str):
         "convfp16": torch.float16,
     }
     dtype = dtype_dict[comm_list[0]]
-    conv_config.update(layouts)
     return ConvSignature(
-        dtype=dtype,
         input_shape=in_shape,
         kernel_shape=ker_shape,
+        dtype=dtype,
+        input_layout=layouts["input_layout"],
+        kernel_layout=layouts["kernel_layout"],
+        output_layout=layouts["output_layout"],
         bias=bias,
-        **conv_config,
+        stride=conv_config["stride"],
+        padding=conv_config["padding"],
+        dilation=conv_config["dilation"],
+        output_padding=conv_config["output_padding"],
         groups=int(groups),
         transposed=transposed,
         mode=mode,
@@ -334,7 +340,7 @@ def main(args: argparse.Namespace):
     signatures = {get_safe_name(c): command_to_signature(c) for c in commands}
     filters = {}
     if args.forw:
-        filters["mode"] = Mode.parse(str(args.forw))
+        filters["mode"] = args.forw
     if args.num_spatial_dims:
         filters["num_spatial_dims"] = int(args.num_spatial_dims)
     if args.all:
