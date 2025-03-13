@@ -99,38 +99,22 @@ class ConvSignature:
                 f"Expected same rank for input and kernel, got {input_shape=}, {kernel_shape=}"
             )
         num_spatial_dims = len(input_shape) - 2
-        layouts = {
-            "input_layout": input_layout,
-            "kernel_layout": kernel_layout,
-            "output_layout": output_layout,
-        }
         default_layout = DEFAULT_LAYOUTS[num_spatial_dims]
-        for name in layouts.keys():
+
+        def get_layout(provided) -> str:
             if shared_layout:
-                layouts[name] = shared_layout
-            elif not layouts[name]:
-                layouts[name] = default_layout
-            assert (
-                len(layouts[name]) == num_spatial_dims + 2
-            ), f"Expected layout of length {num_spatial_dims + 2}, got {name} = {layouts[name]}."
-        parameters = {}
+                return shared_layout
+            if provided:
+                return provided
+            return default_layout
 
-        def add_param(name, value):
+        def listify(value: int | List[int]) -> List[int]:
             if isinstance(value, int):
-                parameters[name] = [value] * num_spatial_dims
-                return
-            assert (
-                len(value) == num_spatial_dims
-            ), f"{name} value, {value}, must be a list or tuple of size {num_spatial_dims=}."
-            assert isinstance(
-                value[0], int
-            ), f"{name} value, {value}, must contain ints."
-            parameters[name] = list(value)
+                return [value] * num_spatial_dims
+            if isinstance(value, list):
+                assert len(value) == num_spatial_dims
+                return value
 
-        add_param("stride", stride)
-        add_param("padding", padding)
-        add_param("dilation", dilation)
-        add_param("output_padding", output_padding)
         if isinstance(mode, str):
             mode = Mode.parse(mode)
         self._signature = ConvSignatureStorage(
@@ -138,9 +122,14 @@ class ConvSignature:
             kernel_shape=kernel_shape,
             num_spatial_dims=num_spatial_dims,
             dtype=dtype,
-            **layouts,
-            **parameters,
+            input_layout=get_layout(input_layout),
+            kernel_layout=get_layout(kernel_layout),
+            output_layout=get_layout(output_layout),
             bias=bias,
+            stride=listify(stride),
+            padding=listify(padding),
+            dilation=listify(dilation),
+            output_padding=listify(output_padding),
             transposed=transposed,
             groups=groups,
             mode=mode,
@@ -207,8 +196,8 @@ class ConvSignature:
     ) -> "ConvSignature":
         """gets a signature from provided input, weight, bias tensors and additional kwargs"""
         return ConvSignature(
-            input_shape=input.shape,
-            kernel_shape=weight.shape,
+            input_shape=list(input.shape),
+            kernel_shape=list(weight.shape),
             dtype=input.dtype,
             bias=bool(bias),
             **kwargs,

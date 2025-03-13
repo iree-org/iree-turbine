@@ -36,9 +36,9 @@ DEFAULT_TORCH_TO_LINALG_PIPELINE = [
 
 def generate_mlir(
     signature: ConvSignature,
-    output_path: Optional[Union[str, Path]] = None,
+    output_path: str | Path | None = None,
     *,
-    import_pipeline: Union[None, str, List[str]] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
+    import_pipeline: str | List[str] | None = DEFAULT_TORCH_TO_LINALG_PIPELINE,
     print_ir: bool = False,
     print_ir_after_all: bool = False,
 ):
@@ -70,19 +70,20 @@ def generate_mlir(
 
 def batch_generate_mlir(
     signatures: Dict[str, ConvSignature],
-    save_dir: Path,
+    save_dir: str | Path | None,
     *,
     import_pipeline: List[str] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
     print_ir: bool = False,
     print_ir_after_all: bool = False,
 ) -> Tuple[int, int]:
     """prints or saves mlir for each signature provided. Returns tuple: (#failed, #total)"""
-    save_dir.mkdir(parents=True, exist_ok=True)
+    if save_dir:
+        Path(save_dir).mkdir(parents=True, exist_ok=True)
     total = 0
     err = 0
     for name, s in signatures.items():
         print(f"processing {name}...")
-        path = save_dir / f"{name}.mlir"
+        path = None if not save_dir else Path(save_dir) / f"{name}.mlir"
         total += 1
         try:
             generate_mlir(
@@ -94,8 +95,12 @@ def batch_generate_mlir(
             )
         except Exception as e:
             err += 1
-            path = save_dir / f"ERR_{name}.log"
-            path.write_text(f"signature = {s}\n{str(e)}")
+            err_str = f"signature = {s}\n{str(e)}"
+            if save_dir:
+                path = Path(save_dir) / f"ERR_{name}.log"
+                path.write_text(err_str)
+            else:
+                print(err_str)
         gc.collect()
     return err, total
 
@@ -201,7 +206,7 @@ def command_to_signature(command: str):
     # luckily the order is alphabetical regardless of num_spatial_dims
     order.sort()
 
-    conv_config = {
+    conv_config: Dict[str, List[int]] = {
         "stride": [],
         "padding": [],
         "dilation": [],
@@ -217,19 +222,18 @@ def command_to_signature(command: str):
     for value in conv_config.values():
         assert len(value) == n
 
-    conv_config["groups"] = int(groups)
     fwd = find("-F", use_default=True)
     if fwd == "1":
-        conv_config["mode"] = Mode.FORWARD
+        mode = Mode.FORWARD
     elif fwd == "2":
-        conv_config["mode"] = Mode.INPUT_BACKWARD
+        mode = Mode.INPUT_BACKWARD
     elif fwd == "4":
-        conv_config["mode"] = Mode.WEIGHT_BACKWARD
+        mode = Mode.WEIGHT_BACKWARD
     else:
         warnings.warn(
             f"Only one of fwd, bwd, wrw conv supported at one time. Got {command}."
         )
-    conv_config["transposed"] = find("-m") == "trans"
+    transposed = find("-m") == "trans"
     dtype_dict = {
         "convbfp16": torch.bfloat16,
         "conv": torch.float32,
@@ -243,6 +247,9 @@ def command_to_signature(command: str):
         kernel_shape=ker_shape,
         bias=bias,
         **conv_config,
+        groups=int(groups),
+        transposed=transposed,
+        mode=mode,
     )
 
 

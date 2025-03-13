@@ -1,8 +1,8 @@
 from pathlib import Path
 
 from typing import (
+    Collection,
     Dict,
-    Iterable,
     List,
     Tuple,
     Union,
@@ -23,11 +23,11 @@ class Permutation:
         self._items = tuple(ordering)
 
     @property
-    def size(self):
+    def size(self) -> int:
         return len(self._items)
 
     @property
-    def items(self):
+    def items(self) -> Tuple[int, ...]:
         return self._items
 
     def __getitem__(self, n: int):
@@ -36,7 +36,9 @@ class Permutation:
     def __repr__(self):
         return f"Permutation of {self.size} : {self.items}"
 
-    def __eq__(self, other: "Permutation"):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Permutation):
+            return False
         return self.items == other.items
 
     def __len__(self):
@@ -47,42 +49,42 @@ class Permutation:
         assert self.size == other.size, "permutations must be the same size"
         return Permutation([other.items[element] for element in self.items])
 
-    def __call__(
-        self, other: Union[torch.Tensor, Iterable]
-    ) -> Union[torch.Tensor, Iterable]:
+    def __call__(self, other):
         """apply the permutation to a tensor or iterable (e.g., a shape)"""
         if isinstance(other, torch.Tensor):
             assert (
                 len(other.shape) == self.size
             ), f"permutation must match the rank of the tensor being permuted, got permutation size {self.size} for tensor of shape {other.shape}"
             return torch.permute(other, self.items)
-        assert len(other) == self.size
-        return [other[item] for item in self.items]
+        if isinstance(other, Collection):
+            assert len(other) == self.size
+            return [other[item] for item in self.items]
 
     def __truediv__(self, other: "Permutation") -> "Permutation":
         return self * other.inv()
 
     def inv(self) -> "Permutation":
         """inverts the permutation x*inv(x) = inv(x)*x = Permutation.identity(x.size)"""
-        inverse = [None] * self.size
+        inverse = list(range(self.size))
         for i in range(self.size):
-            inverse[self.items[i]] = i
+            index = self.items[i]
+            inverse[index] = i
         return Permutation(inverse)
 
     @staticmethod
     def identity(size: int):
         """creates an identity permutation"""
         assert size > 0, "size must be positive integer"
-        return Permutation(range(size))
+        return Permutation(list(range(size)))
 
     @staticmethod
-    def get(src: Iterable, target: Iterable):
+    def get(src: Collection, target: Collection):
         """Gets a permutation p such that `torch.permute(a, p) = b` where `a.shape = src` and `b.shape = target`"""
         n = len(src)
         assert n > 0 and n == len(
             target
         ), "source and target iterables must share the same positive length"
-        d = {target[i]: i for i in range(n)}
+        d = {t: i for i, t in enumerate(target)}
         inverse = []
         try:
             for item in src:
@@ -101,7 +103,7 @@ def _load_miopen_args() -> List[str]:
     return p.read_text().splitlines()
 
 
-def get_aliases_and_defaults() -> Tuple[Dict[str, str], Dict[str, str]]:
+def get_aliases_and_defaults() -> Tuple[Dict[str, str], Dict[str, str | None]]:
     lines = _load_miopen_args()
     alias_dict = {}
     default_dict = {
