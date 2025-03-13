@@ -22,6 +22,7 @@ from iree.turbine.kernel.wave.templates.paged_decode_attention import (
     get_paged_decode_attention_kernels,
     paged_decode_attention_shape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import os
 from torch.testing import assert_close
 from ..common.utils import (
@@ -143,7 +144,7 @@ def load_inputs(directory):
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("dtype", [torch.float16])
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @pytest.mark.parametrize("num_kv_splits", [8])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -154,7 +155,7 @@ def load_inputs(directory):
 def testPagedFlashDecoding(
     shape: tuple[int],
     dtype: torch.dtype,
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     num_kv_splits: int,
     mfma_variant: MMAType,
     request,
