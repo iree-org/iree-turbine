@@ -108,7 +108,7 @@ def testAttentionPure(
         dk_sqrt = math.sqrt(1.0 / shape.head_size)
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
-        mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+        asm = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
         torch_ref = torch.nn.functional.scaled_dot_product_attention(
             q, k, v, attn_mask=None
         )
@@ -116,7 +116,7 @@ def testAttentionPure(
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, input_shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
 
@@ -191,7 +191,7 @@ def testAttentionCausal(
         dk_sqrt = math.sqrt(1.0 / shape.head_size)
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
-        mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+        asm = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
         torch_ref = torch.nn.functional.scaled_dot_product_attention(
             q, k, v, is_causal=True
         )
@@ -199,7 +199,7 @@ def testAttentionCausal(
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
 
@@ -387,7 +387,7 @@ def testAttentionBias(
         dk_sqrt = math.sqrt(1.0 / shape[3])
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
-        mb = base_attention_bias(
+        asm = base_attention_bias(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), bias * log2e, output
         )
         k_t = k.transpose(-1, -2)
@@ -399,7 +399,7 @@ def testAttentionBias(
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         if "gfx94" in config["target"]:
             assert_close(output, torch_ref, atol=2e-3, rtol=5e-3, check_dtype=False)
@@ -593,7 +593,7 @@ def testAttentionSoftCap(
         dk_sqrt = math.sqrt(1.0 / shape[3])
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
-        mb = base_attention_softcap(
+        asm = base_attention_softcap(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
         k_t = k.transpose(-1, -2)
@@ -605,7 +605,7 @@ def testAttentionSoftCap(
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         if "gfx94" in config["target"]:
             assert_close(output, torch_ref, atol=2e-3, rtol=5e-3, check_dtype=False)
@@ -764,13 +764,13 @@ def testAttentionF8(
         dk_sqrt = math.sqrt(1.0 / shape[3])
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
-        mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+        asm = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
         torch_ref = torch.nn.functional.scaled_dot_product_attention(
             q, k, v, attn_mask=None
         )
         if dump_generated_mlir:
             filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
         rmse = torch.sqrt(torch.mean(torch.square(output - torch_ref)))
         assert rmse <= 0.006

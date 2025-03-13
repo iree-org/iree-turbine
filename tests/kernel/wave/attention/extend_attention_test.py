@@ -380,7 +380,7 @@ def testExtendAttention(
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
     ):
-        mb_qk = extend_attention(
+        asm_qk = extend_attention(
             q_extend,
             k_extend,
             v_extend,
@@ -397,7 +397,7 @@ def testExtendAttention(
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(asm_qk)
 
     # Run the reference implementation.
     ref_output = ref_extend_attn(
@@ -517,7 +517,7 @@ def testExtendRpeAttention(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
-        mb_qk = extend_attention_rpe(
+        asm_qk = extend_attention_rpe(
             q_extend,
             k_extend,
             v_extend,
@@ -535,7 +535,7 @@ def testExtendRpeAttention(
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_rpe_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(asm_qk)
 
     # Run the reference implementation.
     ref_output = ref_extend_attn(

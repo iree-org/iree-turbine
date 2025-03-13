@@ -61,7 +61,7 @@ def test_paged_flash_decoding():
         schedule=False,
         use_scheduling_barriers=False,
     ):
-        print(phase_0(q, k, v, logits, logits_max).module_op)
+        print(phase_0(q, k, v, logits, logits_max))
 
     # CHECK:                func.func @phase_0
     # CHECK-DAG:               %[[C0:.*]] = arith.constant 0 : index
@@ -94,7 +94,7 @@ def test_paged_flash_decoding():
         schedule=False,
         use_scheduling_barriers=False,
     ):
-        print(phase_1(logits, logits_max, output).module_op)
+        print(phase_1(logits, logits_max, output))
 
     # CHECK:            func.func @phase_1
     # CHECK:               scf.for
@@ -146,7 +146,7 @@ def test_flash_decoding():
         dynamic_symbols=dynamic_symbols_0,
         dynamic_symbols_map=dynamic_symbols_map_0,
     ):
-        print(phase_0(q, k, v, logits, logits_max).module_op)
+        print(phase_0(q, k, v, logits, logits_max))
 
     # CHECK:            func.func @phase_0
     # CHECK-NOT:               {{.*}} = scf.for
@@ -175,7 +175,7 @@ def test_flash_decoding():
         dynamic_symbols=dynamic_symbols_1,
         dynamic_symbols_map=dynamic_symbols_map_1,
     ):
-        print(phase_1(logits, logits_max, output).module_op)
+        print(phase_1(logits, logits_max, output))
 
     # CHECK:            func.func @phase_1
     # CHECK:               {{.*}} = scf.for

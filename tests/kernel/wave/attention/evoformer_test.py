@@ -124,7 +124,7 @@ def testEvoformerAttentionForward(
         dk_sqrt = math.sqrt(1.0 / shape[4])
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add v-permute as part of kernel.
-        mb = evoformer_fwd(
+        asm = evoformer_fwd(
             q * dk_sqrt * log2e,
             k,
             v.permute([0, 1, 4, 3, 2]),
@@ -140,7 +140,7 @@ def testEvoformerAttentionForward(
         if dump_generated_mlir:
             filename = f"wave_evoformer_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb.module_op.get_asm())
+                f.write(asm)
 
         eps = 1e-2 if output.dtype == torch.float16 else 5e-2
         assert (
