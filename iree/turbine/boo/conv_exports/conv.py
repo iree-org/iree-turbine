@@ -187,6 +187,17 @@ class ConvSignature:
         # out_shape_p is NCHW (pytorch) so permute back to specified layout.
         return self.output_perms(out_shape_p)
 
+    @property
+    def explicit_padding(self) -> List[int]:
+        """Padding of input tensor compatible with torch.nn.functional.pad."""
+        torch_pads_NCHW = [[0, 0], [0, 0]] + [[p, p] for p in self.padding]
+        # permute back to input ordering
+        permuted_pads = self.input_perms.inv()(torch_pads_NCHW)
+        # to make compatible with torch.nn.functional.pad reverse ordering
+        permuted_pads.reverse()
+        # flatten the list
+        return [p for dim_pads in permuted_pads for p in dim_pads]
+
     @staticmethod
     def get(
         input: torch.Tensor,
@@ -267,10 +278,12 @@ class ConvForward(torch.nn.Module):
         self.kwargs = sig.get_conv_kwargs()
         if not sig.bias:
             self.kwargs["bias"] = None
+        self.explicit_padding = sig.explicit_padding
+        self.kwargs["padding"] = [0] * sig.num_spatial_dims
 
     def forward(self, *args):
         mod_args = [
-            self.perms[0](args[0]),
+            self.perms[0](torch.nn.functional.pad(args[0], self.explicit_padding)),
             self.perms[1](args[1]),
         ]
         if "bias" not in self.kwargs.keys():
@@ -329,7 +342,7 @@ class ConvBackwardInput(torch.nn.Module):
 class ConvBackwardWeight(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
         super().__init__()
-        # TODO: support grouped input_grad
+        # TODO: support grouped weight_grad
         # Note: expanding the weight shape to g x Cout//g x Cin//g x K
         # dLdw[gidx, co, ci, k] = sum_n sum_hout x[n, gidx, ci, dil*k + s*hout]* dLdy[n, gidx, co, hout]
         # The sum is over N, so this convolution-like op should have group=1, and the "batch-dim"
@@ -341,11 +354,11 @@ class ConvBackwardWeight(torch.nn.Module):
         # over the (g x g) dims.
         if sig.groups != 1:
             raise NotImplementedError(
-                "unimplemented input grad decompostion: groups != 1"
+                "unimplemented weight grad decompostion: groups != 1"
             )
         if sig.transposed:
             raise NotImplementedError(
-                "unimplemented input grad decomposition: transposed conv"
+                "unimplemented weight grad decomposition: transposed conv"
             )
         self.ND = sig.num_spatial_dims
         self.K = sig.kernel_perms(sig.kernel_shape)[-self.ND :]
@@ -375,8 +388,11 @@ class ConvBackwardWeight(torch.nn.Module):
             NC_perm / sig.output_perms,
             sig.kernel_perms.inv() * NC_perm,
         ]
+        self.explicit_padding = sig.explicit_padding
+        self.kwargs["padding"] = sig.num_spatial_dims * [0]
 
     def forward(self, dLdy, x):
+        x = torch.nn.functional.pad(x, self.explicit_padding)
         conv = torch.convolution(
             self.perms[0](x),
             self.perms[1](dLdy),
