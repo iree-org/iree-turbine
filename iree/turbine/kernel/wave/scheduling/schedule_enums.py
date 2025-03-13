@@ -21,3 +21,4 @@ class SchedulingType(Enum):
     NONE = 0x00
     MODULO = 0x10
     PREFETCH = 0x20
+    MODULO_MULTI_BUFFERED = 0x11
