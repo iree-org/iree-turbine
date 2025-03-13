@@ -31,6 +31,7 @@ from ..common.utils import (
     require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
+    param_bool,
 )
 from ..common.shapes import get_test_shapes
 from typing import List, Optional
@@ -95,7 +96,7 @@ def create_inputs(
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize("enable_scheduling", [False])
+@param_bool("enable_scheduling", "sched", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [(MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)],

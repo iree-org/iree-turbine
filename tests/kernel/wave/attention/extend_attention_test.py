@@ -44,6 +44,7 @@ from ..common.utils import (
     require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
+    param_bool,
 )
 from ..common.shapes import get_test_shapes, construct_test_name
 from torch.nn.attention.flex_attention import flex_attention
@@ -279,9 +280,9 @@ def create_inputs(
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("is_causal", [False, True])
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("enable_scheduling", "sched", [False])
+@param_bool("is_causal", "causal")
+@param_bool("use_buffer_ops", "buf_ops")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -423,8 +424,8 @@ def testExtendAttention(
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("is_causal", [True])
+@param_bool("enable_scheduling", "sched", [False])
+@param_bool("is_causal", "causal", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [

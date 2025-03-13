@@ -30,6 +30,7 @@ from .common.utils import (
     perf_test,
     enable_scheduling_barriers,
     dump_generated_mlir,
+    param_bool,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
@@ -67,8 +68,8 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("enable_scheduling", "sched")
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -214,8 +215,8 @@ def testGemm(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("enable_scheduling", "sched")
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -362,8 +363,8 @@ def testVMFMAGemm(
 @require_e2e
 @require_cdna2
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
-@pytest.mark.parametrize("dynamic_dims", [False, True])
+@param_bool("enable_scheduling", "sched")
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -511,7 +512,7 @@ def testCDNA2IntGemm(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
+@param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -628,7 +629,7 @@ def testCDNA3IntGemm(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
+@param_bool("enable_scheduling", "sched")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -742,7 +743,7 @@ def testF8Gemm(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_batched_gemm"))
-@pytest.mark.parametrize("enable_scheduling", [False, True])
+@param_bool("enable_scheduling", "sched")
 def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
