@@ -31,6 +31,14 @@ from .constraints import (
 )
 
 # Passes
+from .analysis.index_sequence_analysis import (
+    set_node_indices,
+    set_post_expansion_indices,
+)
+from .analysis.partition_strided_operators import (
+    partition_ops_with_gpr_offsets,
+    partition_strided_operators,
+)
 from .barriers import add_shared_memory_barriers
 from .codegen import WaveEmitter
 from .decompose_reduce_ops import decompose_reduce_ops
@@ -43,12 +51,6 @@ from .promotion import promote_placeholders
 from .reuse_shared_allocs import reuse_shared_allocs
 from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
-from .index_sequence_analysis import (
-    partition_ops_with_gpr_offsets,
-    partition_strided_operators,
-    set_node_indices,
-    set_post_expansion_indices,
-)
 from .shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
     align_index_sizes,
@@ -114,11 +116,12 @@ def _warn_iree_is_too_old():
     try:
         from packaging.version import Version
         from importlib.metadata import version
-    except ImportError:
+
+        iree_compiler_ver = Version(version("iree-base-compiler"))
+        iree_runtime_ver = Version(version("iree-base-runtime"))
+    except:
         return
 
-    iree_compiler_ver = Version(version("iree-base-compiler"))
-    iree_runtime_ver = Version(version("iree-base-runtime"))
     if not _are_versions_compatible(iree_compiler_ver, iree_runtime_ver):
         warnings.warn(
             f"IREE compiler and runtime versions mismatch: {iree_compiler_ver} and {iree_runtime_ver}"
@@ -623,7 +626,7 @@ class LaunchableWave(Launchable):
                     run_bench,
                     kernel_hash,
                 )
-                return cached_kernel
+                return cached_kernel.asm
 
         # Recompile kernel from scratch if not found in cache.
         (
@@ -676,7 +679,7 @@ class LaunchableWave(Launchable):
                 cache_manager.store_kernel(
                     compiled_wave_vmfb,
                     kernel_usages,
-                    mb.module_op.get_asm(),
+                    asm,
                     kernel_hash,
                 )
 
@@ -693,7 +696,7 @@ class LaunchableWave(Launchable):
                 kernel_hash=kernel_hash,
             )
 
-        return mb
+        return mb.module_op.get_asm()
 
     def aot_execute(self, args, kwargs):
         raise NotImplementedError("AOT execution for wave not implemented yet.")

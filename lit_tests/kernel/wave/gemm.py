@@ -101,7 +101,7 @@ def test_gemm():
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(gemm(a, b, c).module_op)
+        print(gemm(a, b, c))
 
         # CHECK-LABEL:    func.func @gemm
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
@@ -249,7 +249,7 @@ def test_cdna2_int_gemm():
         a = torch.ones(64, 32, dtype=torch.int8)
         b = torch.ones(128, 32, dtype=torch.int8)
         c = torch.zeros(64, 128, dtype=torch.int32)
-        print(cdna2_int_gemm(a, b, c).module_op)
+        print(cdna2_int_gemm(a, b, c))
 
         # CHECK-LABEL:    func.func @cdna2_int_gemm
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
@@ -325,7 +325,7 @@ def test_cdna3_int_gemm():
         a = torch.ones(64, 32, dtype=torch.int8)
         b = torch.ones(128, 32, dtype=torch.int8)
         c = torch.zeros(64, 128, dtype=torch.int32)
-        print(cdna3_int_gemm(a, b, c).module_op)
+        print(cdna3_int_gemm(a, b, c))
 
         # CHECK-LABEL:    func.func @cdna3_int_gemm
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
@@ -406,7 +406,7 @@ def test_batched_gemm():
         a = torch.randn(12, 64, 32, dtype=torch.float16)
         b = torch.randn(12, 128, 32, dtype=torch.float16)
         c = torch.zeros(12, 64, 128, dtype=torch.float32)
-        print(batched_gemm(a, b, c).module_op)
+        print(batched_gemm(a, b, c))
 
         # CHECK-LABEL:    func.func @batched_gemm
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]:
@@ -575,7 +575,7 @@ def test_chained_gemm():
         k = torch.randn(8, 256, 64, dtype=torch.float16)
         v = torch.zeros(8, 128, 256, dtype=torch.float16)
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
-        print(chained_gemm(q, k, v, output).module_op)
+        print(chained_gemm(q, k, v, output))
 
         # CHECK-LABEL:     func.func @chained_gemm
         # CHECK-SAME:        (%[[ARG0:.*]]: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding)
@@ -660,7 +660,7 @@ def test_chained_gemm_32x32x8():
         k = torch.randn(8, 256, 64, dtype=torch.float16)
         v = torch.zeros(8, 128, 256, dtype=torch.float16)
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
-        print(chained_gemm_32x32x8(q, k, v, output).module_op)
+        print(chained_gemm_32x32x8(q, k, v, output))
 
         # CHECK-LABEL:     func.func @chained_gemm_32x32x8
         # CHECK-SAME:        (%[[ARG0:.*]]: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding, %{{.+}}: !stream.binding)
@@ -750,7 +750,7 @@ def test_chained_gemm_32x32x16():
         k = torch.randn(8, 256, 64, dtype=torch.float16)
         v = torch.zeros(8, 128, 256, dtype=torch.float16)
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
-        print(chained_gemm_32x32x16(q, k, v, output).module_op)
+        print(chained_gemm_32x32x16(q, k, v, output))
 
         # CHECK-LABEL:     func.func @chained_gemm_32x32x16(
         # CHECK:             %[[V_SHARED:.+]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
@@ -845,7 +845,7 @@ def test_chained_gemm_16x16x32():
         k = torch.randn(8, 256, 64, dtype=torch.float16)
         v = torch.zeros(8, 128, 256, dtype=torch.float16)
         output = torch.zeros(8, 64, 128, dtype=torch.float32)
-        print(chained_gemm_16x16x32(q, k, v, output).module_op)
+        print(chained_gemm_16x16x32(q, k, v, output))
 
         # CHECK-LABEL:     func.func @chained_gemm_16x16x32(
         # CHECK:             %[[V_SHARED:.+]] = memref.alloc() : memref<1x64x36xf16, #gpu.address_space<workgroup>>
@@ -932,7 +932,7 @@ def test_gemm_pipelined():
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(gemm_pipelined(a, b, c).module_op)
+        print(gemm_pipelined(a, b, c))
 
         # CHECK-LABEL:    func.func @gemm_pipelined
         # CHECK-COUNT-2:    vector.load
@@ -1026,7 +1026,7 @@ def test_dynamic_gemm_pipelined():
         a = torch.randn(64, 256, dtype=torch.float16)
         b = torch.randn(128, 256, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(dynamic_gemm_pipelined(a, b, c).module_op)
+        print(dynamic_gemm_pipelined(a, b, c))
 
         # CHECK-LABEL:    func.func @dynamic_gemm_pipelined
         # CHECK-COUNT-2:    vector.maskedload
@@ -1119,7 +1119,7 @@ def test_gemm_with_gpr_offsets():
         a = torch.randn(64, 64, dtype=torch.float16)
         b = torch.randn(64, 64, dtype=torch.float16)
         c = torch.zeros(64, 64, dtype=torch.float32)
-        print(gemm_with_interleave_gpr(a, b, c).module_op)
+        print(gemm_with_interleave_gpr(a, b, c))
 
         # CHECK-LABEL:    func.func @gemm_with_interleave_gpr
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
@@ -1205,7 +1205,7 @@ def test_gemm_and_reduce():
         a = torch.randn(64, 32, dtype=torch.float16)
         b = torch.randn(128, 32, dtype=torch.float16)
         c = torch.zeros(64, 128, dtype=torch.float32)
-        print(gemm(a, b, c).module_op)
+        print(gemm(a, b, c))
         # CHECK-LABEL: func.func @gemm
         # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
         # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
@@ -1291,7 +1291,7 @@ def test_gemm_with_maximized_shared_read_32x32x16():
         a = torch.randn(128, 64, dtype=torch.float16)
         b = torch.randn(128, 64, dtype=torch.float16)
         c = torch.zeros(128, 128, dtype=torch.float32)
-        print(gemm_with_maximized_shared_read_32x32x16(a, b, c).module_op)
+        print(gemm_with_maximized_shared_read_32x32x16(a, b, c))
 
         # CHECK-LABEL:    func.func @gemm_with_maximized_shared_read_32x32x16
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
@@ -1376,7 +1376,7 @@ def test_gemm_with_maximized_shared_read_16x16x32():
         a = torch.randn(64, 128, dtype=torch.float16)
         b = torch.randn(64, 128, dtype=torch.float16)
         c = torch.zeros(64, 64, dtype=torch.float32)
-        print(gemm_with_maximized_shared_read_16x16x32(a, b, c).module_op)
+        print(gemm_with_maximized_shared_read_16x16x32(a, b, c))
 
         # CHECK-LABEL:    func.func @gemm_with_maximized_shared_read_16x16x32
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
@@ -1466,7 +1466,7 @@ def test_broadcast_batched_gemm_with_vmma():
         a = torch.randn(1, 64, 64, dtype=torch.float16)
         b = torch.randn(6, 128, 64, dtype=torch.float16)
         c = torch.zeros(6, 64, 128, dtype=torch.float32)
-        print(broadcast_batched_gemm_with_vmma(a, b, c).module_op)
+        print(broadcast_batched_gemm_with_vmma(a, b, c))
         # CHECK-LABEL:    func.func @broadcast_batched_gemm_with_vmma
         # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
         # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {

@@ -190,7 +190,7 @@ def test_evoformer():
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(evoformer(q, k, v, output).module_op)
+        print(evoformer(q, k, v, output))
 
         # CHECK:            func.func @evoformer
         # CHECK:                {{.*}} = scf.for
