@@ -87,15 +87,17 @@ resource_reservation_table = {
 def get_custom_operation_type(custom: CustomOp) -> Operation:
     if isinstance(custom, Read):
         return (
-            Operation.READ_GLOBAL
-            if custom.memory_type.address_space == GLOBAL_ADDRESS_SPACE
-            else Operation.READ_SHARED
+            Operation.READ_SHARED
+            if custom.memory
+            and custom.memory_type.address_space == SHARED_ADDRESS_SPACE
+            else Operation.READ_GLOBAL
         )
     elif isinstance(custom, Write):
         return (
-            Operation.WRITE_GLOBAL
-            if custom.memory_type.address_space == GLOBAL_ADDRESS_SPACE
-            else Operation.WRITE_SHARED
+            Operation.WRITE_SHARED
+            if custom.memory
+            and custom.memory_type.address_space == SHARED_ADDRESS_SPACE
+            else Operation.WRITE_GLOBAL
         )
     elif isinstance(custom, MMA):
         return Operation.MMA
