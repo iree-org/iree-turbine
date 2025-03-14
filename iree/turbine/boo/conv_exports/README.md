@@ -48,15 +48,25 @@ module = generate_mlir(
     # print_ir=...,
 )
 
-# You can also use iree-turbine's exporter:
+# Instead of `generate_mlir` you could instead use iree-turbine's exporter:
 
 from iree.turbine.aot import export
 
 args = signature.get_sample_conv_args()
 
-exported = export(module, args=args)
+exported = export(conv, args=args)
 
 # get iree-input IR
 exported.import_to("full")
 
 module = exported.mlir_module
+
+# you can also directly compile the export output and save the vmfb to a file:
+
+from pathlib import Path
+
+vmfb_path = Path(__file__).parent / "sample.vmfb"
+
+exported.compile(save_to=vmfb_path)
+
+```
