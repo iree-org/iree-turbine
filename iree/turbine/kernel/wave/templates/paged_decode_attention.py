@@ -233,6 +233,9 @@ def get_paged_decode_attention_kernels(
         init_sum = tkl.Register[S, B, tkl.f32](0.0)
         new_acc = tkl.Register[S, N, B, tkl.f32](0.0)
 
+        zero = tkl.Register[B, K2, tkl.f32](0.0)
+        neg_infinity = tkl.Register[B, K2, tkl.f32](-1e6)
+
         # The request index is used to load the appropriate entries from the block table.
         req_index = tkw.read(request_indices, elements_per_thread=1)
         # The sequence length is used to control the bounds of the loop over K2.
@@ -282,6 +285,12 @@ def get_paged_decode_attention_kernels(
             imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
+            k2_index = tkw.self_index(K2, tkl.i32)
+            mask = tkw.apply_expr(k2_index, lambda x: x < K2)
+            mask = tkw.broadcast(mask, target_shape=[B, K2])
+            mask = tkw.cast(mask, tkw.i1)
+            bias = tkw.select(mask, zero, neg_infinity)
+            x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
