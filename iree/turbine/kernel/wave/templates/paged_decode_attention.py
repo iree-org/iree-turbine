@@ -286,7 +286,7 @@ def get_paged_decode_attention_kernels(
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
             k2_index = tkw.self_index(K2, tkl.i32)
-            mask = tkw.apply_expr(k2_index, lambda x: x < K2)
+            mask = tkw.apply_expr(k2_index, lambda x: x < (SPLIT_OFF + SPLIT_LEN))
             mask = tkw.broadcast(mask, target_shape=[B, K2])
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, zero, neg_infinity)
