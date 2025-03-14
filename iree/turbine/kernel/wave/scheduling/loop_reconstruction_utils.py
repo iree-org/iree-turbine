@@ -10,7 +10,6 @@ from ...ops.wave_ops import (
     get_custom,
     Placeholder,
 )
-from .modulo_scheduling import ModuloScheduler
 from ..utils import graph_copy, erase_graph
 from ..utils import subs_idxc
 import torch.fx as fx
@@ -276,15 +275,15 @@ def liveness_analysis(graph: fx.Graph, reduction: Reduction) -> dict[fx.Node, in
 
 
 def partition_graph_by_stage(
-    graph: fx.Graph, scheduler: ModuloScheduler
+    graph: fx.Graph, num_stages: int
 ) -> list[dict[int, list[fx.Node]]]:
     """
     Partition the graph into stages based on the scheduling parameters.
     """
     partitioned_graph: list[dict[int, list[fx.Node]]] = [
-        defaultdict(list) for _ in range(scheduler.num_stages)
+        defaultdict(list) for _ in range(num_stages)
     ]
-    for stage in range(scheduler.num_stages):
+    for stage in range(num_stages):
         for node in graph.nodes:
             custom = get_custom(node)
             if custom.scheduling_parameters is None:

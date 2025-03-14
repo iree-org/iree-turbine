@@ -49,7 +49,7 @@ from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
 from .promotion import promote_placeholders
 from .reuse_shared_allocs import reuse_shared_allocs
-from .scheduling.schedule import schedule_graph
+from .scheduling.schedule import schedule_graph, SchedulingType
 from .type_inference import infer_types
 from .shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
@@ -547,13 +547,17 @@ class LaunchableWave(Launchable):
         # git fetch https://github.com/kerbowa/llvm-project.git ee52732cddae42deed2e3387a83b20ec05860b4e
         # git cherry-pick ee52732cddae42deed2e3387a83b20ec05860b4e
         # [Manually resolve conflicts consistent with the PR]
-        if kwargs.get("schedule", False):
-            use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
-            graph_passes.append(
-                partial(
-                    schedule_graph, trace, self.constraints, use_scheduling_barriers
-                )
+        scheduling_type = kwargs.get("schedule", SchedulingType.NONE)
+        use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
+        graph_passes.append(
+            partial(
+                schedule_graph,
+                trace,
+                self.constraints,
+                use_scheduling_barriers,
+                scheduling_type,
             )
+        )
 
         graph_passes += [
             # Align sizes to WG/Tile sizes

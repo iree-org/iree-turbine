@@ -15,6 +15,7 @@ from iree.turbine.kernel.wave.templates.vanilla_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 # Input sizes
@@ -141,7 +142,7 @@ def test_attention_32x32x8():
         run=False,
         run_bench=False,
         compile_config=compile_config,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
@@ -281,7 +282,7 @@ def test_dynamic_attention_32x32x8():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         use_scheduling_barriers=False,
@@ -334,7 +335,7 @@ def test_attention():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
@@ -391,7 +392,7 @@ def test_attention_causal():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)

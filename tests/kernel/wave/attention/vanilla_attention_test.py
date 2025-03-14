@@ -35,11 +35,14 @@ from iree.turbine.kernel.wave.templates.vanilla_attention import (
     get_vanilla_attention_kernel,
 )
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 
 
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
-@param_bool("enable_scheduling", "sched")
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+)
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -52,7 +55,7 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 )
 def testAttentionPure(
     input_shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: tuple[MMAType],
     request,
@@ -124,7 +127,7 @@ def testAttentionPure(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -135,7 +138,7 @@ def testAttentionPure(
 )
 def testAttentionCausal(
     shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: tuple[MMAType],
     request,
@@ -207,7 +210,7 @@ def testAttentionCausal(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -218,7 +221,7 @@ def testAttentionCausal(
 )
 def testAttentionBias(
     shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: MMAType,
     request,
@@ -411,7 +414,7 @@ def testAttentionBias(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -422,7 +425,7 @@ def testAttentionBias(
 )
 def testAttentionSoftCap(
     shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: MMAType,
     request,
@@ -618,7 +621,9 @@ def testAttentionSoftCap(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
-@param_bool("enable_scheduling", "sched")
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+)
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -627,7 +632,10 @@ def testAttentionSoftCap(
     ],
 )
 def testAttentionF8(
-    shape: tuple[int], enable_scheduling: bool, mfma_variant: tuple[MMAType], request
+    shape: tuple[int],
+    enable_scheduling: SchedulingType,
+    mfma_variant: tuple[MMAType],
+    request,
 ):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
