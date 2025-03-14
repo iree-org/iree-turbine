@@ -22,7 +22,7 @@ from typing import Optional
 
 def get_extend_attention_kernel(
     shape: AttentionShape,
-    mfma_variant: MMAType,
+    mfma_variant: tuple[MMAType, MMAType],
     q_shape: tuple[int],
     k_shape: tuple[int],
     v_shape: tuple[int],
