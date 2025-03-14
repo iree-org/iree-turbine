@@ -50,7 +50,6 @@ def get_paged_decode_attention_kernels(
     SPLIT_OFF = tkl.sym.SPLIT_OFF
     SPLIT_LEN = tkl.sym.SPLIT_LEN
     SPLITS_ACTIVE = tkl.sym.SPLITS_ACTIVE
-    ZERO = tkl.sym.ZERO  # Hack
     U = tkl.sym.U  # Num splits
     BH = tkl.sym.BH
     # Workgroup tile sizes
