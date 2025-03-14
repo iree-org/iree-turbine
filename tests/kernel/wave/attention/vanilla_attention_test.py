@@ -50,6 +50,92 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
         (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
     ],
 )
+def testTransposedVAttentionPure(
+    input_shape: tuple[int],
+    enable_scheduling: bool,
+    dynamic_dims: bool,
+    mfma_variant: tuple[MMAType],
+    request,
+):
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    shape = AttentionShape(
+        num_query_heads=input_shape[0],
+        num_kv_heads=input_shape[0],
+        query_seq_len=input_shape[1],
+        head_size_kv=input_shape[2],
+        head_size=input_shape[3],
+        kv_seq_len=input_shape[4],
+    )
+    (
+        base_attention,
+        hyperparams,
+        dynamic_symbols,
+        dynamic_symbols_map,
+    ) = get_vanilla_attention_kernel(
+        shape, mfma_variant, dynamic_dims, is_v_transposed=True
+    )
+    q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
+    k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
+    v_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
+    o_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)
+    hyperparams.update(get_default_scheduling_params())
+    config = get_default_run_config()
+    if run_bench:
+        config["benchmark_batch_size"] = 10
+        config["benchmark_repetitions"] = 3
+    if dump_perf is not None:
+        perf_filename = request.node.name + ".json"
+        config["benchmark_results_file"] = os.path.join(
+            dump_perf, "tk_" + perf_filename
+        )
+    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
+    with tk.gen.TestLaunchContext(
+        hyperparams,
+        canonicalize=True,
+        run=True,
+        run_bench=run_bench,
+        run_config=config,
+        compile_config=compile_config,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+    ):
+        torch.manual_seed(0)
+        q = device_randn(q_shape, dtype=torch.float16)
+        k = device_randn(k_shape, dtype=torch.float16)
+        v = device_randn(v_shape, dtype=torch.float16)
+        output = device_zeros(o_shape, dtype=torch.float32)
+        log2e = 1.44269504089
+        dk_sqrt = math.sqrt(1.0 / shape.head_size)
+        # TODO: Add scaling of QK as part of kernel.
+        asm = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+        torch_ref = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=None
+        )
+
+        if dump_generated_mlir:
+            filename = f"wave_attention_{'x'.join(map(str, input_shape))}.mlir"
+            with open(filename, "w") as f:
+                f.write(asm)
+
+        assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
+
+
+@require_e2e
+@pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
+@param_bool("enable_scheduling", "sched")
+@param_bool("dynamic_dims", "dyn")
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
+        (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+    ],
+)
 def testAttentionPure(
     input_shape: tuple[int],
     enable_scheduling: bool,
@@ -108,8 +194,7 @@ def testAttentionPure(
         log2e = 1.44269504089
         dk_sqrt = math.sqrt(1.0 / shape.head_size)
         # TODO: Add scaling of QK as part of kernel.
-        # TODO: Add variant of non-transposed V attention kernel.
-        asm = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+        asm = base_attention(q * dk_sqrt * log2e, k, v, output)
         torch_ref = torch.nn.functional.scaled_dot_product_attention(
             q, k, v, attn_mask=None
         )
@@ -155,7 +240,9 @@ def testAttentionCausal(
         hyperparams,
         dynamic_symbols,
         dynamic_symbols_map,
-    ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims, is_causal=True)
+    ) = get_vanilla_attention_kernel(
+        shape, mfma_variant, dynamic_dims, is_causal=True, is_v_transposed=True
+    )
     q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
     v_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
