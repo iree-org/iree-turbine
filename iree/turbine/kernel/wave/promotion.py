@@ -10,7 +10,8 @@ from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 from .constraints import Constraint, get_constrained_shape
-from .utils import subs_idxc, move_node_after, is_gather
+from .utils import subs_idxc, move_node_after, KernelLaunchInfo
+import math
 
 logger = get_logger("turbine.wave.promotion")
 
@@ -145,3 +146,18 @@ def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
             last_write_to_shared = promote_node(
                 custom, last_write_to_shared, address_space, constraints
             )
+
+
+def compute_shared_memory_usage(
+    graph: CapturedTrace, kernel_launch_info: KernelLaunchInfo
+):
+    """
+    Compute the amount of shared memory used in bytes by iterating over all allocate
+    nodes and summing up their distributed shapes.
+    """
+    is_allocate = lambda x: isinstance(get_custom(x), Allocate)
+    for alloc in graph.walk(is_allocate):
+        custom_alloc = get_custom(alloc)
+        shape = subs_idxc(math.prod(custom_alloc.distributed_shape))
+        bits = custom_alloc.type.dtype.bitwidth()
+        kernel_launch_info.shared_memory_bytes += (shape * bits) // 8

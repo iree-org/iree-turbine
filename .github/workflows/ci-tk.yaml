@@ -59,9 +59,10 @@ jobs:
           pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
           pip install -r requirements.txt -e .
 
-      - name: Install GPU pip deps
+      - name: Install GPU rocm and pip deps
         if: "(contains(toJSON(matrix.os), 'amdgpu') || contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
         run: |
+          sudo apt install -y rocm
           python -m pip install --no-compile --upgrade pip
           # Note: We install in three steps in order to satisfy requirements
           # from non default locations first. Installing the PyTorch CPU
