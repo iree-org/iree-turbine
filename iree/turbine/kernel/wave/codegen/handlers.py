@@ -202,7 +202,7 @@ def handle_self_index(emitter: WaveEmitter, node: fx.Node):
     stride = subs_idxc(var.stride)
 
     start = _get_start_index(var)
-    step = IndexingContext.current().iota(elements_per_thread)
+    step = IndexingContext.current().iota(size)
     value = start + step * stride
     value = gen_sympy_index(add_emitter_subs(emitter), value)
 
