@@ -198,7 +198,7 @@ def handle_self_index(emitter: WaveEmitter, node: fx.Node):
 
     index = get_custom(node).index
     var = index[iterator]
-    size = elements_per_thread or subs_idxc(var.size)
+    size = int(elements_per_thread or subs_idxc(var.size))
     stride = subs_idxc(var.stride)
 
     start = _get_start_index(var)
