@@ -410,7 +410,7 @@ def _create_buffer_read_write(
 
         res = amdgpu_d.raw_buffer_load(load_type, ptr, indices=[offset])
         if is_1elem:
-            res = vector_d.splat(vector_type, res)
+            res = vector_d.splat(elem_type, res)
 
         return res
     else:
