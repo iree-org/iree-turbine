@@ -7,7 +7,7 @@
 import operator
 import sympy
 import math
-from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
+from typing import Any, Callable, ClassVar, Optional, List, Type, Dict, Sequence
 import sympy.functions
 import sympy.functions.elementary
 import sympy.functions.elementary.piecewise
@@ -221,17 +221,23 @@ def handle_self_index(emitter: WaveEmitter, node: fx.Node):
 @handle_op(apply_expr)
 def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
     try:
-        register, expr = node.args
+        args, expr = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    APPLY_EXPR_ARG = index_symbol("$APPLY_EXPR_ARG")
-    expr = expr(APPLY_EXPR_ARG)
+    if not isinstance(args, Sequence):
+        args = [args]
 
-    register = cast_vector(emitter, register, element_type=IndexType.get())
+    symbols = [index_symbol(f"$APPLY_EXPR_ARG_{i}") for i in range(len(args))]
+    expr = expr(*symbols)
+
+    index_type = IndexType.get()
+    args = [cast_vector(emitter, a, element_type=index_type) for a in args]
 
     subs = add_emitter_subs(emitter)
-    subs[APPLY_EXPR_ARG] = register
+    for s, a in zip(symbols, args):
+        subs[s] = a
+
     result = gen_sympy_index(subs, expr)
     emitter.bind_node_proxy(node, IRProxyValue(result))
 

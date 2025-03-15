@@ -112,7 +112,7 @@ def write(
     ...
 
 
-def apply_expr(value: "Register", expr: Callable) -> "Register":
+def apply_expr(value: "Register" | Sequence["Register"], expr: Callable) -> "Register":
     ...
 
 
@@ -1630,16 +1630,28 @@ class Write(CustomOp):
 @define_op("apply_expr")
 @dataclass
 class ApplyExpr(CustomOp):
-    register_: fx.Proxy
+    register_: fx.Proxy | Sequence[fx.Proxy]
     expr: Callable
 
     @property
     def type(self) -> "Register":
-        return get_custom(self.register_).type
+        reg = self.register_
+        if not isinstance(reg, Sequence):
+            return get_custom(reg).type
+
+        types = [get_custom(r).type for r in reg]
+        assert len(set(types)) == 1, f"Types mismatch: {types}"
+        return types[0]
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
-        return get_custom(self.register_).indexing_dims
+        reg = self.register_
+        if not isinstance(reg, Sequence):
+            return get_custom(reg).indexing_dims
+
+        dims = [tuple(get_custom(r).indexing_dims) for r in reg]
+        assert len(set(dims)) == 1, f"Indexing dims mismatch: {dims}"
+        return dims[0]
 
 
 @define_op("set_symbol")
