@@ -283,6 +283,7 @@ def create_inputs(
 @param_bool("enable_scheduling", "sched", [False])
 @param_bool("is_causal", "causal")
 @param_bool("use_buffer_ops", "buf_ops")
+@param_bool("use_wave_runtime", "wr", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -296,6 +297,7 @@ def testExtendAttention(
     enable_scheduling: bool,
     is_causal: bool,
     use_buffer_ops: bool,
+    use_wave_runtime: bool,
     mfma_variant: MMAType,
     request,
 ):
@@ -367,6 +369,9 @@ def testExtendAttention(
             "wave_extend_attention", mfma_variant, is_causal, shape
         )
         config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
+
+    if use_wave_runtime:
+        config["wave_runtime"] = True
 
     with tk.gen.TestLaunchContext(
         hyperparams,
