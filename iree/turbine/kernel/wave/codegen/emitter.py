@@ -20,6 +20,7 @@ from iree.turbine.aot.support.ir_utils import (
 
 
 from ...compiler.ir import (
+    AffineExpr,
     Attribute,
     DenseElementsAttr,
     FloatAttr,
@@ -197,7 +198,7 @@ def add_emitter_subs(
 _emulate_ceildiv = False
 
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
-_ApplyExpr = namedtuple("__ApplyExpr", ["expr", "args"])
+_ApplyExpr = namedtuple("_ApplyExpr", ["expr", "args"])
 
 
 def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpResult:
@@ -289,26 +290,46 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
 
         return arith_d.addi(lhs, rhs, overflow_flags=overflow_flags)
 
+    def add_expr(lhs, rhs):
+        if isinstance(lhs, _ApplyExpr):
+            lhs_args = lhs.args
+            lhs_expr = lhs.expr
+        else:
+            lhs_args = [lhs]
+            lhs_expr = AffineExpr.get_symbol(0)
+
+        if isinstance(rhs, _ApplyExpr):
+            rhs_args = rhs.args
+            rhs_expr = rhs.expr
+        else:
+            rhs_args = [rhs]
+            rhs_expr = AffineExpr.get_symbol(0)
+
+        args = lhs_args + rhs_args
+        print(dir(rhs_expr))
+        expr = lhs_expr + rhs_expr.shift_symbols(len(rhs_args), len(lhs_args))
+        return _ApplyExpr(expr, args)
+
     # `x + (a/b)` transformed into `(x*b + a) / b`
     def _add(lhs, rhs):
         is_rational_lhs = isinstance(lhs, _Rational)
         is_rational_rhs = isinstance(rhs, _Rational)
         if is_rational_lhs and not is_rational_rhs:
             numerator = muli(*_broadcast(lhs.denominator, rhs))
-            numerator = addi(*_broadcast(numerator, lhs.numerator))
+            numerator = add_expr(numerator, lhs.numerator)
             return _Rational(numerator, lhs.denominator)
         elif not is_rational_lhs and is_rational_rhs:
             numerator = muli(*_broadcast(lhs, rhs.denominator))
-            numerator = addi(*_broadcast(numerator, rhs.numerator))
+            numerator = add_expr(numerator, rhs.numerator)
             return _Rational(numerator, rhs.denominator)
         elif is_rational_lhs and is_rational_rhs:
             lhs_numerator = muli(*_broadcast(lhs.numerator, rhs.denominator))
             rhs_numerator = muli(*_broadcast(rhs.numerator, lhs.denominator))
-            numerator = addi(*_broadcast(lhs_numerator, rhs_numerator))
+            numerator = add_expr(lhs_numerator, rhs_numerator)
             denominator = muli(*_broadcast(lhs.denominator, rhs.denominator))
             return _Rational(numerator, denominator)
         else:
-            return addi(*_broadcast(lhs, rhs))
+            return add_expr(lhs, rhs)
 
     # `x * (a/b)` transformed into `(x * a) / b`
     def _mul(lhs, rhs):
