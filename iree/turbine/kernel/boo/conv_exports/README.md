@@ -27,7 +27,7 @@ If you want to generate a convolution signature explicitly from python:
 
 ```python
 
-from iree.turbine.kernel.boo.conv_exports.conv import ConvSignature, get_nn_module
+from iree.turbine.kernel.boo.conv_exports.conv import ConvSignature
 from iree.turbine.kernel.boo.conv_exports.generate import generate_mlir
 
 # see the definition for default values, or customize stride, dilation, padding, groups, etc.

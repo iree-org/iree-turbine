@@ -23,7 +23,6 @@ __all__ = [
     "ConvForward",
     "ConvBackwardWeight",
     "ConvBackwardInput",
-    "get_nn_module",
 ]
 
 
