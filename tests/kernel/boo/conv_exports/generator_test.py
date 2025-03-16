@@ -1,8 +1,11 @@
 import logging
 import unittest
 
-from iree.turbine.boo.conv_exports.conv import ConvSignature
-from iree.turbine.boo.conv_exports.generate import generate_mlir, command_to_signature
+from iree.turbine.kernel.boo.conv_exports.conv import ConvSignature
+from iree.turbine.kernel.boo.conv_exports.generate import (
+    generate_mlir,
+    command_to_signature,
+)
 
 _sample_pipelines = [None, ["torch-to-iree"], "builtin.module(torch-to-iree)"]
 _sample_commands = [

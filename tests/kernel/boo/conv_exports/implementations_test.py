@@ -1,7 +1,7 @@
 import pytest
 
 import torch
-from iree.turbine.boo.conv_exports.conv import Mode, ConvSignature, get_nn_module
+from iree.turbine.kernel.boo.conv_exports.conv import Mode, ConvSignature
 
 # Note: Singleton parameters are intentionally included for ease of adding additional configurations to test
 @pytest.mark.parametrize("dtype", [torch.float32])
@@ -42,13 +42,13 @@ def test_conv_impl(
     w = w.to(device="cpu")
     x.requires_grad_(True)
     w.requires_grad_(True)
-    fwd = get_nn_module(fwd_sig).to(device="cpu")
+    fwd = fwd_sig.get_nn_module().to(device="cpu")
     kwargs["mode"] = Mode.INPUT_BACKWARD
     bwd_sig = ConvSignature(**kwargs)
-    bwd = get_nn_module(bwd_sig).to(device="cpu")
+    bwd = bwd_sig.get_nn_module().to(device="cpu")
     kwargs["mode"] = Mode.WEIGHT_BACKWARD
     wrw_sig = ConvSignature(**kwargs)
-    wrw = get_nn_module(wrw_sig).to(device="cpu")
+    wrw = wrw_sig.get_nn_module().to(device="cpu")
     y = fwd(x, w)
     y.retain_grad()
     s = y.sum()
