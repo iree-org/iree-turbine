@@ -274,7 +274,7 @@ def get_paged_decode_attention_kernels(
             imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
-            x_j = tkw.mask_value(x_j, -1e6)
+            x_j = tkw.mask_value(x_j, -1e6, dim_bounds={K2: SPLIT_OFF + SPLIT_LEN})
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)

@@ -894,7 +894,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
 @handle_op(mask_value)
 def handle_mask_value(emitter: WaveEmitter, node: fx.Node):
     try:
-        register, value = node.args
+        register, value, dim_bounds = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
@@ -902,8 +902,7 @@ def handle_mask_value(emitter: WaveEmitter, node: fx.Node):
     register = cast_py_value(emitter, register).ir_value
     vec_type = register.type
 
-    bounds = find_index_bounds(emitter.constraints, index)
-    if mask := build_mask(emitter, index, vec_type.shape[0]):
+    if mask := build_mask(emitter, index, vec_type.shape[0], dim_bounds):
         val = arith_d.constant(
             vec_type,
             DenseElementsAttr.get_splat(

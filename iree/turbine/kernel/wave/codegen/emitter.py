@@ -563,9 +563,12 @@ def get_constant_attr(value: Any, element_type: IrType) -> Attribute:
 
 
 def build_mask(
-    emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
+    emitter: WaveEmitter,
+    index: Dict[IndexExpr, IndexExpr],
+    elements_per_thread: int,
+    dim_bounds: dict[IndexExpr, IndexExpr] = {},
 ) -> Optional[OpResult]:
-    bounds = find_index_bounds(emitter.constraints, index)
+    bounds = find_index_bounds(emitter.constraints, index, dim_bounds)
     if bounds is None:
         return None
 
@@ -577,7 +580,7 @@ def build_mask(
     new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
 
     mask_expr = functools.reduce(
-        lambda a, b: sympy.And(a, b), (new_index[dim] < dim for dim in bounds)
+        lambda a, b: sympy.And(a, b), (new_index[dim] < bound for dim, bound in bounds)
     )
     mask = gen_sympy_index(add_emitter_subs(emitter), mask_expr)
 

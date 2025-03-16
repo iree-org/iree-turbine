@@ -154,7 +154,9 @@ def broadcast(
     ...
 
 
-def mask_value(arg: "Register", value: int | float) -> "Register":
+def mask_value(
+    arg: "Register", value: int | float, dim_bounds: dict[IndexExpr, IndexExpr] = None
+) -> "Register":
     ...
 
 
@@ -1815,6 +1817,7 @@ class Broadcast(CustomOp, ABC):
 class MaskValue(CustomOp):
     register_: fx.Proxy
     value: int | float
+    dim_bounds: dict[IndexExpr, IndexExpr] = field(default_factory=dict)
 
     @property
     def type(self) -> "Register":
