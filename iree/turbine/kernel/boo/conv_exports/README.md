@@ -4,15 +4,15 @@ To quickly generate some examples, install iree-turbine (e.g., `pip install -e .
 
 ```
 cd iree/turbine/boo/conv_exports
-python generate.py -o all_convs --all
+python generate.py -o all_convs --commands-file="sample_commands.txt"
 ```
 
-This will populate a new directory `iree/turbine/boo/conv_exports/all_convs/` containing IR matching the MiOpen signatures in `conv_configs.txt`.
+This will populate a new directory `iree/turbine/kernel/boo/conv_exports/all_convs/` containing IR matching the MiOpen signatures in `sample_commands.txt`.
 
 If you want to use a different pass pipeline on mlir import to lower to linalg or iree-input, the `generate.py` script allows running a user-specified pass pipeline from the initial torch-mlir IR. For example,
 
 ```
-python generate.py -o all_convs --all --pipeline="builtin.module(torch-to-iree, iree-preprocessing-transpose-convolution-pipeline)"
+python generate.py -o all_convs -f "sample_commands.txt" --pipeline="builtin.module(torch-to-iree, iree-preprocessing-transpose-convolution-pipeline)"
 ```
 
 Will sometimes fuse the transposes with the auto-generated `nchw` conv coming from pytorch.
@@ -27,8 +27,8 @@ If you want to generate a convolution signature explicitly from python:
 
 ```python
 
-from iree.turbine.boo.conv_exports.conv import ConvSignature, get_nn_module
-from iree.turbine.boo.conv_exports.generate import generate_mlir
+from iree.turbine.kernel.boo.conv_exports.conv import ConvSignature, get_nn_module
+from iree.turbine.kernel.boo.conv_exports.generate import generate_mlir
 
 # see the definition for default values, or customize stride, dilation, padding, groups, etc.
 signature = ConvSignature(
@@ -39,7 +39,7 @@ signature = ConvSignature(
     mode="bwd",
 )
 
-conv = get_nn_module(signature)
+conv = signature.get_nn_module()
 
 module = generate_mlir(
     signature,

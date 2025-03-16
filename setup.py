@@ -98,10 +98,7 @@ setup(
     packages=packages,
     include_package_data=True,
     package_data={
-        "iree.turbine": [
-            "ops/templates/*.mlir",
-            "boo/conv_exports/*.txt",
-        ],  # Include MLIR templates
+        "iree.turbine": ["ops/templates/*.mlir"],  # Include MLIR templates
     },
     entry_points={
         "torch_dynamo_backends": [

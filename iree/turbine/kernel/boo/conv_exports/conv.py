@@ -9,7 +9,7 @@ from enum import IntEnum
 
 import torch
 
-from iree.turbine.boo.conv_exports.utils import Permutation
+from .utils import Permutation
 
 __all__ = [
     "Mode",
@@ -73,7 +73,10 @@ class ConvSignatureStorage(NamedTuple):
 
 
 class ConvSignature:
-    """Wraps ConvSignatureStorage with some additional helper methods and easier instantiaion."""
+    """
+    Wraps ConvSignatureStorage with some additional helper methods and easier instantiation.
+
+    """
 
     def __init__(
         self,
@@ -136,6 +139,7 @@ class ConvSignature:
         )
 
     def __getattr__(self, name):
+        # forward stored signature attributes
         return self._signature.__getattribute__(name)
 
     @property
@@ -254,6 +258,16 @@ class ConvSignature:
             ]
         )
         return "_".join(name_items)
+
+    def get_nn_module(self) -> torch.nn.Module:
+        """For a given ConvSignature, returns a torch.nn.Module implementation."""
+        if self.mode == Mode.FORWARD:
+            return ConvForward(self)
+        if self.mode == Mode.WEIGHT_BACKWARD:
+            return ConvBackwardWeight(self)
+        if self.mode == Mode.INPUT_BACKWARD:
+            return ConvBackwardInput(self)
+        raise ValueError(f"signature has unexpected mode: {self.mode}")
 
 
 class ConvForward(torch.nn.Module):
@@ -405,14 +419,3 @@ class ConvBackwardWeight(torch.nn.Module):
             sliced = conv[..., : self.K[0], : self.K[1], : self.K[2]]
 
         return self.perms[2](sliced)
-
-
-def get_nn_module(signature: ConvSignature):
-    """For a given ConvSignature, returns a torch.nn.Module implementation."""
-    if signature.mode == Mode.FORWARD:
-        return ConvForward(signature)
-    if signature.mode == Mode.WEIGHT_BACKWARD:
-        return ConvBackwardWeight(signature)
-    if signature.mode == Mode.INPUT_BACKWARD:
-        return ConvBackwardInput(signature)
-    raise ValueError(f"Signature has unexpected mode: {signature.mode}")

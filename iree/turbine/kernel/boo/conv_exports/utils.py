@@ -1,16 +1,12 @@
-from pathlib import Path
-
 from typing import (
     Collection,
-    Dict,
     List,
     Tuple,
-    Union,
 )
 
 import torch
 
-__all__ = ["Permutation", "get_aliases_and_defaults"]
+__all__ = ["Permutation"]
 
 
 class Permutation:
@@ -95,34 +91,3 @@ class Permutation:
                 f"src and target should be permutations of a common set of unique items, got {src=}, {target=}"
             )
         return Permutation(inverse).inv()
-
-
-def _load_miopen_args() -> List[str]:
-    """opens miopen_args.txt and splits lines"""
-    p = Path(__file__).parent / "miopen_args.txt"
-    return p.read_text().splitlines()
-
-
-def get_aliases_and_defaults() -> Tuple[Dict[str, str], Dict[str, str | None]]:
-    lines = _load_miopen_args()
-    alias_dict = {}
-    default_dict = {
-        "-F": "1",
-        "-T": None,
-        "-U": None,
-        "-R": None,
-        "-I": None,
-        "-f": None,
-        "-O": None,
-    }
-    for l in lines:
-        items = l.split()
-        if len(items) < 4:
-            continue
-        short = items[1]
-        long = items[0]
-        alias_dict[short] = long
-        if items[-1].startswith("(Default="):
-            default = items[-1].removeprefix("(Default=").removesuffix(")")
-            default_dict[short] = default
-    return alias_dict, default_dict
