@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import sympy
+import functools
 from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
 from dataclasses import dataclass
 from collections import namedtuple
@@ -49,6 +50,7 @@ from ...compiler.base import CodegenError, NDEBUG
 from ...lang.wave_types import IndexSymbol
 from ..constraints import Constraint, TilingConstraint
 from ..._support.indexing import IndexingContext, IndexExpr
+from ..utils import find_index_bounds, get_fastest_index, get_start_index
 
 
 @dataclass
@@ -558,3 +560,29 @@ def get_constant_attr(value: Any, element_type: IrType) -> Attribute:
     if _is_float_type(element_type):
         return FloatAttr.get(element_type, float(value))
     raise CodegenError(f"Cannot create a constant attribute for type `{element_type}`")
+
+
+def build_mask(
+    emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
+) -> Optional[OpResult]:
+    bounds = find_index_bounds(emitter.constraints, index)
+    if bounds is None:
+        return None
+
+    idxc = IndexingContext.current()
+    fastest_dim = get_fastest_index(index)
+    last_dim = list(index)[fastest_dim]
+    new_index = {k: get_start_index(v) for k, v in index.items()}
+
+    new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
+
+    mask_expr = functools.reduce(
+        lambda a, b: sympy.And(a, b), (new_index[dim] < dim for dim in bounds)
+    )
+    mask = gen_sympy_index(add_emitter_subs(emitter), mask_expr)
+
+    mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
+    if mask.type != mask_vec_type:
+        mask = vector_d.splat(mask_vec_type, mask)
+
+    return mask

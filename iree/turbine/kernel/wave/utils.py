@@ -1229,19 +1229,19 @@ def evaluate_with_assumptions(constraints: list[Constraint], expr: IndexExpr) ->
     return True if any([result.equals(x) for x in facts]) else None
 
 
-def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
+def get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
     if isinstance(i, IndexSequence):
         i = i.start
 
     return i
 
 
-def _get_start_indices(
+def get_start_indices(
     src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
 ) -> list[IndexExpr]:
     start_indices = []
     for dim_indexing in src_indices:
-        i = _get_start_index(src_indices[dim_indexing])
+        i = get_start_index(src_indices[dim_indexing])
         start_indices.append(i)
 
     return start_indices
