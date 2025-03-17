@@ -81,13 +81,7 @@ def get_vanilla_attention_kernel(
         num_iterators=3, inputs={B: i, N: j, K2: k}, outputs={B: i, N: j, K2: k}
     )
 
-    @tkw.wave(constraints)
-    def base_attention_transposed_v(
-        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    ):
+    def base_attention_core(q, k, v, c):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
@@ -128,7 +122,12 @@ def get_vanilla_attention_kernel(
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV)
+            if is_v_transposed:
+                v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV)
+            else:
+                v_reg = tkw.read(
+                    v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV, mapping=v_mapping
+                )
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
@@ -138,6 +137,15 @@ def get_vanilla_attention_kernel(
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    @tkw.wave(constraints)
+    def base_attention_transposed_v(
+        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        base_attention_core(q, k, v, c)
 
     @tkw.wave(constraints)
     def base_attention(
@@ -146,58 +154,7 @@ def get_vanilla_attention_kernel(
         v: tkl.Memory[B, K2, N, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
-        c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
-        init_sum = tkl.Register[B, M, tkl.f32](0.0)
-        init_max = tkl.Register[B, M, tkl.f32](-1e6)
-        ZEROF = tkl.Register[M, K2, tkl.f32](0.0)
-        MIN_INF = tkl.Register[M, K2, tkl.f32](-1e6)
-
-        # This microkernel encodes the fact that if the reduction
-        # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
-        def repeat(
-            partial_max: tkl.Register[B, M, tkl.f32],
-            partial_sum: tkl.Register[B, M, tkl.f32],
-            acc: tkl.Register[B, N, M, tkl.f32],
-        ):
-            imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-            inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
-            x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
-            k2_index = tkw.self_index(K2, tkl.i64)
-            mask = tkw.apply_expr(k2_index, lambda x: x < K2)
-            mask = tkw.broadcast(mask, target_shape=[M, K2])
-            if is_causal:
-                # Indices i and j broadcasted along K2 with a twist:
-                # here we use *static* information that is *implicitly* encoded
-                # in the *transformation*: under the distribution constraints
-                # specified we know that the shape [M] will eventually resolve
-                # to [1] and can thus be "cast + broadcast" to [K2].
-                m_index = tkw.self_index(M, tkl.i64)
-                m_index = tkw.broadcast(m_index, target_shape=[M, K2])
-                mask = (m_index >= k2_index) & mask
-            mask = tkw.cast(mask, tkw.i1)
-            bias = tkw.select(mask, ZEROF, MIN_INF)
-            x_j = x_j + bias
-            m_j = tkw.max(x_j, partial_max, dim=K2)
-            e_delta_max = tkw.exp2(partial_max - m_j)
-            e_delta = tkw.exp2(x_j - m_j)
-            e_init = partial_sum * e_delta_max
-            d_j = tkw.sum(e_delta, e_init, dim=K2)
-            imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(
-                v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV, mapping=v_mapping
-            )
-            new_acc = acc * e_delta_max
-            acc = tkw.mma(v_reg, imm_f16, new_acc)
-            return m_j, d_j, acc
-
-        # repeat represents the results of the loop
-        res_max, res_sum, res_mm = repeat
-        reciprocal_sum = tkw.reciprocal(res_sum)
-        res = res_mm * reciprocal_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        base_attention_core(q, k, v, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,

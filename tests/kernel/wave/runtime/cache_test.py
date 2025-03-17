@@ -568,7 +568,9 @@ def testSameConfigDifferentFreeVar(request):
         hyperparams,
         dynamic_symbols,
         dynamic_symbols_map,
-    ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims)
+    ) = get_vanilla_attention_kernel(
+        shape, mfma_variant, dynamic_dims, is_v_transposed=True
+    )
     q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
     v_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
@@ -609,7 +611,9 @@ def testSameConfigDifferentFreeVar(request):
         hyperparams,
         dynamic_symbols,
         dynamic_symbols_map,
-    ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims, is_causal=True)
+    ) = get_vanilla_attention_kernel(
+        shape, mfma_variant, dynamic_dims, is_causal=True, is_v_transposed=True
+    )
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
