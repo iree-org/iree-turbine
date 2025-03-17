@@ -59,10 +59,21 @@ jobs:
           pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
           pip install -r requirements.txt -e .
 
-      - name: Install GPU rocm and pip deps
-        if: "(contains(toJSON(matrix.os), 'amdgpu') || contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+      - name: Install GPU rocm and pip deps (mi300)
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
         run: |
           sudo apt install -y rocm
+          python -m pip install --no-compile --upgrade pip
+          # Note: We install in three steps in order to satisfy requirements
+          # from non default locations first. Installing the PyTorch CPU
+          # wheels saves multiple minutes and a lot of bandwidth on runner setup.
+          pip install --no-compile -r pytorch-rocm-requirements.txt
+          pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
+          pip install -r requirements.txt -e .
+
+      - name: Install pip deps (mi250)
+        if: "(contains(toJSON(matrix.os), 'amdgpu') && !contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
           python -m pip install --no-compile --upgrade pip
           # Note: We install in three steps in order to satisfy requirements
           # from non default locations first. Installing the PyTorch CPU

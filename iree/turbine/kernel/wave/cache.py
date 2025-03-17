@@ -16,7 +16,7 @@ import torch
 import threading
 
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 import functools
 from typing import Any, Callable, Optional
@@ -30,8 +30,6 @@ from .utils import (
     _read_file,
     _write_file,
     KernelLaunchInfo,
-    _write_pickle_file,
-    _read_pickle_file,
 )
 
 default_cache_base_dir = Path.home() / ".wave"
@@ -228,8 +226,9 @@ class WaveCacheManager(object):
         if cur_hsaco_path:
             cur_hsaco_path = cur_hsaco_path[0]
             shutil.copy(cur_hsaco_path, cur_cache_basefile.with_suffix(".hsaco"))
-        cur_pkl_path = cur_cache_basefile.with_suffix(".pkl")
-        _write_pickle_file(cur_pkl_path, "wb", kernel_launch_info)
+        cur_kernel_info_path = cur_cache_basefile.with_suffix(".kernel_info.json")
+        kernel_info_str = json.dumps(asdict(kernel_launch_info))
+        _write_file(cur_kernel_info_path, "w", kernel_info_str)
 
     @staticmethod
     @functools.lru_cache
@@ -249,8 +248,9 @@ class WaveCacheManager(object):
         vmfb = _read_file(cur_vmfb_path, "rb")
         kernel_sig_str = json.loads(_read_file(cur_kernelsig_path, "r"))
         kernel_sig = [KernelBufferUsage[usage] for usage in kernel_sig_str]
-        cur_pkl_path = cur_cache_basefile.with_suffix(".pkl")
-        kernel_launch_info = _read_pickle_file(cur_pkl_path, "rb")
+        cur_kernel_info_path = cur_cache_basefile.with_suffix(".kernel_info.json")
+        kernel_info_str = json.loads(_read_file(cur_kernel_info_path, "r"))
+        kernel_launch_info = KernelLaunchInfo(**kernel_info_str)
         return WaveCache(kernel_hash, kernel_sig, vmfb, kernel_launch_info)
 
     ###############################################################################

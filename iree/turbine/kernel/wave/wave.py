@@ -554,6 +554,9 @@ class LaunchableWave(Launchable):
         run_config = kwargs.get("run_config", {})
         if run_config.get("wave_runtime", None):
             # Remove any existing hsaco files in this directory.
+            # If the kernel is being cached, then it will be referenced from the
+            # cache directory. When kernels are not being cached, we remove them
+            # to ensure that at any time there is only one hsaco file in this directory.
             remove_files_with_extension(WAVE_RUNTIME_DIR, ".hsaco")
             build_wave_runtime()
 

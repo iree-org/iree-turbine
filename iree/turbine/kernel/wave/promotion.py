@@ -70,9 +70,9 @@ def apply_promotion_pattern(
     ```
     """
     match custom_node:
-        case Read(memory, elements_per_thread) if get_custom(
-            memory
-        ).type.address_space != allocate_node.address_space:
+        case Read(memory, elements_per_thread) if (
+            get_custom(memory).type.address_space != allocate_node.address_space
+        ):
             # Moves memory to top of graph after allocate to avoid non-dominating operands.
             move_node_after(custom_node.memory, allocate_node.fx_node)
             # We move CustomOp/Read up to the last write_to_shared_mem S.T
@@ -160,4 +160,4 @@ def compute_shared_memory_usage(
         custom_alloc = get_custom(alloc)
         shape = subs_idxc(math.prod(custom_alloc.distributed_shape))
         bits = custom_alloc.type.dtype.bitwidth()
-        kernel_launch_info.shared_memory_bytes += (shape * bits) // 8
+        kernel_launch_info.shared_memory_bytes += int((shape * bits) // 8)

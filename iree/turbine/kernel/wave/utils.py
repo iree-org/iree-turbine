@@ -603,20 +603,9 @@ def _read_file(name, mode):
     return data
 
 
-def _read_pickle_file(name, mode):
-    with open(name, mode) as file:
-        data = pickle.load(file)
-    return data
-
-
 def _write_file(name, mode, data):
     with open(name, mode) as file:
         file.write(data)
-
-
-def _write_pickle_file(name, mode, data):
-    with open(name, mode) as file:
-        pickle.dump(data, file)
 
 
 def _print_bench_result(result, filename):
@@ -717,8 +706,7 @@ def invoke_with_wave_runtime(
     if kernel_hash:
         binary = str(CACHE_BASE_DIR / kernel_hash / kernel_hash) + ".hsaco"
     else:
-        bin_dir = WAVE_RUNTIME_DIR
-        binary = glob.glob(str(bin_dir / "*.hsaco"))[0]
+        binary = glob.glob(str(WAVE_RUNTIME_DIR / "*.hsaco"))[0]
 
     # Populate all the information required to launch the kernel.
     hash_str = "" if not kernel_hash else kernel_hash
