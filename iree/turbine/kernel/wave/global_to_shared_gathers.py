@@ -177,12 +177,17 @@ def update_read_mapping_dynamic_values(read: Read):
     Since every thread is now only reading one element along the gather dimension,
     we need to modify the read of the dynamic value to read only one element
     and do it at the specified index.
+
+    We cannot just update dynamic val node inplace, as it may be used by other
+    nodes, clone the node and set the new index and `element_per_thread` on it.
+
+    This code can leave old reads without users, we are expecting them to be
+    cleaned up by DCE.
     """
     new_dyn_vals = []
     for dyn_val in read.mapping_dynamic_vals:
         custom = get_custom(dyn_val)
         assert isinstance(custom, Read), f"Only read nodes are supported, got {custom}"
-        # We cannot just update dynamic val inplace, as it may be used by other nodes
         with custom.graph.inserting_before(dyn_val):
             new_read = Read(
                 custom.memory,
