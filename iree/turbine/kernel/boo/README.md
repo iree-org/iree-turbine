@@ -1,64 +1,50 @@
-boo = bag of ops
+BOO = Bag of ops
 
-The heirarchy for kernel implementations is something like:
+This subdirectory contains some simple API for generating and calling into a larger corpus of kernels.
 
-1. namespace - has a cache_manager and contains a registry of templates
-2. kernel template - python callable which can specialize to certain args (similar to CustomOp)
-3. template specialization - essentially 1-1 equivalent to device-agnostic mlir specialized from a template for specific args and kwargs. Can be compiled to a kernel.
-4. kernel - essentially 1-1 equivalent to a pre-compiled dispatch for a template specialization
+The general idea is:
 
-The cache_manager should be able to check for generated specializations and kernels and retrieve them as needed. Kernel Templates should be able to build/compile specializations as-needed if they aren't available from the cache.
+1. Write a pytorch function that should ideally be a single kernel.
+2. Import the function to MLIR.
+3. Try to force the IR function into a single dispatch (TODO: add a func op attribute for this on import)
 
-User experience should be as easy as:
-
-1. set up some options for iree
-2. choose which kernel libraries to allow
-3. can either call custom ops from these libraries directly, or..
-4. can wrap a function call in a decorator to auto generate kernel impls?
-
-E.g.,
+You can define a boo kernel as easily as:
 
 ```python
-import iree.turbine.boo as boo
+from iree.turbine.kernel.boo import boo_kernel
+from iree.turbine.kernel._support.tracing import TestLaunchContext
 
-iree_options = {"target_backends" : "rocm", "flags" : ["--iree-hip-target=gfx942"]}
-km = boo.KernelManager(iree_options)
 
-km.load_namespace("tkw")
+@boo_kernel
+def matmul_relu(lhs, rhs):
+    mm = torch.matmul(lhs, rhs)
+    return torch.nn.functional.relu(mm)
+```
 
-# use the tkw namespace to search for a kernel template by name
-# calling this mmt function should use the tkw cache_manager to find/deploy/generate
-mmt = km.find_template_op("tkw", "mmt")
+To compile/run this kernel, you need to set some configurations for the compiler and runtime.
 
-LHS = torch.randn(16, 32)
-RHS = torch.randn(32, 128)
+```python
+compile_config = {
+    "target_backends": ("llvm-cpu",),
+    "flags": ("--iree-llvmcpu-target-cpu=host",),
+    "print_mlir": True,
+}
 
-# calling this template op should automatically check the cache for a kernel matching the input signature
-# if no kernel exists for this signature, specialize and compile - adding those to the cache
-result = mmt(LHS, RHS)
+run_config = {
+    "device": "local-task",
+}
 
-## example flow of using auto-generated kernels ##
-
-# the boo cache_manager should also allow saving auto-generated kernels to disk for loading in a new session.
-
-# allows saving the template and kernels for future use
-@km.auto_kernel(op_name = "mmt", save_kernels=True)
-def my_auto_mmt(LHS, RHS):
-    return torch.matmul(LHS, RHS.transpose(-1,-2))
-
-result = mmt(LHS, RHS)
-
-# should be available from a new python session
-same_mmt = km.find_template_op("auto_op", "my_auto_mmt")
-
-same_result = same_mmt(LHS, RHS)
-
-# find fused kernel templates?
-fused_conv_relu = km.find_template_op("tkw", "fused_conv_relu")
-
-args = (...)
-kwargs = {...}
-
-fused_conv_relu(*args, **kwargs)
-
+with TestLaunchContext(compile_config=compile_config, run_config=run_config):
+    # this compiles for m,n,k = 16,16,32 bfloat16 example
+    x = torch.randn([16,32], dtype=torch.bfloat16)
+    w = torch.randn([32,16], dtype=torch.bfloat16)
+    y = matmul_relu(x,w)
+    # this will now pull from the cached files in ~/.cache/turbine_kernels/
+    x = torch.randn([16,32], dtype=torch.bfloat16)
+    w = torch.randn([32,16], dtype=torch.bfloat16)
+    y = matmul_relu(x,w)
+    # this is a new configuration, so it will need to re-compile a new kernel
+    x = torch.randn([128,128], dtype=torch.float32)
+    w = torch.randn([128,128], dtype=torch.float32)
+    y = matmul_relu(x,w)
 ```

@@ -1,9 +1,8 @@
 import unittest
 
 import torch
-from iree.turbine.kernel.boo import *
+from iree.turbine.kernel.boo import boo_kernel
 from iree.turbine.kernel._support.tracing import TestLaunchContext
-from iree.turbine.kernel.cache import KernelCacheManager
 
 
 @boo_kernel
