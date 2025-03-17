@@ -37,31 +37,17 @@ from iree.turbine.kernel.wave.templates.vanilla_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 
 
-# @require_e2e
-# @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
-# @param_bool("enable_scheduling", "sched")
-# @param_bool("dynamic_dims", "dyn")
-# @pytest.mark.parametrize(
-#     "mfma_variant",
-#     [
-#         (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-#         (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
-#         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-#         (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
-#     ],
-# )
 @require_e2e
-# @pytest.mark.parametrize("input_shape", get_test_shapes("attention")) # (8, 128, 128, 64, 256)
-@pytest.mark.parametrize("input_shape", [(8, 128, 128, 64, 256)])
-@param_bool("enable_scheduling", "sched", [False])
-@param_bool("dynamic_dims", "dyn", [False])
+@pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
+@param_bool("enable_scheduling", "sched")
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
         (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-        # (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
-        # (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-        # (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+        (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
     ],
 )
 def testTransposedVAttentionPure(
@@ -138,17 +124,16 @@ def testTransposedVAttentionPure(
 
 
 @require_e2e
-# @pytest.mark.parametrize("input_shape", get_test_shapes("attention")) # (8, 128, 128, 64, 256)
-@pytest.mark.parametrize("input_shape", [(8, 128, 128, 64, 256)])
+@pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
 @param_bool("enable_scheduling", "sched", [False])
 @param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
         (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-        # (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
-        # (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-        # (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+        (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
     ],
 )
 def testAttentionPure(
