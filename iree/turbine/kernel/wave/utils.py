@@ -51,7 +51,7 @@ import iree.turbine.kernel.lang as tkl
 
 
 from ...support.conversions import TORCH_DTYPE_TO_SIGNED_MLIR_TYPE_ASM
-from .profiling import benchmark_module
+from .._support.profiling import benchmark_module
 from iree.compiler.dialects.transform import (
     interpreter as transform_interpreter,
     any_op_t,

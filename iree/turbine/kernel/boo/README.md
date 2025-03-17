@@ -21,7 +21,7 @@ E.g.,
 ```python
 import iree.turbine.boo as boo
 
-iree_options = {"target_backends" : "rocm", "flags" : ["-iree-hip-target=gfx942"], "device" : "hip"}
+iree_options = {"target_backends" : "rocm", "flags" : ["--iree-hip-target=gfx942"]}
 km = boo.KernelManager(iree_options)
 
 km.load_namespace("tkw")
