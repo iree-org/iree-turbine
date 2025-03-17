@@ -106,7 +106,7 @@ class ExportOutput:
         save_to: SaveableTarget,
         *,
         target_backends: Union[str, Sequence[str], None] = ("llvm-cpu",),
-    ) -> Optional[memoryview]:
+    ) -> Optional[Output]:
         """Compiles the exported program to an executable binary.
 
         Args:

@@ -141,6 +141,7 @@ def invoke_cached_kernel(
     dynamic_symbols_map: dict[IndexExpr, int],
     run: bool,
     run_bench: bool,
+    inplace: bool = True,
 ):
     if not config:
         raise ValueError("no config provided")
@@ -160,14 +161,14 @@ def invoke_cached_kernel(
 
     invoke_vmfb(
         cached_kernel.vmfb,
-        "isolated_benchmark",
+        cached_kernel.function_name,
         config,
         kernel_inputs,
         kernel_outputs,
         kernel_dynamic_dims,
         run,
         run_bench,
-        inplace=True,
+        inplace=inplace,
         kernel_hash=cached_kernel.cache_id,
     )
 
@@ -203,7 +204,7 @@ def invoke_vmfb(
     if not (run or run_bench):
         return
 
-    if inplace:
+    if inplace and not device.startswith("local"):
         # Select device as the GPU, where input tensors are coming from.
         device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
         device = f"{device}://GPU-{device_uuid}"

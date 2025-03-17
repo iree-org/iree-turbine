@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict
 
+from iree.compiler.api import Output
 from ..compiler.kernel_codegen import KernelBufferUsage
 
 __all__ = [
@@ -46,6 +47,7 @@ class KernelCacheEntry:
     """
 
     namespace: str
+    function_name: str
     cache_id: str
     kernel_sig: tuple[KernelBufferUsage]
     vmfb: bytes
@@ -53,14 +55,18 @@ class KernelCacheEntry:
     @property
     def module_op(self):
         filepath = (
-            CACHE_BASE_DIR / self.namespace / self.cache_id / self.cache_id
+            CACHE_BASE_DIR
+            / self.namespace
+            / self.function_name
+            / self.cache_id
+            / self.cache_id
         ).with_suffix(".mlir")
         with open(filepath, "r") as f:
             module_str = f.read()
         return module_str
 
 
-NAMESPACE_REGISTRY = Dict[str, "KernelNamespace"] = {}
+NAMESPACE_REGISTRY = dict()
 
 
 class KernelNamespace:
@@ -82,7 +88,7 @@ class KernelNamespace:
         NAMESPACE_REGISTRY[self.name] = self
 
     @staticmethod
-    def add(name, hashing_function: Callable):
+    def add(name):
         """
         Decorator-based instantiation. Adds the instantiated namespace to global `NAMESPACE_REGISTRY`.
         Example use:
@@ -98,8 +104,11 @@ class KernelNamespace:
         ```
         """
 
-        namespace = KernelNamespace(name, hashing_function)
-        return namespace.get_hash
+        def decorator(hashing_function: Callable) -> Callable:
+            namespace = KernelNamespace(name, hashing_function)
+            return namespace.get_hash
+
+        return decorator
 
 
 FileCache = Dict[str, set[str]]  # namespace -> set of hashes present in file cache
@@ -125,13 +134,13 @@ class KernelCacheManager:
     for number of kernel cached here, because this lives on RAM, and we wouldn't want to run OOM.
 
     2. File/Offline cache - This cache is essential for loading saved/compiled cache between sessions/runs. This is done
-    by storing vital kernel information(vmfb, kernel_sig, and mlir) to CACHE_BASE_DIR/kernel_hash directory. If said kernel
+    by storing vital kernel information(vmfb, kernel_sig, and mlir) to CACHE_BASE_DIR/namespace/function_name/kernel_hash directory. If said kernel
     is queried during a new run and does not exist on session/online cache yet, we'd load files from the kernel_hash directory
     and reconstruct the KernelCacheEntry from it.
     """
 
     def __init__(self):
-        self.namespaces: Dict[str, KernelNamespace] = {}
+        self.namespaces: Dict[str, KernelNamespace] = NAMESPACE_REGISTRY
         self.file_cache: FileCache = {}
         self.session_cache: OrderedDict[str, KernelCacheEntry] = OrderedDict()
         self.lock = threading.Lock()
@@ -157,31 +166,33 @@ class KernelCacheManager:
         Search for saved/cached kernels in cache_base_directory and inform
         the cache manager for what are available.
         """
+        for ns in self.namespaces.keys():
+            self.file_cache[ns] = dict()
         # Early exit if no cache directory found.
         if not CACHE_BASE_DIR.is_dir():
             return
         for ns_dir in CACHE_BASE_DIR.glob("*/"):
             namespace = ns_dir.name
-            if namespace not in self.file_cache.keys():
-                self.file_cache[namespace] = {}
-                for ker_dir in ns_dir.glob("*/"):
-                    hash = ker_dir.name
-                    self.file_cache[namespace].add(hash)
+            for ker_dir in ns_dir.glob("*/*/"):
+                func_name = ker_dir.parent.name
+                hash = ker_dir.name
+                self.file_cache[namespace][hash] = func_name
 
     def store_kernel_to_file(
         self,
         namespace,
+        function_name,
         kernel_hash,
         vmfb: bytes,
         kernel_sig: tuple[KernelBufferUsage],
         module_str: str,
     ):
         """
-        Stores/save compiled kernels into CACHE_BASE_DIR/namespace/kernel_hash
+        Stores/save compiled kernels into CACHE_BASE_DIR/namespace/function_name/kernel_hash
         including it's MLIR, VMFB, and kernel signature.
         """
-        cur_cache_dir = CACHE_BASE_DIR / namespace / kernel_hash
-        os.makedirs(cur_cache_dir, exist_ok=True)
+        cur_cache_dir = CACHE_BASE_DIR / namespace / function_name / kernel_hash
+        cur_cache_dir.mkdir(parents=True, exist_ok=True)
         cur_cache_basefile = cur_cache_dir / kernel_hash
         cur_vmfb_path = cur_cache_basefile.with_suffix(".vmfb")
         cur_module_path = cur_cache_basefile.with_suffix(".mlir")
@@ -191,12 +202,12 @@ class KernelCacheManager:
         kernel_sig_str = json.dumps([usage.name for usage in kernel_sig])
         _write_file(cur_kernelsig_path, "w", kernel_sig_str)
 
-    def load_kernel_from_file(self, namespace, kernel_hash):
+    def load_kernel_from_file(self, namespace, function_name, kernel_hash):
         """
         Loads the queried kernel(including VMFB, and kernel signature)
         from local cache file/directory.
         """
-        cur_cache_dir = CACHE_BASE_DIR / namespace / kernel_hash
+        cur_cache_dir = CACHE_BASE_DIR / namespace / function_name / kernel_hash
         vmfb = None
         kernel_sig_str = None
         if not os.path.exists(cur_cache_dir):
@@ -207,7 +218,7 @@ class KernelCacheManager:
         vmfb = _read_file(cur_vmfb_path, "rb")
         kernel_sig_str = json.loads(_read_file(cur_kernelsig_path, "r"))
         kernel_sig = [KernelBufferUsage[usage] for usage in kernel_sig_str]
-        return KernelCacheEntry(namespace, kernel_hash, kernel_sig, vmfb)
+        return KernelCacheEntry(namespace, function_name, kernel_hash, kernel_sig, vmfb)
 
     ###############################################################################
     # Session cache related helpers
@@ -230,6 +241,7 @@ class KernelCacheManager:
         kernel_sig: tuple[KernelBufferUsage],
         module_str: str,
         namespace: str,
+        function_name: str,
         kernel_hash: str,
     ):
         """
@@ -238,15 +250,19 @@ class KernelCacheManager:
         if not CACHE_ON or not kernel_hash:
             return
         with self.lock:
-            self.store_kernel_to_file(kernel_hash, vmfb, kernel_sig, module_str)
+            self.store_kernel_to_file(
+                namespace, function_name, kernel_hash, vmfb, kernel_sig, module_str
+            )
             if not ALWAYS_COMPILE:
                 # Do not store in session cache if always compile to save memory.
                 self.store_kernel_to_session(
                     kernel_hash,
-                    KernelCacheEntry(namespace, kernel_hash, kernel_sig, vmfb),
+                    KernelCacheEntry(
+                        namespace, function_name, kernel_hash, kernel_sig, vmfb
+                    ),
                 )
 
-    def load_kernel(self, namespace, kernel_hash: str):
+    def load_kernel(self, namespace, function_name, kernel_hash: str):
         """
         LRU style loading of kernel from session cache and move queried kernel to top of LRU if it exist.
         If it only exist in file/offline cache, we'll load from local files, reconstruct KernelCacheEntry and then store
@@ -258,20 +274,22 @@ class KernelCacheManager:
         with self.lock:
             if kernel_hash in self.session_cache:
                 self.session_cache.move_to_end(kernel_hash)
-            elif kernel_hash in self.file_cache[namespace]:
-                cached_kernel = self.load_kernel_from_file(kernel_hash)
+            elif kernel_hash in self.file_cache[namespace].keys():
+                cached_kernel = self.load_kernel_from_file(
+                    namespace, function_name, kernel_hash
+                )
                 self.store_kernel_to_session(kernel_hash, cached_kernel)
             return self.session_cache.get(kernel_hash, None)
 
     @staticmethod
-    def get_cache_manager() -> "KernelCacheManager":
+    def get() -> "KernelCacheManager":
         global _global_cache_manager
         if not "_global_cache_manager" in globals():
             _global_cache_manager = KernelCacheManager()
         return _global_cache_manager
 
     @staticmethod
-    def reset_cache_manager() -> "KernelCacheManager":
+    def reset() -> "KernelCacheManager":
         if not "_global_cache_manager" in globals():
             return
         if os.path.exists(CACHE_BASE_DIR):
