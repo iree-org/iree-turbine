@@ -21,6 +21,7 @@ from iree.turbine.kernel.wave.utils import (
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.evoformer import get_evoformer_kernel
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.lang import DataType
 import os
 from ..common.utils import (
@@ -62,7 +63,7 @@ def attention_reference(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("evoformer"))
 @pytest.mark.parametrize("tile_sizes", default_tile_sizes)
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @pytest.mark.parametrize(
     "mfma_variant",
     [

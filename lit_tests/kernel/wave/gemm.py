@@ -12,6 +12,7 @@ from iree.turbine.kernel.wave.utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 M = tkl.sym.M
@@ -926,7 +927,7 @@ def test_gemm_pipelined():
             SHUFFLE_UNITS: 8,
         },
         canonicalize=True,
-        schedule=True,
+        schedule=SchedulingType.MODULO,
         use_scheduling_barriers=True,
     ):
         a = torch.randn(64, 32, dtype=torch.float16)
@@ -1018,7 +1019,7 @@ def test_dynamic_gemm_pipelined():
             SHUFFLE_UNITS: 8,
         },
         canonicalize=True,
-        schedule=True,
+        schedule=SchedulingType.MODULO,
         use_scheduling_barriers=True,
         dynamic_symbols=(M, N, K),
         dynamic_symbols_map={M: 64, N: 128, K: 256},

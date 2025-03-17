@@ -13,6 +13,7 @@ from iree.turbine.kernel.wave.templates.paged_decode_attention import (
 from iree.turbine.kernel.wave.templates.decode_attention import (
     get_decode_attention_kernels,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 
@@ -58,7 +59,7 @@ def test_paged_flash_decoding():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         print(phase_0(q, k, v, logits, logits_max))
@@ -91,7 +92,7 @@ def test_paged_flash_decoding():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         print(phase_1(logits, logits_max, output))
@@ -141,7 +142,7 @@ def test_flash_decoding():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols_0,
         dynamic_symbols_map=dynamic_symbols_map_0,
@@ -170,7 +171,7 @@ def test_flash_decoding():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols_1,
         dynamic_symbols_map=dynamic_symbols_map_1,
