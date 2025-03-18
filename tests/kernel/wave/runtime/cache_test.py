@@ -41,8 +41,9 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
     get_vanilla_attention_kernel,
 )
-
-require_e2e = pytest.mark.require_e2e
+from ..common.utils import (
+    require_e2e,
+)
 
 require_cache = pytest.mark.skipif(
     not is_cache_enabled(), reason="filesystem cache is disabled"
@@ -207,8 +208,8 @@ def testSameConfig(request):
         output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
         mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
         assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
-        assert isinstance(
-            mb, tk.compiler.builder.ModuleBuilder
+        assert (
+            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
         ), "Expected first call to not be cached."
         assert (
             len(cache_manager.session_cache) == 1
@@ -223,8 +224,8 @@ def testSameConfig(request):
         assert (
             len(cache_manager.session_cache) == 1
         ), "Expected to keep size of cache because we reuse same kernel."
-        assert isinstance(
-            cached_kernel, WaveCache
+        assert (
+            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 1
         ), "Expected subsequent call to be cached."
 
 
@@ -331,8 +332,8 @@ def testDifferentDynamicSameBlock(request):
             output_shape_0,
         )
         assert_close(output_shape_0, torch_ref_shape_0, atol=1e-3, rtol=1e-3)
-        assert isinstance(
-            mb, tk.compiler.builder.ModuleBuilder
+        assert (
+            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
         ), "Expected first call to not be cached."
         assert (
             len(cache_manager.session_cache) == 1
@@ -385,8 +386,8 @@ def testDifferentDynamicSameBlock(request):
         assert (
             len(cache_manager.session_cache) == 1
         ), "Expected to keep size of cache because we reuse same kernel."
-        assert isinstance(
-            cached_kernel, WaveCache
+        assert (
+            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 1
         ), "Expected subsequent call to be cached."
 
 
@@ -479,8 +480,8 @@ def testSameSizeDifferentBlock(request):
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
         assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
-        assert isinstance(
-            mb_config_0, tk.compiler.builder.ModuleBuilder
+        assert (
+            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
         ), "Expected first call to not be cached."
         assert (
             len(cache_manager.session_cache) == 1
@@ -508,9 +509,9 @@ def testSameSizeDifferentBlock(request):
         assert (
             len(cache_manager.session_cache) == 2
         ), "Expected cache size to increment, because we use different block size/config."
-        assert isinstance(
-            mb_config_1, tk.compiler.builder.ModuleBuilder
-        ), "Expected subsequent call to be cached."
+        assert (
+            cache_manager.cache_misses == 2 and cache_manager.cache_hits == 0
+        ), "Expected subsequent call to not be cached."
         assert len(kernel_hash) == 1, "Expected to have one kernel hash returned."
 
     # Subsequent run/call to kernel, this will not trigger a hash computation
@@ -534,8 +535,8 @@ def testSameSizeDifferentBlock(request):
         assert (
             len(cache_manager.session_cache) == 2
         ), "Expected cache size to increment, because we use different block size/config."
-        assert isinstance(
-            mb_config_2, WaveCache
+        assert (
+            cache_manager.cache_misses == 2 and cache_manager.cache_hits == 1
         ), "Expected subsequent call to be cached."
         assert len(kernel_hash) == 1, "Expected to still have only one kernel hash."
 
@@ -567,7 +568,9 @@ def testSameConfigDifferentFreeVar(request):
         hyperparams,
         dynamic_symbols,
         dynamic_symbols_map,
-    ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims)
+    ) = get_vanilla_attention_kernel(
+        shape, mfma_variant, dynamic_dims, is_v_transposed=True
+    )
     q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
     v_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
@@ -596,8 +599,8 @@ def testSameConfigDifferentFreeVar(request):
         non_causal_mb = base_attention(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
-        assert isinstance(
-            non_causal_mb, tk.compiler.builder.ModuleBuilder
+        assert (
+            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
         ), "Expected first call to not be cached."
         assert (
             len(cache_manager.session_cache) == 1
@@ -608,7 +611,9 @@ def testSameConfigDifferentFreeVar(request):
         hyperparams,
         dynamic_symbols,
         dynamic_symbols_map,
-    ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims, is_causal=True)
+    ) = get_vanilla_attention_kernel(
+        shape, mfma_variant, dynamic_dims, is_causal=True, is_v_transposed=True
+    )
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -630,8 +635,8 @@ def testSameConfigDifferentFreeVar(request):
         causal_mb = causal_attention(
             q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
         )
-        assert isinstance(
-            causal_mb, tk.compiler.builder.ModuleBuilder
+        assert (
+            cache_manager.cache_misses == 2 and cache_manager.cache_hits == 0
         ), "Expected to not be cached despite same config, since it has different values for is_causal."
         assert (
             len(cache_manager.session_cache) == 2

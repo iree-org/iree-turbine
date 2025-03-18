@@ -68,6 +68,18 @@ import iree.runtime as rt
 # TODO: Monkey-patching f16 support, need to fix in iree.
 import numpy
 import ctypes
+from dataclasses import dataclass
+import glob
+import os
+import pickle
+
+
+@dataclass
+class KernelLaunchInfo:
+    grid: tuple[int] = None
+    blocks: tuple[int] = None
+    shared_memory_bytes: int = 0
+    func_name: str = ""
 
 
 def try_apply_pass(
@@ -483,7 +495,11 @@ def remove_global_indexing(
     new_index = {key: safe_subs(index[key], subs) for key in index}
     for key in new_index:
         for constraint in tiling_constraints:
-            new_index[key] = new_index[key].subs({constraint.induction_var: 0})
+            new_dim = new_index[key]
+            if sympy.sympify(new_dim.start).has(constraint.induction_var):
+                new_dim = new_dim.subs({constraint.induction_var: 0})
+                new_dim.start = new_dim.start - constraint.start
+                new_index[key] = new_dim
     return new_index
 
 
@@ -551,7 +567,7 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     def push_tensor_to_arg_list(arg_tensor: torch.Tensor):
         if not arg_tensor.is_contiguous():
             arg_tensor = arg_tensor.contiguous()
-        capsule = arg_tensor.__dlpack__(None)
+        capsule = torch.to_dlpack(arg_tensor)
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
 
         # IREE runtime renames capsule to "dltensor_used" for some reason, but
@@ -602,20 +618,19 @@ def _print_bench_result(result, filename):
         print(res)
 
 
-def get_device_uuid(input_tensors: list[torch.Tensor]) -> tuple[int, str]:
+@functools.lru_cache
+def get_device_uuid(device_list: list[str], device_str: str) -> tuple[int, str]:
     """
     Checks all torch.Tensor are on the same device, and get UUID from Torch device.
     """
-    device_list = [
-        input.device for input in input_tensors if isinstance(input, torch.Tensor)
-    ]
     if len(set(device_list)) != 1:
         raise ValueError(f"Found multiple device on input tensors:{set(device_list)}")
     device = device_list[0]
     if device.type != "cuda":
         raise ValueError("Expected all argument tensors to be in GPU.")
     uuid = str(torch.cuda.get_device_properties(device).uuid)
-    return uuid
+    device_str = f"{device_str}://GPU-{uuid}"
+    return device_str
 
 
 def compile_to_vmfb(
@@ -656,6 +671,9 @@ def compile_to_vmfb(
             f"--iree-hal-dump-executable-intermediates-to={intermediates_path}"
         )
 
+    if binaries_path := config.get("dump_binaries", None):
+        flags.append(f"--iree-hal-dump-executable-binaries-to={binaries_path}")
+
     if run_bench:
         bench_batch_size = config.get("benchmark_batch_size", None)
         if bench_batch_size is not None:
@@ -671,6 +689,53 @@ def compile_to_vmfb(
 RUNTIME_CACHE: dict[str, tuple[rt.SystemContext, rt.VmFunction]] = {}
 
 
+def invoke_with_wave_runtime(
+    kernel_inputs: list[torch.Tensor],
+    kernel_outputs: list[torch.Tensor],
+    kernel_dynamic_dims: list[int],
+    kernel_hash: str,
+    kernel_info: KernelLaunchInfo,
+):
+    """
+    Invokes the kernel with the wave runtime.
+    """
+    import wave_runtime
+    from .cache import WAVE_RUNTIME_DIR, CACHE_BASE_DIR
+
+    # Get the path to the binary.
+    if kernel_hash:
+        binary = str(CACHE_BASE_DIR / kernel_hash / kernel_hash) + ".hsaco"
+    else:
+        binary = glob.glob(str(WAVE_RUNTIME_DIR / "*.hsaco"))[0]
+
+    # Populate all the information required to launch the kernel.
+    hash_str = "" if not kernel_hash else kernel_hash
+    kernel_launch_info = wave_runtime.KernelLaunchInfo(
+        binary,
+        kernel_info.func_name,
+        hash_str,
+        kernel_info.shared_memory_bytes,
+        kernel_info.grid[0],
+        kernel_info.grid[1],
+        kernel_info.grid[2],
+        kernel_info.blocks[0],
+        kernel_info.blocks[1],
+        kernel_info.blocks[2],
+    )
+
+    # Ensure that the tensors are contiguous.
+    kern_args = []
+    for arg_tensor in kernel_inputs + kernel_outputs:
+        if not arg_tensor.is_contiguous():
+            arg_tensor = arg_tensor.contiguous()
+        kern_args.append(arg_tensor.data_ptr())
+
+    kernel_args = wave_runtime.Int64Vector(kern_args)
+    dyn_dims = wave_runtime.Int64Vector(list(kernel_dynamic_dims))
+    # Launch the kernel.
+    wave_runtime.launch(kernel_launch_info, kernel_args, dyn_dims)
+
+
 def invoke_vmfb(
     vmfb: bytes,
     func_name: str,
@@ -682,7 +747,18 @@ def invoke_vmfb(
     run_bench: bool = False,
     inplace: bool = False,
     kernel_hash: Optional[str] = None,
+    kernel_launch_info: Optional[KernelLaunchInfo] = None,
 ):
+    wave_runtime_launcher = config.get("wave_runtime", None)
+    if wave_runtime_launcher:
+        invoke_with_wave_runtime(
+            kernel_inputs,
+            kernel_outputs,
+            kernel_dynamic_dims,
+            kernel_hash,
+            kernel_launch_info,
+        )
+        return
 
     device = config["device"]
     if run_bench:
@@ -704,8 +780,12 @@ def invoke_vmfb(
 
     if inplace:
         # Select device as the GPU, where input tensors are coming from.
-        device_uuid = get_device_uuid(kernel_inputs + kernel_outputs)
-        device = f"{device}://GPU-{device_uuid}"
+        device_list = tuple(
+            input.device
+            for input in kernel_inputs + kernel_outputs
+            if isinstance(input, torch.Tensor)
+        )
+        device = get_device_uuid(device_list, device)
     rt_config = rt.Config(device)
     device = rt_config.device
     vm_instance = rt_config.vm_instance
@@ -1231,7 +1311,7 @@ def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
 
 
 def _get_start_indices(
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
 ) -> list[IndexExpr]:
     start_indices = []
     for dim_indexing in src_indices:
@@ -1613,3 +1693,16 @@ def print_live_tensors():
         except:
             pass
     print("-----------------------------")
+
+
+def remove_files_with_extension(directory, extension):
+    pattern = os.path.join(directory, "*" + extension)
+    files_to_remove = glob.glob(pattern)
+
+    for file_path in files_to_remove:
+        try:
+            os.remove(file_path)
+        except FileNotFoundError:
+            print(f"File not found: {file_path}")
+        except Exception as e:
+            print(f"Error removing {file_path}: {e}")

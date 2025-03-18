@@ -29,10 +29,7 @@ import os
 from torch.testing import assert_close
 from ..common.utils import (
     require_e2e,
-    require_cdna3,
     enable_scheduling_barriers,
-    dump_generated_mlir,
-    get_default_arch,
 )
 from ..common.shapes import get_test_shapes
 from typing import List, Optional, Tuple

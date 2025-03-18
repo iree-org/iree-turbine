@@ -74,7 +74,7 @@ def test_cast():
     with codegen_test_context(canonicalize=True):
         a = torch.randn(16, 16, dtype=torch.float16)
         b = torch.zeros(16, 16, dtype=torch.float16)
-        print(test(a, b).module_op)
+        print(test(a, b))
 
         # CHECK:  %[[D0:.*]] = arith.extf {{.*}} : vector<16xf16> to vector<16xf32>
         # CHECK:  %[[D1:.*]] = arith.fptosi %[[D0]] : vector<16xf32> to vector<16xi8>

@@ -6,6 +6,7 @@
 
 
 import copy
+import glob
 import hashlib
 import inspect
 import json
@@ -15,19 +16,25 @@ import torch
 import threading
 
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any, Callable
 import functools
+from typing import Any, Callable, Optional
 
 from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
 from ..lang.wave_types import IndexMapping
 from .._support.indexing import IndexExpr
-from .utils import invoke_vmfb, _read_file, _write_file
+from .utils import (
+    invoke_vmfb,
+    _read_file,
+    _write_file,
+    KernelLaunchInfo,
+)
 
 default_cache_base_dir = Path.home() / ".wave"
 CACHE_BASE_DIR = Path(os.environ.get("WAVE_CACHE_DIR", default_cache_base_dir))
+WAVE_RUNTIME_DIR = CACHE_BASE_DIR / "wave_runtime"
 WAVE_ALWAYS_COMPILE = int(os.environ.get("WAVE_ALWAYS_COMPILE", 0))
 WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 1))
 WAVE_CACHE_LIMIT = int(os.environ.get("WAVE_CACHE_LIMIT", 16))
@@ -48,10 +55,15 @@ class WaveCache:
     cache_id: str
     kernel_sig: tuple[KernelBufferUsage]
     vmfb: bytes
+    kernel_launch_info: Optional[KernelLaunchInfo] = None
 
     @property
-    def module_op(self):
-        filepath = (CACHE_BASE_DIR / self.cache_id / self.cache_id).with_suffix(".mlir")
+    def asm_filepath(self):
+        return (CACHE_BASE_DIR / self.cache_id / self.cache_id).with_suffix(".mlir")
+
+    @staticmethod
+    @functools.lru_cache
+    def asm(filepath: str):
         with open(filepath, "r") as f:
             module_str = f.read()
         return module_str
@@ -124,6 +136,8 @@ class WaveCacheManager(object):
         self.session_cache: OrderedDict[str, WaveCache] = OrderedDict()
         self.lock = threading.Lock()
         self.update_file_cache()
+        self.cache_hits = 0
+        self.cache_misses = 0
 
     def get_hash(
         self,
@@ -164,7 +178,7 @@ class WaveCacheManager(object):
 
         # Benchmark related hash
         if run_bench and config != None:
-            key += config.get("benchmark_batch_size", "")
+            key += [config.get("benchmark_batch_size", "")]
         return hashlib.sha256(str(key).encode("utf-8")).hexdigest()
 
     ###############################################################################
@@ -189,10 +203,13 @@ class WaveCacheManager(object):
         vmfb: bytes,
         kernel_sig: tuple[KernelBufferUsage],
         module_str: str,
+        kernel_launch_info: KernelLaunchInfo,
     ):
         """
         Stores/save compiled kernels into CACHE_BASE_DIR/kernel_hash
-        including it's MLIR, VMFB, and kernel signature.
+        including it's MLIR, VMFB, and kernel signature. If wave
+        runtime is enabled, also copies the hsaco binary and
+        stores the kernel launch information.
         """
         cur_cache_dir = CACHE_BASE_DIR / kernel_hash
         os.makedirs(cur_cache_dir, exist_ok=True)
@@ -204,8 +221,18 @@ class WaveCacheManager(object):
         _write_file(cur_module_path, "w", module_str)
         kernel_sig_str = json.dumps([usage.name for usage in kernel_sig])
         _write_file(cur_kernelsig_path, "w", kernel_sig_str)
+        cur_hsaco_path = glob.glob(str(WAVE_RUNTIME_DIR / "*.hsaco"))
+        # Copy the hsaco file to the cache directory only if it exists.
+        if cur_hsaco_path:
+            cur_hsaco_path = cur_hsaco_path[0]
+            shutil.copy(cur_hsaco_path, cur_cache_basefile.with_suffix(".hsaco"))
+        cur_kernel_info_path = cur_cache_basefile.with_suffix(".kernel_info.json")
+        kernel_info_str = json.dumps(asdict(kernel_launch_info))
+        _write_file(cur_kernel_info_path, "w", kernel_info_str)
 
-    def load_kernel_from_file(self, kernel_hash):
+    @staticmethod
+    @functools.lru_cache
+    def load_kernel_from_file(kernel_hash):
         """
         Loads the queried kernel(including VMFB, and kernel signature)
         from local cache file/directory.
@@ -221,7 +248,10 @@ class WaveCacheManager(object):
         vmfb = _read_file(cur_vmfb_path, "rb")
         kernel_sig_str = json.loads(_read_file(cur_kernelsig_path, "r"))
         kernel_sig = [KernelBufferUsage[usage] for usage in kernel_sig_str]
-        return WaveCache(kernel_hash, kernel_sig, vmfb)
+        cur_kernel_info_path = cur_cache_basefile.with_suffix(".kernel_info.json")
+        kernel_info_str = json.loads(_read_file(cur_kernel_info_path, "r"))
+        kernel_launch_info = KernelLaunchInfo(**kernel_info_str)
+        return WaveCache(kernel_hash, kernel_sig, vmfb, kernel_launch_info)
 
     ###############################################################################
     # Session cache related helpers
@@ -242,6 +272,7 @@ class WaveCacheManager(object):
         kernel_sig: tuple[KernelBufferUsage],
         module_str: str,
         kernel_hash: str,
+        kernel_launch_info: KernelLaunchInfo,
     ):
         """
         Save given kernel(vmfb, kernel_sig, and MLIR) into session_cache and file/offline cache.
@@ -249,11 +280,14 @@ class WaveCacheManager(object):
         if not WAVE_CACHE_ON or not kernel_hash:
             return
         with self.lock:
-            self.store_kernel_to_file(kernel_hash, vmfb, kernel_sig, module_str)
+            self.store_kernel_to_file(
+                kernel_hash, vmfb, kernel_sig, module_str, kernel_launch_info
+            )
             if not WAVE_ALWAYS_COMPILE:
                 # Do not store in session cache if always compile to save memory.
                 self.store_kernel_to_session(
-                    kernel_hash, WaveCache(kernel_hash, kernel_sig, vmfb)
+                    kernel_hash,
+                    WaveCache(kernel_hash, kernel_sig, vmfb, kernel_launch_info),
                 )
 
     def load_kernel(self, kernel_hash: str):
@@ -268,9 +302,13 @@ class WaveCacheManager(object):
         with self.lock:
             if kernel_hash in self.session_cache:
                 self.session_cache.move_to_end(kernel_hash)
+                self.cache_hits += 1
             elif kernel_hash in self.file_cache:
                 cached_kernel = self.load_kernel_from_file(kernel_hash)
                 self.store_kernel_to_session(kernel_hash, cached_kernel)
+                self.cache_hits += 1
+            else:
+                self.cache_misses += 1
             return self.session_cache.get(kernel_hash, None)
 
 
@@ -327,4 +365,5 @@ def invoke_cached_kernel(
         run_bench,
         inplace=True,
         kernel_hash=kernel_hash,
+        kernel_launch_info=cached_kernel.kernel_launch_info,
     )

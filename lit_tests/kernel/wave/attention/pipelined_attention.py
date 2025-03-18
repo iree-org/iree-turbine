@@ -9,6 +9,7 @@ from iree.turbine.kernel.wave.utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 # Input sizes
@@ -139,7 +140,7 @@ def test_dynamic_attention_pipelined():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=True,
+        schedule=SchedulingType.MODULO,
         use_scheduling_barriers=False,
         dynamic_symbols=(B, M, N, K2),
         dynamic_symbol_map={
@@ -154,7 +155,7 @@ def test_dynamic_attention_pipelined():
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(dynamic_attention_pipelined(q, k, v, output).module_op)
+        print(dynamic_attention_pipelined(q, k, v, output))
 
         # CHECK-LABEL:       func.func @dynamic_attention_pipelined
         # CHECK-COUNT-4:        {{.*}} = vector.maskedload {{.*}}
@@ -281,7 +282,7 @@ def test_attention_pipelined():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=True,
+        schedule=SchedulingType.MODULO,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
@@ -289,7 +290,7 @@ def test_attention_pipelined():
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(base_attention_pipelined(q, k, v, output).module_op)
+        print(base_attention_pipelined(q, k, v, output))
 
         # CHECK-LABEL:       func.func @base_attention_pipelined
         # CHECK:                {{.*}} = scf.for

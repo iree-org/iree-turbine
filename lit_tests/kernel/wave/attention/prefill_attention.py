@@ -12,6 +12,7 @@ from iree.turbine.kernel.wave.templates.prefill_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 
@@ -39,7 +40,7 @@ def test_prefill_attention():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
@@ -49,7 +50,7 @@ def test_prefill_attention():
         output = torch.zeros(o_shape, dtype=torch.float32)
         offsets = torch.ones(shape.num_seqs, dtype=torch.int32)
         seq_lens = torch.ones(shape.num_seqs, dtype=torch.int32)
-        print(prefill_attention(q, k, v, offsets, seq_lens, output).module_op)
+        print(prefill_attention(q, k, v, offsets, seq_lens, output))
         # CHECK-LABEL:       func.func @prefill_attention
         # CHECK-COUNT-4:        vector.maskedload
         # CHECK:                scf.for

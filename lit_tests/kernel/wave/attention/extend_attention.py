@@ -12,6 +12,7 @@ from iree.turbine.kernel.wave.templates.extend_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 
@@ -58,7 +59,7 @@ def test_extend_attention():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
@@ -88,7 +89,7 @@ def test_extend_attention():
                 sequence_lengths_extend,
                 start_indices_extend,
                 output,
-            ).module_op
+            )
         )
         # This part ensure correctness of WG distribution for extend attention.
         # CHECK:              stream.executable.export public @extend_attention workgroups(%[[ARG0:.+]]: index, %[[ARG1:.+]]: index, %[[ARG2:.+]]: index, %[[ARG3:.+]]: index)
@@ -185,7 +186,7 @@ def test_causal_extend_attention():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
@@ -215,7 +216,7 @@ def test_causal_extend_attention():
                 sequence_lengths_extend,
                 start_indices_extend,
                 output,
-            ).module_op
+            )
         )
 
         # CHECK-LABEL:       func.func @extend_attention
@@ -331,7 +332,7 @@ def test_causal_extend_attention_32x32x8():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
@@ -361,7 +362,7 @@ def test_causal_extend_attention_32x32x8():
                 sequence_lengths_extend,
                 start_indices_extend,
                 output,
-            ).module_op
+            )
         )
 
         # CHECK-LABEL:       func.func @extend_attention
