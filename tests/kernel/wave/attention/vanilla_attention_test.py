@@ -55,7 +55,7 @@ from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 )
 def testTransposedVAttentionPure(
     input_shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: tuple[MMAType],
     request,
@@ -128,7 +128,7 @@ def testTransposedVAttentionPure(
 
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
