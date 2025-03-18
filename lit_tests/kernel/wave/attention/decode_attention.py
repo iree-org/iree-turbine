@@ -67,21 +67,21 @@ def test_paged_flash_decoding():
     # CHECK-LABEL:          func.func @phase_0
     # CHECK-DAG:               %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:               %[[C1:.*]] = arith.constant 1 : index
-    # CHECK-DAG:               %[[C32:.*]] = arith.constant 32 : index
+    # CHECK-DAG:               %[[C16:.*]] = arith.constant 16 : index
     # CHECK-COUNT-2:           vector.load
     # CHECK:                   %[[COUNT0:.*]] = arith.minsi %{{.*}}, %{{.*}} : vector<1xindex>
     # CHECK:                   %[[COUNT1:.*]] = vector.extract %[[COUNT0]][0] : index from vector<1xindex>
     # CHECK-COUNT-2:           vector.load
     # CHECK:                   %[[D36:.*]] = arith.subi %[[COUNT1]], %[[C1]] : index
-    # CHECK:                   %[[D37:.*]] = arith.divui %[[D36]], %[[C32]] : index
+    # CHECK:                   %[[D37:.*]] = arith.divui %[[D36]], %[[C16]] : index
     # CHECK:                   %[[D38:.*]] = arith.addi %[[D37]], %[[C1]] : index
     # CHECK:                   %[[COUNT2:.*]] = arith.select %{{.*}}, %[[C0]], %[[D38]] : index
     # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT2]] step %[[C1]]
     # CHECK:                        amdgpu.lds_barrier
-    # 2 masked load block table, 2 for k_cache, and 2 for v_cache.
-    # CHECK-COUNT-6:                vector.maskedload
+    # 1 masked load block table, 1 for k_cache, and 1 for v_cache.
+    # CHECK-COUNT-3:                vector.maskedload
     # CHECK:                        amdgpu.lds_barrier
-    # CHECK-COUNT-8:                amdgpu.mfma
+    # CHECK-COUNT-4:                amdgpu.mfma
     # CHECK:                  %[[COND:.*]] = arith.cmpi sgt, %[[COUNT1]], %[[C0]] : index
     # CHECK:                  scf.if %[[COND]] {
     # CHECK-COUNT-1:          arith.divf
