@@ -1,7 +1,7 @@
 import unittest
 
 import torch
-from iree.turbine.kernel.boo import boo_kernel
+from iree.turbine.kernel.boo import boo_kernel, KernelCacheManager
 from iree.turbine.kernel._support.tracing import TestLaunchContext
 
 
@@ -43,10 +43,10 @@ def _run():
         assert torch.allclose(y, y_ref)
 
         # reset the cache with:
-        # KernelCacheManager.reset()
+        # KernelCacheManager.reset("boo", "matmul_relu")
 
 
-class BOOKernelTest(unittest.TestCase):
+class BOOMatmulReluKernelTest(unittest.TestCase):
     def testMatmulRelu(self):
         _run()
 

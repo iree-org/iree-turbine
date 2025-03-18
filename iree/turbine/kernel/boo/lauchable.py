@@ -23,7 +23,7 @@ def boo_kernel(eager_function):
         def forward(self, *args, **kwargs):
             return eager_function(*args, **kwargs)
 
-    return BOOLaunchable(f"boo_{eager_function.__name__}", Mod())
+    return BOOLaunchable(f"{eager_function.__name__}", Mod())
 
 
 @KernelNamespace.add("boo")
@@ -31,6 +31,7 @@ def get_hash(module: torch.nn.Module, compile_config, run_config, sample_args):
     sample_arg_types = tuple([(a.shape, a.dtype) for a in sample_args])
     key = [
         inspect.getsource(module.__class__),
+        module.__getstate__(),
         compile_config,
         run_config,
         sample_arg_types,

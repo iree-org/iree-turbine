@@ -289,10 +289,26 @@ class KernelCacheManager:
         return _global_cache_manager
 
     @staticmethod
-    def reset() -> "KernelCacheManager":
+    def reset(namespace: str | None = None, func_name: str | None = None):
+        """
+        Clears the file cache.
+        Specifying the namespace or func_name will only clear that part of the cache.
+        If no namespace or func_name are specified, all cache is cleared.
+        """
         if not "_global_cache_manager" in globals():
             return
-        if os.path.exists(CACHE_BASE_DIR):
-            shutil.rmtree(CACHE_BASE_DIR)
+        dir_path = Path(CACHE_BASE_DIR)
+        if func_name and not namespace:
+            raise ValueError(
+                f"Cannot clear cache for {func_name} without knowing the namespace."
+            )
+        if namespace:
+            dir_path = (
+                dir_path / namespace
+                if not func_name
+                else dir_path / namespace / func_name
+            )
+        if dir_path.is_dir():
+            shutil.rmtree(dir_path)
         global _global_cache_manager
         del _global_cache_manager
