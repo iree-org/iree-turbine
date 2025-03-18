@@ -75,7 +75,7 @@ def test_paged_flash_decoding():
     # CHECK:                   %[[D36:.*]] = arith.subi %[[COUNT1]], %[[C1]] : index
     # CHECK:                   %[[D37:.*]] = arith.divui %[[D36]], %[[C32]] : index
     # CHECK:                   %[[D38:.*]] = arith.addi %[[D37]], %[[C1]] : index
-    # CHECK:                   %[[COUNT2:.*]] = arith.select %{{.*}}, %[[C0]], %38 : index
+    # CHECK:                   %[[COUNT2:.*]] = arith.select %{{.*}}, %[[C0]], %[[D38]] : index
     # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT2]] step %[[C1]]
     # CHECK:                        amdgpu.lds_barrier
     # 2 masked load block table, 2 for k_cache, and 2 for v_cache.
