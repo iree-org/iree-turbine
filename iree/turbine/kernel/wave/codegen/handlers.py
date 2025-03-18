@@ -890,6 +890,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     # If by chance broadcast size  matches current size, we can return src.
     if target_thread_size == vector_type.shape[0]:
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
+        return
 
     result_type = VectorType.get([target_thread_size], vector_type.element_type)
     element = vector_d.extract(vector_src, static_position=[0], dynamic_position=[])
