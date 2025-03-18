@@ -85,7 +85,7 @@ def get_paged_decode_attention_kernels(
         constraints: list[tkw.Constraint] = []
         # U represents the number of splits of the key-value sequence.
         # U is parallelizable and is distributed across workgroups.
-        constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 0)]
+        constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
         constraints += [
             tkw.TilingConstraint(
                 K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
@@ -111,7 +111,7 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1, primary=False)]
         constraints += [tkw.WaveConstraint(B, BLOCK_B / B_WAVES)]
 
-        constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
+        constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
 
         vector_shapes = {BH: 0, S: 0, U: 1}
         waves_per_block = (1, B_WAVES, 1)
@@ -364,7 +364,7 @@ def get_paged_decode_attention_kernels(
         BLOCK_B: HEAD_BLOCK_SIZE,
         BLOCK_S: 1,
         BLOCK_U: 1,
-        BLOCK_K2: 32,
+        BLOCK_K2: 16,
         B: shape.num_query_heads,
         M: 1,
         N: shape.head_size_kv,
