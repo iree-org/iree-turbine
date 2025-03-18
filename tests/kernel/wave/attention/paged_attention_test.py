@@ -38,6 +38,7 @@ from typing import List, Optional
 # Reference paged attention implementation from vLLM and sglang.
 # (NUM_Q_HEADS, NUM_KV_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
 shapes = [(16, 1, 64, 64, 32, 2, 100)]
+shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
 shapes += [(128, 2, 80, 80, 32, 2, 500)]
 
@@ -149,7 +150,7 @@ def load_inputs(directory):
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        MMAType.F32_16x16x16_F16,
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
     ],
 )
 def testPagedFlashDecoding(
@@ -289,7 +290,7 @@ def testPagedFlashDecoding(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        asm_sv = phase_1(phase_0_output, phase_0_output_max, output)
+        asm_sv = phase_1(phase_0_output, phase_0_output_max, kv_lens_tensor, output)
 
     if dump_generated_mlir:
         filename = f"wave_paged_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
