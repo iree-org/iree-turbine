@@ -1,5 +1,6 @@
 import inspect
 import hashlib
+import warnings
 
 import torch
 
@@ -14,6 +15,7 @@ from ..cache import (
     invoke_cached_kernel,
 )
 from ..compiler.kernel_codegen import KernelBufferUsage
+from ...importers.ir import Attribute, MLIRError
 
 
 def boo_kernel(eager_function):
@@ -63,10 +65,10 @@ class BOOLaunchable(Launchable):
     def test_execute(self, input_args, kwargs):
         run = True
         run_bench = False
+        func_name = self._name
         create_vmfb_file = kwargs.get("create_vmfb_file", None)
         dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
         dynamic_symbols = kwargs.get("dynamic_symbols", [])
-        func_name = self._name
         compile_config = kwargs.get("compile_config", None)
         run_config = kwargs.get("run_config", None)
         output_types = kwargs.get("output_types", None)
@@ -114,6 +116,23 @@ class BOOLaunchable(Launchable):
             raise ValueError("no compilation config provided")
 
         cm = export(self._m, args=input_args, function_name=func_name)
+
+        # Try to attach a func.func attribute for forming a single dispatch:
+        func_op = cm.mlir_module.regions[0].blocks[0].operations[0]
+
+        try:
+            with cm.mlir_module.context as ctx:
+                pipeline_attr = Attribute.parse(
+                    '#util.preprocessing_pipeline<"iree-preprocessing-make-single-dispatch">'
+                )
+                func_op.attributes["preprocessing_pipeline"] = pipeline_attr
+        except MLIRError as e:
+            warnings.warn(
+                f"Failed to attach #util.preprocessing_pipeline attr to func op. Please try using a newer version of IREE."
+            )
+
+        # this will allow custom op expansion
+        cm.import_to("full")
 
         if run or run_bench or create_vmfb_file:
             if compile_config.get("print_mlir", False):
