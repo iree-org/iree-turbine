@@ -140,6 +140,10 @@ def tanh(src: "Register") -> "Register":
     ...
 
 
+def roundeven(src: "Register") -> "Register":
+    ...
+
+
 def maximum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
@@ -804,6 +808,7 @@ class ComparisonPyOp(BinaryOpBase, ABC):
 @define_interface_op("reciprocal")
 @define_interface_op("abs")
 @define_interface_op("tanh")
+@define_interface_op("roundeven")
 @define_py_op(operator.neg)
 @dataclass
 class UnaryPyOp(CustomOp, ABC):

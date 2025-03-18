@@ -1007,6 +1007,7 @@ def test_unary_lowerings():
         res = tkw.abs(res)
         res_b = tkw.abs(b_reg)
         res = tkw.tanh(res)
+        res = tkw.roundeven(res)
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_b, b, elements_per_thread=4)
 
@@ -1031,6 +1032,9 @@ def test_unary_lowerings():
 
         # Tests tanh
         # CHECK: %[[TANH:.+]] = math.tanh %[[ABSF]]
+
+        # Tests roundeven
+        # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[TANH]]
 
 
 @run_test

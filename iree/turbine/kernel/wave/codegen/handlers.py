@@ -84,6 +84,7 @@ from ...ops.wave_ops import (
     shared_memory_barrier,
     shuffle,
     tanh,
+    roundeven,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
@@ -642,6 +643,18 @@ def handle_tanh(source: Value) -> OpResult:
     else:
         raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
     return result
+
+
+@handle_unary_op(roundeven)
+def handle_roundeven(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        roundeven = math_d.roundeven(source)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for roundeven: {element_type}"
+        )
+    return roundeven
 
 
 ###############################################################################
