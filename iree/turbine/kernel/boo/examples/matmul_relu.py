@@ -12,7 +12,7 @@ def matmul_relu(lhs, rhs):
 
 
 compile_config = {
-    "target_backends": ("llvm-cpu",),
+    "backends": ("llvm-cpu",),
     "flags": ("--iree-llvmcpu-target-cpu=host",),
     "print_mlir": True,
 }

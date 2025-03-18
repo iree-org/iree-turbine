@@ -18,7 +18,7 @@ def _get_test_signature(
 
 
 compile_config = {
-    "target_backends": ("llvm-cpu",),
+    "backends": ("llvm-cpu",),
     "flags": ("--iree-llvmcpu-target-cpu=host",),
     "print_mlir": True,
 }
