@@ -803,12 +803,12 @@ class ComparisonPyOp(BinaryOpBase, ABC):
         self.type = Register[(*self.infer_shape(), i1)]
 
 
-@define_interface_op("log2")
-@define_interface_op("exp2")
-@define_interface_op("reciprocal")
 @define_interface_op("abs")
-@define_interface_op("tanh")
+@define_interface_op("exp2")
+@define_interface_op("log2")
+@define_interface_op("reciprocal")
 @define_interface_op("roundeven")
+@define_interface_op("tanh")
 @define_py_op(operator.neg)
 @dataclass
 class UnaryPyOp(CustomOp, ABC):

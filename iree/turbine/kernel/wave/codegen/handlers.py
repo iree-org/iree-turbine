@@ -76,6 +76,7 @@ from ...ops.wave_ops import (
     reduction,
     register,
     reshape,
+    roundeven,
     scheduling_barrier,
     scheduling_group_barrier,
     self_index,
@@ -84,7 +85,6 @@ from ...ops.wave_ops import (
     shared_memory_barrier,
     shuffle,
     tanh,
-    roundeven,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
