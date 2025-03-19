@@ -4,7 +4,7 @@ import warnings
 
 import torch
 
-from ...aot import export
+from ...aot import export, CompiledModule
 from .._support.tracing import Launchable
 from ..cache import (
     KernelCacheManager,
@@ -118,22 +118,35 @@ class BOOLaunchable(Launchable):
 
         cm = export(self._m, args=input_args, function_name=func_name)
 
-        # Try to attach a func.func attribute for forming a single dispatch:
-        func_op = cm.mlir_module.regions[0].blocks[0].operations[0]
+        # This will allow custom op expansion.
+        cm.import_to("full")
 
+        # Force into a single dispatch.
         try:
-            with cm.mlir_module.context as ctx:
-                pipeline_attr = Attribute.parse(
-                    '#util.preprocessing_pipeline<"iree-preprocessing-make-single-dispatch">'
-                )
-                func_op.attributes["preprocessing_pipeline"] = pipeline_attr
-        except MLIRError as e:
+            CompiledModule.run_pass_pipeline(
+                cm.compiled_module,
+                "builtin.module(util.func(iree-preprocessing-make-single-dispatch))",
+                enable_ir_printing=True,
+            )
+        except MLIRError:
             warnings.warn(
-                f"Failed to attach #util.preprocessing_pipeline attr to func op. Please try using a newer version of IREE."
+                f"Failed to apply `iree-preprocessing-make-single-dispatch`. Please try using a newer version of IREE."
             )
 
-        # this will allow custom op expansion
-        cm.import_to("full")
+        # Delete pass pipeline application above and uncomment the following once https://github.com/iree-org/iree/pull/20314 lands
+        # Try to attach a func.func attribute for forming a single dispatch:
+        # func_op = cm.mlir_module.regions[0].blocks[0].operations[0]
+
+        # try:
+        #     with cm.mlir_module.context as ctx:
+        #         pipeline_attr = Attribute.parse(
+        #             '#util.preprocessing_pipeline<"iree-preprocessing-make-single-dispatch">'
+        #         )
+        #         func_op.attributes["preprocessing_pipeline"] = pipeline_attr
+        # except MLIRError as e:
+        #     warnings.warn(
+        #         f"Failed to attach #util.preprocessing_pipeline attr to func op. Please try using a newer version of IREE."
+        #     )
 
         if run or run_bench or create_vmfb_file:
             if compile_config.get("print_mlir", False):
