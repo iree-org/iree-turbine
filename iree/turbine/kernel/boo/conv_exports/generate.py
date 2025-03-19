@@ -9,6 +9,9 @@
 import argparse
 import gc
 import re
+import subprocess
+import os
+from subprocess import Popen
 
 from pathlib import Path
 
@@ -73,6 +76,37 @@ def generate_mlir(
         print(str(importer.module))
     return importer.module
 
+def get_shape_2D(
+    shape,
+    dtype,
+):
+    dtype = "bf16" if dtype == torch.bfloat16 else str(dtype)
+
+    return 'x'.join(map(str, shape)) + "x" + str(dtype)
+
+def trace_gpu(cmd: list[str]) -> dict[str, list[int]]:
+    trace_path = "results/benchmark.tracy"
+    tracy_port = "56789"
+    with Popen(["iree-tracy-capture", "-o", trace_path, "-f", "-p", tracy_port], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as tracy:
+        process = subprocess.run(cmd, capture_output=True, check=True, env=dict(os.environ, TRACY_PORT=tracy_port))
+        assert process.returncode == 0
+        out, err = tracy.communicate()
+    if tracy.returncode:
+        raise ValueError(f"Tracy failed:\n{out}\n{err}")
+
+    csvexport = subprocess.run(["tracy-csvexport", "--gpu", trace_path], capture_output=True, check=True, text=True)
+    import csv
+    reader = csv.reader(csvexport.stdout.splitlines())
+    header = next(reader)
+    column = {name: idx for idx, name in enumerate(header)}
+
+    zones: dict[str, list[int]] = {}
+    for row in reader:
+        name = row[column['name']]
+        time = int(row[column['GPU execution time']])
+        zones.setdefault(name, []).append(time)
+
+    return zones
 
 def _batch_generate_mlir(
     signatures: Dict[str, ConvSignature],
@@ -91,6 +125,8 @@ def _batch_generate_mlir(
         print(f"processing {name}...")
         path = None if not save_dir else Path(save_dir) / f"{name}.mlir"
         total += 1
+        input_shape = get_shape_2D(s.input_shape,s.dtype)
+        kernel_shape = get_shape_2D(s.kernel_shape,s.dtype)
         try:
             generate_mlir(
                 s,
@@ -107,6 +143,24 @@ def _batch_generate_mlir(
                 path.write_text(err_str)
             else:
                 print(err_str)
+        stat = str(path)+".stats.txt"
+        vmfb = str(path)+".vmfb"
+        err_file_name = str(path)+".error.compile.txt"
+        benchmark_file_name = str(path)+".out.benchmark.txt"
+        err_file = open(err_file_name,"w")
+        benchmark_file = open(benchmark_file_name,"w")  
+        subprocess.run(["iree-compile",path, "-o",vmfb,f"--iree-scheduling-dump-statistics-file={stat}","--iree-scheduling-dump-statistics-format=json","--iree-hal-target-backends=rocm", "--iree-hip-target=gfx942", "--iree-preprocessing-pass-pipeline=builtin.module(iree-preprocessing-transpose-convolution-pipeline,util.func(iree-preprocessing-make-single-dispatch-for-function))","--iree-flow-enable-pad-handling"], stderr=err_file)
+        if(os.path.exists(vmfb)):
+            cmd = ["iree-benchmark-module",f"--module={vmfb}",f"--input={input_shape}",f"--input={kernel_shape}","--device=hip",f"--function={s.get_func_name()}"]
+            zones = trace_gpu(cmd)
+            [name_for_entrypoint] = [name for name in zones.keys() if s.get_func_name() in name]
+            times_ns = zones[name_for_entrypoint]
+            times_us = [t / 1000 for t in times_ns]  # convert to microseconds
+            import statistics
+            print(f"min={min(times_us)}, max={max(times_us)}, mean={statistics.mean(times_us)}, stdev={statistics.stdev(times_us)} (us)")
+        else:
+          err += 1
+          print("N.A")
         gc.collect()
     return err, total
 
