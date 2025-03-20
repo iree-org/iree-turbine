@@ -14,6 +14,7 @@ import os
 import shutil
 import torch
 import threading
+import math
 
 from collections import OrderedDict
 from dataclasses import dataclass, asdict
@@ -227,7 +228,10 @@ class WaveCacheManager(object):
             cur_hsaco_path = cur_hsaco_path[0]
             shutil.copy(cur_hsaco_path, cur_cache_basefile.with_suffix(".hsaco"))
         cur_kernel_info_path = cur_cache_basefile.with_suffix(".kernel_info.json")
-        kernel_info_str = json.dumps(asdict(kernel_launch_info))
+        kernel_launch_info_dict = asdict(kernel_launch_info)
+        # Lambdas cannot be serialized by json so remove this from the kernel launch info.
+        del kernel_launch_info_dict["grid"]
+        kernel_info_str = json.dumps(kernel_launch_info_dict)
         _write_file(cur_kernel_info_path, "w", kernel_info_str)
 
     @staticmethod
@@ -250,6 +254,9 @@ class WaveCacheManager(object):
         kernel_sig = [KernelBufferUsage[usage] for usage in kernel_sig_str]
         cur_kernel_info_path = cur_cache_basefile.with_suffix(".kernel_info.json")
         kernel_info_str = json.loads(_read_file(cur_kernel_info_path, "r"))
+        # Convert string to lambda. This could have a math dependency
+        # and so we include it above.
+        kernel_info_str["grid"] = eval(kernel_info_str["grid_str"])
         kernel_launch_info = KernelLaunchInfo(**kernel_info_str)
         return WaveCache(kernel_hash, kernel_sig, vmfb, kernel_launch_info)
 
