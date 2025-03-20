@@ -76,6 +76,7 @@ from ...ops.wave_ops import (
     reduction,
     register,
     reshape,
+    roundeven,
     scheduling_barrier,
     scheduling_group_barrier,
     self_index,
@@ -642,6 +643,18 @@ def handle_tanh(source: Value) -> OpResult:
     else:
         raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
     return result
+
+
+@handle_unary_op(roundeven)
+def handle_roundeven(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        roundeven = math_d.roundeven(source)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for roundeven: {element_type}"
+        )
+    return roundeven
 
 
 ###############################################################################
