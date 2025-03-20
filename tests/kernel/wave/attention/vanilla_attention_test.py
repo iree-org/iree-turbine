@@ -33,6 +33,7 @@ from ..common.utils import (
 from ..common.shapes import get_test_shapes
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
     get_vanilla_attention_kernel,
+    get_bshd_attention_kernel,
 )
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
@@ -243,9 +244,7 @@ def testAttentionCausal(
         hyperparams,
         dynamic_symbols,
         dynamic_symbols_map,
-    ) = get_vanilla_attention_kernel(
-        shape, mfma_variant, dynamic_dims, is_causal=True, is_v_transposed=True
-    )
+    ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims, is_causal=True)
     q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
     v_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
@@ -282,7 +281,7 @@ def testAttentionCausal(
         dk_sqrt = math.sqrt(1.0 / shape.head_size)
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
-        asm = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+        asm = base_attention(q * dk_sqrt * log2e, k, v, output)
         torch_ref = torch.nn.functional.scaled_dot_product_attention(
             q, k, v, is_causal=True
         )
@@ -293,6 +292,90 @@ def testAttentionCausal(
                 f.write(asm)
 
         assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+@param_bool("dynamic_dims", "dyn", [False])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+    ],
+)
+def testAttentionBSHD(
+    shape: tuple[int],
+    enable_scheduling: SchedulingType,
+    dynamic_dims: bool,
+    mfma_variant: tuple[MMAType],
+    request,
+):
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    shape = AttentionShape(
+        num_query_heads=shape[0],
+        num_kv_heads=shape[0],
+        query_seq_len=shape[1],
+        head_size_kv=shape[2],
+        head_size=shape[3],
+        kv_seq_len=shape[4],
+    )
+    (
+        base_attention,
+        hyperparams,
+        dynamic_symbols,
+        dynamic_symbols_map,
+    ) = get_bshd_attention_kernel(
+        shape,
+        mfma_variant,
+        dynamic_dims,
+        is_causal=True,
+    )
+    # q_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size)
+    # k_shape = (1, shape.kv_seq_len, shape.num_kv_heads, shape.head_size)
+    # v_shape = (1, shape.kv_seq_len, shape.num_kv_heads, shape.head_size_kv)
+    # o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
+    q_shape = (1, shape.num_query_heads, shape.query_seq_len, shape.head_size)
+    k_shape = (1, shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
+    v_shape = (1, shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
+    hyperparams.update(get_default_scheduling_params())
+    config = get_default_run_config()
+    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
+    with tk.gen.TestLaunchContext(
+        hyperparams,
+        canonicalize=True,
+        run=True,
+        run_bench=run_bench,
+        run_config=config,
+        compile_config=compile_config,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+    ):
+        torch.manual_seed(1)
+        q = device_randn(q_shape, dtype=torch.float16)
+        k = device_randn(k_shape, dtype=torch.float16)
+        v = device_randn(v_shape, dtype=torch.float16)
+        # Torch reference needs to be in BHSD
+        torch_ref = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, is_causal=True
+        )
+
+        # This variant of wave kernel is BSHD
+        o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
+        output = device_zeros(o_shape, dtype=torch.float32)
+        asm = base_attention(
+            q.transpose(1, 2).contiguous(),
+            k.transpose(1, 2).contiguous(),
+            v.transpose(1, 2).contiguous(),
+            output,
+        )
+        assert_close(
+            output.transpose(1, 2), torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3
+        )
 
 
 @require_e2e
