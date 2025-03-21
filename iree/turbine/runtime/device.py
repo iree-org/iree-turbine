@@ -211,6 +211,7 @@ class Device:
 
     def _initialize(self):
         d = self._s.device
+        print(d)
         self._main_timeline = d.create_semaphore(0)
         self._main_timepoint = 0
         self._tx_timeline = d.create_semaphore(0)
@@ -246,7 +247,9 @@ class Device:
 
     def _recompute_target_keys(self):
         self.type_cache_key = f"{self.driver_id}:{';'.join(self.compile_target_flags)}"
-        self.instance_cache_key = f"{self.driver_id}:{repr(self._s.torch_device)}"
+        self.instance_cache_key = (
+            f"{self.driver_id}:{self._s.enumerated_info.get('device_id', None)}"
+        )
 
     @property
     def hal_device(self) -> HalDevice:
