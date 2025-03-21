@@ -246,7 +246,7 @@ class Device:
 
     def _recompute_target_keys(self):
         self.type_cache_key = f"{self.driver_id}:{';'.join(self.compile_target_flags)}"
-        self.instance_cache_key = f"{self.driver_id}:{self._s.enumerated_device_id}"
+        self.instance_cache_key = f"{self.driver_id}:{repr(self._s.torch_device)}"
 
     @property
     def hal_device(self) -> HalDevice:
