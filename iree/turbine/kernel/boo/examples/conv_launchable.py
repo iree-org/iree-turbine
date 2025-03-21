@@ -1,5 +1,9 @@
 import torch
-from iree.turbine.kernel.boo.conv_exports import ConvSignature, get_launchable
+from iree.turbine.kernel.boo.conv_exports import (
+    ConvSignature,
+    get_launchable,
+    clear_cache_dir,
+)
 
 # run this script with the env variable: TURBINE_DEBUG="log_level=DEBUG"
 
@@ -25,3 +29,6 @@ y = conv(*args)
 # torch_device = torch.device("cuda:1") if torch.cuda.is_available() else None
 # other_args = sig.get_sample_conv_args(seed=8, device=torch_device)
 # y = conv(*other_args)
+
+# clear the cache dir
+# clear_cache_dir()

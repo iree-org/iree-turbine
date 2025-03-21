@@ -5,7 +5,7 @@ import warnings
 from pathlib import Path
 
 from .conv import ConvSignature
-from ....aot import export
+from ....aot import CompiledModule, export
 from ....importers.ir import Attribute, MLIRError
 from ....runtime import Launchable
 from ....support.logging import runtime_logger as logger
@@ -26,7 +26,7 @@ def is_cache_enabled() -> bool:
 
 
 def clear_cache_dir():
-    if CACHE_BASE_DIR.is_dir():
+    if not CACHE_BASE_DIR.is_dir():
         return
     shutil.rmtree(CACHE_BASE_DIR)
 
@@ -63,7 +63,8 @@ def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> s
             f"Failed to attach #util.preprocessing_pipeline attr to func op. Please try using a newer version of IREE."
         )
 
-    module_asm = str(mod)
+    e.import_to("full")
+    module_asm = str(e.mlir_module)
 
     if is_cache_enabled():
         logger.debug("Saving newly generated mlir file to %s", str(mlir_path))
