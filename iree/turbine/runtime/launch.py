@@ -75,9 +75,10 @@ class Launchable:
         parameter_providers: Sequence[ParameterProvider] = (),
         entry_point: str = "main",
     ) -> "Launchable":
-        return Launchable(
-            _jit_callback(source, entry_point),
+        return Launchable.from_vm_module(
+            _jit_callback(source),
             parameter_providers=parameter_providers,
+            entry_point=entry_point,
         )
 
     def preload(self, device: torch.device):
@@ -99,6 +100,18 @@ class Launchable:
         logger.debug("Cached new binary for %s", device_key)
         self._target_binaries[device_key] = vm_context, main_function
         return vm_context, main_function
+
+    @staticmethod
+    def from_vm_module(
+        vm_module_callback: Callable[[Device], VmModule],
+        *,
+        parameter_providers: Sequence[ParameterProvider],
+        entry_point: str,
+    ):
+        def loader(device: Device) -> _NamedVmModule:
+            return entry_point, vm_module_callback(device)
+
+        return Launchable(loader, parameter_providers)
 
     def _resolve_target_binary(self, turbine_device: Device) -> _TargetBinary:
 
@@ -197,7 +210,7 @@ class Launchable:
             return torch_results
 
 
-def _jit_callback(program_source: Any, entry_point: str) -> _Loader:
+def _jit_callback(program_source: Any) -> _Loader:
     session = Session()
     if isinstance(program_source, Source):
         ...
@@ -221,7 +234,7 @@ def _jit_callback(program_source: Any, entry_point: str) -> _Loader:
         # TODO: VmModule.wrap_buffer would be better here, but it is still
         # unreliable capturing mapped memory from the compiler.
         # See: https://github.com/iree-org/iree/issues/17403
-        return entry_point, VmModule.copy_buffer(vm_instance, mapped_memory)
+        return VmModule.copy_buffer(vm_instance, mapped_memory)
 
     return callback
 
