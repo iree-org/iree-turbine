@@ -30,7 +30,7 @@ from iree.turbine.kernel.boo.conv_exports.miopen_parser import (
     command_to_signature,
 )
 
-from iree.turbine.kernel.boo.conv_exports.conv import ConvSignature
+from iree.turbine.kernel.boo.conv_exports.conv import ConvSignature, Mode
 
 __all__ = [
     "DEFAULT_TORCH_TO_LINALG_PIPELINE",
@@ -127,6 +127,8 @@ def _batch_generate_mlir(
         total += 1
         input_shape = get_shape_2D(s.input_shape,s.dtype)
         kernel_shape = get_shape_2D(s.kernel_shape,s.dtype)
+        output_shape = get_shape_2D(s.output_shape, s.dtype)
+        print(s.mode)
         try:
             generate_mlir(
                 s,
@@ -149,9 +151,15 @@ def _batch_generate_mlir(
         benchmark_file_name = str(path)+".out.benchmark.txt"
         err_file = open(err_file_name,"w")
         benchmark_file = open(benchmark_file_name,"w")  
-        subprocess.run(["iree-compile",path, "-o",vmfb,f"--iree-scheduling-dump-statistics-file={stat}","--iree-scheduling-dump-statistics-format=json","--iree-hal-target-backends=rocm", "--iree-hip-target=gfx942", "--iree-preprocessing-pass-pipeline=builtin.module(iree-preprocessing-transpose-convolution-pipeline,util.func(iree-preprocessing-make-single-dispatch-for-function))","--iree-flow-enable-pad-handling"], stderr=err_file)
+        subprocess.run(["iree-compile",path, "-o",vmfb,f"--iree-scheduling-dump-statistics-file={stat}","--iree-scheduling-dump-statistics-format=json","--iree-hal-target-backends=rocm", "--iree-hip-target=gfx942", "--iree-preprocessing-pass-pipeline=builtin.module(util.func(iree-global-opt-propagate-linalg-transpose{enable-aggressive-propagation-through-conv=true}),util.func(iree-preprocessing-make-single-dispatch-for-function))","--iree-flow-enable-pad-handling"], stderr=err_file, stdout=err_file)
         if(os.path.exists(vmfb)):
-            cmd = ["iree-benchmark-module",f"--module={vmfb}",f"--input={input_shape}",f"--input={kernel_shape}","--device=hip",f"--function={s.get_func_name()}"]
+            cmd = ["iree-benchmark-module",f"--module={vmfb}","--device=hip",f"--function={s.get_func_name()}"]
+            if(s.mode == Mode.FORWARD):
+                cmd.append(f"--input={input_shape}")
+                cmd.append(f"--input={kernel_shape}")
+            elif(s.mode == Mode.WEIGHT_BACKWARD):
+                cmd.append(f"--input={output_shape}")
+                cmd.append(f"--input={input_shape}")    
             zones = trace_gpu(cmd)
             [name_for_entrypoint] = [name for name in zones.keys() if s.get_func_name() in name]
             times_ns = zones[name_for_entrypoint]

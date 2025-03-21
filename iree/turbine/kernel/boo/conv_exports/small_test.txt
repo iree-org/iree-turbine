@@ -1,0 +1,6 @@
+convbfp16 -n 16 -c 288 -H 24 -W 16 -k 288 -y 3 -x 3 -p 1 -q 1 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+convbfp16 -n 16 -c 288 -H 24 -W 16 -k 288 -y 3 -x 3 -p 1 -q 1 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 2 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+convbfp16 -n 16 -c 288 -H 24 -W 16 -k 288 -y 3 -x 3 -p 1 -q 1 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 4 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+convbfp16 -n 16 -c 288 -H 26 -W 18 -k 288 -y 3 -x 3 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+convbfp16 -n 16 -c 288 -H 26 -W 18 -k 288 -y 3 -x 3 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 2 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+convbfp16 -n 16 -c 288 -H 26 -W 18 -k 288 -y 3 -x 3 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 4 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
