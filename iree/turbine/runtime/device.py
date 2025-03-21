@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from functools import lru_cache
-from typing import Callable, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 from threading import local, Lock
 import warnings
 
@@ -246,6 +246,9 @@ class Device:
 
     def _recompute_target_keys(self):
         self.type_cache_key = f"{self.driver_id}:{';'.join(self.compile_target_flags)}"
+        self.instance_cache_key = (
+            f"{self.driver_id}:{self._s.enumerated_info.get('device_id', None)}"
+        )
 
     @property
     def hal_device(self) -> HalDevice:
@@ -509,21 +512,21 @@ def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
     return device
 
 
+@lru_cache(maxsize=None)
+def _get_uuid_to_info_mapping(driver) -> Dict[str, Dict[str, Any]]:
+    available_infos = driver.query_available_devices()
+    return {info["path"].removeprefix("GPU-"): info for info in available_infos}
+
+
 def _create_cuda_like_device(
     torch_device: torch.device, props, driver_name: str, dlpack_device_type_code: int
 ) -> Optional[Device]:
-    if torch.cuda.device_count() > 1:
-        warnings.warn(
-            f"Multiple {driver_name} devices detected: Turbine does not yet "
-            f"guarantee stable device mapping"
-        )
-
-    requested_index = torch_device.index
+    uuid = str(torch.cuda.get_device_properties(torch_device).uuid)
     driver = get_driver(driver_name)
-    available_infos = driver.query_available_devices()
-    if requested_index >= len(available_infos):
+    info_mapping = _get_uuid_to_info_mapping(driver)
+    device_info = info_mapping.get(uuid)
+    if device_info is None:
         return None
-    device_info = available_infos[requested_index]
     hal_device = driver.create_device(device_info)
     device_state = DeviceState(
         driver=driver,
