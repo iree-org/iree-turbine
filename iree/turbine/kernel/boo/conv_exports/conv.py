@@ -224,21 +224,41 @@ class ConvSignature:
         ]
         return {name: self._asdict()[name] for name in conv_extra_args}
 
-    def get_sample_conv_args(self, *, splat_value=None, seed: Optional[int] = None):
+    def get_sample_conv_args(
+        self,
+        *,
+        device: str | torch.device | None = None,
+        splat_value=None,
+        seed: Optional[int] = None,
+    ):
         """Gets example args for the convolution (mode-dependent)"""
         out_channels = self.kernel_shape[self.kernel_perms[0]]
         if splat_value:
-            x = torch.ones(self.input_shape, dtype=self.dtype) * splat_value
-            w = torch.ones(self.kernel_shape, dtype=self.dtype) * splat_value
-            b = torch.ones(out_channels, dtype=self.dtype) * splat_value
+            x = (
+                torch.ones(self.input_shape, dtype=self.dtype, device=device)
+                * splat_value
+            )
+            w = (
+                torch.ones(self.kernel_shape, dtype=self.dtype, device=device)
+                * splat_value
+            )
+            b = torch.ones(out_channels, dtype=self.dtype, device=device) * splat_value
         else:
             gen = None if not seed else torch.random.manual_seed(seed)
-            x = torch.randn(self.input_shape, generator=gen, dtype=self.dtype)
-            w = torch.randn(self.kernel_shape, generator=gen, dtype=self.dtype)
-            b = torch.randn(out_channels, generator=gen, dtype=self.dtype)
+            x = torch.randn(self.input_shape, generator=gen, dtype=self.dtype).to(
+                device=device
+            )
+            w = torch.randn(self.kernel_shape, generator=gen, dtype=self.dtype).to(
+                device=device
+            )
+            b = torch.randn(out_channels, generator=gen, dtype=self.dtype).to(
+                device=device
+            )
         if self.mode == Mode.FORWARD:
             return (x, w, b) if self.bias else (x, w)
-        dLdy = torch.randn(self.output_shape, generator=gen, dtype=self.dtype)
+        dLdy = torch.randn(self.output_shape, generator=gen, dtype=self.dtype).to(
+            device=device
+        )
         if self.mode == Mode.WEIGHT_BACKWARD:
             return (dLdy, x)
         if self.mode == Mode.INPUT_BACKWARD:
