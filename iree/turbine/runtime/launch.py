@@ -41,7 +41,6 @@ __all__ = [
 _NamedVmModule = Tuple[str, VmModule]
 _TargetBinary = Tuple[VmContext, VmFunction]
 _Loader = Callable[[Device], _NamedVmModule]
-# _Loader = Callable[[Device], _TargetBinary]
 
 
 class Launchable:
