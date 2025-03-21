@@ -38,8 +38,9 @@ __all__ = [
     "Launchable",
 ]
 
+_NamedVmModule = Tuple[str, VmModule]
 _TargetBinary = Tuple[VmContext, VmFunction]
-_Loader = Callable[[Device], _TargetBinary]
+_Loader = Callable[[Device], _NamedVmModule]
 
 
 class Launchable:
@@ -55,10 +56,17 @@ class Launchable:
     This has various limitations.
     """
 
-    def __init__(self, loader: Optional[_Loader]):
+    def __init__(
+        self,
+        loader: Optional[_Loader],
+        parameter_providers: Sequence[ParameterProvider] = (),
+    ):
         self._loader = loader
-        # Map of Device.type_cache_key -> _TargetBinary for a resolved binary.
+        self._providers = parameter_providers
+        # Map of Device.instance_cache_key -> _TargetBinary for a resolved binary.
         self._target_binaries: dict[str, _TargetBinary] = {}
+        # Map of Device.type_cache_key -> VmModule for a device-type specific main VmModule
+        self._target_vm_modules: dict[str, _NamedVmModule] = {}
 
     @staticmethod
     def jit_compile(
@@ -73,48 +81,72 @@ class Launchable:
             entry_point=entry_point,
         )
 
-    @staticmethod
-    def from_vm_module(
-        vm_module_callback: Callable[[Device], VmModule],
-        *,
-        parameter_providers: Sequence[ParameterProvider] = (),
-        entry_point: str = "main",
-    ) -> "Launchable":
-        def loader(device: Device) -> _TargetBinary:
-            vm_instance = device.vm_instance
-            modules = [device.create_hal_module()]
-            if parameter_providers:
-                modules.append(
-                    create_io_parameters_module(vm_instance, *parameter_providers)
-                )
-            main_module = vm_module_callback(device)
-            modules.append(main_module)
-            vm_context = VmContext(vm_instance, modules)
-            main_function = main_module.lookup_function(entry_point)
-            return vm_context, main_function
-
-        return Launchable(loader)
-
     def preload(self, device: torch.device):
         """Pre-loads (or JIT compiles) for the given torch.device."""
         turbine_device = get_device_from_torch(device)
         self._resolve_target_binary(turbine_device)
 
+    def _assemble_target_binary_from_vm_module(
+        self, turbine_device: Device, entry_point: str, main_module: VmModule
+    ) -> _TargetBinary:
+        device_key = turbine_device.instance_cache_key
+        vm_instance = turbine_device.vm_instance
+        modules = [turbine_device.create_hal_module()]
+        if self._providers:
+            modules.append(create_io_parameters_module(vm_instance, *self._providers))
+        modules.append(main_module)
+        vm_context = VmContext(vm_instance, modules)
+        main_function = main_module.lookup_function(entry_point)
+        logger.debug("Cached new binary for %s", device_key)
+        self._target_binaries[device_key] = vm_context, main_function
+        return vm_context, main_function
+
+    @staticmethod
+    def from_vm_module(
+        vm_module_callback: Callable[[Device], VmModule],
+        *,
+        parameter_providers: Sequence[ParameterProvider],
+        entry_point: str,
+    ):
+        def loader(device: Device) -> _NamedVmModule:
+            return entry_point, vm_module_callback(device)
+
+        return Launchable(loader, parameter_providers)
+
     def _resolve_target_binary(self, turbine_device: Device) -> _TargetBinary:
-        device_key = turbine_device.type_cache_key
+
+        # Try binary cache for specific device:
+        device_key = turbine_device.instance_cache_key
         existing = self._target_binaries.get(device_key)
         if existing is not None:
             logger.debug("Launching cached binary for %s", device_key)
             return existing
 
+        # Try named module cache for device-type specific vm-module:
+        device_type_key = turbine_device.type_cache_key
+        _named_module = self._target_vm_modules.get(device_type_key)
+        if _named_module is not None:
+            entry_point, main_module = _named_module
+            logger.debug(
+                "Assembling binary for %s from cached module for %s",
+                device_key,
+                device_type_key,
+            )
+            return self._assemble_target_binary_from_vm_module(
+                turbine_device, entry_point, main_module
+            )
+
         # Try the user loader.
         loader = self._loader
         if loader is not None:
-            loaded = loader(turbine_device)
-            if loaded is not None:
-                logger.debug("Cached new binary for %s", device_key)
-                self._target_binaries[device_key] = loaded
-                return loaded
+            _named_module = loader(turbine_device)
+            if _named_module is not None:
+                logger.debug("Cached new module for %s", device_type_key)
+                self._target_vm_modules[device_type_key] = _named_module
+                entry_point, main_module = _named_module
+                return self._assemble_target_binary_from_vm_module(
+                    turbine_device, entry_point, main_module
+                )
         raise NotImplementedError(
             f"Could not load a target binary for device {turbine_device}"
         )
@@ -178,7 +210,7 @@ class Launchable:
             return torch_results
 
 
-def _jit_callback(program_source: Any) -> Callable[[Device], VmModule]:
+def _jit_callback(program_source: Any) -> _Loader:
     session = Session()
     if isinstance(program_source, Source):
         ...
