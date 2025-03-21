@@ -158,6 +158,12 @@ def broadcast(
     ...
 
 
+def mask_value(
+    arg: "Register", value: int | float, dim_bounds: dict[IndexExpr, IndexExpr] = None
+) -> "Register":
+    ...
+
+
 def sum(
     src: "Register",
     acc: Optional["Register"] = None,
@@ -1821,6 +1827,22 @@ class Broadcast(CustomOp, ABC):
     def infer_type(self):
         src_dtype = get_custom(self.arg).type.dtype
         self.type = Register[(*self.target_shape, src_dtype)]
+
+
+@define_op("mask_value")
+@dataclass
+class MaskValue(CustomOp):
+    register_: fx.Proxy
+    value: int | float
+    dim_bounds: dict[IndexExpr, IndexExpr] = field(default_factory=dict)
+
+    @property
+    def type(self) -> "Register":
+        return get_custom(self.register_).type
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.register_).indexing_dims
 
 
 @define_interface_op("max")
