@@ -87,7 +87,15 @@ class LaunchableTest(unittest.TestCase):
         torch.testing.assert_close(expected, result)
 
 
+@unittest.skipIf(
+    len(devices) == 1,
+    "Tests are redundant if not running on multiple devices.",
+)
 class SameLaunchableDifferentDevicesTest(unittest.TestCase):
+    """
+    These are roughly equivalent to the previous tests, but the Launchable persists between launches to test the caching.
+    """
+
     def testLaunchJit(self):
         launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
         for d in devices:
@@ -97,6 +105,7 @@ class SameLaunchableDifferentDevicesTest(unittest.TestCase):
             result = launch(t1, t2)
             expected = torch.tensor([10, 40, 90, 160], dtype=torch.int32).to(device)
             torch.testing.assert_close(expected, result)
+        self.assertEqual(len(devices), len(launch._target_binaries.keys()))
 
     def testLaunchPreload(self):
         launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
@@ -111,6 +120,7 @@ class SameLaunchableDifferentDevicesTest(unittest.TestCase):
             result = launch(t1, t2)
             expected = torch.tensor([10, 40, 90, 160], dtype=torch.int32).to(device)
             torch.testing.assert_close(expected, result)
+        self.assertEqual(len(devices), len(launch._target_binaries.keys()))
 
     def testLaunchParams(self):
         param_archive = ParameterArchiveBuilder()
@@ -126,6 +136,7 @@ class SameLaunchableDifferentDevicesTest(unittest.TestCase):
             result = launch(t1, t2)
             expected = torch.tensor([12, 44, 96, 168], dtype=torch.int32).to(device)
             torch.testing.assert_close(expected, result)
+        self.assertEqual(len(devices), len(launch._target_binaries.keys()))
 
 
 if __name__ == "__main__":

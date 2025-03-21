@@ -211,7 +211,6 @@ class Device:
 
     def _initialize(self):
         d = self._s.device
-        print(d)
         self._main_timeline = d.create_semaphore(0)
         self._main_timepoint = 0
         self._tx_timeline = d.create_semaphore(0)
