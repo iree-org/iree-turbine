@@ -40,7 +40,10 @@ func.func @main(%arg0: tensor<4xi32>, %arg1: tensor<4xi32>) -> tensor<4xi32> {
 # TODO: Move this to a common utility controlled by project wide env vars.
 devices = [[torch.device("cpu")]]
 if torch.cuda.is_available():
+    num_gpus = torch.cuda.device_count()
     devices.append([torch.device("cuda:0")])
+    if num_gpus > 1:
+        devices.append([torch.device("cuda:1")])
 
 
 @parameterized_class(["device"], devices)
@@ -82,6 +85,47 @@ class LaunchableTest(unittest.TestCase):
         result = launch(t1, t2)
         expected = torch.tensor([12, 44, 96, 168], dtype=torch.int32).to(self.device)
         torch.testing.assert_close(expected, result)
+
+
+class SameLaunchableDifferentDeviceTest(unittest.TestCase):
+    def testLaunchJit(self):
+        launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
+        for d in devices:
+            device = d[0]
+            t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(device)
+            t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32).to(device)
+            result = launch(t1, t2)
+            expected = torch.tensor([10, 40, 90, 160], dtype=torch.int32).to(device)
+            torch.testing.assert_close(expected, result)
+
+    # def testLaunchPreload(self):
+    #     launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
+    #     for d in devices:
+    #         device = d[0]
+    #         launch.preload(device)
+    #     launch._loader = None  # Don't let it load anything more.
+    #     for d in devices:
+    #         device = d[0]
+    #         t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(device)
+    #         t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32).to(device)
+    #         result = launch(t1, t2)
+    #         expected = torch.tensor([10, 40, 90, 160], dtype=torch.int32).to(device)
+    #         torch.testing.assert_close(expected, result)
+
+    # def testLaunchParams(self):
+    #     param_archive = ParameterArchiveBuilder()
+    #     param_archive.add_tensor("param", torch.tensor([2, 4, 6, 8], dtype=torch.int32))
+    #     provider = param_archive.index.create_provider()
+
+    #     launch = Launchable.jit_compile(MLIR_PARAMS_ASM, parameter_providers=[provider])
+    #     for d in devices:
+    #         device = d[0]
+    #         launch.preload(device)
+    #         t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(device)
+    #         t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32).to(device)
+    #         result = launch(t1, t2)
+    #         expected = torch.tensor([12, 44, 96, 168], dtype=torch.int32).to(device)
+    #         torch.testing.assert_close(expected, result)
 
 
 if __name__ == "__main__":
