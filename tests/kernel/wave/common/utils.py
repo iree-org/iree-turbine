@@ -41,7 +41,7 @@ def param_bool(name, shortname=None, values=None):
     return pytest.mark.parametrize(name, [pytest.param(v) for v in values], ids=ids)
 
 
-## custom
+#
 def scaled_dot_product_attention_bhsd(q, k, v, is_causal=False):
     B, H, S_q, D = q.shape
     S_k = k.shape[2]
