@@ -360,8 +360,9 @@ def testAttentionBSHD(
         q = device_randn(q_shape, dtype=torch.float16)
         k = device_randn(k_shape, dtype=torch.float16)
         v = device_randn(v_shape, dtype=torch.float16)
-        # Torch reference needs to be in BHSD
-        custom_torch_ref = scaled_dot_product_attention_bhsd(q, k, v, is_causal=True)
+
+        # Torch reference needs to be in BHSD format
+        torch_ref = scaled_dot_product_attention_bhsd(q, k, v, is_causal=True)
 
         # This variant of wave kernel is BSHD
         o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
@@ -374,7 +375,7 @@ def testAttentionBSHD(
         )
         assert_close(
             output.transpose(1, 2),
-            custom_torch_ref,
+            torch_ref,
             check_dtype=False,
             atol=1e-2,
             rtol=1e-3,

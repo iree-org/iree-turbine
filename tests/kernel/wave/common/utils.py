@@ -11,6 +11,7 @@ from iree.turbine.kernel.wave.utils import (
 )
 import torch
 import torch.nn.functional as F
+from torch import Tensor
 
 require_e2e = pytest.mark.require_e2e
 require_cdna2 = pytest.mark.skipif(
@@ -41,22 +42,38 @@ def param_bool(name, shortname=None, values=None):
     return pytest.mark.parametrize(name, [pytest.param(v) for v in values], ids=ids)
 
 
-#
-def scaled_dot_product_attention_bhsd(q, k, v, is_causal=False):
-    B, H, S_q, D = q.shape
-    S_k = k.shape[2]
+def scaled_dot_product_attention_bhsd(
+    query: Tensor, key: Tensor, value: Tensor, is_causal: bool = False
+) -> Tensor:
+    """
+    This version mimics PyTorch's `torch.nn.functional.scaled_dot_product_attention`
+    with optional causal masking and improved numerical stability.
+    Intended for comparison and debugging purposes.
 
-    scale = 1.0 / (D**0.5)
-    attn_logits = torch.matmul(q, k.transpose(-2, -1)) * scale  # [B, H, S_q, S_k]
+    Args:
+        query (Tensor): query tensor of shape [B, H, S_q, D].
+        key (Tensor): key tensor of shape [B, H, S_k, D].
+        value (Tensor): value tensor of shape [B, H, S_k, D].
+        is_causal (bool): If True, applies causal masking to the attention logits.
+
+    Returns:
+        Tensor: Output tensor of shape [B, H, S_q, D] after applying attention.
+    """
+    scale: float = query.shape[-1] ** -0.5
+    attn_logits: Tensor = torch.matmul(query, key.transpose(-2, -1)) * scale
 
     if is_causal:
-        mask = torch.tril(
-            torch.ones((S_q, S_k), dtype=torch.bool, device=attn_logits.device)
+        seq_len_q, seq_len_k = attn_logits.shape[-2], attn_logits.shape[-1]
+        causal_mask: Tensor = torch.tril(
+            torch.ones(
+                (seq_len_q, seq_len_k), device=attn_logits.device, dtype=torch.bool
+            )
         )
-        attn_logits = attn_logits.masked_fill(~mask, float("-inf"))
+        attn_logits = attn_logits.masked_fill(~causal_mask, float("-inf"))
 
-    attn_weights = F.softmax(attn_logits, dim=-1)
+    # Improve numerical stability using log-sum-exp trick
+    attn_logits = attn_logits - attn_logits.max(dim=-1, keepdim=True).values
+    attn_weights: Tensor = F.softmax(attn_logits, dim=-1)
     attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
 
-    output = torch.matmul(attn_weights, v)  # [B, H, S_q, D]
-    return output
+    return torch.matmul(attn_weights, value)
