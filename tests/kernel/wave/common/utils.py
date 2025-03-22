@@ -9,6 +9,8 @@ import os
 from iree.turbine.kernel.wave.utils import (
     get_default_arch,
 )
+import torch
+import torch.nn.functional as F
 
 require_e2e = pytest.mark.require_e2e
 require_cdna2 = pytest.mark.skipif(
@@ -37,3 +39,24 @@ def param_bool(name, shortname=None, values=None):
     values = values or [False, True]
     ids = [f"{shortname}" if v else f"no_{shortname}" for v in values]
     return pytest.mark.parametrize(name, [pytest.param(v) for v in values], ids=ids)
+
+
+## custom
+def scaled_dot_product_attention_bhsd(q, k, v, is_causal=False):
+    B, H, S_q, D = q.shape
+    S_k = k.shape[2]
+
+    scale = 1.0 / (D**0.5)
+    attn_logits = torch.matmul(q, k.transpose(-2, -1)) * scale  # [B, H, S_q, S_k]
+
+    if is_causal:
+        mask = torch.tril(
+            torch.ones((S_q, S_k), dtype=torch.bool, device=attn_logits.device)
+        )
+        attn_logits = attn_logits.masked_fill(~mask, float("-inf"))
+
+    attn_weights = F.softmax(attn_logits, dim=-1)
+    attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
+
+    output = torch.matmul(attn_weights, v)  # [B, H, S_q, D]
+    return output
