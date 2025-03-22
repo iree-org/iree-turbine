@@ -80,6 +80,7 @@ class KernelLaunchInfo:
     blocks: tuple[int] = None
     shared_memory_bytes: int = 0
     func_name: str = ""
+    grid_str: str = ""
 
 
 def try_apply_pass(
@@ -689,6 +690,11 @@ def compile_to_vmfb(
 RUNTIME_CACHE: dict[str, tuple[rt.SystemContext, rt.VmFunction]] = {}
 
 
+@functools.lru_cache
+def compute_grid(kernel_dynamic_dims: tuple[int], grid_fn: Callable):
+    return [int(x) for x in grid_fn(list(kernel_dynamic_dims))]
+
+
 def invoke_with_wave_runtime(
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
@@ -708,6 +714,11 @@ def invoke_with_wave_runtime(
     else:
         binary = glob.glob(str(WAVE_RUNTIME_DIR / "*.hsaco"))[0]
 
+    dynamic_dims = tuple(kernel_dynamic_dims)
+    # Update the grid size as this may vary depending
+    # on the dynamic symbols.
+    grid = compute_grid(dynamic_dims, kernel_info.grid)
+
     # Populate all the information required to launch the kernel.
     hash_str = "" if not kernel_hash else kernel_hash
     kernel_launch_info = wave_runtime.KernelLaunchInfo(
@@ -715,9 +726,9 @@ def invoke_with_wave_runtime(
         kernel_info.func_name,
         hash_str,
         kernel_info.shared_memory_bytes,
-        kernel_info.grid[0],
-        kernel_info.grid[1],
-        kernel_info.grid[2],
+        grid[0],
+        grid[1],
+        grid[2],
         kernel_info.blocks[0],
         kernel_info.blocks[1],
         kernel_info.blocks[2],
@@ -731,7 +742,7 @@ def invoke_with_wave_runtime(
         kern_args.append(arg_tensor.data_ptr())
 
     kernel_args = wave_runtime.Int64Vector(kern_args)
-    dyn_dims = wave_runtime.Int64Vector(list(kernel_dynamic_dims))
+    dyn_dims = wave_runtime.Int64Vector(dynamic_dims)
     # Launch the kernel.
     wave_runtime.launch(kernel_launch_info, kernel_args, dyn_dims)
 
