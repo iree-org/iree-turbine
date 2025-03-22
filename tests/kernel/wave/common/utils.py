@@ -57,7 +57,7 @@ def scaled_dot_product_attention_bhsd(
         is_causal (bool): If True, applies causal masking to the attention logits.
 
     Returns:
-        Tensor: output tensor of shape [B, H, S_q, D] after applying attention.
+        Tensor: Output tensor of shape [B, H, S_q, D] after applying attention.
     """
     scale: float = query.shape[-1] ** -0.5
     attn_logits: Tensor = torch.matmul(query, key.transpose(-2, -1)) * scale
