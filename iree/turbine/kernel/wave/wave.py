@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 # Lang, compiler, ops, constraints
+from sympy.utilities.lambdify import lambdastr
 import iree.turbine.kernel.lang as tkl
 from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
 from ..lang import Grid, IndexMapping
@@ -648,11 +649,13 @@ class LaunchableWave(Launchable):
 
         # Add grid and block dims to kernel launch info.
         dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
-        try_convert_to_int = lambda x: int(x) if isinstance(x, sympy.Integer) else x
-        kernel_launch_info.grid = [
-            try_convert_to_int(safe_subs(x, dynamic_symbols_map))
-            for x in self.grid_type.dims
-        ]
+        # Convert the grid into a lambda that we can use to compute the grid dimension.
+        kernel_launch_info.grid = sympy.lambdify(
+            [list(dynamic_symbols_map.keys())], self.grid_type.dims
+        )
+        kernel_launch_info.grid_str = lambdastr(
+            [list(dynamic_symbols_map.keys())], self.grid_type.dims
+        )
         kernel_launch_info.blocks = [
             int(x) for x in get_hardware_constraint(self.constraints).threads_per_block
         ]
