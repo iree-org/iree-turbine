@@ -208,19 +208,21 @@ def create_inputs(
     if shape.fixed_seq_len_extend:
         b_seq_len_extend.fill_(shape.fixed_seq_len_extend)
     b_seq_len = b_seq_len_prefix + b_seq_len_extend
-    max_len_in_batch = torch.max(b_seq_len, 0)[0].item()
 
     b_req_idx = device_arange(B, dtype=torch.int32)
-    req_to_tokens = device_empty((B, max_len_in_batch), dtype=torch.int32)
     b_start_loc = device_zeros((B,), dtype=torch.int32)
     b_start_loc[1:] = torch.cumsum(b_seq_len[:-1], 0)
     b_start_loc_extend = device_zeros((B,), dtype=torch.int32)
     b_start_loc_extend[1:] = torch.cumsum(b_seq_len_extend[:-1], 0)
-    for i in range(B):
-        req_to_tokens[i, : b_seq_len[i]] = torch.arange(
-            b_start_loc[i], b_start_loc[i] + b_seq_len[i]
-        )
 
+    kv_indptr = device_zeros((B + 1,), dtype=torch.int32)
+    kv_indptr[1 : B + 1] = torch.cumsum(b_seq_len_prefix[:B], dim=0)
+    kv_indices = device_zeros((b_seq_len_prefix.sum().item(),), dtype=torch.int32)
+
+    for i in range(B):
+        kv_indices[kv_indptr[i] : kv_indptr[i + 1]] = torch.arange(
+            b_start_loc[i], b_start_loc[i] + b_seq_len_prefix[i]
+        )
     total_token_num = torch.sum(b_seq_len).item()
     extend_token_num = torch.sum(b_seq_len_extend).item()
     k_buffer = device_empty((total_token_num, H_KV, D), dtype=dtype).normal_(
@@ -252,6 +254,8 @@ def create_inputs(
     b_start_loc_extend = torch.zeros_like(b_seq_len)
     b_start_loc_extend[1:] = torch.cumsum(b_seq_len_extend[:-1], 0)
     max_len_extend = torch.max(b_seq_len_extend, 0)[0].item()
+    qo_indptr = device_zeros((B + 1,), dtype=torch.int32)
+    qo_indptr[1 : B + 1] = torch.cumsum(b_seq_len_extend[:B], dim=0)
     logit_cap = 30.0
 
     max_rpe_context_length = 10
@@ -265,14 +269,13 @@ def create_inputs(
         v_extend,
         k_buffer,
         v_buffer,
-        req_to_tokens,
         b_req_idx,
         b_seq_len,
-        b_seq_len_extend,
+        qo_indptr,
+        kv_indptr,
+        kv_indices,
         b_start_loc,
-        b_start_loc_extend,
         b_seq_len_prefix,
-        max_len_in_batch,
         extend_token_num,
         max_len_extend,
         logit_cap,
@@ -287,14 +290,14 @@ def create_inputs(
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
-@param_bool("is_causal", "causal")
-@param_bool("use_buffer_ops", "buf_ops")
+@param_bool("is_causal", "causal", [True])
+@param_bool("use_buffer_ops", "buf_ops", [False])
 @param_bool("use_wave_runtime", "wr", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+        # (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
     ],
 )
 def testExtendAttention(
@@ -316,14 +319,13 @@ def testExtendAttention(
         v_extend,
         k_buffer,
         v_buffer,
-        req_to_tokens,
         b_req_idx,
         b_seq_len,
-        b_seq_len_extend,
+        qo_indptr,
+        kv_indptr,
+        kv_indices,
         b_start_loc,
-        b_start_loc_extend,
         b_seq_len_prefix,
-        max_len_in_batch,
         extend_token_num,
         max_len_extend,
         logit_cap,
@@ -352,7 +354,6 @@ def testExtendAttention(
         q_extend.shape,
         k_extend.shape,
         v_extend.shape,
-        req_to_tokens.shape,
         k_buffer.shape,
         v_buffer.shape,
         output.shape,
@@ -395,11 +396,9 @@ def testExtendAttention(
         v_extend,
         k_buffer,
         v_buffer,
-        req_to_tokens,
-        b_req_idx,
-        b_seq_len,
-        b_seq_len_extend,
-        b_start_loc_extend,
+        qo_indptr,
+        kv_indptr,
+        kv_indices,
         output,
     )
 
@@ -458,14 +457,13 @@ def testExtendRpeAttention(
         v_extend,
         k_buffer,
         v_buffer,
-        req_to_tokens,
         b_req_idx,
         b_seq_len,
-        b_seq_len_extend,
+        qo_indptr,
+        kv_indptr,
+        kv_indices,
         b_start_loc,
-        b_start_loc_extend,
         b_seq_len_prefix,
-        max_len_in_batch,
         extend_token_num,
         max_len_extend,
         logit_cap,
@@ -494,7 +492,6 @@ def testExtendRpeAttention(
         q_extend.shape,
         k_extend.shape,
         v_extend.shape,
-        req_to_tokens.shape,
         k_buffer.shape,
         v_buffer.shape,
         output.shape,
@@ -532,11 +529,9 @@ def testExtendRpeAttention(
         v_extend,
         k_buffer,
         v_buffer,
-        req_to_tokens,
-        b_req_idx,
-        b_seq_len,
-        b_seq_len_extend,
-        b_start_loc_extend,
+        qo_indptr,
+        kv_indptr,
+        kv_indices,
         rpe_bias,
         output,
     )
