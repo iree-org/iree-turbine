@@ -1116,8 +1116,10 @@ def specialize_index_sequence(
 
 
 def find_index_bounds(
-    constraints: list[Constraint], index: dict[IndexExpr, IndexExpr]
-) -> Optional[list[IndexExpr]]:
+    constraints: list[Constraint],
+    index: dict[IndexExpr, IndexExpr],
+    dim_bounds: dict[IndexExpr, IndexExpr] = {},
+) -> Optional[tuple[IndexExpr, IndexExpr]]:
     bounds = []
     for constraint in constraints:
         if not isinstance(constraint, (WorkgroupConstraint, TilingConstraint)):
@@ -1127,16 +1129,18 @@ def find_index_bounds(
         if dim not in index:
             continue
 
-        work_size = constraint.count * constraint.tile_size
-        if subs_idxc(work_size) == subs_idxc(dim):
+        dim_bound = dim_bounds.get(dim, None) or dim
+
+        work_size = (
+            getattr(constraint, "start", 0) + constraint.count * constraint.tile_size
+        )
+
+        if subs_idxc(work_size) == subs_idxc(dim_bound):
             continue
 
-        bounds.append(dim)
+        bounds.append((dim, dim_bound))
 
-    if len(bounds) == 0:
-        return None
-
-    return bounds
+    return bounds or None
 
 
 def get_induction_variable(
@@ -1314,19 +1318,19 @@ def evaluate_with_assumptions(constraints: list[Constraint], expr: IndexExpr) ->
     return True if any([result.equals(x) for x in facts]) else None
 
 
-def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
+def get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
     if isinstance(i, IndexSequence):
         i = i.start
 
     return i
 
 
-def _get_start_indices(
+def get_start_indices(
     src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
 ) -> list[IndexExpr]:
     start_indices = []
     for dim_indexing in src_indices:
-        i = _get_start_index(src_indices[dim_indexing])
+        i = get_start_index(src_indices[dim_indexing])
         start_indices.append(i)
 
     return start_indices

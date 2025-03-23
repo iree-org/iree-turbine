@@ -68,6 +68,7 @@ from ...ops.wave_ops import (
     le,
     log2,
     lt,
+    mask_value,
     maximum,
     minimum,
     mma,
@@ -79,8 +80,8 @@ from ...ops.wave_ops import (
     roundeven,
     scheduling_barrier,
     scheduling_group_barrier,
-    self_index,
     select,
+    self_index,
     set_symbol,
     shared_memory_barrier,
     shuffle,
@@ -101,7 +102,12 @@ from ..constraints import (
     WorkgroupConstraint,
     TilingConstraint,
 )
-from ..utils import subs_idxc, get_hardware_vector_map
+from ..utils import (
+    subs_idxc,
+    get_hardware_vector_map,
+    get_start_indices,
+    find_index_bounds,
+)
 
 # Indexing imports.
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
@@ -109,11 +115,12 @@ from ..scheduling.resources import get_scheduling_mask
 
 from .emitter import (
     WaveEmitter,
-    handle_op,
-    get_type_or_element_type,
     add_emitter_subs,
+    build_mask,
     gen_sympy_index,
     get_constant_attr,
+    get_type_or_element_type,
+    handle_op,
 )
 
 
@@ -156,24 +163,6 @@ def handle_allocate(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxy(node, IRProxyValue(alloc))
 
 
-def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
-    if isinstance(i, IndexSequence):
-        i = i.start
-
-    return i
-
-
-def _get_start_indices(
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
-) -> list[IndexExpr]:
-    start_indices = []
-    for dim_indexing in src_indices:
-        i = _get_start_index(src_indices[dim_indexing])
-        start_indices.append(i)
-
-    return start_indices
-
-
 def _build_start_indices(
     emitter: WaveEmitter,
     src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
@@ -181,7 +170,7 @@ def _build_start_indices(
 ) -> list[OpResult]:
     return [
         gen_sympy_index(add_emitter_subs(emitter, dynamic_values), i)
-        for i in _get_start_indices(src_indices)
+        for i in get_start_indices(src_indices)
     ]
 
 
@@ -914,6 +903,29 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 # Miscellanous ops
 ###############################################################################
+
+
+@handle_op(mask_value)
+def handle_mask_value(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, value, dim_bounds = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    index = register.index
+    register = cast_py_value(emitter, register).ir_value
+    vec_type = register.type
+
+    if mask := build_mask(emitter, index, vec_type.shape[0], dim_bounds):
+        val = arith_d.constant(
+            vec_type,
+            DenseElementsAttr.get_splat(
+                vec_type, get_constant_attr(value, vec_type.element_type)
+            ),
+        )
+        register = arith_d.select(mask, register, val)
+
+    emitter.bind_node_proxy(node, IRProxyValue(register))
 
 
 @handle_op(select)

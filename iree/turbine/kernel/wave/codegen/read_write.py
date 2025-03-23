@@ -40,7 +40,7 @@ from ...compiler.vector_codegen import (
 
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils import safe_subs, subs_idxc, find_index_bounds, get_fastest_index
+from ..utils import safe_subs, subs_idxc, get_fastest_index, get_start_indices
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from ...lang.wave_types import IndexMapping
@@ -53,25 +53,8 @@ from .emitter import (
     add_emitter_subs,
     gen_sympy_index,
     get_constant_attr,
+    build_mask,
 )
-
-
-def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
-    if isinstance(i, IndexSequence):
-        i = i.start
-
-    return i
-
-
-def _get_start_indices(
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
-) -> list[IndexExpr]:
-    start_indices = []
-    for dim_indexing in src_indices:
-        i = _get_start_index(src_indices[dim_indexing])
-        start_indices.append(i)
-
-    return start_indices
 
 
 def _split_index(src: IndexExpr | int) -> tuple[IndexExpr, IndexExpr]:
@@ -101,7 +84,7 @@ def _build_start_indices(
     src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
     dynamic_values: dict[IndexExpr, Any] = {},
 ) -> tuple[list[OpResult], list[OpResult], list[OpResult]]:
-    start_indices = _get_start_indices(src_indices)
+    start_indices = get_start_indices(src_indices)
     split_indices = [_split_index(i) for i in start_indices]
     subs = add_emitter_subs(emitter, dynamic_values)
     indices = [gen_sympy_index(subs, i) for i in start_indices]
@@ -117,32 +100,6 @@ def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> Index
 
 def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
     return get_custom(node).type.symbolic_shape
-
-
-def _build_mask(
-    emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
-) -> Optional[OpResult]:
-    bounds = find_index_bounds(emitter.constraints, index)
-    if bounds is None:
-        return None
-
-    idxc = IndexingContext.current()
-    fastest_dim = get_fastest_index(index)
-    last_dim = list(index)[fastest_dim]
-    new_index = {k: _get_start_index(v) for k, v in index.items()}
-
-    new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
-
-    mask_expr = functools.reduce(
-        lambda a, b: sympy.And(a, b), (new_index[dim] < dim for dim in bounds)
-    )
-    mask = gen_sympy_index(add_emitter_subs(emitter), mask_expr)
-
-    mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
-    if mask.type != mask_vec_type:
-        mask = vector_d.splat(mask_vec_type, mask)
-
-    return mask
 
 
 def _get_splat_const(vec_type: IrType, value: Any) -> Value:
@@ -196,7 +153,7 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
 
-    mask = _build_mask(emitter, index, elements_per_thread)
+    mask = build_mask(emitter, index, elements_per_thread)
     if mask is None:
         mask_vec_type = VectorType.get(
             [elements_per_thread], IntegerType.get_signless(1)
@@ -217,8 +174,8 @@ def _construct_gather_scatter_indices(
         )
         return start_indices, start_indices_wg, start_indices_th, None, mask
 
-    start_indices = _get_start_indices(result_index)
-    start_indices_orig = _get_start_indices(index)
+    start_indices = get_start_indices(result_index)
+    start_indices_orig = get_start_indices(index)
     fastest_dim = get_fastest_index(index)
     need_dynamic_offsets = False
     for val in dynamic_vals:
@@ -637,7 +594,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
-        mask = _build_mask(
+        mask = build_mask(
             emitter,
             index,
             elements_per_thread,
@@ -726,7 +683,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
-        mask = _build_mask(emitter, index, elements_per_thread)
+        mask = build_mask(emitter, index, elements_per_thread)
         _create_vec_read_write(
             emitter,
             output_shape,
