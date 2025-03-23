@@ -9,9 +9,13 @@ import torch
 import math
 import iree.turbine.kernel as tk
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
-    get_default_run_config,
+from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
+)
+from iree.turbine.kernel.wave.utils.torch_utils import (
     device_arange,
     device_full,
     device_randn,
@@ -25,6 +29,7 @@ from iree.turbine.kernel.wave.templates.alibi_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 import os
 from torch.testing import assert_close
 from ..common.utils import (
@@ -130,41 +135,40 @@ def test_alibi_attention(
     output_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)
 
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
     log2e = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
     alibi_slopes = precompute_alibi_slopes(shape.head_size)
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        output = device_zeros(output_shape, dtype=torch.float32)
-        # TODO: Add scaling of QK and ALiBi as part of kernel.
-        alibi_attention(
-            query * dk_sqrt * log2e,
-            key,
-            value.permute([0, 2, 1]),
-            # NOTE: since the kernel uses exp2 instead of exp, the ALiBi slopes must be
-            # multiplied by the same factor as the Q matrix to preserve the result post
-            # softmax:  exp(x + alibi) = exp2((x + alibi) * log2(e))
-            alibi_slopes * log2e,
-            output,
-        )
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    alibi_attention = wave_compile(options, alibi_attention)
 
-        validate_accuracy(query, key, value, output)
+    output = device_zeros(output_shape, dtype=torch.float32)
+    # TODO: Add scaling of QK and ALiBi as part of kernel.
+    alibi_attention(
+        query * dk_sqrt * log2e,
+        key,
+        value.permute([0, 2, 1]),
+        # NOTE: since the kernel uses exp2 instead of exp, the ALiBi slopes must be
+        # multiplied by the same factor as the Q matrix to preserve the result post
+        # softmax:  exp(x + alibi) = exp2((x + alibi) * log2(e))
+        alibi_slopes * log2e,
+        output,
+    )
+
+    validate_accuracy(query, key, value, output)

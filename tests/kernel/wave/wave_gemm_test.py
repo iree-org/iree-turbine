@@ -13,17 +13,23 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
-from iree.turbine.kernel.wave.utils import (
-    get_default_run_config,
-    get_default_arch,
+from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
+)
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
+)
+from iree.turbine.kernel.wave.utils.torch_utils import (
     device_randn,
     device_randint,
     device_zeros,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from .common.utils import (
     require_e2e,
     require_cdna2,
@@ -162,15 +168,6 @@ def testGemm(
         K: shape[2],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
     dynamic_symbols = []
     dynamic_symbols_map = {}
@@ -185,35 +182,42 @@ def testGemm(
         del hyperparams[N]
         del hyperparams[K]
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    perf_filename = request.node.name + ".json"
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-    ):
-        a = device_randn(shape[0], shape[2], dtype=torch.float16)
-        b = device_randn(shape[1], shape[2], dtype=torch.float16)
-        c = device_zeros(shape[0], shape[1], dtype=torch.float32)
-        asm = gemm(a, b, c)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + perf_filename) if dump_perf else None
+        ),
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm)
 
-        if dump_generated_mlir:
-            filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm)
+    a = device_randn(shape[0], shape[2], dtype=torch.float16)
+    b = device_randn(shape[1], shape[2], dtype=torch.float16)
+    c = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    asm = gemm(a, b, c)
 
-        if run_bench:
-            if dump_perf is not None:
-                config["benchmark_results_file"] = os.path.join(
-                    dump_perf, "iree_" + perf_filename
-                )
-        iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
-        generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref, check_device=False)
+    if dump_generated_mlir:
+        filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    if run_bench:
+        if dump_perf is not None:
+            options.benchmark_results_file = os.path.join(
+                dump_perf, "iree_" + perf_filename
+            )
+    iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    assert_close(c, iree_ref, check_device=False)
 
 
 @require_e2e
@@ -311,15 +315,6 @@ def testVMFMAGemm(
         K: shape[2],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
     dynamic_symbols = []
     dynamic_symbols_map = {}
@@ -334,35 +329,42 @@ def testVMFMAGemm(
         del hyperparams[N]
         del hyperparams[K]
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-    ):
-        a = device_randn(shape[0], shape[2], dtype=torch.float16)
-        b = device_randn(shape[1], shape[2], dtype=torch.float16)
-        c = device_zeros(shape[0], shape[1], dtype=torch.float32)
-        asm = gemm(a, b, c)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm)
 
-        if dump_generated_mlir:
-            filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm)
+    a = device_randn(shape[0], shape[2], dtype=torch.float16)
+    b = device_randn(shape[1], shape[2], dtype=torch.float16)
+    c = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    asm = gemm(a, b, c)
 
-        if run_bench:
-            if dump_perf is not None:
-                config["benchmark_results_file"] = os.path.join(
-                    dump_perf, "iree_" + perf_filename
-                )
-        iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
-        generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref, atol=2e-4, rtol=3e-4, check_device=False)
+    if dump_generated_mlir:
+        filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    if run_bench and dump_perf is not None:
+        options.benchmark_results_file = os.path.join(
+            dump_perf, "iree_" + request.node.name + ".json"
+        )
+    iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    assert_close(c, iree_ref, atol=2e-4, rtol=3e-4, check_device=False)
 
 
 @require_e2e
@@ -461,15 +463,6 @@ def testCDNA2IntGemm(
         K: shape[2],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
     dynamic_symbols = []
     dynamic_symbols_map = {}
@@ -484,36 +477,43 @@ def testCDNA2IntGemm(
         del hyperparams[N]
         del hyperparams[K]
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-    ):
-        randint_hi = 4
-        a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
-        b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
-        c = device_zeros(shape[0], shape[1], dtype=torch.int32)
-        asm = gemm(a, b, c)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm)
 
-        if dump_generated_mlir:
-            filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm)
+    randint_hi = 4
+    a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
+    b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
+    c = device_zeros(shape[0], shape[1], dtype=torch.int32)
+    asm = gemm(a, b, c)
 
-        if run_bench:
-            if dump_perf is not None:
-                config["benchmark_results_file"] = os.path.join(
-                    dump_perf, "iree_" + perf_filename
-                )
-        iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.int32)
-        generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref, check_device=False)
+    if dump_generated_mlir:
+        filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    if run_bench and dump_perf is not None:
+        options.benchmark_results_file = os.path.join(
+            dump_perf, "iree_" + request.node.name + ".json"
+        )
+    iree_ref = device_zeros(shape[0], shape[1], dtype=torch.int32)
+    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    assert_close(c, iree_ref, check_device=False)
 
 
 @require_e2e
@@ -595,44 +595,42 @@ def testCDNA3IntGemm(
         K: shape[2],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        randint_hi = 4
-        a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
-        b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
-        c = device_zeros(shape[0], shape[1], dtype=torch.int32)
-        asm = gemm(a, b, c)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm)
 
-        if dump_generated_mlir:
-            filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
-            with open(filename, "w") as f:
-                f.write(asm)
+    randint_hi = 4
+    a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
+    b = device_randint(randint_hi, (shape[1], shape[2]), dtype=torch.int8)
+    c = device_zeros(shape[0], shape[1], dtype=torch.int32)
+    asm = gemm(a, b, c)
 
-        if run_bench:
-            if dump_perf is not None:
-                config["benchmark_results_file"] = os.path.join(
-                    dump_perf, "iree_" + perf_filename
-                )
-        iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.int32)
-        generate_iree_ref("mmt", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref, check_device=False)
+    if dump_generated_mlir:
+        filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    if run_bench and dump_perf is not None:
+        options.benchmark_results_file = os.path.join(
+            dump_perf, "iree_" + request.node.name + ".json"
+        )
+    iree_ref = device_zeros(shape[0], shape[1], dtype=torch.int32)
+    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    assert_close(c, iree_ref, check_device=False)
 
 
 @require_e2e
@@ -713,43 +711,41 @@ def testF8Gemm(
         K: shape[2],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        a = device_randn(shape[0], shape[2], dtype=torch.float16)
-        b = device_randn(shape[1], shape[2], dtype=torch.float16)
-        c = device_zeros(shape[0], shape[1], dtype=torch.float32)
-        asm = gemm(a, b, c)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm)
 
-        if dump_generated_mlir:
-            filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
-            with open(filename, "w") as f:
-                f.write(asm)
+    a = device_randn(shape[0], shape[2], dtype=torch.float16)
+    b = device_randn(shape[1], shape[2], dtype=torch.float16)
+    c = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    asm = gemm(a, b, c)
 
-        if run_bench:
-            if dump_perf is not None:
-                config["benchmark_results_file"] = os.path.join(
-                    dump_perf, "iree_" + perf_filename
-                )
-        iree_ref = torch.zeros(shape[0], shape[1], dtype=torch.float32)
-        generate_iree_ref("mmt_f8", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref, atol=3e-5, rtol=3e-4, check_device=False)
+    if dump_generated_mlir:
+        filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    if run_bench and dump_perf is not None:
+        options.benchmark_results_file = os.path.join(
+            dump_perf, "iree_" + request.node.name + ".json"
+        )
+    iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    generate_iree_ref("mmt_f8", [a, b], [iree_ref], options)
+    assert_close(c, iree_ref, atol=3e-5, rtol=3e-4, check_device=False)
 
 
 @require_e2e
@@ -800,7 +796,7 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
 
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(
-            acc: tkl.Register[B, M, N, tkl.f32]
+            acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -823,44 +819,42 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
         K: shape[3],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        torch.manual_seed(0)
-        a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-        b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
-        c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        asm = batched_gemm(a, b, c)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    batched_gemm = wave_compile(options, batched_gemm)
 
-        if dump_generated_mlir:
-            filename = f"wave_batched_gemm_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm)
+    torch.manual_seed(0)
+    a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
+    b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
+    c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+    asm = batched_gemm(a, b, c)
 
-        if run_bench:
-            if dump_perf is not None:
-                config["benchmark_results_file"] = os.path.join(
-                    dump_perf, "iree_" + perf_filename
-                )
-        iree_ref = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        generate_iree_ref("bmmt", [a, b], [iree_ref], config, run_bench=run_bench)
-        assert_close(c, iree_ref, check_device=False)
+    if dump_generated_mlir:
+        filename = f"wave_batched_gemm_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
 
-        torch_ref = torch.matmul(a, b.transpose(-2, -1))
-        assert_close(c.to(torch.float16), torch_ref, atol=1e-3, rtol=5e-3)
+    if run_bench and dump_perf is not None:
+        options.benchmark_results_file = os.path.join(
+            dump_perf, "iree_" + request.node.name + ".json"
+        )
+    iree_ref = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+    generate_iree_ref("bmmt", [a, b], [iree_ref], options)
+    assert_close(c, iree_ref, check_device=False)
+
+    torch_ref = torch.matmul(a, b.transpose(-2, -1))
+    assert_close(c.to(torch.float16), torch_ref, atol=1e-3, rtol=5e-3)

@@ -9,14 +9,19 @@ import torch
 import math
 import iree.turbine.kernel as tk
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
-    get_default_run_config,
+from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
+)
+from iree.turbine.kernel.wave.utils.torch_utils import (
     device_arange,
     device_full,
     device_randn,
     device_zeros,
 )
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.prefill_attention import (
     get_prefill_attention_kernel,
@@ -137,47 +142,46 @@ def testPrefillAttention(
     )
 
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
     log2e = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        # TODO: Add scaling of QK as part of kernel.
-        # TODO: Add variant of non-transposed V attention kernel.
-        output = device_zeros(output_shape, dtype=torch.float32)
-        mb = prefill(
-            query * dk_sqrt * log2e,
-            key,
-            value,
-            start_offsets,
-            seq_lens,
-            output,
-        )
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    prefill = wave_compile(options, prefill)
 
-        validate_accuracy(
-            query=query,
-            key=key,
-            value=value,
-            seq_lens=seq_lens,
-            causal=False,
-            output=output,
-        )
+    # TODO: Add scaling of QK as part of kernel.
+    # TODO: Add variant of non-transposed V attention kernel.
+    output = device_zeros(output_shape, dtype=torch.float32)
+    mb = prefill(
+        query * dk_sqrt * log2e,
+        key,
+        value,
+        start_offsets,
+        seq_lens,
+        output,
+    )
+
+    validate_accuracy(
+        query=query,
+        key=key,
+        value=value,
+        seq_lens=seq_lens,
+        causal=False,
+        output=output,
+    )

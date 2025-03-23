@@ -6,7 +6,8 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import run_test
+from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
+from iree.turbine.kernel.wave.utils.general_utils import run_test
 import torch
 
 M = tkl.sym.M
@@ -23,7 +24,7 @@ ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
 
-def codegen_test_context(canonicalize: bool = False, dynamic_symbols=[]):
+def get_wave_compile_options(canonicalize: bool = False, dynamic_symbols=[]):
     bindings = {
         M: 16,
         N: 16,
@@ -39,9 +40,13 @@ def codegen_test_context(canonicalize: bool = False, dynamic_symbols=[]):
         if sym in bindings:
             del bindings[sym]
 
-    return tk.gen.TestLaunchContext(
-        bindings, canonicalize=canonicalize, dynamic_symbols=dynamic_symbols
+    compile_options = WaveCompileOptions(
+        subs=bindings,
+        canonicalize=canonicalize,
+        compile_to_mlir=True,
     )
+
+    return compile_options
 
 
 @run_test
@@ -71,15 +76,14 @@ def test_cast():
         a_reg = tkw.cast(a_reg, tkl.f16)
         tkw.write(a_reg, b, elements_per_thread=16)
 
-    with codegen_test_context(canonicalize=True):
-        a = torch.randn(16, 16, dtype=torch.float16)
-        b = torch.zeros(16, 16, dtype=torch.float16)
-        print(test(a, b))
+    options = get_wave_compile_options(canonicalize=True)
+    test = wave_compile(options, test)
+    print(test.asm)
 
-        # CHECK:  %[[D0:.*]] = arith.extf {{.*}} : vector<16xf16> to vector<16xf32>
-        # CHECK:  %[[D1:.*]] = arith.fptosi %[[D0]] : vector<16xf32> to vector<16xi8>
-        # CHECK:  %[[D2:.*]] = arith.sitofp %[[D1]] : vector<16xi8> to vector<16xf16>
-        # CHECK:  %[[D3:.*]] = arith.fptosi %[[D2]] : vector<16xf16> to vector<16xi16>
-        # CHECK:  %[[D4:.*]] = arith.extsi %[[D3]] : vector<16xi16> to vector<16xi32>
-        # CHECK:  %[[D5:.*]] = arith.sitofp %[[D4]] : vector<16xi32> to vector<16xf32>
-        # CHECK:  %[[D6:.*]] = arith.truncf %[[D5]] : vector<16xf32> to vector<16xf16>
+    # CHECK:  %[[D0:.*]] = arith.extf {{.*}} : vector<16xf16> to vector<16xf32>
+    # CHECK:  %[[D1:.*]] = arith.fptosi %[[D0]] : vector<16xf32> to vector<16xi8>
+    # CHECK:  %[[D2:.*]] = arith.sitofp %[[D1]] : vector<16xi8> to vector<16xf16>
+    # CHECK:  %[[D3:.*]] = arith.fptosi %[[D2]] : vector<16xf16> to vector<16xi16>
+    # CHECK:  %[[D4:.*]] = arith.extsi %[[D3]] : vector<16xi16> to vector<16xi32>
+    # CHECK:  %[[D5:.*]] = arith.sitofp %[[D4]] : vector<16xi32> to vector<16xf32>
+    # CHECK:  %[[D6:.*]] = arith.truncf %[[D5]] : vector<16xf32> to vector<16xf16>

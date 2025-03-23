@@ -17,7 +17,15 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.ops.wave_ops import *
-from iree.turbine.kernel.wave.utils import run_test, print_trace, initialize_iter_args
+from iree.turbine.kernel.wave.utils.general_utils import (
+    run_test,
+)
+from iree.turbine.kernel.wave.utils.print_utils import (
+    print_trace,
+)
+from iree.turbine.kernel.wave.utils.graph_utils import (
+    initialize_iter_args,
+)
 
 
 def get_read_nodes(graph: fx.Graph) -> list[CustomOp]:

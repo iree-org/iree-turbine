@@ -4,43 +4,31 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from enum import Enum
 from ..constraints import Constraint
 from ..._support.tracing import CapturedTrace
 from ...ops.wave_ops import Reduction, IterArg, get_custom, CustomOp
 from .modulo_scheduling import ModuloScheduler
 from .graph_utils import create_scheduling_edges, Edge
 from .resources import get_available_resources, annotate_resource_usage
+from .schedule_enums import SchedulingType
 from ..visualization import visualize_edges, visualize_graph, visualize_schedule
 from .loop_reconstruction import construct_pipelined_loop
-from ..utils import (
+from ..utils.graph_utils import (
     graph_copy,
     erase_graph,
+)
+from ..utils.general_utils import (
     get_tiling_constraint,
-    subs_idxc,
     get_assumptions,
     evaluate_with_assumptions,
+)
+from ..utils.symbol_utils import (
+    subs_idxc,
 )
 import torch.fx as fx
 from ....support.logging import get_logger
 
 logger = get_logger("turbine.wave.scheduling.schedule")
-
-
-"""
-Formatting for different scheduling strategies:
-Values: 0xAB where:
-* A = Strategy types:
-  * 0 = None
-  * 1 = Solver Based
-  * 2 = Heuristic Based (to come)
-* B enumerates different strategy that share the same 0xA* bits.
-"""
-
-
-class SchedulingType(Enum):
-    NONE = 0x00
-    MODULO = 0x10
 
 
 def is_solver_based(scheduling_type: SchedulingType):

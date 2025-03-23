@@ -12,10 +12,8 @@ from ...ops.wave_ops import (
     MMA,
     NewRegister,
 )
-from ..utils import (
-    get_induction_variable,
-    replace_uses_in,
-)
+from ..utils.general_utils import get_induction_variable
+from ..utils.graph_utils import replace_uses_in
 import torch.fx as fx
 from collections import deque, defaultdict
 from ..visualization import visualize_mapped_graphs, visualize_graph
@@ -292,7 +290,7 @@ def construct_prologue(
 
 
 def flatten_dict_values(
-    rotating_registers: dict[fx.Node, list[fx.Node]]
+    rotating_registers: dict[fx.Node, list[fx.Node]],
 ) -> list[fx.Node]:
     """
     Flatten the values of the rotating registers into a list.

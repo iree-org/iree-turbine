@@ -12,13 +12,18 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
-    get_default_run_config,
+from iree.turbine.kernel.wave.utils.general_utils import (
+    get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
+)
+from iree.turbine.kernel.wave.utils.torch_utils import (
     device_randn,
     device_zeros,
     device_randint,
-    get_default_scheduling_params,
 )
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.evoformer import get_evoformer_kernel
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
@@ -88,63 +93,61 @@ def testEvoformerAttentionForward(
 
     symbols.update(get_default_scheduling_params())
 
-    config = get_default_run_config()
-    if run_bench:
-        config["benchmark_batch_size"] = 1000
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
-    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
-
-    with tk.gen.TestLaunchContext(
-        symbols,
+    options = WaveCompileOptions(
+        subs=symbols,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
-        compile_config=compile_config,
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        torch.manual_seed(0)
-        if dtype == tkl.bf16:
-            torch_dtype = torch.bfloat16
-        else:
-            torch_dtype = torch.float16
-        batch, n, kv_seq_len, heads, head_dim, q_seq_len, v_dim = shape
-        q = device_randn(batch, n, q_seq_len, heads, head_dim, dtype=torch_dtype)
-        k = device_randn(batch, n, kv_seq_len, heads, head_dim, dtype=torch_dtype)
-        v = device_randn(batch, n, kv_seq_len, heads, v_dim, dtype=torch_dtype)
-        mask = device_randint(0, 2, (batch, n, kv_seq_len), dtype=torch_dtype)
-        mask_bias = 1e9 * (mask - 1)
-        bias = device_randn(batch, heads, q_seq_len, kv_seq_len, dtype=torch_dtype)
-        output = device_zeros(batch, n, q_seq_len, heads, v_dim, dtype=torch_dtype)
-        log2e = 1.44269504089
-        dk_sqrt = math.sqrt(1.0 / shape[4])
-        # TODO: Add scaling of QK as part of kernel.
-        # TODO: Add v-permute as part of kernel.
-        asm = evoformer_fwd(
-            q * dk_sqrt * log2e,
-            k,
-            v.permute([0, 1, 4, 3, 2]),
-            mask_bias,
-            bias * log2e,
-            output,
-        )
+        benchmark_batch_size=1000,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    evoformer_fwd = wave_compile(options, evoformer_fwd)
 
-        mask_bias = mask_bias.view([batch, n, 1, 1, kv_seq_len])
-        bias = bias.view([batch, 1, heads, q_seq_len, kv_seq_len])
-        torch_ref = attention_reference(q, k, v, [mask_bias, bias], dk_sqrt)
+    torch.manual_seed(0)
+    if dtype == tkl.bf16:
+        torch_dtype = torch.bfloat16
+    else:
+        torch_dtype = torch.float16
+    batch, n, kv_seq_len, heads, head_dim, q_seq_len, v_dim = shape
+    q = device_randn(batch, n, q_seq_len, heads, head_dim, dtype=torch_dtype)
+    k = device_randn(batch, n, kv_seq_len, heads, head_dim, dtype=torch_dtype)
+    v = device_randn(batch, n, kv_seq_len, heads, v_dim, dtype=torch_dtype)
+    mask = device_randint(0, 2, (batch, n, kv_seq_len), dtype=torch_dtype)
+    mask_bias = 1e9 * (mask - 1)
+    bias = device_randn(batch, heads, q_seq_len, kv_seq_len, dtype=torch_dtype)
+    output = device_zeros(batch, n, q_seq_len, heads, v_dim, dtype=torch_dtype)
+    log2e = 1.44269504089
+    dk_sqrt = math.sqrt(1.0 / shape[4])
+    # TODO: Add scaling of QK as part of kernel.
+    # TODO: Add v-permute as part of kernel.
+    asm = evoformer_fwd(
+        q * dk_sqrt * log2e,
+        k,
+        v.permute([0, 1, 4, 3, 2]),
+        mask_bias,
+        bias * log2e,
+        output,
+    )
 
-        if dump_generated_mlir:
-            filename = f"wave_evoformer_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm)
+    mask_bias = mask_bias.view([batch, n, 1, 1, kv_seq_len])
+    bias = bias.view([batch, 1, heads, q_seq_len, kv_seq_len])
+    torch_ref = attention_reference(q, k, v, [mask_bias, bias], dk_sqrt)
 
-        eps = 1e-2 if output.dtype == torch.float16 else 5e-2
-        assert (
-            torch.max(torch.abs(torch_ref - output)).item() < eps
-        ), f"out eps: {torch.max(torch.abs(torch_ref - output))}"
+    if dump_generated_mlir:
+        filename = f"wave_evoformer_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    eps = 1e-2 if output.dtype == torch.float16 else 5e-2
+    assert (
+        torch.max(torch.abs(torch_ref - output)).item() < eps
+    ), f"out eps: {torch.max(torch.abs(torch_ref - output))}"

@@ -20,9 +20,13 @@ from ...ops.wave_ops import (
 from ..._support.indexing import IndexSequence, IndexSymbol
 from ..._support.tracing import CapturedTrace
 from ....support.logging import get_logger
-from ..utils import (
+from ..utils.general_utils import (
     all_equal,
+)
+from ..utils.mma_utils import (
     simplify_index,
+)
+from ..utils.symbol_utils import (
     subs_idxc,
 )
 from copy import deepcopy

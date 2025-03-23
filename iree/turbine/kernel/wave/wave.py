@@ -20,6 +20,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
+from .cache import WAVE_RUNTIME_DIR
 from ..compiler.ir import Context, Module, Operation
 from .codegen import WaveEmitter
 from .constraints import (
@@ -42,6 +43,7 @@ from .analysis.partition_strided_operators import (
 )
 from .barriers import add_shared_memory_barriers
 from .codegen import WaveEmitter
+from .compile_options import WaveCompileOptions
 from .decompose_reduce_ops import decompose_reduce_ops
 from .decompose_vmma_ops import decompose_vmma_ops
 from .expansion.expansion import expand_graph
@@ -50,7 +52,7 @@ from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
 from .promotion import promote_placeholders, compute_shared_memory_usage
 from .reuse_shared_allocs import reuse_shared_allocs
-from .scheduling.schedule import schedule_graph, SchedulingType
+from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
 from .shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
@@ -58,29 +60,20 @@ from .shared_memory_indexing import (
 )
 
 # Utils
-from .utils import (
-    canonicalize_module,
-    compile_to_vmfb,
-    invoke_vmfb,
-    safe_subs,
-    remove_chained_getresult,
+from .utils.symbol_utils import subs_idxc, safe_subs
+from .utils.classes import KernelLaunchInfo
+from .utils.print_utils import print_trace, try_apply_pass
+from .utils.graph_utils import (
     remove_chained_extractslice,
-    subs_idxc,
-    delinearize_index,
-    _write_file,
+    remove_chained_getresult,
     initialize_iter_args,
+)
+from .utils.compile_utils import canonicalize_module
+from .utils.general_utils import (
+    delinearize_index,
     partial,
-    print_trace,
-    try_apply_pass,
-    KernelLaunchInfo,
     get_hardware_constraint,
     remove_files_with_extension,
-)
-from .cache import (
-    is_cache_enabled,
-    get_cache_manager,
-    invoke_cached_kernel,
-    WAVE_RUNTIME_DIR,
 )
 
 # Others
@@ -433,19 +426,16 @@ class LaunchableWave(Launchable):
         trace: CapturedTrace,
         context: Context,
         module_op: Optional[Module] = None,
-        *args,
-        **kwargs,
+        options: WaveCompileOptions = None,
     ):
-        compile_config = kwargs.get("compile_config", {})
         entrypoint_name = self._name
         root_graph = trace.get_root_graph()
         kernel_sig = kernel_codegen.KernelSignature()
         kernel_sig.add_from_graph_placeholders(root_graph)
-        dynamic_symbols = kwargs.get("dynamic_symbols", [])
-        kernel_sig.add_from_dynamic_symbols(dynamic_symbols)
+        kernel_sig.add_from_dynamic_symbols(options.dynamic_symbols)
         kernel_sig.add_grid(self.grid_type)
         kernel_sig.determine_input_output_buffers(root_graph)
-        if compile_config.get("print_signature", False):
+        if options.print_signature:
             print(kernel_sig)
 
         mb = builder.ModuleBuilder(context=context, module_op=module_op)
@@ -455,13 +445,11 @@ class LaunchableWave(Launchable):
 
         # Setup LLVM func compilation configs.
         llvm_func_config = {}
-        denorm_fp_math_f32 = compile_config.get("denorm_fp_math_f32", None)
-        if denorm_fp_math_f32 != None:
-            llvm_func_config["denormal-fp-math-f32"] = denorm_fp_math_f32
+        if options.denorm_fp_math_f32:
+            llvm_func_config["denormal-fp-math-f32"] = options.denorm_fp_math_f32
 
-        waves_per_eu = compile_config.get("waves_per_eu", None)
-        if waves_per_eu != None:
-            llvm_func_config["amdgpu-waves-per-eu"] = waves_per_eu
+        if options.waves_per_eu:
+            llvm_func_config["amdgpu-waves-per-eu"] = options.waves_per_eu
 
         dispatch_entrypoint = exe.define_entrypoint(
             entrypoint_name,
@@ -469,13 +457,11 @@ class LaunchableWave(Launchable):
             self.grid_type,
             workgroup_size,
             subgroup_size,
-            dynamic_symbols,
+            options.dynamic_symbols,
             llvm_func_config,
         )
 
-        emitter = WaveEmitter(
-            dispatch_entrypoint, trace, self.constraints, dynamic_symbols, kwargs
-        )
+        emitter = WaveEmitter(dispatch_entrypoint, trace, self.constraints, options)
         try:
             emitter.emit(trace.get_root_graph())
         except:
@@ -485,7 +471,7 @@ class LaunchableWave(Launchable):
             raise
         emitter.finish()
 
-        if kwargs.get("canonicalize", False):
+        if options.canonicalize:
             canonicalize_module(mb.module_op)
 
         return mb, trace, exe, kernel_sig, entrypoint_name
@@ -493,7 +479,6 @@ class LaunchableWave(Launchable):
     def build_initial_pass_pipeline(
         self,
         trace: CapturedTrace,
-        kernel_launch_info: KernelLaunchInfo,
         print_ir_before: Sequence[str] = [],
         print_ir_after: Sequence[str] = [],
     ):
@@ -530,8 +515,7 @@ class LaunchableWave(Launchable):
 
     def _trace_and_get_kernel_signature(
         self,
-        args,
-        kwargs,
+        options: WaveCompileOptions,
         context: Optional[Context] = None,
         module_op: Optional[Operation] = None,
     ) -> tuple[
@@ -540,7 +524,7 @@ class LaunchableWave(Launchable):
         dispatch_codegen.StreamExecutable,
         kernel_codegen.KernelSignature,
         str,
-        KernelLaunchInfo,
+        WaveCompileOptions,
     ]:
         # Issue a warning if IREE ver is too low.
         # Warning will only be issued if we are compiling the kernel and won't
@@ -548,12 +532,8 @@ class LaunchableWave(Launchable):
         # overhead to 'happy' path.
         _warn_iree_is_too_old()
 
-        # Store kernel launch info for the wave runtime.
-        kernel_launch_info = KernelLaunchInfo()
-
         # Build wave runtime, if specified.
-        run_config = kwargs.get("run_config", {})
-        if run_config.get("wave_runtime", None):
+        if options.wave_runtime:
             # Remove any existing hsaco files in this directory.
             # If the kernel is being cached, then it will be referenced from the
             # cache directory. When kernels are not being cached, we remove them
@@ -561,10 +541,9 @@ class LaunchableWave(Launchable):
             remove_files_with_extension(WAVE_RUNTIME_DIR, ".hsaco")
             build_wave_runtime()
 
-        compile_config = kwargs.get("compile_config", {})
-        print_ir_after = compile_config.get("print_ir_after", [])
-        print_ir_before = compile_config.get("print_ir_before", [])
-        if compile_config.get("print_trace_begin", False):
+        print_ir_after = options.print_ir_after
+        print_ir_before = options.print_ir_before
+        if options.print_trace_begin:
             print(f"\n***Tracing kernel {self._name}***")
 
         trace = self._trace()
@@ -579,7 +558,7 @@ class LaunchableWave(Launchable):
 
         # Initial passes, pre-optimization.
         graph_passes = self.build_initial_pass_pipeline(
-            trace, kernel_launch_info, print_ir_before, print_ir_after
+            trace, print_ir_before, print_ir_after
         )
 
         # Optimizations.
@@ -613,8 +592,8 @@ class LaunchableWave(Launchable):
         # git fetch https://github.com/kerbowa/llvm-project.git ee52732cddae42deed2e3387a83b20ec05860b4e
         # git cherry-pick ee52732cddae42deed2e3387a83b20ec05860b4e
         # [Manually resolve conflicts consistent with the PR]
-        scheduling_type = kwargs.get("schedule", SchedulingType.NONE)
-        use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
+        scheduling_type = options.schedule
+        use_scheduling_barriers = options.use_scheduling_barriers
         graph_passes.append(
             partial(
                 schedule_graph,
@@ -631,7 +610,7 @@ class LaunchableWave(Launchable):
             # so it should be called close to the end of pipeline.
             partial(align_index_sizes, trace, self.constraints),
             partial(add_shared_memory_barriers, trace),
-            partial(compute_shared_memory_usage, trace, kernel_launch_info),
+            partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
         ]
 
         for p in graph_passes:
@@ -644,155 +623,26 @@ class LaunchableWave(Launchable):
 
         # Determine grid shape.
         self.infer_grid_shape(idxc)
-        if compile_config.get("print_grid", False):
+        if options.print_grid:
             print(f"Grid: {self.grid_type}")
 
         # Add grid and block dims to kernel launch info.
-        dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
         # Convert the grid into a lambda that we can use to compute the grid dimension.
-        kernel_launch_info.grid = sympy.lambdify(
-            [list(dynamic_symbols_map.keys())], self.grid_type.dims
+        options.kernel_launch_info.grid = sympy.lambdify(
+            [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
         )
-        kernel_launch_info.grid_str = lambdastr(
-            [list(dynamic_symbols_map.keys())], self.grid_type.dims
+        options.kernel_launch_info.grid_str = lambdastr(
+            [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
         )
-        kernel_launch_info.blocks = [
+        options.kernel_launch_info.blocks = [
             int(x) for x in get_hardware_constraint(self.constraints).threads_per_block
         ]
-        kernel_launch_info.func_name = self._name
+        options.kernel_launch_info.func_name = self._name
 
         return (
-            *self.compile_to_mlir(trace, context, module_op, *args, **kwargs),
-            kernel_launch_info,
+            *self.compile_to_mlir(trace, context, module_op, options=options),
+            options,
         )
-
-    def test_execute(self, args, kwargs):
-        run = kwargs.get("run", False)
-        run_bench = kwargs.get("run_bench", False)
-        create_vmfb_file = kwargs.get("create_vmfb_file", None)
-        dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
-        dynamic_symbols = kwargs.get("dynamic_symbols", [])
-        config = kwargs.get("run_config", None)
-        use_scheduling = kwargs.get("schedule", False)
-        use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
-        # When this is passed in from the user, we will populate it with the kernel hash.
-        # It will always be returned with just one entry which is the hash of the kernel.
-        cached_kernel_hash = kwargs.get("kernel_hash", [])
-        # For the wave runtime, we need the hsaco binary. So we turn on
-        # dumping of binaries and store in wave runtime directory. If we
-        # are caching, this will be moved to the appropriate directory.
-        if config and config.get("wave_runtime", None):
-            config["dump_binaries"] = str(WAVE_RUNTIME_DIR)
-
-        # Get cached kernel when available.
-        cache_enabled = is_cache_enabled()
-        kernel_hash = None
-        if cache_enabled:
-            # TODO: Move use_scheduling, use_scheduling_barriers, etc. into the config so everything is contained there.
-            cache_manager = get_cache_manager()
-            if cached_kernel_hash:
-                # If a cached_kernel_hash is passed in, we assume it was generated in a previous run
-                # and since we always return a list of size 1, we can just grab the first element.
-                kernel_hash = cached_kernel_hash[0]
-            if not kernel_hash:
-                kernel_hash = cache_manager.get_hash(
-                    self.constraints,
-                    self._f,
-                    IndexingContext.current().subs,
-                    dynamic_symbols,
-                    config,
-                    use_scheduling=use_scheduling,
-                    use_scheduling_barriers=use_scheduling_barriers,
-                    run_bench=run_bench,
-                )
-                cached_kernel_hash[:] = [kernel_hash]
-
-            cached_kernel = cache_manager.load_kernel(kernel_hash)
-            if cached_kernel and (run or run_bench):
-                invoke_cached_kernel(
-                    cached_kernel,
-                    args,
-                    config,
-                    dynamic_symbols,
-                    dynamic_symbols_map,
-                    run,
-                    run_bench,
-                    kernel_hash,
-                )
-                return cached_kernel.asm(cached_kernel.asm_filepath)
-
-        # Recompile kernel from scratch if not found in cache.
-        (
-            mb,
-            graph,
-            exe,
-            kernel_sig,
-            entrypoint_name,
-            kernel_launch_info,
-        ) = self._trace_and_get_kernel_signature(args, kwargs)
-
-        if run or run_bench or create_vmfb_file:
-            if not config:
-                raise ValueError("no config provided")
-
-            host_codegen.isolated_test_call(
-                mb, exe, kernel_sig, entrypoint_name, dynamic_symbols
-            )
-            asm = mb.module_op.get_asm()
-            if config.get("print_mlir", False):
-                print(asm)
-
-            if override_mlir := config.get("override_mlir", None):
-                asm = override_mlir
-
-            kernel_inputs = []
-            kernel_outputs = []
-            for arg, b in zip(args, kernel_sig.kernel_buffer_bindings):
-                usage = b.kernel_buffer_type.usage
-                if usage == kernel_codegen.KernelBufferUsage.INPUT:
-                    kernel_inputs.append(arg)
-
-                if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
-                    kernel_outputs.append(arg)
-
-            dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
-            kernel_dynamic_dims = []
-            if dynamic_symbols:
-                kernel_dynamic_dims = dynamic_symbols_map.values()
-
-            compiled_wave_vmfb = compile_to_vmfb(asm, config, run_bench)
-            if create_vmfb_file is not None:
-                _write_file(create_vmfb_file, "wb", compiled_wave_vmfb)
-
-            kernel_usages = [
-                binding.kernel_buffer_type.usage
-                for binding in kernel_sig.kernel_buffer_bindings
-            ]
-
-            if cache_enabled:
-                cache_manager.store_kernel(
-                    compiled_wave_vmfb,
-                    kernel_usages,
-                    asm,
-                    kernel_hash,
-                    kernel_launch_info,
-                )
-
-            invoke_vmfb(
-                compiled_wave_vmfb,
-                "isolated_benchmark",
-                config,
-                kernel_inputs,
-                kernel_outputs,
-                kernel_dynamic_dims,
-                run,
-                run_bench,
-                inplace=True,
-                kernel_hash=kernel_hash,
-                kernel_launch_info=kernel_launch_info,
-            )
-
-        return mb.module_op.get_asm()
 
     def aot_execute(self, args, kwargs):
         raise NotImplementedError("AOT execution for wave not implemented yet.")

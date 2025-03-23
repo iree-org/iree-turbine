@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from .constraints import Constraint
-from .utils import get_induction_variable
+from .utils.general_utils import get_induction_variable
 from ...support.logging import get_logger
 from iree.turbine.kernel._support.tracing import CapturedTrace
 import torch.fx as fx

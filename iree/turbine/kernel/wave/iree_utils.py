@@ -6,8 +6,9 @@
 
 import torch
 from typing import Any
-from .utils import compile_and_invoke
+from .utils.run_utils import compile_and_invoke
 from ...support.conversions import TORCH_DTYPE_TO_IREE_TYPE_ASM
+from .compile import WaveCompileOptions
 
 
 def get_chain_mmt_asm(
@@ -152,8 +153,7 @@ def generate_iree_ref(
     kernel_type: str,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    config: dict[str, str],
-    **kwargs: dict[str, Any],
+    options: WaveCompileOptions,
 ):
     """
     Generate a reference output for the given kernel type and arguments.
@@ -200,13 +200,12 @@ def generate_iree_ref(
     else:
         raise ValueError(f"Unknown kernel type: {kernel_type}")
 
+    options.func_name = kernel_type
+    options.inplace = False
+    options.dynamic_symbols_map = {}
     compile_and_invoke(
         asm,
-        kernel_type,
-        config,
         kernel_inputs,
         kernel_outputs,
-        run=True,
-        run_bench=kwargs.get("run_bench", False),
-        inplace=False,
+        options,
     )
