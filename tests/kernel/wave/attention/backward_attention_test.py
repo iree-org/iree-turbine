@@ -1292,7 +1292,6 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...], request
         run_bench=False,
         run_config=config,
         compile_config=compile_config,
-        schedule=False,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
 
@@ -1336,7 +1335,6 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...], request
         run_bench=False,
         run_config=config,
         compile_config=compile_config,
-        schedule=False,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
         D = torch.sum(do * o, -1)
@@ -1469,7 +1467,6 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...], re
         run_bench=False,
         run_config=config,
         compile_config=compile_config_dv,
-        schedule=False,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
 
@@ -1511,7 +1508,6 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...], re
         run_bench=False,
         run_config=config,
         compile_config=compile_config_dk,
-        schedule=False,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
 
@@ -1575,7 +1571,6 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...], re
         run_bench=False,
         run_config=config,
         compile_config=compile_config_dq,
-        schedule=False,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
 
