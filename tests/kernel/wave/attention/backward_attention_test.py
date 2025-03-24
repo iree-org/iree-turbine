@@ -29,6 +29,16 @@ from ..common.utils import (
 )
 from torch.testing import assert_close
 
+big_shapes = [
+    # Bigger shapes
+    (2, 64, 128, 32, 256),
+    # The batch size 40 mostly just makes things slower. I don't think it helps
+    # that much with correctness testing.
+    (2, 1024, 64, 64, 1024),
+    (8, 128, 128, 64, 256),
+    # (40, 1024, 64, 64, 1024),
+]
+
 shapes_16x16x16 = [
     # Test first with very small shapes. These are much easier to debug.
     (1, 16, 16, 16, 16),
@@ -38,13 +48,11 @@ shapes_16x16x16 = [
     (1, 16, 32, 16, 16),
     (1, 32, 16, 16, 16),
     (2, 16, 16, 16, 16),
-    # Bigger shapes
-    (2, 64, 128, 32, 256),
-    # The batch size 40 mostly just makes things slower. I don't think it helps
-    # that much with correctness testing.
-    (2, 1024, 64, 64, 1024),
-    (8, 128, 128, 64, 256),
-    (40, 1024, 64, 64, 1024),
+]
+
+shapes_32x32x32 = [
+    tuple(dim if i == 0 else 2 * dim for i, dim in enumerate(shape))
+    for shape in shapes_16x16x16
 ]
 
 
@@ -57,7 +65,8 @@ def get_param_id(val):
 
 param_mfma_shape = pytest.mark.parametrize(
     "mfma_variant,shape",
-    [(MMAType.F32_16x16x16_F16, shape) for shape in shapes_16x16x16],
+    [(MMAType.F32_16x16x16_F16, shape) for shape in shapes_16x16x16 + big_shapes]
+    + [(MMAType.F32_32x32x8_F16, shape) for shape in shapes_32x32x32 + big_shapes],
     ids=get_param_id,
 )
 
