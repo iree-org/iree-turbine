@@ -656,12 +656,10 @@ def get_attention_bwd_kernel(
         # get errors about tile size being divisible by vector size.
         BLOCK_N: max(v_head_dim, vec_size),
         BLOCK_K1: max(qk_head_dim, vec_size),
-        # TODO(#364) and TODO(#365): Not actually what we want probably, but I
-        # couldn't get nested loops to work (the only option is a reduction, it
-        # insists on having args to reduce, and then it can't figure out the
-        # vector shapes for them if I give it dummy args) and I don't think our
-        # read/write scheme for dq is thread safe. So force the distribution of
-        # K2 to be degenerate.
+        # TODO(#364) and TODO(#365) and TODO(#586): We actually want a nested
+        # (#586) loop (#364) or an atomic add (#365), but those aren't
+        # supported. So we force the distribution of K2 to be degenerate and
+        # expansion will have to fully unroll it.
         BLOCK_K2: max(kv_seq_len, vec_size),
         B: batch,
         M_qs: q_seq_len,
@@ -745,6 +743,10 @@ def get_attention_bwd_dv_kernel(
         outputs={B: i, N_vd: j, M_qs: k},
     )
 
+    # Other than writing out the intermediate values (which is just a debugging
+    # aid), this kernel is basically fine with respect to extra reads or writes
+    # of the same tensor. It still has to have fake tiling of dimensions that
+    # aren't actually being tiled.
     @tkw.wave(constraints)
     def attention_bwd_dv(
         q: tkl.Memory[B, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
@@ -891,6 +893,9 @@ def get_attention_bwd_dk_kernel(
         outputs={B: i, K1_qkd: j, M_qs: k},
     )
 
+    # We're able to eliminate some of the issues with the combined kernel, like
+    # having to pre-broadcast lse and write out and read back ds, but this still
+    # has an extra read of q.
     @tkw.wave(constraints)
     def attention_bwd_dk(
         q: tkl.Memory[B, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
@@ -955,6 +960,13 @@ def get_attention_bwd_dk_kernel(
             scale_ds_reg = tkl.Register[B, M_qs, K2_kvs, tkl.f16](scale)
             ds_scaled_ij = scale_ds_reg * ds_ij
 
+            # We have to read q a second time so that we get q as
+            # [B, K1_qkd, M_qs] for the matmul to compute dk whereas we need q
+            # as [B, M_qs, K1_qkd] for the matmul to compute s. That logical
+            # dimension order should be resolvable with a permute, but at the
+            # thread level the individual threads need different elements of q.
+            # Ideally the compiler should just be smart enough to insert a
+            # shuffle operation here.
             q_i_for_dk = tkw.read(
                 q,
                 mapping=flip_m_k1_read_mapping,
@@ -1069,6 +1081,10 @@ def get_attention_bwd_dq_kernel(
         outputs={B: i, K1_qkd: j, K2_kvs: k},
     )
 
+    # We're able to eliminate some of the issues with the combined kernel, like
+    # having to pre-broadcast lse and write out and read back ds, but this still
+    # has an extra read of k, and has to do a full expansion (i.e. unrolled loop
+    # in the K2 dimension).
     @tkw.wave(constraints)
     def attention_bwd_dq(
         q: tkl.Memory[B, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
@@ -1105,7 +1121,8 @@ def get_attention_bwd_dq_kernel(
             s_ij = scale_s_reg * s_unscaled_ij
             # permuting and then writing without a mapping breaks whichever of s
             # and dp is used later in the kernel iff we multiply p_ij and
-            # dp_ij_sub to compute ds_ij.
+            # dp_ij_sub to compute ds_ij. So even though we are about to permute
+            # this, we do the write with a mapping instead.
             tkw.write(
                 s_ij,
                 s,
@@ -1144,7 +1161,13 @@ def get_attention_bwd_dq_kernel(
             scale_ds_reg = tkl.Register[B, M_qs, K2_kvs, tkl.f16](scale)
             ds_scaled_ij = scale_ds_reg * ds_ij
 
-            # permuting doesn't work here. We need to read it in directly in the correct layout.
+            # We have to read q a second time so that we get k as
+            # [B, K1_qkd, K2_kvs] for the matmul to compute dq whereas we need k
+            # as [B, K2_kvs, K1_qkd] for the matmul to compute s. That logical
+            # dimension order should be resolvable with a permute, but at the
+            # thread level the individual threads need different elements of q.
+            # Ideally the compiler should just be smart enough to insert a
+            # shuffle operation here.
             k_j_for_dq = tkw.read(
                 k,
                 mapping=flip_k2_k1_read_mapping,
@@ -1167,11 +1190,10 @@ def get_attention_bwd_dq_kernel(
         # get errors about tile size being divisible by vector size.
         BLOCK_N: max(v_head_dim, vec_size),
         BLOCK_K1: max(qk_head_dim, vec_size),
-        # TODO: Not actually what we want probably, but I couldn't get nested
-        # loops to work (the only option is a reduction, it insists on having
-        # args to reduce, and then it can't figure out the vector shapes for
-        # them if I give it dummy args) and I don't think our read/write scheme
-        # for dq is thread safe. So force the distribution of K2 to be degenerate.
+        # TODO(#364) and TODO(#365) and TODO(#586): We actually want a nested
+        # (#586) loop (#364) or an atomic add (#365), but those aren't
+        # supported. So we force the distribution of K2 to be degenerate and
+        # expansion will have to fully unroll it.
         BLOCK_K2: max(kv_seq_len, vec_size),
         B: batch,
         M_qs: q_seq_len,
