@@ -5,7 +5,7 @@ import warnings
 from pathlib import Path
 
 from .conv import ConvSignature
-from ....aot import CompiledModule, export
+from ....aot import export
 from ....importers.ir import Attribute, MLIRError
 from ....runtime import Launchable
 from ....support.logging import runtime_logger as logger
@@ -79,5 +79,10 @@ def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> s
 def get_launchable(signature: ConvSignature) -> Launchable:
     func_name = signature.get_func_name()
     module_asm = _get_module_asm(signature, func_name)
-    # TODO: cache vmfb per-device type
-    return Launchable.jit_compile(module_asm, entry_point=func_name)
+    cache_dir = CACHE_BASE_DIR / func_name if is_cache_enabled else None
+    return Launchable.jit_compile(
+        module_asm,
+        parameter_providers=(),
+        entry_point=func_name,
+        file_cache_dir=cache_dir,
+    )
