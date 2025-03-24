@@ -559,6 +559,8 @@ def get_attention_bwd_kernel(
             dv_prev: tkl.Register[B, K2_kvs, N_vd, tkl.f32],
             dk_prev: tkl.Register[B, K2_kvs, K1_qkd, tkl.f32],
         ):
+            # TODO(#602): Wave has implicit layout requirements for MMAs, so we
+            # have to actually compute s transpose and then permute it.
             k_j = tkw.read(k, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
             q_i = tkw.read(q, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
 
@@ -590,7 +592,8 @@ def get_attention_bwd_kernel(
             dv_j = tkw.mma(p_ij, do_i_for_dv, dv_prev)
 
             v_j = tkw.read(v, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
-            # This has to be loaded separately so we have N last
+            # TODO(#603): Wave has implicit layout requirements for MMAs, so we
+            # have load do_i again in this layout.
             do_i_for_dp = tkw.read(do, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
             dp_acc = tkl.Register[B, K2_kvs, M_qs, tkl.f32](0.0)
             dp_ij = tkw.mma(v_j, do_i_for_dp, dp_acc)
@@ -604,6 +607,8 @@ def get_attention_bwd_kernel(
             # Just multiplying p_ij * dp_ij_sub breaks the previously calculated
             # dp. We have to load back p in the required layout.
             scale_ds_reg = tkl.Register[B, M_qs, K2_kvs, tkl.f16](scale)
+            # TODO(#603): Wave has implicit layout requirements for MMAs, so we
+            # have to read back p_ij in this layout.
             p_ij_for_ds = tkw.read(p, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
             ds_ij = p_ij_for_ds * dp_ij_sub
             tkw.write(ds_ij, ds, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
@@ -612,11 +617,15 @@ def get_attention_bwd_kernel(
                 ds_scaled_ij, ds_scaled, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
             )
 
+            # TODO(#603): Wave has implicit layout requirements for MMAs, so we
+            # have to read back ds_ij in this layout.
             ds_scaled_ij_for_dk = tkw.read(
                 ds_scaled,
                 mapping=flip_m_k2_read_mapping,
                 elements_per_thread=MFMA_INPUT_ELS_PER_THREAD,
             )
+            # TODO(#603): Wave has implicit layout requirements for MMAs, so we
+            # have to read q again.
             q_i_for_dk = tkw.read(
                 q,
                 mapping=flip_m_k1_read_mapping,
@@ -624,6 +633,8 @@ def get_attention_bwd_kernel(
             )
             dk_j = tkw.mma(ds_scaled_ij_for_dk, q_i_for_dk, dk_prev)
 
+            # TODO(#603): Wave has implicit layout requirements for MMAs, so we
+            # have to read k again.
             k_j_for_dq = tkw.read(
                 k,
                 mapping=flip_k2_k1_read_mapping,
@@ -963,13 +974,8 @@ def get_attention_bwd_dk_kernel(
             scale_ds_reg = tkl.Register[B, M_qs, K2_kvs, tkl.f16](scale)
             ds_scaled_ij = scale_ds_reg * ds_ij
 
-            # We have to read q a second time so that we get q as
-            # [B, K1_qkd, M_qs] for the matmul to compute dk whereas we need q
-            # as [B, M_qs, K1_qkd] for the matmul to compute s. That logical
-            # dimension order should be resolvable with a permute, but at the
-            # thread level the individual threads need different elements of q.
-            # Ideally the compiler should just be smart enough to insert a
-            # shuffle operation here.
+            # TODO(#603): Wave has implicit layout requirements for MMAs, so we
+            # have to read q again.
             q_i_for_dk = tkw.read(
                 q,
                 mapping=flip_m_k1_read_mapping,
@@ -1168,13 +1174,8 @@ def get_attention_bwd_dq_kernel(
             scale_ds_reg = tkl.Register[B, M_qs, K2_kvs, tkl.f16](scale)
             ds_scaled_ij = scale_ds_reg * ds_ij
 
-            # We have to read q a second time so that we get k as
-            # [B, K1_qkd, K2_kvs] for the matmul to compute dq whereas we need k
-            # as [B, K2_kvs, K1_qkd] for the matmul to compute s. That logical
-            # dimension order should be resolvable with a permute, but at the
-            # thread level the individual threads need different elements of q.
-            # Ideally the compiler should just be smart enough to insert a
-            # shuffle operation here.
+            # TODO(#603): Wave has implicit layout requirements for MMAs, so we
+            # have to read k again.
             k_j_for_dq = tkw.read(
                 k,
                 mapping=flip_k2_k1_read_mapping,
