@@ -1082,7 +1082,7 @@ def get_attention_bwd_dq_kernel(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
-            vector_shapes={B: 0, N_vd: vec_size},
+            vector_shapes={B: 0},
         ),
     ]
 
