@@ -70,8 +70,6 @@ param_mfma_shape = pytest.mark.parametrize(
     ids=get_param_id,
 )
 
-param_shape = pytest.mark.parametrize("shape", shapes_16x16x16, ids=get_param_id)
-
 
 def attention_torch_builtin_ref(q, k, v, do, scale=1):
     """Attention forward and backward reference using the Torch builtin."""
@@ -135,172 +133,6 @@ def attention_torch_ops_ref(q, k, v, do, scale=1):
     p = p.detach()
 
     return o, lse, dq, dk, dv, s, p, ds, dp
-
-
-def attention_bwd_torch_ops_ref(q, k, v, do, p, scale=1):
-    """Attention backward pass computed with individual Torch operations."""
-
-    dv = torch.matmul(p.transpose(-1, -2), do)
-    dp = torch.matmul(do, v.transpose(-1, -2))
-    ds = p * (dp - torch.sum(p * dp, -1).unsqueeze(-1))
-    ds_scaled = scale * ds
-    dq = torch.matmul(ds_scaled, k)
-    dk = torch.matmul(ds_scaled.transpose(-1, -2), q)
-
-    return dq, dk, dv, ds, dp
-
-
-def attention_flash_fwd_loops_ref(q, k, v, scale=1):
-    """Reference implementation for Flash Attention 2 foward pass.
-
-    This implements the forward pass of the Flash Attention 2 algorithm using
-    basic Torch operations. It will not be performant, but provides a reference
-    implementation for the algorithm (without the typos present in the paper)
-    and a reference output for the LSE calculation that isn't performed in the
-    standard attention implementation.
-    """
-    B, M_qs, K1_qkd = q.shape
-    _, K2_kvs, _ = k.shape
-    assert k.shape == (B, K2_kvs, K1_qkd)
-    _, _, N_vd = v.shape
-    assert v.shape == (B, K2_kvs, N_vd)
-
-    o = device_zeros(B, M_qs, N_vd)
-    lse = device_zeros(B, M_qs)
-    s = device_zeros(B, M_qs, K2_kvs)
-
-    # ensure we have different shapes so we get errors if there are mismatches.
-    if M_qs == K2_kvs:
-        BLOCK_M_Br = M_qs // 4
-        BLOCK_K2_Bc = K2_kvs // 2
-    else:
-        BLOCK_M_Br = M_qs // 2
-        BLOCK_K2_Bc = K2_kvs // 2
-
-    assert M_qs % BLOCK_M_Br == 0
-    assert K2_kvs % BLOCK_K2_Bc == 0
-
-    for batch in range(B):
-        for start_m in range(0, M_qs, BLOCK_M_Br):
-            end_m = start_m + BLOCK_M_Br
-            q_i = q[batch, start_m:end_m, :]
-            assert q_i.shape == (BLOCK_M_Br, K1_qkd)
-            o_i = device_zeros(BLOCK_M_Br, N_vd)
-            l_i = device_zeros(BLOCK_M_Br)
-            m_i = to_default_device(torch.full((BLOCK_M_Br,), -torch.inf))
-            for start_k2 in range(0, K2_kvs, BLOCK_K2_Bc):
-                end_k2 = start_k2 + BLOCK_K2_Bc
-                k_j = k[batch, start_k2:end_k2, :]
-                assert k_j.shape == (BLOCK_K2_Bc, K1_qkd)
-                v_j = v[batch, start_k2:end_k2, :]
-                assert v_j.shape == (BLOCK_K2_Bc, N_vd)
-                s_ij = scale * torch.matmul(q_i, k_j.transpose(-1, -2))
-                assert s_ij.shape == (BLOCK_M_Br, BLOCK_K2_Bc)
-                s[batch, start_m:end_m, start_k2:end_k2] = s_ij
-                m_ij = torch.maximum(m_i, torch.max(s_ij, dim=-1)[0])
-                assert m_ij.shape == (BLOCK_M_Br,)
-                p_ij = torch.exp(s_ij - torch.reshape(m_ij, (BLOCK_M_Br, 1)))
-                assert p_ij.shape == (BLOCK_M_Br, BLOCK_K2_Bc)
-                e_delta_max = torch.exp(m_i - m_ij)
-                l_ij = e_delta_max * l_i + torch.sum(p_ij, dim=-1)
-                assert l_ij.shape == (BLOCK_M_Br,)
-                o_ij = e_delta_max.reshape(BLOCK_M_Br, 1) * o_i + torch.matmul(
-                    p_ij, v_j
-                )
-                assert o_ij.shape == (BLOCK_M_Br, N_vd)
-
-                o_i = o_ij
-                m_i = m_ij
-                l_i = l_ij
-
-            o_i = o_i / l_i.reshape(BLOCK_M_Br, 1)
-            L_i = m_i + torch.log(l_i)
-            o[batch, start_m:end_m, :] = o_i
-            lse[batch, start_m:end_m] = L_i
-
-    return o, lse, s
-
-
-def attention_flash_bwd_loops_ref(q, k, v, do, o, lse, scale=1):
-    """Reference implementation for Flash Attention 2 backward pass.
-
-    This implements the backward pass of the Flash Attention 2 algorithm using
-    basic Torch operations. It will not be performant, but provides a reference
-    implementation for the algorithm (without the typos present in the paper).
-    """
-    B, M_qs, K1_qkd = q.shape
-    _, K2_kvs, _ = k.shape
-    assert k.shape == (B, K2_kvs, K1_qkd)
-    _, _, N_vd = v.shape
-    assert v.shape == (B, K2_kvs, N_vd)
-    assert do.shape == (B, M_qs, N_vd)
-    assert lse.shape == (B, M_qs)
-
-    D = torch.sum(do * o, -1)
-    dq = torch.zeros_like(q)
-    dk = torch.zeros_like(k)
-    dv = torch.zeros_like(v)
-    s = device_zeros(B, M_qs, K2_kvs)
-    p = torch.zeros_like(s)
-    ds = torch.zeros_like(s)
-    dp = torch.zeros_like(s)
-
-    # ensure we have different shapes so we get errors if there are mismatches.
-    if M_qs == K2_kvs:
-        BLOCK_M_Br = M_qs // 4
-        BLOCK_K2_Bc = K2_kvs // 2
-    else:
-        BLOCK_M_Br = M_qs // 2
-        BLOCK_K2_Bc = K2_kvs // 2
-
-    assert M_qs % BLOCK_M_Br == 0
-    assert K2_kvs % BLOCK_K2_Bc == 0
-
-    for batch in range(B):
-        for start_k2 in range(0, K2_kvs, BLOCK_K2_Bc):
-            end_k2 = start_k2 + BLOCK_K2_Bc
-            k_j = k[batch, start_k2:end_k2, :]
-            assert k_j.shape == (BLOCK_K2_Bc, K1_qkd)
-            v_j = v[batch, start_k2:end_k2, :]
-            assert v_j.shape == (BLOCK_K2_Bc, N_vd)
-
-            dv_j = device_zeros(BLOCK_K2_Bc, N_vd)
-            dk_j = device_zeros(BLOCK_K2_Bc, K1_qkd)
-
-            for start_m in range(0, M_qs, BLOCK_M_Br):
-                end_m = start_m + BLOCK_M_Br
-                q_i = q[batch, start_m:end_m, :]
-                assert q_i.shape == (BLOCK_M_Br, K1_qkd)
-                do_i = do[batch, start_m:end_m, :]
-                assert do_i.shape == (BLOCK_M_Br, N_vd)
-                dq_i = dq[batch, start_m:end_m, :]
-                assert dq_i.shape == (BLOCK_M_Br, K1_qkd)
-                lse_i = lse[batch, start_m:end_m]
-                assert lse_i.shape == (BLOCK_M_Br,)
-                D_i = D[batch, start_m:end_m]
-                assert D_i.shape == (BLOCK_M_Br,)
-                s_ij = scale * torch.matmul(q_i, k_j.transpose(-1, -2))
-                assert s_ij.shape == (BLOCK_M_Br, BLOCK_K2_Bc)
-                s[batch, start_m:end_m, start_k2:end_k2] = s_ij
-                p_ij = torch.exp(s_ij - lse_i.reshape(BLOCK_M_Br, 1))
-                p[batch, start_m:end_m, start_k2:end_k2] = p_ij
-                assert p_ij.shape == (BLOCK_M_Br, BLOCK_K2_Bc)
-                dv_j += torch.matmul(p_ij.transpose(-1, -2), do_i)
-                dp_ij = torch.matmul(do_i, v_j.transpose(-1, -2))
-                assert dp_ij.shape == (BLOCK_M_Br, BLOCK_K2_Bc)
-                dp[batch, start_m:end_m, start_k2:end_k2] = dp_ij
-                ds_ij = p_ij * (dp_ij - D_i.reshape(BLOCK_M_Br, 1))
-                assert ds_ij.shape == (BLOCK_M_Br, BLOCK_K2_Bc)
-                ds[batch, start_m:end_m, start_k2:end_k2] = ds_ij
-                ds_ij_scaled = scale * ds_ij
-                dq_i += torch.matmul(ds_ij_scaled, k_j)
-                dk_j += torch.matmul(ds_ij_scaled.transpose(-1, -2), q_i)
-
-                dv[batch, start_k2:end_k2, :] = dv_j
-
-            dk[batch, start_k2:end_k2, :] = dk_j
-
-    return dq, dk, dv, s, p, ds, dp
 
 
 def get_attention_fwd_kernel(
@@ -1225,8 +1057,13 @@ def get_attention_bwd_dq_kernel(
 
 
 @require_e2e
-@param_shape
+@pytest.mark.parametrize("shape", big_shapes, ids=get_param_id)
 def testAttentionOpsReference(shape: tuple[int, ...]):
+    """Validate our manual reference implementation against the torch builtin.
+
+    We subsequently use it as a reference for the Wave kernels because it's more
+    stable and includes intermediate values we can test against.
+    """
     torch.manual_seed(0)
 
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
@@ -1245,86 +1082,19 @@ def testAttentionOpsReference(shape: tuple[int, ...]):
     (
         o_ops,
         unused_lse_ops,
-        dq_auto_ops,
-        dk_auto_ops,
-        dv_auto_ops,
+        dq_ops,
+        dk_ops,
+        dv_ops,
         unused_s_ops,
-        p_ops,
-        ds_auto_ops,
-        dp_auto_ops,
+        unused_p_ops,
+        unused_ds_ops,
+        unused_dp_ops,
     ) = attention_torch_ops_ref(q, k, v, do, scale=scale)
 
     assert_close(o_ops, o_ref)
-    assert_close(dq_auto_ops, dq_ref)
-    assert_close(dk_auto_ops, dk_ref)
-    assert_close(dv_auto_ops, dv_ref)
-
-    dq_ops, dk_ops, dv_ops, ds_ops, dp_ops = attention_bwd_torch_ops_ref(
-        q, k, v, do, p_ops, scale=scale
-    )
-
-    assert_close(dq_ops, dq_auto_ops, atol=1e-3, rtol=1e-3)
-    assert_close(dk_ops, dk_auto_ops, atol=1e-3, rtol=1e-3)
-    assert_close(dv_ops, dv_auto_ops, atol=1e-3, rtol=1e-3)
-    assert_close(ds_ops, ds_auto_ops, atol=1e-3, rtol=1e-3)
-    assert_close(dp_ops, dp_auto_ops, atol=1e-3, rtol=1e-3)
-
-
-@require_e2e
-@param_shape
-def testFlashAttentionLoopsReference(shape: tuple[int, ...]):
-    torch.manual_seed(0)
-
-    batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
-
-    scale = math.sqrt(1.0 / qk_head_dim)
-
-    q = device_randn(batch, q_seq_len, qk_head_dim)
-    k = device_randn(batch, kv_seq_len, qk_head_dim)
-    v = device_randn(batch, kv_seq_len, v_head_dim)
-    do = device_randn(batch, q_seq_len, v_head_dim)
-
-    (
-        o_ref,
-        lse_ref,
-        dq_ref,
-        dk_ref,
-        dv_ref,
-        s_ref,
-        p_ref,
-        ds_ref,
-        dp_ref,
-    ) = attention_torch_ops_ref(q, k, v, do, scale=scale)
-
-    o_loops, lse_loops, s_loops = attention_flash_fwd_loops_ref(q, k, v, scale=scale)
-
-    # We can't verify P because the Flash Attention 2 algorithm doesn't actually
-    # compute it directly, instead rescaling it as it goes.
-    assert_close(o_loops, o_ref, atol=1e-4, rtol=1e-4)
-    assert_close(s_loops, s_ref, atol=1e-4, rtol=1e-4)
-    assert_close(lse_loops, lse_ref, atol=1e-4, rtol=1e-4)
-
-    dq_loops = torch.zeros_like(q)
-    dk_loops = torch.zeros_like(k)
-    dv_loops = torch.zeros_like(v)
-
-    (
-        dq_loops,
-        dk_loops,
-        dv_loops,
-        s_loops,
-        p_loops,
-        ds_loops,
-        dp_loops,
-    ) = attention_flash_bwd_loops_ref(q, k, v, do, o_loops, lse_loops, scale=scale)
-
-    assert_close(s_loops, s_ref, atol=1e-4, rtol=1e-4)
-    assert_close(p_loops, p_ref, atol=1e-4, rtol=1e-4)
-    assert_close(ds_loops, ds_ref, atol=1e-4, rtol=1e-4)
-    assert_close(dp_loops, dp_ref, atol=1e-4, rtol=1e-4)
-    assert_close(dq_loops, dq_ref, atol=1e-4, rtol=1e-4)
-    assert_close(dk_loops, dk_ref, atol=1e-4, rtol=1e-4)
-    assert_close(dv_loops, dv_ref, atol=1e-4, rtol=1e-4)
+    assert_close(dq_ops, dq_ref)
+    assert_close(dk_ops, dk_ref)
+    assert_close(dv_ops, dv_ref)
 
 
 @require_e2e
@@ -1340,6 +1110,8 @@ def testAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...]):
     v = device_randn(batch, kv_seq_len, v_head_dim, dtype=torch.float16)
     do = device_randn(batch, q_seq_len, v_head_dim, dtype=torch.float16)
 
+    # We could move the reference to a fixture, but it's pretty fast, so that
+    # doesn't seem worth the extra complexity.
     (
         o_ref,
         lse_ref,
