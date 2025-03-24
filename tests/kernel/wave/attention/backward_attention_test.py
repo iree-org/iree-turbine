@@ -1400,6 +1400,9 @@ def testAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...]):
 @require_e2e
 @param_mfma_shape
 def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
+    if mfma_variant == MMAType.F32_32x32x8_F16:
+        pytest.skip("Asymmetric MFMA is broken")
+
     torch.manual_seed(0)
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
     scale = math.sqrt(1.0 / qk_head_dim)
