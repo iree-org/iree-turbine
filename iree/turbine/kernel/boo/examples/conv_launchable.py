@@ -38,13 +38,30 @@ def main():
     run_time_1 = (time() - t0) * 1000
     logger.debug("second launchable call time (same device) : %fms", run_time_1)
 
-    # Interestingly, launching on a different GPU results in a memory access fault:
-    # torch_device = torch.device("cuda:1") if torch.cuda.is_available() else None
-    # other_args = sig.get_sample_conv_args(seed=8, device=torch_device)
-    # y = conv(*other_args)
+    # run a third time, but on a new GPU. This should take a bit longer as we need to assemble a context from the vmfb.
+    torch_device = (
+        torch.device("cuda:1")
+        if torch.cuda.is_available() and torch.cuda.device_count() > 1
+        else None
+    )
+    other_args_0 = sig.get_sample_conv_args(seed=8, device=torch_device)
+    t0 = time()
+    y = conv(*other_args_0)
+    run_time_2 = (time() - t0) * 1000
+    logger.debug(
+        "third launchable call time (new gpu if multiple gpus available) : %fms",
+        run_time_2,
+    )
 
-    # clear the cache dir (cache is located at ~/.cache/turbine-kernels/boo/ by default)
-    # clear_cache_dir()
+    # run a fourth time. This should take about as long as the second run time.
+    other_args_1 = sig.get_sample_conv_args(seed=7, device=torch_device)
+    t0 = time()
+    y = conv(*other_args_1)
+    run_time_3 = (time() - t0) * 1000
+    logger.debug("fourth launchable call time : %fms", run_time_3)
+
+    # clear the mlir artifacts from the cache dir (cache is located at ~/.cache/turbine-kernels/boo/ by default)
+    clear_cache_dir()
 
 
 if __name__ == "__main__":
