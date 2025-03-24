@@ -29,16 +29,7 @@ from ..common.utils import (
 )
 from torch.testing import assert_close
 
-big_shapes = [
-    # Bigger shapes
-    (2, 64, 128, 32, 256),
-    # The batch size 40 mostly just makes things slower. I don't think it helps
-    # that much with correctness testing.
-    (2, 1024, 64, 64, 1024),
-    (8, 128, 128, 64, 256),
-    # (40, 1024, 64, 64, 1024),
-]
-
+# batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len
 shapes_16x16x16 = [
     # Test first with very small shapes. These are much easier to debug.
     (1, 16, 16, 16, 16),
@@ -53,6 +44,18 @@ shapes_16x16x16 = [
 shapes_32x32x32 = [
     tuple(dim if i == 0 else 2 * dim for i, dim in enumerate(shape))
     for shape in shapes_16x16x16
+]
+
+
+big_shapes = [
+    # Bigger shapes
+    (2, 64, 128, 32, 256),
+    (2, 1024, 64, 64, 1024),
+    (8, 128, 128, 64, 256),
+    # The batch size 40 is used in other attention tests, but mostly just makes
+    # things slower. I don't think it helps that much with correctness testing
+    # and we're not doing performance testing yet.
+    # (40, 1024, 64, 64, 1024),
 ]
 
 
@@ -192,7 +195,7 @@ def get_attention_fwd_kernel(
             threads_per_wave=64,
             waves_per_block=(WAVES_PER_BLOCK_M, WAVES_PER_BLOCK_N, WAVES_PER_BLOCK_B),
             mma_type=mfma_variant,
-            vector_shapes={B: 0, M_qs: vec_size, N_vd: vec_size},
+            vector_shapes={B: 0},
         )
     ]
 
@@ -341,6 +344,9 @@ def get_attention_bwd_kernel(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
+            # TODO(#384): If we don't set the N vector shape here, then there is
+            # a compilation failure when BLOCK_N (which is just set to the head
+            # dimension) is not equal to vec_size.
             vector_shapes={B: 0, N_vd: vec_size},
         ),
     ]
