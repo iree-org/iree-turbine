@@ -115,20 +115,23 @@ def _batch_generate_mlir(
     import_pipeline: List[str] = DEFAULT_TORCH_TO_LINALG_PIPELINE,
     print_ir: bool = False,
     print_ir_after_all: bool = False,
+    commands : List[str] = [],
+    old_times: List[str] = [],
 ) -> Tuple[int, int]:
     """prints or saves mlir for each signature provided. Returns tuple: (#failed, #total)"""
     if save_dir:
         Path(save_dir).mkdir(parents=True, exist_ok=True)
     total = 0
     err = 0
-    for name, s in signatures.items():
-        print(f"processing {name}...")
+    sorted_items = sorted(enumerate(signatures.items()), key=lambda item: (item[1][1].mode, item[1][1].groups, item[1][1].dilation, item[1][1].stride, item[1][1].padding))
+    sorted_conv_dict = {key: value for _, (key, value) in sorted_items}
+    sorted_indices = [index for index, _ in sorted_items]
+    for name, s in sorted_conv_dict.items():
+        curr_index = sorted_indices[total]
         path = None if not save_dir else Path(save_dir) / f"{name}.mlir"
-        total += 1
         input_shape = get_shape_2D(s.input_shape,s.dtype)
         kernel_shape = get_shape_2D(s.kernel_shape,s.dtype)
         output_shape = get_shape_2D(s.output_shape, s.dtype)
-        print(s.mode)
         try:
             generate_mlir(
                 s,
@@ -151,7 +154,7 @@ def _batch_generate_mlir(
         benchmark_file_name = str(path)+".out.benchmark.txt"
         err_file = open(err_file_name,"w")
         benchmark_file = open(benchmark_file_name,"w")  
-        subprocess.run(["iree-compile",path, "-o",vmfb,f"--iree-scheduling-dump-statistics-file={stat}","--iree-scheduling-dump-statistics-format=json","--iree-hal-target-backends=rocm", "--iree-hip-target=gfx942", "--iree-preprocessing-pass-pipeline=builtin.module(util.func(iree-global-opt-propagate-linalg-transpose{enable-aggressive-propagation-through-conv=true}),util.func(iree-preprocessing-make-single-dispatch-for-function))","--iree-flow-enable-pad-handling"], stderr=err_file, stdout=err_file)
+        subprocess.run(["iree-compile",path, "-o",vmfb,"--iree-hal-target-backends=rocm", "--iree-hip-target=gfx942", "--iree-preprocessing-pass-pipeline=builtin.module(util.func(iree-preprocessing-make-single-dispatch))","--iree-flow-enable-pad-handling"], stderr=err_file, stdout=err_file)
         if(os.path.exists(vmfb)):
             cmd = ["iree-benchmark-module",f"--module={vmfb}","--device=hip",f"--function={s.get_func_name()}"]
             if(s.mode == Mode.FORWARD):
@@ -159,16 +162,20 @@ def _batch_generate_mlir(
                 cmd.append(f"--input={kernel_shape}")
             elif(s.mode == Mode.WEIGHT_BACKWARD):
                 cmd.append(f"--input={output_shape}")
-                cmd.append(f"--input={input_shape}")    
+                cmd.append(f"--input={input_shape}")
+            elif(s.mode == Mode.INPUT_BACKWARD):
+                cmd.append(f"--input={output_shape}")
+                cmd.append(f"--input={kernel_shape}")    
             zones = trace_gpu(cmd)
             [name_for_entrypoint] = [name for name in zones.keys() if s.get_func_name() in name]
             times_ns = zones[name_for_entrypoint]
             times_us = [t / 1000 for t in times_ns]  # convert to microseconds
             import statistics
-            print(f"min={min(times_us)}, max={max(times_us)}, mean={statistics.mean(times_us)}, stdev={statistics.stdev(times_us)} (us)")
+            print(f"{curr_index}, {commands[curr_index]}, {old_times[curr_index]}, {min(times_us)} ")
         else:
           err += 1
-          print("N.A")
+          print(f"{curr_index}, {commands[curr_index]}, {old_times[curr_index]}, N.A")
+        total += 1
         gc.collect()
     return err, total
 
@@ -252,6 +259,13 @@ def _get_argparse() -> argparse.Namespace:
         default=False,
         help="Enables ir printing for the pass manager. This will dump IR after each pass applied.",
     )
+    parser.add_argument(
+        "--old-times",
+        "-ot",
+        type=str,
+        help="Old times to compare against.",
+    )
+
     return parser.parse_args()
 
 
@@ -280,6 +294,7 @@ def main(args: argparse.Namespace):
         return None
     # user must have specified a commands-file
     commands = _load_commands(args.commands_file)
+    old_times = _load_commands(args.old_times)
     signatures = {_get_safe_name(c): command_to_signature(c) for c in commands}
     # check for filters
     filters = {}
@@ -294,6 +309,8 @@ def main(args: argparse.Namespace):
         import_pipeline=pipeline,
         print_ir=print_ir,
         print_ir_after_all=args.mlir_print_ir_after_all,
+        commands=commands,
+        old_times=old_times,
     )
 
 

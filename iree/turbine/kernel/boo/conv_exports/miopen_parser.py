@@ -16,8 +16,9 @@ __all__ = [
     "get_signature",
 ]
 
-
-def get_signature(args):
+# set fake_padding=True here to see perf without input_padding issues.
+# Note if you are using sorting in generate script the ordering will change.
+def get_signature(args, fake_padding=False):
     layouts = {
         "input_layout": args.in_layout,
         "kernel_layout": args.fil_layout,
@@ -46,7 +47,13 @@ def get_signature(args):
     in_channels = args.in_channels
     groups = args.group_count
     out_channels = args.out_channels
-
+    if(fake_padding):
+        args.in_d = args.in_d + 2*args.pad_d
+        args.in_h = args.in_h + 2*args.pad_h
+        args.in_w = args.in_w + 2*args.pad_w
+        args.pad_d = 0
+        args.pad_h = 0
+        args.pad_w = 0
     in_dims = {
         "N": batch,
         "C": in_channels,
@@ -300,4 +307,5 @@ def get_miopen_parser():
     parser.add_argument(
         "--group_count", "-g", type=int, default=1, help="Number of Groups (Default=1)"
     )
+
     return parser
