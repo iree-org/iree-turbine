@@ -19,6 +19,7 @@ from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.decode_attention import (
     get_decode_attention_kernels,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import os
 from torch.testing import assert_close
 from ..common.utils import (
@@ -32,7 +33,7 @@ from ..common.shapes import get_test_shapes
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("decode_attention"))
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -43,7 +44,7 @@ from ..common.shapes import get_test_shapes
 )
 def testFlashDecoding(
     shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: MMAType,
     request,

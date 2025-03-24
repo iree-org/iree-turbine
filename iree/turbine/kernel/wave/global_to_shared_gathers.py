@@ -172,18 +172,37 @@ def construct_shared_read_mapping(read: Read) -> IndexMapping:
     return new_mapping
 
 
-def update_read_mapping_dynamic_values(read: Read) -> list[fx.Node]:
+def update_read_mapping_dynamic_values(read: Read):
     """
     Since every thread is now only reading one element along the gather dimension,
     we need to modify the read of the dynamic value to read only one element
     and do it at the specified index.
+
+    We cannot just update dynamic val node inplace, as it may be used by other
+    nodes, clone the node and set the new index and `element_per_thread` on it.
+
+    This code can leave old reads without users, we are expecting them to be
+    cleaned up by DCE.
     """
+    new_dyn_vals = []
     for dyn_val in read.mapping_dynamic_vals:
         custom = get_custom(dyn_val)
-        custom.update_arg("elements_per_thread", 1)
-        for dim in dyn_val.index:
-            if dim in read.index:
-                dyn_val.index[dim] = read.index[dim]
+        assert isinstance(custom, Read), f"Only read nodes are supported, got {custom}"
+        with custom.graph.inserting_before(dyn_val):
+            new_read = Read(
+                custom.memory,
+                1,
+                custom.mapping,
+                custom.mapping_dynamic_vals,
+            ).add_to_graph(custom.graph)
+            new_dyn_vals.append(new_read)
+
+            new_read.index = deepcopy(custom.index)
+            for dim in custom.index:
+                if dim in read.index:
+                    new_read.index[dim] = read.index[dim]
+
+    read.update_arg("mapping_dynamic_vals", new_dyn_vals)
 
 
 def add_optimized_nodes(

@@ -21,6 +21,7 @@ def get_vanilla_attention_kernel(
     mfma_variant: MMAType,
     dynamic_dims: bool,
     is_causal: bool = False,
+    is_v_transposed: bool = False,
 ):
     # Input sizes
     B = tkl.sym.B
@@ -74,13 +75,13 @@ def get_vanilla_attention_kernel(
         num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
     )
 
-    @tkw.wave(constraints)
-    def base_attention(
-        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    ):
+    # Value tensor mapping to transpose for efficient computation if the input is
+    # not already transposed.
+    v_mapping = tkw.IndexMapping(
+        num_iterators=3, inputs={B: i, N: j, K2: k}, outputs={B: i, N: j, K2: k}
+    )
+
+    def base_attention_core(q, k, v, c):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
@@ -121,7 +122,12 @@ def get_vanilla_attention_kernel(
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV)
+            if is_v_transposed:
+                v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV)
+            else:
+                v_reg = tkw.read(
+                    v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV, mapping=v_mapping
+                )
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
@@ -131,6 +137,24 @@ def get_vanilla_attention_kernel(
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    @tkw.wave(constraints)
+    def base_attention_transposed_v(
+        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        base_attention_core(q, k, v, c)
+
+    @tkw.wave(constraints)
+    def base_attention(
+        q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, K2, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        base_attention_core(q, k, v, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -163,5 +187,8 @@ def get_vanilla_attention_kernel(
         del hyperparams[N]
         del hyperparams[B]
         del hyperparams[K2]
+
+    if is_v_transposed:
+        base_attention = base_attention_transposed_v
 
     return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map

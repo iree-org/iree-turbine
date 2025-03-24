@@ -13,6 +13,7 @@ from iree.turbine.kernel.wave.templates.paged_decode_attention import (
 from iree.turbine.kernel.wave.templates.decode_attention import (
     get_decode_attention_kernels,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 
@@ -35,7 +36,7 @@ def test_paged_flash_decoding():
     logits_shape = (num_kv_splits, shape.num_seqs, shape.head_size_kv, shape.kv_lens)
     logits_max_shape = (num_kv_splits, shape.num_seqs, shape.head_size_kv)
     block_table_shape = (shape.num_seqs, shape.kv_lens)
-    mfma_variant = tkw.MMAType.F32_16x16x16_F16
+    mfma_variant = (tkw.MMAType.F32_16x16x16_F16, tkw.MMAType.F32_16x16x16_F16)
     (
         phase_0,
         phase_1,
@@ -58,29 +59,30 @@ def test_paged_flash_decoding():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         print(phase_0(q, k, v, logits, logits_max))
 
-    # CHECK:                func.func @phase_0
+    # CHECK-LABEL:          func.func @phase_0
     # CHECK-DAG:               %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:               %[[C1:.*]] = arith.constant 1 : index
-    # CHECK-COUNT-4:           vector.load
-    # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT:.*]] step %[[C1]]
+    # CHECK-DAG:               %[[C16:.*]] = arith.constant 16 : index
+    # CHECK-COUNT-2:           vector.load
+    # CHECK:                   %[[COUNT0:.*]] = arith.minsi %{{.*}}, %{{.*}} : vector<1xindex>
+    # CHECK:                   %[[COUNT1:.*]] = vector.extract %[[COUNT0]][0] : index from vector<1xindex>
+    # CHECK-COUNT-2:           vector.load
+    # CHECK:                   %[[D36:.*]] = arith.subi %[[COUNT1]], %[[C1]] : index
+    # CHECK:                   %[[D37:.*]] = arith.divui %[[D36]], %[[C16]] : index
+    # CHECK:                   %[[D38:.*]] = arith.addi %[[D37]], %[[C1]] : index
+    # CHECK:                   %[[COUNT2:.*]] = arith.select %{{.*}}, %[[C0]], %[[D38]] : index
+    # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT2]] step %[[C1]]
     # CHECK:                        amdgpu.lds_barrier
-    # 1 masked load for sequence idx, 4 for k_cache, and 4 for v_cache.
-    # CHECK-COUNT-1:                vector.maskedload
-    # CHECK-NEXT:                   arith.index_cast
-    # CHECK-COUNT-4:                vector.maskedload
-    # CHECK-NEXT:                   vector.store
-    # CHECK-COUNT-4:                vector.maskedload
-    # CHECK-NEXT:                   vector.store
+    # 1 masked load block table, 1 for k_cache, and 1 for v_cache.
+    # CHECK-COUNT-3:                vector.maskedload
     # CHECK:                        amdgpu.lds_barrier
-    # CHECK-COUNT-32:               vector.load
-    # CHECK-COUNT-8:                vector.load
-    # CHECK-COUNT-8:                amdgpu.mfma
-    # CHECK:                  %[[COND:.*]] = arith.cmpi sgt, %[[COUNT]], %[[C0]] : index
+    # CHECK-COUNT-4:                amdgpu.mfma
+    # CHECK:                  %[[COND:.*]] = arith.cmpi sgt, %[[COUNT1]], %[[C0]] : index
     # CHECK:                  scf.if %[[COND]] {
     # CHECK-COUNT-1:          arith.divf
     # CHECK-COUNT-1:          math.log2
@@ -91,14 +93,15 @@ def test_paged_flash_decoding():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         print(phase_1(logits, logits_max, output))
 
-    # CHECK:            func.func @phase_1
+    # CHECK-LABEL:       func.func @phase_1
+    # CHECK:               vector.load
     # CHECK:               scf.for
-    # CHECK-COUNT-2:           vector.load
+    # CHECK-COUNT-2:           vector.maskedload
     # CHECK-COUNT-1:           arith.maximumf
     # CHECK-COUNT-1:           arith.subf
     # CHECK-COUNT-1:           math.exp2
@@ -141,14 +144,14 @@ def test_flash_decoding():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols_0,
         dynamic_symbols_map=dynamic_symbols_map_0,
     ):
         print(phase_0(q, k, v, logits, logits_max))
 
-    # CHECK:            func.func @phase_0
+    # CHECK-LABEL:           func.func @phase_0
     # CHECK-NOT:               {{.*}} = scf.for
     # CHECK-COUNT-9:           {{.*}} = vector.maskedload
     # CHECK-COUNT-1:           vector.store
@@ -170,14 +173,14 @@ def test_flash_decoding():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols_1,
         dynamic_symbols_map=dynamic_symbols_map_1,
     ):
         print(phase_1(logits, logits_max, output))
 
-    # CHECK:            func.func @phase_1
+    # CHECK-LABEL:       func.func @phase_1
     # CHECK:               {{.*}} = scf.for
     # CHECK-COUNT-2:           {{.*}} = vector.maskedload
     # CHECK-COUNT-1:           {{.*}} = arith.maximumf

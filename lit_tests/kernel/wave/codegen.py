@@ -293,6 +293,7 @@ def test_read_write_diagonal():
         # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
         # CHECK-DAG:        %[[ONE:.+]] = arith.constant dense<1.000000e+00> : vector<16xf16>
         # CHECK-DAG:        %[[ZERO:.+]] = arith.constant dense<0.000000e+00> : vector<16xf16>
+        # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> : vector<16xindex>
         # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
         # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
         # CHECK-DAG:        %[[THREAD_ID_X:.+]] = gpu.thread_id  x
@@ -302,23 +303,19 @@ def test_read_write_diagonal():
         # CHECK:            %[[D3:.+]] = arith.muli %[[D2]], %[[C16]] overflow<nsw, nuw> : index
         # CHECK:            %[[D4:.+]] = arith.addi %[[D3]], %[[D1]] overflow<nsw, nuw> : index
         # CHECK:            %[[BASE_INDEX_X:.+]] = arith.addi %[[D4]], %[[THREAD_ID_X]] overflow<nsw, nuw> : index
-        # CHECK:            %[[D5:.+]] = vector.step : vector<1xindex>
-        # CHECK:            %[[D6:.+]] = arith.muli %[[D5]], %{{.*}} : vector<1xindex>
-        # CHECK:            %[[D7:.+]] = vector.splat %[[BASE_INDEX_X]] : vector<1xindex>
-        # CHECK:            %[[D8:.+]] = arith.addi %[[D6]], %[[D7]] : vector<1xindex>
-        # CHECK:            %[[INDEX_X:.+]] = arith.index_cast %[[D8]] : vector<1xindex> to vector<1xi64>
-        # CHECK:            %[[D10:.+]] = vector.extract %[[INDEX_X]][0] : i64 from vector<1xi64>
-        # CHECK:            %[[BCAST_INDEX_X:.+]] = vector.splat %[[D10]] : vector<16xi64>
-        # CHECK:            %[[D12:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
-        # CHECK:            %[[D13:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] overflow<nsw, nuw> : index
-        # CHECK:            %[[BASE_INDEX_Y:.+]] = arith.addi %[[D13]], %[[D12]] overflow<nsw, nuw> : index
-        # CHECK:            %[[D15:.+]] = vector.step : vector<16xindex>
-        # CHECK:            %[[D16:.+]] = vector.splat %[[BASE_INDEX_Y]] : vector<16xindex>
-        # CHECK:            %[[D17:.+]] = arith.addi %[[D15]], %[[D16]] : vector<16xindex>
-        # CHECK:            %[[INDEX_Y:.+]] = arith.index_cast %[[D17]] : vector<16xindex> to vector<16xi64>
-        # CHECK:            %[[MASK:.+]] = arith.cmpi sge, %[[BCAST_INDEX_X]], %[[INDEX_Y]] : vector<16xi64>
-        # CHECK:            %[[MASK_VAL:.+]] = arith.select %[[MASK]], %[[ZERO]], %[[ONE]] : vector<16xi1>, vector<16xf16>
-        # CHECK:            %[[OUTPUT:.+]] = stream.binding.subspan %arg0[%c0] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
+        # CHECK:            %[[D5:.*]] = vector.splat %[[BASE_INDEX_X]] : vector<1xindex>
+        # CHECK:            %[[D6:.*]] = arith.index_cast %[[D5]] : vector<1xindex> to vector<1xi64>
+        # CHECK:            %[[D7:.*]] = vector.extract %[[D6]][0] : i64 from vector<1xi64>
+        # CHECK:            %[[D8:.*]] = vector.splat %[[D7]] : vector<16xi64>
+        # CHECK:            %[[D9:.*]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D10:.*]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] overflow<nsw, nuw> : index
+        # CHECK:            %[[BASE_INDEX_Y:.*]] = arith.addi %[[D10]], %[[D9]] overflow<nsw, nuw> : index
+        # CHECK:            %[[D12:.*]] = vector.splat %[[BASE_INDEX_Y]] : vector<16xindex>
+        # CHECK:            %[[D13:.*]] = arith.addi %[[D12]], %[[CST]] overflow<nsw, nuw> : vector<16xindex>
+        # CHECK:            %[[D14:.*]] = arith.index_cast %[[D13]] : vector<16xindex> to vector<16xi64>
+        # CHECK:            %[[D15:.*]] = arith.cmpi sge, %[[D8]], %[[D14]] : vector<16xi64>
+        # CHECK:            %[[MASK_VAL:.*]] = arith.select %15, %[[ZERO]], %[[ONE]] : vector<16xi1>, vector<16xf16>
+        # CHECK:            %[[OUTPUT:.+]] = stream.binding.subspan %{{.*}}[%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
         # CHECK:            vector.store %[[MASK_VAL]], %[[OUTPUT]][%[[BASE_INDEX_X]], %[[BASE_INDEX_Y]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
@@ -897,7 +894,8 @@ def test_dynamic_copy():
         a = torch.randn(16, 16, dtype=torch.float16)
         print(dynamic_copy(a))
 
-    # CHECK-LABEL:    func.func @dynamic_copy(%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index)
+    # CHECK-LABEL:    func.func @dynamic_copy
+    # CHECH-SAME:       %[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index
     # CHECK-SAME:       attributes {translation_info = #[[TRANSLATION:.+]]} {
     # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<16xf16>
     # CHECK-DAG:        %[[CST_0:.+]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> :
@@ -1009,6 +1007,7 @@ def test_unary_lowerings():
         res = tkw.abs(res)
         res_b = tkw.abs(b_reg)
         res = tkw.tanh(res)
+        res = tkw.roundeven(res)
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_b, b, elements_per_thread=4)
 
@@ -1033,6 +1032,9 @@ def test_unary_lowerings():
 
         # Tests tanh
         # CHECK: %[[TANH:.+]] = math.tanh %[[ABSF]]
+
+        # Tests roundeven
+        # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[TANH]]
 
 
 @run_test

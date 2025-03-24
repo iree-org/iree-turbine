@@ -12,10 +12,16 @@ from iree.turbine.kernel.wave.utils import (
 
 require_e2e = pytest.mark.require_e2e
 require_cdna2 = pytest.mark.skipif(
-    "gfx90" not in get_default_arch(), reason="Default device is not CDNA2"
+    "gfx90" not in get_default_arch(),
+    reason="Default architecture is not CDNA2, default architecture is '{}'".format(
+        get_default_arch()
+    ),
 )
 require_cdna3 = pytest.mark.skipif(
-    "gfx94" not in get_default_arch(), reason="Default device is not CDNA3"
+    "gfx94" not in get_default_arch(),
+    reason="Default architecture is not CDNA3, default architecture is '{}'".format(
+        get_default_arch()
+    ),
 )
 # Whether to dump the generated MLIR module.
 dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))

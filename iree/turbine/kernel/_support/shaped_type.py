@@ -125,6 +125,16 @@ class ShapedDataType(ShapedType):
 
         return cast(Type[SubtypeT], Subtype)
 
+    def __hash__(cls):
+        return hash((cls.__class__, cls.dtype, *(cls.symbolic_shape or [])))
+
+    def __eq__(cls, other):
+        return (
+            cls.__class__ == other.__class__
+            and cls.dtype == other.dtype
+            and cls.symbolic_shape == other.symbolic_shape
+        )
+
     def __str__(cls):
         return repr(cls)
 
