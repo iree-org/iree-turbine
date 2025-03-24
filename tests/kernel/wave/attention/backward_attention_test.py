@@ -1500,7 +1500,7 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
 
 @require_e2e
 @param_mfma_shape
-def testAttentionBackwarddv(mfma_variant: MMAType, shape: tuple[int, ...]):
+def testAttentionBackward_dv(mfma_variant: MMAType, shape: tuple[int, ...]):
     """This tests a kernel only for the gradient of v."""
     torch.manual_seed(0)
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
@@ -1535,7 +1535,7 @@ def testAttentionBackwarddv(mfma_variant: MMAType, shape: tuple[int, ...]):
     )
     hyperparams_dv.update(get_default_scheduling_params())
     config = get_default_run_config()
-    compile_config_dv = {
+    compile_config = {
         "waves_per_eu": 2,
         "denorm_fp_math_f32": "preserve-sign",
     }
@@ -1546,7 +1546,7 @@ def testAttentionBackwarddv(mfma_variant: MMAType, shape: tuple[int, ...]):
         run=True,
         run_bench=False,
         run_config=config,
-        compile_config=compile_config_dv,
+        compile_config=compile_config,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
 
@@ -1569,7 +1569,7 @@ def testAttentionBackwarddv(mfma_variant: MMAType, shape: tuple[int, ...]):
 
 @require_e2e
 @param_mfma_shape
-def testAttentionBackwarddk(mfma_variant: MMAType, shape: tuple[int, ...]):
+def testAttentionBackward_dk(mfma_variant: MMAType, shape: tuple[int, ...]):
     """This tests a kernel only for the gradient of k."""
     torch.manual_seed(0)
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
@@ -1604,7 +1604,7 @@ def testAttentionBackwarddk(mfma_variant: MMAType, shape: tuple[int, ...]):
     )
     hyperparams_dk.update(get_default_scheduling_params())
     config = get_default_run_config()
-    compile_config_dk = {
+    compile_config = {
         "waves_per_eu": 2,
         "denorm_fp_math_f32": "preserve-sign",
     }
@@ -1615,7 +1615,7 @@ def testAttentionBackwarddk(mfma_variant: MMAType, shape: tuple[int, ...]):
         run=True,
         run_bench=False,
         run_config=config,
-        compile_config=compile_config_dk,
+        compile_config=compile_config,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
 
@@ -1660,7 +1660,7 @@ def testAttentionBackwarddk(mfma_variant: MMAType, shape: tuple[int, ...]):
 
 @require_e2e
 @param_mfma_shape
-def testAttentionBackwarddq(mfma_variant: MMAType, shape: tuple[int, ...]):
+def testAttentionBackward_dq(mfma_variant: MMAType, shape: tuple[int, ...]):
     """This tests a kernel only for the gradient of q."""
     torch.manual_seed(0)
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
@@ -1695,7 +1695,7 @@ def testAttentionBackwarddq(mfma_variant: MMAType, shape: tuple[int, ...]):
     )
     hyperparams_dq.update(get_default_scheduling_params())
     config = get_default_run_config()
-    compile_config_dq = {
+    compile_config = {
         "waves_per_eu": 2,
         "denorm_fp_math_f32": "preserve-sign",
     }
@@ -1706,7 +1706,7 @@ def testAttentionBackwarddq(mfma_variant: MMAType, shape: tuple[int, ...]):
         run=True,
         run_bench=False,
         run_config=config,
-        compile_config=compile_config_dq,
+        compile_config=compile_config,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
 
