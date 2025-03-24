@@ -451,7 +451,8 @@ def get_attention_bwd_kernel(
     performance.
 
     This also currently has to perform a lot of extra reads to satisfy the
-    layout restrictions wave has for MMAs. Hopefully these can be elimanted.
+    layout restrictions wave has for MMAs, including having to write out and
+    then read back an intermediate variable. Hopefully these can be elimanted.
     """
     # Input sizes
     B = tkl.sym.B  # batch
@@ -535,9 +536,7 @@ def get_attention_bwd_kernel(
         k: tkl.Memory[B, K2_kvs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, K2_kvs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         do: tkl.Memory[B, M_qs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        # This has to be loaded in this way or set_node_indices fails with
-        # resolving thread shapes
-        lse: tkl.Memory[B, K2_kvs, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        lse: tkl.Memory[B, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         D: tkl.Memory[B, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dq: tkl.Memory[B, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dk: tkl.Memory[B, K2_kvs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
@@ -567,8 +566,9 @@ def get_attention_bwd_kernel(
             log2e = tkl.Register[B, M_qs, K2_kvs, tkl.f16](1.44269504089)
             scale_s_reg = tkl.Register[B, M_qs, K2_kvs, tkl.f32](scale)
             s_unscaled_ij = tkw.mma(q_i, k_j, s_acc)
-            # TODO(#410): This no-op permute works around expansion failing in
-            # the K1 dimension when the scaling factor is applied.
+            # TODO(#410): This no-op permute works around either index
+            # assignment or expansion failing when doing a subsequent
+            # elementwise operation.
             s_unscaled_ij = tkw.permute(s_unscaled_ij, [B, M_qs, K2_kvs])
             s_ij = scale_s_reg * s_unscaled_ij
             tkw.write(s_ij, s, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
@@ -769,9 +769,10 @@ def get_attention_bwd_dv_kernel(
             log2e = tkl.Register[B, M_qs, K2_kvs, tkl.f16](1.44269504089)
             scale_s_reg = tkl.Register[B, M_qs, K2_kvs, tkl.f32](scale)
             s_unscaled_ij = tkw.mma(q_i, k_j, s_acc)
-            # TODO(#410): a no-op permute here gets past a compiler error
-            # resolving node indices. I think it just hides the K1 dimension
-            # from the index.
+            # TODO(#410): This no-op permute works around either index
+            # assignment or expansion failing when doing a subsequent
+            # elementwise operation. I think it just hides the K1 dimension from
+            # the index.
             s_unscaled_ij = tkw.permute(s_unscaled_ij, [B, M_qs, K2_kvs])
             s_ij = scale_s_reg * s_unscaled_ij
             tkw.write(s_ij, s, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
@@ -925,8 +926,10 @@ def get_attention_bwd_dk_kernel(
             log2e = tkl.Register[B, M_qs, K2_kvs, tkl.f16](1.44269504089)
             scale_s_reg = tkl.Register[B, M_qs, K2_kvs, tkl.f32](scale)
             s_unscaled_ij = tkw.mma(q_i, k_j, s_acc)
-            # TODO(#410): This no-op permute works around expansion failing in
-            # the K1 dimension when the scaling factor is applied.
+            # TODO(#410): This no-op permute works around either index
+            # assignment or expansion failing when doing a subsequent
+            # elementwise operation. I think it just hides the K1 dimension from
+            # the index.
             s_unscaled_ij = tkw.permute(s_unscaled_ij, [B, M_qs, K2_kvs])
             s_ij = scale_s_reg * s_unscaled_ij
             tkw.write(s_ij, s, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
@@ -1130,6 +1133,10 @@ def get_attention_bwd_dq_kernel(
                 elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
             )
             s_ij = tkw.permute(s_ij, [B, M_qs, K2_kvs])
+            # For some reason because s is now computed as K2xM and then
+            # permuted to MxK2 (as opposed to the reverse in the fused kernel),
+            # elements_per_thread needs to be 1 instead of
+            # MFMA_OUTPUT_ELS_PER_THREAD. I'm not sure which is more desirable.
             lse_i = tkw.read(lse, elements_per_thread=1)
             s_ij_sub = tkw.cast(s_ij, tkl.f16) - lse_i
             tkw.write(s_ij_sub, s_sub, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
@@ -1442,19 +1449,12 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
         dp = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
         dp_sub = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
 
-        expanded_lse = lse.reshape((batch, q_seq_len, 1)).expand(
-            batch, q_seq_len, kv_seq_len
-        )
-
         asm_bwd = attention_bwd(
             q,
             k,
             v,
             do,
-            # We currently have to broadcast this prior to passing it to the
-            # kernel or wave gets upset. This is fixed in the
-            # individual-gradient kernels.
-            expanded_lse.transpose(-1, -2),
+            lse,
             D,
             dq,
             dk,
