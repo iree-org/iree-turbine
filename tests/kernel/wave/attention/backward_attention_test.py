@@ -105,6 +105,10 @@ def attention_torch_ops_ref(q, k, v, do, scale=1):
     p = torch.softmax(s, dim=-1)
     o = torch.matmul(p, v)
 
+    m = torch.max(s, dim=-1)[0]
+    p_prime = torch.exp(s - m.unsqueeze(-1))
+    lse = m + torch.log(torch.sum(p_prime, dim=-1))
+
     q.retain_grad()
     k.retain_grad()
     v.retain_grad()
@@ -121,7 +125,7 @@ def attention_torch_ops_ref(q, k, v, do, scale=1):
     s = s.detach()
     p = p.detach()
 
-    return o, dq, dk, dv, s, p, ds, dp
+    return o, lse, dq, dk, dv, s, p, ds, dp
 
 
 def attention_bwd_torch_ops_ref(q, k, v, do, p, scale=1):
@@ -738,9 +742,7 @@ def get_attention_bwd_dv_kernel(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
-            # Setting the N vector size here avoids some errors about not being
-            # able to compute vector sizes.
-            vector_shapes={B: 0, N_vd: vec_size},
+            vector_shapes={B: 0},
         ),
     ]
 
@@ -1233,6 +1235,7 @@ def testAttentionOpsReference(shape: tuple[int, ...]):
 
     (
         o_ops,
+        unused_lse_ops,
         dq_auto_ops,
         dk_auto_ops,
         dv_auto_ops,
@@ -1274,6 +1277,7 @@ def testFlashAttentionLoopsReference(shape: tuple[int, ...]):
 
     (
         o_ref,
+        lse_ref,
         dq_ref,
         dk_ref,
         dv_ref,
@@ -1289,6 +1293,7 @@ def testFlashAttentionLoopsReference(shape: tuple[int, ...]):
     # compute it directly, instead rescaling it as it goes.
     assert_close(o_loops, o_ref, atol=1e-4, rtol=1e-4)
     assert_close(s_loops, s_ref, atol=1e-4, rtol=1e-4)
+    assert_close(lse_loops, lse_ref, atol=1e-4, rtol=1e-4)
 
     dq_loops = torch.zeros_like(q)
     dk_loops = torch.zeros_like(k)
@@ -1315,59 +1320,28 @@ def testFlashAttentionLoopsReference(shape: tuple[int, ...]):
 
 @require_e2e
 @param_mfma_shape
-def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
-    batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
-
-    scale = math.sqrt(1.0 / qk_head_dim)
-
-    tols = dict(atol=3e-3, rtol=3e-3)
-
+def testAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...]):
     torch.manual_seed(0)
-    # doing all this manual stuff in float32 or we lose too much precision. We
-    # generate the random numbers in float16 though so we at least start with
-    # something that is representable in that.
+    batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
+    scale = math.sqrt(1.0 / qk_head_dim)
+    cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
 
-    q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16).to(
-        torch.float32
-    )
-    k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16).to(
-        torch.float32
-    )
-    v = device_randn(batch, kv_seq_len, v_head_dim, dtype=torch.float16).to(
-        torch.float32
-    )
-    do = device_randn(batch, q_seq_len, v_head_dim, dtype=torch.float16).to(
-        torch.float32
-    )
-
-    o_ref, lse_ref, s_ref = attention_flash_fwd_loops_ref(q, k, v, scale=scale)
+    q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16)
+    k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
+    v = device_randn(batch, kv_seq_len, v_head_dim, dtype=torch.float16)
+    do = device_randn(batch, q_seq_len, v_head_dim, dtype=torch.float16)
 
     (
-        dq_ref,
-        dk_ref,
-        dv_ref,
+        o_ref,
+        lse_ref,
+        unused_dq_ref,
+        unused_dk_ref,
+        unused_dv_ref,
         s_ref,
         p_ref,
-        ds_ref,
-        dp_ref,
-    ) = attention_flash_bwd_loops_ref(q, k, v, do, o_ref, lse_ref, scale=scale)
-
-    # Alright, back to float16, which Wave requires
-
-    lse_ref = lse_ref.to(torch.float16)
-    # s and dp are matrix accumulators, so still f32
-    p_ref = p_ref.to(torch.float16)
-    ds_ref = ds_ref.to(torch.float16)
-
-    o_ref = o_ref.to(torch.float16)
-    dq_ref = dq_ref.to(torch.float16)
-    dk_ref = dk_ref.to(torch.float16)
-    dv_ref = dv_ref.to(torch.float16)
-
-    q = q.to(torch.float16)
-    k = k.to(torch.float16)
-    v = v.to(torch.float16)
-    do = do.to(torch.float16)
+        unused_ds_ref,
+        unused_dp_ref,
+    ) = attention_torch_ops_ref(q, k, v, do, scale=scale)
 
     attention_fwd, hyperparams = get_attention_fwd_kernel(
         batch=batch,
@@ -1407,11 +1381,37 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
                 f.write(asm_fwd)
             print(f"IR dumped to {filename}")
 
-        assert_close(s, s_ref, **tols)
+        assert_close(s, s_ref, **cmp_params)
         # Can't check P, since we don't actually compute the "real" thing in the
         # forward pass, but rather rescale as we go.
-        assert_close(lse, lse_ref, **tols)
-        assert_close(o, o_ref, **tols)
+        assert_close(lse, lse_ref, **cmp_params)
+        assert_close(o, o_ref, **cmp_params)
+
+
+@require_e2e
+@param_mfma_shape
+def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
+    torch.manual_seed(0)
+    batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
+    scale = math.sqrt(1.0 / qk_head_dim)
+    cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
+
+    q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16)
+    k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
+    v = device_randn(batch, kv_seq_len, v_head_dim, dtype=torch.float16)
+    do = device_randn(batch, q_seq_len, v_head_dim, dtype=torch.float16)
+
+    (
+        o_ref,
+        lse_ref,
+        dq_ref,
+        dk_ref,
+        dv_ref,
+        s_ref,
+        p_ref,
+        ds_ref,
+        dp_ref,
+    ) = attention_torch_ops_ref(q, k, v, do, scale=scale)
 
     attention_bwd, hyperparams = get_attention_bwd_kernel(
         batch=batch,
@@ -1438,7 +1438,7 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
         compile_config=compile_config,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        D = torch.sum(do * o, -1)
+        D = torch.sum(do * o_ref, -1)
 
         dq = torch.zeros_like(q)
         dk = torch.zeros_like(k)
@@ -1455,7 +1455,7 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
             k,
             v,
             do,
-            lse,
+            lse_ref,
             D,
             dq,
             dk,
@@ -1474,73 +1474,47 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
                 f.write(asm_bwd)
             print(f"IR dumped to {filename}")
 
-        assert_close(s, s_ref, **tols)
-        assert_close(p, p_ref, **tols)
+        assert_close(s, s_ref, **cmp_params)
+        assert_close(p, p_ref, **cmp_params)
 
-        assert_close(dv, dv_ref, **tols)
+        assert_close(dv, dv_ref, **cmp_params)
 
         dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
-        assert_close(dp, dp_ref, **tols)
-        assert_close(dp_sub, dp_sub_ref, **tols)
+        assert_close(dp, dp_ref, **cmp_params)
+        assert_close(dp_sub, dp_sub_ref, **cmp_params)
 
-        assert_close(ds, ds_ref, **tols)
+        assert_close(ds, ds_ref, **cmp_params)
 
-        assert_close(dk, dk_ref, **tols)
-        assert_close(dq, dq_ref, **tols)
+        assert_close(dk, dk_ref, **cmp_params)
+        assert_close(dq, dq_ref, **cmp_params)
 
 
 @require_e2e
 @param_mfma_shape
-def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...]):
-    """This tests separate kernels for the different gradients."""
-    batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
-
-    scale = math.sqrt(1.0 / qk_head_dim)
-
-    tols = dict(atol=3e-3, rtol=3e-3)
-
+def testAttentionBackwarddv(mfma_variant: MMAType, shape: tuple[int, ...]):
+    """This tests a kernel only for the gradient of v."""
     torch.manual_seed(0)
-    # doing all this manual stuff in float32 or we lose too much precision. We
-    # generate the random numbers in float16 though so we at least start with
-    # something that is representable in that.
+    batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
+    scale = math.sqrt(1.0 / qk_head_dim)
+    cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
 
-    q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16).to(
-        torch.float32
-    )
-    k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16).to(
-        torch.float32
-    )
-    v = device_randn(batch, kv_seq_len, v_head_dim, dtype=torch.float16).to(
-        torch.float32
-    )
-    do = device_randn(batch, q_seq_len, v_head_dim, dtype=torch.float16).to(
-        torch.float32
-    )
-
-    o_ref, lse_ref, s_ref = attention_flash_fwd_loops_ref(q, k, v, scale=scale)
+    q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16)
+    k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
+    v = device_randn(batch, kv_seq_len, v_head_dim, dtype=torch.float16)
+    do = device_randn(batch, q_seq_len, v_head_dim, dtype=torch.float16)
 
     (
-        dq_ref,
-        dk_ref,
+        unused_o_ref,
+        lse_ref,
+        unused_dq_ref,
+        unused_dk_ref,
         dv_ref,
         s_ref,
         p_ref,
-        ds_ref,
-        dp_ref,
-    ) = attention_flash_bwd_loops_ref(q, k, v, do, o_ref, lse_ref, scale=scale)
+        unused_ds_ref,
+        unused_dp_ref,
+    ) = attention_torch_ops_ref(q, k, v, do, scale=scale)
 
-    q = q.to(torch.float16)
-    k = k.to(torch.float16)
-    v = v.to(torch.float16)
-    do = do.to(torch.float16)
-    lse_ref = lse_ref.to(torch.float16)
-    p_ref = p_ref.to(torch.float16)
-    dq_ref = dq_ref.to(torch.float16)
-    dk_ref = dk_ref.to(torch.float16)
-    dv_ref = dv_ref.to(torch.float16)
-    ds_ref = ds_ref.to(torch.float16)
-
-    # *** dv ***
     attention_bwd_dv, hyperparams_dv = get_attention_bwd_dv_kernel(
         batch=batch,
         kv_seq_len=kv_seq_len,
@@ -1579,11 +1553,37 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...]):
                 f.write(asm_bwd_dv)
             print(f"IR dumped to {filename}")
 
-        assert_close(s, s_ref, **tols)
-        assert_close(p, p_ref, **tols)
-        assert_close(dv, dv_ref, **tols)
+        assert_close(s, s_ref, **cmp_params)
+        assert_close(p, p_ref, **cmp_params)
+        assert_close(dv, dv_ref, **cmp_params)
 
-    # *** dk ***
+
+@require_e2e
+@param_mfma_shape
+def testAttentionBackwarddk(mfma_variant: MMAType, shape: tuple[int, ...]):
+    """This tests a kernel only for the gradient of k."""
+    torch.manual_seed(0)
+    batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
+    scale = math.sqrt(1.0 / qk_head_dim)
+    cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
+
+    q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16)
+    k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
+    v = device_randn(batch, kv_seq_len, v_head_dim, dtype=torch.float16)
+    do = device_randn(batch, q_seq_len, v_head_dim, dtype=torch.float16)
+
+    (
+        o_ref,
+        lse_ref,
+        unused_dq_ref,
+        dk_ref,
+        unused_dv_ref,
+        s_ref,
+        p_ref,
+        ds_ref,
+        dp_ref,
+    ) = attention_torch_ops_ref(q, k, v, do, scale=scale)
+
     attention_bwd_dk, hyperparams_dk = get_attention_bwd_dk_kernel(
         batch=batch,
         kv_seq_len=kv_seq_len,
@@ -1641,14 +1641,40 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...]):
 
         dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
 
-        assert_close(s, s_ref, **tols)
-        assert_close(p, p_ref, **tols)
-        assert_close(dp, dp_ref, **tols)
-        assert_close(dp_sub, dp_sub_ref, **tols)
-        assert_close(ds, ds_ref, **tols)
-        assert_close(dk, dk_ref, **tols)
+        assert_close(s, s_ref, **cmp_params)
+        assert_close(p, p_ref, **cmp_params)
+        assert_close(dp, dp_ref, **cmp_params)
+        assert_close(dp_sub, dp_sub_ref, **cmp_params)
+        assert_close(ds, ds_ref, **cmp_params)
+        assert_close(dk, dk_ref, **cmp_params)
 
-    # *** dq ***
+
+@require_e2e
+@param_mfma_shape
+def testAttentionBackwarddq(mfma_variant: MMAType, shape: tuple[int, ...]):
+    """This tests a kernel only for the gradient of q."""
+    torch.manual_seed(0)
+    batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
+    scale = math.sqrt(1.0 / qk_head_dim)
+    cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
+
+    q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16)
+    k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
+    v = device_randn(batch, kv_seq_len, v_head_dim, dtype=torch.float16)
+    do = device_randn(batch, q_seq_len, v_head_dim, dtype=torch.float16)
+
+    (
+        o_ref,
+        lse_ref,
+        dq_ref,
+        unused_dk_ref,
+        unused_dv_ref,
+        s_ref,
+        p_ref,
+        ds_ref,
+        dp_ref,
+    ) = attention_torch_ops_ref(q, k, v, do, scale=scale)
+
     attention_bwd_dq, hyperparams_dq = get_attention_bwd_dq_kernel(
         batch=batch,
         kv_seq_len=kv_seq_len,
@@ -1677,8 +1703,6 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...]):
 
         D = torch.sum(do * o_ref, -1).to(torch.float16)
         dq = torch.zeros_like(q)
-        dk = torch.zeros_like(k)
-        dv = torch.zeros_like(v)
         s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
         p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
         s_sub = torch.zeros_like(p)
@@ -1713,10 +1737,10 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...]):
         ).expand(batch, q_seq_len, kv_seq_len)
         dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
 
-        assert_close(s, s_ref, **tols)
-        assert_close(s_sub, s_sub_ref, **tols)
-        assert_close(p, p_ref, **tols)
-        assert_close(dp, dp_ref, **tols)
-        assert_close(dp_sub, dp_sub_ref, **tols)
-        assert_close(ds, ds_ref, **tols)
-        assert_close(dq, dq_ref, **tols)
+        assert_close(s, s_ref, **cmp_params)
+        assert_close(s_sub, s_sub_ref, **cmp_params)
+        assert_close(p, p_ref, **cmp_params)
+        assert_close(dp, dp_ref, **cmp_params)
+        assert_close(dp_sub, dp_sub_ref, **cmp_params)
+        assert_close(ds, ds_ref, **cmp_params)
+        assert_close(dq, dq_ref, **cmp_params)
