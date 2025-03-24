@@ -4,7 +4,9 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Any, Callable, Optional, Sequence, Tuple
+import hashlib
+from pathlib import Path
+from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 import torch
 from torch import Tensor
@@ -74,9 +76,19 @@ class Launchable:
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
         entry_point: str = "main",
+        file_cache_dir: Union[str, Path, None] = None,
     ) -> "Launchable":
+        """
+        Generates a launchable from a program source (e.g., mlir string).
+        Set a file_cache_dir to enable storing/retrieving artifacts between sessions.
+        """
+        callback = (
+            _jit_callback(source)
+            if file_cache_dir is None
+            else _caching_jit_callback(source, file_cache_dir)
+        )
         return Launchable.from_vm_module(
-            _jit_callback(source),
+            callback,
             parameter_providers=parameter_providers,
             entry_point=entry_point,
         )
@@ -105,8 +117,8 @@ class Launchable:
     def from_vm_module(
         vm_module_callback: Callable[[Device], VmModule],
         *,
-        parameter_providers: Sequence[ParameterProvider],
-        entry_point: str,
+        parameter_providers: Sequence[ParameterProvider] = (),
+        entry_point: str = "main",
     ):
         def loader(device: Device) -> _NamedVmModule:
             return entry_point, vm_module_callback(device)
@@ -231,6 +243,54 @@ def _jit_callback(program_source: Any) -> _Loader:
         inv.output_vm_bytecode(output)
         mapped_memory = output.map_memory()
         vm_instance = device.vm_instance
+        # TODO: VmModule.wrap_buffer would be better here, but it is still
+        # unreliable capturing mapped memory from the compiler.
+        # See: https://github.com/iree-org/iree/issues/17403
+        return VmModule.copy_buffer(vm_instance, mapped_memory)
+
+    return callback
+
+
+def _caching_jit_callback(program_source: Any, cache_dir: Path | str):
+    """
+    Similar to _jit_callback, but reads and writes vmfbs to a file_cache
+    """
+    # TODO: move this into iree/turbine/runtime/launch.py
+    session = Session()
+    if isinstance(program_source, Source):
+        source = program_source
+    elif isinstance(program_source, str):
+        source = Source.wrap_buffer(session, program_source.encode())
+    else:
+        source = Source.wrap_buffer(session, program_source)
+
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(exist_ok=True, parents=True)
+
+    def callback(device: Device):
+        key_hash = hashlib.sha1(
+            device.type_cache_key.encode(), usedforsecurity=False
+        ).hexdigest()
+        vmfb_path: Path = cache_dir / f"{key_hash}.vmfb"
+        vm_instance = device.vm_instance
+        if vmfb_path.is_file():
+            logger.debug("Loading vmfb from cache: %s", str(vmfb_path))
+            vmfb = vmfb_path.read_bytes()
+            return VmModule.copy_buffer(vm_instance, vmfb)
+
+        session.set_flags(*device.compile_target_flags)
+        inv = session.invocation()
+        output = Output.open_membuffer()
+        inv.enable_console_diagnostics()
+        inv.parse_source(source)
+        if not inv.execute():
+            # TODO: Capture diagnostics and report.
+            raise RuntimeError(f"JIT compilation failed. See diagnostics.")
+        inv.output_vm_bytecode(output)
+        mapped_memory = output.map_memory()
+
+        logger.debug("Writing vmfb to cache: %s", str(vmfb_path))
+        vmfb_path.write_bytes(mapped_memory.raw)
         # TODO: VmModule.wrap_buffer would be better here, but it is still
         # unreliable capturing mapped memory from the compiler.
         # See: https://github.com/iree-org/iree/issues/17403
