@@ -59,6 +59,13 @@ def scaled_dot_product_attention_bhsd(
     Returns:
         Tensor: Output tensor of shape [B, H, S_q, D] after applying attention.
     """
+    if query.dtype != torch.float32:
+        query = query.to(torch.float32)
+    if key.dtype != torch.float32:
+        key = key.to(torch.float32)
+    if value.dtype != torch.float32:
+        value = value.to(torch.float32)
+
     scale: float = query.shape[-1] ** -0.5
     attn_logits: Tensor = torch.matmul(query, key.transpose(-2, -1)) * scale
 

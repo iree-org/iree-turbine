@@ -377,7 +377,7 @@ def testAttentionBSHD(
             output.transpose(1, 2),
             torch_ref,
             check_dtype=False,
-            atol=1e-2,
+            atol=1e-3,
             rtol=1e-3,
         )
 
