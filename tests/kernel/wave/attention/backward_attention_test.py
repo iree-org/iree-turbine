@@ -1300,12 +1300,12 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...], request
         lse = device_zeros(batch, q_seq_len, dtype=torch.float16)
         s = device_zeros(batch, q_seq_len, kv_seq_len)
 
-        mb_fwd = attention_fwd(q, k, v.transpose(-1, -2), s, o, lse)
+        asm_fwd = attention_fwd(q, k, v.transpose(-1, -2), s, o, lse)
 
         if dump_generated_mlir:
             filename = f"out/wave_attention_fwd_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb_fwd.module_op.get_asm())
+                f.write(asm_fwd)
             print(f"IR dumped to {filename}")
 
         assert_close(s, s_ref, **tols)
@@ -1354,7 +1354,7 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...], request
             batch, q_seq_len, kv_seq_len
         )
 
-        mb_bwd = attention_bwd(
+        asm_bwd = attention_bwd(
             q,
             k,
             v,
@@ -1377,7 +1377,7 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...], request
         if dump_generated_mlir:
             filename = f"out/wave_attention_bwd_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb_bwd.module_op.get_asm())
+                f.write(asm_bwd)
             print(f"IR dumped to {filename}")
 
         assert_close(s, s_ref, **tols)
@@ -1477,12 +1477,12 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...], re
         s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
         p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
 
-        mb_bwd_dv = attention_bwd_dv(q, k, do, lse_ref, dv, s, p)
+        asm_bwd_dv = attention_bwd_dv(q, k, do, lse_ref, dv, s, p)
 
         if dump_generated_mlir:
             filename = f"out/wave_attention_bwd_dv_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb_bwd_dv.module_op.get_asm())
+                f.write(asm_bwd_dv)
             print(f"IR dumped to {filename}")
 
         assert_close(s, s_ref, **tols)
@@ -1523,7 +1523,7 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...], re
         dp = torch.zeros_like(s)
         dp_sub = torch.zeros_like(p)
 
-        mb_bwd_dk = attention_bwd_dk(
+        asm_bwd_dk = attention_bwd_dk(
             q,
             k,
             v,
@@ -1541,7 +1541,7 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...], re
         if dump_generated_mlir:
             filename = f"out/wave_attention_bwd_dk_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb_bwd_dk.module_op.get_asm())
+                f.write(asm_bwd_dk)
             print(f"IR dumped to {filename}")
 
         dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
@@ -1590,7 +1590,7 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...], re
         dp = torch.zeros_like(s)
         dp_sub = torch.zeros_like(p)
 
-        mb_bwd_dq = attention_bwd_dq(
+        asm_bwd_dq = attention_bwd_dq(
             q,
             k,
             v,
@@ -1609,7 +1609,7 @@ def testAttentionBackwardParts(mfma_variant: MMAType, shape: tuple[int, ...], re
         if dump_generated_mlir:
             filename = f"out/wave_attention_bwd_dq_{'x'.join(map(str, shape))}.mlir"
             with open(filename, "w") as f:
-                f.write(mb_bwd_dq.module_op.get_asm())
+                f.write(asm_bwd_dq)
             print(f"IR dumped to {filename}")
 
         s_sub_ref = s_ref.to(torch.float16) - lse_ref.reshape(
