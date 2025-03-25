@@ -19,10 +19,12 @@ from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.decode_attention import (
     get_decode_attention_kernels,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import os
 from torch.testing import assert_close
 from ..common.utils import (
     require_e2e,
+    param_bool,
     enable_scheduling_barriers,
     dump_generated_mlir,
 )
@@ -31,8 +33,8 @@ from ..common.shapes import get_test_shapes
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("decode_attention"))
-@pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("dynamic_dims", [True, False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+@param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -42,7 +44,7 @@ from ..common.shapes import get_test_shapes
 )
 def testFlashDecoding(
     shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: MMAType,
     request,
@@ -99,7 +101,7 @@ def testFlashDecoding(
         dynamic_symbols_map=dynamic_symbols_map_0,
     ):
         # TODO: Add scaling of QK as part of kernel.
-        mb_qk = phase_0(
+        asm_qk = phase_0(
             q * dk_sqrt * log2e,
             k,
             v.permute([0, 2, 1]),
@@ -119,7 +121,7 @@ def testFlashDecoding(
         dynamic_symbols_map=dynamic_symbols_map_1,
     ):
         # TODO: Add variant of non-transposed V attention kernel.
-        mb_sv = phase_1(phase_0_output, phase_0_output_max, output)
+        asm_sv = phase_1(phase_0_output, phase_0_output_max, output)
 
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q, k, v, attn_mask=None
@@ -128,9 +130,9 @@ def testFlashDecoding(
     if dump_generated_mlir:
         filename = f"wave_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(asm_qk)
         filename = f"wave_phase_1_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_sv.module_op.get_asm())
+            f.write(asm_sv)
 
     assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)

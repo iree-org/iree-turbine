@@ -4,7 +4,9 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Any, Callable, Optional, Sequence, Tuple
+import hashlib
+from pathlib import Path
+from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 import torch
 from torch import Tensor
@@ -38,8 +40,9 @@ __all__ = [
     "Launchable",
 ]
 
+_NamedVmModule = Tuple[str, VmModule]
 _TargetBinary = Tuple[VmContext, VmFunction]
-_Loader = Callable[[Device], _TargetBinary]
+_Loader = Callable[[Device], _NamedVmModule]
 
 
 class Launchable:
@@ -55,10 +58,17 @@ class Launchable:
     This has various limitations.
     """
 
-    def __init__(self, loader: Optional[_Loader]):
+    def __init__(
+        self,
+        loader: Optional[_Loader],
+        parameter_providers: Sequence[ParameterProvider] = (),
+    ):
         self._loader = loader
-        # Map of Device.type_cache_key -> _TargetBinary for a resolved binary.
+        self._providers = parameter_providers
+        # Map of Device.instance_cache_key -> _TargetBinary for a resolved binary.
         self._target_binaries: dict[str, _TargetBinary] = {}
+        # Map of Device.type_cache_key -> VmModule for a device-type specific main VmModule
+        self._target_vm_modules: dict[str, _NamedVmModule] = {}
 
     @staticmethod
     def jit_compile(
@@ -66,12 +76,42 @@ class Launchable:
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
         entry_point: str = "main",
+        file_cache_dir: Union[str, Path, None] = None,
     ) -> "Launchable":
+        """
+        Generates a launchable from a program source (e.g., mlir string).
+        Set a file_cache_dir to enable storing/retrieving artifacts between sessions.
+        """
+        callback = (
+            _jit_callback(source)
+            if file_cache_dir is None
+            else _caching_jit_callback(source, file_cache_dir)
+        )
         return Launchable.from_vm_module(
-            _jit_callback(source),
+            callback,
             parameter_providers=parameter_providers,
             entry_point=entry_point,
         )
+
+    def preload(self, device: torch.device):
+        """Pre-loads (or JIT compiles) for the given torch.device."""
+        turbine_device = get_device_from_torch(device)
+        self._resolve_target_binary(turbine_device)
+
+    def _assemble_target_binary_from_vm_module(
+        self, turbine_device: Device, entry_point: str, main_module: VmModule
+    ) -> _TargetBinary:
+        device_key = turbine_device.instance_cache_key
+        vm_instance = turbine_device.vm_instance
+        modules = [turbine_device.create_hal_module()]
+        if self._providers:
+            modules.append(create_io_parameters_module(vm_instance, *self._providers))
+        modules.append(main_module)
+        vm_context = VmContext(vm_instance, modules)
+        main_function = main_module.lookup_function(entry_point)
+        logger.debug("Cached new binary for %s", device_key)
+        self._target_binaries[device_key] = vm_context, main_function
+        return vm_context, main_function
 
     @staticmethod
     def from_vm_module(
@@ -79,42 +119,46 @@ class Launchable:
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
         entry_point: str = "main",
-    ) -> "Launchable":
-        def loader(device: Device) -> _TargetBinary:
-            vm_instance = device.vm_instance
-            modules = [device.create_hal_module()]
-            if parameter_providers:
-                modules.append(
-                    create_io_parameters_module(vm_instance, *parameter_providers)
-                )
-            main_module = vm_module_callback(device)
-            modules.append(main_module)
-            vm_context = VmContext(vm_instance, modules)
-            main_function = main_module.lookup_function(entry_point)
-            return vm_context, main_function
+    ):
+        def loader(device: Device) -> _NamedVmModule:
+            return entry_point, vm_module_callback(device)
 
-        return Launchable(loader)
-
-    def preload(self, device: torch.device):
-        """Pre-loads (or JIT compiles) for the given torch.device."""
-        turbine_device = get_device_from_torch(device)
-        self._resolve_target_binary(turbine_device)
+        return Launchable(loader, parameter_providers)
 
     def _resolve_target_binary(self, turbine_device: Device) -> _TargetBinary:
-        device_key = turbine_device.type_cache_key
+
+        # Try binary cache for specific device:
+        device_key = turbine_device.instance_cache_key
         existing = self._target_binaries.get(device_key)
         if existing is not None:
             logger.debug("Launching cached binary for %s", device_key)
             return existing
 
+        # Try named module cache for device-type specific vm-module:
+        device_type_key = turbine_device.type_cache_key
+        _named_module = self._target_vm_modules.get(device_type_key)
+        if _named_module is not None:
+            entry_point, main_module = _named_module
+            logger.debug(
+                "Assembling binary for %s from cached module for %s",
+                device_key,
+                device_type_key,
+            )
+            return self._assemble_target_binary_from_vm_module(
+                turbine_device, entry_point, main_module
+            )
+
         # Try the user loader.
         loader = self._loader
         if loader is not None:
-            loaded = loader(turbine_device)
-            if loaded is not None:
-                logger.debug("Cached new binary for %s", device_key)
-                self._target_binaries[device_key] = loaded
-                return loaded
+            _named_module = loader(turbine_device)
+            if _named_module is not None:
+                logger.debug("Cached new module for %s", device_type_key)
+                self._target_vm_modules[device_type_key] = _named_module
+                entry_point, main_module = _named_module
+                return self._assemble_target_binary_from_vm_module(
+                    turbine_device, entry_point, main_module
+                )
         raise NotImplementedError(
             f"Could not load a target binary for device {turbine_device}"
         )
@@ -178,7 +222,7 @@ class Launchable:
             return torch_results
 
 
-def _jit_callback(program_source: Any) -> Callable[[Device], VmModule]:
+def _jit_callback(program_source: Any) -> _Loader:
     session = Session()
     if isinstance(program_source, Source):
         ...
@@ -199,6 +243,54 @@ def _jit_callback(program_source: Any) -> Callable[[Device], VmModule]:
         inv.output_vm_bytecode(output)
         mapped_memory = output.map_memory()
         vm_instance = device.vm_instance
+        # TODO: VmModule.wrap_buffer would be better here, but it is still
+        # unreliable capturing mapped memory from the compiler.
+        # See: https://github.com/iree-org/iree/issues/17403
+        return VmModule.copy_buffer(vm_instance, mapped_memory)
+
+    return callback
+
+
+def _caching_jit_callback(program_source: Any, cache_dir: Path | str):
+    """
+    Similar to _jit_callback, but reads and writes vmfbs to a file_cache
+    """
+    # TODO: move this into iree/turbine/runtime/launch.py
+    session = Session()
+    if isinstance(program_source, Source):
+        source = program_source
+    elif isinstance(program_source, str):
+        source = Source.wrap_buffer(session, program_source.encode())
+    else:
+        source = Source.wrap_buffer(session, program_source)
+
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(exist_ok=True, parents=True)
+
+    def callback(device: Device):
+        key_hash = hashlib.sha1(
+            device.type_cache_key.encode(), usedforsecurity=False
+        ).hexdigest()
+        vmfb_path: Path = cache_dir / f"{key_hash}.vmfb"
+        vm_instance = device.vm_instance
+        if vmfb_path.is_file():
+            logger.debug("Loading vmfb from cache: %s", str(vmfb_path))
+            vmfb = vmfb_path.read_bytes()
+            return VmModule.copy_buffer(vm_instance, vmfb)
+
+        session.set_flags(*device.compile_target_flags)
+        inv = session.invocation()
+        output = Output.open_membuffer()
+        inv.enable_console_diagnostics()
+        inv.parse_source(source)
+        if not inv.execute():
+            # TODO: Capture diagnostics and report.
+            raise RuntimeError(f"JIT compilation failed. See diagnostics.")
+        inv.output_vm_bytecode(output)
+        mapped_memory = output.map_memory()
+
+        logger.debug("Writing vmfb to cache: %s", str(vmfb_path))
+        vmfb_path.write_bytes(mapped_memory.raw)
         # TODO: VmModule.wrap_buffer would be better here, but it is still
         # unreliable capturing mapped memory from the compiler.
         # See: https://github.com/iree-org/iree/issues/17403

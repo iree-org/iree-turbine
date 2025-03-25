@@ -35,6 +35,7 @@ from iree.turbine.kernel.wave.templates.prefill_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import os
 from enum import Enum
 from torch.testing import assert_close
@@ -44,6 +45,7 @@ from ..common.utils import (
     require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
+    param_bool,
 )
 from ..common.shapes import get_test_shapes, construct_test_name
 from torch.nn.attention.flex_attention import flex_attention
@@ -279,9 +281,10 @@ def create_inputs(
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("is_causal", [False, True])
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+@param_bool("is_causal", "causal")
+@param_bool("use_buffer_ops", "buf_ops")
+@param_bool("use_wave_runtime", "wr", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -292,9 +295,10 @@ def create_inputs(
 def testExtendAttention(
     shape: AttentionShape,
     dtype: torch.dtype,
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     is_causal: bool,
     use_buffer_ops: bool,
+    use_wave_runtime: bool,
     mfma_variant: MMAType,
     request,
 ):
@@ -367,6 +371,9 @@ def testExtendAttention(
         )
         config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
+    if use_wave_runtime:
+        config["wave_runtime"] = True
+
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -380,7 +387,7 @@ def testExtendAttention(
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
     ):
-        mb_qk = extend_attention(
+        asm_qk = extend_attention(
             q_extend,
             k_extend,
             v_extend,
@@ -397,7 +404,7 @@ def testExtendAttention(
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(asm_qk)
 
     # Run the reference implementation.
     ref_output = ref_extend_attn(
@@ -423,8 +430,8 @@ def testExtendAttention(
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize("enable_scheduling", [False])
-@pytest.mark.parametrize("is_causal", [True])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+@param_bool("is_causal", "causal", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -435,7 +442,7 @@ def testExtendAttention(
 def testExtendRpeAttention(
     shape: AttentionShape,
     dtype: torch.dtype,
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     is_causal: bool,
     mfma_variant: MMAType,
     request,
@@ -517,7 +524,7 @@ def testExtendRpeAttention(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
-        mb_qk = extend_attention_rpe(
+        asm_qk = extend_attention_rpe(
             q_extend,
             k_extend,
             v_extend,
@@ -535,7 +542,7 @@ def testExtendRpeAttention(
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_rpe_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(asm_qk)
 
     # Run the reference implementation.
     ref_output = ref_extend_attn(

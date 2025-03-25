@@ -215,7 +215,7 @@ class IndexMapping:
 
         assert all(
             i is not None for i in iter_shape
-        ), "Cannot determine iteration domain"
+        ), f"Cannot determine iteration domain: {iter_shape=}"
         self.iters = iters
         self.iteration_shape = iter_shape
         self.input_mapping = inputs

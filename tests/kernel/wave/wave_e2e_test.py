@@ -22,6 +22,12 @@ from iree.turbine.kernel.wave.utils import (
     device_randperm,
     device_zeros,
 )
+from .common.utils import (
+    require_e2e,
+    require_cdna3,
+    perf_test,
+    param_bool,
+)
 import torch
 from torch.testing import assert_close
 import pytest
@@ -30,10 +36,6 @@ import os
 import torch
 import json
 
-require_e2e = pytest.mark.require_e2e
-require_cdna3 = pytest.mark.skipif(
-    "gfx94" not in get_default_arch(), reason="Default device is not CDNA3"
-)
 default_test_shapes = [
     (1, 27),
     (111, 813),
@@ -131,7 +133,7 @@ def test_dump_vmfb(shape, tmp_path, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_copy(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -191,7 +193,7 @@ def test_copy(shape, use_buffer_ops, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_dynamic_copy(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -251,7 +253,7 @@ def test_dynamic_copy(shape, use_buffer_ops, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_transpose_read"))
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_transpose_read(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     shape = shape[::-1]
@@ -313,7 +315,7 @@ def test_transpose_read(shape, use_buffer_ops, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_transpose_write"))
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_transpose_write(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -374,7 +376,7 @@ def test_transpose_write(shape, use_buffer_ops, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_offset_read(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -453,7 +455,7 @@ def test_offset_read(shape, use_buffer_ops, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_offset_read_one(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -537,7 +539,7 @@ def test_offset_read_one(shape, use_buffer_ops, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_read_write_same(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -834,7 +836,7 @@ def test_conditional(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_offset_write(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -921,7 +923,7 @@ def test_offset_write(shape, use_buffer_ops, request):
 @pytest.mark.parametrize(
     "shape", mark_shapes_xfail(get_test_shapes("test_copy"), [(111, 813)])
 )
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_offset_write_one(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -1417,7 +1419,6 @@ _igemm_cases = [
     (1, 5, 5, 1, 3, 3, 1, 1),
 ]
 
-perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
 validation_test = lambda *a: pytest.param(*a, marks=pytest.mark.validate_only)
 
 _igemm_cases += [
@@ -1459,7 +1460,7 @@ _layouts = [
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
 @pytest.mark.parametrize("mem_space", _mem_spaces)
 @pytest.mark.parametrize("layout", _layouts)
-@pytest.mark.parametrize("use_buffer_ops", [False, True])
+@param_bool("use_buffer_ops", "buf_ops")
 def test_igemm_conv(
     n, h, w, c, hf, wf, nf, stride, mem_space, layout, use_buffer_ops, request
 ):
@@ -1520,7 +1521,6 @@ def test_igemm_conv(
         run=True,
         run_bench=run_bench,
         run_config=config,
-        schedule=False,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
     ):

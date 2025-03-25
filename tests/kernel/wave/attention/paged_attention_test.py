@@ -22,6 +22,7 @@ from iree.turbine.kernel.wave.templates.paged_decode_attention import (
     get_paged_decode_attention_kernels,
     paged_decode_attention_shape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import os
 from torch.testing import assert_close
 from ..common.utils import (
@@ -29,6 +30,7 @@ from ..common.utils import (
     require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
+    param_bool,
 )
 from ..common.shapes import get_test_shapes
 from typing import List, Optional
@@ -36,6 +38,7 @@ from typing import List, Optional
 # Reference paged attention implementation from vLLM and sglang.
 # (NUM_Q_HEADS, NUM_KV_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
 shapes = [(16, 1, 64, 64, 32, 2, 100)]
+shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
 shapes += [(128, 2, 80, 80, 32, 2, 500)]
 
@@ -142,18 +145,18 @@ def load_inputs(directory):
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
 @pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize("enable_scheduling", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @pytest.mark.parametrize("num_kv_splits", [8])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        MMAType.F32_16x16x16_F16,
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
     ],
 )
 def testPagedFlashDecoding(
     shape: tuple[int],
     dtype: torch.dtype,
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     num_kv_splits: int,
     mfma_variant: MMAType,
     request,
@@ -267,7 +270,7 @@ def testPagedFlashDecoding(
     ):
         # TODO: Add scaling of QK as part of kernel.
         # TODO: Add variant of non-transposed V attention kernel.
-        mb_qk = phase_0(
+        asm_qk = phase_0(
             query * dk_sqrt * log2e,
             key_cache_4d,
             value_cache_4d,
@@ -287,15 +290,15 @@ def testPagedFlashDecoding(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
     ):
-        mb_sv = phase_1(phase_0_output, phase_0_output_max, output)
+        asm_sv = phase_1(phase_0_output, phase_0_output_max, kv_lens_tensor, output)
 
     if dump_generated_mlir:
         filename = f"wave_paged_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_qk.module_op.get_asm())
+            f.write(asm_qk)
         filename = f"wave_paged_phase_1_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
-            f.write(mb_sv.module_op.get_asm())
+            f.write(asm_sv)
 
     if not artifact_directory:
         # Run the reference implementation.

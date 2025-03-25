@@ -183,7 +183,7 @@ def test_igemm():
         },
         canonicalize=True,
     ):
-        print(conv(x, we, out).module_op)
+        print(conv(x, we, out))
         # CHECK-LABEL: func @conv
         #  CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
 

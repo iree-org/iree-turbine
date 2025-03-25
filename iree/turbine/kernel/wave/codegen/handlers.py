@@ -7,7 +7,7 @@
 import operator
 import sympy
 import math
-from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
+from typing import Any, Callable, ClassVar, Optional, List, Type, Dict, Sequence
 import sympy.functions
 import sympy.functions.elementary
 import sympy.functions.elementary.piecewise
@@ -76,6 +76,7 @@ from ...ops.wave_ops import (
     reduction,
     register,
     reshape,
+    roundeven,
     scheduling_barrier,
     scheduling_group_barrier,
     self_index,
@@ -198,46 +199,46 @@ def handle_self_index(emitter: WaveEmitter, node: fx.Node):
 
     index = get_custom(node).index
     var = index[iterator]
-    offset = subs_idxc(var.start)
-    size = elements_per_thread or subs_idxc(var.size)
+    size = cast_py_literal(emitter, elements_per_thread or subs_idxc(var.size))
     stride = subs_idxc(var.stride)
 
-    start = _build_start_indices(emitter, {iterator: var})[0]
+    start = _get_start_index(var)
+    step = IndexingContext.current().iota(size)
+    value = start + step * stride
+    value = gen_sympy_index(add_emitter_subs(emitter), value)
 
     element_type = IrType.parse(dtype.ir_type_asm())
-    index_type = IrType.parse("index")
-    vector_shape = cast_py_literal(emitter, [size])
+    if not isinstance(value.type, VectorType):
+        vector_type = VectorType.get([size], value.type)
+        value = vector_d.splat(vector_type, value)
 
-    vector_index_type = VectorType.get(vector_shape, index_type)
-    vector_type = VectorType.get(vector_shape, element_type)
+    if value.type.element_type != element_type:
+        vector_type = VectorType.get([size], element_type)
+        value = arith_d.index_cast(vector_type, value)
 
-    step = vector_d.step(vector_index_type)
-    stride_cst = arith_d.ConstantOp(
-        index_type, get_constant_attr(cast_py_literal(emitter, stride), index_type)
-    )
-    stride_vec = vector_d.splat(vector_index_type, stride_cst)
-    scaled = arith_d.muli(step, stride_vec)
-    offset = vector_d.splat(vector_index_type, start)
-    shifted = arith_d.addi(scaled, offset)
-    casted_i = arith_d.index_cast(vector_type, shifted)
-
-    emitter.bind_node_proxy(node, IRProxyValue(casted_i))
+    emitter.bind_node_proxy(node, IRProxyValue(value))
 
 
 @handle_op(apply_expr)
 def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
     try:
-        register, expr = node.args
+        args, expr = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    APPLY_EXPR_ARG = index_symbol("$APPLY_EXPR_ARG")
-    expr = expr(APPLY_EXPR_ARG)
+    if not isinstance(args, Sequence):
+        args = [args]
 
-    register = cast_vector(emitter, register, element_type=IndexType.get())
+    symbols = [index_symbol(f"$APPLY_EXPR_ARG_{i}") for i in range(len(args))]
+    expr = expr(*symbols)
+
+    index_type = IndexType.get()
+    args = [cast_vector(emitter, a, element_type=index_type) for a in args]
 
     subs = add_emitter_subs(emitter)
-    subs[APPLY_EXPR_ARG] = register
+    for s, a in zip(symbols, args):
+        subs[s] = a
+
     result = gen_sympy_index(subs, expr)
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
@@ -650,6 +651,18 @@ def handle_tanh(source: Value) -> OpResult:
     return result
 
 
+@handle_unary_op(roundeven)
+def handle_roundeven(source: Value) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        roundeven = math_d.roundeven(source)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for roundeven: {element_type}"
+        )
+    return roundeven
+
+
 ###############################################################################
 # Control Flow ops
 ###############################################################################
@@ -703,10 +716,11 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
 
     # For now, we assume that dimensions that have tiling constraints on them,
     # do not have any other constraints.
-    if isinstance(node.count, sympy.Expr):
-        end = gen_sympy_index(add_emitter_subs(emitter), node.count)
+    count = node.count
+    if isinstance(count, sympy.Expr):
+        end = gen_sympy_index(add_emitter_subs(emitter), count)
     else:
-        end = arith_d.constant(IndexType.get(), int(node.count))
+        end = arith_d.constant(IndexType.get(), int(count))
 
     # Since we divide the end by the tile size, we need to make sure that the
     # step is 1.
@@ -906,6 +920,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
     # If by chance broadcast size  matches current size, we can return src.
     if target_thread_size == vector_type.shape[0]:
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
+        return
 
     result_type = VectorType.get([target_thread_size], vector_type.element_type)
     element = vector_d.extract(vector_src, static_position=[0], dynamic_position=[])

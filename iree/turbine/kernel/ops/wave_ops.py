@@ -112,7 +112,7 @@ def write(
     ...
 
 
-def apply_expr(value: "Register", expr: Callable) -> "Register":
+def apply_expr(value: "Register" | Sequence["Register"], expr: Callable) -> "Register":
     ...
 
 
@@ -137,6 +137,10 @@ def abs(src: "Register") -> "Register":
 
 
 def tanh(src: "Register") -> "Register":
+    ...
+
+
+def roundeven(src: "Register") -> "Register":
     ...
 
 
@@ -206,7 +210,9 @@ def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
     ...
 
 
-def reshape(inputs: Sequence["Register"]) -> "Register":
+def reshape(
+    inputs: Sequence["Register"], target_vector_shape: dict[IndexSymbol, int]
+) -> "Register":
     ...
 
 
@@ -796,10 +802,11 @@ class ComparisonPyOp(BinaryOpBase, ABC):
         self.type = Register[(*self.infer_shape(), i1)]
 
 
-@define_interface_op("log2")
-@define_interface_op("exp2")
-@define_interface_op("reciprocal")
 @define_interface_op("abs")
+@define_interface_op("exp2")
+@define_interface_op("log2")
+@define_interface_op("reciprocal")
+@define_interface_op("roundeven")
 @define_interface_op("tanh")
 @define_py_op(operator.neg)
 @dataclass
@@ -1632,16 +1639,28 @@ class Write(CustomOp):
 @define_op("apply_expr")
 @dataclass
 class ApplyExpr(CustomOp):
-    register_: fx.Proxy
+    register_: fx.Proxy | Sequence[fx.Proxy]
     expr: Callable
 
     @property
     def type(self) -> "Register":
-        return get_custom(self.register_).type
+        reg = self.register_
+        if not isinstance(reg, Sequence):
+            return get_custom(reg).type
+
+        types = [get_custom(r).type for r in reg]
+        assert len(set(types)) == 1, f"Types mismatch: {types}"
+        return types[0]
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
-        return get_custom(self.register_).indexing_dims
+        reg = self.register_
+        if not isinstance(reg, Sequence):
+            return get_custom(reg).indexing_dims
+
+        dims = [tuple(get_custom(r).indexing_dims) for r in reg]
+        assert len(set(dims)) == 1, f"Indexing dims mismatch: {dims}"
+        return dims[0]
 
 
 @define_op("set_symbol")

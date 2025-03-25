@@ -15,6 +15,7 @@ from iree.turbine.kernel.wave.templates.vanilla_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 # Input sizes
@@ -141,7 +142,7 @@ def test_attention_32x32x8():
         run=False,
         run_bench=False,
         compile_config=compile_config,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
@@ -149,9 +150,9 @@ def test_attention_32x32x8():
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(base_attention_32x32x8(q, k, v, output).module_op)
+        print(base_attention_32x32x8(q, k, v, output))
 
-        # CHECK-DAG:        #iree_codegen.translation_info
+        # CHECK:            #iree_codegen.translation_info
         # CHECK-SAME:       {llvm_func_attrs = {"amdgpu-waves-per-eu" = "2", "denormal-fp-math-f32" = "preserve-sign"}
         # CHECK-LABEL:      func.func @base_attention_32x32x8
         # CHECK:                {{.*}} = scf.for
@@ -281,7 +282,7 @@ def test_dynamic_attention_32x32x8():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         use_scheduling_barriers=False,
@@ -291,7 +292,7 @@ def test_dynamic_attention_32x32x8():
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(dynamic_attention_32x32x8(q, k, v, output).module_op)
+        print(dynamic_attention_32x32x8(q, k, v, output))
 
         # CHECK-LABEL:      func.func @dynamic_attention_32x32x8
         # CHECK-DAG:            %[[IOTA:.+]] = arith.constant dense<[0, 1, 2, 3]> : vector<4xindex>
@@ -334,7 +335,7 @@ def test_attention():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
@@ -359,7 +360,7 @@ def test_attention():
             shape.head_size_kv,
             dtype=torch.float32,
         )
-        print(base_attention(q, k, v, output).module_op)
+        print(base_attention(q, k, v, output))
 
         # CHECK-LABEL:       func.func @base_attention
         # CHECK:                {{.*}} = scf.for
@@ -391,7 +392,7 @@ def test_attention_causal():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
@@ -416,7 +417,7 @@ def test_attention_causal():
             shape.head_size_kv,
             dtype=torch.float32,
         )
-        print(base_attention(q, k, v, output).module_op)
+        print(base_attention(q, k, v, output))
 
         # CHECK-LABEL:       func.func @base_attention
         # CHECK:                %[[NEG_INF:.+]] = arith.constant dense<-1.000000e+06> : vector<4xf32>

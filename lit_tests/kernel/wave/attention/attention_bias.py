@@ -9,6 +9,7 @@ from iree.turbine.kernel.wave.utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 # Input sizes
@@ -138,7 +139,7 @@ def test_attention_bias():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
@@ -146,7 +147,7 @@ def test_attention_bias():
         k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
         v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
         output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(base_attention_bias(q, k, v, output).module_op)
+        print(base_attention_bias(q, k, v, output))
 
         # CHECK:            func.func @base_attention_bias
         # CHECK:                {{.*}} = scf.for
