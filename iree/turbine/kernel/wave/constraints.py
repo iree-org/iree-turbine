@@ -471,6 +471,16 @@ class TilingConstraint(Constraint):
 
 
 @dataclass
+class ThreadConstraint(Constraint):
+    dim: IndexExpr
+    workgroup_dim: int
+
+    def apply(self) -> IndexSequence:
+        thread_id = [THREAD_0, THREAD_1, THREAD_2][self.workgroup_dim]
+        return IndexSequence(thread_id, 1)
+
+
+@dataclass
 class WaveConstraint(Constraint):
     """
     A constraint of the form `tkw.WaveConstraint(K, WAVE_K)` specifies
@@ -510,7 +520,7 @@ class WaveConstraint(Constraint):
     def set_wave_id_from_hardware_and_workgroup_constraint(
         self,
         hardware_constraint: HardwareConstraint,
-        workgroup_constraint: WorkgroupConstraint,
+        workgroup_constraint: WorkgroupConstraint | ThreadConstraint,
     ):
         """
         The wave_id is the same as the thread_id, with the exception of
