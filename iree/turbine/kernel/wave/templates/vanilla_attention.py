@@ -339,8 +339,8 @@ def get_bshd_attention_kernel(
         c_reg = tkl.Register[B, H, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, H, M, tkl.f32](0.0)
         init_max = tkl.Register[B, H, M, tkl.f32](-1e6)
-        ZEROF = tkl.Register[M, K2, tkl.f32](0.0)
-        MIN_INF = tkl.Register[M, K2, tkl.f32](-1e6)
+        ZEROF = tkl.Register[B, M, K2, tkl.f32](0.0)
+        MIN_INF = tkl.Register[B, M, K2, tkl.f32](-1e6)
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
@@ -362,7 +362,8 @@ def get_bshd_attention_kernel(
             x_j = tkw.permute(inner_acc, target_shape=[B, H, M, K2])
             k2_index = tkw.self_index(K2, tkl.i32)
             mask = tkw.apply_expr(k2_index, lambda x: x < K2)
-            mask = tkw.broadcast(mask, target_shape=[M, K2])
+            mask = tkw.broadcast(mask, target_shape=[B, M, K2])
+            mask = tkw.cast(mask, tkl.i32)
 
             if is_custom_mask:
                 custom_mask_tensor = tkw.read(
@@ -371,7 +372,7 @@ def get_bshd_attention_kernel(
                 )
                 custom_mask_tensor = tkw.broadcast(
                     custom_mask_tensor,
-                    target_shape=[M, K2],
+                    target_shape=[B, M, K2],
                 )
                 mask = mask & custom_mask_tensor
 
@@ -411,7 +412,7 @@ def get_bshd_attention_kernel(
         q: tkl.Memory[B, M, H, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, H, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, K2, H, N, ADDRESS_SPACE, tkl.f16],
-        custom_mask: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        custom_mask: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.i32],
         c: tkl.Memory[B, M, H, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         base_attention_core_custom_mask(q, k, v, custom_mask, c)
@@ -450,4 +451,12 @@ def get_bshd_attention_kernel(
         del hyperparams[B]
         del hyperparams[K2]
 
-    return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    if is_causal:
+        return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    else:
+        return (
+            base_attention_custom_mask,
+            hyperparams,
+            dynamic_symbols,
+            dynamic_symbols_map,
+        )

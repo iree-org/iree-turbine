@@ -43,7 +43,11 @@ def param_bool(name, shortname=None, values=None):
 
 
 def scaled_dot_product_attention_bhsd(
-    query: Tensor, key: Tensor, value: Tensor, is_causal: bool = False
+    query: Tensor,
+    key: Tensor,
+    value: Tensor,
+    is_causal: bool = False,
+    custom_mask: Tensor | None = None,
 ) -> Tensor:
     """
     This version mimics PyTorch's `torch.nn.functional.scaled_dot_product_attention`
@@ -77,6 +81,10 @@ def scaled_dot_product_attention_bhsd(
             )
         )
         attn_logits = attn_logits.masked_fill(~causal_mask, float("-inf"))
+
+    if custom_mask is not None:
+        custom_mask = custom_mask[:, None, :, None].bool()
+        attn_logits = attn_logits.masked_fill(~custom_mask, float("-inf"))
 
     # Improve numerical stability using log-sum-exp trick
     attn_logits = attn_logits - attn_logits.max(dim=-1, keepdim=True).values

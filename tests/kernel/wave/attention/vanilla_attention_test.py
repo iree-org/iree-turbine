@@ -328,7 +328,7 @@ def testAttentionBSHD(
     is_custom_mask = True
 
     (
-        base_attention,
+        base_attention_func,
         hyperparams,
         dynamic_symbols,
         dynamic_symbols_map,
@@ -349,7 +349,7 @@ def testAttentionBSHD(
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
-    breakpoint()
+
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -367,15 +367,20 @@ def testAttentionBSHD(
         k = device_randn(k_shape, dtype=torch.float16)
         v = device_randn(v_shape, dtype=torch.float16)
 
+        custom_mask = device_randn([1, shape.query_seq_len], dtype=torch.float16)
+        custom_mask = (custom_mask > 0).int()
+
         # Torch reference needs to be in BHSD format
-        torch_ref = scaled_dot_product_attention_bhsd(q, k, v, is_causal=True)
+        torch_ref = scaled_dot_product_attention_bhsd(
+            q, k, v, is_causal=False, custom_mask=custom_mask
+        )
 
         # This variant of wave kernel is BSHD
         o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
         output = device_zeros(o_shape, dtype=torch.float32)
 
         if is_causal:
-            asm = base_attention(
+            asm = base_attention_func(
                 q.transpose(1, 2).contiguous(),
                 k.transpose(1, 2).contiguous(),
                 v.transpose(1, 2).contiguous(),
@@ -383,9 +388,7 @@ def testAttentionBSHD(
             )
 
         if is_custom_mask:
-            custom_mask = device_randn([1, shape.query_seq_len], dtype=torch.float32)
-            custom_mask = (custom_mask > 0).int().to(torch.float32)
-            asm = base_attention(
+            asm = base_attention_func(
                 q.transpose(1, 2).contiguous(),
                 k.transpose(1, 2).contiguous(),
                 v.transpose(1, 2).contiguous(),
