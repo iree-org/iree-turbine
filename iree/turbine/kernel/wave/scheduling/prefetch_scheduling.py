@@ -19,6 +19,9 @@ class PrefetchStage(Enum):
     COMPUTE = 3
 
     def next(self):
+        # Helper function to get next stage from the current.
+        # If at stage 3 returns itself to prevent crash
+        # since it is final stage.
         if self.value == 3:
             return PrefetchStage(3)
         v = self.value + 1
