@@ -1099,7 +1099,7 @@ def test_toy_online_softmax(shape):
             M: shape[0],
             N: shape[1],
             BLOCK_N: min(128, shape[1]),
-            ELEMS_PER_THREAD: min(128, shape[1]) // wave_size,
+            ELEMS_PER_THREAD: ceildiv(min(128, shape[1]), wave_size),
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
