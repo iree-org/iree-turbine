@@ -779,9 +779,7 @@ def invoke_vmfb(
 
         benchmark_flags = {}
 
-        # If we use 1000 for bench_batch_size during compilation, and set this batch size to 1,
-        # then the latency is in milliseconds.
-        benchmark_flags["batch_size"] = 1
+        benchmark_flags["batch_size"] = bench_batch_size
 
         if bench_repetitions is not None:
             benchmark_flags["benchmark_repetitions"] = int(bench_repetitions)
