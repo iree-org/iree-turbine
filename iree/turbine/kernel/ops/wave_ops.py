@@ -1198,7 +1198,7 @@ class MMA(CustomOp):
 
     def align_index(self, constraints: list["Constraint"]) -> None:
         # Local import to break circular dep.
-        from ..wave.utils import align_index_vars
+        from ..wave.utils.general_utils import align_index_vars
 
         self.index = align_index_vars(self.index, constraints)
 
@@ -1247,7 +1247,7 @@ class Read(CustomOp):
 
     def align_index(self, constraints: list["Constraint"]) -> None:
         # Local import to break circular dep.
-        from ..wave.utils import align_index_vars, is_shared_mem_access
+        from ..wave.utils.general_utils import align_index_vars, is_shared_mem_access
 
         if is_shared_mem_access(self):
             self.index = align_index_vars(self.index, constraints)
@@ -1322,7 +1322,7 @@ class Read(CustomOp):
 
         mem_shape = get_custom(self.memory).type.symbolic_shape
 
-        from ..wave.utils import check_is_mapping_contiguous
+        from ..wave.utils.mapping_utils import check_is_mapping_contiguous
 
         return check_is_mapping_contiguous(
             mapping=mapping,
@@ -1552,7 +1552,7 @@ class Write(CustomOp):
 
     def align_index(self, constraints: list["Constraint"]) -> None:
         # Local import to break circular dep.
-        from ..wave.utils import align_index_vars, is_shared_mem_access
+        from ..wave.utils.general_utils import align_index_vars, is_shared_mem_access
 
         if is_shared_mem_access(self):
             self.index = align_index_vars(self.index, constraints)
@@ -1621,7 +1621,7 @@ class Write(CustomOp):
 
         mem_shape = get_custom(self.memory).type.symbolic_shape
 
-        from ..wave.utils import check_is_mapping_contiguous
+        from ..wave.utils.mapping_utils import check_is_mapping_contiguous
 
         return check_is_mapping_contiguous(
             mapping=mapping,
@@ -1843,7 +1843,7 @@ class ReduceOp(CustomOp, ABC):
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         # Local import to break circular dep.
-        from ..wave.utils import all_equal
+        from ..wave.utils.general_utils import all_equal
 
         if isinstance(self.arg, Sequence):
             src_indexings = [get_custom(arg).indexing_dims for arg in self.arg]

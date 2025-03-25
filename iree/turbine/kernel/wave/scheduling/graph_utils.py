@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import sympy
 import math
 from functools import partial
-from ..utils import safe_subs
+from ..utils.symbol_utils import safe_subs
 import multiprocessing as mp
 from typing import Optional
 

@@ -6,7 +6,12 @@
 
 import pytest
 from iree.turbine.kernel.lang import sym
-from iree.turbine.kernel.wave.utils import delinearize_index, _simplify_sympy_expr
+from iree.turbine.kernel.wave.utils.general_utils import (
+    delinearize_index,
+)
+from iree.turbine.kernel.wave.utils.mapping_utils import (
+    _simplify_sympy_expr,
+)
 import sympy
 import numpy as np
 

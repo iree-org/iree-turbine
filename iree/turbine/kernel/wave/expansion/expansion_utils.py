@@ -28,7 +28,7 @@ from ...ops.wave_ops import (
 )
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
 import itertools
-from ..utils import (
+from ..utils.graph_utils import (
     get_inputs,
 )
 

@@ -13,11 +13,9 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.ops.wave_ops import *
-from iree.turbine.kernel.wave.utils import (
-    run_test,
-    print_subgraph,
-    initialize_iter_args,
-)
+from iree.turbine.kernel.wave.utils.general_utils import run_test
+from iree.turbine.kernel.wave.utils.graph_utils import initialize_iter_args
+from iree.turbine.kernel.wave.utils.print_utils import print_subgraph
 from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
 from iree.turbine.kernel.wave.shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,

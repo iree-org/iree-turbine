@@ -6,12 +6,14 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
-    get_default_compile_config,
+)
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 import torch
 
 M = tkl.sym.M
@@ -27,7 +29,7 @@ ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
 
-def codegen_test_context(canonicalize: bool = False, dynamic_symbols=[]):
+def get_wave_compile_options(canonicalize: bool = False, dynamic_symbols=[]):
     bindings = {
         M: 16,
         N: 16,
@@ -43,7 +45,7 @@ def codegen_test_context(canonicalize: bool = False, dynamic_symbols=[]):
         if sym in bindings:
             del bindings[sym]
 
-    return tk.gen.TestLaunchContext(
+    return WaveCompileOptions(
         bindings, canonicalize=canonicalize, dynamic_symbols=dynamic_symbols
     )
 
@@ -166,8 +168,8 @@ def test_igemm():
             repeat, out, mapping=out_mapping, elements_per_thread=ELEMS_PER_THREAD
         )
 
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             N: n,
             C: c,
             W: w,
@@ -182,13 +184,17 @@ def test_igemm():
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         },
         canonicalize=True,
-    ):
-        print(conv(x, we, out))
-        # CHECK-LABEL: func @conv
-        #  CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
+        compile_to_mlir=True,
+    )
 
-        # Input load must be contiguous.
-        #      CHECK: %{{.*}} = vector.maskedload %{{.*}}[%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}], %{{.*}}, %{{.*}} : memref<2x64x64x640xf16
+    conv = wave_compile(options, conv)
+    print(conv.asm)
 
-        # Unrolled result store
-        #      CHECK-COUNT-32: vector.maskedstore %{{.*}}[%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}], %{{.*}}, %{{.*}} : memref<2x62x62x640xf32
+    # CHECK-LABEL: func @conv
+    #  CHECK-DAG: %[[C0:.*]] = arith.constant 0 : index
+
+    # Input load must be contiguous.
+    #      CHECK: %{{.*}} = vector.maskedload %{{.*}}[%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}], %{{.*}}, %{{.*}} : memref<2x64x64x640xf16
+
+    # Unrolled result store
+    #      CHECK-COUNT-32: vector.maskedstore %{{.*}}[%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}], %{{.*}}, %{{.*}} : memref<2x62x62x640xf32

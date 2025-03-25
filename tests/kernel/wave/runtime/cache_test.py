@@ -27,12 +27,18 @@ from iree.turbine.kernel.wave.cache import (
 )
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
-from iree.turbine.kernel.wave.utils import (
-    get_default_run_config,
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
     get_default_arch,
+)
+from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
+)
+from iree.turbine.kernel.wave.utils.torch_utils import (
     device_randn,
     device_zeros,
 )
@@ -41,6 +47,7 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
     get_vanilla_attention_kernel,
 )
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from ..common.utils import (
     require_e2e,
 )
@@ -179,8 +186,6 @@ def testSameConfig(request):
         K2: shape[4],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
 
     torch.manual_seed(0)
     q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
@@ -192,41 +197,47 @@ def testSameConfig(request):
         q, k, v, attn_mask=None
     ).to(torch.float32)
     cache_manager = get_cache_manager()
-    with tk.gen.TestLaunchContext(
-        copy.deepcopy(hyperparams),
+
+    options = WaveCompileOptions(
+        subs=copy.deepcopy(hyperparams),
         canonicalize=True,
-        run=True,
         run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
-    ):
-        assert (
-            len(cache_manager.session_cache) == 0
-        ), "Expected to start runtime with no cache."
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
 
-        # First run/call to kernel, this should compile from scratch.
-        output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
-        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
-        assert (
-            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
-        ), "Expected first call to not be cached."
-        assert (
-            len(cache_manager.session_cache) == 1
-        ), "Expected len == 1, after caching first kernel."
+    # Before compilation, nothing in cache.
+    assert (
+        len(cache_manager.session_cache) == 0
+    ), "Expected to start runtime with no cache."
 
-        # Subsequent run/call to kernel, this should be using cached.
-        output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        cached_kernel = base_attention(
-            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
-        )
-        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
-        assert (
-            len(cache_manager.session_cache) == 1
-        ), "Expected to keep size of cache because we reuse same kernel."
-        assert (
-            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 1
-        ), "Expected subsequent call to be cached."
+    base_attention_0 = wave_compile(options, base_attention)
+
+    # First run/call to kernel, this should compile from scratch.
+    output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+    mb = base_attention_0(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
+    assert (
+        cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
+    ), "Expected first call to not be cached."
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected len == 1, after caching first kernel."
+
+    # Subsequent run/call to kernel, this should be using cached.
+    output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+    base_attention_1 = wave_compile(options, base_attention)
+    cached_kernel = base_attention_1(
+        q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
+    )
+    assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected to keep size of cache because we reuse same kernel."
+    assert (
+        cache_manager.cache_misses == 1 and cache_manager.cache_hits == 1
+    ), "Expected subsequent call to be cached."
 
 
 @require_e2e
@@ -284,8 +295,6 @@ def testDifferentDynamicSameBlock(request):
         K1: shape_0[3],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
 
     dynamic_symbols = [M, N, B, K2]
     dynamic_sym_shape0 = {M: shape_0[1], N: shape_0[2], B: shape_0[0], K2: shape_0[4]}
@@ -293,102 +302,95 @@ def testDifferentDynamicSameBlock(request):
     cache_manager = get_cache_manager()
 
     # First run/call to kernel, this should compile from scratch.
-    with tk.gen.TestLaunchContext(
-        copy.deepcopy(hyperparams),
+    options = WaveCompileOptions(
+        subs=copy.deepcopy(hyperparams),
         canonicalize=True,
-        run=True,
         run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_sym_shape0,
-    ):
-        assert (
-            len(cache_manager.session_cache) == 0
-        ), "Expected to start runtime with no cache."
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
 
-        torch.manual_seed(0)
-        q_shape_0 = device_randn(
-            shape_0[0], shape_0[1], shape_0[3], dtype=torch.float16
-        )
-        k_shape_0 = device_randn(
-            shape_0[0], shape_0[4], shape_0[3], dtype=torch.float16
-        )
-        v_shape_0 = device_randn(
-            shape_0[0], shape_0[4], shape_0[2], dtype=torch.float16
-        )
-        log2e = 1.44269504089
-        dk_sqrt = math.sqrt(1.0 / shape_0[3])
-        torch_ref_shape_0 = torch.nn.functional.scaled_dot_product_attention(
-            q_shape_0, k_shape_0, v_shape_0, attn_mask=None
-        ).to(torch.float32)
-        output_shape_0 = device_zeros(
-            shape_0[0], shape_0[1], shape_0[2], dtype=torch.float32
-        )
-        mb = base_attention(
-            q_shape_0 * dk_sqrt * log2e,
-            k_shape_0,
-            v_shape_0.permute([0, 2, 1]),
-            output_shape_0,
-        )
-        assert_close(output_shape_0, torch_ref_shape_0, atol=1e-3, rtol=1e-3)
-        assert (
-            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
-        ), "Expected first call to not be cached."
-        assert (
-            len(cache_manager.session_cache) == 1
-        ), "Expected len == 1, after caching first kernel."
+    assert (
+        len(cache_manager.session_cache) == 0
+    ), "Expected to start runtime with no cache."
+
+    base_attention_0 = wave_compile(options, base_attention)
+
+    torch.manual_seed(0)
+    q_shape_0 = device_randn(shape_0[0], shape_0[1], shape_0[3], dtype=torch.float16)
+    k_shape_0 = device_randn(shape_0[0], shape_0[4], shape_0[3], dtype=torch.float16)
+    v_shape_0 = device_randn(shape_0[0], shape_0[4], shape_0[2], dtype=torch.float16)
+    log2e = 1.44269504089
+    dk_sqrt = math.sqrt(1.0 / shape_0[3])
+    torch_ref_shape_0 = torch.nn.functional.scaled_dot_product_attention(
+        q_shape_0, k_shape_0, v_shape_0, attn_mask=None
+    ).to(torch.float32)
+    output_shape_0 = device_zeros(
+        shape_0[0], shape_0[1], shape_0[2], dtype=torch.float32
+    )
+    mb = base_attention_0(
+        q_shape_0 * dk_sqrt * log2e,
+        k_shape_0,
+        v_shape_0.permute([0, 2, 1]),
+        output_shape_0,
+    )
+    assert_close(output_shape_0, torch_ref_shape_0, atol=1e-3, rtol=1e-3)
+    assert (
+        cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
+    ), "Expected first call to not be cached."
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected len == 1, after caching first kernel."
 
     # Despite having different problem size, since we use exact same
     # block size we should be able to use cache.
     shape_1 = (2, 128, 64, 64, 128)
     dynamic_sym_shape1 = {M: shape_1[1], N: shape_1[2], B: shape_1[0], K2: shape_1[4]}
-    with tk.gen.TestLaunchContext(
-        copy.deepcopy(hyperparams),
+    options = WaveCompileOptions(
+        subs=copy.deepcopy(hyperparams),
         canonicalize=True,
-        run=True,
         run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_sym_shape1,
-    ):
-        torch.manual_seed(0)
-        q_shape_1 = device_randn(
-            shape_1[0], shape_1[1], shape_1[3], dtype=torch.float16
-        )
-        k_shape_1 = device_randn(
-            shape_1[0], shape_1[4], shape_1[3], dtype=torch.float16
-        )
-        v_shape_1 = device_randn(
-            shape_1[0], shape_1[4], shape_1[2], dtype=torch.float16
-        )
-        log2e = 1.44269504089
-        dk_sqrt = math.sqrt(1.0 / shape_1[3])
-        torch_ref_shape_1 = torch.nn.functional.scaled_dot_product_attention(
-            q_shape_1, k_shape_1, v_shape_1, attn_mask=None
-        ).to(torch.float32)
-        assert (
-            len(cache_manager.session_cache) == 1
-        ), "Expected len == 1, after caching first kernel."
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
+    base_attention_1 = wave_compile(options, base_attention)
 
-        # Subsequent run/call to kernel, this should be using cached.
-        output_shape_1 = device_zeros(
-            shape_1[0], shape_1[1], shape_1[2], dtype=torch.float32
-        )
-        cached_kernel = base_attention(
-            q_shape_1 * dk_sqrt * log2e,
-            k_shape_1,
-            v_shape_1.permute([0, 2, 1]),
-            output_shape_1,
-        )
-        assert_close(output_shape_1, torch_ref_shape_1, atol=1e-3, rtol=1e-3)
-        assert (
-            len(cache_manager.session_cache) == 1
-        ), "Expected to keep size of cache because we reuse same kernel."
-        assert (
-            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 1
-        ), "Expected subsequent call to be cached."
+    torch.manual_seed(0)
+    q_shape_1 = device_randn(shape_1[0], shape_1[1], shape_1[3], dtype=torch.float16)
+    k_shape_1 = device_randn(shape_1[0], shape_1[4], shape_1[3], dtype=torch.float16)
+    v_shape_1 = device_randn(shape_1[0], shape_1[4], shape_1[2], dtype=torch.float16)
+    log2e = 1.44269504089
+    dk_sqrt = math.sqrt(1.0 / shape_1[3])
+    torch_ref_shape_1 = torch.nn.functional.scaled_dot_product_attention(
+        q_shape_1, k_shape_1, v_shape_1, attn_mask=None
+    ).to(torch.float32)
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected len == 1, after caching first kernel."
+
+    # Subsequent run/call to kernel, this should be using cached.
+    output_shape_1 = device_zeros(
+        shape_1[0], shape_1[1], shape_1[2], dtype=torch.float32
+    )
+    cached_kernel = base_attention_1(
+        q_shape_1 * dk_sqrt * log2e,
+        k_shape_1,
+        v_shape_1.permute([0, 2, 1]),
+        output_shape_1,
+    )
+    assert_close(output_shape_1, torch_ref_shape_1, atol=1e-3, rtol=1e-3)
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected to keep size of cache because we reuse same kernel."
+    assert (
+        cache_manager.cache_misses == 1 and cache_manager.cache_hits == 1
+    ), "Expected subsequent call to be cached."
 
 
 @require_e2e
@@ -449,8 +451,6 @@ def testSameSizeDifferentBlock(request):
         K2: shape[4],
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
 
     torch.manual_seed(0)
     q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
@@ -462,83 +462,55 @@ def testSameSizeDifferentBlock(request):
         q, k, v, attn_mask=None
     ).to(torch.float32)
     cache_manager = get_cache_manager()
-    with tk.gen.TestLaunchContext(
-        copy.deepcopy(hyperparams),
+    options = WaveCompileOptions(
+        subs=copy.deepcopy(hyperparams),
         canonicalize=True,
-        run=True,
         run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
-    ):
-        assert (
-            len(cache_manager.session_cache) == 0
-        ), "Expected to start runtime with no cache."
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
 
-        # First run/call to kernel, this should compile from scratch.
-        output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        mb_config_0 = base_attention(
-            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
-        )
-        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
-        assert (
-            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
-        ), "Expected first call to not be cached."
-        assert (
-            len(cache_manager.session_cache) == 1
-        ), "Expected len == 1, after caching first kernel."
+    assert (
+        len(cache_manager.session_cache) == 0
+    ), "Expected to start runtime with no cache."
+
+    base_attention_0 = wave_compile(options, base_attention)
+
+    # First run/call to kernel, this should compile from scratch.
+    output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+    mb_config_0 = base_attention_0(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
+    assert (
+        cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
+    ), "Expected first call to not be cached."
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected len == 1, after caching first kernel."
 
     # Subsequent run/call to kernel, this trigger recompile because we use
     # a different block size/config.
     hyperparams[BLOCK_N] = 32
     hyperparams[BLOCK_K2] = 32
-    kernel_hash = []
-    with tk.gen.TestLaunchContext(
-        copy.deepcopy(hyperparams),
+    options = WaveCompileOptions(
+        subs=copy.deepcopy(hyperparams),
         canonicalize=True,
-        run=True,
         run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
-        kernel_hash=kernel_hash,
-    ):
-        output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        mb_config_1 = base_attention(
-            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
-        )
-        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
-        assert (
-            len(cache_manager.session_cache) == 2
-        ), "Expected cache size to increment, because we use different block size/config."
-        assert (
-            cache_manager.cache_misses == 2 and cache_manager.cache_hits == 0
-        ), "Expected subsequent call to not be cached."
-        assert len(kernel_hash) == 1, "Expected to have one kernel hash returned."
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
+    base_attention_1 = wave_compile(options, base_attention)
 
-    # Subsequent run/call to kernel, this will not trigger a hash computation
-    # because we are passing in the kernel hash from the last call.
-    hyperparams[BLOCK_N] = 32
-    hyperparams[BLOCK_K2] = 32
-    with tk.gen.TestLaunchContext(
-        copy.deepcopy(hyperparams),
-        canonicalize=True,
-        run=True,
-        run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
-        kernel_hash=kernel_hash,
-    ):
-        output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        mb_config_2 = base_attention(
-            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
-        )
-        assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
-        assert (
-            len(cache_manager.session_cache) == 2
-        ), "Expected cache size to increment, because we use different block size/config."
-        assert (
-            cache_manager.cache_misses == 2 and cache_manager.cache_hits == 1
-        ), "Expected subsequent call to be cached."
-        assert len(kernel_hash) == 1, "Expected to still have only one kernel hash."
+    output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
+    mb_config_1 = base_attention_1(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
+    assert (
+        len(cache_manager.session_cache) == 2
+    ), "Expected cache size to increment, because we use different block size/config."
+    assert (
+        cache_manager.cache_misses == 2 and cache_manager.cache_hits == 0
+    ), "Expected subsequent call to be cached."
 
 
 # Free vars are variables defined outside the kernels that would impact the
@@ -576,35 +548,34 @@ def testSameConfigDifferentFreeVar(request):
     v_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
     o_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)
     hyperparams.update(get_default_scheduling_params())
-    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
     cache_manager = get_cache_manager()
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
-        run_config=get_default_run_config(),
-        compile_config=compile_config,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-    ):
-        torch.manual_seed(0)
-        q = device_randn(q_shape, dtype=torch.float16)
-        k = device_randn(k_shape, dtype=torch.float16)
-        v = device_randn(v_shape, dtype=torch.float16)
-        output = device_zeros(o_shape, dtype=torch.float32)
-        log2e = 1.44269504089
-        dk_sqrt = math.sqrt(1.0 / shape.head_size)
-        # TODO: Add scaling of QK as part of kernel.
-        # TODO: Add variant of non-transposed V attention kernel.
-        non_causal_mb = base_attention(
-            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
-        )
-        assert (
-            cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
-        ), "Expected first call to not be cached."
-        assert (
-            len(cache_manager.session_cache) == 1
-        ), "Expected len == 1, after caching first kernel."
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
+    base_attention = wave_compile(options, base_attention)
+
+    torch.manual_seed(0)
+    q = device_randn(q_shape, dtype=torch.float16)
+    k = device_randn(k_shape, dtype=torch.float16)
+    v = device_randn(v_shape, dtype=torch.float16)
+    output = device_zeros(o_shape, dtype=torch.float32)
+    log2e = 1.44269504089
+    dk_sqrt = math.sqrt(1.0 / shape.head_size)
+    # TODO: Add scaling of QK as part of kernel.
+    # TODO: Add variant of non-transposed V attention kernel.
+    non_causal_mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    assert (
+        cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
+    ), "Expected first call to not be cached."
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected len == 1, after caching first kernel."
 
     (
         causal_attention,
@@ -614,30 +585,31 @@ def testSameConfigDifferentFreeVar(request):
     ) = get_vanilla_attention_kernel(
         shape, mfma_variant, dynamic_dims, is_causal=True, is_v_transposed=True
     )
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
-        run_config=get_default_run_config(),
-        compile_config=compile_config,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-    ):
-        torch.manual_seed(0)
-        q = device_randn(q_shape, dtype=torch.float16)
-        k = device_randn(k_shape, dtype=torch.float16)
-        v = device_randn(v_shape, dtype=torch.float16)
-        output = device_zeros(o_shape, dtype=torch.float32)
-        log2e = 1.44269504089
-        dk_sqrt = math.sqrt(1.0 / shape.head_size)
-        # TODO: Add scaling of QK as part of kernel.
-        # TODO: Add variant of non-transposed V attention kernel.
-        causal_mb = causal_attention(
-            q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
-        )
-        assert (
-            cache_manager.cache_misses == 2 and cache_manager.cache_hits == 0
-        ), "Expected to not be cached despite same config, since it has different values for is_causal."
-        assert (
-            len(cache_manager.session_cache) == 2
-        ), "Expected len == 2, after caching second kernel."
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
+    causal_attention = wave_compile(options, causal_attention)
+
+    torch.manual_seed(0)
+    q = device_randn(q_shape, dtype=torch.float16)
+    k = device_randn(k_shape, dtype=torch.float16)
+    v = device_randn(v_shape, dtype=torch.float16)
+    output = device_zeros(o_shape, dtype=torch.float32)
+    log2e = 1.44269504089
+    dk_sqrt = math.sqrt(1.0 / shape.head_size)
+    # TODO: Add scaling of QK as part of kernel.
+    # TODO: Add variant of non-transposed V attention kernel.
+    causal_mb = causal_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    assert (
+        cache_manager.cache_misses == 2 and cache_manager.cache_hits == 0
+    ), "Expected to be cached despite same config, since it has different values for is_causal."
+    assert (
+        len(cache_manager.session_cache) == 2
+    ), "Expected len == 2, after caching second kernel."

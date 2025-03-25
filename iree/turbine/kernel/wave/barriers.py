@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from .utils import is_reduction_subgraph
+from .utils.graph_utils import is_reduction_subgraph
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import get_custom, Read, SharedMemoryBarrier, Write, Reduction
 from ..lang.global_symbols import SHARED_ADDRESS_SPACE

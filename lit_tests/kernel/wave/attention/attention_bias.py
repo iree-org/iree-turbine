@@ -4,11 +4,14 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
+)
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
@@ -134,25 +137,21 @@ def test_attention_bias():
         MMA_UNITS: 4,
     }
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-    ):
-        torch.manual_seed(0)
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-        v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-        output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(base_attention_bias(q, k, v, output))
+        compile_to_mlir=True,
+    )
+    base_attention_bias = wave_compile(options, base_attention_bias)
+    print(base_attention_bias.asm)
 
-        # CHECK:            func.func @base_attention_bias
-        # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-4:            {{.*}} = vector.load
-        # CHECK-COUNT-4:            {{.*}} = arith.addf
-        # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
+    # CHECK:            func.func @base_attention_bias
+    # CHECK:                {{.*}} = scf.for
+    # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-4:            {{.*}} = vector.load
+    # CHECK-COUNT-4:            {{.*}} = arith.addf
+    # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
