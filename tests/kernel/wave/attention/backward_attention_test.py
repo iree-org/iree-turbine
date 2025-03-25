@@ -12,15 +12,21 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
-    get_default_run_config,
-    get_default_scheduling_params,
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
+)
+from iree.turbine.kernel.wave.utils.general_utils import (
+    get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
+)
+from iree.turbine.kernel.wave.utils.torch_utils import (
     device_randn,
     device_zeros,
-    to_default_device,
 )
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
 from ..common.utils import (
     require_e2e,
@@ -1140,39 +1146,33 @@ def testAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...]):
         scale=scale,
     )
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    compile_config = {
-        "waves_per_eu": 2,
-        "denorm_fp_math_f32": "preserve-sign",
-    }
-
-    with tk.gen.TestLaunchContext(
-        hyperparams,
-        canonicalize=True,
-        run=True,
-        run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
+        run_bench=False,
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
+    attention_fwd = wave_compile(options, attention_fwd)
 
-        o = device_zeros(batch, q_seq_len, v_head_dim, dtype=torch.float16)
-        lse = device_zeros(batch, q_seq_len, dtype=torch.float16)
-        s = device_zeros(batch, q_seq_len, kv_seq_len)
+    o = device_zeros(batch, q_seq_len, v_head_dim, dtype=torch.float16)
+    lse = device_zeros(batch, q_seq_len, dtype=torch.float16)
+    s = device_zeros(batch, q_seq_len, kv_seq_len)
 
-        asm_fwd = attention_fwd(q, k, v.transpose(-1, -2), s, o, lse)
+    asm_fwd = attention_fwd(q, k, v.transpose(-1, -2), s, o, lse)
 
-        if dump_generated_mlir:
-            filename = f"out/wave_attention_fwd_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm_fwd)
-            print(f"IR dumped to {filename}")
+    if dump_generated_mlir:
+        filename = f"out/wave_attention_fwd_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm_fwd)
+        print(f"IR dumped to {filename}")
 
-        assert_close(s, s_ref, **cmp_params)
-        # Can't check P, since we don't actually compute the "real" thing in the
-        # forward pass, but rather rescale as we go.
-        assert_close(lse, lse_ref, **cmp_params)
-        assert_close(o, o_ref, **cmp_params)
+    assert_close(s, s_ref, **cmp_params)
+    # Can't check P, since we don't actually compute the "real" thing in the
+    # forward pass, but rather rescale as we go.
+    assert_close(lse, lse_ref, **cmp_params)
+    assert_close(o, o_ref, **cmp_params)
 
 
 @require_e2e
@@ -1213,70 +1213,65 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
         scale=scale,
     )
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    compile_config = {
-        "waves_per_eu": 2,
-        "denorm_fp_math_f32": "preserve-sign",
-    }
-
-    with tk.gen.TestLaunchContext(
-        hyperparams,
-        canonicalize=True,
-        run=True,
-        run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        D = torch.sum(do * o_ref, -1)
+        run_bench=False,
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
+    attention_bwd = wave_compile(options, attention_bwd)
 
-        dq = torch.zeros_like(q)
-        dk = torch.zeros_like(k)
-        dv = torch.zeros_like(v)
-        s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
-        p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
-        ds = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
-        ds_scaled = torch.zeros_like(ds)
-        dp = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
-        dp_sub = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
+    D = torch.sum(do * o_ref, -1)
 
-        asm_bwd = attention_bwd(
-            q,
-            k,
-            v,
-            do,
-            lse_ref,
-            D,
-            dq,
-            dk,
-            dv,
-            s,
-            p,
-            ds,
-            ds_scaled,
-            dp,
-            dp_sub,
-        )
+    dq = torch.zeros_like(q)
+    dk = torch.zeros_like(k)
+    dv = torch.zeros_like(v)
+    s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
+    p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
+    ds = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
+    ds_scaled = torch.zeros_like(ds)
+    dp = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
+    dp_sub = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
 
-        if dump_generated_mlir:
-            filename = f"out/wave_attention_bwd_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm_bwd)
-            print(f"IR dumped to {filename}")
+    asm_bwd = attention_bwd(
+        q,
+        k,
+        v,
+        do,
+        lse_ref,
+        D,
+        dq,
+        dk,
+        dv,
+        s,
+        p,
+        ds,
+        ds_scaled,
+        dp,
+        dp_sub,
+    )
 
-        assert_close(s, s_ref, **cmp_params)
-        assert_close(p, p_ref, **cmp_params)
+    if dump_generated_mlir:
+        filename = f"out/wave_attention_bwd_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm_bwd)
+        print(f"IR dumped to {filename}")
 
-        assert_close(dv, dv_ref, **cmp_params)
+    assert_close(s, s_ref, **cmp_params)
+    assert_close(p, p_ref, **cmp_params)
 
-        dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
-        assert_close(dp, dp_ref, **cmp_params)
-        assert_close(dp_sub, dp_sub_ref, **cmp_params)
+    assert_close(dv, dv_ref, **cmp_params)
 
-        assert_close(ds, ds_ref, **cmp_params)
+    dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
+    assert_close(dp, dp_ref, **cmp_params)
+    assert_close(dp_sub, dp_sub_ref, **cmp_params)
 
-        assert_close(dk, dk_ref, **cmp_params)
-        assert_close(dq, dq_ref, **cmp_params)
+    assert_close(ds, ds_ref, **cmp_params)
+
+    assert_close(dk, dk_ref, **cmp_params)
+    assert_close(dq, dq_ref, **cmp_params)
 
 
 @require_e2e
@@ -1315,37 +1310,31 @@ def testAttentionBackward_dv(mfma_variant: MMAType, shape: tuple[int, ...]):
         scale=scale,
     )
     hyperparams_dv.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    compile_config = {
-        "waves_per_eu": 2,
-        "denorm_fp_math_f32": "preserve-sign",
-    }
-
-    with tk.gen.TestLaunchContext(
-        hyperparams_dv,
-        canonicalize=True,
-        run=True,
-        run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
+    options = WaveCompileOptions(
+        subs=hyperparams_dv,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
+        run_bench=False,
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
+    attention_bwd_dv = wave_compile(options, attention_bwd_dv)
 
-        dv = torch.zeros_like(v)
-        s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
-        p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
+    dv = torch.zeros_like(v)
+    s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
+    p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
 
-        asm_bwd_dv = attention_bwd_dv(q, k, do, lse_ref, dv, s, p)
+    asm_bwd_dv = attention_bwd_dv(q, k, do, lse_ref, dv, s, p)
 
-        if dump_generated_mlir:
-            filename = f"out/wave_attention_bwd_dv_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm_bwd_dv)
-            print(f"IR dumped to {filename}")
+    if dump_generated_mlir:
+        filename = f"out/wave_attention_bwd_dv_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm_bwd_dv)
+        print(f"IR dumped to {filename}")
 
-        assert_close(s, s_ref, **cmp_params)
-        assert_close(p, p_ref, **cmp_params)
-        assert_close(dv, dv_ref, **cmp_params)
+    assert_close(s, s_ref, **cmp_params)
+    assert_close(p, p_ref, **cmp_params)
+    assert_close(dv, dv_ref, **cmp_params)
 
 
 @require_e2e
@@ -1384,59 +1373,53 @@ def testAttentionBackward_dk(mfma_variant: MMAType, shape: tuple[int, ...]):
         scale=scale,
     )
     hyperparams_dk.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    compile_config = {
-        "waves_per_eu": 2,
-        "denorm_fp_math_f32": "preserve-sign",
-    }
-
-    with tk.gen.TestLaunchContext(
-        hyperparams_dk,
-        canonicalize=True,
-        run=True,
-        run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
+    options = WaveCompileOptions(
+        subs=hyperparams_dk,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
+        run_bench=False,
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
+    attention_bwd_dk = wave_compile(options, attention_bwd_dk)
 
-        D = torch.sum(do * o_ref, -1).to(torch.float16)
-        dk = torch.zeros_like(k)
-        s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
-        p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
-        ds = torch.zeros_like(p)
-        dp = torch.zeros_like(s)
-        dp_sub = torch.zeros_like(p)
+    D = torch.sum(do * o_ref, -1).to(torch.float16)
+    dk = torch.zeros_like(k)
+    s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
+    p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
+    ds = torch.zeros_like(p)
+    dp = torch.zeros_like(s)
+    dp_sub = torch.zeros_like(p)
 
-        asm_bwd_dk = attention_bwd_dk(
-            q,
-            k,
-            v,
-            do,
-            lse_ref,
-            D,
-            dk,
-            s,
-            p,
-            ds,
-            dp,
-            dp_sub,
-        )
+    asm_bwd_dk = attention_bwd_dk(
+        q,
+        k,
+        v,
+        do,
+        lse_ref,
+        D,
+        dk,
+        s,
+        p,
+        ds,
+        dp,
+        dp_sub,
+    )
 
-        if dump_generated_mlir:
-            filename = f"out/wave_attention_bwd_dk_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm_bwd_dk)
-            print(f"IR dumped to {filename}")
+    if dump_generated_mlir:
+        filename = f"out/wave_attention_bwd_dk_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm_bwd_dk)
+        print(f"IR dumped to {filename}")
 
-        dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
+    dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
 
-        assert_close(s, s_ref, **cmp_params)
-        assert_close(p, p_ref, **cmp_params)
-        assert_close(dp, dp_ref, **cmp_params)
-        assert_close(dp_sub, dp_sub_ref, **cmp_params)
-        assert_close(ds, ds_ref, **cmp_params)
-        assert_close(dk, dk_ref, **cmp_params)
+    assert_close(s, s_ref, **cmp_params)
+    assert_close(p, p_ref, **cmp_params)
+    assert_close(dp, dp_ref, **cmp_params)
+    assert_close(dp_sub, dp_sub_ref, **cmp_params)
+    assert_close(ds, ds_ref, **cmp_params)
+    assert_close(dk, dk_ref, **cmp_params)
 
 
 @require_e2e
@@ -1475,62 +1458,56 @@ def testAttentionBackward_dq(mfma_variant: MMAType, shape: tuple[int, ...]):
         scale=scale,
     )
     hyperparams_dq.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    compile_config = {
-        "waves_per_eu": 2,
-        "denorm_fp_math_f32": "preserve-sign",
-    }
-
-    with tk.gen.TestLaunchContext(
-        hyperparams_dq,
-        canonicalize=True,
-        run=True,
-        run_bench=False,
-        run_config=config,
-        compile_config=compile_config,
+    options = WaveCompileOptions(
+        subs=hyperparams_dq,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
+        run_bench=False,
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+    )
+    options = set_default_run_config(options)
+    attention_bwd_dq = wave_compile(options, attention_bwd_dq)
 
-        D = torch.sum(do * o_ref, -1).to(torch.float16)
-        dq = torch.zeros_like(q)
-        s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
-        p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
-        s_sub = torch.zeros_like(p)
-        ds = torch.zeros_like(p)
-        dp = torch.zeros_like(s)
-        dp_sub = torch.zeros_like(p)
+    D = torch.sum(do * o_ref, -1).to(torch.float16)
+    dq = torch.zeros_like(q)
+    s = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float32)
+    p = device_zeros(batch, q_seq_len, kv_seq_len, dtype=torch.float16)
+    s_sub = torch.zeros_like(p)
+    ds = torch.zeros_like(p)
+    dp = torch.zeros_like(s)
+    dp_sub = torch.zeros_like(p)
 
-        asm_bwd_dq = attention_bwd_dq(
-            q,
-            k,
-            v,
-            do,
-            lse_ref,
-            D,
-            dq,
-            s,
-            s_sub,
-            p,
-            ds,
-            dp,
-            dp_sub,
-        )
+    asm_bwd_dq = attention_bwd_dq(
+        q,
+        k,
+        v,
+        do,
+        lse_ref,
+        D,
+        dq,
+        s,
+        s_sub,
+        p,
+        ds,
+        dp,
+        dp_sub,
+    )
 
-        if dump_generated_mlir:
-            filename = f"out/wave_attention_bwd_dq_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm_bwd_dq)
-            print(f"IR dumped to {filename}")
+    if dump_generated_mlir:
+        filename = f"out/wave_attention_bwd_dq_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm_bwd_dq)
+        print(f"IR dumped to {filename}")
 
-        s_sub_ref = s_ref.to(torch.float16) - lse_ref.reshape(
-            (batch, q_seq_len, 1)
-        ).expand(batch, q_seq_len, kv_seq_len)
-        dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
+    s_sub_ref = s_ref.to(torch.float16) - lse_ref.reshape((batch, q_seq_len, 1)).expand(
+        batch, q_seq_len, kv_seq_len
+    )
+    dp_sub_ref = (dp_ref - D.reshape((batch, q_seq_len, 1))).to(torch.float16)
 
-        assert_close(s, s_ref, **cmp_params)
-        assert_close(s_sub, s_sub_ref, **cmp_params)
-        assert_close(p, p_ref, **cmp_params)
-        assert_close(dp, dp_ref, **cmp_params)
-        assert_close(dp_sub, dp_sub_ref, **cmp_params)
-        assert_close(ds, ds_ref, **cmp_params)
-        assert_close(dq, dq_ref, **cmp_params)
+    assert_close(s, s_ref, **cmp_params)
+    assert_close(s_sub, s_sub_ref, **cmp_params)
+    assert_close(p, p_ref, **cmp_params)
+    assert_close(dp, dp_ref, **cmp_params)
+    assert_close(dp_sub, dp_sub_ref, **cmp_params)
+    assert_close(ds, ds_ref, **cmp_params)
+    assert_close(dq, dq_ref, **cmp_params)
