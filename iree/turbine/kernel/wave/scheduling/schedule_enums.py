@@ -12,7 +12,7 @@ Values: 0xAB where:
 * A = Strategy types:
   * 0 = None
   * 1 = Solver Based
-  * 2 = Heuristic Based (to come)
+  * 2 = Heuristic Based
 * B enumerates different strategy that share the same 0xA* bits.
 """
 
@@ -20,3 +20,4 @@ Values: 0xAB where:
 class SchedulingType(Enum):
     NONE = 0x00
     MODULO = 0x10
+    PREFETCH = 0x20

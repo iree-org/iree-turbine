@@ -76,7 +76,8 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.PREFETCH, SchedulingType.MODULO],
 )
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
