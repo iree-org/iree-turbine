@@ -25,7 +25,9 @@ from ..ops.wave_ops import (
 )
 from ..lang.global_symbols import *
 
-from .utils import DCE, subs_idxc, all_equal
+from .utils.symbol_utils import subs_idxc
+from .utils.graph_utils import DCE
+from .utils.general_utils import all_equal
 import torch.fx as fx
 import math
 from typing import Callable

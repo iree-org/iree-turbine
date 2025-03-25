@@ -10,8 +10,8 @@ from ...ops.wave_ops import (
     get_custom,
     Placeholder,
 )
-from ..utils import graph_copy, erase_graph
-from ..utils import subs_idxc
+from ..utils.graph_utils import graph_copy, erase_graph
+from ..utils.symbol_utils import subs_idxc
 import torch.fx as fx
 import math
 from collections import defaultdict, deque, ChainMap

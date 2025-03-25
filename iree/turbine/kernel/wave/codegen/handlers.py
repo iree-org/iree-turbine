@@ -101,7 +101,7 @@ from ..constraints import (
     WorkgroupConstraint,
     TilingConstraint,
 )
-from ..utils import subs_idxc, get_hardware_vector_map
+from ..utils.symbol_utils import subs_idxc
 
 # Indexing imports.
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
@@ -164,7 +164,7 @@ def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
 
 
 def _get_start_indices(
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
 ) -> list[IndexExpr]:
     start_indices = []
     for dim_indexing in src_indices:

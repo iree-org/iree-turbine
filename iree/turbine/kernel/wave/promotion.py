@@ -10,7 +10,9 @@ from .._support.indexing import IndexingContext
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 from .constraints import Constraint, get_constrained_shape
-from .utils import subs_idxc, move_node_after, KernelLaunchInfo
+from .utils.symbol_utils import subs_idxc
+from .utils.graph_utils import move_node_after
+from .utils.classes import KernelLaunchInfo
 import math
 
 logger = get_logger("turbine.wave.promotion")
