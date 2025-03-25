@@ -16,6 +16,7 @@ from typing import Any
 import torch
 import iree.runtime
 from ...support.conversions import TORCH_DTYPE_TO_SIGNED_MLIR_TYPE_ASM
+from .compile_options import WaveCompileOptions
 
 BenchmarkResult = namedtuple(
     "BenchmarkResult", "benchmark_name time cpu_time iterations user_counters"
@@ -23,17 +24,15 @@ BenchmarkResult = namedtuple(
 
 
 def construct_inputs(
-    config: dict[str, Any],
+    options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    kernel_dynamic_dims: list[int],
-    inplace: bool,
 ) -> tuple[list[str], list[tempfile.NamedTemporaryFile]]:
-    bench_with_constant_weights = config.get("bench_with_constant_weights", False)
+    bench_with_constant_weights = options.bench_with_constant_weights
     tempfiles = []
     inputs = []
-    all_inputs = kernel_inputs + kernel_outputs if inplace else kernel_inputs
-    all_inputs += kernel_dynamic_dims
+    all_inputs = kernel_inputs + kernel_outputs if options.inplace else kernel_inputs
+    all_inputs += options.kernel_dynamic_dims
     if bench_with_constant_weights:
         for inp in all_inputs:
             if isinstance(inp, torch.Tensor):
@@ -117,10 +116,10 @@ def create_trace_json():
         json.dump(data, f)
 
 
-def populate_trace_args(prefix: list[str], config: dict[str, Any]) -> list[str]:
+def populate_trace_args(prefix: list[str], capture_trace_dir: str) -> list[str]:
     create_trace_json()
     prefix += ["rocprofv3", "-i", "input.json", "-d"]
-    prefix += [config.get("capture_trace")]
+    prefix += [capture_trace_dir]
     prefix += ["--"]
     return prefix
 
@@ -128,9 +127,7 @@ def populate_trace_args(prefix: list[str], config: dict[str, Any]) -> list[str]:
 def benchmark_module(
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    kernel_dynamic_dims: list[int],
-    config: dict[str, Any],
-    inplace: bool,
+    options: "WaveCompileOptions",
     module,
     entry_function=None,
     timeout=None,
@@ -148,17 +145,14 @@ def benchmark_module(
 
     flatbuffer = module.stashed_flatbuffer_blob
     prefix = []
-    capture_trace = config.get("capture_trace", None)
-    if capture_trace:
-        prefix = populate_trace_args(prefix, config)
+    if options.capture_trace:
+        prefix = populate_trace_args(prefix, options.capture_trace)
     args = prefix + [iree.runtime.benchmark_exe()]
     args.append(f"--function={entry_function}")
     for k in kwargs:
         v = kwargs[k]
         args.append(f"--{k}={v}")
-    inputs, tempfiles = construct_inputs(
-        config, kernel_inputs, kernel_outputs, kernel_dynamic_dims, inplace
-    )
+    inputs, tempfiles = construct_inputs(options, kernel_inputs, kernel_outputs)
     args += inputs
     args.append(f"--module=-")
 

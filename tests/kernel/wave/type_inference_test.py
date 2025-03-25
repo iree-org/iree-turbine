@@ -13,7 +13,7 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )

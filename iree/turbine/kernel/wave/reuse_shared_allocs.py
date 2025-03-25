@@ -9,7 +9,7 @@ from iree.turbine.kernel._support.tracing import CapturedTrace
 import torch.fx as fx
 
 from ..ops.wave_ops import get_custom, Allocate, SharedMemoryBarrier
-from .utils import get_users
+from .utils.graph_utils import get_users
 
 
 def reuse_shared_allocs(trace: CapturedTrace):

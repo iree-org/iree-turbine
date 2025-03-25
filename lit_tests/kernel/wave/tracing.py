@@ -5,7 +5,8 @@ from iree.turbine.kernel._support.tracing import CapturedTrace
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.ops.wave_ops import get_custom, Read, Write
-from iree.turbine.kernel.wave.utils import run_test, print_trace
+from iree.turbine.kernel.wave.utils.general_utils import run_test
+from iree.turbine.kernel.wave.utils.print_utils import print_trace
 
 M = tkl.sym.M
 N = tkl.sym.N

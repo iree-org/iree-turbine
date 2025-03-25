@@ -49,6 +49,7 @@ from ...compiler.base import CodegenError, NDEBUG
 from ...lang.wave_types import IndexSymbol
 from ..constraints import Constraint, TilingConstraint
 from ..._support.indexing import IndexingContext, IndexExpr
+from ..compile_options import WaveCompileOptions
 
 
 @dataclass
@@ -58,14 +59,14 @@ class WaveEmitter:
     root_sig: BoundKernelSignature
     trace: CapturedTrace
     constraints: list[Constraint]
-    dynamic_symbols: list[IndexSymbol]
-    params: dict[str, Any]
+    params: WaveCompileOptions
     ip: InsertionPoint = None
     OP_HANDLERS: ClassVar[dict[str, Callable[["WaveEmitter", fx.Node], None]]] = {}
     _node_values: ClassVar[dict[fx.Node, List[IRProxyValue]]] = {}
 
     def __post_init__(self):
         self.ip = InsertionPoint(self.root_sig.entry_block)
+        self.dynamic_symbols = self.params.dynamic_symbols
 
     def emit_program_invariants(self):
         self.workgroup_ids = [
@@ -151,7 +152,7 @@ class WaveEmitter:
 
 def handle_op(op: Callable[..., Any] | list[Callable[..., Any]]):
     def decorator(
-        f: Callable[[WaveEmitter, fx.Node], None]
+        f: Callable[[WaveEmitter, fx.Node], None],
     ) -> Callable[[WaveEmitter, fx.Node], None]:
         if isinstance(op, Callable):
             WaveEmitter.OP_HANDLERS[op.__name__] = f

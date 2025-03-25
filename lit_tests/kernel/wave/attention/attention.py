@@ -4,8 +4,10 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
+)
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
@@ -16,6 +18,7 @@ from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 import torch
 
 # Input sizes
@@ -135,46 +138,42 @@ def test_attention_32x32x8():
         MMA_UNITS: 4,
     }
 
-    compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=False,
         run_bench=False,
-        compile_config=compile_config,
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-    ):
-        torch.manual_seed(0)
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-        v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-        output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(base_attention_32x32x8(q, k, v, output))
+        compile_to_mlir=True,
+    )
+    base_attention_32x32x8 = wave_compile(options, base_attention_32x32x8)
+    print(base_attention_32x32x8.asm)
 
-        # CHECK:            #iree_codegen.translation_info
-        # CHECK-SAME:       {llvm_func_attrs = {"amdgpu-waves-per-eu" = "2", "denormal-fp-math-f32" = "preserve-sign"}
-        # CHECK-LABEL:      func.func @base_attention_32x32x8
-        # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
+    # CHECK:            #iree_codegen.translation_info
+    # CHECK-SAME:       {llvm_func_attrs = {"amdgpu-waves-per-eu" = "2", "denormal-fp-math-f32" = "preserve-sign"}
+    # CHECK-LABEL:      func.func @base_attention_32x32x8
+    # CHECK:                {{.*}} = scf.for
+    # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
 
-        # Test for reduction decomposition related to softmax.
-        # CHECK-NOT:                arith.maximumf {{.*}}, {{.*}} : vector<16xf32>
-        # CHECK-COUNT-30:           arith.maximumf {{.*}}, {{.*}} : vector<1xf32>
-        # CHECK:                    {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-2:            arith.maximumf {{.*}}, {{.*}} : vector<1xf32>
-        # CHECK:                    arith.addf {{.*}}, {{.*}} : vector<16xf32>
-        # CHECK-COUNT-14:           arith.addf {{.*}}, {{.*}} : vector<1xf32>
-        # CHECK:                    {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-2:            arith.addf {{.*}}, {{.*}} : vector<1xf32>
+    # Test for reduction decomposition related to softmax.
+    # CHECK-NOT:                arith.maximumf {{.*}}, {{.*}} : vector<16xf32>
+    # CHECK-COUNT-30:           arith.maximumf {{.*}}, {{.*}} : vector<1xf32>
+    # CHECK:                    {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-2:            arith.maximumf {{.*}}, {{.*}} : vector<1xf32>
+    # CHECK:                    arith.addf {{.*}}, {{.*}} : vector<16xf32>
+    # CHECK-COUNT-14:           arith.addf {{.*}}, {{.*}} : vector<1xf32>
+    # CHECK:                    {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-2:            arith.addf {{.*}}, {{.*}} : vector<1xf32>
 
-        # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [0], sizes = [4], strides = [1]}
-        # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [4], sizes = [4], strides = [1]}
-        # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [8], sizes = [4], strides = [1]}
-        # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [12], sizes = [4], strides = [1]}
-        # CHECK-COUNT-4:            {{.*}} = amdgpu.mfma
-        # CHECK:                    scf.yield
-        # CHECK-COUNT-4:            vector.store {{.*}}: memref<8x128x128xf32{{.*}}>, vector<4xf32>
+    # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [0], sizes = [4], strides = [1]}
+    # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [4], sizes = [4], strides = [1]}
+    # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [8], sizes = [4], strides = [1]}
+    # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [12], sizes = [4], strides = [1]}
+    # CHECK-COUNT-4:            {{.*}} = amdgpu.mfma
+    # CHECK:                    scf.yield
+    # CHECK-COUNT-4:            vector.store {{.*}}: memref<8x128x128xf32{{.*}}>, vector<4xf32>
 
 
 @run_test
@@ -277,42 +276,38 @@ def test_dynamic_attention_32x32x8():
     dynamic_symbols_map[K2] = shape[4]
     dynamic_symbols = [M, N, B, K2]
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         use_scheduling_barriers=False,
-    ):
-        torch.manual_seed(0)
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-        v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-        output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(dynamic_attention_32x32x8(q, k, v, output))
+        compile_to_mlir=True,
+    )
+    dynamic_attention_32x32x8 = wave_compile(options, dynamic_attention_32x32x8)
+    print(dynamic_attention_32x32x8.asm)
 
-        # CHECK-LABEL:      func.func @dynamic_attention_32x32x8
-        # CHECK-DAG:            %[[IOTA:.+]] = arith.constant dense<[0, 1, 2, 3]> : vector<4xindex>
-        # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [0], sizes = [4], strides = [1]}
-        # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [4], sizes = [4], strides = [1]}
-        # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [8], sizes = [4], strides = [1]}
-        # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [12], sizes = [4], strides = [1]}
-        # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
-        # CHECK:                    scf.yield
+    # CHECK-LABEL:      func.func @dynamic_attention_32x32x8
+    # CHECK-DAG:            %[[IOTA:.+]] = arith.constant dense<[0, 1, 2, 3]> : vector<4xindex>
+    # CHECK:                {{.*}} = scf.for
+    # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-2:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [0], sizes = [4], strides = [1]}
+    # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [4], sizes = [4], strides = [1]}
+    # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [8], sizes = [4], strides = [1]}
+    # CHECK:                    {{.*}} = vector.extract_strided_slice {{.*}} {offsets = [12], sizes = [4], strides = [1]}
+    # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
+    # CHECK:                    scf.yield
 
-        # Check for mask generation and masked stor:
-        # CHECK:                %[[INDICES:.+]] = arith.addi %{{.*}}, %[[IOTA]] overflow<nsw, nuw> : vector<4xindex>
-        # CHECK:                %[[BOUNDS:.+]] = vector.splat %{{.*}} : vector<4xindex>
-        # CHECK:                %[[SLT:.+]] = arith.cmpi slt, %[[INDICES]], %[[BOUNDS]] : vector<4xindex>
-        # CHECK:                %[[MASK:.+]] = arith.andi %{{.*}}, %[[SLT]] : vector<4xi1>
-        # CHECK:                vector.maskedstore %{{.*}}[{{.*}}], %[[MASK]], %{{.*}} : memref<?x?x?xf32, strided<[?, ?, 1], offset: ?>>, vector<4xi1>, vector<4xf32>
-        # CHECK-COUNT-3:        vector.maskedstore {{.*}} : memref<?x?x?xf32, strided<[?, ?, 1], offset: ?>>, vector<4xi1>, vector<4xf32>
+    # Check for mask generation and masked stor:
+    # CHECK:                %[[INDICES:.+]] = arith.addi %{{.*}}, %[[IOTA]] overflow<nsw, nuw> : vector<4xindex>
+    # CHECK:                %[[BOUNDS:.+]] = vector.splat %{{.*}} : vector<4xindex>
+    # CHECK:                %[[SLT:.+]] = arith.cmpi slt, %[[INDICES]], %[[BOUNDS]] : vector<4xindex>
+    # CHECK:                %[[MASK:.+]] = arith.andi %{{.*}}, %[[SLT]] : vector<4xi1>
+    # CHECK:                vector.maskedstore %{{.*}}[{{.*}}], %[[MASK]], %{{.*}} : memref<?x?x?xf32, strided<[?, ?, 1], offset: ?>>, vector<4xi1>, vector<4xf32>
+    # CHECK-COUNT-3:        vector.maskedstore {{.*}} : memref<?x?x?xf32, strided<[?, ?, 1], offset: ?>>, vector<4xi1>, vector<4xf32>
 
 
 @run_test
@@ -330,46 +325,25 @@ def test_attention():
         shape, mfma_variant, False
     )
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-    ):
-        torch.manual_seed(0)
-        q = torch.randn(
-            shape.num_query_heads,
-            shape.query_seq_len,
-            shape.head_size,
-            dtype=torch.float16,
-        )
-        k = torch.randn(
-            shape.num_kv_heads, shape.kv_seq_len, shape.head_size, dtype=torch.float16
-        )
-        v = torch.randn(
-            shape.num_kv_heads,
-            shape.kv_seq_len,
-            shape.head_size_kv,
-            dtype=torch.float16,
-        )
-        output = torch.zeros(
-            shape.num_query_heads,
-            shape.query_seq_len,
-            shape.head_size_kv,
-            dtype=torch.float32,
-        )
-        print(base_attention(q, k, v, output))
+        compile_to_mlir=True,
+    )
+    base_attention = wave_compile(options, base_attention)
+    print(base_attention.asm)
 
-        # CHECK-LABEL:       func.func @base_attention
-        # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-4:            {{.*}} = arith.cmpi slt
-        # CHECK-COUNT-4:            {{.*}} = arith.select
-        # CHECK-COUNT-8:            {{.*}} = arith.addf
-        # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
+    # CHECK-LABEL:       func.func @base_attention
+    # CHECK:                {{.*}} = scf.for
+    # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-4:            {{.*}} = arith.cmpi slt
+    # CHECK-COUNT-4:            {{.*}} = arith.select
+    # CHECK-COUNT-8:            {{.*}} = arith.addf
+    # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
 
 
 @run_test
@@ -387,47 +361,26 @@ def test_attention_causal():
         shape, mfma_variant, False, is_causal=True
     )
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-    ):
-        torch.manual_seed(0)
-        q = torch.randn(
-            shape.num_query_heads,
-            shape.query_seq_len,
-            shape.head_size,
-            dtype=torch.float16,
-        )
-        k = torch.randn(
-            shape.num_kv_heads, shape.kv_seq_len, shape.head_size, dtype=torch.float16
-        )
-        v = torch.randn(
-            shape.num_kv_heads,
-            shape.kv_seq_len,
-            shape.head_size_kv,
-            dtype=torch.float16,
-        )
-        output = torch.zeros(
-            shape.num_query_heads,
-            shape.query_seq_len,
-            shape.head_size_kv,
-            dtype=torch.float32,
-        )
-        print(base_attention(q, k, v, output))
+        compile_to_mlir=True,
+    )
+    base_attention = wave_compile(options, base_attention)
+    print(base_attention.asm)
 
-        # CHECK-LABEL:       func.func @base_attention
-        # CHECK:                %[[NEG_INF:.+]] = arith.constant dense<-1.000000e+06> : vector<4xf32>
-        # CHECK:                %[[ZERO:.+]] = arith.constant dense<0.000000e+00> : vector<4xf32>
-        # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-4:            {{.*}} = arith.cmpi slt, {{.*}} : vector<4xindex>
-        # CHECK-COUNT-8:            {{.*}} = arith.cmpi sge, {{.*}} : vector<4xi64>
-        # CHECK-COUNT-8:            {{.*}} = arith.andi {{.*}} : vector<4xi1>
-        # CHECK-COUNT-8:            {{.*}} = arith.select %{{.*}}, %[[ZERO]], %[[NEG_INF]] : vector<4xi1>, vector<4xf32>
-        # CHECK-COUNT-8:            {{.*}} = arith.addf %{{.*}}, %{{.*}} : vector<4xf32>
-        # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
+    # CHECK-LABEL:       func.func @base_attention
+    # CHECK:                %[[NEG_INF:.+]] = arith.constant dense<-1.000000e+06> : vector<4xf32>
+    # CHECK:                %[[ZERO:.+]] = arith.constant dense<0.000000e+00> : vector<4xf32>
+    # CHECK:                {{.*}} = scf.for
+    # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-4:            {{.*}} = arith.cmpi slt, {{.*}} : vector<4xindex>
+    # CHECK-COUNT-8:            {{.*}} = arith.cmpi sge, {{.*}} : vector<4xi64>
+    # CHECK-COUNT-8:            {{.*}} = arith.andi {{.*}} : vector<4xi1>
+    # CHECK-COUNT-8:            {{.*}} = arith.select %{{.*}}, %[[ZERO]], %[[NEG_INF]] : vector<4xi1>, vector<4xf32>
+    # CHECK-COUNT-8:            {{.*}} = arith.addf %{{.*}}, %{{.*}} : vector<4xf32>
+    # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma

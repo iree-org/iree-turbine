@@ -3,6 +3,7 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 import torch
 
 
@@ -73,10 +74,12 @@ def testGemm():
         N: 10240,
         K: 1280,
     }
-    with tk.gen.TestLaunchContext(hyperparams, canonicalize=True):
-        a = torch.randn(2048, 1280, dtype=torch.float16)
-        b = torch.randn(10240, 1280, dtype=torch.float16)
-        c = torch.zeros(2048, 10240, dtype=torch.float32)
-        asm = gemm(a, b, c)
-        interpreter = Interpreter([0, 0, 0], [0, 0, 0])
-        interpreter.interpret(asm)
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    gemm = wave_compile(options, gemm)
+    interpreter = Interpreter([0, 0, 0], [0, 0, 0])
+    interpreter.interpret(gemm.asm)

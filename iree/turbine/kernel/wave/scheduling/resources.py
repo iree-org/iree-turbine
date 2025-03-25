@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from ...lang.global_symbols import *
-from ..utils import subs_idxc
+from ..utils.symbol_utils import subs_idxc
 from ...ops.wave_ops import (
     Read,
     Write,

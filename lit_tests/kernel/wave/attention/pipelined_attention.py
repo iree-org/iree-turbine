@@ -4,12 +4,15 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
+)
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 import torch
 
 # Input sizes
@@ -135,47 +138,43 @@ def test_dynamic_attention_pipelined():
         SHUFFLE_UNITS: 2,
     }
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.MODULO,
         use_scheduling_barriers=False,
         dynamic_symbols=(B, M, N, K2),
-        dynamic_symbol_map={
+        dynamic_symbols_map={
             B: shape[0],
             M: shape[1],
             N: shape[2],
             K2: shape[4],
         },
-    ):
-        torch.manual_seed(0)
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-        v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-        output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(dynamic_attention_pipelined(q, k, v, output))
+        compile_to_mlir=True,
+    )
+    dynamic_attention_pipelined = wave_compile(options, dynamic_attention_pipelined)
+    print(dynamic_attention_pipelined.asm)
 
-        # CHECK-LABEL:       func.func @dynamic_attention_pipelined
-        # CHECK-COUNT-4:        {{.*}} = vector.maskedload {{.*}}
-        # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-2:            {{.*}} = vector.maskedload {{.*}}
-        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
-        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
-        # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
-        # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
-        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
-        # CHECK-COUNT-15:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-4:        vector.maskedstore {{.*}}
+    # CHECK-LABEL:       func.func @dynamic_attention_pipelined
+    # CHECK-COUNT-4:        {{.*}} = vector.maskedload {{.*}}
+    # CHECK:                {{.*}} = scf.for
+    # CHECK-COUNT-2:            {{.*}} = vector.maskedload {{.*}}
+    # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
+    # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
+    # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
+    # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
+    # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-4:            {{.*}} = vector.load {{.*}}
+    # CHECK-COUNT-15:            {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-4:        vector.maskedstore {{.*}}
 
 
 @run_test
@@ -277,28 +276,24 @@ def test_attention_pipelined():
         SHUFFLE_UNITS: 2,
     }
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.MODULO,
         use_scheduling_barriers=False,
-    ):
-        torch.manual_seed(0)
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-        v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-        output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(base_attention_pipelined(q, k, v, output))
+        compile_to_mlir=True,
+    )
+    base_attention_pipelined = wave_compile(options, base_attention_pipelined)
+    print(base_attention_pipelined.asm)
 
-        # CHECK-LABEL:       func.func @base_attention_pipelined
-        # CHECK:                {{.*}} = scf.for
-        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-5:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-15:            {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma
+    # CHECK-LABEL:       func.func @base_attention_pipelined
+    # CHECK:                {{.*}} = scf.for
+    # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-5:            {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-2:            {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-1:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-15:            {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-5:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-1:            {{.*}} = amdgpu.mfma

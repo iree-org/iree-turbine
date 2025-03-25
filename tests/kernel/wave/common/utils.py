@@ -6,7 +6,7 @@
 
 import pytest
 import os
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.run_utils import (
     get_default_arch,
 )
 

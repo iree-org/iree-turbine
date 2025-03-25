@@ -13,7 +13,15 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.ops.wave_ops import *
-from iree.turbine.kernel.wave.utils import run_test, print_trace, initialize_iter_args
+from iree.turbine.kernel.wave.utils.general_utils import (
+    run_test,
+)
+from iree.turbine.kernel.wave.utils.print_utils import (
+    print_trace,
+)
+from iree.turbine.kernel.wave.utils.graph_utils import (
+    initialize_iter_args,
+)
 from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
 from iree.turbine.kernel.wave.visualization import visualize_graph
 from iree.turbine.kernel.wave.shared_memory_indexing import (
@@ -115,22 +123,22 @@ def test_gemm():
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: reduction
         # CHECK-SAME (K, [%register_M:0_N:0_K:0, %register_M:1_N:1_K:0, %register_M:1_N:0_K:0, %register_M:0_N:1_K:0]
-        # CHECK-NEXT: %getresult_M:0_N:0_K:0
+        # CHECK-NEXT: %get_result_M:0_N:0_K:0
         # CHECK-SAME: (%reduction, 0)
-        # CHECK-NEXT: %getresult_M:0_N:1_K:0
+        # CHECK-NEXT: %get_result_M:0_N:1_K:0
         # CHECK-SAME: (%reduction, 1)
-        # CHECK-NEXT: %getresult_M:1_N:0_K:0
+        # CHECK-NEXT: %get_result_M:1_N:0_K:0
         # CHECK-SAME: (%reduction, 2)
-        # CHECK-NEXT: %getresult_M:1_N:1_K:0
+        # CHECK-NEXT: %get_result_M:1_N:1_K:0
         # CHECK-SAME: (%reduction, 3)
         # CHECK-NEXT: %write_M:0_N:0_K:0
-        # CHECK-SAME: (%getresult_M:0_N:0_K:0, %c, 4, None, ())
+        # CHECK-SAME: (%get_result_M:0_N:0_K:0, %c, 4, None, ())
         # CHECK-NEXT: %write_M:0_N:1_K:0
-        # CHECK-SAME: (%getresult_M:0_N:1_K:0, %c, 4, None, ())
+        # CHECK-SAME: (%get_result_M:0_N:1_K:0, %c, 4, None, ())
         # CHECK-NEXT: %write_M:1_N:0_K:0
-        # CHECK-SAME: (%getresult_M:1_N:0_K:0, %c, 4, None, ())
+        # CHECK-SAME: (%get_result_M:1_N:0_K:0, %c, 4, None, ())
         # CHECK-NEXT: %write_M:1_N:1_K:0
-        # CHECK-SAME: (%getresult_M:1_N:1_K:0, %c, 4, None, ())
+        # CHECK-SAME: (%get_result_M:1_N:1_K:0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
         # CHECK: Custom format:
@@ -152,13 +160,13 @@ def test_gemm():
         # CHECK-NEXT: get_result(value=reduction, res_idx=1)
         # CHECK-NEXT: get_result(value=reduction, res_idx=2)
         # CHECK-NEXT: get_result(value=reduction, res_idx=3)
-        # CHECK-NEXT: write(register_=getresult_M:0_N:0_K:0, memory=c
+        # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0, memory=c
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) : 1 : 1})
-        # CHECK-NEXT: write(register_=getresult_M:0_N:1_K:0, memory=c
+        # CHECK-NEXT: write(register_=get_result_M:0_N:1_K:0, memory=c
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1})
-        # CHECK-NEXT: write(register_=getresult_M:1_N:0_K:0, memory=c
+        # CHECK-NEXT: write(register_=get_result_M:1_N:0_K:0, memory=c
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) : 1 : 1})
-        # CHECK-NEXT: write(register_=getresult_M:1_N:1_K:0, memory=c
+        # CHECK-NEXT: write(register_=get_result_M:1_N:1_K:0, memory=c
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1})
 
         # Reduction subgraph:
@@ -186,22 +194,22 @@ def test_gemm():
         # CHECK-NEXT: %write_21
         # CHECK-SAME: (%read_40, %allocate_1, 8, None, ())
         # CHECK-NEXT: %shared_memory_barrier
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:0
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:1
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:2
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:3
-        # CHECK-NEXT: %read_shared_M:0_N:1_K:0
-        # CHECK-NEXT: %read_shared_M:0_N:1_K:1
-        # CHECK-NEXT: %read_shared_M:0_N:1_K:2
-        # CHECK-NEXT: %read_shared_M:0_N:1_K:3
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:0
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:1
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:2
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:3
-        # CHECK-NEXT: %read_shared_M:1_N:0_K:0
-        # CHECK-NEXT: %read_shared_M:1_N:0_K:1
-        # CHECK-NEXT: %read_shared_M:1_N:0_K:2
-        # CHECK-NEXT: %read_shared_M:1_N:0_K:3
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:0
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:1
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:2
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:3
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:0
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:1
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:2
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:3
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:0
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:1
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:2
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:3
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:0
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:1
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:2
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:3
         # CHECK-NEXT: %mma_M:0_N:0_K:0
         # CHECK-NEXT: %mma_M:0_N:0_K:1
         # CHECK-NEXT: %mma_M:0_N:0_K:2

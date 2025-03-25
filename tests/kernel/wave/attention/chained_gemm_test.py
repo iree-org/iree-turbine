@@ -11,14 +11,21 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
-from iree.turbine.kernel.wave.utils import (
-    get_default_run_config,
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
+)
+from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
+)
+from iree.turbine.kernel.wave.utils.torch_utils import (
     device_randn,
     device_zeros,
 )
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
 from torch.testing import assert_close
@@ -102,7 +109,7 @@ def testChainedGemm(
 
         @tkw.reduction(K2, init_args=[c_reg])
         def repeat(
-            acc: tkl.Register[B, M, N, tkl.f32]
+            acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
             inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
             q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -135,46 +142,42 @@ def testChainedGemm(
         K2: kv_seq_len,
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    perf_filename = request.node.name + ".json"
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16)
-        k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
-        v = device_randn(batch, v_head_dim, kv_seq_len, dtype=torch.float16)
-        output = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
-        asm = chained_gemm(q, k, v, output)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + perf_filename) if dump_perf else None
+        ),
+    )
+    options = set_default_run_config(options)
+    chained_gemm = wave_compile(options, chained_gemm)
 
-        if dump_generated_mlir:
-            filename = f"wave_cgemm_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm)
-                print(f"IR dumped to {filename}")
+    q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16)
+    k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
+    v = device_randn(batch, v_head_dim, kv_seq_len, dtype=torch.float16)
+    output = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
+    asm = chained_gemm(q, k, v, output)
 
-        iree_ref = torch.zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
-        generate_iree_ref(
-            "chain_mmt", [q, k, v], [iree_ref], config, run_bench=run_bench
-        )
-        assert_close(output, iree_ref, check_device=False, atol=0, rtol=0)
+    if dump_generated_mlir:
+        filename = f"wave_cgemm_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+            print(f"IR dumped to {filename}")
 
-        torch_qk = torch.matmul(q, k.transpose(-1, -2))
-        torch_ref = torch.matmul(torch_qk, v.transpose(-1, -2))
-        output_for_cmp = output.transpose(-1, -2).to(torch.float16)
-        assert_close(output_for_cmp, torch_ref, atol=5e-2, rtol=5e-3)
+    iree_ref = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
+    generate_iree_ref("chain_mmt", [q, k, v], [iree_ref], options)
+    assert_close(output, iree_ref, check_device=False, atol=0, rtol=0)
+
+    torch_qk = torch.matmul(q, k.transpose(-1, -2))
+    torch_ref = torch.matmul(torch_qk, v.transpose(-1, -2))
+    output_for_cmp = output.transpose(-1, -2).to(torch.float16)
+    assert_close(output_for_cmp, torch_ref, atol=5e-2, rtol=5e-3)
 
 
 @require_e2e
@@ -254,7 +257,7 @@ def testChainedGemmF8(
 
         @tkw.reduction(K2, init_args=[c_reg])
         def repeat(
-            acc: tkl.Register[B, M, N, tkl.f32]
+            acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
             inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
             q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -290,38 +293,34 @@ def testChainedGemmF8(
         K2: kv_seq_len,
     }
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        torch.manual_seed(0)
-        q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16)
-        k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
-        v = device_randn(batch, v_head_dim, kv_seq_len, dtype=torch.float16)
-        output = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
-        asm = chained_gemm_f8(q, k, v, output)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    chained_gemm_f8 = wave_compile(options, chained_gemm_f8)
 
-        if dump_generated_mlir:
-            filename = f"wave_cgemm_{'x'.join(map(str, shape))}.mlir"
-            with open(filename, "w") as f:
-                f.write(asm)
+    q = device_randn(batch, q_seq_len, qk_head_dim, dtype=torch.float16)
+    k = device_randn(batch, kv_seq_len, qk_head_dim, dtype=torch.float16)
+    v = device_randn(batch, v_head_dim, kv_seq_len, dtype=torch.float16)
+    output = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
+    asm = chained_gemm_f8(q, k, v, output)
 
-        iree_ref = torch.zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
-        generate_iree_ref(
-            "chain_mmt_f8", [q, k, v], [iree_ref], config, run_bench=run_bench
-        )
-        assert_close(output, iree_ref, atol=7e-5, rtol=2e-3, check_device=False)
+    if dump_generated_mlir:
+        filename = f"wave_cgemm_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    iree_ref = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
+    generate_iree_ref("chain_mmt_f8", [q, k, v], [iree_ref], options)
+    assert_close(output, iree_ref, atol=7e-5, rtol=2e-3, check_device=False)
