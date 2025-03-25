@@ -263,18 +263,6 @@ class HardwareConstraint(Constraint):
             if isinstance(vector_size, IndexExpr):
                 self.vector_shapes[vector_dim] = vector_size.subs(index_map)
 
-    def compute_access_pattern_using_vector_shapes(
-        self,
-        dim: IndexSymbol,
-        workgroup_dim: int,
-        elements_per_thread: int | IndexSymbol,
-        stride: int,
-    ) -> IndexSequence:
-        thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
-        return IndexSequence(
-            thread_id * elements_per_thread, elements_per_thread, stride
-        )
-
     def apply(self):
         assert False, "Call either apply_read_write_thread_mapping or apply_mma_mapping"
 
@@ -476,8 +464,19 @@ class ThreadConstraint(Constraint):
     workgroup_dim: int
 
     def apply(self) -> IndexSequence:
+        return IndexSequence(0, 1)
+
+    def apply_read_write_thread_mapping(
+        self,
+        dim: IndexSymbol,
+        workgroup_dim: int,
+        elements_per_thread: int | IndexSymbol,
+        stride: int,
+    ) -> IndexSequence:
         thread_id = [THREAD_0, THREAD_1, THREAD_2][self.workgroup_dim]
-        return IndexSequence(thread_id, 1)
+        return IndexSequence(
+            thread_id * elements_per_thread, elements_per_thread, stride
+        )
 
 
 @dataclass
