@@ -111,76 +111,76 @@ def test_gemm():
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: reduction
         # CHECK-SAME (K, [%register_M:0_N:0_K:0, %register_M:0_N:1_K:0, %register_M:1_N:0_K:0, %register_M:1_N:1_K:0]
-        # CHECK-NEXT: %getresult_M:0_N:0_K:0
+        # CHECK-NEXT: %get_result_M:0_N:0_K:0
         # CHECK-SAME: (%reduction, 0)
-        # CHECK-NEXT: %getresult_M:0_N:1_K:0
+        # CHECK-NEXT: %get_result_M:0_N:1_K:0
         # CHECK-SAME: (%reduction, 1)
-        # CHECK-NEXT: %getresult_M:1_N:0_K:0
+        # CHECK-NEXT: %get_result_M:1_N:0_K:0
         # CHECK-SAME: (%reduction, 2)
-        # CHECK-NEXT: %getresult_M:1_N:1_K:0
+        # CHECK-NEXT: %get_result_M:1_N:1_K:0
         # CHECK-SAME: (%reduction, 3)
         # CHECK-NEXT: extract_slice
-        # CHECK-SAME: (%getresult_M:0_N:0_K:0, [0], [1], [1])
+        # CHECK-SAME: (%get_result_M:0_N:0_K:0, [0], [1], [1])
         # CHECK-NEXT: %write_5
         # CHECK-SAME: (%extract_slice, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_1
-        # CHECK-SAME: (%getresult_M:0_N:0_K:0, [1], [1], [1])
+        # CHECK-SAME: (%get_result_M:0_N:0_K:0, [1], [1], [1])
         # CHECK-NEXT: %write_6
         # CHECK-SAME: (%extract_slice_1, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_2
-        # CHECK-SAME: (%getresult_M:0_N:0_K:0, [2], [1], [1])
+        # CHECK-SAME: (%get_result_M:0_N:0_K:0, [2], [1], [1])
         # CHECK-NEXT: %write_7
         # CHECK-SAME: (%extract_slice_2, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_3
-        # CHECK-SAME: (%getresult_M:0_N:0_K:0, [3], [1], [1])
+        # CHECK-SAME: (%get_result_M:0_N:0_K:0, [3], [1], [1])
         # CHECK-NEXT: %write_8
         # CHECK-SAME: (%extract_slice_3, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_4
-        # CHECK-SAME: (%getresult_M:0_N:1_K:0, [0], [1], [1])
+        # CHECK-SAME: (%get_result_M:0_N:1_K:0, [0], [1], [1])
         # CHECK-NEXT: %write_9
         # CHECK-SAME: (%extract_slice_4, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_5
-        # CHECK-SAME: (%getresult_M:0_N:1_K:0, [1], [1], [1])
+        # CHECK-SAME: (%get_result_M:0_N:1_K:0, [1], [1], [1])
         # CHECK-NEXT: %write_10
         # CHECK-SAME: (%extract_slice_5, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_6
-        # CHECK-SAME: (%getresult_M:0_N:1_K:0, [2], [1], [1])
+        # CHECK-SAME: (%get_result_M:0_N:1_K:0, [2], [1], [1])
         # CHECK-NEXT: %write_11
         # CHECK-SAME: (%extract_slice_6, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_7
-        # CHECK-SAME: (%getresult_M:0_N:1_K:0, [3], [1], [1])
+        # CHECK-SAME: (%get_result_M:0_N:1_K:0, [3], [1], [1])
         # CHECK-NEXT: %write_12
         # CHECK-SAME: (%extract_slice_7, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_8
-        # CHECK-SAME: (%getresult_M:1_N:0_K:0, [0], [1], [1])
+        # CHECK-SAME: (%get_result_M:1_N:0_K:0, [0], [1], [1])
         # CHECK-NEXT: %write_13
         # CHECK-SAME: (%extract_slice_8, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_9
-        # CHECK-SAME: (%getresult_M:1_N:0_K:0, [1], [1], [1])
+        # CHECK-SAME: (%get_result_M:1_N:0_K:0, [1], [1], [1])
         # CHECK-NEXT: %write_14
         # CHECK-SAME: (%extract_slice_9, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_10
-        # CHECK-SAME: (%getresult_M:1_N:0_K:0, [2], [1], [1])
+        # CHECK-SAME: (%get_result_M:1_N:0_K:0, [2], [1], [1])
         # CHECK-NEXT: %write_15
         # CHECK-SAME: (%extract_slice_10, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_11
-        # CHECK-SAME: (%getresult_M:1_N:0_K:0, [3], [1], [1])
+        # CHECK-SAME: (%get_result_M:1_N:0_K:0, [3], [1], [1])
         # CHECK-NEXT: %write_16
         # CHECK-SAME: (%extract_slice_11, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_12
-        # CHECK-SAME: (%getresult_M:1_N:1_K:0, [0], [1], [1])
+        # CHECK-SAME: (%get_result_M:1_N:1_K:0, [0], [1], [1])
         # CHECK-NEXT: %write_17
         # CHECK-SAME: (%extract_slice_12, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_13
-        # CHECK-SAME: (%getresult_M:1_N:1_K:0, [1], [1], [1])
+        # CHECK-SAME: (%get_result_M:1_N:1_K:0, [1], [1], [1])
         # CHECK-NEXT: %write_18
         # CHECK-SAME: (%extract_slice_13, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_14
-        # CHECK-SAME: (%getresult_M:1_N:1_K:0, [2], [1], [1])
+        # CHECK-SAME: (%get_result_M:1_N:1_K:0, [2], [1], [1])
         # CHECK-NEXT: %write_19
         # CHECK-SAME: (%extract_slice_14, %c, 1, None, ())
         # CHECK-NEXT: extract_slice_15
-        # CHECK-SAME: (%getresult_M:1_N:1_K:0, [3], [1], [1])
+        # CHECK-SAME: (%get_result_M:1_N:1_K:0, [3], [1], [1])
         # CHECK-NEXT: %write_20
         # CHECK-SAME: (%extract_slice_15, %c, 1, None, ())
         # CHECK-NEXT: return None
@@ -204,52 +204,52 @@ def test_gemm():
         # CHECK-NEXT: get_result(value=reduction, res_idx=1)
         # CHECK-NEXT: get_result(value=reduction, res_idx=2)
         # CHECK-NEXT: get_result(value=reduction, res_idx=3)
-        # CHECK-NEXT: extract_slice(register_=getresult_M:0_N:0_K:0, offset=[0], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:0_N:0_K:0, offset=[0], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 32 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:0_N:0_K:0, offset=[1], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:0_N:0_K:0, offset=[1], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_1, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 1 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 32 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:0_N:0_K:0, offset=[2], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:0_N:0_K:0, offset=[2], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_2, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 2 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 32 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:0_N:0_K:0, offset=[3], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:0_N:0_K:0, offset=[3], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_3, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 3 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 32 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:0_N:1_K:0, offset=[0], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:0_N:1_K:0, offset=[0], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_4, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 48 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:0_N:1_K:0, offset=[1], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:0_N:1_K:0, offset=[1], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_5, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 1 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 48 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:0_N:1_K:0, offset=[2], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:0_N:1_K:0, offset=[2], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_6, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 2 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 48 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:0_N:1_K:0, offset=[3], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:0_N:1_K:0, offset=[3], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_7, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 3 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 48 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:1_N:0_K:0, offset=[0], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:1_N:0_K:0, offset=[0], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_8, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 16 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 32 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:1_N:0_K:0, offset=[1], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:1_N:0_K:0, offset=[1], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_9, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 17 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 32 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:1_N:0_K:0, offset=[2], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:1_N:0_K:0, offset=[2], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_10, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 18 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 32 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:1_N:0_K:0, offset=[3], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:1_N:0_K:0, offset=[3], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_11, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 19 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 32 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:1_N:1_K:0, offset=[0], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:1_N:1_K:0, offset=[0], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_12, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 16 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 48 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:1_N:1_K:0, offset=[1], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:1_N:1_K:0, offset=[1], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_13, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 17 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 48 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:1_N:1_K:0, offset=[2], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:1_N:1_K:0, offset=[2], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_14, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 18 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 48 : 1 : 1})
-        # CHECK-NEXT: extract_slice(register_=getresult_M:1_N:1_K:0, offset=[3], size=[1], stride=[1])
+        # CHECK-NEXT: extract_slice(register_=get_result_M:1_N:1_K:0, offset=[3], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice_15, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 19 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 48 : 1 : 1})
 
@@ -276,22 +276,22 @@ def test_gemm():
         # CHECK-SAME: (%b, 8, None, (), None)
         # CHECK-NEXT: %write_21
         # CHECK-SAME: (%read_40, %allocate_1, 8, None, ())
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:0
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:1
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:2
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:3
-        # CHECK-NEXT: %read_shared_M:0_N:1_K:0
-        # CHECK-NEXT: %read_shared_M:0_N:1_K:1
-        # CHECK-NEXT: %read_shared_M:0_N:1_K:2
-        # CHECK-NEXT: %read_shared_M:0_N:1_K:3
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:0
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:1
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:2
-        # CHECK-NEXT: %read_shared_M:0_N:0_K:3
-        # CHECK-NEXT: %read_shared_M:1_N:0_K:0
-        # CHECK-NEXT: %read_shared_M:1_N:0_K:1
-        # CHECK-NEXT: %read_shared_M:1_N:0_K:2
-        # CHECK-NEXT: %read_shared_M:1_N:0_K:3
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:0
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:1
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:2
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:3
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:0
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:1
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:2
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:3
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:0
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:1
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:2
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:3
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:0
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:1
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:2
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:3
         # CHECK-NEXT: %mma_M:0_N:0_K:0
         # CHECK-NEXT: %mma_M:0_N:0_K:1
         # CHECK-NEXT: %mma_M:0_N:0_K:2

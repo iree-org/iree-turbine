@@ -907,6 +907,7 @@ def graph_copy(graph: fx.Graph) -> tuple[fx.Graph, dict[fx.Node, fx.Node]]:
     for node in graph.nodes:
         custom = get_custom(node)
         new_node = custom.copy(
+            new_name=node.name,
             new_graph=new_graph,
             arg_transform=lambda x: node_map[x] if x in node_map else x,
         )

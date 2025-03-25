@@ -121,45 +121,45 @@ def test_gemm_pipelined():
         # CHECK-NEXT: %rotating_reg_1
         # CHECK-NEXT: %rotating_reg_2
         # CHECK-NEXT: %rotating_reg_3
-        # CHECK-NEXT: %read_shared_M_0_N_0_K_0
-        # CHECK-NEXT: %read_shared_M_0_N_0_K_1
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:0
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:0
         # CHECK-NEXT: %read_21
         # CHECK-NEXT: %read_22
         # CHECK-NEXT: %scheduling_group_barrier
         # CHECK-SAME: ({Operation.READ_SHARED: 2, Operation.READ_GLOBAL: 2}, 0)
-        # CHECK-NEXT: %read_shared_M_0_N_1_K_0
-        # CHECK-NEXT: %read_shared_M_0_N_1_K_1
-        # CHECK-NEXT: %mma_M_0_N_0_K_0
-        # CHECK-SAME: (%read_shared_M_0_N_0_K_1, %read_shared_M_0_N_0_K_0, %acc_m_0_n_0_k_0, None)
-        # CHECK-NEXT: %mma_M_1_N_0_K_0
-        # CHECK-SAME: (%rotating_reg_2, %read_shared_M_0_N_0_K_0, %acc_m_1_n_0_k_0, None)
-        # CHECK-NEXT: %scheduling_group_barrier
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:0
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:1
+        # CHECK-NEXT: %mma_M:0_N:0_K:0
+        # CHECK-SAME: (%read_2_shared_M:0_N:0_K:0, %read_4_shared_M:0_N:0_K:0, %acc_m_0_n_0_k_0, None)
+        # CHECK-NEXT: %mma_M:1_N:0_K:0
+        # CHECK-SAME: (%rotating_reg_2, %read_4_shared_M:0_N:0_K:0, %acc_m_1_n_0_k_0, None)
+        # CHECK-NEXT: %scheduling_group_barrier_1
         # CHECK-SAME: ({Operation.READ_SHARED: 2, Operation.MMA: 2}, 0)
-        # CHECK-NEXT: %mma_M_0_N_0_K_1
-        # CHECK-SAME: (%rotating_reg_1, %rotating_reg_0, %mma_M_0_N_0_K_0, None)
-        # CHECK-NEXT: %mma_M_1_N_0_K_1
-        # CHECK-SAME: (%rotating_reg_3, %rotating_reg_0, %mma_M_1_N_0_K_0, None)
+        # CHECK-NEXT: %mma_M:0_N:0_K:1
+        # CHECK-SAME: (%rotating_reg_1, %rotating_reg_0, %mma_M:0_N:0_K:0, None)
+        # CHECK-NEXT: %mma_M:1_N:0_K:1
+        # CHECK-SAME: (%rotating_reg_3, %rotating_reg_0, %mma_M:1_N:0_K:0, None)
         # CHECK-NEXT: %write_10
         # CHECK-NEXT: %write_11
-        # CHECK-NEXT: %scheduling_group_barrier
+        # CHECK-NEXT: %scheduling_group_barrier_2
         # CHECK-SAME: ({Operation.MMA: 2, Operation.WRITE_SHARED: 2}, 0)
-        # CHECK-NEXT: %mma_M_0_N_1_K_0
-        # CHECK-SAME: (%read_shared_M_0_N_0_K_1, %read_shared_M_0_N_1_K_0, %acc_m_0_n_1_k_0, None)
-        # CHECK-NEXT: %mma_M_1_N_1_K_0
-        # CHECK-SAME: (%rotating_reg_2, %read_shared_M_0_N_1_K_0, %acc_m_1_n_1_k_0, None)
-        # CHECK-NEXT: %read_shared_M_1_N_0_K_0
-        # CHECK-NEXT: %read_shared_M_1_N_0_K_1
-        # CHECK-NEXT: %scheduling_group_barrier
+        # CHECK-NEXT: %mma_M:0_N:1_K:0
+        # CHECK-SAME: (%read_2_shared_M:0_N:0_K:0, %read_4_shared_M:0_N:1_K:0, %acc_m_0_n_1_k_0, None)
+        # CHECK-NEXT: %mma_M:1_N:1_K:0
+        # CHECK-SAME: (%rotating_reg_2, %read_4_shared_M:0_N:1_K:0, %acc_m_1_n_1_k_0, None)
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:0
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:1
+        # CHECK-NEXT: %scheduling_group_barrier_3
         # CHECK-SAME: ({Operation.MMA: 2, Operation.READ_SHARED: 2}, 0)
-        # CHECK-NEXT: %mma_M_0_N_1_K_1
-        # CHECK-SAME: (%rotating_reg_1, %read_shared_M_0_N_1_K_1, %mma_M_0_N_1_K_0, None)
-        # CHECK-NEXT: %mma_M_1_N_1_K_1
-        # CHECK-SAME: (%rotating_reg_3, %read_shared_M_0_N_1_K_1, %mma_M_1_N_1_K_0, None)
-        # CHECK-NEXT: %read_shared_M_0_N_0_K_2
-        # CHECK-NEXT: %read_shared_M_0_N_0_K_3
-        # CHECK-NEXT: %scheduling_group_barrier
+        # CHECK-NEXT: %mma_M:0_N:1_K:1
+        # CHECK-SAME: (%rotating_reg_1, %read_4_shared_M:0_N:1_K:1, %mma_M:0_N:1_K:0, None)
+        # CHECK-NEXT: %mma_M:1_N:1_K:1
+        # CHECK-SAME: (%rotating_reg_3, %read_4_shared_M:0_N:1_K:1, %mma_M:1_N:1_K:0, None)
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:1
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:1
+        # CHECK-NEXT: %scheduling_group_barrier_4
         # CHECK-SAME: ({Operation.MMA: 2, Operation.READ_SHARED: 2}, 0)
-        # CHECK-NEXT: [mma_M_0_N_0_K_1, mma_M_0_N_1_K_1, mma_M_1_N_0_K_1, mma_M_1_N_1_K_1, read_shared_M_0_N_0_K_2, read_shared_M_0_N_0_K_3, read_shared_M_1_N_0_K_0, read_shared_M_1_N_0_K_1]
+        # CHECK-NEXT: [mma_M:0_N:0_K:1, mma_M:0_N:1_K:1, mma_M:1_N:0_K:1, mma_M:1_N:1_K:1, read_4_shared_M:0_N:0_K:1, read_2_shared_M:0_N:0_K:1, read_2_shared_M:1_N:0_K:0, read_2_shared_M:1_N:0_K:1]
 
         print_subgraph(trace, "region_1", False)
         # CHECK: %a
@@ -175,39 +175,40 @@ def test_gemm_pipelined():
         # CHECK-NEXT: %read_22
         # CHECK-NEXT: %write_10
         # CHECK-NEXT: %write_11
-        # CHECK-NEXT: %read_shared_M_1_N_0_K_0
-        # CHECK-NEXT: %read_shared_M_1_N_0_K_1
-        # CHECK-NEXT: %read_shared_M_0_N_0_K_1
-        # CHECK-NEXT: %read_shared_M_0_N_0_K_2
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:0
+        # CHECK-NEXT: %read_2_shared_M:1_N:0_K:1
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:1
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:1
         # CHECK-NEXT: %reduction_1
-        # CHECK-NEXT: %getresult_M:0_N:0_K:0
-        # CHECK-NEXT: %getresult_M:0_N:1_K:0
-        # CHECK-NEXT: %getresult_M:1_N:0_K:0
-        # CHECK-NEXT: %getresult_M:1_N:1_K:0
+        # CHECK-NEXT: %get_result_M:0_N:0_K:0
+        # CHECK-NEXT: %get_result_M:0_N:1_K:0
+        # CHECK-NEXT: %get_result_M:1_N:0_K:0
+        # CHECK-NEXT: %get_result_M:1_N:1_K:0
         # CHECK-NEXT: %get_result_9
         # CHECK-NEXT: %get_result_10
         # CHECK-NEXT: %get_result_11
         # CHECK-NEXT: %get_result_12
-        # CHECK-NEXT: %read_shared_M_0_N_0_K_0
-        # CHECK-NEXT: %read_shared_M_0_N_0_K_3
-        # CHECK-NEXT: %read_shared_M_0_N_1_K_0
-        # CHECK-NEXT: %read_shared_M_0_N_1_K_1
-        # CHECK-NEXT: %mma_M_0_N_0_K_0
-        # CHECK-SAME: (%read_shared_M_0_N_0_K_3, %read_shared_M_0_N_0_K_0, %getresult_M:0_N:0_K:0, None)
-        # CHECK-NEXT: %mma_M_1_N_0_K_0
-        # CHECK-SAME: (%get_result_11, %read_shared_M_0_N_0_K_0, %getresult_M:1_N:0_K:0, None)
-        # CHECK-NEXT: %mma_M_0_N_0_K_1
-        # CHECK-SAME: (%get_result_10, %get_result_9, %mma_M_0_N_0_K_0, None)
-        # CHECK-NEXT: %mma_M_1_N_0_K_1
-        # CHECK-SAME: (%get_result_12, %get_result_9, %mma_M_1_N_0_K_0, None)
-        # CHECK-NEXT: %mma_M_0_N_1_K_0
-        # CHECK-SAME: (%read_shared_M_0_N_0_K_3, %read_shared_M_0_N_1_K_0, %getresult_M:0_N:1_K:0, None)
-        # CHECK-NEXT: %mma_M_1_N_1_K_0
-        # CHECK-SAME: (%get_result_11, %read_shared_M_0_N_1_K_0, %getresult_M:1_N:1_K:0, None)
-        # CHECK-NEXT: %mma_M_0_N_1_K_1
-        # CHECK-SAME: (%get_result_10, %read_shared_M_0_N_1_K_1, %mma_M_0_N_1_K_0, None)
-        # CHECK-NEXT: %mma_M_1_N_1_K_1
-        # CHECK-SAME: (%get_result_12, %read_shared_M_0_N_1_K_1, %mma_M_1_N_1_K_0, None)
+        # CHECK-NEXT: %read_4_shared_M:0_N:0_K:0
+        # CHECK-NEXT: %read_2_shared_M:0_N:0_K:0
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:0
+        # CHECK-NEXT: %read_4_shared_M:0_N:1_K:1
+
+        # CHECK-NEXT: %mma_M:0_N:0_K:0
+        # CHECK-SAME: (%read_2_shared_M:0_N:0_K:0, %read_4_shared_M:0_N:0_K:0, %get_result_M:0_N:0_K:0, None)
+        # CHECK-NEXT: %mma_M:1_N:0_K:0
+        # CHECK-SAME: (%get_result_11, %read_4_shared_M:0_N:0_K:0, %get_result_M:1_N:0_K:0, None)
+        # CHECK-NEXT: %mma_M:0_N:0_K:1
+        # CHECK-SAME: (%get_result_10, %get_result_9, %mma_M:0_N:0_K:0, None)
+        # CHECK-NEXT: %mma_M:1_N:0_K:1
+        # CHECK-SAME: (%get_result_12, %get_result_9, %mma_M:1_N:0_K:0, None)
+        # CHECK-NEXT: %mma_M:0_N:1_K:0
+        # CHECK-SAME: (%read_2_shared_M:0_N:0_K:0, %read_4_shared_M:0_N:1_K:0, %get_result_M:0_N:1_K:0, None)
+        # CHECK-NEXT: %mma_M:1_N:1_K:0
+        # CHECK-SAME: (%get_result_11, %read_4_shared_M:0_N:1_K:0, %get_result_M:1_N:1_K:0, None)
+        # CHECK-NEXT: %mma_M:0_N:1_K:1
+        # CHECK-SAME: (%get_result_10, %read_4_shared_M:0_N:1_K:1, %mma_M:0_N:1_K:0, None)
+        # CHECK-NEXT: %mma_M:1_N:1_K:1
+        # CHECK-SAME: (%get_result_12, %read_4_shared_M:0_N:1_K:1, %mma_M:1_N:1_K:0, None)
         # CHECK-NEXT: %write_M:0_N:0_K:0
         # CHECK-NEXT: %write_M:0_N:1_K:0
         # CHECK-NEXT: %write_M:1_N:0_K:0
