@@ -7,3 +7,4 @@
 from . import iree
 from . import _jinja_test_ops
 from . import _str_format_test_ops
+from . import conv_fwd
