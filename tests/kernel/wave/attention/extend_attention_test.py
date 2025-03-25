@@ -35,6 +35,7 @@ from iree.turbine.kernel.wave.templates.prefill_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import os
 from enum import Enum
 from torch.testing import assert_close
@@ -280,9 +281,10 @@ def create_inputs(
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("is_causal", "causal")
 @param_bool("use_buffer_ops", "buf_ops")
+@param_bool("use_wave_runtime", "wr", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -293,9 +295,10 @@ def create_inputs(
 def testExtendAttention(
     shape: AttentionShape,
     dtype: torch.dtype,
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     is_causal: bool,
     use_buffer_ops: bool,
+    use_wave_runtime: bool,
     mfma_variant: MMAType,
     request,
 ):
@@ -368,6 +371,9 @@ def testExtendAttention(
         )
         config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
 
+    if use_wave_runtime:
+        config["wave_runtime"] = True
+
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -424,7 +430,7 @@ def testExtendAttention(
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
-@param_bool("enable_scheduling", "sched", [False])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("is_causal", "causal", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -436,7 +442,7 @@ def testExtendAttention(
 def testExtendRpeAttention(
     shape: AttentionShape,
     dtype: torch.dtype,
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     is_causal: bool,
     mfma_variant: MMAType,
     request,

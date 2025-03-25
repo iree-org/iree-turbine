@@ -68,6 +68,19 @@ import iree.runtime as rt
 # TODO: Monkey-patching f16 support, need to fix in iree.
 import numpy
 import ctypes
+from dataclasses import dataclass
+import glob
+import os
+import pickle
+
+
+@dataclass
+class KernelLaunchInfo:
+    grid: tuple[int] = None
+    blocks: tuple[int] = None
+    shared_memory_bytes: int = 0
+    func_name: str = ""
+    grid_str: str = ""
 
 
 def try_apply_pass(
@@ -483,7 +496,11 @@ def remove_global_indexing(
     new_index = {key: safe_subs(index[key], subs) for key in index}
     for key in new_index:
         for constraint in tiling_constraints:
-            new_index[key] = new_index[key].subs({constraint.induction_var: 0})
+            new_dim = new_index[key]
+            if sympy.sympify(new_dim.start).has(constraint.induction_var):
+                new_dim = new_dim.subs({constraint.induction_var: 0})
+                new_dim.start = new_dim.start - constraint.start
+                new_index[key] = new_dim
     return new_index
 
 
@@ -655,6 +672,9 @@ def compile_to_vmfb(
             f"--iree-hal-dump-executable-intermediates-to={intermediates_path}"
         )
 
+    if binaries_path := config.get("dump_binaries", None):
+        flags.append(f"--iree-hal-dump-executable-binaries-to={binaries_path}")
+
     if run_bench:
         bench_batch_size = config.get("benchmark_batch_size", None)
         if bench_batch_size is not None:
@@ -670,6 +690,63 @@ def compile_to_vmfb(
 RUNTIME_CACHE: dict[str, tuple[rt.SystemContext, rt.VmFunction]] = {}
 
 
+@functools.lru_cache
+def compute_grid(kernel_dynamic_dims: tuple[int], grid_fn: Callable):
+    return [int(x) for x in grid_fn(list(kernel_dynamic_dims))]
+
+
+def invoke_with_wave_runtime(
+    kernel_inputs: list[torch.Tensor],
+    kernel_outputs: list[torch.Tensor],
+    kernel_dynamic_dims: list[int],
+    kernel_hash: str,
+    kernel_info: KernelLaunchInfo,
+):
+    """
+    Invokes the kernel with the wave runtime.
+    """
+    import wave_runtime
+    from .cache import WAVE_RUNTIME_DIR, CACHE_BASE_DIR
+
+    # Get the path to the binary.
+    if kernel_hash:
+        binary = str(CACHE_BASE_DIR / kernel_hash / kernel_hash) + ".hsaco"
+    else:
+        binary = glob.glob(str(WAVE_RUNTIME_DIR / "*.hsaco"))[0]
+
+    dynamic_dims = tuple(kernel_dynamic_dims)
+    # Update the grid size as this may vary depending
+    # on the dynamic symbols.
+    grid = compute_grid(dynamic_dims, kernel_info.grid)
+
+    # Populate all the information required to launch the kernel.
+    hash_str = "" if not kernel_hash else kernel_hash
+    kernel_launch_info = wave_runtime.KernelLaunchInfo(
+        binary,
+        kernel_info.func_name,
+        hash_str,
+        kernel_info.shared_memory_bytes,
+        grid[0],
+        grid[1],
+        grid[2],
+        kernel_info.blocks[0],
+        kernel_info.blocks[1],
+        kernel_info.blocks[2],
+    )
+
+    # Ensure that the tensors are contiguous.
+    kern_args = []
+    for arg_tensor in kernel_inputs + kernel_outputs:
+        if not arg_tensor.is_contiguous():
+            arg_tensor = arg_tensor.contiguous()
+        kern_args.append(arg_tensor.data_ptr())
+
+    kernel_args = wave_runtime.Int64Vector(kern_args)
+    dyn_dims = wave_runtime.Int64Vector(dynamic_dims)
+    # Launch the kernel.
+    wave_runtime.launch(kernel_launch_info, kernel_args, dyn_dims)
+
+
 def invoke_vmfb(
     vmfb: bytes,
     func_name: str,
@@ -681,7 +758,19 @@ def invoke_vmfb(
     run_bench: bool = False,
     inplace: bool = False,
     kernel_hash: Optional[str] = None,
+    kernel_launch_info: Optional[KernelLaunchInfo] = None,
 ):
+    wave_runtime_launcher = config.get("wave_runtime", None)
+    if wave_runtime_launcher:
+        invoke_with_wave_runtime(
+            kernel_inputs,
+            kernel_outputs,
+            kernel_dynamic_dims,
+            kernel_hash,
+            kernel_launch_info,
+        )
+        return
+
     device = config["device"]
     if run_bench:
         bench_batch_size = config.get("benchmark_batch_size", None)
@@ -818,6 +907,7 @@ def graph_copy(graph: fx.Graph) -> tuple[fx.Graph, dict[fx.Node, fx.Node]]:
     for node in graph.nodes:
         custom = get_custom(node)
         new_node = custom.copy(
+            new_name=node.name,
             new_graph=new_graph,
             arg_transform=lambda x: node_map[x] if x in node_map else x,
         )
@@ -1615,3 +1705,16 @@ def print_live_tensors():
         except:
             pass
     print("-----------------------------")
+
+
+def remove_files_with_extension(directory, extension):
+    pattern = os.path.join(directory, "*" + extension)
+    files_to_remove = glob.glob(pattern)
+
+    for file_path in files_to_remove:
+        try:
+            os.remove(file_path)
+        except FileNotFoundError:
+            print(f"File not found: {file_path}")
+        except Exception as e:
+            print(f"Error removing {file_path}: {e}")

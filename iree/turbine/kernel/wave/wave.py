@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 # Lang, compiler, ops, constraints
+from sympy.utilities.lambdify import lambdastr
 import iree.turbine.kernel.lang as tkl
 from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
 from ..lang import Grid, IndexMapping
@@ -47,9 +48,9 @@ from .expansion.expansion import expand_graph
 from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
-from .promotion import promote_placeholders
+from .promotion import promote_placeholders, compute_shared_memory_usage
 from .reuse_shared_allocs import reuse_shared_allocs
-from .scheduling.schedule import schedule_graph
+from .scheduling.schedule import schedule_graph, SchedulingType
 from .type_inference import infer_types
 from .shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
@@ -71,11 +72,15 @@ from .utils import (
     partial,
     print_trace,
     try_apply_pass,
+    KernelLaunchInfo,
+    get_hardware_constraint,
+    remove_files_with_extension,
 )
 from .cache import (
     is_cache_enabled,
     get_cache_manager,
     invoke_cached_kernel,
+    WAVE_RUNTIME_DIR,
 )
 
 # Others
@@ -84,9 +89,17 @@ import torch.fx as fx
 import inspect
 import sympy
 import warnings
+from pathlib import Path
+import sys
+import subprocess
+import os
+import shutil
+import glob
 
 __all__ = ["wave", "wave_trace_only"]
 
+# Add wave runtime directory to sys path.
+sys.path.append(str(WAVE_RUNTIME_DIR))
 
 # Warn only once
 _warned = False
@@ -134,6 +147,44 @@ def _warn_iree_is_too_old():
         warnings.warn(
             f"IREE version is too old: {iree_compiler_ver}, min version: {min_iree_version}"
         )
+
+
+def build_wave_runtime():
+    wave_runtime_lib = "wave_runtime*.so"
+    lib_path = glob.glob(str(WAVE_RUNTIME_DIR / wave_runtime_lib))
+    # Don't build if lib already exists.
+    if lib_path and Path(lib_path[0]).is_file():
+        return
+
+    # Run cmake command.
+    runtime_path = Path(__file__).resolve()
+    runtime_path = runtime_path.parent / "runtime"
+    runtime_build_path = runtime_path / "build"
+    args = [
+        "cmake",
+        f"-DPython_EXECUTABLE={sys.executable}",
+        "-S",
+        str(runtime_path),
+        "-B",
+        str(runtime_build_path),
+    ]
+    try:
+        subprocess.run(args, check=True)
+    except subprocess.CalledProcessError as e:
+        raise ValueError(f"CMake configuration failed: {e}")
+
+    # Run build command.
+    args = ["cmake", "--build", str(runtime_build_path)]
+    try:
+        subprocess.run(args, check=True)
+    except subprocess.CalledProcessError as e:
+        raise ValueError(f"Build failed: {e}")
+
+    # Copy lib to cache dir.
+    os.makedirs(WAVE_RUNTIME_DIR, exist_ok=True)
+    lib_path = glob.glob(str(runtime_build_path / wave_runtime_lib))[0]
+    shutil.copy(lib_path, WAVE_RUNTIME_DIR)
+    sys.path.append(str(runtime_build_path))
 
 
 def wave(constraints: Optional[list[Constraint]] = None):
@@ -442,6 +493,7 @@ class LaunchableWave(Launchable):
     def build_initial_pass_pipeline(
         self,
         trace: CapturedTrace,
+        kernel_launch_info: KernelLaunchInfo,
         print_ir_before: Sequence[str] = [],
         print_ir_after: Sequence[str] = [],
     ):
@@ -488,12 +540,26 @@ class LaunchableWave(Launchable):
         dispatch_codegen.StreamExecutable,
         kernel_codegen.KernelSignature,
         str,
+        KernelLaunchInfo,
     ]:
         # Issue a warning if IREE ver is too low.
         # Warning will only be issued if we are compiling the kernel and won't
         # if we are using cached kernel as we don't want to add any additional
         # overhead to 'happy' path.
         _warn_iree_is_too_old()
+
+        # Store kernel launch info for the wave runtime.
+        kernel_launch_info = KernelLaunchInfo()
+
+        # Build wave runtime, if specified.
+        run_config = kwargs.get("run_config", {})
+        if run_config.get("wave_runtime", None):
+            # Remove any existing hsaco files in this directory.
+            # If the kernel is being cached, then it will be referenced from the
+            # cache directory. When kernels are not being cached, we remove them
+            # to ensure that at any time there is only one hsaco file in this directory.
+            remove_files_with_extension(WAVE_RUNTIME_DIR, ".hsaco")
+            build_wave_runtime()
 
         compile_config = kwargs.get("compile_config", {})
         print_ir_after = compile_config.get("print_ir_after", [])
@@ -513,7 +579,7 @@ class LaunchableWave(Launchable):
 
         # Initial passes, pre-optimization.
         graph_passes = self.build_initial_pass_pipeline(
-            trace, print_ir_before, print_ir_after
+            trace, kernel_launch_info, print_ir_before, print_ir_after
         )
 
         # Optimizations.
@@ -547,13 +613,17 @@ class LaunchableWave(Launchable):
         # git fetch https://github.com/kerbowa/llvm-project.git ee52732cddae42deed2e3387a83b20ec05860b4e
         # git cherry-pick ee52732cddae42deed2e3387a83b20ec05860b4e
         # [Manually resolve conflicts consistent with the PR]
-        if kwargs.get("schedule", False):
-            use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
-            graph_passes.append(
-                partial(
-                    schedule_graph, trace, self.constraints, use_scheduling_barriers
-                )
+        scheduling_type = kwargs.get("schedule", SchedulingType.NONE)
+        use_scheduling_barriers = kwargs.get("use_scheduling_barriers", False)
+        graph_passes.append(
+            partial(
+                schedule_graph,
+                trace,
+                self.constraints,
+                use_scheduling_barriers,
+                scheduling_type,
             )
+        )
 
         graph_passes += [
             # Align sizes to WG/Tile sizes
@@ -561,6 +631,7 @@ class LaunchableWave(Launchable):
             # so it should be called close to the end of pipeline.
             partial(align_index_sizes, trace, self.constraints),
             partial(add_shared_memory_barriers, trace),
+            partial(compute_shared_memory_usage, trace, kernel_launch_info),
         ]
 
         for p in graph_passes:
@@ -576,7 +647,24 @@ class LaunchableWave(Launchable):
         if compile_config.get("print_grid", False):
             print(f"Grid: {self.grid_type}")
 
-        return self.compile_to_mlir(trace, context, module_op, *args, **kwargs)
+        # Add grid and block dims to kernel launch info.
+        dynamic_symbols_map = kwargs.get("dynamic_symbols_map", {})
+        # Convert the grid into a lambda that we can use to compute the grid dimension.
+        kernel_launch_info.grid = sympy.lambdify(
+            [list(dynamic_symbols_map.keys())], self.grid_type.dims
+        )
+        kernel_launch_info.grid_str = lambdastr(
+            [list(dynamic_symbols_map.keys())], self.grid_type.dims
+        )
+        kernel_launch_info.blocks = [
+            int(x) for x in get_hardware_constraint(self.constraints).threads_per_block
+        ]
+        kernel_launch_info.func_name = self._name
+
+        return (
+            *self.compile_to_mlir(trace, context, module_op, *args, **kwargs),
+            kernel_launch_info,
+        )
 
     def test_execute(self, args, kwargs):
         run = kwargs.get("run", False)
@@ -590,6 +678,11 @@ class LaunchableWave(Launchable):
         # When this is passed in from the user, we will populate it with the kernel hash.
         # It will always be returned with just one entry which is the hash of the kernel.
         cached_kernel_hash = kwargs.get("kernel_hash", [])
+        # For the wave runtime, we need the hsaco binary. So we turn on
+        # dumping of binaries and store in wave runtime directory. If we
+        # are caching, this will be moved to the appropriate directory.
+        if config and config.get("wave_runtime", None):
+            config["dump_binaries"] = str(WAVE_RUNTIME_DIR)
 
         # Get cached kernel when available.
         cache_enabled = is_cache_enabled()
@@ -635,6 +728,7 @@ class LaunchableWave(Launchable):
             exe,
             kernel_sig,
             entrypoint_name,
+            kernel_launch_info,
         ) = self._trace_and_get_kernel_signature(args, kwargs)
 
         if run or run_bench or create_vmfb_file:
@@ -681,6 +775,7 @@ class LaunchableWave(Launchable):
                     kernel_usages,
                     asm,
                     kernel_hash,
+                    kernel_launch_info,
                 )
 
             invoke_vmfb(
@@ -694,6 +789,7 @@ class LaunchableWave(Launchable):
                 run_bench,
                 inplace=True,
                 kernel_hash=kernel_hash,
+                kernel_launch_info=kernel_launch_info,
             )
 
         return mb.module_op.get_asm()

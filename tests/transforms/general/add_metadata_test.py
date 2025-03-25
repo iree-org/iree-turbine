@@ -14,8 +14,8 @@ from iree.compiler.ir import Context, Operation, Module
 from iree.turbine.transforms.general import add_metadata
 
 SIMPLE_FUNC_ASM = r"""
-func.func @list_func(%arg0 : !iree_input.list<!iree_input.variant>) -> !iree_input.list<!iree_input.variant> {
-  return %arg0 : !iree_input.list<!iree_input.variant>
+func.func @list_func(%arg0 : !util.list<!util.variant>) -> !util.list<!util.variant> {
+  return %arg0 : !util.list<!util.variant>
 }
 """
 

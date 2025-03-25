@@ -23,6 +23,7 @@ from iree.turbine.kernel.wave.utils import (
     device_randint,
     device_zeros,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from .common.utils import (
     require_e2e,
     require_cdna2,
@@ -68,7 +69,9 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@param_bool("enable_scheduling", "sched")
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+)
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -79,7 +82,7 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 )
 def testGemm(
     shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: MMAType,
     request,
@@ -215,7 +218,9 @@ def testGemm(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@param_bool("enable_scheduling", "sched")
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+)
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -226,7 +231,7 @@ def testGemm(
 )
 def testVMFMAGemm(
     shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: MMAType,
     request,
@@ -363,7 +368,9 @@ def testVMFMAGemm(
 @require_e2e
 @require_cdna2
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@param_bool("enable_scheduling", "sched")
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+)
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -374,7 +381,7 @@ def testVMFMAGemm(
 )
 def testCDNA2IntGemm(
     shape: tuple[int],
-    enable_scheduling: bool,
+    enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: MMAType,
     request,
@@ -512,7 +519,9 @@ def testCDNA2IntGemm(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@param_bool("enable_scheduling", "sched")
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+)
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -521,7 +530,7 @@ def testCDNA2IntGemm(
     ],
 )
 def testCDNA3IntGemm(
-    shape: tuple[int], enable_scheduling: bool, mfma_variant: MMAType, request
+    shape: tuple[int], enable_scheduling: SchedulingType, mfma_variant: MMAType, request
 ):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
@@ -629,7 +638,9 @@ def testCDNA3IntGemm(
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
-@param_bool("enable_scheduling", "sched")
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+)
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -640,7 +651,7 @@ def testCDNA3IntGemm(
     ],
 )
 def testF8Gemm(
-    shape: tuple[int], enable_scheduling: bool, mfma_variant: MMAType, request
+    shape: tuple[int], enable_scheduling: SchedulingType, mfma_variant: MMAType, request
 ):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
@@ -743,8 +754,10 @@ def testF8Gemm(
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_batched_gemm"))
-@param_bool("enable_scheduling", "sched")
-def testBatchedGemm(shape: tuple[int], enable_scheduling: bool, request):
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+)
+def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, request):
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
     # Input sizes

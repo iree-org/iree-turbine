@@ -12,7 +12,6 @@ from ...ops.wave_ops import (
     MMA,
     NewRegister,
 )
-from .modulo_scheduling import ModuloScheduler
 from ..utils import (
     get_induction_variable,
     replace_uses_in,
@@ -88,6 +87,7 @@ def add_nodes_by_schedule(
                     )
                     continue
             new_node = custom_node.copy(
+                new_name=node.name,
                 new_graph=reduction_graph,
                 arg_transform=lambda x: (
                     arg_context.get_from_iteration(iteration, x, preferred_stage)
@@ -218,7 +218,8 @@ def construct_prologue(
     reduction_subgraph: fx.Graph,
     reduction: Reduction,
     partitioned_graph: list[dict[int, fx.Node]],
-    scheduler: ModuloScheduler,
+    num_stages: int,
+    initiation_interval: int,
     rotating_registers: dict[fx.Node, list[fx.Node]],
     induction_variable: IndexSymbol,
     new_induction_variables: list[int],
@@ -239,7 +240,7 @@ def construct_prologue(
         reduction.outputs(reduction_subgraph),
         reduction.iter_args(reduction_subgraph),
         reduction.init_args,
-        scheduler.num_stages,
+        num_stages,
     )
 
     # Map iter args to init args in the prologue.
@@ -251,13 +252,13 @@ def construct_prologue(
 
     push_placeholders(reduction.implicit_captures, reduction_subgraph, arg_context)
     with reduction.graph.inserting_before(reduction.fx_node):
-        for i in range(scheduler.num_stages - 1):
+        for i in range(num_stages - 1):
             add_nodes_by_schedule(
                 reduction.graph,
                 partitioned_graph,
                 arg_context,
                 stages[i],
-                scheduler.initiation_interval,
+                initiation_interval,
                 induction_variable,
                 new_induction_variables,
                 rotating_registers,
@@ -377,7 +378,8 @@ def construct_kernel(
     reduction_subgraph: fx.Graph,
     reduction: Reduction,
     partitioned_graph: list[dict[int, fx.Node]],
-    scheduler: ModuloScheduler,
+    num_stages: int,
+    initiation_interval: int,
     rotating_registers: dict[fx.Node, list[fx.Node]],
     induction_variable: IndexSymbol,
     new_induction_variables: list[int],
@@ -413,7 +415,7 @@ def construct_kernel(
             reduction.outputs(reduction_subgraph),
             reduction.iter_args(reduction_subgraph),
             reduction.init_args,
-            scheduler.num_stages,
+            num_stages,
         )
         push_placeholders(reduction.implicit_captures, reduction_subgraph, arg_context)
 
@@ -440,8 +442,8 @@ def construct_kernel(
             pipelined_reduction_graph,
             partitioned_graph,
             arg_context,
-            list(reversed(range(scheduler.num_stages))),
-            scheduler.initiation_interval,
+            list(reversed(range(num_stages))),
+            initiation_interval,
             induction_variable,
             new_induction_variables,
             new_rotating_registers,
@@ -479,7 +481,8 @@ def construct_epilogue(
     reduction: Reduction,
     pipelined_reduction: Reduction,
     partitioned_graph: list[dict[int, fx.Node]],
-    scheduler: ModuloScheduler,
+    num_stages: int,
+    initiation_interval: int,
     rotating_registers: dict[fx.Node, list[fx.Node]],
     induction_variable: IndexSymbol,
     new_induction_variables: list[int],
@@ -504,7 +507,7 @@ def construct_epilogue(
         reduction.outputs(reduction_subgraph),
         reduction.iter_args(reduction_subgraph),
         reduction.init_args,
-        scheduler.num_stages,
+        num_stages,
     )
 
     existing_get_results: list[GetResult] = [
@@ -560,13 +563,13 @@ def construct_epilogue(
         push_rotating_registers(arg_context, rotating_registers, None, node_map, False)
         push_placeholders(reduction.implicit_captures, reduction_subgraph, arg_context)
 
-        for i in range(scheduler.num_stages - 1):
+        for i in range(num_stages - 1):
             add_nodes_by_schedule(
                 pipelined_reduction.graph,
                 partitioned_graph,
                 arg_context,
                 stages[i],
-                scheduler.initiation_interval,
+                initiation_interval,
                 induction_variable,
                 new_induction_variables,
                 rotating_registers,
@@ -599,7 +602,8 @@ def construct_pipelined_loop(
     reduction: Reduction,
     graph: fx.Graph,
     constraints: list[Constraint],
-    scheduler: ModuloScheduler,
+    num_stages: int,
+    initiation_interval: int,
     node_map: dict[fx.Node, fx.Node],
     max_induction_variable: int,
     visualize: bool = False,
@@ -614,27 +618,29 @@ def construct_pipelined_loop(
     rotating_registers: dict[fx.Node, deque[fx.Node]] = {
         k: deque([None for _ in range(v)]) for k, v in num_rotating_registers.items()
     }
-    partitioned_graph = partition_graph_by_stage(graph, scheduler)
+    partitioned_graph = partition_graph_by_stage(graph, num_stages)
     # Construct prologue.
     construct_prologue(
         graph,
         reduction,
         partitioned_graph,
-        scheduler,
+        num_stages,
+        initiation_interval,
         rotating_registers,
         induction_variable,
-        list(range(scheduler.num_stages)),
-        create_fill_stage_schedule(scheduler.num_stages),
+        list(range(num_stages)),
+        create_fill_stage_schedule(num_stages),
     )
     # Construct kernel.
     pipelined_reduction, pipelined_reduction_graph = construct_kernel(
         graph,
         reduction,
         partitioned_graph,
-        scheduler,
+        num_stages,
+        initiation_interval,
         rotating_registers,
         induction_variable,
-        [induction_variable + i for i in range(scheduler.num_stages)],
+        [induction_variable + i for i in range(num_stages)],
         node_map,
         visualize,
         use_scheduling_barriers,
@@ -648,14 +654,12 @@ def construct_pipelined_loop(
         reduction,
         get_custom(pipelined_reduction),
         partitioned_graph,
-        scheduler,
+        num_stages,
+        initiation_interval,
         rotating_registers,
         induction_variable,
-        [
-            max_induction_variable - scheduler.num_stages + i
-            for i in range(scheduler.num_stages)
-        ],
-        create_drain_stage_schedule(scheduler.num_stages),
+        [max_induction_variable - num_stages + i for i in range(num_stages)],
+        create_drain_stage_schedule(num_stages),
         num_rotating_registers,
         node_map,
         visualize,

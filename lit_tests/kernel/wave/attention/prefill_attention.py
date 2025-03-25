@@ -12,6 +12,7 @@ from iree.turbine.kernel.wave.templates.prefill_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import torch
 
 
@@ -39,7 +40,7 @@ def test_prefill_attention():
         canonicalize=True,
         run=False,
         run_bench=False,
-        schedule=False,
+        schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
     ):
         torch.manual_seed(0)
