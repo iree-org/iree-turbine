@@ -23,10 +23,6 @@ from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
-from iree.turbine.kernel.wave.utils.torch_utils import (
-    device_randn,
-    device_zeros,
-)
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
@@ -200,8 +196,11 @@ class WaveLinear(nn.Module):
             input.view(flat_batch, input_len, input.shape[-1]), self.weight, output
         )
 
+        if self.bias is not None:
+            output += self.bias
+
         # Return non flattened shape
-        return output.view(*batch, input_len, out_features) + self.bias
+        return output.view(*batch, input_len, out_features)
 
     def extra_repr(self) -> str:
         return f"in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}"
