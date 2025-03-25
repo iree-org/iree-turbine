@@ -22,6 +22,7 @@ from ...ops.wave_ops import (
 from ..constraints import (
     Constraint,
     HardwareConstraint,
+    ThreadConstraint,
     TilingConstraint,
     WorkgroupConstraint,
 )
@@ -503,7 +504,7 @@ def set_thread_dependent_index_from_read_write(
 
     visited = set()
     workgroup_constraints = [
-        c for c in constraints if isinstance(c, WorkgroupConstraint)
+        c for c in constraints if isinstance(c, (WorkgroupConstraint, ThreadConstraint))
     ]
     symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
     for source in sources:
