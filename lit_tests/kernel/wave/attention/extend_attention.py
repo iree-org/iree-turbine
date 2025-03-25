@@ -36,7 +36,6 @@ def test_extend_attention():
     o_shape = (extend_token_num, shape.num_query_heads, shape.head_size_kv)
     k_cache_shape = (total_token_num, shape.num_kv_heads, shape.head_size)
     v_cache_shape = (total_token_num, shape.num_kv_heads, shape.head_size)
-    block_table_shape = (shape.num_seqs, shape.max_seq_len)
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
     (
         extend_attention,
@@ -49,7 +48,6 @@ def test_extend_attention():
         q_shape,
         k_shape,
         v_shape,
-        block_table_shape,
         k_cache_shape,
         v_cache_shape,
         o_shape,
@@ -137,7 +135,6 @@ def test_causal_extend_attention():
     o_shape = (extend_token_num, shape.num_query_heads, shape.head_size_kv)
     k_cache_shape = (total_token_num, shape.num_kv_heads, shape.head_size)
     v_cache_shape = (total_token_num, shape.num_kv_heads, shape.head_size)
-    block_table_shape = (shape.num_seqs, shape.max_seq_len)
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
     (
         extend_attention,
@@ -150,7 +147,6 @@ def test_causal_extend_attention():
         q_shape,
         k_shape,
         v_shape,
-        block_table_shape,
         k_cache_shape,
         v_cache_shape,
         o_shape,
@@ -257,7 +253,6 @@ def test_causal_extend_attention_32x32x8():
     o_shape = (extend_token_num, shape.num_query_heads, shape.head_size_kv)
     k_cache_shape = (total_token_num, shape.num_kv_heads, shape.head_size)
     v_cache_shape = (total_token_num, shape.num_kv_heads, shape.head_size)
-    block_table_shape = (shape.num_seqs, shape.max_seq_len)
     mfma_variant = (tkw.MMAType.F32_32x32x8_F16,) * 2
     (
         extend_attention,
@@ -270,7 +265,6 @@ def test_causal_extend_attention_32x32x8():
         q_shape,
         k_shape,
         v_shape,
-        block_table_shape,
         k_cache_shape,
         v_cache_shape,
         o_shape,

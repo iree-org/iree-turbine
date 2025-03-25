@@ -290,14 +290,14 @@ def create_inputs(
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
-@param_bool("is_causal", "causal", [True])
-@param_bool("use_buffer_ops", "buf_ops", [False])
+@param_bool("is_causal", "causal")
+@param_bool("use_buffer_ops", "buf_ops")
 @param_bool("use_wave_runtime", "wr", [True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-        # (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
     ],
 )
 def testExtendAttention(
