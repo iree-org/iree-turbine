@@ -460,23 +460,20 @@ class TilingConstraint(Constraint):
 
 @dataclass
 class ThreadConstraint(Constraint):
+    """
+    A constraint of the form `tkw.ThreadConstraint(M, 0)`
+    specifies that we want to distribute dimension M along thread dim 0.
+    This translates to an index constraint for all tensors of the
+    shape [M, ?] -> index += (thread_id_0, 0)
+    """
+
     dim: IndexExpr
-    workgroup_dim: int
+    workgroup_dim: int  # Used by `populate_read_write_source_indices`
 
     def apply(self) -> IndexSequence:
+        # `apply` is called during thread-independent index sequence
+        # initialization. We don't need to do anything here.
         return IndexSequence(0, 1)
-
-    def apply_read_write_thread_mapping(
-        self,
-        dim: IndexSymbol,
-        workgroup_dim: int,
-        elements_per_thread: int | IndexSymbol,
-        stride: int,
-    ) -> IndexSequence:
-        thread_id = [THREAD_0, THREAD_1, THREAD_2][self.workgroup_dim]
-        return IndexSequence(
-            thread_id * elements_per_thread, elements_per_thread, stride
-        )
 
 
 @dataclass
