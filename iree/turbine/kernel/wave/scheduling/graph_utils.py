@@ -402,8 +402,7 @@ def sort_graph_by_edge_weight(nodes: list[fx.Node], edges: list[Edge]):
     no value yet, we move current node to end of queue to try again later.
     """
     schedule_weight = {}
-    root_nodes = get_root_nodes_from_edges(edges)
-    workqueue = deque(root_nodes)
+    workqueue = deque(nodes)
     non_solved_counter = 0
     while len(workqueue) > 0:
         node = workqueue.popleft()
@@ -432,10 +431,4 @@ def sort_graph_by_edge_weight(nodes: list[fx.Node], edges: list[Edge]):
                 for edge in filter_producer_edge
             ]
         )
-        is_consumer_edge = lambda edge: edge._from == node
-        consumer_edges = filter_edges(is_consumer_edge, edges)
-        consumer_nodes = [
-            edge._to for edge in consumer_edges if edge.weight.iteration_difference == 0
-        ]
-        workqueue.extend(consumer_nodes)
     return sorted(nodes, key=lambda x: schedule_weight[x])
