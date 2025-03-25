@@ -4,12 +4,15 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
+)
+from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 import torch
 
 # Input sizes
@@ -178,34 +181,30 @@ def test_evoformer():
         SHUFFLE_UNITS: 2,
     }
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-    ):
-        torch.manual_seed(0)
-        q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-        k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-        v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-        output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-        print(evoformer(q, k, v, output))
+        compile_to_mlir=True,
+    )
+    evoformer = wave_compile(options, evoformer)
+    print(evoformer.asm)
 
-        # CHECK:            func.func @evoformer
-        # CHECK:                {{.*}} = scf.for
-        # CHECK:                    {{.*}} = vector.load
-        # CHECK:                    vector.store {{.*}}
-        # CHECK:                    {{.*}} = vector.maskedload
-        # CHECK:                    vector.store {{.*}}
-        # CHECK:                    amdgpu.lds_barrier
-        # CHECK-COUNT-16:           {{.*}} = vector.load
-        # CHECK-COUNT-4:            {{.*}} = vector.load
-        # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
-        # CHECK-COUNT-2:            {{.*}} = vector.load
-        # CHECK-COUNT-2:            {{.*}} = arith.extf
-        # CHECK-COUNT-4:            {{.*}} = arith.addf
-        # CHECK-COUNT-4:            {{.*}} = vector.load
-        # CHECK-COUNT-4:            {{.*}} = arith.extf
-        # CHECK-COUNT-4:            {{.*}} = arith.addf
+    # CHECK:            func.func @evoformer
+    # CHECK:                {{.*}} = scf.for
+    # CHECK:                    {{.*}} = vector.load
+    # CHECK:                    vector.store {{.*}}
+    # CHECK:                    {{.*}} = vector.maskedload
+    # CHECK:                    vector.store {{.*}}
+    # CHECK:                    amdgpu.lds_barrier
+    # CHECK-COUNT-16:           {{.*}} = vector.load
+    # CHECK-COUNT-4:            {{.*}} = vector.load
+    # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-2:            {{.*}} = vector.load
+    # CHECK-COUNT-2:            {{.*}} = arith.extf
+    # CHECK-COUNT-4:            {{.*}} = arith.addf
+    # CHECK-COUNT-4:            {{.*}} = vector.load
+    # CHECK-COUNT-4:            {{.*}} = arith.extf
+    # CHECK-COUNT-4:            {{.*}} = arith.addf

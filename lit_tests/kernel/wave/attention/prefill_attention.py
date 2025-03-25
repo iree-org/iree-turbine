@@ -3,7 +3,7 @@
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
 )
 from iree.turbine.kernel.wave.templates.prefill_attention import (
@@ -13,6 +13,7 @@ from iree.turbine.kernel.wave.templates.attention_common import (
     AttentionShape,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 import torch
 
 
@@ -35,34 +36,29 @@ def test_prefill_attention():
     prefill_attention, hyperparams = get_prefill_attention_kernel(
         shape, mfma_variant, q_shape, k_shape, v_shape, o_shape
     )
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-    ):
-        torch.manual_seed(0)
-        q = torch.randn(q_shape, dtype=torch.float16)
-        k = torch.randn(k_shape, dtype=torch.float16)
-        v = torch.randn(v_shape, dtype=torch.float16)
-        output = torch.zeros(o_shape, dtype=torch.float32)
-        offsets = torch.ones(shape.num_seqs, dtype=torch.int32)
-        seq_lens = torch.ones(shape.num_seqs, dtype=torch.int32)
-        print(prefill_attention(q, k, v, offsets, seq_lens, output))
-        # CHECK-LABEL:       func.func @prefill_attention
-        # CHECK-COUNT-4:        vector.maskedload
-        # CHECK:                scf.for
-        # CHECK-COUNT-1:            vector.maskedload
-        # CHECK-COUNT-1:            vector.store
-        # CHECK-COUNT-1:            vector.maskedload
-        # CHECK-COUNT-1:            vector.store
-        # CHECK-COUNT-1:            vector.maskedload
-        # CHECK-COUNT-1:            vector.store
-        # CHECK-COUNT-64:           vector.load
-        # CHECK-COUNT-16:           vector.load
-        # CHECK-COUNT-16:           amdgpu.mfma
-        # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
-        # CHECK-COUNT-16:           amdgpu.mfma
-        # CHECK-COUNT-4:       vector.maskedstore
+        compile_to_mlir=True,
+    )
+    prefill_attention = wave_compile(options, prefill_attention)
+    print(prefill_attention.asm)
+
+    # CHECK-LABEL:       func.func @prefill_attention
+    # CHECK-COUNT-4:        vector.maskedload
+    # CHECK:                scf.for
+    # CHECK-COUNT-1:            vector.maskedload
+    # CHECK-COUNT-1:            vector.store
+    # CHECK-COUNT-1:            vector.maskedload
+    # CHECK-COUNT-1:            vector.store
+    # CHECK-COUNT-1:            vector.maskedload
+    # CHECK-COUNT-1:            vector.store
+    # CHECK-COUNT-64:           vector.load
+    # CHECK-COUNT-16:           vector.load
+    # CHECK-COUNT-16:           amdgpu.mfma
+    # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-16:           amdgpu.mfma
+    # CHECK-COUNT-4:       vector.maskedstore

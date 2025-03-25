@@ -7,7 +7,7 @@
 from iree.turbine.kernel._support.indexing import IndexExpr, IndexSymbol
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
-from .utils import subs_idxc
+from .utils.symbol_utils import subs_idxc
 from .constraints import (
     Constraint,
     WorkgroupConstraint,

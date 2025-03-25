@@ -13,15 +13,20 @@ from dataclasses import replace
 
 import iree.turbine.kernel as tk
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
-    get_default_run_config,
+from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
+)
+from iree.turbine.kernel.wave.utils.torch_utils import (
     device_randn,
     device_zeros,
     device_empty,
     device_arange,
     device_randint,
 )
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.templates.extend_attention import (
     get_extend_attention_kernel,
@@ -356,50 +361,47 @@ def testExtendAttention(
         num_waves=num_waves,
     )
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
-    config["gpu-native-math-precision"] = True
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
-    if run_bench:
-        config["benchmark_batch_size"] = 1000
-        config["benchmark_repetitions"] = 3
-        config["dump_intermediates"] = "./inter"
+    perf_filename = construct_test_name(
+        "wave_extend_attention", mfma_variant, is_causal, shape
+    )
 
-    if dump_perf is not None:
-        perf_filename = construct_test_name(
-            "wave_extend_attention", mfma_variant, is_causal, shape
-        )
-        config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
-
-    if use_wave_runtime:
-        config["wave_runtime"] = True
-
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        asm_qk = extend_attention(
-            q_extend,
-            k_extend,
-            v_extend,
-            k_buffer,
-            v_buffer,
-            req_to_tokens,
-            b_req_idx,
-            b_seq_len,
-            b_seq_len_extend,
-            b_start_loc_extend,
-            output,
-        )
+        benchmark_batch_size=1000,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, perf_filename) if dump_perf else None
+        ),
+        dump_intermediates="./inter",
+        gpu_native_math_precision=True,
+        wave_runtime=(True if use_wave_runtime else False),
+    )
+    options = set_default_run_config(options)
+    extend_attention = wave_compile(options, extend_attention)
+
+    asm_qk = extend_attention(
+        q_extend,
+        k_extend,
+        v_extend,
+        k_buffer,
+        v_buffer,
+        req_to_tokens,
+        b_req_idx,
+        b_seq_len,
+        b_seq_len_extend,
+        b_start_loc_extend,
+        output,
+    )
 
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
@@ -501,43 +503,43 @@ def testExtendRpeAttention(
         max_rpe_context_length=max_rpe_context_length,
     )
     hyperparams.update(get_default_scheduling_params())
-    config = get_default_run_config()
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
-    if run_bench:
-        config["benchmark_batch_size"] = 1000
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = construct_test_name(
-            "wave_extend_attention", mfma_variant, is_causal, shape
-        )
-        config["benchmark_results_file"] = os.path.join(dump_perf, perf_filename)
+    perf_filename = construct_test_name(
+        "wave_extend_attention", mfma_variant, is_causal, shape
+    )
 
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-    ):
-        asm_qk = extend_attention_rpe(
-            q_extend,
-            k_extend,
-            v_extend,
-            k_buffer,
-            v_buffer,
-            req_to_tokens,
-            b_req_idx,
-            b_seq_len,
-            b_seq_len_extend,
-            b_start_loc_extend,
-            rpe_bias,
-            output,
-        )
+        benchmark_batch_size=1000,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, perf_filename) if dump_perf else None
+        ),
+    )
+    options = set_default_run_config(options)
+    extend_attention_rpe = wave_compile(options, extend_attention_rpe)
+
+    asm_qk = extend_attention_rpe(
+        q_extend,
+        k_extend,
+        v_extend,
+        k_buffer,
+        v_buffer,
+        req_to_tokens,
+        b_req_idx,
+        b_seq_len,
+        b_seq_len_extend,
+        b_start_loc_extend,
+        rpe_bias,
+        output,
+    )
 
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_rpe_{'x'.join(map(str, shape))}.mlir"

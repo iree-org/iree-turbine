@@ -7,7 +7,7 @@
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import Read, Write, MMA, get_custom
 from ..lang.global_symbols import *
-from .utils import remove_global_indexing, is_shared_mem_access
+from .utils.general_utils import remove_global_indexing, is_shared_mem_access
 from .constraints import Constraint, TilingConstraint
 import torch.fx as fx
 

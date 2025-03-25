@@ -10,12 +10,16 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.wave_sim import wave_sim
 from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
 from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.general_utils import (
     ceildiv,
-    get_default_arch,
-    get_default_run_config,
     get_default_scheduling_params,
+)
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
+)
+from iree.turbine.kernel.wave.utils.torch_utils import (
     to_default_device,
     device_randn,
     device_randint,
@@ -113,22 +117,21 @@ def test_dump_vmfb(shape, tmp_path, request):
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     vmfb_file = tmp_path / "test.vmfb"
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
         create_vmfb_file=vmfb_file,
-        run_config=config,
-    ):
-        assert not os.path.exists(vmfb_file)
-        test()
-        assert os.path.exists(vmfb_file)
+    )
+    options = set_default_run_config(options)
+
+    assert not os.path.exists(vmfb_file)
+    test = wave_compile(options, test)
+    assert os.path.exists(vmfb_file)
 
 
 @require_e2e
@@ -170,25 +173,24 @@ def test_copy(shape, use_buffer_ops, request):
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        test(a, b)
-        assert_close(a, b)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b)
+    assert_close(a, b)
 
 
 @require_e2e
@@ -230,25 +232,24 @@ def test_dynamic_copy(shape, use_buffer_ops, request):
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
-        dynamic_symbols=(M, N),
-        dynamic_symbols_map={M: shape[0], N: shape[1]},
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        test(a, b)
-        assert_close(a, b)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b)
+    assert_close(a, b)
 
 
 @require_e2e
@@ -292,25 +293,24 @@ def test_transpose_read(shape, use_buffer_ops, request):
         res = tkw.read(a, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape[::-1], dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        test(a, b)
-        assert_close(a.T, b)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b)
+    assert_close(a.T, b)
 
 
 @require_e2e
@@ -353,25 +353,24 @@ def test_transpose_write(shape, use_buffer_ops, request):
         res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape[::-1], dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        test(a, b)
-        assert_close(a.T, b)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b)
+    assert_close(a.T, b)
 
 
 @require_e2e
@@ -430,27 +429,26 @@ def test_offset_read(shape, use_buffer_ops, request):
         )
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     off = device_randint(shape[0], shape, dtype=torch.int32)
     out = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        test(a, off, out)
-        out_ref = torch.take_along_dim(a, off.to(torch.long), dim=0)
-        assert_close(out, out_ref)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, off, out)
+    out_ref = torch.take_along_dim(a, off.to(torch.long), dim=0)
+    assert_close(out, out_ref)
 
 
 @require_e2e
@@ -510,31 +508,30 @@ def test_offset_read_one(shape, use_buffer_ops, request):
         )
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     count = int(ELEMS_PER_THREAD)
     n1 = ceildiv(shape[1], count)
     off = device_randint(shape[0], (shape[0], n1), dtype=torch.int32)
     out = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             N1: n1,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        test(a, off, out)
-        off_expanded = off.repeat_interleave(count, dim=1)[:, : shape[1]].to(torch.long)
-        out_ref = torch.take_along_dim(a, off_expanded, dim=0)
-        assert_close(out, out_ref)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, off, out)
+    off_expanded = off.repeat_interleave(count, dim=1)[:, : shape[1]].to(torch.long)
+    out_ref = torch.take_along_dim(a, off_expanded, dim=0)
+    assert_close(out, out_ref)
 
 
 @require_e2e
@@ -574,25 +571,24 @@ def test_read_write_same(shape, use_buffer_ops, request):
         double = res + res
         tkw.write(double, a, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     ref = a + a
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        double(a)
-        assert_close(a, ref)
+    )
+    options = set_default_run_config(options)
+    double = wave_compile(options, double)
+
+    double(a)
+    assert_close(a, ref)
 
 
 @require_e2e
@@ -658,27 +654,26 @@ def test_set_symbol(shape, request):
         )
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     off = device_randint(shape[0], shape, dtype=torch.int32)
     out = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-    ):
-        test(a, off, out)
-        out_ref = torch.take_along_dim(a, off.to(torch.long), dim=0)
-        assert_close(out, out_ref)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, off, out)
+    out_ref = torch.take_along_dim(a, off.to(torch.long), dim=0)
+    assert_close(out, out_ref)
 
 
 @require_e2e
@@ -745,27 +740,26 @@ def test_apply_expr(shape, request):
         )
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     off = device_randint(shape[0], shape, dtype=torch.int32)
     out = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-    ):
-        test(a, off, out)
-        out_ref = torch.take_along_dim(a, (shape[0] - off - 1).to(torch.long), dim=0)
-        assert_close(out, out_ref)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, off, out)
+    out_ref = torch.take_along_dim(a, (shape[0] - off - 1).to(torch.long), dim=0)
+    assert_close(out, out_ref)
 
 
 @require_e2e
@@ -814,24 +808,23 @@ def test_conditional(shape, request):
         def then():
             tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     mask = device_randint(2, shape, dtype=torch.int32)
     b = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
-    ):
-        test(a, mask, b)
-        assert_close(a * mask, b)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, mask, b)
+    assert_close(a * mask, b)
 
 
 @require_e2e
@@ -891,8 +884,6 @@ def test_offset_write(shape, use_buffer_ops, request):
             elements_per_thread=ELEMS_PER_THREAD,
         )
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     off = (
         device_randperm(shape[1], dtype=torch.int32)
@@ -900,23 +891,24 @@ def test_offset_write(shape, use_buffer_ops, request):
         .repeat(shape[0], 1)
     )
     out = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        test(a, off, out)
-        out_ref = torch.zeros_like(out)
-        out_ref = out_ref.scatter(1, off.to(torch.long), a)
-        assert_close(out, out_ref)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, off, out)
+    out_ref = torch.zeros_like(out)
+    out_ref = out_ref.scatter(1, off.to(torch.long), a)
+    assert_close(out, out_ref)
 
 
 @require_e2e
@@ -979,8 +971,6 @@ def test_offset_write_one(shape, use_buffer_ops, request):
             elements_per_thread=ELEMS_PER_THREAD,
         )
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float16)
     count = int(ELEMS_PER_THREAD)
     n1 = ceildiv(shape[1], count)
@@ -989,30 +979,31 @@ def test_offset_write_one(shape, use_buffer_ops, request):
         * count
     )
     out = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             N1: n1,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        test(a, off, out)
-        out_ref = torch.zeros_like(out)
-        off_expanded = off.repeat_interleave(count, dim=1)
-        off_expanded = off_expanded + to_default_device(
-            torch.arange(count, dtype=torch.int32)
-        ).reshape((1, count)).repeat(shape[0], n1)
-        off_expanded = off_expanded[:, : shape[1]].to(torch.long)
-        out_ref = out_ref.scatter(1, off_expanded.to(torch.long), a)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
 
-        assert_close(out, out_ref)
+    test(a, off, out)
+    out_ref = torch.zeros_like(out)
+    off_expanded = off.repeat_interleave(count, dim=1)
+    off_expanded = off_expanded + to_default_device(
+        torch.arange(count, dtype=torch.int32)
+    ).reshape((1, count)).repeat(shape[0], n1)
+    off_expanded = off_expanded[:, : shape[1]].to(torch.long)
+    out_ref = out_ref.scatter(1, off_expanded.to(torch.long), a)
+
+    assert_close(out, out_ref)
 
 
 @require_e2e
@@ -1051,26 +1042,25 @@ def test_reduce_sum(shape, request):
         res = tkw.sum(res, dim=N)
         tkw.write(res, c, elements_per_thread=1)
 
-    config = get_default_run_config()
-
     torch.manual_seed(1)
     a = device_randn(shape, dtype=torch.float16)
     b = device_randn(shape, dtype=torch.float16)
     c = device_zeros((shape[0],), dtype=torch.float16)
     ref = torch.sum((a * b), dim=-1)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
-    ):
-        test(a, b, c)
-        assert_close(ref, c, atol=0.1, rtol=1e-05)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b, c)
+    assert_close(ref, c, atol=0.1, rtol=1e-05)
 
 
 @require_e2e
@@ -1123,8 +1113,6 @@ def test_toy_online_softmax(shape):
         result = res_max / res_sum
         tkw.write(result, c, elements_per_thread=1)
 
-    config = get_default_run_config()
-
     torch.manual_seed(1)
     a = device_randn(shape, dtype=torch.float32)
     b = device_randn(shape, dtype=torch.float32)
@@ -1132,8 +1120,8 @@ def test_toy_online_softmax(shape):
     ref_max = torch.max((a * b), dim=-1).values
     ref_sum = torch.sum((a * b), dim=-1)
     ref = ref_max / ref_sum
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             BLOCK_N: min(128, shape[1]),
@@ -1141,14 +1129,13 @@ def test_toy_online_softmax(shape):
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
-        run_config=config,
-    ):
-        test(a, b, c)
-        # Assert equal does cast to boolean on torch.Tensor
-        # which causes issues, hence we cast to numpy before
-        # checking.
-        assert_close(ref, c, atol=0.1, rtol=1e-4)
+        run_bench=False,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b, c)
+    assert_close(ref, c, atol=0.1, rtol=1e-4)
 
 
 @require_e2e
@@ -1222,8 +1209,6 @@ def test_im2col(request):
         res = tkw.read(a, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     h_out = (h + 2 * padding - hf) // stride + 1
     w_out = (w + 2 * padding - wf) // stride + 1
     res_shape = (h_out * w_out * n, hf * wf * c)
@@ -1233,8 +1218,8 @@ def test_im2col(request):
     im2col = torch.nn.Unfold(kernel_size=(hf, wf), padding=padding, stride=stride)
     expected = im2col(a)[0, :, :].T
 
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             N: n,
             C: c,
             W: w,
@@ -1246,12 +1231,13 @@ def test_im2col(request):
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
-    ):
-        test(a, b)
-        assert_close(b, expected)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b)
+    assert_close(b, expected)
 
 
 # TODO: Fix test for CDNA2. CDNA2 seem to have worse accuracy, atol=0.0094, rtol=10.2405
@@ -1362,10 +1348,8 @@ def test_im2col_mma(request):
 
     out = torch.zeros_like(out_ref)
 
-    config = get_default_run_config()
-
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             N: n,
             C: c,
             W: w,
@@ -1379,15 +1363,16 @@ def test_im2col_mma(request):
             ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
-    ):
-        x = x.to("cuda")
-        we = we.to("cuda")
-        out = out.to("cuda")
-        gpu_func(x, we, out)
-        assert_close(out, out_ref, rtol=1e-05, atol=1e-05, check_device=False)
+    )
+    options = set_default_run_config(options)
+    gpu_func = wave_compile(options, gpu_func)
+
+    x = x.to("cuda")
+    we = we.to("cuda")
+    out = out.to("cuda")
+    gpu_func(x, we, out)
+    assert_close(out, out_ref, rtol=1e-05, atol=1e-05, check_device=False)
 
 
 _igemm_cases = [
@@ -1500,52 +1485,46 @@ def test_igemm_conv(
     )
     hyperparams.update(get_default_scheduling_params())
 
-    config = get_default_run_config()
-
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-        config["dump_intermediates"] = "./inter"
 
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
-
-    with tk.gen.TestLaunchContext(
-        hyperparams,
+    perf_filename = request.node.name + ".json"
+    options = WaveCompileOptions(
+        subs=hyperparams,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-    ):
-        out = torch.zeros_like(out_ref)
-        conv(x, we, out)
-        assert_close(out, out_ref, rtol=1e-03, atol=1e-03)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + perf_filename) if dump_perf else None
+        ),
+        dump_intermediates="./inter",
+    )
+    options = set_default_run_config(options)
+    conv = wave_compile(options, conv)
 
-        if run_bench:
-            if dump_perf is not None:
-                config["benchmark_results_file"] = os.path.join(
-                    dump_perf, "iree_" + perf_filename
-                )
+    out = torch.zeros_like(out_ref)
+    conv(x, we, out)
+    assert_close(out, out_ref, rtol=1e-03, atol=1e-03)
 
-            config[
-                "iree_preprocessing_pass_pipeline"
-            ] = "builtin.module(iree-preprocessing-transpose-convolution-pipeline, iree-preprocessing-pad-to-intrinsics)"
-            iree_ref = torch.zeros_like(out_ref)
-            generate_iree_ref(
-                "conv_2d_" + layout,
-                [x, we],
-                [iree_ref],
-                config,
-                stride=stride,
-                run_bench=True,
+    if run_bench:
+        if dump_perf is not None:
+            options.benchmark_results_file = os.path.join(
+                dump_perf, "iree_" + perf_filename
             )
+
+        options.iree_preprocessing_pass_pipeline = "builtin.module(iree-preprocessing-transpose-convolution-pipeline, iree-preprocessing-pad-to-intrinsics)"
+        iree_ref = torch.zeros_like(out_ref)
+        generate_iree_ref(
+            "conv_2d_" + layout,
+            [x, we],
+            [iree_ref],
+            options,
+            stride=stride,
+            run_bench=True,
+        )
 
 
 @require_e2e
@@ -1587,20 +1566,19 @@ def test_cast(shape, request):
         res = tkw.cast(res, tkl.f16)
         tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
 
-    config = get_default_run_config()
-
     a = device_randn(shape, dtype=torch.float32)
     b = device_zeros(shape, dtype=torch.float16)
-    with tk.gen.TestLaunchContext(
-        {
+    options = WaveCompileOptions(
+        subs={
             M: shape[0],
             N: shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
-    ):
-        test(a, b)
-        assert_close(a.to(dtype=torch.float16), b)
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b)
+    assert_close(a.to(dtype=torch.float16), b)

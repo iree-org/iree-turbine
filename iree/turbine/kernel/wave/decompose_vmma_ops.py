@@ -10,7 +10,6 @@ from ..wave.constraints import (
     MMAType,
     MMAOperand,
 )
-from iree.turbine.kernel.wave.utils import get_mfma_load_elems_per_thread
 from .._support.tracing import CapturedTrace
 from .._support.indexing import IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import (

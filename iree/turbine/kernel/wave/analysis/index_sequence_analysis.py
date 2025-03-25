@@ -30,13 +30,19 @@ from ..symbolic_constraints import SymbolicAlias
 from ..._support.tracing import CapturedTrace, IndexingContext
 from ..._support.indexing import IndexSymbol, IndexSequence
 from ...lang.global_symbols import *
-from ..utils import (
-    get_mma_dimensional_mapping,
+from ..utils.general_utils import (
     get_hardware_constraint,
-    get_inputs,
-    get_users,
     get_largest_index_and_size,
     partial,
+)
+from ..utils.mma_utils import (
+    get_mma_dimensional_mapping,
+)
+from ..utils.graph_utils import (
+    get_inputs,
+    get_users,
+)
+from ..utils.print_utils import (
     print_trace,
     try_apply_pass,
 )

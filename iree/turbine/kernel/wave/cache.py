@@ -26,8 +26,8 @@ from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
 from ..lang.wave_types import IndexMapping
 from .._support.indexing import IndexExpr
-from .utils import invoke_vmfb, KernelLaunchInfo
-
+from .utils.classes import KernelLaunchInfo
+from .compile_options import WaveCompileOptions
 
 default_cache_base_dir = Path.home() / ".wave"
 CACHE_BASE_DIR = Path(os.environ.get("WAVE_CACHE_DIR", default_cache_base_dir))
@@ -130,12 +130,7 @@ class WaveCacheManager(object):
         self,
         constraints: list[Constraint],
         kernel_fn: Callable,
-        hyperparams: dict[IndexExpr, Any],
-        dynamic_symbols: list[IndexExpr, Any],
-        config: dict[str, str],
-        use_scheduling: bool,
-        use_scheduling_barriers: bool,
-        run_bench: bool,
+        options: WaveCompileOptions,
     ):
         """
         Get a unique identifier for a given kernel.
@@ -154,18 +149,18 @@ class WaveCacheManager(object):
         key = [
             kernel_src,
             processed_constraints,
-            hyperparams,
-            dynamic_symbols,
-            use_scheduling,
-            use_scheduling_barriers,
+            options.subs,
+            options.dynamic_symbols,
+            options.schedule,
+            options.use_scheduling_barriers,
             index_mappings,
             arg_dtypes,
             free_vars,
         ]
 
         # Benchmark related hash
-        if run_bench and config != None:
-            key += [config.get("benchmark_batch_size", "")]
+        if options.run_bench:
+            key += [options.benchmark_batch_size]
         return hashlib.sha256(str(key).encode("utf-8")).hexdigest()
 
     ###############################################################################
@@ -266,25 +261,32 @@ class WaveCacheManager(object):
     def store_kernel(
         self,
         vmfb: bytes,
-        kernel_sig: tuple[KernelBufferUsage],
         module_str: str,
-        kernel_hash: str,
-        kernel_launch_info: KernelLaunchInfo,
+        options: WaveCompileOptions,
     ):
         """
         Save given kernel(vmfb, kernel_sig, and MLIR) into session_cache and file/offline cache.
         """
-        if not WAVE_CACHE_ON or not kernel_hash:
+        if not WAVE_CACHE_ON or not options.kernel_hash:
             return
         with self.lock:
             self.store_kernel_to_file(
-                kernel_hash, vmfb, kernel_sig, module_str, kernel_launch_info
+                options.kernel_hash,
+                vmfb,
+                options.kernel_usages,
+                module_str,
+                options.kernel_launch_info,
             )
             if not WAVE_ALWAYS_COMPILE:
                 # Do not store in session cache if always compile to save memory.
                 self.store_kernel_to_session(
-                    kernel_hash,
-                    WaveCache(kernel_sig, vmfb, module_str, kernel_launch_info),
+                    options.kernel_hash,
+                    WaveCache(
+                        options.kernel_usages,
+                        vmfb,
+                        module_str,
+                        options.kernel_launch_info,
+                    ),
                 )
 
     def load_kernel(self, kernel_hash: str):
@@ -319,44 +321,3 @@ def get_cache_manager() -> WaveCacheManager:
 def reset_cache_manager(base_dir):
     global _global_cache_manager
     _global_cache_manager = WaveCacheManager(base_dir)
-
-
-def invoke_cached_kernel(
-    cached_kernel: WaveCache,
-    args: list[torch.Tensor],
-    config: dict[str, str],
-    dynamic_symbols: list[IndexExpr],
-    dynamic_symbols_map: dict[IndexExpr, int],
-    run: bool,
-    run_bench: bool,
-    kernel_hash: str,
-):
-    kernel_inputs = []
-    kernel_outputs = []
-    for arg, usage in zip(args, cached_kernel.kernel_sig):
-        if usage == KernelBufferUsage.INPUT:
-            kernel_inputs.append(arg)
-
-        if usage == KernelBufferUsage.OUTPUT:
-            kernel_outputs.append(arg)
-
-    kernel_dynamic_dims = []
-    if dynamic_symbols:
-        kernel_dynamic_dims = dynamic_symbols_map.values()
-
-    if not config:
-        raise ValueError("no config provided")
-
-    invoke_vmfb(
-        cached_kernel.vmfb,
-        "isolated_benchmark",
-        config,
-        kernel_inputs,
-        kernel_outputs,
-        kernel_dynamic_dims,
-        run,
-        run_bench,
-        inplace=True,
-        kernel_hash=kernel_hash,
-        kernel_launch_info=cached_kernel.kernel_launch_info,
-    )

@@ -41,7 +41,7 @@ from .expansion_utils import (
     remove_original_nodes,
     remove_unused_registers,
 )
-from ..utils import (
+from ..utils.graph_utils import (
     get_users,
     get_inputs,
 )

@@ -15,12 +15,12 @@ from .._support.indexing import IndexSequence, IndexSymbol, IndexExpr
 from ..lang.wave_types import IndexMapping
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
-from .utils import subs_idxc, is_gather
 from math import prod
 import torch.fx as fx
 from collections import defaultdict
 from copy import deepcopy
-from .utils import is_shared_read, is_shared_write
+from .utils.symbol_utils import subs_idxc
+from .utils.general_utils import is_gather
 from .minimize_global_loads import (
     has_write_shared_user,
     construct_min_global_access_pattern,

@@ -9,7 +9,7 @@ import pytest
 import unittest
 from iree.turbine.kernel.lang import sym
 from iree.turbine.kernel.wave.assumptions import Assumption
-from iree.turbine.kernel.wave.utils import evaluate_with_assumptions
+from iree.turbine.kernel.wave.utils.general_utils import evaluate_with_assumptions
 from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel._support.context import push
 

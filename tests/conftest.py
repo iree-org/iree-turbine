@@ -52,9 +52,9 @@ def _set_default_device(config):
 
     device_id = int(worker_id[2:]) % int(distribute)
 
-    import iree.turbine.kernel.wave.utils as utils
+    import iree.turbine.kernel.wave.utils.general_utils as general_utils
 
-    utils.DEFAULT_GPU_DEVICE = device_id
+    general_utils.DEFAULT_GPU_DEVICE = device_id
 
 
 def _has_marker(item, marker):

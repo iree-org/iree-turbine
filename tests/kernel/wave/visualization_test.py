@@ -23,7 +23,7 @@ from iree.turbine.kernel.wave.analysis.index_sequence_analysis import (
     set_node_indices,
     set_post_expansion_indices,
 )
-from iree.turbine.kernel.wave.utils import initialize_iter_args
+from iree.turbine.kernel.wave.utils.graph_utils import initialize_iter_args
 
 
 def run(func: Callable[[], None]) -> Callable[[], None]:

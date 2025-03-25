@@ -40,7 +40,8 @@ from ...compiler.vector_codegen import (
 
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils import safe_subs, subs_idxc, find_index_bounds, get_fastest_index
+from ..utils.general_utils import find_index_bounds, get_fastest_index
+from ..utils.symbol_utils import safe_subs, subs_idxc
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from ...lang.wave_types import IndexMapping
@@ -64,7 +65,7 @@ def _get_start_index(i: IndexSequence | IndexExpr) -> IndexExpr:
 
 
 def _get_start_indices(
-    src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
+    src_indices: dict[IndexExpr, IndexSequence | IndexExpr],
 ) -> list[IndexExpr]:
     start_indices = []
     for dim_indexing in src_indices:
@@ -471,8 +472,11 @@ def _create_vec_read_write(
     # TODO: If strides cannot be converted into integers, means they are dynamic
     # and linearize breaks, need to investigate later.
     has_int_strides = all(isinstance(s, int) for s in strides)
-    optname = "use_buffer_load_ops" if is_read else "use_buffer_store_ops"
-    buffer_ops_enabled = emitter.params.get(optname, False)
+    buffer_ops_enabled = (
+        emitter.params.use_buffer_load_ops
+        if is_read
+        else emitter.params.use_buffer_store_ops
+    )
     if buffer_ops_enabled and has_int_strides and use_buffer_ops:
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
         data, offset_th = _linearize_memref(

@@ -3,7 +3,7 @@
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils import (
+from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
 )
 from iree.turbine.kernel.wave.templates.paged_decode_attention import (
@@ -14,7 +14,7 @@ from iree.turbine.kernel.wave.templates.decode_attention import (
     get_decode_attention_kernels,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
-import torch
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 
 
 @run_test
@@ -46,23 +46,16 @@ def test_paged_flash_decoding():
         shape, mfma_variant, num_kv_splits, k_shape, v_shape, block_table_shape
     )
 
-    torch.manual_seed(0)
-    q = torch.randn(q_shape, dtype=torch.float16)
-    k = torch.randn(k_shape, dtype=torch.float16)
-    v = torch.randn(v_shape, dtype=torch.float16)
-    logits = torch.zeros(logits_shape, dtype=torch.float32)
-    logits_max = torch.zeros(logits_max_shape, dtype=torch.float32)
-    output = torch.zeros(o_shape, dtype=torch.float16)
-
-    with tk.gen.TestLaunchContext(
-        hyperparams_0,
+    options = WaveCompileOptions(
+        subs=hyperparams_0,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-    ):
-        print(phase_0(q, k, v, logits, logits_max))
+        compile_to_mlir=True,
+    )
+    phase_0 = wave_compile(options, phase_0)
+    print(phase_0.asm)
 
     # CHECK-LABEL:          func.func @phase_0
     # CHECK-DAG:               %[[C0:.*]] = arith.constant 0 : index
@@ -88,15 +81,16 @@ def test_paged_flash_decoding():
     # CHECK-COUNT-1:          math.log2
     # CHECK-COUNT-9:         vector.store
 
-    with tk.gen.TestLaunchContext(
-        hyperparams_1,
+    options = WaveCompileOptions(
+        subs=hyperparams_1,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-    ):
-        print(phase_1(logits, logits_max, output))
+        compile_to_mlir=True,
+    )
+    phase_1 = wave_compile(options, phase_1)
+    print(phase_1.asm)
 
     # CHECK-LABEL:       func.func @phase_1
     # CHECK:               vector.load
@@ -131,25 +125,18 @@ def test_flash_decoding():
         dynamic_symbols_map_1,
     ) = get_decode_attention_kernels(shape, mfma_variant, use_dynamic_dims)
 
-    torch.manual_seed(0)
-    q = torch.randn(shape[0], shape[1], shape[3], dtype=torch.float16)
-    k = torch.randn(shape[0], shape[4], shape[3], dtype=torch.float16)
-    v = torch.randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-    logits = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-    logits_max = torch.zeros(shape[0], shape[1], dtype=torch.float32)
-    output = torch.zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-
-    with tk.gen.TestLaunchContext(
-        hyperparams_0,
+    options = WaveCompileOptions(
+        subs=hyperparams_0,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols_0,
         dynamic_symbols_map=dynamic_symbols_map_0,
-    ):
-        print(phase_0(q, k, v, logits, logits_max))
+        compile_to_mlir=True,
+    )
+    phase_0 = wave_compile(options, phase_0)
+    print(phase_0.asm)
 
     # CHECK-LABEL:           func.func @phase_0
     # CHECK-NOT:               {{.*}} = scf.for
@@ -168,17 +155,18 @@ def test_flash_decoding():
     # CHECK-COUNT-2:           {{.*}} = math.log2
     # CHECK-COUNT-18:          vector.maskedstore
 
-    with tk.gen.TestLaunchContext(
-        hyperparams_1,
+    compile_options = WaveCompileOptions(
+        subs=hyperparams_1,
         canonicalize=True,
-        run=False,
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols_1,
         dynamic_symbols_map=dynamic_symbols_map_1,
-    ):
-        print(phase_1(logits, logits_max, output))
+        compile_to_mlir=True,
+    )
+    phase_1 = wave_compile(compile_options, phase_1)
+    print(phase_1.asm)
 
     # CHECK-LABEL:       func.func @phase_1
     # CHECK:               {{.*}} = scf.for
