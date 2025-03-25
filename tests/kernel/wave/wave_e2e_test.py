@@ -71,15 +71,6 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     return default_test_shapes
 
 
-def xfail_unaligned(func):
-    def wrapper(shape):
-        if shape[-1] % 2 != 0:
-            pytest.xfail("Unaligned shape is not expected to work on this test yet.")
-        func(shape)
-
-    return wrapper
-
-
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy")[:1])
 def test_dump_vmfb(shape, tmp_path, request):
@@ -1048,7 +1039,6 @@ def test_reduce_sum(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
-@xfail_unaligned
 def test_toy_online_softmax(shape):
     M = tkl.sym.M
     N = tkl.sym.N
