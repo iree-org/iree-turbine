@@ -323,6 +323,10 @@ def testAttentionBSHD(
         head_size=shape[3],
         kv_seq_len=shape[4],
     )
+
+    is_causal = False
+    is_custom_mask = True
+
     (
         base_attention,
         hyperparams,
@@ -332,7 +336,8 @@ def testAttentionBSHD(
         shape,
         mfma_variant,
         dynamic_dims,
-        is_causal=True,
+        is_causal=is_causal,
+        is_custom_mask=is_custom_mask,
     )
     # q_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size)
     # k_shape = (1, shape.kv_seq_len, shape.num_kv_heads, shape.head_size)
@@ -344,6 +349,7 @@ def testAttentionBSHD(
     hyperparams.update(get_default_scheduling_params())
     config = get_default_run_config()
     compile_config = {"waves_per_eu": 2, "denorm_fp_math_f32": "preserve-sign"}
+    breakpoint()
     with tk.gen.TestLaunchContext(
         hyperparams,
         canonicalize=True,
@@ -367,12 +373,26 @@ def testAttentionBSHD(
         # This variant of wave kernel is BSHD
         o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
         output = device_zeros(o_shape, dtype=torch.float32)
-        asm = base_attention(
-            q.transpose(1, 2).contiguous(),
-            k.transpose(1, 2).contiguous(),
-            v.transpose(1, 2).contiguous(),
-            output,
-        )
+
+        if is_causal:
+            asm = base_attention(
+                q.transpose(1, 2).contiguous(),
+                k.transpose(1, 2).contiguous(),
+                v.transpose(1, 2).contiguous(),
+                output,
+            )
+
+        if is_custom_mask:
+            custom_mask = device_randn([1, shape.query_seq_len], dtype=torch.float32)
+            custom_mask = (custom_mask > 0).int().to(torch.float32)
+            asm = base_attention(
+                q.transpose(1, 2).contiguous(),
+                k.transpose(1, 2).contiguous(),
+                v.transpose(1, 2).contiguous(),
+                custom_mask,
+                output,
+            )
+
         assert_close(
             output.transpose(1, 2),
             torch_ref,
