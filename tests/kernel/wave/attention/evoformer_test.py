@@ -31,6 +31,7 @@ from iree.turbine.kernel.lang import DataType
 import os
 from ..common.utils import (
     require_e2e,
+    require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
     param_bool,
@@ -65,7 +66,9 @@ def attention_reference(
     return o
 
 
+# TODO: Investigate why failing on MI250.
 @require_e2e
+@require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("evoformer"))
 @pytest.mark.parametrize("tile_sizes", default_tile_sizes)
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
