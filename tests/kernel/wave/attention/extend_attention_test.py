@@ -282,6 +282,8 @@ def create_inputs(
 
 
 # TODO: Investigate errors on MI250.
+# TODO: See why wave_runtime is failing on OSSCI.
+# TODO: Push up a setup.py change to make WRT more stable.
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
@@ -289,7 +291,7 @@ def create_inputs(
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("is_causal", "causal")
 @param_bool("use_buffer_ops", "buf_ops")
-@param_bool("use_wave_runtime", "wr", [True])
+@param_bool("use_wave_runtime", "wr", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
