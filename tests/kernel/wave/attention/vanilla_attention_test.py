@@ -326,6 +326,9 @@ def testAttentionBSHD(
 
     is_causal = False
     is_custom_mask = True
+    custom_mask = None
+
+    # TODO: add assertion to check if causal and custom mask are not applied together.
 
     (
         base_attention_func,
@@ -367,14 +370,6 @@ def testAttentionBSHD(
         k = device_randn(k_shape, dtype=torch.float16)
         v = device_randn(v_shape, dtype=torch.float16)
 
-        custom_mask = device_randn([1, shape.query_seq_len], dtype=torch.float16)
-        custom_mask = (custom_mask > 0).int()
-
-        # Torch reference needs to be in BHSD format
-        torch_ref = scaled_dot_product_attention_bhsd(
-            q, k, v, is_causal=False, custom_mask=custom_mask
-        )
-
         # This variant of wave kernel is BSHD
         o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
         output = device_zeros(o_shape, dtype=torch.float32)
@@ -388,13 +383,23 @@ def testAttentionBSHD(
             )
 
         if is_custom_mask:
+            mask_output = device_zeros([1, shape.query_seq_len], dtype=torch.float32)
+            custom_mask = device_zeros([1, shape.query_seq_len], dtype=torch.float32)
+            custom_mask = (custom_mask > 0).int()
+
             asm = base_attention_func(
                 q.transpose(1, 2).contiguous(),
                 k.transpose(1, 2).contiguous(),
                 v.transpose(1, 2).contiguous(),
-                custom_mask,
+                custom_mask.to(torch.int8),
                 output,
+                mask_output,
             )
+
+        # Torch reference needs to be in BHSD format
+        torch_ref = scaled_dot_product_attention_bhsd(
+            q, k, v, is_causal=is_causal, custom_mask=custom_mask
+        )
 
         assert_close(
             output.transpose(1, 2),

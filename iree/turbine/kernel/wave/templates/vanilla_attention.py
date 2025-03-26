@@ -202,6 +202,8 @@ def get_bshd_attention_kernel(
     is_causal: bool = False,
     is_custom_mask: bool = False,
 ):
+    # TODO: add assertion to check if causal and custom mask are not applied together.
+
     # Input sizes
     # BxS_QxHxD x BxS_KVxH_KVxD
     B = tkl.sym.B
@@ -334,7 +336,7 @@ def get_bshd_attention_kernel(
         res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
-    def base_attention_core_custom_mask(q, k, v, custom_mask, c):
+    def base_attention_core_custom_mask(q, k, v, custom_mask, c, mask_output):
         qkv_scaling = tkl.Register[B, H, M, K1, tkl.f16](dk_sqrt * log2e)
         c_reg = tkl.Register[B, H, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, H, M, tkl.f32](0.0)
@@ -363,7 +365,7 @@ def get_bshd_attention_kernel(
             k2_index = tkw.self_index(K2, tkl.i32)
             mask = tkw.apply_expr(k2_index, lambda x: x < K2)
             mask = tkw.broadcast(mask, target_shape=[B, M, K2])
-            mask = tkw.cast(mask, tkl.i32)
+            mask = tkw.cast(mask, tkw.i1)
 
             if is_custom_mask:
                 custom_mask_tensor = tkw.read(
@@ -374,10 +376,14 @@ def get_bshd_attention_kernel(
                     custom_mask_tensor,
                     target_shape=[B, M, K2],
                 )
+                custom_mask_tensor = tkw.cast(custom_mask_tensor, tkw.i1)
                 mask = mask & custom_mask_tensor
 
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, ZEROF, MIN_INF)
+
+            tkw.write(bias, mask_output, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
             x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
@@ -412,10 +418,11 @@ def get_bshd_attention_kernel(
         q: tkl.Memory[B, M, H, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, H, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, K2, H, N, ADDRESS_SPACE, tkl.f16],
-        custom_mask: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        custom_mask: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[B, M, H, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        mask_output: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
-        base_attention_core_custom_mask(q, k, v, custom_mask, c)
+        base_attention_core_custom_mask(q, k, v, custom_mask, c, mask_output)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
