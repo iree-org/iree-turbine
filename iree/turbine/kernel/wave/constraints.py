@@ -490,7 +490,10 @@ class ThreadConstraint(DistributionConstraint):
     A constraint of the form `tkw.ThreadConstraint(M, 0)`
     specifies that we want to distribute dimension M along thread dim 0.
     This translates to an index constraint for all tensors of the
-    shape [M, ?] -> index += (thread_id_0, 0)
+    shape [M, ?] -> index += (thread_id_0, 0).
+
+    This is useful when we want to distribute tiled reduction loop without
+    mma across threads.
     """
 
     dim: IndexExpr
