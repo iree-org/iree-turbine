@@ -22,6 +22,7 @@ def get_vanilla_attention_kernel(
     dynamic_dims: bool,
     is_causal: bool = False,
     is_v_transposed: bool = False,
+    sliding_window_size: int = -1,
 ):
     # Input sizes
     B = tkl.sym.B
@@ -85,6 +86,7 @@ def get_vanilla_attention_kernel(
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
+        sliding_window = tkl.Register[M, K2, tkl.i64](sliding_window_size)
         ZEROF = tkl.Register[M, K2, tkl.f32](0.0)
         MIN_INF = tkl.Register[M, K2, tkl.f32](-1e6)
 
@@ -113,6 +115,10 @@ def get_vanilla_attention_kernel(
                 m_index = tkw.self_index(M, tkl.i64)
                 m_index = tkw.broadcast(m_index, target_shape=[M, K2])
                 mask = (m_index >= k2_index) & mask
+            if sliding_window_size > 0:
+                m_index = tkw.self_index(M, tkl.i64)
+                m_index = tkw.broadcast(m_index, target_shape=[M, K2])
+                mask = (m_index - k2_index <= sliding_window) & mask
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, ZEROF, MIN_INF)
             x_j = x_j + bias
