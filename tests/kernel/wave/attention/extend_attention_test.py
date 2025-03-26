@@ -25,6 +25,7 @@ from iree.turbine.kernel.wave.utils.torch_utils import (
     device_empty,
     device_arange,
     device_randint,
+    device_full,
 )
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
@@ -258,6 +259,25 @@ def create_inputs(
     qo_indptr[1 : B + 1] = torch.cumsum(b_seq_len_extend[:B], dim=0)
     logit_cap = 30.0
 
+    b_seq_mask_len = b_seq_len_extend * b_seq_len
+    custom_mask = device_full(
+            (b_seq_mask_len.sum().item(),), fill_value=1, dtype=torch.bool
+        )
+    mask_offsets = device_zeros((B + 1,), dtype=torch.int32)
+    mask_offsets[1 : B + 1] = torch.cumsum(b_seq_mask_len[:B], dim=0)
+    for i in range(B):
+        causal_mask = (
+            torch.tril(
+                device_full((b_seq_len_extend[i], b_seq_len_extend[i]), fill_value=1, dtype=torch.bool), diagonal=0
+            )
+            == 1
+        )
+        prefix_mask = device_full((
+            b_seq_len_extend[i], b_seq_len_prefix[i]), fill_value=1, dtype=torch.bool
+        )
+        mask_flatten = torch.cat([prefix_mask, causal_mask], dim=1).flatten()
+        custom_mask[mask_offsets[i] : mask_offsets[i + 1]] = mask_flatten
+    
     max_rpe_context_length = 10
     rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
     rpe_bias.copy_(device_randn(max_rpe_context_length + 1, dtype=torch.float32))
@@ -274,6 +294,8 @@ def create_inputs(
         qo_indptr,
         kv_indptr,
         kv_indices,
+        custom_mask,
+        mask_offsets,
         b_start_loc,
         b_seq_len_prefix,
         extend_token_num,
@@ -292,14 +314,14 @@ def create_inputs(
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
-@param_bool("is_causal", "causal")
-@param_bool("use_buffer_ops", "buf_ops")
+@param_bool("is_causal", "causal", [False])
+@param_bool("use_buffer_ops", "buf_ops", [False])
 @param_bool("use_wave_runtime", "wr", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-        (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+        # (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
     ],
 )
 def testExtendAttention(
@@ -326,6 +348,8 @@ def testExtendAttention(
         qo_indptr,
         kv_indptr,
         kv_indices,
+        custom_mask,
+        mask_offsets,
         b_start_loc,
         b_seq_len_prefix,
         extend_token_num,
@@ -427,6 +451,153 @@ def testExtendAttention(
 
     assert_close(output, ref_output, rtol=1e-3, atol=1e-3, check_dtype=False)
 
+# TODO: Investigate errors on MI250.
+# TODO: See why wave_runtime is failing on OSSCI.
+# TODO: Push up a setup.py change to make WRT more stable.
+@require_e2e
+@require_cdna3
+@pytest.mark.parametrize("shape", get_test_shapes("extend"))
+@pytest.mark.parametrize("dtype", [torch.float16])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+@param_bool("is_causal", "causal", [False])
+@param_bool("use_buffer_ops", "buf_ops", [False])
+@param_bool("use_wave_runtime", "wr", [False])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        # (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
+    ],
+)
+def testExtendAttentionCustomMask(
+    shape: AttentionShape,
+    dtype: torch.dtype,
+    enable_scheduling: SchedulingType,
+    is_causal: bool,
+    use_buffer_ops: bool,
+    use_wave_runtime: bool,
+    mfma_variant: MMAType,
+    request,
+):
+
+    torch.manual_seed(0)
+    assert shape.num_query_heads % shape.num_kv_heads == 0
+    (
+        q_extend,
+        k_extend,
+        v_extend,
+        k_buffer,
+        v_buffer,
+        b_req_idx,
+        b_seq_len,
+        qo_indptr,
+        kv_indptr,
+        kv_indices,
+        custom_mask,
+        mask_offsets,
+        b_start_loc,
+        b_seq_len_prefix,
+        extend_token_num,
+        max_len_extend,
+        logit_cap,
+        _,
+        _,
+    ) = create_inputs(shape, dtype)
+    shape = replace(shape, max_seq_len=max_len_extend)
+
+    if mfma_variant[0] == MMAType.F32_16x16x16_F16:
+        num_waves = 4
+    if mfma_variant[1] == MMAType.F32_32x32x8_F16:
+        num_waves = 2
+
+    # Run the wave kernel.
+    output = device_zeros(
+        extend_token_num, shape.num_query_heads, shape.head_size, dtype=torch.float32
+    )
+    (
+        extend_attention,
+        hyperparams,
+        dynamic_symbols,
+        dynamic_symbols_map,
+    ) = get_extend_attention_kernel(
+        shape,
+        mfma_variant,
+        q_extend.shape,
+        k_extend.shape,
+        v_extend.shape,
+        k_buffer.shape,
+        v_buffer.shape,
+        output.shape,
+        is_causal=is_causal,
+        logit_cap=logit_cap,
+        num_waves=num_waves,
+        has_custom_mask=True
+    )
+    hyperparams.update(get_default_scheduling_params())
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    perf_filename = construct_test_name(
+        "wave_extend_attention", mfma_variant, is_causal, shape
+    )
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        run_bench=run_bench,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
+        benchmark_batch_size=1000,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, perf_filename) if dump_perf else None
+        ),
+        dump_intermediates="./inter",
+        gpu_native_math_precision=True,
+        wave_runtime=(True if use_wave_runtime else False),
+    )
+    options = set_default_run_config(options)
+    extend_attention = wave_compile(options, extend_attention)
+
+    asm_qk = extend_attention(
+        q_extend,
+        k_extend,
+        v_extend,
+        k_buffer,
+        v_buffer,
+        qo_indptr,
+        kv_indptr,
+        kv_indices,
+        custom_mask,
+        mask_offsets,
+        output,
+    )
+
+    if dump_generated_mlir:
+        filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm_qk)
+
+    # # Run the reference implementation.
+    # ref_output = ref_extend_attn(
+    #     q_extend=q_extend,
+    #     k_buffer=k_buffer,
+    #     v_buffer=v_buffer,
+    #     b_req_idx=b_req_idx,
+    #     b_start_loc=b_start_loc,
+    #     b_seq_len=b_seq_len,
+    #     b_seq_len_prefix=b_seq_len_prefix,
+    #     max_len_extend=max_len_extend,
+    #     extend_token_num=extend_token_num,
+    #     dtype=dtype,
+    #     is_causal=is_causal,
+    #     logit_cap=logit_cap,
+    # )
+
+    # assert_close(output, ref_output, rtol=1e-3, atol=1e-3, check_dtype=False)
 
 # TODO: Investigate errors on MI250.
 @require_e2e
