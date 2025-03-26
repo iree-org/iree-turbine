@@ -1056,7 +1056,6 @@ def test_toy_online_softmax(shape):
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    # constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.ThreadConstraint(N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
