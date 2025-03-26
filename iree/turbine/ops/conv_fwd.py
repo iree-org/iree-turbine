@@ -126,7 +126,9 @@ class conv_2d_nhwc_fhwc(CustomOp):
             v = res_desc.t.shape[i + 1]
             kwargs[f"OUT_DIM{i}"] = v
 
-        kwargs["conv_op"] = f"linalg.conv_2d_nhwc_fhwc"
+        # Currently, the conv op and accumulator type is hardcoded.
+        # It may be advantageous to eventually allow passing these as string attributes.
+        kwargs["conv_op"] = "linalg.conv_2d_nhwc_fhwc"
         kwargs["accum_dtype"] = "f32"
         kwargs[
             "result_asm_type"

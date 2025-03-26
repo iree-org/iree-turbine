@@ -10,7 +10,6 @@
 !accum_type = {{accum_dtype}}
 !X_asm_type = {{X_asm_type}}
 !W_asm_type = {{W_asm_type}}
-// !bias_asm_type = {{B_asm_type}}
 !result_asm_type = {{result_asm_type}}
 !dynamic_result_asm_type = tensor<?x?x?x?x{{accum_dtype}}>
 
