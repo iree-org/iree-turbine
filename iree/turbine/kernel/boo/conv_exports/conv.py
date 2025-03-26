@@ -16,6 +16,7 @@ from enum import IntEnum
 import torch
 
 from .utils import Permutation
+from ....ops.conv_fwd import conv_2d_nhwc_fhwc
 
 __all__ = [
     "Mode",
@@ -277,12 +278,26 @@ class ConvSignature:
 
     def get_nn_module(self) -> torch.nn.Module:
         """For a given ConvSignature, returns a torch.nn.Module implementation."""
-        if self.mode == Mode.FORWARD:
-            return ConvForward(self)
         if self.mode == Mode.WEIGHT_BACKWARD:
             return ConvBackwardWeight(self)
         if self.mode == Mode.INPUT_BACKWARD:
             return ConvBackwardInput(self)
+        is_nhwc = (
+            self.input_layout == "NHWC"
+            and self.kernel_layout == "NHWC"
+            and self.output_layout == "NHWC"
+        )
+        is_supported_nhwc = (
+            is_nhwc
+            and self.groups == 1
+            and not self.transposed
+            and self.dtype.is_floating_point
+            and self.dtype.itemsize <= 4
+        )
+        if self.mode == Mode.FORWARD and is_supported_nhwc:
+            return ConvForwardCustomNHWC(self)
+        if self.mode == Mode.FORWARD:
+            return ConvForward(self)
         raise ValueError(f"signature has unexpected mode: {self.mode}")
 
 
@@ -310,6 +325,35 @@ class ConvForward(torch.nn.Module):
         if "bias" not in self.kwargs.keys():
             mod_args.append(args[2])
         output = torch.convolution(*mod_args, **self.kwargs)
+        return self.perms[2](output)
+
+
+class ConvForwardCustomNHWC(torch.nn.Module):
+    def __init__(self, sig: ConvSignature):
+        super().__init__()
+        assert sig.groups == 1, "Grouped custom nhwc is currently unsupported."
+        assert not sig.transposed, "Transposed custom nhwc is currently unsupported."
+        target_layout = "NHWC"
+        nchw_to_nhwc = Permutation.get("NCHW", target_layout)
+        self.perms = [
+            nchw_to_nhwc * sig.input_perms,
+            nchw_to_nhwc * sig.kernel_perms,
+            sig.output_perms * (nchw_to_nhwc.inv()),
+        ]
+        self.stride = sig.stride
+        self.dilation = sig.dilation
+        self.has_bias = sig.bias
+        self.explicit_padding = sig.explicit_padding
+
+    def forward(self, *args):
+        x_pad = torch.constant_pad_nd(args[0], self.explicit_padding, value=0)
+        x_pad = self.perms[0](x_pad)
+        w = self.perms[1](args[1])
+        output = conv_2d_nhwc_fhwc(x_pad, w, self.stride, self.dilation)
+        output = output.to(dtype=x_pad.dtype)
+        if self.has_bias:
+            # Note bias has shape [out_channels], which is currently last
+            output = output + args[2]
         return self.perms[2](output)
 
 
