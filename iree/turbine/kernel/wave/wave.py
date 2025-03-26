@@ -271,6 +271,9 @@ class LaunchableWave(Launchable):
         """
 
         hardware_constraint = self.hardware_constraints[0]
+        for thread_constraint in self.thread_constraints:
+            thread_constraint.hw_constraint = hardware_constraint
+
         for wave_constraint in self.wave_constraints:
             for workgroup_constraint in (
                 self.workgroup_constraints + self.thread_constraints

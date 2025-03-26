@@ -83,6 +83,24 @@ class Constraint(ABC):
 
 
 @dataclass
+class DistributionConstraint(Constraint):
+    """
+    Base class for constraints that distribute a dimension across a
+    workgroup or reduction loop.
+    """
+
+    @property
+    def work_bound(self) -> IndexExpr:
+        """
+        Returns the work bound for the constraint.
+
+        It may be different from the dimension of the tensor if the dimensions is not divisible
+        by the tile size.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+
+@dataclass
 class HardwareConstraint(Constraint):
     """
     A constraint of the form
@@ -358,7 +376,7 @@ class HardwareConstraint(Constraint):
 
 
 @dataclass
-class WorkgroupConstraint(Constraint):
+class WorkgroupConstraint(DistributionConstraint):
     """
     A constraint of the form `tkw.WorkgroupConstraint(M, BLOCK_M, 0)`
     specifies that we want to distribute dimension M along workgroup dim 0
@@ -398,6 +416,10 @@ class WorkgroupConstraint(Constraint):
             return IndexSequence(self.apply_fn(self.wg_dim), 1)
         return IndexSequence(self.wg_dim * self.tile_size, 1)
 
+    @property
+    def work_bound(self) -> IndexExpr:
+        return self.count * self.tile_size
+
 
 def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]:
     sorted_constraints = sorted(
@@ -416,7 +438,7 @@ def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]
 
 
 @dataclass
-class TilingConstraint(Constraint):
+class TilingConstraint(DistributionConstraint):
     """
     A constraint of the form `tkw.TilingConstraint(K, BLOCK_K)` specifies
     that we want to tile the K dimension with a tile size of BLOCK_K. This
@@ -457,9 +479,13 @@ class TilingConstraint(Constraint):
             )
         return IndexSequence(self.start + self.induction_var * self.tile_size, 1)
 
+    @property
+    def work_bound(self) -> IndexExpr:
+        return self.start + self.count * self.tile_size
+
 
 @dataclass
-class ThreadConstraint(Constraint):
+class ThreadConstraint(DistributionConstraint):
     """
     A constraint of the form `tkw.ThreadConstraint(M, 0)`
     specifies that we want to distribute dimension M along thread dim 0.
@@ -469,11 +495,20 @@ class ThreadConstraint(Constraint):
 
     dim: IndexExpr
     workgroup_dim: int  # Used by `populate_read_write_source_indices`
+    hw_constraint: Optional[HardwareConstraint] = None
 
     def apply(self) -> IndexSequence:
         # `apply` is called during thread-independent index sequence
-        # initialization. We don't need to do anything here.
+        # initialization. We don't need to do anything here as we are
+        # depending on workgroup id.
         return IndexSequence(0, 1)
+
+    @property
+    def work_bound(self) -> IndexExpr:
+        if self.hw_constraint is None:
+            raise ValueError("Hardware constraint not set")
+
+        return self.hw_constraint.threads_per_block[self.workgroup_dim]
 
 
 @dataclass
