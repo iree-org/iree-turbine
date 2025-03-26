@@ -91,9 +91,6 @@ import glob
 
 __all__ = ["wave", "wave_trace_only"]
 
-# Add wave runtime directory to sys path.
-sys.path.append(str(WAVE_RUNTIME_DIR))
-
 # Warn only once
 _warned = False
 
@@ -140,44 +137,6 @@ def _warn_iree_is_too_old():
         warnings.warn(
             f"IREE version is too old: {iree_compiler_ver}, min version: {min_iree_version}"
         )
-
-
-def build_wave_runtime():
-    wave_runtime_lib = "wave_runtime*.so"
-    lib_path = glob.glob(str(WAVE_RUNTIME_DIR / wave_runtime_lib))
-    # Don't build if lib already exists.
-    if lib_path and Path(lib_path[0]).is_file():
-        return
-
-    # Run cmake command.
-    runtime_path = Path(__file__).resolve()
-    runtime_path = runtime_path.parent / "runtime"
-    runtime_build_path = runtime_path / "build"
-    args = [
-        "cmake",
-        f"-DPython_EXECUTABLE={sys.executable}",
-        "-S",
-        str(runtime_path),
-        "-B",
-        str(runtime_build_path),
-    ]
-    try:
-        subprocess.run(args, check=True)
-    except subprocess.CalledProcessError as e:
-        raise ValueError(f"CMake configuration failed: {e}")
-
-    # Run build command.
-    args = ["cmake", "--build", str(runtime_build_path)]
-    try:
-        subprocess.run(args, check=True)
-    except subprocess.CalledProcessError as e:
-        raise ValueError(f"Build failed: {e}")
-
-    # Copy lib to cache dir.
-    os.makedirs(WAVE_RUNTIME_DIR, exist_ok=True)
-    lib_path = glob.glob(str(runtime_build_path / wave_runtime_lib))[0]
-    shutil.copy(lib_path, WAVE_RUNTIME_DIR)
-    sys.path.append(str(runtime_build_path))
 
 
 def wave(constraints: Optional[list[Constraint]] = None):
@@ -539,7 +498,6 @@ class LaunchableWave(Launchable):
             # cache directory. When kernels are not being cached, we remove them
             # to ensure that at any time there is only one hsaco file in this directory.
             remove_files_with_extension(WAVE_RUNTIME_DIR, ".hsaco")
-            build_wave_runtime()
 
         print_ir_after = options.print_ir_after
         print_ir_before = options.print_ir_before

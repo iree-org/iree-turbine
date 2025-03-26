@@ -12,7 +12,6 @@ import inspect
 import json
 import os
 import shutil
-import torch
 import threading
 import math
 
@@ -26,10 +25,7 @@ from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
 from ..lang.wave_types import IndexMapping
 from .._support.indexing import IndexExpr
-from .utils.run_utils import (
-    _read_file,
-    _write_file,
-)
+from .utils.run_utils import _write_file, _read_file
 from .utils.classes import KernelLaunchInfo
 from .compile_options import WaveCompileOptions
 
