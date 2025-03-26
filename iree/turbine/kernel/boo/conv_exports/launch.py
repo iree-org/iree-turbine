@@ -41,7 +41,7 @@ def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> s
         return mlir_path.read_text()
 
     e = export(
-        signature.get_nn_module(),
+        signature.get_nn_module(use_custom=True),
         args=signature.get_sample_conv_args(splat_value=0),
         function_name=func_name,
     )

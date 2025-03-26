@@ -75,3 +75,19 @@ def test_conv_impl(
         print(f"{dsdw=}")
         print(f"{w.grad=}")
     raise RuntimeError(f"{bwd_match=}; {wrw_match=};")
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+def test_conv_custom_impl(dtype):
+    sig = ConvSignature(
+        input_shape=[1, 16, 16, 2],
+        kernel_shape=[4, 3, 3, 2],
+        shared_layout="NHWC",
+        dtype=dtype,
+    )
+    default_mod = sig.get_nn_module()
+    custom_mod = sig.get_nn_module(use_custom=True)
+    args = sig.get_sample_conv_args(seed=10)
+    y_ref = default_mod(*args)
+    y = custom_mod(*args)
+    assert torch.allclose(y, y_ref, rtol=1e-4, atol=1e-4)

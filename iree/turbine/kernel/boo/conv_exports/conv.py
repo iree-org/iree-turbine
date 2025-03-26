@@ -278,19 +278,17 @@ class ConvSignature:
         )
         return "_".join(name_items)
 
-    def get_nn_module(self) -> torch.nn.Module:
+    def get_nn_module(self, *, use_custom: bool = False) -> torch.nn.Module:
         """For a given ConvSignature, returns a torch.nn.Module implementation."""
         if self.mode == Mode.WEIGHT_BACKWARD:
             return ConvBackwardWeight(self)
         if self.mode == Mode.INPUT_BACKWARD:
             return ConvBackwardInput(self)
-        is_nhwc = (
-            self.input_layout == "NHWC"
+        is_supported_nhwc = (
+            use_custom
+            and self.input_layout == "NHWC"
             and self.kernel_layout == "NHWC"
             and self.output_layout == "NHWC"
-        )
-        is_supported_nhwc = (
-            is_nhwc
             and self.groups == 1
             and not self.transposed
             and self.dtype.is_floating_point
