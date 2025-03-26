@@ -25,6 +25,7 @@ from iree.turbine.kernel.wave.utils.torch_utils import (
     device_empty,
     device_arange,
     device_randint,
+    device_full,
 )
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
@@ -258,6 +259,30 @@ def create_inputs(
     qo_indptr[1 : B + 1] = torch.cumsum(b_seq_len_extend[:B], dim=0)
     logit_cap = 30.0
 
+    b_seq_mask_len = b_seq_len_extend * b_seq_len
+    custom_mask = device_full(
+        (b_seq_mask_len.sum().item(),), fill_value=1, dtype=torch.int8
+    )
+    mask_offsets = device_zeros((B + 1,), dtype=torch.int32)
+    mask_offsets[1 : B + 1] = torch.cumsum(b_seq_mask_len[:B], dim=0)
+    for i in range(B):
+        causal_mask = (
+            torch.tril(
+                device_full(
+                    (b_seq_len_extend[i], b_seq_len_extend[i]),
+                    fill_value=1,
+                    dtype=torch.int8,
+                ),
+                diagonal=0,
+            )
+            == 1
+        )
+        prefix_mask = device_full(
+            (b_seq_len_extend[i], b_seq_len_prefix[i]), fill_value=1, dtype=torch.int8
+        )
+        mask_flatten = torch.cat([prefix_mask, causal_mask], dim=1).flatten()
+        custom_mask[mask_offsets[i] : mask_offsets[i + 1]] = mask_flatten
+
     max_rpe_context_length = 10
     rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
     rpe_bias.copy_(device_randn(max_rpe_context_length + 1, dtype=torch.float32))
@@ -274,6 +299,8 @@ def create_inputs(
         qo_indptr,
         kv_indptr,
         kv_indices,
+        custom_mask,
+        mask_offsets,
         b_start_loc,
         b_seq_len_prefix,
         extend_token_num,
@@ -294,7 +321,8 @@ def create_inputs(
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("is_causal", "causal")
 @param_bool("use_buffer_ops", "buf_ops")
-@param_bool("use_wave_runtime", "wr", [True])
+@param_bool("use_wave_runtime", "wr", [False])
+@param_bool("use_custom_mask", "cmask")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -309,10 +337,10 @@ def testExtendAttention(
     is_causal: bool,
     use_buffer_ops: bool,
     use_wave_runtime: bool,
+    use_custom_mask: bool,
     mfma_variant: MMAType,
     request,
 ):
-
     torch.manual_seed(0)
     assert shape.num_query_heads % shape.num_kv_heads == 0
     (
@@ -326,6 +354,8 @@ def testExtendAttention(
         qo_indptr,
         kv_indptr,
         kv_indices,
+        custom_mask,
+        mask_offsets,
         b_start_loc,
         b_seq_len_prefix,
         extend_token_num,
@@ -335,7 +365,7 @@ def testExtendAttention(
         _,
     ) = create_inputs(shape, dtype)
     shape = replace(shape, max_seq_len=max_len_extend)
-
+    shape = replace(shape, flattened_mask_len=custom_mask.shape[0])
     if mfma_variant[0] == MMAType.F32_16x16x16_F16:
         num_waves = 4
     if mfma_variant[1] == MMAType.F32_32x32x8_F16:
@@ -362,6 +392,7 @@ def testExtendAttention(
         is_causal=is_causal,
         logit_cap=logit_cap,
         num_waves=num_waves,
+        use_custom_mask=use_custom_mask,
     )
     hyperparams.update(get_default_scheduling_params())
     run_bench = request.config.getoption("--runperf")
@@ -369,7 +400,6 @@ def testExtendAttention(
     perf_filename = construct_test_name(
         "wave_extend_attention", mfma_variant, is_causal, shape
     )
-
     options = WaveCompileOptions(
         subs=hyperparams,
         canonicalize=True,
@@ -392,17 +422,32 @@ def testExtendAttention(
     options = set_default_run_config(options)
     extend_attention = wave_compile(options, extend_attention)
 
-    asm_qk = extend_attention(
-        q_extend,
-        k_extend,
-        v_extend,
-        k_buffer,
-        v_buffer,
-        qo_indptr,
-        kv_indptr,
-        kv_indices,
-        output,
-    )
+    if use_custom_mask:
+        asm_qk = extend_attention(
+            q_extend,
+            k_extend,
+            v_extend,
+            k_buffer,
+            v_buffer,
+            qo_indptr,
+            kv_indptr,
+            kv_indices,
+            custom_mask,
+            mask_offsets,
+            output,
+        )
+    else:
+        asm_qk = extend_attention(
+            q_extend,
+            k_extend,
+            v_extend,
+            k_buffer,
+            v_buffer,
+            qo_indptr,
+            kv_indptr,
+            kv_indices,
+            output,
+        )
 
     if dump_generated_mlir:
         filename = f"wave_extend_attention_kernel_{'x'.join(map(str, shape))}.mlir"

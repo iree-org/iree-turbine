@@ -38,6 +38,7 @@ def get_extend_attention_kernel(
     logit_cap: Optional[float] = 0.0,
     layer_scaling: Optional[float] = None,
     num_waves: Optional[int] = 4,
+    use_custom_mask: Optional[bool] = False,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
@@ -59,6 +60,9 @@ def get_extend_attention_kernel(
     EXT_IDX = tkl.sym.EXT_IDX
     KV_START_IDX = tkl.sym.KV_START_IDX
     MAX_EXTEND_SEQ_LEN = tkl.sym.MAX_EXTEND_SEQ_LEN
+    MASK_LEN = tkl.sym.MASK_LEN
+    MASK_START_IDX = tkl.sym.MASK_START_IDX
+    SEQ_LEN = tkl.sym.SEQ_LEN
     # Workgroup tile sizes
     BLOCK_S = tkl.sym.BLOCK_S
     # Address space (for GPU, shared(1) or global(0))
@@ -170,6 +174,12 @@ def get_extend_attention_kernel(
         num_iterators=1,
         inputs={S: i + 1},
         outputs={S: i},
+    )
+
+    custom_mask_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={MASK_LEN: i * SEQ_LEN + j + MASK_START_IDX},
+        outputs={N_Q: i, N_KV: j},
     )
 
     # Set the dynamic shapes for the kernel. Here we set it to N_Q
@@ -344,6 +354,186 @@ def get_extend_attention_kernel(
             res = tkw.cast(res, wave_output_dtype)
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
+    @tkw.wave(constraints)
+    def extend_attention_custom_mask(
+        q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, wave_input_dtype, q_layout],
+        k: tkl.Memory[N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_layout],
+        v: tkl.Memory[N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_layout],
+        k_cache: tkl.Memory[
+            N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_cache_layout
+        ],
+        v_cache: tkl.Memory[
+            N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_cache_layout
+        ],
+        qo_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        kv_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        kv_indices: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
+        custom_mask: tkl.Memory[
+            MASK_LEN, GLOBAL_ADDRESS_SPACE, tkl.i8, num_seqs_layout
+        ],
+        mask_offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
+    ):
+        c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
+        init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
+        init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)
+        zero = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
+        neg_infinity = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
+        layer_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](layer_scaling)
+        if logit_cap > 0:
+            logit_cap_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](logit_cap)
+
+        seq_extend_start_idx = tkw.read(qo_indptr, elements_per_thread=1)
+        tkw.set_symbol(EXT_IDX, seq_extend_start_idx)
+        seq_len_extend = (
+            tkw.read(qo_indptr, elements_per_thread=1, mapping=ind_ptr_mapping)
+            - seq_extend_start_idx
+        )
+        tkw.set_symbol(N_Q, seq_len_extend)
+        seq_kv_start_idx = tkw.read(kv_indptr, elements_per_thread=1)
+        tkw.set_symbol(KV_START_IDX, seq_kv_start_idx)
+        seq_len_prefix = (
+            tkw.read(kv_indptr, elements_per_thread=1, mapping=ind_ptr_mapping)
+            - seq_kv_start_idx
+        )
+        tkw.set_symbol(N_KV, seq_len_prefix)
+        seq_len = seq_len_prefix + seq_len_extend
+        tkw.set_symbol(SEQ_LEN, seq_len)
+        seq_mask_start_idx = tkw.read(mask_offsets, elements_per_thread=1)
+        tkw.set_symbol(MASK_START_IDX, seq_mask_start_idx)
+
+        @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
+        def first_loop(
+            partial_max: tkl.Register[H, N_Q, tkl.f32],
+            partial_sum: tkl.Register[H, N_Q, tkl.f32],
+            acc: tkl.Register[H, D_KV, N_Q, tkl.f32],
+        ):
+            q_reg = tkw.read(
+                q,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+                mapping=q_mapping,
+            )
+            block_indices_v = tkw.read(
+                kv_indices,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
+                mapping=kv_indices_mapping,
+            )
+            block_indices_k = tkw.read(
+                kv_indices,
+                elements_per_thread=1,
+                mapping=kv_indices_mapping,
+            )
+            k_reg = tkw.read(
+                k_cache,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+                mapping=k_cache_mapping,
+                mapping_dynamic_vals=(block_indices_k,),
+            )
+            imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
+            inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
+            x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            x_j = x_j * layer_scale_reg
+            if logit_cap > 0:
+                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+            n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            c_mask = tkw.read(
+                custom_mask,
+                elements_per_thread=STORE_ELEMS_PER_THREAD,
+                mapping=custom_mask_mapping,
+            )
+            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            mask = tkw.cast(mask, tkw.i1)
+            c_mask = tkw.cast(c_mask, tkw.i1)
+            mask &= c_mask
+            bias = tkw.select(mask, zero, neg_infinity)
+            x_j = x_j + bias
+            m_j = tkw.max(x_j, partial_max, dim=N_KV)
+            e_delta_max = tkw.exp2(partial_max - m_j)
+            e_delta = tkw.exp2(x_j - m_j)
+            e_init = partial_sum * e_delta_max
+            d_j = tkw.sum(e_delta, e_init, dim=N_KV)
+            imm_f16 = tkw.cast(e_delta, wave_input_dtype)
+            v_reg = tkw.read(
+                v_cache,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
+                mapping=v_cache_mapping,
+                mapping_dynamic_vals=(block_indices_v,),
+            )
+            new_acc = acc * e_delta_max
+            acc = tkw.mma(v_reg, imm_f16, new_acc)
+            return m_j, d_j, acc
+
+        res_max, res_sum, res_mm = first_loop
+
+        if is_causal:
+            seq_len_extend = tkw.apply_expr(
+                seq_len_extend, lambda x: sympy.Min(x, (WORKGROUP_0 + 1) * BLOCK_N_Q)
+            )
+        tkw.set_symbol(N_KV, seq_len_extend)
+
+        @tkw.reduction(N_KV, init_args=[res_max, res_sum, res_mm])
+        def second_loop(
+            partial_max: tkl.Register[H, N_Q, tkl.f32],
+            partial_sum: tkl.Register[H, N_Q, tkl.f32],
+            acc: tkl.Register[H, D_KV, N_Q, tkl.f32],
+        ):
+            imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
+            q_reg = tkw.read(
+                q,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+                mapping=q_mapping,
+            )
+            k_reg = tkw.read(
+                k,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+                mapping=k_mapping,
+            )
+            inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
+            x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
+            x_j = x_j * layer_scale_reg
+            if logit_cap > 0:
+                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+            n_kv_index = tkw.self_index(N_KV, tkl.i32)
+            c_mask = tkw.read(
+                custom_mask,
+                elements_per_thread=STORE_ELEMS_PER_THREAD,
+                mapping=custom_mask_mapping,
+            )
+            mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
+            mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
+            if is_causal:
+                n_q_index = tkw.self_index(N_Q, tkl.i32)
+                n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
+                mask = (n_q_index >= n_kv_index) & mask
+            mask = tkw.cast(mask, tkw.i1)
+            c_mask = tkw.cast(c_mask, tkw.i1)
+            mask &= c_mask
+            bias = tkw.select(mask, zero, neg_infinity)
+            x_j = x_j + bias
+            m_j = tkw.max(x_j, partial_max, dim=N_KV)
+            e_delta_max = tkw.exp2(partial_max - m_j)
+            e_delta = tkw.exp2(x_j - m_j)
+            e_init = partial_sum * e_delta_max
+            d_j = tkw.sum(e_delta, e_init, dim=N_KV)
+            imm_f16 = tkw.cast(e_delta, wave_input_dtype)
+            v_reg = tkw.read(
+                v,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
+                mapping=v_mapping,
+            )
+            new_acc = acc * e_delta_max
+            acc = tkw.mma(v_reg, imm_f16, new_acc)
+            return m_j, d_j, acc
+
+        # repeat represents the results of the loop
+        res_max, res_sum, res_mm = second_loop
+        reciprocal_sum = tkw.reciprocal(res_sum)
+        res = res_mm * reciprocal_sum
+        if wave_output_dtype != tkl.f32:
+            res = tkw.cast(res, wave_output_dtype)
+        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
@@ -360,12 +550,21 @@ def get_extend_attention_kernel(
         D_Q: shape.head_size,
     }
 
-    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN]
+    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN, MASK_LEN]
     dynamic_symbols_map = {
         N_Q: q_shape[0],
         N_KV: k_shape[0],
         S: shape.num_seqs,
         MAX_EXTEND_SEQ_LEN: shape.max_seq_len,
+        MASK_LEN: shape.flattened_mask_len,
     }
+
+    if use_custom_mask:
+        return (
+            extend_attention_custom_mask,
+            hyperparams,
+            dynamic_symbols,
+            dynamic_symbols_map,
+        )
 
     return extend_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
