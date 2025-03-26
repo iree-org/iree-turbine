@@ -46,7 +46,7 @@ def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> s
         function_name=func_name,
     )
 
-    e.import_to("import")
+    e.import_to("full")
 
     mod = e.mlir_module
 
@@ -63,7 +63,6 @@ def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> s
             f"Failed to attach #util.preprocessing_pipeline attr to func op. Please try using a newer version of IREE."
         )
 
-    e.import_to("full")
     module_asm = str(e.mlir_module)
 
     if is_cache_enabled():
