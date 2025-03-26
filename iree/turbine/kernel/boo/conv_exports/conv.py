@@ -264,7 +264,7 @@ class ConvSignature:
             str(self.mode).lower(),
         ]
         if self.bias and self.mode == Mode.FORWARD:
-            name_items.append("_b_")
+            name_items.append("b")
         l2s = lambda l: "x".join([str(i) for i in l])
         name_items.extend(
             [
