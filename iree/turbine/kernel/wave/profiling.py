@@ -32,7 +32,7 @@ def construct_inputs(
     tempfiles = []
     inputs = []
     all_inputs = kernel_inputs + kernel_outputs if options.inplace else kernel_inputs
-    all_inputs += options.kernel_dynamic_dims
+    all_inputs += options.dynamic_symbols_map.values()
     if bench_with_constant_weights:
         for inp in all_inputs:
             if isinstance(inp, torch.Tensor):
@@ -125,25 +125,15 @@ def populate_trace_args(prefix: list[str], capture_trace_dir: str) -> list[str]:
 
 
 def benchmark_module(
+    options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    options: "WaveCompileOptions",
-    module,
-    entry_function=None,
+    flatbuffer: bytes,
+    entry_function: str,
     timeout=None,
     **kwargs,
 ):
-    funcs = [a for a in module.function_names if a != "__init"]
-    if entry_function is None:
-        if len(funcs) > 1:
-            raise ValueError(f"No function specified with multiple options {funcs}")
-        entry_function = funcs[0]
-    if entry_function not in funcs:
-        raise ValueError(
-            f"Attempted to benchmark unknown function {entry_function} of options {funcs}"
-        )
 
-    flatbuffer = module.stashed_flatbuffer_blob
     prefix = []
     if options.capture_trace:
         prefix = populate_trace_args(prefix, options.capture_trace)
@@ -154,7 +144,8 @@ def benchmark_module(
         args.append(f"--{k}={v}")
     inputs, tempfiles = construct_inputs(options, kernel_inputs, kernel_outputs)
     args += inputs
-    args.append(f"--module=-")
+    args.append("--module=-")
+    args.append(f"--device={options.device}")
 
     try:
         benchmark_process = subprocess.run(
