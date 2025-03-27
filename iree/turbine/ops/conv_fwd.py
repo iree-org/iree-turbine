@@ -140,6 +140,5 @@ class conv_2d_nhwc_fhwc(CustomOp):
             function_name,
             **kwargs,
         )
-        print(func_op)
         arg_bindings = kb.arg_bindings[0:2]
         kb.yield_results(*impl_helper.call_function(func_op, *arg_bindings))
