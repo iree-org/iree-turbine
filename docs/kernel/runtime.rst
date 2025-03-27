@@ -19,8 +19,14 @@ Wave Runtime
 In scenarios where the latencies associated with `torch.to_dlpack` are
 unacceptable, the Wave runtime can be used to launch kernels directly.
 The Wave runtime is a C++ extension that uses nanobind [3]_ to interface with
-inputs from Wave. In order to enable the wave runtime, modify the `run_config`
-as shown below.
+inputs from Wave. In order to enable the wave runtime, first install
+the `wave-runtime` pip package.
+
+.. code-block:: python
+
+     pip install -r requirements-wave-runtime.txt
+
+Then modify the `run_config` as shown below.
 
 .. code-block:: python
 
