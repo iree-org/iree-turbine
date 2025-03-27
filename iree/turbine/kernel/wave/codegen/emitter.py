@@ -8,6 +8,7 @@ import sympy
 from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
 from dataclasses import dataclass
 from collections import namedtuple
+import sys
 
 import torch.fx as fx
 
@@ -112,7 +113,11 @@ class WaveEmitter:
         except KeyError:
             raise CodegenError(f"No handler registered for op {target_op}")
 
-        handler(self, node)
+        try:
+            handler(self, node)
+        except:
+            print(f"Error handling {node}", file=sys.stderr)
+            raise
 
     def lookup_node_values(self, node: fx.Node) -> List[Value]:
         assert NDEBUG or isinstance(node, fx.Node)
