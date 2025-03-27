@@ -340,8 +340,6 @@ def testAttentionBias(
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
 
     if mfma_variant == MMAType.F32_16x16x16_F16:
         Mvec = 16
@@ -545,8 +543,6 @@ def testAttentionSoftCap(
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
 
     if mfma_variant == MMAType.F32_16x16x16_F16:
         Mvec = 16
@@ -750,8 +746,6 @@ def testAttentionF8(
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
     if mfma_variant[0] == MMAType.F32_16x16x32_F8:
         Mvec = 16
         Nvec = 16

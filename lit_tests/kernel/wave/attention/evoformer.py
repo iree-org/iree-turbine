@@ -48,8 +48,6 @@ def test_evoformer():
     constraints += [tkw.WorkgroupConstraint(BN, BLOCK_BN, 3)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 4)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     mfma_variant = tkw.MMAType.F32_16x16x16_F16
     constraints += [

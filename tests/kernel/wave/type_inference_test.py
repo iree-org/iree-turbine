@@ -47,8 +47,6 @@ class TypeInferenceTest(unittest.TestCase):
         constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
         constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-        constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-        constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
         mfma_variant = MMAType.F32_16x16x16_F16
         if mfma_variant == MMAType.F32_16x16x16_F16:

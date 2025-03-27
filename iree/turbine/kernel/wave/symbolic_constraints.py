@@ -11,7 +11,7 @@ from .utils.symbol_utils import subs_idxc
 from .constraints import (
     Constraint,
     WorkgroupConstraint,
-    WaveConstraint,
+    ImplicitWaveConstraint,
     TilingConstraint,
 )
 
@@ -49,8 +49,8 @@ class SymbolicAlias:
             case WorkgroupConstraint():
                 build_constraint = lambda x, y, z: WorkgroupConstraint(x, y, z)
                 id_fn = lambda x: x.workgroup_dim
-            case WaveConstraint():
-                build_constraint = lambda x, y, z: WaveConstraint(x, y, z)
+            case ImplicitWaveConstraint():
+                build_constraint = lambda x, y, z: ImplicitWaveConstraint(x, y, z)
                 id_fn = lambda x: x.wave_id
             case TilingConstraint():
                 build_constraint = lambda x, y, z: TilingConstraint(x, y, z)

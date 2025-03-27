@@ -80,6 +80,10 @@ class Constraint(ABC):
     def apply(self) -> IndexSequence:
         """Apply the constraint and get the resulting index sequence."""
         ...
+    
+    def is_implicit(self) -> bool:
+        """Returns whether this is an implicit constraint internal to tkw."""
+        return False
 
 
 @dataclass
@@ -471,9 +475,9 @@ class TilingConstraint(Constraint):
 
 
 @dataclass
-class WaveConstraint(Constraint):
+class ImplicitWaveConstraint(Constraint):
     """
-    A constraint of the form `tkw.WaveConstraint(K, WAVE_K)` specifies
+    A constraint of the form `tkw.ImplicitWaveConstraint(K, WAVE_K)` specifies
     that we want distribute the K dimension among multiple waves which
     each wave operating on a tile size of WAVE_K. The assumption is
     that the K dimension has already been distributed among workgroups.
@@ -496,6 +500,9 @@ class WaveConstraint(Constraint):
     wave_id_0 = floor(thread_id_0 / threads_per_wave)
     wave_id_1 = thread_id_1
     wave_id_2 = thread_id_2
+
+    Important, this constraint is internal to TKW and cannot be specified by
+    a user.
     """
 
     dim: IndexExpr
@@ -506,6 +513,9 @@ class WaveConstraint(Constraint):
         if self.wave_id is None:
             raise ValueError("Index is being computed without setting wave id")
         return IndexSequence(self.tile_size * self.wave_id, 1)
+    
+    def is_implicit(self) -> bool:
+        return True
 
     def set_wave_id_from_hardware_and_workgroup_constraint(
         self,

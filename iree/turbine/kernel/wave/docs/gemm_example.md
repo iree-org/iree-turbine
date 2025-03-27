@@ -108,8 +108,6 @@ The kernel above captures the computations that a single wave does, but does not
 constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
 constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
 constraints += [tkw.TilingConstraint(K, BLOCK_K)]
-constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
 constraints += [
     tkw.HardwareConstraint(threads_per_wave=64,
@@ -124,13 +122,6 @@ constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
 ```
 
 This reads as "distribute dimension `M` with a tile size of `BLOCK_M` along workgroup dimension 0". So if we have a tensor of shape `[M, N]`, then with this constraint, each workgroup would be operating on a tile of size `[BLOCK_M, N]`.
-
-Once we have a workgroup constraint in place, we add further wave constraints on the same dimension.
-
-```python
-constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-```
-The above constraint states that "distribute dimension `M` with a tile size of `BLOCK_M/2` among waves". With the above and this constraint, each wave would see a tile with shape `[BLOCK_M/2, N]`.
 
 We can also specify constraints for reductions. We do this through the use of `TilingConstraint`.
 

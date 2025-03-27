@@ -155,8 +155,6 @@ def testSameConfig(request):
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
 
     mfma_variant = MMAType.F32_32x32x8_F16
 
@@ -266,8 +264,6 @@ def testDifferentDynamicSameBlock(request):
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
     constraints += [tkw.Assumption(K2 > BLOCK_K2 * 4)]
 
     mfma_variant = MMAType.F32_32x32x8_F16
@@ -420,8 +416,6 @@ def testSameSizeDifferentBlock(request):
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
 
     mfma_variant = MMAType.F32_32x32x8_F16
 

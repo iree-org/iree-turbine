@@ -46,8 +46,6 @@ def get_vanilla_attention_kernel(
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
 
     if mfma_variant[1] == MMAType.F32_16x16x16_F16:
         Mvec = 16

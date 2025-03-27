@@ -187,9 +187,6 @@ def get_attention_fwd_kernel(
     constraints += [tkw.WorkgroupConstraint(N_vd, BLOCK_N_vd, 1)]
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.TilingConstraint(K2_kvs, BLOCK_K2_c_kvs)]
-    constraints += [tkw.WaveConstraint(M_qs, BLOCK_M_r_qs / WAVES_PER_BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N_vd, BLOCK_N_vd / WAVES_PER_BLOCK_N)]
-    constraints += [tkw.WaveConstraint(B, BLOCK_B / WAVES_PER_BLOCK_B)]
 
     if mfma_variant == MMAType.F32_16x16x16_F16:
         vec_size = 16

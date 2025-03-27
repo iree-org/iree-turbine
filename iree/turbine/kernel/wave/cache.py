@@ -22,7 +22,7 @@ from pathlib import Path
 import functools
 from typing import Any, Callable, Optional
 
-from .constraints import Constraint, TilingConstraint, WaveConstraint
+from .constraints import Constraint, TilingConstraint, ImplicitWaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
 from ..lang.wave_types import IndexMapping
 from .._support.indexing import IndexExpr
@@ -112,7 +112,7 @@ def anonymize_constraints(input_constraints: list[Constraint]):
     for constraint in processed_constraints:
         if isinstance(constraint, TilingConstraint):
             constraint.induction_var = None
-        elif isinstance(constraint, WaveConstraint):
+        elif isinstance(constraint, ImplicitWaveConstraint):
             constraint.wave_id = None
         else:
             continue

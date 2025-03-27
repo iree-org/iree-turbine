@@ -130,8 +130,6 @@ def test_igemm():
     constraints: list[tkw.Constraint] = []
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / ratio_m)]
-    constraints += [tkw.WaveConstraint(NF, BLOCK_N / ratio_n)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     constraints += [

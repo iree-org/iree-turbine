@@ -13,7 +13,7 @@ from iree.turbine.kernel.wave.constraints import (
     WorkgroupConstraint,
     get_grid_shape,
     TilingConstraint,
-    WaveConstraint,
+    ImplicitWaveConstraint,
 )
 
 M = sym.M
@@ -62,9 +62,9 @@ class ConstraintsTest(unittest.TestCase):
         ):
             constraints[0].apply()
 
-    def testWaveConstraint(self):
-        constraints: list[WaveConstraint] = [WaveConstraint(M, BLOCK_M, I)]
-        constraints.append(WaveConstraint(N, BLOCK_N))
+    def testImplicitWaveConstraint(self):
+        constraints: list[ImplicitWaveConstraint] = [ImplicitWaveConstraint(M, BLOCK_M, I)]
+        constraints.append(ImplicitWaveConstraint(N, BLOCK_N))
 
         assert constraints[0].apply().start == I * BLOCK_M
 

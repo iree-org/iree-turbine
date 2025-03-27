@@ -58,8 +58,6 @@ def get_evoformer_kernel(
     constraints += [tkw.WorkgroupConstraint(BN, BLOCK_BN, 3)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 4)]
     constraints += [tkw.TilingConstraint(K2, BLOCK_K2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / ratio_m)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / ratio_n)]
 
     if mfma_variant == MMAType.F32_16x16x16_F16:
         Mvec = 16

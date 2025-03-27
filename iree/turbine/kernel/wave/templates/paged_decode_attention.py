@@ -109,7 +109,6 @@ def get_paged_decode_attention_kernels(
             tkw.WorkgroupConstraint(BH, BLOCK_BH, 1, apply_fn=wg_func_2, iters=count)
         ]
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1, primary=False)]
-        constraints += [tkw.WaveConstraint(B, BLOCK_B / B_WAVES)]
 
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
 
@@ -127,9 +126,7 @@ def get_paged_decode_attention_kernels(
 
     def phase_1_constraints() -> list[tkw.Constraint]:
         constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(B, BLOCK_B, 0)]
-        constraints += [tkw.WaveConstraint(B, BLOCK_B)]
         constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-        constraints += [tkw.WaveConstraint(N, BLOCK_N)]
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
         constraints += [tkw.TilingConstraint(U, BLOCK_U, iters=SPLITS_ACTIVE)]
         vector_shapes = {

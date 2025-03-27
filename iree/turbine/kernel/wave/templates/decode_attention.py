@@ -57,11 +57,8 @@ def get_decode_attention_kernels(
 
     def phase_0_constraints():
         constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-        constraints += [tkw.WaveConstraint(M, BLOCK_M / M_WAVES)]
         constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-        constraints += [tkw.WaveConstraint(N, BLOCK_N / N_WAVES)]
         constraints += [tkw.WorkgroupConstraint(K2, BLOCK_K2, 2)]
-        constraints += [tkw.WaveConstraint(K2, BLOCK_K2 / K_WAVES)]
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 3)]
         constraints += [
             SymbolicAlias(U, K2, lambda x: sympy.ceiling(x / (BLOCK_K2 / K_WAVES)))
@@ -80,9 +77,7 @@ def get_decode_attention_kernels(
 
     def phase_1_constraints() -> list[tkw.Constraint]:
         constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-        constraints += [tkw.WaveConstraint(M, BLOCK_M)]
         constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-        constraints += [tkw.WaveConstraint(N, BLOCK_N)]
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
         constraints += [tkw.TilingConstraint(U, BLOCK_U)]
         vector_shapes = {

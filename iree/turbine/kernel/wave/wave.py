@@ -27,7 +27,7 @@ from .constraints import (
     Constraint,
     HardwareConstraint,
     TilingConstraint,
-    WaveConstraint,
+    ImplicitWaveConstraint,
     WorkgroupConstraint,
     get_grid_shape,
 )
@@ -204,6 +204,18 @@ class LaunchableWave(Launchable):
     ):
         super().__init__(eager_function)
 
+        assert (
+            constraints is None
+            or next(
+                (
+                    c
+                    for c in constraints
+                    if isinstance(c, Constraint) and c.is_implicit()
+                ),
+                None,
+            )
+            is None
+        ), "found an implicit constraint in the constraint set."
         self.constraints = constraints if constraints else []
         self.induction_vars: dict[CustomOp, IndexExpr] = {}
         self._name = name
@@ -229,11 +241,11 @@ class LaunchableWave(Launchable):
         ]
 
     @property
-    def wave_constraints(self) -> list[WaveConstraint]:
+    def wave_constraints(self) -> list[ImplicitWaveConstraint]:
         return [
             constraint
             for constraint in self.constraints
-            if isinstance(constraint, WaveConstraint)
+            if isinstance(constraint, ImplicitWaveConstraint)
         ]
 
     @property
@@ -294,21 +306,41 @@ class LaunchableWave(Launchable):
                 if tiling_constraint.dim == custom.axis:
                     tiling_constraint.induction_var = self.induction_vars[custom]
 
-    def initialize_wave_constraints(self, trace: CapturedTrace) -> None:
+    def initialize_implicit_constraints(self, trace: CapturedTrace) -> None:
         """
-        For each wave constraint, determines the appropriate wave id by looking
-        for workgroup constraints along the same dimension and using information
-        from the hardware constraints.
+        Initialize all implicit constraints. Add wave constraints to the
+        [x, y, z] dimensions using information from the hardware constraints.
 
         """
 
         hardware_constraint = self.hardware_constraints[0]
-        for wave_constraint in self.wave_constraints:
-            for workgroup_constraint in self.workgroup_constraints:
-                if wave_constraint.dim == workgroup_constraint.dim:
-                    wave_constraint.set_wave_id_from_hardware_and_workgroup_constraint(
-                        hardware_constraint, workgroup_constraint
-                    )
+        constraints = []
+        for workgroup_constraint in self.workgroup_constraints:
+            # Ignore `workgroup_dim > 2` and dimensions with only one thread (ie. the value is always 0).
+            if (
+                workgroup_constraint.workgroup_dim > 2
+                or (
+                    workgroup_constraint.workgroup_dim != 0
+                    and hardware_constraint.waves_per_block[
+                        workgroup_constraint.workgroup_dim
+                    ]
+                    == 1
+                )
+                or not workgroup_constraint.primary
+            ):
+                continue
+            constraint = ImplicitWaveConstraint(
+                workgroup_constraint.dim,
+                workgroup_constraint.tile_size
+                / hardware_constraint.waves_per_block[
+                    workgroup_constraint.workgroup_dim
+                ],
+            )
+            constraint.set_wave_id_from_hardware_and_workgroup_constraint(
+                hardware_constraint, workgroup_constraint
+            )
+            constraints.append(constraint)
+        self.constraints += constraints
 
     def initialize_reductions(self, trace: CapturedTrace) -> None:
         """
@@ -493,7 +525,7 @@ class LaunchableWave(Launchable):
         return [
             partial(initialize_iter_args, trace),
             partial(self.create_induction_vars, trace),
-            partial(self.initialize_wave_constraints, trace),
+            partial(self.initialize_implicit_constraints, trace),
             partial(self.initialize_reductions, trace),
             partial(self.initialize_symbolic_constraints, trace),
             partial(self.initialize_workgroup_constraints, trace),

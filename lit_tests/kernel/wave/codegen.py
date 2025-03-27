@@ -64,8 +64,6 @@ def test_read():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def read(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -95,9 +93,9 @@ def test_read():
     # CHECK:            %[[D4:.+]] = arith.addi %[[D3]], %[[D1]] overflow<nsw, nuw> : index
     # CHECK:            %[[D4_1:.+]] = arith.addi %[[D4]], %[[THREAD_ID_X]] overflow<nsw, nuw> : index
     # CHECK-DAG:        %[[C16_1:.+]] = arith.constant 16 : index
-    # CHECK:            %[[D5:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16_1]] overflow<nsw, nuw> : index
-    # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
-    # CHECK:            %[[D6:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D5:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16_1]] overflow<nsw, nuw> : index
+    # CHECK-DAG:        %[[C16_2:.+]] = arith.constant 16 : index
+    # CHECK:            %[[D6:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16_2]] overflow<nsw, nuw> : index
     # CHECK:            %[[D7:.+]] = arith.addi %[[D6]], %[[D5]] overflow<nsw, nuw> : index
     # CHECK:            %[[D8:.+]] = vector.load %[[D0]][%[[D4_1]], %[[D7]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>,
     # CHECK-SAME:         vector<16xf16>
@@ -112,8 +110,6 @@ def test_read_mapped():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -152,9 +148,7 @@ def test_read_mapped():
     # CHECK:            %[[D5:.+]] = arith.addi %[[D4]], %[[D0]] overflow<nsw, nuw> : index
     # CHECK-DAG:        %[[C16_2:.+]] = arith.constant 16 : index
     # CHECK:            %[[D6:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16_2]] overflow<nsw, nuw> : index
-    # CHECK-DAG:        %[[C17:.+]] = arith.constant 17 : index
-    # CHECK:            %[[D7:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C17]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D8:.+]] = arith.addi %[[D7]], %[[D6]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D7:.+]] = arith.addi %[[D6]], %[[THREAD_ID_Y]] overflow<nsw, nuw> : index
     # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<[0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240]> : vector<16xindex>
     # CHECK-DAG:        %[[CST_2:.+]] = arith.constant 0.000000e+00 : f16
     # CHECK-COUNT-16:   vector.maskedload
@@ -169,8 +163,6 @@ def test_read_mapped_buffer():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -213,8 +205,6 @@ def test_read_write():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def read_write(
@@ -229,7 +219,6 @@ def test_read_write():
 
     # CHECK-LABEL:    func.func @read_write
     # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
-    # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
     # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
     # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
     # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
@@ -244,8 +233,8 @@ def test_read_write():
     # CHECK:            %[[D3:.+]] = arith.muli %[[D2]], %[[C16]] overflow<nsw, nuw> : index
     # CHECK:            %[[D4:.+]] = arith.addi %[[D3]], %[[D1]] overflow<nsw, nuw> : index
     # CHECK:            %[[D5:.+]] = arith.addi %[[D4]], %[[THREAD_ID_X]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D6:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D7:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D6:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D7:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
     # CHECK:            %[[D8:.+]] = arith.addi %[[D7]], %[[D6]] overflow<nsw, nuw> : index
     # CHECK:            %[[D9:.+]] = vector.load %[[D0]][%[[D5]], %[[D8]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>,
     # CHECK-SAME:         vector<16xf16>
@@ -266,8 +255,6 @@ def test_read_write_diagonal():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def read_write_diagonal(
@@ -288,7 +275,6 @@ def test_read_write_diagonal():
 
     # CHECK-LABEL:    func.func @read_write_diagonal
     # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
-    # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
     # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
     # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
     # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
@@ -308,8 +294,8 @@ def test_read_write_diagonal():
     # CHECK:            %[[D6:.*]] = arith.index_cast %[[D5]] : vector<1xindex> to vector<1xi64>
     # CHECK:            %[[D7:.*]] = vector.extract %[[D6]][0] : i64 from vector<1xi64>
     # CHECK:            %[[D8:.*]] = vector.splat %[[D7]] : vector<16xi64>
-    # CHECK:            %[[D9:.*]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D10:.*]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D9:.*]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D10:.*]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
     # CHECK:            %[[BASE_INDEX_Y:.*]] = arith.addi %[[D10]], %[[D9]] overflow<nsw, nuw> : index
     # CHECK:            %[[D12:.*]] = vector.splat %[[BASE_INDEX_Y]] : vector<16xindex>
     # CHECK:            %[[D13:.*]] = arith.addi %[[D12]], %[[CST]] overflow<nsw, nuw> : vector<16xindex>
@@ -329,8 +315,6 @@ def test_read_write_masked():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def read_write_masked(
@@ -362,7 +346,6 @@ def test_read_write_masked():
     # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:        %[[C1:.*]] = arith.constant 1 : index
     # CHECK-DAG:        %[[C4:.*]] = arith.constant 4 : index
-    # CHECK-DAG:        %[[C8:.*]] = arith.constant 8 : index
     # CHECK-DAG:        %[[C64:.*]] = arith.constant 64 : index
     # CHECK:            %[[WORKGROUP_ID_0:.*]] = stream.dispatch.workgroup.id[0] : index
     # CHECK:            %[[WORKGROUP_ID_1:.*]] = stream.dispatch.workgroup.id[1] : index
@@ -375,8 +358,8 @@ def test_read_write_masked():
     # CHECK:            %[[D3:.*]] = arith.muli %[[D2]], %[[C4]] overflow<nsw, nuw> : index
     # CHECK:            %[[D4:.*]] = arith.addi %[[D3]], %[[D1]] overflow<nsw, nuw> : index
     # CHECK:            %[[D5:.*]] = arith.addi %[[D4]], %[[THREAD_ID_X]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D6:.*]] = arith.muli %[[WORKGROUP_ID_1]], %[[C4]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D7:.*]] = arith.muli %[[THREAD_ID_Y]], %[[C8]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D6:.*]] = arith.muli %[[THREAD_ID_Y]], %[[C4]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D7:.*]] = arith.muli %[[WORKGROUP_ID_1]], %[[C4]] overflow<nsw, nuw> : index
     # CHECK:            %[[D8:.*]] = arith.addi %[[D7]], %[[D6]] overflow<nsw, nuw> : index
     # CHECK:            %[[D9:.*]] = vector.splat %[[D8]] : vector<4xindex>
     # CHECK:            %[[D10:.*]] = arith.addi %[[D9]], %[[CST_1]] overflow<nsw, nuw> : vector<4xindex>
@@ -401,8 +384,6 @@ def test_read_write_masked_shared():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def read_write_masked_shared(
@@ -444,8 +425,6 @@ def test_read_write_mapping():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -468,7 +447,6 @@ def test_read_write_mapping():
 
     # CHECK-LABEL:    func.func @read_write_mapping
     # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding)
-    # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
     # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
     # CHECK-DAG:        %[[C16:.+]] = arith.constant 16 : index
     # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
@@ -483,8 +461,8 @@ def test_read_write_mapping():
     # CHECK:            %[[D3:.+]] = arith.muli %[[D2]], %[[C16]] overflow<nsw, nuw> : index
     # CHECK:            %[[D4:.+]] = arith.addi %[[D3]], %[[D1]] overflow<nsw, nuw> : index
     # CHECK:            %[[D5:.+]] = arith.addi %[[D4]], %[[THREAD_ID_X]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D6:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D7:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D6:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D7:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
     # CHECK:            %[[D8:.+]] = arith.addi %[[D7]], %[[D6]] overflow<nsw, nuw> : index
     # CHECK:            %[[D9:.+]] = vector.load %[[D0]][%[[D5]], %[[D8]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>,
     # CHECK-SAME:         vector<16xf16>
@@ -502,8 +480,6 @@ def test_read_write_dynamic_mapping():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -539,7 +515,6 @@ def test_read_write_dynamic_mapping():
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
     # CHECK-DAG:        %[[D0:.*]] = arith.constant 0 : index
     # CHECK-DAG:        %[[C16:.*]] = arith.constant 16 : index
-    # CHECK-DAG:        %[[C32:.*]] = arith.constant 32 : index
     # CHECK-DAG:        %[[C64:.*]] = arith.constant 64 : index
     # CHECK-DAG:        %[[C256:.*]] = arith.constant 256 : index
     # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
@@ -570,8 +545,6 @@ def test_read_write_dynamic_mapping_broadcast():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -625,8 +598,6 @@ def test_read_write_dynamic_mapping_chain():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -675,19 +646,22 @@ def test_read_write_dynamic_mapping_chain():
     print(read_write_dynamic_mapping_chain.asm)
 
     # CHECK-LABEL:    func.func @read_write_dynamic_mapping_chain
-    # CHECK:            %[[C8:.*]] = arith.constant 8 : index
+    # CHECK:            %[[C4:.*]] = arith.constant 4 : index
+    # CHECK:            %[[C2:.*]] = arith.constant 2 : index
     # CHECK:            %[[thread_id_y:.*]] = gpu.thread_id  y
-    # CHECK:            %[[D7:.*]] = arith.addi %{{.*}}, %[[thread_id_y]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D8:.*]] = vector.load %{{.*}}[%[[D5:.*]], %[[D7]]] : memref<16x2xi32, strided<[2, 1], offset: ?>>, vector<1xi32>
+    # CHECK:            %[[D5:.*]] = arith.muli %[[thread_id_y]], %[[C2]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D6:.*]] = arith.addi %{{.*}}, %[[D5]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D7:.*]] = arith.divsi %[[D6]], %[[C4]] : index
+    # CHECK:            %[[D8:.*]] = vector.load %{{.*}}[%[[D4:.*]], %[[D7]]] : memref<16x2xi32, strided<[2, 1], offset: ?>>, vector<1xi32>
     # CHECK:            %[[D10:.*]] = arith.index_cast %[[D8]] : vector<1xi32> to vector<1xindex>
     # CHECK:            %[[D11:.*]] = vector.extract %[[D10]][0] : index from vector<1xindex>
-    # CHECK:            %[[D12:.*]] = vector.load %{{.*}}[%[[D5]], %[[D11]]] : memref<16x4xi32, strided<[4, 1], offset: ?>>, vector<1xi32>
+    # CHECK:            %[[D12:.*]] = vector.load %{{.*}}[%[[D4]], %[[D11]]] : memref<16x4xi32, strided<[4, 1], offset: ?>>, vector<1xi32>
     # CHECK:            %[[D14:.*]] = arith.index_cast %[[D12]] : vector<1xi32> to vector<1xindex>
     # CHECK:            %[[D15:.*]] = vector.extract %[[D14]][0] : index from vector<1xindex>
-    # CHECK:            %[[D16:.*]] = vector.load %{{.*}}[%[[D5]], %[[D15]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
-    # CHECK:            %[[D19:.*]] = arith.muli %[[thread_id_y]], %[[C8]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D20:.*]] = arith.addi %[[D19]], %{{.*}} overflow<nsw, nuw> : index
-    # CHECK:            vector.store %[[D16]], %{{.*}}[%[[D5]], %[[D20]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
+    # CHECK:            %[[D16:.*]] = vector.load %{{.*}}[%[[D4]], %[[D15]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
+    # CHECK:            %[[D19:.*]] = arith.muli %[[thread_id_y]], %[[C4]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D20:.*]] = arith.addi %{{.*}}, %[[D19]] overflow<nsw, nuw> : index
+    # CHECK:            vector.store %[[D16]], %{{.*}}[%[[D4]], %[[D20]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
 
 
 @run_test
@@ -702,8 +676,6 @@ def test_read_write_dynamic_symbol():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -764,8 +736,6 @@ def test_read_write_dynamic_symbol_expr():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -828,8 +798,6 @@ def test_read_write_conditional():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test_conditional(
@@ -877,8 +845,6 @@ def test_dynamic_copy():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def dynamic_copy(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -897,7 +863,6 @@ def test_dynamic_copy():
     # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<16xf16>
     # CHECK-DAG:        %[[CST_0:.+]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> :
     # CHECK-SAME:         vector<16xindex>
-    # CHECK-DAG:        %[[C32:.+]] = arith.constant 32 : index
     # CHECK-DAG:        %[[C64:.+]] = arith.constant 64 : index
     # CHECK-DAG:        %[[C16]] = arith.constant 16 : index
     # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
@@ -912,8 +877,8 @@ def test_dynamic_copy():
     # CHECK:            %[[D3:.+]] = arith.muli %[[D2]], %[[C16]] overflow<nsw, nuw> : index
     # CHECK:            %[[D4:.+]] = arith.addi %[[D3]], %[[D1]] overflow<nsw, nuw> : index
     # CHECK:            %[[D5:.+]] = arith.addi %[[D4]], %[[THREAD_ID_X]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D6:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
-    # CHECK:            %[[D7:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C32]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D6:.+]] = arith.muli %[[THREAD_ID_Y]], %[[C16]] overflow<nsw, nuw> : index
+    # CHECK:            %[[D7:.+]] = arith.muli %[[WORKGROUP_ID_1]], %[[C16]] overflow<nsw, nuw> : index
     # CHECK:            %[[D8:.+]] = arith.addi %[[D7]], %[[D6]] overflow<nsw, nuw> : index
     # CHECK:            %[[D9:.+]] = vector.splat %[[D8]] : vector<16xindex>
     # CHECK:            %[[D10:.+]] = arith.addi %[[D9]], %[[CST_0]] overflow<nsw, nuw> : vector<16xindex>
@@ -938,8 +903,6 @@ def test_add_float():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def add(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
@@ -963,8 +926,6 @@ def test_add_integer():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32]):
@@ -987,8 +948,6 @@ def test_unary_lowerings():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def test(
@@ -1049,8 +1008,6 @@ def test_reduce_sum():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1126,8 +1083,6 @@ def test_mutliple_local_reduce_sum():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1191,8 +1146,6 @@ def test_reduction_and_elemwise():
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1278,8 +1231,6 @@ def test_tiled_reduce_max():
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1373,8 +1324,6 @@ def test_tiled_reduce_min():
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1469,8 +1418,6 @@ def test_multiple_reduction_iv():
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1569,8 +1516,6 @@ def test_reduce_propagate_broadcast():
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1640,8 +1585,6 @@ def test_explicit_broadcast():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def explicit_broadcast(
@@ -1713,8 +1656,6 @@ def test_broadcast_add():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def broadcast_add(
@@ -1783,8 +1724,6 @@ def test_binary_lowerings():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def binary_lowerings(
@@ -1818,8 +1757,6 @@ def test_int_comparisons():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def cmp_lowerings(
@@ -1860,8 +1797,6 @@ def test_verbose_int_comparisons():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def verbose_cmp_lowerings(
@@ -1906,8 +1841,6 @@ def test_get_item():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     @tkw.wave(constraints)
     def get_item(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):

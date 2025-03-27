@@ -73,8 +73,6 @@ def gemm(
 def test_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, 0)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
     constraints += [
         tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
@@ -146,13 +144,13 @@ def test_gemm():
         # CHECK-NEXT: placeholder(_name=b
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: register
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) : 1 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: register(
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
         # CHECK-NEXT: register(
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) : 1 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: register(
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: reduction(
@@ -161,13 +159,13 @@ def test_gemm():
         # CHECK-NEXT: get_result(value=reduction, res_idx=2)
         # CHECK-NEXT: get_result(value=reduction, res_idx=3)
         # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) : 1 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: write(register_=get_result_M:0_N:1_K:0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
         # CHECK-NEXT: write(register_=get_result_M:1_N:0_K:0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) : 1 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: write(register_=get_result_M:1_N:1_K:0, memory=c
-        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1})
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
 
         # Reduction subgraph:
         # CHECK: %shared_memory_barrier_1
@@ -245,22 +243,22 @@ def test_gemm():
         # CHECK-NEXT: write(register_=read_38, memory=allocate, elements_per_thread=8,
         # CHECK-SAME: index={M: Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 1 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: read(memory=b, elements_per_thread=8,
-        # CHECK-SAME: index={N: $WG1*BLOCK_N + BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64) : 1 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={N: $WG1*BLOCK_N + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64) : 1 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: write(register_=read_39, memory=allocate_1, elements_per_thread=8,
-        # CHECK-SAME: index={N: BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8), 64) : 1 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={N: Mod(16*$T1 + 32*$T2 + floor($T0/8), 64) : 1 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: read(memory=b, elements_per_thread=8,
-        # CHECK-SAME: index={N: $WG1*BLOCK_N + BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 1 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SAME: index={N: $WG1*BLOCK_N + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 1 : 1, K: ARGK*BLOCK_K + 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: write(register_=read_40, memory=allocate_1, elements_per_thread=8,
-        # CHECK-SMAE: index={N: BLOCK_N/2 + Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 1 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
+        # CHECK-SMAE: index={N: Mod(16*$T1 + 32*$T2 + floor($T0/8) + 32, 64) : 1 : 1, K: 8*(Mod($T0, 8)) : 8 : 1})
         # CHECK-NEXT: barrier()
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: BLOCK_N/2 + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: BLOCK_N/2 + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: BLOCK_N/2 + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: BLOCK_N/2 + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
-        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})
+        # CHECK-NEXT: read(memory=allocate_1, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_20, write_21], index={N: Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 48 : 4 : 1})
         # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_18, write_19], index={M: Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1})
         # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_18, write_19], index={M: Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1})
         # CHECK-NEXT: read(memory=allocate, elements_per_thread=4, mapping_dynamic_vals=(), _write_dependency=[write_18, write_19], index={M: Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 32 : 4 : 1})

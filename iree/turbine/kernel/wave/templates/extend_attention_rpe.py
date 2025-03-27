@@ -87,8 +87,6 @@ def get_extend_attention_rpe_kernel(
     constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 2, primary=False)]
     constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3)]
     constraints += [tkw.TilingConstraint(N_KV, BLOCK_N_KV)]
-    constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / M_WAVES)]
-    constraints += [tkw.WaveConstraint(D_KV, BLOCK_D_KV / N_WAVES)]
 
     if mfma_variant[1] == MMAType.F32_16x16x16_F16:
         Mvec = 16
