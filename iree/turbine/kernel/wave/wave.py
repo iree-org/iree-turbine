@@ -316,7 +316,8 @@ class LaunchableWave(Launchable):
         hardware_constraint = self.hardware_constraints[0]
         constraints = []
         for workgroup_constraint in self.workgroup_constraints:
-            # Ignore `workgroup_dim > 2` and dimensions with only one thread (ie. the value is always 0).
+            # Ignore `workgroup_dim > 2` and dimensions with only one 
+            # wave (ie. the value is always 0).
             if (
                 workgroup_constraint.workgroup_dim > 2
                 or (
