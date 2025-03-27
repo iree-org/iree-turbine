@@ -48,7 +48,6 @@ def schedule_reduction(
     constraints: list[Constraint],
     use_scheduling_barriers: bool = False,
     scheduling_type: SchedulingType = SchedulingType.NONE,
-    enable_multi_buffering: bool = False,
 ):
     """
     Clones the reduction graph and does the following:
@@ -96,14 +95,11 @@ def schedule_reduction(
         if node not in inverse_node_map:
             continue
         custom = get_custom(inverse_node_map[node])
-        stage = cycle // scheduler.initiation_interval
-
-        # Update scheduling parameters
         custom.scheduling_parameters = {
             "absolute_cycle": cycle,
-            "cycle": cycle % scheduler.initiation_interval,
-            "stage": stage,
-            "initiation_interval": scheduler.initiation_interval,
+            "cycle": cycle % initiation_interval,
+            "stage": cycle // initiation_interval,
+            "initiation_interval": initiation_interval,
         }
         # Erase edges between outputs and iter args.
         if isinstance(get_custom(node), IterArg):
@@ -169,9 +165,8 @@ def schedule_reduction(
     )
 
     # Update new reduction count.
-    new_reduction.count = max_induction_variable - (scheduler.num_stages - 1)
-
-    if enable_multi_buffering:
+    new_reduction.count = max_induction_variable - (num_stages - 1)
+    if scheduling_type == SchedulingType.MODULO_MULTI_BUFFERED:
         multi_buffer(trace)
 
 
@@ -180,12 +175,10 @@ def schedule_graph(
     constraints: list[Constraint],
     use_scheduling_barriers: bool = False,
     scheduling_type: SchedulingType = SchedulingType.NONE,
-    enable_multi_buffering: bool = False,
 ):
     """
     Given a graph, pipelines the reductions in the graph.
     """
-
     if scheduling_type == SchedulingType.NONE:
         return
 
@@ -203,5 +196,4 @@ def schedule_graph(
             constraints,
             use_scheduling_barriers,
             scheduling_type,
-            enable_multi_buffering,
         )
