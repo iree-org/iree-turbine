@@ -73,6 +73,7 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
     "enable_scheduling",
+   
     [SchedulingType.NONE, SchedulingType.PREFETCH, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
 )
 @param_bool("dynamic_dims", "dyn")
@@ -179,11 +180,8 @@ def testGemm(
         subs=hyperparams,
         canonicalize=True,
         run_bench=run_bench,
-        schedule=(
-            enable_scheduling == "on" or enable_scheduling == "on+multibuffering"
-        ),
+        schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        enable_multi_buffering=(enable_scheduling == "on+multibuffering"),
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
@@ -218,10 +216,10 @@ def testGemm(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED]
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
 )
 @param_bool("dynamic_dims", "dyn")
-
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -324,11 +322,8 @@ def testVMFMAGemm(
         subs=hyperparams,
         canonicalize=True,
         run_bench=run_bench,
-        schedule=(
-            enable_scheduling == "on" or enable_scheduling == "on+multibuffering"
-        ),
+        schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        enable_multi_buffering=(enable_scheduling == "on+multibuffering"),
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
@@ -365,7 +360,8 @@ def testVMFMAGemm(
 @require_cdna2
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED]
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
 )
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -470,11 +466,8 @@ def testCDNA2IntGemm(
         subs=hyperparams,
         canonicalize=True,
         run_bench=run_bench,
-        schedule=(
-            enable_scheduling == "on" or enable_scheduling == "on+multibuffering"
-        ),
+        schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        enable_multi_buffering=(enable_scheduling == "on+multibuffering"),
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
@@ -512,7 +505,8 @@ def testCDNA2IntGemm(
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED]
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
 )
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -587,11 +581,8 @@ def testCDNA3IntGemm(
         subs=hyperparams,
         canonicalize=True,
         run_bench=run_bench,
-        schedule=(
-            enable_scheduling == "on" or enable_scheduling == "on+multibuffering"
-        ),
+        schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        enable_multi_buffering=(enable_scheduling == "on+multibuffering"),
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -701,11 +692,8 @@ def testF8Gemm(
         subs=hyperparams,
         canonicalize=True,
         run_bench=run_bench,
-        schedule=(
-            enable_scheduling == "on" or enable_scheduling == "on+multibuffering"
-        ),
+        schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        enable_multi_buffering=False,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -807,11 +795,8 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
         subs=hyperparams,
         canonicalize=True,
         run_bench=run_bench,
-        schedule=(
-            enable_scheduling == "on" or enable_scheduling == "on+multibuffering"
-        ),
+        schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-        enable_multi_buffering=False,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
