@@ -39,8 +39,8 @@ from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
 from iree.turbine.kernel.wave.shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
 )
-from iree.turbine.kernel.wave.scheduling.schedule import schedule_graph
-from iree.turbine.kernel.wave.index_sequence_analysis import (
+from iree.turbine.kernel.wave.scheduling.schedule import schedule_graph, SchedulingType
+from iree.turbine.kernel.wave.analysis.index_sequence_analysis import (
     set_node_indices,
     set_post_expansion_indices,
 )
@@ -127,7 +127,12 @@ def test_gemm_multibuffering():
         hoist_loop_invariant_ops(trace, constraints)
         minimize_global_loads(trace, constraints)
         apply_shared_memory_indexing_corrections(trace, constraints)
-        schedule_graph(trace, constraints, True, enable_multi_buffering=True)
+        schedule_graph(
+            trace,
+            constraints,
+            True,
+            scheduling_type=SchedulingType.MODULO_MULTI_BUFFERED,
+        )
 
         def print_affected_node(node: fx.Node):
             match custom := get_custom(node):
@@ -147,34 +152,38 @@ def test_gemm_multibuffering():
         for node in trace.get_root_graph().nodes:
             print_affected_node(node)
 
-        # CHECK: allocate(shape=(2*M, K), distributed_shape=(2*BLOCK_M, BLOCK_K + 4)
-        # CHECK-NEXT: allocate(shape=(2*N, K), distributed_shape=(2*BLOCK_N, BLOCK_K + 4)
-        # CHECK: reduction begin
-        # CHECK-NEXT: read(memory=allocate
-        # CHECK-SAME: index={M: BLOCK_M*(Mod($ARGK, 2)) + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1}
-        # CHECK-NEXT: read(memory=allocate_1
-        # CHECK-SAME: {N: BLOCK_N*(Mod($ARGK, 2)) + BLOCK_N/2 + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1}
-        # CHECK-NEXT: read(memory=allocate
-        # CHECK-SAME: index={M: BLOCK_M*(Mod($ARGK, 2)) + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1}
-        # CHECK-NEXT: read(memory=allocate
-        # CHECK-SAME: index={M: BLOCK_M*(Mod($ARGK, 2)) + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1}
-        # CHECK-NEXT: write(register_=read_20
+        # CHECK: allocate(shape=(2*N, K), distributed_shape=(2*BLOCK_N, BLOCK_K + 4)
+        # CHECK-NEXT: allocate(shape=(2*M, K), distributed_shape=(2*BLOCK_M, BLOCK_K + 4)
+        # CHECK-NEXT: write(register_=read_21,
         # CHECK-SAME: index={M: xor(BLOCK_M*(Mod($ARGK, 2)), BLOCK_M) + Mod(32*$T1 + floor($T0/4), 64) : 1 : 1, K: 8*(Mod($T0, 4)) : 8 : 1}
-        # CHECK-NEXT: write(register_=read_21
+        # CHECK-NEXT: write(register_=read_22,
         # CHECK-SAME: index={N: BLOCK_N/2 + xor(BLOCK_N*(Mod($ARGK, 2)), BLOCK_N) + Mod(32*$T1 + floor($T0/4), 64) : 1 : 1, K: 8*(Mod($T0, 4)) : 8 : 1}
-        # CHECK-NEXT: read(memory=allocate_1
+        # CHECK: reduction begin
+        # CHECK-NEXT: read(memory=allocate,
+        # CHECK-SAME: index={M: BLOCK_M*(Mod($ARGK, 2)) + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1}
+        # CHECK-NEXT: read(memory=allocate_1,
+        # CHECK-SAME: {N: BLOCK_N*(Mod($ARGK, 2)) + BLOCK_N/2 + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1}
+        # CHECK-NEXT: read(memory=allocate,
+        # CHECK-SAME: index={M: BLOCK_M*(Mod($ARGK, 2)) + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1}
+        # CHECK-NEXT: read(memory=allocate,
+        # CHECK-SAME: index={M: BLOCK_M*(Mod($ARGK, 2)) + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1}
+        # CHECK-NEXT: write(register_=read_21,
+        # CHECK-SAME: index={M: xor(BLOCK_M*(Mod($ARGK, 2)), BLOCK_M) + Mod(32*$T1 + floor($T0/4), 64) : 1 : 1, K: 8*(Mod($T0, 4)) : 8 : 1}
+        # CHECK-NEXT: write(register_=read_22,
+        # CHECK-SAME: index={N: BLOCK_N/2 + xor(BLOCK_N*(Mod($ARGK, 2)), BLOCK_N) + Mod(32*$T1 + floor($T0/4), 64) : 1 : 1, K: 8*(Mod($T0, 4)) : 8 : 1}
+        # CHECK-NEXT: read(memory=allocate_1,
         # CHECK-SAME: index={N: BLOCK_N/2 + xor(BLOCK_N*(Mod($ARGK, 2)), BLOCK_N) + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) : 4 : 1}
-        # CHECK-NEXT: read(memory=allocate_1
+        # CHECK-NEXT: read(memory=allocate_1,
         # CHECK-SAME: index={N: BLOCK_N/2 + xor(BLOCK_N*(Mod($ARGK, 2)), BLOCK_N) + Mod($T0, 16) + 16 : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1}
-        # CHECK-NEXT: read(memory=allocate
+        # CHECK-NEXT: read(memory=allocate,
         # CHECK-SAME: index={M: xor(BLOCK_M*(Mod($ARGK, 2)), BLOCK_M) + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1}
-        # CHECK-NEXT: read(memory=allocate_1
+        # CHECK-NEXT: read(memory=allocate_1,
         # CHECK-SAME: index={N: BLOCK_N/2 + xor(BLOCK_N*(Mod($ARGK, 2)), BLOCK_N) + Mod($T0, 16) : 1 : 1, K: 4*floor((Mod($T0, 64))/16) + 16 : 4 : 1}
         # CHECK-NEXT: reduction end
-        # CHECK-NEXT: read(memory=allocate
-        # CHECK-NEXT: read(memory=allocate_1
-        # CHECK-NEXT: read(memory=allocate
-        # CHECK-NEXT: read(memory=allocate
+        # CHECK-NEXT: read(memory=allocate,
+        # CHECK-NEXT: read(memory=allocate_1,
+        # CHECK-NEXT: read(memory=allocate,
+        # CHECK-NEXT: read(memory=allocate,
 
 
 if __name__ == "__main__":
