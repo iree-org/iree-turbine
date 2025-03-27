@@ -41,6 +41,9 @@ class WaveCompileOptions:
     benchmark_batch_size: int = None
     benchmark_repetitions: int = None
     benchmark_results_file: str = None
+    capture_trace: bool = False
+    bench_with_constant_weights: bool = False
+    bench_file: str = None
 
     # === Cache options ===
     kernel_hash: list[str] = None
