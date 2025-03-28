@@ -4,15 +4,20 @@ from pathlib import Path
 from typing import Dict, Sequence, Union
 
 import torch
+
 from iree.compiler.tools.core import compile_file, CompilerToolError
 
 from .conv import ConvSignature, ConvSignatureStorage
-from .miopen_parser import command_to_signature
 from .generate import _load_commands
 from .launch import CACHE_BASE_DIR, _get_module_asm
+from .miopen_parser import command_to_signature
+from ....runtime.device import get_device_from_torch
 from ....support.ir_imports import MLIRError
 from ....support.logging import runtime_logger as logger
-from ....runtime.device import get_device_from_torch
+
+__all__ = [
+    "CachePopulator",
+]
 
 
 def _get_unique_torch_device_list():
