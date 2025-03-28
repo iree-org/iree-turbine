@@ -7,7 +7,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from .conv import *
-from .generate import *
 from .miopen_parser import *
 from .utils import *
 from .launch import *
+from .preload import *

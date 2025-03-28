@@ -20,9 +20,9 @@ _sample_commands = [
     "convbfp16 -n 16 -c 96 -H 48 -W 32 -k 96 -y 3 -x 1 -p 2 -q 0 -u 1 -v 1 -l 2 -j 2 -m conv -g 1 -F 2 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC",
 ]
 _expected_names = [
-    "conv_2d_float32_forward_100x3x32x32_32x3x3x3_1x1s_0x0p_1x1d_1g",
-    "conv_2d_bfloat16_forward_100x3x32x32_32x3x3x3_1x1s_0x0p_1x1d_1g",
-    "conv_2d_bfloat16_input_backward_16x48x32x96_96x3x1x96_1x1s_2x0p_2x2d_1g",
+    "conv_2d_float32_forward_100x3x32x32_nchw_32x3x3x3_fchw_nfhw_1x1s_0x0p_1x1d_1g",
+    "conv_2d_bfloat16_forward_100x3x32x32_nchw_32x3x3x3_fchw_nfhw_1x1s_0x0p_1x1d_1g",
+    "conv_2d_bfloat16_input_backward_16x48x32x96_nhwc_96x3x1x96_fhwc_nhwf_1x1s_2x0p_2x2d_1g",
 ]
 
 

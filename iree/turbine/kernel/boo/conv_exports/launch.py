@@ -3,6 +3,9 @@ import shutil
 import warnings
 
 from pathlib import Path
+from typing import Union
+
+from iree.compiler.tools.core import compile_file, CompilerToolError
 
 from .conv import ConvSignature
 from ....aot import export
@@ -17,7 +20,19 @@ __all__ = [
 ]
 
 _default_cache_base_dir = Path.home() / ".cache" / "turbine_kernels" / "boo"
-CACHE_BASE_DIR = Path(os.environ.get("BOO_CACHE_DIR", _default_cache_base_dir))
+
+
+def set_boo_cache(cache_dir: Union[Path, str, None] = None) -> Path:
+    global CACHE_BASE_DIR
+    if cache_dir:
+        CACHE_BASE_DIR = Path(cache_dir)
+        return CACHE_BASE_DIR
+    if not "CACHE_BASE_DIR" in globals():
+        CACHE_BASE_DIR = Path(os.environ.get("BOO_CACHE_DIR", _default_cache_base_dir))
+        return CACHE_BASE_DIR
+
+
+set_boo_cache()
 BOO_CACHE_ON = int(os.environ.get("BOO_CACHE_ON", 1))
 
 
@@ -29,6 +44,28 @@ def clear_cache_dir():
     if not CACHE_BASE_DIR.is_dir():
         return
     shutil.rmtree(CACHE_BASE_DIR)
+
+
+def _out_of_process_compile(func_name, key_hashes_and_flags):
+    mlir_path = CACHE_BASE_DIR / func_name / f"{func_name}.mlir"
+    if not mlir_path.is_file():
+        logger.debug("no mlir file found at %s", str(mlir_path))
+        return
+
+    for key_hash, flags in key_hashes_and_flags:
+        try:
+            vmfb_path: Path = CACHE_BASE_DIR / func_name / f"{key_hash}.vmfb"
+            if vmfb_path.is_file():
+                logger.debug("found vmfb in cache: %s", str(vmfb_path))
+                continue
+            logger.debug("Compiling vmfb to cache: %s", str(vmfb_path))
+            options = {
+                "output_file": str(vmfb_path),
+                "extra_args": flags,
+            }
+            compile_file(str(mlir_path), **options)
+        except CompilerToolError as e:
+            logger.debug("failed compilation with diagnostics: %s", str(e))
 
 
 def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> str:

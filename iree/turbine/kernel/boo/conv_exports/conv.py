@@ -270,7 +270,10 @@ class ConvSignature:
         name_items.extend(
             [
                 l2s(self.input_shape),
+                self.input_layout.lower(),
                 l2s(self.kernel_shape),
+                self.kernel_layout.lower().replace("n", "f"),
+                self.output_layout.lower().replace("c", "f"),
                 l2s(self.stride) + "s",
                 l2s(self.padding) + "p",
                 l2s(self.dilation) + "d",
