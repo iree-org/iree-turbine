@@ -1365,13 +1365,11 @@ def test_tiled_reduce_min():
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
-    def test(
+    def tiled_reduce_min(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
@@ -1404,10 +1402,10 @@ def test_tiled_reduce_min():
         compile_to_mlir=True,
     )
     options = set_default_compile_config(options)
-    test = wave_compile(options, test)
+    test = wave_compile(options, tiled_reduce_min)
     print(test.asm)
 
-    # CHECK-LABEL: func @test
+    # CHECK-LABEL: func @tiled_reduce_min
     # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i32
     # CHECK-DAG: %[[C2:.+]] = arith.constant 2 : i32
     # CHECK-DAG: %[[C4:.+]] = arith.constant 4 : i32
@@ -1489,7 +1487,7 @@ def test_tiled_reduce_min_unaligned():
             M: shape[0],
             N: shape[1],
             BLOCK_M: 1,
-            BLOCK_N: 64,
+            BLOCK_N: 128,
             ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
@@ -1504,16 +1502,16 @@ def test_tiled_reduce_min_unaligned():
     # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
     # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
     # CHECK-DAG: %[[C2_IDX:.+]] = arith.constant 2 : index
-    # CHECK-DAG: %[[C9_IDX:.+]] = arith.constant 9 : index
-    # CHECK-DAG: %[[C64_IDX:.+]] = arith.constant 64 : index
+    # CHECK-DAG: %[[C5_IDX:.+]] = arith.constant 5 : index
+    # CHECK-DAG: %[[C128_IDX:.+]] = arith.constant 128 : index
     # CHECK-DAG: %[[CST_0:.+]] = arith.constant dense<527> : vector<2xindex>
     # CHECK-DAG: %[[CST_1:.+]] = arith.constant dense<[0, 1]> : vector<2xindex>
     # CHECK-DAG: %[[INIT:.+]] = arith.constant dense<0x7C00> : vector<1xf16>
     # CHECK: %[[THREAD_ID_X:.+]] = gpu.thread_id  x
     # CHECK: %[[MUL:.+]] = arith.muli %[[THREAD_ID_X]], %[[C2_IDX]] overflow<nsw, nuw> : index
     # Tiled Reduction Loop
-    # CHECK: scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C9_IDX]] step %[[C1_IDX]]
-    # CHECK: %[[D9:.*]] = arith.muli %[[ITER]], %[[C64_IDX]] overflow<nsw, nuw> : index
+    # CHECK: scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C5_IDX]] step %[[C1_IDX]]
+    # CHECK: %[[D9:.*]] = arith.muli %[[ITER]], %[[C128_IDX]] overflow<nsw, nuw> : index
     # CHECK: %[[D10:.*]] = arith.addi %[[D9]], %[[MUL]] overflow<nsw, nuw> : index
     # CHECK: %[[D11:.*]] = vector.splat %[[D10]] : vector<2xindex>
     # CHECK: %[[D12:.*]] = arith.addi %[[D11]], %[[CST_1]] overflow<nsw, nuw> : vector<2xindex>
