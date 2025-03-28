@@ -115,8 +115,14 @@ class HardwareConstraint(Constraint):
             self.threads_per_block = (
                 self.waves_per_block[0] * self.threads_per_wave,
             ) + self.waves_per_block[1:]
-        assert math.prod(self.threads_per_block) == self.threads_per_wave * math.prod(
-            self.waves_per_block
+        total_threads_per_block = math.prod(self.threads_per_block)
+        total_waves_per_block = math.prod(self.waves_per_block)
+        expected_threads_per_block = self.threads_per_wave * total_waves_per_block
+        assert (
+            total_threads_per_block == self.threads_per_wave * total_waves_per_block
+        ), (
+            f"Invalid constraints: prod({self.threads_per_block}) = {total_threads_per_block} but must"
+            f" equal {self.threads_per_wave} * prod({self.waves_per_block}) = {expected_threads_per_block}"
         )
 
     def max_elems_per_load(self, element_type: DataType) -> int:
