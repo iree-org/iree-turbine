@@ -61,7 +61,24 @@ conv = get_launchable(signature)
 
 ```
 
-### Prepopulate the launchable cache:
+### Prepopulate the launchable cache
+
+#### From the command line
+
+```
+cd iree/turbine/kernel/boo/conv_exports
+python preload.py "sample_commands.txt"
+```
+
+Will preload the launchable cache for all available devices and for all miopen driver commands in "sample_commands.txt".
+
+To see other options, run:
+
+```
+python preload.py --help
+```
+
+#### From python
 
 ```python
 from iree.turbine.kernel.boo.conv_exports import CachePopulator, get_launchable
