@@ -129,6 +129,9 @@ def set_node_indices(
     print_ir_before: Sequence[str] = [],
     print_ir_after: Sequence[str] = [],
 ):
+    mma_mapping = get_mma_dimensional_mapping(
+        trace, get_hardware_constraint(constraints)
+    )
     trace.walk(partial(set_thread_independent_index, constraints))
 
     if (
@@ -143,9 +146,7 @@ def set_node_indices(
         print_trace(trace)
 
     graph_passes = []
-    if mma_mapping := get_mma_dimensional_mapping(
-        trace, get_hardware_constraint(constraints)
-    ):
+    if mma_mapping:
         graph_passes += [
             partial(
                 set_thread_dependent_index_from_mma, constraints, mma_mapping, trace
