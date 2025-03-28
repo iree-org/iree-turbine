@@ -1460,7 +1460,6 @@ def test_tiled_reduce_min_unaligned():
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.ThreadConstraint(N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
 
