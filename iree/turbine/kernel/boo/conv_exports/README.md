@@ -1,5 +1,6 @@
-This directory contains scripts for exporting various forward and backward convolution configurations to MLIR.
+This directory contains scripts for exporting/executing various forward and backward convolution configurations.
 
+## Generating IR
 To quickly generate some examples, install iree-turbine (e.g., `pip install -e .` from the base directory for iree-turbine), then
 
 ```
@@ -70,3 +71,33 @@ vmfb_path = Path(__file__).parent / "sample.vmfb"
 exported.compile(save_to=vmfb_path)
 
 ```
+
+## Executing convolutions
+
+The `boo_driver.py` script allows for executing convolutions. It uses the same interface as `MIOpenDriver`:
+```console
+$ python boo_driver.py convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+>>> tensor([...], device='cuda:0', size=(128, 24, 48, 384), dtype=torch.bfloat16)
+>>> min=85.24us max=371.23us mean=255.28us stddev=92.66us
+```
+
+The driver commands can also be supplied through a file, using `--commands-file`:
+```console
+$ python boo_driver.py --commands-file sample_commands.txt
+convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+>>> tensor([...], device='cuda:0', size=(128, 24, 48, 384), dtype=torch.bfloat16)
+>>> min=77.76us max=115.29us mean=82.99us stddev=5.07us
+convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 4 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+>>> tensor([...], device='cuda:0', size=(384, 1, 1, 128), dtype=torch.bfloat16)
+>>> min=4383.18us max=4713.31us mean=4407.70us stddev=31.58us
+convbfp16 -n 128 -c 35 -H 48 -W 32 -k 35 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+>>> tensor([...], device='cuda:0', size=(128, 48, 32, 35), dtype=torch.bfloat16)
+>>> min=51.39us max=1989.03us mean=459.48us stddev=654.92us
+...
+```
+
+The `-t 1` option to collect timing is implemented by launching the kernel in a subprocess, which is then traced using `tracy`. Using this requires:
+- IREE runtime python bindings with tracy enabled. If using the pre-built `iree-base-runtime` package, this requires setting `IREE_PY_RUNTIME=tracy` in your environment
+- `iree-tracy-capture`; see https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-capture-cli-tool
+- `tracy-csvexport`; see https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-csvexport-tool
