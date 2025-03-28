@@ -153,7 +153,6 @@ def set_node_indices(
             )
         ]
     elif reduce_mapping := get_reduce_mapping(trace, constraints):
-        print(reduce_mapping)
         graph_passes += [
             partial(
                 set_thread_dependent_index_from_reduce,
