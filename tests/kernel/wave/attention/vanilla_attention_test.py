@@ -44,6 +44,8 @@ from iree.turbine.kernel.wave.templates.vanilla_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
+from torch.nn.attention.flex_attention import flex_attention
+from torch.nn.attention.flex_attention import create_block_mask
 
 
 @require_e2e
@@ -219,6 +221,7 @@ def testAttentionPure(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+@pytest.mark.parametrize("sliding_window", ([-1, 1024]))
 @param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -230,6 +233,7 @@ def testAttentionPure(
 def testAttentionCausal(
     shape: tuple[int],
     enable_scheduling: SchedulingType,
+    sliding_window: int,
     dynamic_dims: bool,
     mfma_variant: tuple[MMAType],
     request,
@@ -250,7 +254,12 @@ def testAttentionCausal(
         dynamic_symbols,
         dynamic_symbols_map,
     ) = get_vanilla_attention_kernel(
-        shape, mfma_variant, dynamic_dims, is_causal=True, is_v_transposed=True
+        shape,
+        mfma_variant,
+        dynamic_dims,
+        is_causal=True,
+        is_v_transposed=True,
+        sliding_window_size=sliding_window,
     )
     q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
@@ -286,9 +295,25 @@ def testAttentionCausal(
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
     # TODO: Add scaling of QK as part of kernel.
     asm = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
-    torch_ref = torch.nn.functional.scaled_dot_product_attention(
-        q, k, v, is_causal=True
-    )
+    if sliding_window > 0:
+
+        def sliding_window_mask(b, h, q_idx, kv_idx):
+            return (q_idx >= kv_idx) & (q_idx - kv_idx <= sliding_window)
+
+        mask = create_block_mask(
+            sliding_window_mask, 1, 1, shape.query_seq_len, shape.kv_seq_len
+        )
+        torch_ref = flex_attention(
+            torch.unsqueeze(q, 0),
+            torch.unsqueeze(k, 0),
+            torch.unsqueeze(v, 0),
+            block_mask=mask,
+        )
+        torch_ref = torch.squeeze(torch_ref, 0)
+    else:
+        torch_ref = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, is_causal=True
+        )
 
     if dump_generated_mlir:
         filename = f"wave_attention_{'x'.join(map(str, shape))}.mlir"
