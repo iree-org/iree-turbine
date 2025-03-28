@@ -196,6 +196,7 @@ def test_copy(shape, use_buffer_ops, request):
     assert_close(a, b)
 
 
+@require_e2e
 @pytest.mark.parametrize(
     "dim_n,block_n",
     [
@@ -249,6 +250,7 @@ def test_copy_1d(dim_n: int, block_n: int):
     assert_close(b, a)
 
 
+@require_e2e
 @pytest.mark.parametrize(
     "shape,block_size",
     [
@@ -331,6 +333,7 @@ def test_copy_2d(shape: tuple[int, int], block_size: tuple[int, int], request):
     assert_close(b, a)
 
 
+@require_e2e
 @pytest.mark.parametrize(
     "shape,block_size",
     [
