@@ -1,5 +1,6 @@
 import argparse
 from collections.abc import Callable, Sequence
+import os
 import shlex
 import statistics
 import torch
@@ -19,6 +20,12 @@ command-line arguments are appended to the arguments from the file.
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--commands-file", type=str, help="read commands from file")
+    parser.add_argument(
+        "--csv",
+        type=str,
+        default=None,
+        help="file to output timing information in csv format",
+    )
     args, extra_cli_args = parser.parse_known_args()
 
     if args.commands_file:
@@ -29,20 +36,30 @@ command-line arguments are appended to the arguments from the file.
     else:
         mio_file_args = [[]]  # use CLI arguments
 
+    csv_file = open(args.csv if args.csv is not None else os.devnull, "w")
+    csv_file.write("arguments,min_time (us)\n")
+
     runner_parser = argparse.ArgumentParser()
     runner_parser.add_argument("--timing", "-t", type=int, help="Enable timing")
     for file_args in mio_file_args:
-        args = file_args + extra_cli_args
-        timing_args, runner_args = runner_parser.parse_known_args(args)
+        driver_args = file_args + extra_cli_args
+        timing_args, runner_args = runner_parser.parse_known_args(driver_args)
         func = lambda: run(runner_args)
+        csv_file.write(shlex.join(driver_args) + ",")
         if not timing_args.timing:
             func()
             continue
 
-        zones, func_name = trace_gpu(func)
+        try:
+            zones, func_name = trace_gpu(func)
+        except Exception as exc:
+            print(f">>> ERROR: {exc}")
+            csv_file.write("N.A.\n")
+            continue
         dispatch_zone_names = [n for n in zones.keys() if n.startswith(func_name)]
         if len(dispatch_zone_names) == 0:
             print(">>> FAILED TO COLLECT TIMING INFO")
+            csv_file.write("failed to collect timing info\n")
             continue
         for zone_name in dispatch_zone_names:
             # Convert from nanoseconds to microseconds
@@ -55,6 +72,13 @@ command-line arguments are appended to the arguments from the file.
             if len(dispatch_zone_names) > 1:
                 s += f"\t({zone_name})"
             print(s)
+
+        if len(dispatch_zone_names) == 0:
+            csv_file.write("no timing info\n")
+        elif len(dispatch_zone_names) > 1:
+            csv_file.write("multiple dispatches\n")
+        else:
+            csv_file.write(f"{min(zones[dispatch_zone_names[0]]) / 1000:.2f}\n")
 
 
 def run(cli_args: Sequence[str]):
@@ -108,14 +132,18 @@ def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
 
             def proc_fn():
                 os.environ["TRACY_PORT"] = tracy_port
-                queue.put(func())
+                try:
+                    queue.put(func())
+                except Exception as exc:
+                    queue.put(str(exc))
+                    raise
 
             process = Process(target=proc_fn)
             process.start()
             process.join()
+            result = queue.get_nowait()
             if process.exitcode != 0:
-                sys.exit(process.exitcode)
-            result = queue.get()
+                raise ValueError(result)
             try:
                 # Tracy will never exit if it fails to connect, so kill the process after some time.
                 out, err = tracy.communicate(timeout=5)
