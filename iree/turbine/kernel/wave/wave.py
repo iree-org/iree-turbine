@@ -26,7 +26,6 @@ from .codegen import WaveEmitter
 from .constraints import (
     Constraint,
     HardwareConstraint,
-    ThreadConstraint,
     TilingConstraint,
     WaveConstraint,
     WorkgroupConstraint,
@@ -178,14 +177,6 @@ class LaunchableWave(Launchable):
             constraint
             for constraint in self.constraints
             if isinstance(constraint, WorkgroupConstraint)
-        ]
-
-    @property
-    def thread_constraints(self) -> list[ThreadConstraint]:
-        return [
-            constraint
-            for constraint in self.constraints
-            if isinstance(constraint, ThreadConstraint)
         ]
 
     @property
