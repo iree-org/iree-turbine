@@ -36,12 +36,10 @@ from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
 
-test_quant_shape = [(1, 4096, 64, 64, 4096)]
-
 
 @require_e2e
 @require_cdna3
-@pytest.mark.parametrize("input_shape", test_quant_shape)
+@pytest.mark.parametrize("input_shape", get_test_shapes("quantized_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
@@ -68,6 +66,7 @@ def testAttentionPure(
         head_size=input_shape[3],
         kv_seq_len=input_shape[4],
     )
+    # Sample tensor scaling from Brevitas SDXL-FP8.
     q_scale = 0.02578124962747097
     k_scale = 0.02363281324505806
     v_scale = 0.010286458767950535
