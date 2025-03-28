@@ -5,15 +5,21 @@ from typing import Dict, Sequence, Union
 
 import torch
 
-from iree.compiler.tools.core import compile_file, CompilerToolError
-
-from .conv import ConvSignature, ConvSignatureStorage
-from .generate import _load_commands
-from .launch import CACHE_BASE_DIR, _get_module_asm
-from .miopen_parser import command_to_signature
-from ....runtime.device import get_device_from_torch
-from ....support.ir_imports import MLIRError
-from ....support.logging import runtime_logger as logger
+from iree.turbine.kernel.boo.conv_exports.conv import (
+    ConvSignature,
+    ConvSignatureStorage,
+)
+from iree.turbine.kernel.boo.conv_exports.generate import _load_commands
+from iree.turbine.kernel.boo.conv_exports.launch import (
+    _get_module_asm,
+    set_boo_cache,
+    _out_of_process_compile,
+    get_launchable,
+)
+from iree.turbine.kernel.boo.conv_exports.miopen_parser import command_to_signature
+from iree.turbine.runtime.device import get_device_from_torch
+from iree.turbine.support.ir_imports import MLIRError
+from iree.turbine.support.logging import runtime_logger as logger
 
 __all__ = [
     "CachePopulator",
@@ -39,12 +45,14 @@ class CachePopulator:
     def __init__(
         self,
         *,
+        cache_dir: Union[str, Path, None] = None,
         devices: Sequence[Union[torch.device, str]] | None = None,
         signatures: Sequence[ConvSignature] = (),
         commands: Sequence[str] = (),
         commands_file: Union[str, Path, None] = None,
         allow_download: bool = False,
     ):
+        self.cache_dir = set_boo_cache(cache_dir)
         self.torch_devices = devices or _get_unique_torch_device_list()
         self.torch_devices = [torch.device(d) for d in self.torch_devices]
         self.signatures = list(signatures)
@@ -115,10 +123,17 @@ class CachePopulator:
         else:
             items = [(mlir_import(s), key_hashes_and_flags) for s in self.signatures]
 
-        pool.starmap(_compile, items)
+        pool.starmap(_out_of_process_compile, items)
         pool.close()
 
-    def get_cache_status(self):
+    def get_cache_status(self, cache_dir: Union[str, Path, None] = None):
+
+        if not cache_dir:
+            from iree.turbine.kernel.boo.conv_exports.launch import CACHE_BASE_DIR
+
+            cache_dir = CACHE_BASE_DIR
+        cache_dir = Path(cache_dir)
+
         key_to_hash = {}
         for d in self.torch_devices:
             key = get_device_from_torch(d).type_cache_key
@@ -126,7 +141,7 @@ class CachePopulator:
                 key.encode(), usedforsecurity=False
             ).hexdigest()
         status = {}
-        for dir in CACHE_BASE_DIR.glob("*/"):
+        for dir in cache_dir.glob("*/"):
             name = dir.name
             status[name] = {}
             status[name]["MLIR"] = (dir / f"{name}.mlir").is_file()
@@ -137,9 +152,6 @@ class CachePopulator:
 
 def mlir_import(sig: ConvSignature) -> str:
     func_name = sig.get_func_name()
-    # make an empty cache dir here, in case we fail import
-    cache_dir = CACHE_BASE_DIR / func_name
-    cache_dir.mkdir(exist_ok=True, parents=True)
     try:
         _get_module_asm(sig, func_name),
     except MLIRError as e:
@@ -174,22 +186,67 @@ def _mlir_import(sig_storage: ConvSignatureStorage) -> str:
     return mlir_import(sig)
 
 
-def _compile(func_name, key_hashes_and_flags):
-    mlir_path = CACHE_BASE_DIR / func_name / f"{func_name}.mlir"
-    if not mlir_path.is_file():
-        return
+def cl_main(args):
+    if args.cache_dir:
+        set_boo_cache(args.cache_dir)
+    devices = [args.device] if args.device else _get_unique_torch_device_list()
+    populator = CachePopulator(devices=devices, commands_file=args.commands_file)
+    populator.run(
+        max_processes=args.max_processes,
+        use_multiprocess_import=args.import_multiprocessing,
+    )
 
-    for key_hash, flags in key_hashes_and_flags:
-        try:
-            vmfb_path: Path = CACHE_BASE_DIR / func_name / f"{key_hash}.vmfb"
-            if vmfb_path.is_file():
-                logger.debug("found vmfb in cache: %s", str(vmfb_path))
-                continue
-            logger.debug("Compiling vmfb to cache: %s", str(vmfb_path))
-            options = {
-                "output_file": str(vmfb_path),
-                "extra_args": flags,
-            }
-            compile_file(str(mlir_path), **options)
-        except CompilerToolError as e:
-            logger.debug("failed compilation with diagnostics: %s", str(e))
+
+def _get_preload_args():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Tool for prepopulating the boo cache from the command line for all miopen driver commands in a specific file."
+    )
+    parser.add_argument(
+        "commands_file",
+        type=str,
+        help="Allows running all Miopen driver commands from a text file.",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        "-o",
+        required=False,
+        type=str,
+        help=(
+            "Specify absolute or relative path from cwd to store output mlir files."
+            "Uses `BOO_CACHE_DIR` or default if not specified."
+        ),
+    )
+    parser.add_argument(
+        "--device",
+        "-d",
+        required=False,
+        type=str,
+        help=(
+            "specify a string identifier for a torch.device to compile for. "
+            "E.g. 'cpu' or 'cuda:0'. Default is to compile for each device type."
+        ),
+    )
+    parser.add_argument(
+        "--import-multiprocessing",
+        "-m",
+        action="store_true",
+        default=False,
+        help=(
+            "Set this flag to enable multiprocessing for mlir imports. "
+            "Currently requires passing 'CUDA_VISIBLE_DEVICES=-1' on the first run. "
+            "Unset the environment variable and run again to populate GPU executables."
+        ),
+    )
+    parser.add_argument(
+        "--max-processes",
+        "-j",
+        type=int,
+        help="Specify a maximum number of concurrent processes.",
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    cl_main(_get_preload_args())
