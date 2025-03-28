@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Callable
-from sympy import ceiling, Piecewise, floor, Integer
+from sympy import ceiling, Piecewise, floor, Integer, Max
 
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
@@ -452,6 +452,7 @@ class TilingConstraint(DistributionConstraint):
     induction_var: Optional[IndexExpr] = None
     iters: Optional[IndexExpr] = None
     start: IndexExpr = Integer(0)
+    hw_constraint: Optional[HardwareConstraint] = None
 
     def __eq__(self, value):
         if not isinstance(value, TilingConstraint):
@@ -481,7 +482,14 @@ class TilingConstraint(DistributionConstraint):
 
     @property
     def work_bound(self) -> IndexExpr:
-        return self.start + self.count * self.tile_size
+        if self.hw_constraint is None:
+            raise ValueError("Hardware constraint not set")
+
+        threads_per_wave = self.hw_constraint.threads_per_wave
+        tile_size = self.tile_size
+        return (
+            self.start + self.count * tile_size + Max(threads_per_wave - tile_size, 0)
+        )
 
 
 @dataclass
