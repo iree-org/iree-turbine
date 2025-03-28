@@ -47,6 +47,8 @@ class CachePopulatorTest(unittest.TestCase):
                 self.assertTrue(
                     mlir_file.is_file(), f"Expected mlir file at {mlir_file}"
                 )
+                count = len([f for f in sub_dir.glob("*.vmfb")])
+                self.assertGreater(count, 0, "Expected at least one vmfb.")
 
             clear_cache_dir()
             self.assertFalse(cache_dir.is_dir(), f"Expected cache dir to be cleared.")
