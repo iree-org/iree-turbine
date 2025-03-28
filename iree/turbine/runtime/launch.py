@@ -255,7 +255,6 @@ def _caching_jit_callback(program_source: Any, cache_dir: Path | str):
     """
     Similar to _jit_callback, but reads and writes vmfbs to a file_cache
     """
-    # TODO: move this into iree/turbine/runtime/launch.py
     session = Session()
     if isinstance(program_source, Source):
         source = program_source
