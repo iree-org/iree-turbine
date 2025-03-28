@@ -229,16 +229,16 @@ class ConvSignature:
         self,
         *,
         device: str | torch.device | None = None,
-        splat_value=None,
+        splat_value: int | float | None = None,
         seed: Optional[int] = None,
-    ):
+    ) -> tuple[torch.Tensor, ...]:
         """Gets example args for the convolution (mode-dependent)"""
         out_channels = self.kernel_shape[self.kernel_perms[0]]
         gen = torch.Generator(device=device)
         gen = gen if not seed else gen.manual_seed(seed)
 
         def get(shape):
-            if splat_value:
+            if splat_value is not None:
                 return torch.ones(shape, dtype=self.dtype, device=device) * splat_value
             return torch.randn(shape, generator=gen, dtype=self.dtype, device=device)
 
@@ -255,6 +255,7 @@ class ConvSignature:
         if self.mode == Mode.INPUT_BACKWARD:
             # (dLdy, w)
             return (get(self.output_shape), get(self.kernel_shape))
+        raise ValueError(f"Unknown mode: {self.mode}")
 
     def get_func_name(self):
         name_items = [
