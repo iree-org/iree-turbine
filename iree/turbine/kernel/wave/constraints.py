@@ -485,36 +485,6 @@ class TilingConstraint(DistributionConstraint):
 
 
 @dataclass
-class ThreadConstraint(DistributionConstraint):
-    """
-    A constraint of the form `tkw.ThreadConstraint(M, 0)`
-    specifies that we want to distribute dimension M along thread dim 0.
-    This translates to an index constraint for all tensors of the
-    shape [M, ?] -> index += (thread_id_0, 0).
-
-    This is useful when we want to distribute tiled reduction loop without
-    mma across threads.
-    """
-
-    dim: IndexExpr
-    workgroup_dim: int  # Used by `populate_read_write_source_indices`
-    hw_constraint: Optional[HardwareConstraint] = None
-
-    def apply(self) -> IndexSequence:
-        # `apply` is called during thread-independent index sequence
-        # initialization. We don't need to do anything here as we are
-        # depending on workgroup id.
-        return IndexSequence(0, 1)
-
-    @property
-    def work_bound(self) -> IndexExpr:
-        if self.hw_constraint is None:
-            raise ValueError("Hardware constraint not set")
-
-        return self.hw_constraint.threads_per_block[self.workgroup_dim]
-
-
-@dataclass
 class WaveConstraint(Constraint):
     """
     A constraint of the form `tkw.WaveConstraint(K, WAVE_K)` specifies
@@ -554,7 +524,7 @@ class WaveConstraint(Constraint):
     def set_wave_id_from_hardware_and_workgroup_constraint(
         self,
         hardware_constraint: HardwareConstraint,
-        workgroup_constraint: WorkgroupConstraint | ThreadConstraint,
+        workgroup_constraint: WorkgroupConstraint,
     ):
         """
         The wave_id is the same as the thread_id, with the exception of
