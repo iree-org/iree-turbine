@@ -564,12 +564,14 @@ def set_thread_dependent_index_from_read_write(
 def get_reduce_mapping(
     trace: CapturedTrace, constraints: list[Constraint]
 ) -> dict[ReduceOp, dict[IndexSymbol, IndexSequence]]:
+    """
+    Get the mapping of the reduce ops to the index sequence.
+    """
     sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
     hardware_constraint = get_hardware_constraint(constraints)
     workgroup_constraints = [
         c for c in constraints if isinstance(c, WorkgroupConstraint)
     ]
-    # tiling_constraints = [c for c in constraints if isinstance(c, TilingConstraint)]
 
     reduce_mapping = {}
     for source in sources:
@@ -577,10 +579,14 @@ def get_reduce_mapping(
         index = {}
 
         dim = custom.dim
-        # assert tiling_constraint, f"No tiling constraint for dimension {dim}"
+
+        # Compute the index sequence for the reduction dimension based on the
+        # threads per wave and the vector size.
         threads_per_wave = hardware_constraint.threads_per_wave
-        tile_size = hardware_constraint.vector_shapes[dim]
-        elements_per_thread = sympy.Max(sympy.ceiling(tile_size / threads_per_wave), 1)
+        vector_size = hardware_constraint.vector_shapes[dim]
+        elements_per_thread = sympy.Max(
+            sympy.ceiling(vector_size / threads_per_wave), 1
+        )
         stride = compute_stride(
             custom.indexing_dims, hardware_constraint.vector_shapes, dim
         )
@@ -599,8 +605,14 @@ def get_reduce_mapping(
             ), f"Multiple workgroup constraints for dimension {dim}"
             if wg_constraint:
                 workgroup_dim = wg_constraint[0].workgroup_dim
+                if workgroup_dim == 0:
+                    # Skip the first dimension as it is the reduction dimension.
+                    # sometimes we want to distribute reduction across the threads, and
+                    # distribute something else across wg0 blocks but not threads.
+                    # There is no way to express this in the current constraint framework.
+                    continue
             else:
-                workgroup_dim = 0
+                continue
 
             index[dim] = hardware_constraint.apply_read_write_thread_mapping(
                 dim, workgroup_dim, elements_per_thread, stride
@@ -617,6 +629,9 @@ def populate_reduce_source_indices(
     workgroup_constraints: list[WorkgroupConstraint],
     index: dict[IndexSymbol, IndexSequence],
 ):
+    """
+    Populate the source indices for the reduce op.
+    """
     vector_shapes = hardware_constraint.vector_shapes
     ret = []
     if isinstance(node.arg, Sequence):
@@ -627,6 +642,8 @@ def populate_reduce_source_indices(
     if node.init:
         ret += [(get_custom(node.init), index, vector_shapes)]
 
+    # Reduce args must contain index for the reduction dimension,
+    # but the reduction itself does not.
     res_index = copy(index)
     del res_index[node.dim]
     ret += [(node, res_index, vector_shapes)]
@@ -640,12 +657,12 @@ def set_thread_dependent_index_from_reduce(
     reduce_mapping: dict[ReduceOp, dict[IndexSymbol, IndexSequence]],
 ):
     """
-    Set the thread dependent index based on the hardware constraint.
+    Set the thread dependent index, rooting on reduce ops.
     """
     hardware_constraint = get_hardware_constraint(constraints)
     sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
     sources = [get_custom(x) for x in sources]
-    assert sources, "No read nodes found in the graph."
+    assert sources, "No reduce nodes found in the graph."
 
     visited = set()
     workgroup_constraints = [
