@@ -597,11 +597,13 @@ def get_reduce_mapping(
             assert (
                 len(wg_constraint) <= 1
             ), f"Multiple workgroup constraints for dimension {dim}"
-            if not wg_constraint:
-                continue
+            if wg_constraint:
+                workgroup_dim = wg_constraint[0].workgroup_dim
+            else:
+                workgroup_dim = 0
 
             index[dim] = hardware_constraint.apply_read_write_thread_mapping(
-                dim, wg_constraint[0].workgroup_dim, elements_per_thread, stride
+                dim, workgroup_dim, elements_per_thread, stride
             )
 
         reduce_mapping[custom] = index
