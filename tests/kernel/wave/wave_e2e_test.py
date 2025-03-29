@@ -151,7 +151,6 @@ def test_copy(shape, use_buffer_ops, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -170,8 +169,8 @@ def test_copy(shape, use_buffer_ops, request):
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.read(a)
+        tkw.write(res, b)
 
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape, dtype=torch.float16)
