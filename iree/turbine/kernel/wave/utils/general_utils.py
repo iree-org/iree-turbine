@@ -145,10 +145,10 @@ def align_index_vars(
     need partial reads/writes.
     """
     key_subs = {
-        c.dim: (c.count * c.tile_size)
+        c.dim: (c.work_bound)
         for c in constraints
-        if isinstance(c, (TilingConstraint, WorkgroupConstraint))
-        and subs_idxc(c.dim) != subs_idxc(c.count * c.tile_size)
+        if isinstance(c, DistributionConstraint)
+        and subs_idxc(c.dim) != subs_idxc(c.work_bound)
     }
     return {safe_subs(key, key_subs): index[key] for key in index}
 
