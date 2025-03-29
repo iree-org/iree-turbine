@@ -1050,7 +1050,7 @@ def test_toy_online_softmax(shape):
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
+            threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
@@ -1095,7 +1095,7 @@ def test_toy_online_softmax(shape):
         subs={
             M: shape[0],
             N: shape[1],
-            BLOCK_N: min(128, shape[1]),
+            BLOCK_N: max(min(128, shape[1]), wave_size),
             ELEMS_PER_THREAD: ceildiv(min(128, shape[1]), wave_size),
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
