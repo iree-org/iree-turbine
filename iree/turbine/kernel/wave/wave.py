@@ -262,9 +262,6 @@ class LaunchableWave(Launchable):
         """
 
         hardware_constraint = self.hardware_constraints[0]
-        for tiling_constraint in self.tiling_constraints:
-            tiling_constraint.hw_constraint = hardware_constraint
-
         for wave_constraint in self.wave_constraints:
             for workgroup_constraint in self.workgroup_constraints:
                 if wave_constraint.dim == workgroup_constraint.dim:
