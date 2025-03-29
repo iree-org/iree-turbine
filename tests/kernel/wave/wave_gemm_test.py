@@ -106,9 +106,6 @@ def testGemm(
     BLOCK_K = tkl.sym.BLOCK_K
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -147,20 +144,18 @@ def testGemm(
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
             # b_reg: tkw.Register[N, K, tkl.f16]
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b)
             # acc: tkw.Register[M, N, tkl.f32]
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
         # repeat represents the results of the loop
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_M: 64,
         BLOCK_N: 64,
         BLOCK_K: 32,
@@ -253,9 +248,6 @@ def testVMFMAGemm(
     BLOCK_K = tkl.sym.BLOCK_K
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -294,20 +286,18 @@ def testVMFMAGemm(
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
             # b_reg: tkw.Register[N, K, tkl.f16]
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b)
             # acc: tkw.Register[M, N, tkl.f32]
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
         # repeat represents the results of the loop
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_M: 64,
         BLOCK_N: 64,
         BLOCK_K: 32,
@@ -401,9 +391,6 @@ def testCDNA2IntGemm(
     BLOCK_K = tkl.sym.BLOCK_K
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -442,20 +429,18 @@ def testCDNA2IntGemm(
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.i32]:
             # a_reg: tkw.Register[M, K, tkl.i8]
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
             # b_reg: tkw.Register[N, K, tkl.i8]
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b)
             # acc: tkw.Register[M, N, tkl.i32]
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
         # repeat represents the results of the loop
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_M: 64,
         BLOCK_N: 64,
         BLOCK_K: 32,
@@ -545,9 +530,6 @@ def testCDNA3IntGemm(
     BLOCK_K = tkl.sym.BLOCK_K
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -575,19 +557,17 @@ def testCDNA3IntGemm(
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.i32]:
             # a_reg: tkw.Register[M, K, tkl.i8]
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
             # b_reg: tkw.Register[N, K, tkl.i8]
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b)
             # acc: tkw.Register[M, N, tkl.i32]
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_M: 64,
         BLOCK_N: 64,
         BLOCK_K: 32,
@@ -664,9 +644,6 @@ def testF8Gemm(
     BLOCK_K = tkl.sym.BLOCK_K
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -691,19 +668,17 @@ def testF8Gemm(
 
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
             a_reg = tkw.cast(a_reg, tkl.f8e4m3fnuz)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b)
             b_reg = tkw.cast(b_reg, tkl.f8e4m3fnuz)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_M: 64,
         BLOCK_N: 64,
         BLOCK_K: 32,
@@ -769,9 +744,6 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
     BLOCK_K = tkl.sym.BLOCK_K
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -799,17 +771,15 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: 4,
-        STORE_ELEMS_PER_THREAD: 4,
         BLOCK_B: 1,
         BLOCK_M: 64,
         BLOCK_N: 64,
