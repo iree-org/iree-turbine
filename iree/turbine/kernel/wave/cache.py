@@ -96,7 +96,7 @@ def get_nested_functions(root_fn: Callable):
     """Simple BFS search to get all sub functions inside a wave kernel."""
     workqueue = deque([root_fn])
     fn_list = set([root_fn])
-    while len(workqueue) > 0:
+    while workqueue:
         cur_fn = workqueue.pop()
         # Add var to workqueue and fn_list freevar that
         # we have not seen before and who's type is a function.
