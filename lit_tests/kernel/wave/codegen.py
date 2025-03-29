@@ -1354,7 +1354,6 @@ def test_tiled_reduce_min():
     N = tkl.sym.N
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -1380,13 +1379,13 @@ def test_tiled_reduce_min():
         def repeat(
             partial_min: tkl.Register[M, tkl.f16],
         ) -> tkl.Register[M, tkl.f16]:
-            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            lhs = tkw.read(a)
+            rhs = tkw.read(b)
             res = lhs * rhs
             partial_min = tkw.min(res, partial_min, dim=N)
             return partial_min
 
-        tkw.write(repeat, c, elements_per_thread=1)
+        tkw.write(repeat, c)
 
     shape = (256, 512)
     options = WaveCompileOptions(
@@ -1395,7 +1394,6 @@ def test_tiled_reduce_min():
             N: shape[1],
             BLOCK_M: 1,
             BLOCK_N: 128,
-            ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
@@ -1447,7 +1445,6 @@ def test_tiled_reduce_min_unaligned():
     N = tkl.sym.N
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -1473,13 +1470,13 @@ def test_tiled_reduce_min_unaligned():
         def repeat(
             partial_min: tkl.Register[M, tkl.f16],
         ) -> tkl.Register[M, tkl.f16]:
-            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            lhs = tkw.read(a)
+            rhs = tkw.read(b)
             res = lhs * rhs
             partial_min = tkw.min(res, partial_min, dim=N)
             return partial_min
 
-        tkw.write(repeat, c, elements_per_thread=1)
+        tkw.write(repeat, c)
 
     shape = (256, 527)
     options = WaveCompileOptions(
@@ -1488,7 +1485,6 @@ def test_tiled_reduce_min_unaligned():
             N: shape[1],
             BLOCK_M: 1,
             BLOCK_N: 128,
-            ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,

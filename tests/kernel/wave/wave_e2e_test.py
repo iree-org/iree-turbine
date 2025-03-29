@@ -1045,7 +1045,6 @@ def test_toy_online_softmax(shape):
     wave_size = 64
     BLOCK_M = 1
     BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -1073,8 +1072,8 @@ def test_toy_online_softmax(shape):
             partial_max: tkl.Register[M, tkl.f32],
             partial_sum: tkl.Register[M, tkl.f32],
         ) -> tkl.Register[M, tkl.f32]:
-            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            lhs = tkw.read(a)
+            rhs = tkw.read(b)
             res = lhs * rhs
             partial_max = tkw.max(res, partial_max, dim=N)
             partial_sum = tkw.sum(res, partial_sum, dim=N)
@@ -1082,7 +1081,7 @@ def test_toy_online_softmax(shape):
 
         res_max, res_sum = repeat
         result = res_max / res_sum
-        tkw.write(result, c, elements_per_thread=1)
+        tkw.write(result, c)
 
     torch.manual_seed(1)
     a = device_randn(shape, dtype=torch.float32)
@@ -1096,7 +1095,6 @@ def test_toy_online_softmax(shape):
             M: shape[0],
             N: shape[1],
             BLOCK_N: max(min(128, shape[1]), wave_size),
-            ELEMS_PER_THREAD: ceildiv(min(128, shape[1]), wave_size),
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
