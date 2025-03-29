@@ -8,10 +8,6 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.constraints import MMAType
-from iree.turbine.kernel.wave.utils.mma_utils import (
-    get_mfma_load_elems_per_thread,
-    get_mfma_store_elems_per_thread,
-)
 from .attention_common import AttentionShape
 from dataclasses import dataclass
 
@@ -36,10 +32,6 @@ def get_vanilla_attention_kernel(
     BLOCK_K2 = tkl.sym.BLOCK_K2
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD_QK = index_symbol("LOAD_ELEMS_PER_THREAD_QK")
-    LOAD_ELEMS_PER_THREAD_PV = index_symbol("LOAD_ELEMS_PER_THREAD_PV")
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -97,8 +89,8 @@ def get_vanilla_attention_kernel(
             acc: tkl.Register[B, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+            q_reg = tkw.read(q)
+            k_reg = tkw.read(k)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
             k2_index = tkw.self_index(K2, tkl.i64)
@@ -123,11 +115,9 @@ def get_vanilla_attention_kernel(
             d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f16 = tkw.cast(e_delta, tkl.f16)
             if is_v_transposed:
-                v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV)
+                v_reg = tkw.read(v)
             else:
-                v_reg = tkw.read(
-                    v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV, mapping=v_mapping
-                )
+                v_reg = tkw.read(v, mapping=v_mapping)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
@@ -136,7 +126,7 @@ def get_vanilla_attention_kernel(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c, mapping=mapping)
 
     @tkw.wave(constraints)
     def base_attention_transposed_v(
@@ -158,9 +148,6 @@ def get_vanilla_attention_kernel(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
-        LOAD_ELEMS_PER_THREAD_PV: get_mfma_load_elems_per_thread(mfma_variant[1]),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_B: 1,
         BLOCK_M: 128,
         BLOCK_N: 64,

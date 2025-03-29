@@ -315,6 +315,12 @@ def populate_read_write_source_indices(
             )
             else node.elements_per_thread
         )
+
+        if elements_per_thread is None:
+            raise ValueError(
+                f"Elements per thread not set for {node} with indexing dim {dim}"
+            )
+
         stride = compute_stride(
             node.indexing_dims, hardware_constraint.vector_shapes, dim
         )
@@ -572,6 +578,12 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         if isinstance(custom, MMA):
             return custom.acc.index
         return custom.index
+
+    for node in trace.walk(lambda x: isinstance(get_custom(x), (Read, Write))):
+        custom = get_custom(node)
+        if custom.elements_per_thread is None:
+            _, size = get_largest_index_and_size(get_index(custom))
+            custom.update_arg("elements_per_thread", size)
 
     binary_ops = trace.walk(lambda node: isinstance(get_custom(node), BinaryPyOp))
     for binary_op in binary_ops:

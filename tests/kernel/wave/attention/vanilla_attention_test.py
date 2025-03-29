@@ -12,10 +12,6 @@ import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.utils.mma_utils import (
-    get_mfma_load_elems_per_thread,
-    get_mfma_store_elems_per_thread,
-)
 from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
 )
@@ -331,9 +327,6 @@ def testAttentionBias(
     BLOCK_K2 = tkl.sym.BLOCK_K2
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -394,13 +387,13 @@ def testAttentionBias(
             tkl.Register[B, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.read(q)
             # b_reg: tkw.Register[B, N, K, tkl.f16]
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            k_reg = tkw.read(k)
             # acc: tkw.Register[B, N, M, tkl.f32]
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
-            bias_reg = tkw.read(bias, elements_per_thread=STORE_ELEMS_PER_THREAD)
+            bias_reg = tkw.read(bias)
             x_j = x_j + bias_reg
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
@@ -408,7 +401,7 @@ def testAttentionBias(
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.read(v)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
@@ -417,12 +410,10 @@ def testAttentionBias(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c, mapping=mapping)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_B: 1,
         BLOCK_M: 128,
         BLOCK_N: 64,
@@ -536,9 +527,6 @@ def testAttentionSoftCap(
     BLOCK_K2 = tkl.sym.BLOCK_K2
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -602,9 +590,9 @@ def testAttentionSoftCap(
             tkl.Register[B, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.read(q)
             # b_reg: tkw.Register[B, N, K, tkl.f16]
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            k_reg = tkw.read(k)
             # acc: tkw.Register[B, N, M, tkl.f32]
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
@@ -615,7 +603,7 @@ def testAttentionSoftCap(
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.read(v)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
@@ -624,12 +612,10 @@ def testAttentionSoftCap(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c, mapping=mapping)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
         BLOCK_B: 1,
         BLOCK_M: 128,
         BLOCK_N: 64,
@@ -742,9 +728,7 @@ def testAttentionF8(
     BLOCK_K2 = tkl.sym.BLOCK_K2
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
+
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -797,8 +781,8 @@ def testAttentionF8(
             tkl.Register[B, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.read(q)
+            k_reg = tkw.read(k)
             q_reg = tkw.cast(q_reg, tkl.f8e4m3fnuz)
             k_reg = tkw.cast(k_reg, tkl.f8e4m3fnuz)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
@@ -809,7 +793,7 @@ def testAttentionF8(
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f8 = tkw.cast(e_delta, tkl.f8e4m3fnuz)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.read(v)
             v_reg = tkw.cast(v_reg, tkl.f8e4m3fnuz)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f8, new_acc, mfma_variant[1])
@@ -819,12 +803,10 @@ def testAttentionF8(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c, mapping=mapping)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant[0]),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_B: 1,
         BLOCK_M: 128,
         BLOCK_N: 64,
