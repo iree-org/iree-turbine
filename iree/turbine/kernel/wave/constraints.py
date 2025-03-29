@@ -485,9 +485,6 @@ class TilingConstraint(DistributionConstraint):
         if self.hw_constraint is None:
             raise ValueError("Hardware constraint not set")
 
-        # Reduction loops are distributed across threads, so if tile size is
-        # less than threads_per_wave, we need to add padding to the work_bound to
-        # avoid threads from accessing OOB.
         threads_per_wave = self.hw_constraint.threads_per_wave
         tile_size = self.tile_size
         return (
