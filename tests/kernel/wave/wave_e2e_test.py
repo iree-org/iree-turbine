@@ -71,15 +71,6 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     return default_test_shapes
 
 
-def xfail_unaligned(func):
-    def wrapper(shape):
-        if shape[-1] % 2 != 0:
-            pytest.xfail("Unaligned shape is not expected to work on this test yet.")
-        func(shape)
-
-    return wrapper
-
-
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy")[:1])
 def test_dump_vmfb(shape, tmp_path, request):
@@ -1065,7 +1056,6 @@ def test_reduce_sum(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
-@xfail_unaligned
 def test_toy_online_softmax(shape):
     M = tkl.sym.M
     N = tkl.sym.N
@@ -1077,16 +1067,14 @@ def test_toy_online_softmax(shape):
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
+            threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1124,8 +1112,8 @@ def test_toy_online_softmax(shape):
         subs={
             M: shape[0],
             N: shape[1],
-            BLOCK_N: min(128, shape[1]),
-            ELEMS_PER_THREAD: min(128, shape[1]) // wave_size,
+            BLOCK_N: max(min(128, shape[1]), wave_size),
+            ELEMS_PER_THREAD: ceildiv(min(128, shape[1]), wave_size),
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,

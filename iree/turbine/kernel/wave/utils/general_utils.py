@@ -18,6 +18,7 @@ from ...ops.wave_ops import CustomOp, Read, Reduction, Write
 from ..assumptions import Assumption
 from ..constraints import (
     Constraint,
+    DistributionConstraint,
     HardwareConstraint,
     TilingConstraint,
     WorkgroupConstraint,
@@ -144,10 +145,10 @@ def align_index_vars(
     need partial reads/writes.
     """
     key_subs = {
-        c.dim: (c.count * c.tile_size)
+        c.dim: (c.work_bound)
         for c in constraints
-        if isinstance(c, (TilingConstraint, WorkgroupConstraint))
-        and subs_idxc(c.dim) != subs_idxc(c.count * c.tile_size)
+        if isinstance(c, DistributionConstraint)
+        and subs_idxc(c.dim) != subs_idxc(c.work_bound)
     }
     return {safe_subs(key, key_subs): index[key] for key in index}
 
@@ -157,14 +158,14 @@ def find_index_bounds(
 ) -> Optional[list[IndexExpr]]:
     bounds = []
     for constraint in constraints:
-        if not isinstance(constraint, (WorkgroupConstraint, TilingConstraint)):
+        if not isinstance(constraint, DistributionConstraint):
             continue
 
         dim = constraint.dim
         if dim not in index:
             continue
 
-        work_size = constraint.count * constraint.tile_size
+        work_size = constraint.work_bound
         if subs_idxc(work_size) == subs_idxc(dim):
             continue
 

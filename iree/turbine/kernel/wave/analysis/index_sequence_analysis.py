@@ -15,6 +15,7 @@ from ...ops.wave_ops import (
     Output,
     Placeholder,
     Read,
+    ReduceOp,
     Reduction,
     Write,
     get_custom,
@@ -47,6 +48,7 @@ from ..utils.print_utils import (
     try_apply_pass,
 )
 import torch.fx as fx
+import sympy
 from typing import Sequence, Callable, Optional
 from ....support.logging import get_logger
 from copy import deepcopy, copy
@@ -144,10 +146,19 @@ def set_node_indices(
         print_trace(trace)
 
     graph_passes = []
-    if mma_mapping != {}:
+    if mma_mapping:
         graph_passes += [
             partial(
                 set_thread_dependent_index_from_mma, constraints, mma_mapping, trace
+            )
+        ]
+    elif reduce_mapping := get_reduce_mapping(trace, constraints):
+        graph_passes += [
+            partial(
+                set_thread_dependent_index_from_reduce,
+                constraints,
+                trace,
+                reduce_mapping,
             )
         ]
     else:
@@ -319,11 +330,16 @@ def populate_read_write_source_indices(
             node.indexing_dims, hardware_constraint.vector_shapes, dim
         )
         wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
+        assert (
+            len(wg_constraint) <= 1
+        ), f"Multiple workgroup constraints for dimension {dim}"
         if not wg_constraint:
             continue
+
         index[dim] = hardware_constraint.apply_read_write_thread_mapping(
             dim, wg_constraint[0].workgroup_dim, elements_per_thread, stride
         )
+
     return [(node, index, hardware_constraint.vector_shapes)]
 
 
@@ -511,6 +527,128 @@ def set_thread_dependent_index_from_read_write(
         visited.remove(source)
         new_sources = populate_read_write_source_indices(
             source, hardware_constraint, workgroup_constraints
+        )
+        visited = propagate_indices(
+            new_sources,
+            visited,
+            symbolic_constraints,
+        )
+
+
+def get_reduce_mapping(
+    trace: CapturedTrace, constraints: list[Constraint]
+) -> dict[ReduceOp, dict[IndexSymbol, IndexSequence]]:
+    """
+    Get the mapping of the reduce ops to the index sequence.
+    """
+    sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
+    hardware_constraint = get_hardware_constraint(constraints)
+    workgroup_constraints = [
+        c for c in constraints if isinstance(c, WorkgroupConstraint)
+    ]
+
+    reduce_mapping = {}
+    for source in sources:
+        custom = get_custom(source)
+        index = {}
+
+        dim = custom.dim
+
+        # Compute the index sequence for the reduction dimension based on the
+        # threads per wave and the vector size.
+        threads_per_wave = hardware_constraint.threads_per_wave
+        vector_size = hardware_constraint.vector_shapes[dim]
+        elements_per_thread = sympy.Max(
+            sympy.ceiling(vector_size / threads_per_wave), 1
+        )
+        stride = compute_stride(
+            custom.indexing_dims, hardware_constraint.vector_shapes, dim
+        )
+        index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+            dim, 0, elements_per_thread, stride
+        )
+
+        for dim in custom.indexing_dims:
+            elements_per_thread = 1
+            stride = compute_stride(
+                custom.indexing_dims, hardware_constraint.vector_shapes, dim
+            )
+            wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
+            assert (
+                len(wg_constraint) <= 1
+            ), f"Multiple workgroup constraints for dimension {dim}"
+            if wg_constraint:
+                workgroup_dim = wg_constraint[0].workgroup_dim
+                if workgroup_dim == 0:
+                    # Skip the first dimension as it is the reduction dimension.
+                    # sometimes we want to distribute reduction across the threads, and
+                    # distribute something else across wg0 blocks but not threads.
+                    # There is no way to express this in the current constraint framework.
+                    continue
+            else:
+                continue
+
+            index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+                dim, workgroup_dim, elements_per_thread, stride
+            )
+
+        reduce_mapping[custom] = index
+
+    return reduce_mapping
+
+
+def populate_reduce_source_indices(
+    node: ReduceOp,
+    hardware_constraint: HardwareConstraint,
+    workgroup_constraints: list[WorkgroupConstraint],
+    index: dict[IndexSymbol, IndexSequence],
+):
+    """
+    Populate the source indices for the reduce op.
+    """
+    vector_shapes = hardware_constraint.vector_shapes
+    ret = []
+    if isinstance(node.arg, Sequence):
+        ret += [(get_custom(a), index, vector_shapes) for a in node.arg]
+    else:
+        ret += [(get_custom(node.arg), index, vector_shapes)]
+
+    if node.init:
+        ret += [(get_custom(node.init), index, vector_shapes)]
+
+    # Reduce args must contain index for the reduction dimension,
+    # but the reduction itself does not.
+    res_index = copy(index)
+    del res_index[node.dim]
+    ret += [(node, res_index, vector_shapes)]
+
+    return ret
+
+
+def set_thread_dependent_index_from_reduce(
+    constraints: Sequence[Constraint],
+    trace: CapturedTrace,
+    reduce_mapping: dict[ReduceOp, dict[IndexSymbol, IndexSequence]],
+):
+    """
+    Set the thread dependent index, rooting on reduce ops.
+    """
+    hardware_constraint = get_hardware_constraint(constraints)
+    sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
+    sources = [get_custom(x) for x in sources]
+    assert sources, "No reduce nodes found in the graph."
+
+    visited = set()
+    workgroup_constraints = [
+        c for c in constraints if isinstance(c, WorkgroupConstraint)
+    ]
+    symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
+    for source in sources:
+        visited = visited.union(set([x for x in sources]))
+        visited.remove(source)
+        index = reduce_mapping[source]
+        new_sources = populate_reduce_source_indices(
+            source, hardware_constraint, workgroup_constraints, index
         )
         visited = propagate_indices(
             new_sources,

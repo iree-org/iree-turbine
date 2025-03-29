@@ -83,6 +83,24 @@ class Constraint(ABC):
 
 
 @dataclass
+class DistributionConstraint(Constraint):
+    """
+    Base class for constraints that distribute a dimension across a
+    workgroup or reduction loop.
+    """
+
+    @property
+    def work_bound(self) -> IndexExpr:
+        """
+        Returns the work bound for the constraint.
+
+        It may be different from the dimension of the tensor if the dimensions is not divisible
+        by the tile size.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+
+@dataclass
 class HardwareConstraint(Constraint):
     """
     A constraint of the form
@@ -263,18 +281,6 @@ class HardwareConstraint(Constraint):
             if isinstance(vector_size, IndexExpr):
                 self.vector_shapes[vector_dim] = vector_size.subs(index_map)
 
-    def compute_access_pattern_using_vector_shapes(
-        self,
-        dim: IndexSymbol,
-        workgroup_dim: int,
-        elements_per_thread: int | IndexSymbol,
-        stride: int,
-    ) -> IndexSequence:
-        thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
-        return IndexSequence(
-            thread_id * elements_per_thread, elements_per_thread, stride
-        )
-
     def apply(self):
         assert False, "Call either apply_read_write_thread_mapping or apply_mma_mapping"
 
@@ -370,7 +376,7 @@ class HardwareConstraint(Constraint):
 
 
 @dataclass
-class WorkgroupConstraint(Constraint):
+class WorkgroupConstraint(DistributionConstraint):
     """
     A constraint of the form `tkw.WorkgroupConstraint(M, BLOCK_M, 0)`
     specifies that we want to distribute dimension M along workgroup dim 0
@@ -410,6 +416,10 @@ class WorkgroupConstraint(Constraint):
             return IndexSequence(self.apply_fn(self.wg_dim), 1)
         return IndexSequence(self.wg_dim * self.tile_size, 1)
 
+    @property
+    def work_bound(self) -> IndexExpr:
+        return self.count * self.tile_size
+
 
 def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]:
     sorted_constraints = sorted(
@@ -428,7 +438,7 @@ def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]
 
 
 @dataclass
-class TilingConstraint(Constraint):
+class TilingConstraint(DistributionConstraint):
     """
     A constraint of the form `tkw.TilingConstraint(K, BLOCK_K)` specifies
     that we want to tile the K dimension with a tile size of BLOCK_K. This
@@ -468,6 +478,10 @@ class TilingConstraint(Constraint):
                 "Index is being computed without setting induction variable"
             )
         return IndexSequence(self.start + self.induction_var * self.tile_size, 1)
+
+    @property
+    def work_bound(self) -> IndexExpr:
+        return self.start + self.count * self.tile_size
 
 
 @dataclass
