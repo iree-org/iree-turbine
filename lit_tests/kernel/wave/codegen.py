@@ -69,7 +69,7 @@ def test_read():
 
     @tkw.wave(constraints)
     def read(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
-        tkw.read(a, elements_per_thread=16)
+        tkw.read(a)
 
     read = wave_compile(get_wave_compile_options(), read)
     print(read.asm)
@@ -221,8 +221,8 @@ def test_read_write():
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=16)
-        tkw.write(res, b, elements_per_thread=16)
+        res = tkw.read(a)
+        tkw.write(res, b)
 
     read_write = wave_compile(get_wave_compile_options(canonicalize=True), read_write)
     print(read_write.asm)
@@ -279,7 +279,7 @@ def test_read_write_diagonal():
         m_index = tkw.broadcast(m_index, target_shape=[M, N])
         n_index = tkw.self_index(N, tkl.i64)
         res = tkw.select(m_index >= n_index, ZEROF, ONEF)
-        tkw.write(res, c, elements_per_thread=16)
+        tkw.write(res, c)
 
     read_write_diagonal = wave_compile(
         get_wave_compile_options(canonicalize=True), read_write_diagonal
@@ -337,8 +337,8 @@ def test_read_write_masked():
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=4)
-        tkw.write(res, b, elements_per_thread=4)
+        res = tkw.read(a)
+        tkw.write(res, b)
 
     options = WaveCompileOptions(
         subs={
@@ -409,8 +409,8 @@ def test_read_write_masked_shared():
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=4)
-        tkw.write(res, b, elements_per_thread=4)
+        res = tkw.read(a)
+        tkw.write(res, b)
 
     options = WaveCompileOptions(
         subs={
@@ -458,8 +458,8 @@ def test_read_write_mapping():
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[N, M, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=16)
-        tkw.write(res, b, mapping=mapping, elements_per_thread=16)
+        res = tkw.read(a)
+        tkw.write(res, b, mapping=mapping)
 
     read_write_mapping = wave_compile(
         get_wave_compile_options(canonicalize=True), read_write_mapping
@@ -521,14 +521,13 @@ def test_read_write_dynamic_mapping():
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=16)
+        offset = tkw.read(off)
         res = tkw.read(
             a,
             mapping=mapping,
             mapping_dynamic_vals=(offset,),
-            elements_per_thread=16,
         )
-        tkw.write(res, b, elements_per_thread=16)
+        tkw.write(res, b)
 
     read_write_dynamic_mapping = wave_compile(
         get_wave_compile_options(canonicalize=True), read_write_dynamic_mapping
@@ -589,14 +588,13 @@ def test_read_write_dynamic_mapping_broadcast():
         off: tkl.Memory[M, ONE, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=1)
+        offset = tkw.read(off)
         res = tkw.read(
             a,
             mapping=mapping,
             mapping_dynamic_vals=(offset,),
-            elements_per_thread=16,
         )
-        tkw.write(res, b, elements_per_thread=16)
+        tkw.write(res, b)
 
     read_write_dynamic_mapping_broadcast = wave_compile(
         get_wave_compile_options(canonicalize=True, additional_symbols={ONE: 1}),
@@ -651,20 +649,18 @@ def test_read_write_dynamic_mapping_chain():
         off2: tkl.Memory[M, SIZE2, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset1 = tkw.read(off1, elements_per_thread=1)
+        offset1 = tkw.read(off1)
         offset2 = tkw.read(
             off2,
             mapping=mapping1,
             mapping_dynamic_vals=(offset1,),
-            elements_per_thread=1,
         )
         res = tkw.read(
             a,
             mapping=mapping2,
             mapping_dynamic_vals=(offset2,),
-            elements_per_thread=4,
         )
-        tkw.write(res, b, elements_per_thread=4)
+        tkw.write(res, b)
 
     read_write_dynamic_mapping_chain = wave_compile(
         get_wave_compile_options(
@@ -720,14 +716,13 @@ def test_read_write_dynamic_symbol():
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=1)
+        offset = tkw.read(off)
         tkw.set_symbol(S, offset)
         res = tkw.read(
             a,
             mapping=mapping,
-            elements_per_thread=1,
         )
-        tkw.write(res, b, elements_per_thread=1)
+        tkw.write(res, b)
 
     test_dyn_symbol = wave_compile(
         get_wave_compile_options(
@@ -782,15 +777,14 @@ def test_read_write_dynamic_symbol_expr():
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=1)
+        offset = tkw.read(off)
         offset = tkw.apply_expr(offset, lambda a: M - a - 1)
         tkw.set_symbol(S, offset)
         res = tkw.read(
             a,
             mapping=mapping,
-            elements_per_thread=1,
         )
-        tkw.write(res, b, elements_per_thread=1)
+        tkw.write(res, b)
 
     test_dyn_expr = wave_compile(
         get_wave_compile_options(
@@ -943,7 +937,7 @@ def test_add_float():
 
     @tkw.wave(constraints)
     def add(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
-        a_reg = tkw.read(a, elements_per_thread=16)
+        a_reg = tkw.read(a)
         res = a_reg + a_reg
 
     add = wave_compile(get_wave_compile_options(), add)
@@ -968,7 +962,7 @@ def test_add_integer():
 
     @tkw.wave(constraints)
     def test(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32]):
-        a_reg = tkw.read(a, elements_per_thread=16)
+        a_reg = tkw.read(a)
         res = a_reg + a_reg
 
     test = wave_compile(get_wave_compile_options(), test)
