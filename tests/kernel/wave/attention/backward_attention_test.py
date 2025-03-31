@@ -426,7 +426,7 @@ def get_evoformer_attention_fwd_kernel(
         # doing so defeats the entire purpose of Flash Attention from a
         # performance perspective.
         s: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        o: tkl.Memory[B, BN, H, M_qs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        o: tkl.Memory[B, BN, M_qs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         lse: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
         init_m = tkl.Register[B, BN, H, M_qs, tkl.f32](-1e6)
@@ -1430,7 +1430,7 @@ def testEvoformerAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...])
     options = set_default_run_config(options)
     attention_fwd = wave_compile(options, attention_fwd)
 
-    o = device_zeros(batch, n, heads, q_seq_len, v_head_dim, dtype=torch.float16)
+    o = device_zeros(batch, n, q_seq_len, heads, v_head_dim, dtype=torch.float16)
     lse = device_zeros(batch, n, heads, q_seq_len, dtype=torch.float16)
     s = device_zeros(batch, n, heads, q_seq_len, kv_seq_len)
 
@@ -1446,7 +1446,7 @@ def testEvoformerAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...])
     # Can't check P, since we don't actually compute the "real" thing in the
     # forward pass, but rather rescale as we go.
     assert_close(lse, lse_ref, **cmp_params)
-    assert_close(o, o_ref, **cmp_params)
+    assert_close(o, o_ref.transpose(-2, -3), **cmp_params)
 
 
 @require_e2e
