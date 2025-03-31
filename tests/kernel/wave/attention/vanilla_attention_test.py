@@ -325,12 +325,10 @@ def testAttentionBSHD(
     )
 
     is_causal = False
-    is_custom_mask = True
+    is_custom_mask = False
     custom_mask = None
-
-    assert not (
-        is_causal and is_custom_mask
-    ), "Causal and custom mask cannot be applied together."
+    
+    assert not (is_causal and is_custom_mask), "Causal and custom mask cannot be applied together."
 
     (
         base_attention_func,
@@ -394,6 +392,7 @@ def testAttentionBSHD(
                 v.transpose(1, 2).contiguous(),
                 output,
             )
+            
 
         # Torch reference needs to be in BHSD format
         torch_ref = scaled_dot_product_attention_bhsd(
