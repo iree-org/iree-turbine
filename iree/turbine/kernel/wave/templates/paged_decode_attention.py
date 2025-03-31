@@ -106,13 +106,12 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
 
         vector_shapes = {BH: 0, S: 0, U: 1}
-        waves_per_block = (1, B_WAVES, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
-                waves_per_block=waves_per_block,
                 mma_type=mfma_variant[1],
                 vector_shapes=vector_shapes,
+                thread_block=tkw.dim3_from_num_waves(THREADS_PER_WAVE, 1, B_WAVES, 1),
             )
         ]
         return constraints
@@ -130,11 +129,9 @@ def get_paged_decode_attention_kernels(
             N: BLOCK_N,
             U: 1,
         }
-        waves_per_block = (1, 1, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
-                waves_per_block=waves_per_block,
                 mma_type=mfma_variant,
                 vector_shapes=vector_shapes,
             )

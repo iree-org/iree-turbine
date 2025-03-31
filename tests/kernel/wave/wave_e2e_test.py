@@ -100,7 +100,6 @@ def test_dump_vmfb(shape, tmp_path, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
@@ -156,7 +155,6 @@ def test_copy(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
@@ -215,7 +213,6 @@ def test_dynamic_copy(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
@@ -270,7 +267,6 @@ def test_transpose_read(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={N: BLOCK_N, M: BLOCK_M},
         )
     ]
@@ -330,7 +326,6 @@ def test_transpose_write(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
@@ -395,7 +390,6 @@ def test_offset_read(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
@@ -474,7 +468,6 @@ def test_offset_read_one(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N, N1: 1},
         )
     ]
@@ -556,7 +549,6 @@ def test_read_write_same(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
@@ -616,7 +608,6 @@ def test_set_symbol(shape, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N, S: BLOCK_M},
         )
     ]
@@ -701,7 +692,6 @@ def test_apply_expr(shape, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N, S: BLOCK_M},
         )
     ]
@@ -784,7 +774,6 @@ def test_conditional(shape, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
@@ -849,7 +838,6 @@ def test_offset_write(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
@@ -936,7 +924,6 @@ def test_offset_write_one(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N, N1: 1},
         )
     ]
@@ -1021,7 +1008,6 @@ def test_reduce_sum(shape, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1078,7 +1064,6 @@ def test_toy_online_softmax(shape):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1188,7 +1173,6 @@ def test_im2col(request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, K: ELEMS_PER_THREAD},
         )
     ]
@@ -1308,7 +1292,6 @@ def test_im2col_mma(request):
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             # vector_shapes={NF: 1, M: BLOCK_M, K: ELEMS_PER_THREAD},
         )
     ]
@@ -1548,7 +1531,6 @@ def test_cast(shape, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]

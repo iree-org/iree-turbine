@@ -4,6 +4,7 @@ from .kernel_buffer import *
 from .wave_types import *
 from .wave_types import Memory, Register, IndexMapping
 from .grid import *
+from .block import *
 
 # Include publics from the _support library.
 from .._support.indexing import (

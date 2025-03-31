@@ -56,7 +56,6 @@ def test_dynamic_attention_pipelined():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 16, N: 16},
         )
@@ -192,7 +191,6 @@ def test_attention_pipelined():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 16, N: 16},
         )

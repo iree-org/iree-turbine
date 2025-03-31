@@ -76,9 +76,7 @@ def test_gemm():
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, 0)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
     with tk.gen.TestLaunchContext(
         {
             M: 128,
@@ -94,6 +92,7 @@ def test_gemm():
         trace: CapturedTrace = gemm()
         visualize = False
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(trace)
         infer_types(trace)
         promote_placeholders(trace, constraints)

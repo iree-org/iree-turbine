@@ -199,7 +199,6 @@ def get_attention_fwd_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(WAVES_PER_BLOCK_M, WAVES_PER_BLOCK_N, WAVES_PER_BLOCK_B),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         )
@@ -340,15 +339,12 @@ def get_attention_bwd_kernel(
         # get errors about tile size being divisible by vector size.
         tkw.WorkgroupConstraint(K1_qkd, BLOCK_K1, 1),
         tkw.WorkgroupConstraint(N_vd, BLOCK_N, 2),
-        # TODO(#392): Can only have 3 dimensions distributed in actual blocks or
-        # the compiler tries to index too far into waves_per_block (and if that
-        # is made longer there's just a fatal crash), so batch dimension needs
-        # to be last.
+        # TODO(#392): Can only have 3 dimensions distributed in actual blocks so
+        # batch dimension needs to be last.
         tkw.WorkgroupConstraint(B, BLOCK_B, 3),
         tkw.TilingConstraint(M_qs, BLOCK_M),
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
             # TODO(#384): If we don't set the N vector shape here, then there is
             # a compilation failure when BLOCK_N (which is just set to the head
@@ -585,15 +581,12 @@ def get_attention_bwd_dv_kernel(
         # get errors about tile size being divisible by vector size.
         tkw.WorkgroupConstraint(K1_qkd, BLOCK_K1, 1),
         tkw.WorkgroupConstraint(N_vd, BLOCK_N, 2),
-        # TODO(#392): Can only have 3 dimensions distributed in actual blocks or
-        # the compiler tries to index too far into waves_per_block (and if that
-        # is made longer there's just a fatal crash), so batch dimension needs
-        # to be last.
+        # TODO(#392): Can only have 3 dimensions distributed in actual blocks so
+        # batch dimension needs to be last.
         tkw.WorkgroupConstraint(B, BLOCK_B, 3),
         tkw.TilingConstraint(M_qs, BLOCK_M),
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         ),
@@ -731,15 +724,12 @@ def get_attention_bwd_dk_kernel(
         # get errors about tile size being divisible by vector size.
         tkw.WorkgroupConstraint(K1_qkd, BLOCK_K1, 1),
         tkw.WorkgroupConstraint(N_vd, BLOCK_N, 2),
-        # TODO(#392): Can only have 3 dimensions distributed in actual blocks or
-        # the compiler tries to index too far into waves_per_block (and if that
-        # is made longer there's just a fatal crash), so batch dimension needs
-        # to be last.
+        # TODO(#392): Can only have 3 dimensions distributed in actual blocks so
+        # batch dimension needs to be last.
         tkw.WorkgroupConstraint(B, BLOCK_B, 3),
         tkw.TilingConstraint(M_qs, BLOCK_M),
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         ),
@@ -916,15 +906,12 @@ def get_attention_bwd_dq_kernel(
         # get errors about tile size being divisible by vector size.
         tkw.WorkgroupConstraint(K1_qkd, BLOCK_K1, 1),
         tkw.WorkgroupConstraint(N_vd, BLOCK_N, 2),
-        # TODO(#392): Can only have 3 dimensions distributed in actual blocks or
-        # the compiler tries to index too far into waves_per_block (and if that
-        # is made longer there's just a fatal crash), so batch dimension needs
-        # to be last.
+        # TODO(#392): Can only have 3 dimensions distributed in actual blocks so
+        # batch dimension needs to be last.
         tkw.WorkgroupConstraint(B, BLOCK_B, 3),
         tkw.TilingConstraint(M_qs, BLOCK_M),
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         ),

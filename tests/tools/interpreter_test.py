@@ -30,9 +30,7 @@ def testGemm():
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     # Wave-level micro-kernel.
     # Since warps are not directly addressable, there is no

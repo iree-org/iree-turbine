@@ -120,12 +120,7 @@ def get_igemm_conv2d(
     constraints += [tkw.WaveConstraint(NF, BLOCK_N / ratio_n)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64,
-            waves_per_block=(ratio_n, ratio_m, 1),
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     @tkw.wave(constraints)
     def conv(

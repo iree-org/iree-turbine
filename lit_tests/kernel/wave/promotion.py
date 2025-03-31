@@ -55,7 +55,6 @@ def test_read_write_equal_sizes():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
         )
     ]
@@ -106,7 +105,6 @@ def test_read_write_equal_sizes_different_address_spaces():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
         )
     ]
@@ -164,9 +162,7 @@ def test_gemm():
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
     with tk.gen.TestLaunchContext(
         {
             BLOCK_M: 32,

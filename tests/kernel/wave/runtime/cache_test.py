@@ -164,7 +164,6 @@ def testSameConfig(request):
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 32, N: 32},
         )
@@ -276,7 +275,6 @@ def testDifferentDynamicSameBlock(request):
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 32, N: 32},
         )
@@ -429,7 +427,6 @@ def testSameSizeDifferentBlock(request):
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 32, N: 32},
         )
@@ -644,7 +641,6 @@ def testDifferentSignatureSameCore():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]

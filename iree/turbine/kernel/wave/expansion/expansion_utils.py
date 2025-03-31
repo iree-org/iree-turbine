@@ -79,7 +79,9 @@ def get_dim_scaling(
 
             wave_count = 1
             if isinstance(constraint, WorkgroupConstraint):
-                wave_count = hw_cons.waves_per_block[constraint.workgroup_dim]
+                wave_count = hw_cons.thread_block.static_shape[constraint.workgroup_dim]
+                if constraint.workgroup_dim == 0:
+                    wave_count //= hw_cons.threads_per_wave
             if tile_size is None or wave_count is None or vector_size is None:
                 raise ValueError(
                     "Tile size, wave count and vector size must be statically known"
