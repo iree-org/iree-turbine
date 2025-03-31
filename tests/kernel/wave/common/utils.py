@@ -86,7 +86,7 @@ def scaled_dot_product_attention_bhsd(
         bool_mask = custom_mask.to(torch.bool)
         bool_mask = bool_mask[:, None, :, None]
         assert bool_mask.shape == (query.shape[0], 1, query.shape[2], 1)
-        attn_logits = attn_logits.masked_fill(bool_mask, float("-inf"))
+        attn_logits = attn_logits.masked_fill(~bool_mask, float("-inf"))
 
     # Improve numerical stability using log-sum-exp trick
     attn_logits = attn_logits - attn_logits.max(dim=-1, keepdim=True).values

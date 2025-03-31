@@ -296,7 +296,7 @@ def testAttentionCausal(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("attention"))
+@pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
@@ -325,7 +325,7 @@ def testAttentionBSHD(
     )
 
     is_causal = False
-    is_custom_mask = False
+    is_custom_mask = True
     custom_mask = None
 
     assert not (
@@ -378,6 +378,7 @@ def testAttentionBSHD(
 
         if is_custom_mask:
             custom_mask = device_randn([1, shape.query_seq_len], dtype=torch.float32)
+            # custom_mask = device_zeros([1, shape.query_seq_len], dtype=torch.float32)
             custom_mask = (custom_mask > 0).int()
 
             asm = base_attention_func(
@@ -399,6 +400,8 @@ def testAttentionBSHD(
         torch_ref = scaled_dot_product_attention_bhsd(
             q, k, v, is_causal=is_causal, custom_mask=custom_mask
         )
+
+        # breakpoint()
 
         assert_close(
             output.transpose(1, 2),

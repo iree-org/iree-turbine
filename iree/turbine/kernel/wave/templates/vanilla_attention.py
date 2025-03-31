@@ -382,7 +382,7 @@ def get_bshd_attention_kernel(
                 custom_mask_tensor = tkw.cast(custom_mask_tensor, tkw.i1)
                 mask = mask & custom_mask_tensor
 
-            bias = tkw.select(mask, MIN_INF, ZEROF)
+            bias = tkw.select(mask, ZEROF, MIN_INF)
 
             x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=K2)
@@ -404,6 +404,17 @@ def get_bshd_attention_kernel(
         # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
+
+        zero_tensor = tkl.Register[B, H, M, tkl.f32](0.0)
+        flag_tensor = tkw.apply_expr(res_sum, lambda x: x == 0.0)
+        flag_tensor = tkw.cast(flag_tensor, tkw.i1)
+        upd_reciprocal_sum = tkw.select(flag_tensor, zero_tensor, reciprocal_sum)
+
+        # zero_mask = tkw.apply_expr(res_sum, lambda x: 0.0 if x == 0.0 else 1.0)
+        # reciprocal_sum = reciprocal_sum * zero_mask
+
+        # reciprocal_sum = tkw.apply_expr(res_sum, lambda x: zero_tensor if x==0.0 else reciprocal_sum)
+
         res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
