@@ -566,9 +566,10 @@ def get_reduce_mapping(
         # threads per wave and the vector size.
         threads_per_wave = hardware_constraint.threads_per_wave
         vector_size = hardware_constraint.vector_shapes[dim]
-        elements_per_thread = sympy.Max(
-            sympy.ceiling(vector_size / threads_per_wave), 1
-        )
+        assert (
+            vector_size % threads_per_wave == 0
+        ), f"Vector size {dim}={vector_size} must be divisible by threads per wave {threads_per_wave}"
+        elements_per_thread = vector_size // threads_per_wave
         stride = compute_stride(
             custom.indexing_dims, hardware_constraint.vector_shapes, dim
         )
