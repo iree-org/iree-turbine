@@ -317,16 +317,19 @@ def populate_read_write_source_indices(
             else node.elements_per_thread
         )
 
-        stride = compute_stride(
-            node.indexing_dims, hardware_constraint.vector_shapes, dim
-        )
         wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
 
         assert len(wg_constraint) <= 1, f"Multiple workgroup constraints for dim {dim}"
         if not wg_constraint:
             continue
 
+        stride = compute_stride(
+            node.indexing_dims, hardware_constraint.vector_shapes, dim
+        )
+
         wg_dim = wg_constraint[0].workgroup_dim
+        assert wg_dim <= 2, f"Only support up to 3 workgroups for now, got {wg_dim}"
+
         if elements_per_thread is None:
             tile_size = wg_constraint[0].tile_size
             threads_count = hardware_constraint.threads_per_block[wg_dim]
