@@ -17,7 +17,7 @@ from ...ops.wave_ops import (
     Write,
     get_custom,
 )
-from ..._support.indexing import IndexSequence, IndexSymbol
+from ..._support.indexing import IndexSequence, IndexSymbol, subs_idxc
 from ..._support.tracing import CapturedTrace
 from ....support.logging import get_logger
 from ..utils.general_utils import (
@@ -25,9 +25,6 @@ from ..utils.general_utils import (
 )
 from ..utils.mma_utils import (
     simplify_index,
-)
-from ..utils.symbol_utils import (
-    subs_idxc,
 )
 from copy import deepcopy
 from itertools import groupby

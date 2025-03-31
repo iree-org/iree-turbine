@@ -101,10 +101,15 @@ from ..constraints import (
     WorkgroupConstraint,
     TilingConstraint,
 )
-from ..utils.symbol_utils import subs_idxc
 
 # Indexing imports.
-from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
+from ..._support.indexing import (
+    IndexingContext,
+    IndexExpr,
+    IndexSequence,
+    index_symbol,
+    subs_idxc,
+)
 from ..scheduling.resources import get_scheduling_mask
 
 from .emitter import (

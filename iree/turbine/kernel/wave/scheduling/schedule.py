@@ -23,9 +23,7 @@ from ..utils.general_utils import (
     get_assumptions,
     evaluate_with_assumptions,
 )
-from ..utils.symbol_utils import (
-    subs_idxc,
-)
+from ..._support.indexing import subs_idxc
 import torch.fx as fx
 from ....support.logging import get_logger
 

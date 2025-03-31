@@ -11,7 +11,13 @@ from ..wave.constraints import (
     TilingConstraint,
 )
 from .._support.tracing import CapturedTrace
-from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
+from .._support.indexing import (
+    IndexingContext,
+    IndexSequence,
+    IndexSymbol,
+    IndexExpr,
+    subs_idxc,
+)
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
 from .utils.general_utils import (
@@ -22,9 +28,6 @@ from .utils.general_utils import (
 )
 from .utils.graph_utils import (
     DCE,
-)
-from .utils.symbol_utils import (
-    subs_idxc,
 )
 from math import prod
 import torch.fx as fx

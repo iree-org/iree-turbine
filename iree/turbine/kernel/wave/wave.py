@@ -12,7 +12,7 @@ from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom, IterArg
-from .._support.indexing import IndexingContext, IndexExpr
+from .._support.indexing import IndexingContext, IndexExpr, subs_idxc, safe_subs
 from .symbolic_constraints import SymbolicAlias
 from .._support.tracing import (
     CapturedTrace,
@@ -60,7 +60,6 @@ from .shared_memory_indexing import (
 )
 
 # Utils
-from .utils.symbol_utils import subs_idxc, safe_subs
 from .utils.classes import KernelLaunchInfo
 from .utils.print_utils import print_trace, try_apply_pass
 from .utils.graph_utils import (

@@ -6,11 +6,10 @@
 
 from .._support.tracing import CapturedTrace
 from ...support.logging import get_logger
-from .._support.indexing import IndexingContext
+from .._support.indexing import IndexingContext, subs_idxc
 from ..ops.wave_ops import *
 from ..lang.global_symbols import *
 from .constraints import Constraint, get_constrained_shape
-from .utils.symbol_utils import subs_idxc
 from .utils.graph_utils import move_node_after
 from .utils.classes import KernelLaunchInfo
 import math

@@ -5,7 +5,7 @@
 
 from typing import Optional
 from ..._support.tracing import CapturedTrace
-from ..._support.indexing import IndexExpr, IndexSymbol, IndexSequence
+from ..._support.indexing import IndexExpr, IndexSymbol, IndexSequence, subs_idxc
 from ...lang.global_symbols import *
 from ...ops.wave_ops import (
     CustomOp,
@@ -20,7 +20,6 @@ from ..constraints import (
 )
 import torch.fx as fx
 
-from .symbol_utils import subs_idxc
 from .graph_utils import capture_backward_slice
 
 

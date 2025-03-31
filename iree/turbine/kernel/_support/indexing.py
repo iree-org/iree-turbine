@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Optional, Type, TypeVar, Union
+from typing import Any, ClassVar, List, Optional, Tuple, Type, TypeVar, Union
 
 from abc import ABC
 from dataclasses import dataclass
@@ -442,3 +442,28 @@ class IndexSequence:
 
     def __repr__(self) -> str:
         return f"{self.start} : {self.size} : {self.stride}"
+
+
+###############################################################################
+# Symbol utilities
+###############################################################################
+
+
+def safe_subs(input: Any, subs: List[Tuple[IndexExpr, IndexExpr]]) -> Any:
+    """
+    Substitute input using provided `subs` list if input is sympy object.
+    Otherwise return input unchanged.
+    """
+    if isinstance(input, (sympy.Basic, IndexSequence)):
+        return input.subs(subs)
+
+    return input
+
+
+def subs_idxc(input: Any) -> Any:
+    """
+    Substitute input using IndexingContext if input is sympy object.
+    Otherwise return input unchanged.
+    """
+    idxc = IndexingContext.current()
+    return safe_subs(input, idxc.subs)
