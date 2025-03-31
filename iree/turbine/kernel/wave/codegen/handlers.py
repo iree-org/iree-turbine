@@ -621,7 +621,6 @@ def handle_reciprocal(source: Value) -> OpResult:
         zeros = arith_d.ConstantOp(source.type, splat_zeros)
         div_result = arith_d.divf(ones, source)
         cmp = arith_d.cmpf(arith_d.CmpFPredicate.OEQ, source, zeros)
-        # reciprocal = arith_d.divf(ones, source)
         reciprocal = arith_d.select(cmp, zeros, div_result)
     else:
         raise ValidationError(
