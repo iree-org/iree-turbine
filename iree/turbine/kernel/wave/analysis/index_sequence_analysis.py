@@ -587,12 +587,6 @@ def get_reduce_mapping(
             ), f"Multiple workgroup constraints for dimension {dim}"
             if wg_constraint:
                 workgroup_dim = wg_constraint[0].workgroup_dim
-                if workgroup_dim == 0:
-                    # Skip the first dimension as it is the reduction dimension.
-                    # sometimes we want to distribute reduction across the threads, and
-                    # distribute something else across wg0 blocks but not threads.
-                    # There is no way to express this in the current constraint framework.
-                    continue
             else:
                 continue
 
