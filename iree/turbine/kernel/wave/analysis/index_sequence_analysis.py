@@ -34,6 +34,7 @@ from ...lang.global_symbols import *
 from ..utils.general_utils import (
     get_hardware_constraint,
     get_largest_index_and_size,
+    get_workgroup_constraints,
     partial,
 )
 from ..utils.mma_utils import (
@@ -526,9 +527,7 @@ def set_thread_dependent_index_from_read_write(
     assert sources, "No read nodes found in the graph."
 
     visited = set()
-    workgroup_constraints = [
-        c for c in constraints if isinstance(c, WorkgroupConstraint)
-    ]
+    workgroup_constraints = get_workgroup_constraints(constraints)
     symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
     for source in sources:
         visited = visited.union(set([x for x in sources]))
@@ -569,9 +568,7 @@ def get_reduce_mapping(
     """
     sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
     hardware_constraint = get_hardware_constraint(constraints)
-    workgroup_constraints = [
-        c for c in constraints if isinstance(c, WorkgroupConstraint)
-    ]
+    workgroup_constraints = get_workgroup_constraints(constraints)
 
     reduce_mapping = {}
     for source in sources:
@@ -660,9 +657,7 @@ def set_thread_dependent_index_from_reduce(
     assert sources, "No reduce nodes found in the graph."
 
     visited = set()
-    workgroup_constraints = [
-        c for c in constraints if isinstance(c, WorkgroupConstraint)
-    ]
+    workgroup_constraints = get_workgroup_constraints(constraints)
     symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
     for source in sources:
         visited = visited.union(set([x for x in sources]))
