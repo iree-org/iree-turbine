@@ -28,7 +28,6 @@ def get_extend_attention_rpe_kernel(
     q_shape: tuple[int],
     k_shape: tuple[int],
     v_shape: tuple[int],
-    block_table_shape: tuple[int],
     k_cache_shape: tuple[int],
     v_cache_shape: tuple[int],
     o_shape: tuple[int],
@@ -58,8 +57,7 @@ def get_extend_attention_rpe_kernel(
 
     S = tkl.sym.S
     EXT_IDX = tkl.sym.EXT_IDX
-    REQ_IDX = tkl.sym.REQ_IDX
-    SEQ_IDX = tkl.sym.SEQ_IDX
+    KV_START_IDX = tkl.sym.KV_START_IDX
     MAX_EXTEND_SEQ_LEN = tkl.sym.MAX_EXTEND_SEQ_LEN
     # Workgroup tile sizes
     BLOCK_S = tkl.sym.BLOCK_S
@@ -118,13 +116,11 @@ def get_extend_attention_rpe_kernel(
         inputs={H: i, D_KV: j, N_Q: k},
         outputs={H: i, N_Q: k + EXT_IDX, D_KV: j},
     )
-
     q_mapping = tkw.IndexMapping(
         num_iterators=3,
         inputs={H: i, N_Q: j + EXT_IDX, D_Q: k},
         outputs={H: i, N_Q: j, D_Q: k},
     )
-
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     k_mapping = tkw.IndexMapping(
         num_iterators=3,
@@ -137,26 +133,27 @@ def get_extend_attention_rpe_kernel(
         outputs={H_KV: i, N_KV: j, D_Q: k},
         dynamic_val_mappings={N_KV: j},
     )
-
     v_mapping = tkw.IndexMapping(
         num_iterators=3,
         inputs={H_KV: i // head_ratio, D_KV: j, N_KV: k + EXT_IDX},
         outputs={H_KV: i, D_KV: j, N_KV: k},
     )
-
     v_cache_mapping = tkw.IndexMapping(
         num_iterators=3,
         inputs={H_KV: i // head_ratio, D_KV: j, N_KV: d0},
         outputs={H_KV: i, D_KV: j, N_KV: k},
         dynamic_val_mappings={N_KV: k},
     )
-
-    block_table_mapping = tkw.IndexMapping(
+    kv_indices_mapping = tkw.IndexMapping(
         num_iterators=1,
-        inputs={S: REQ_IDX, N_KV: i},
+        inputs={N_KV: i + KV_START_IDX},
         outputs={N_KV: i},
     )
-
+    ind_ptr_mapping = tkw.IndexMapping(
+        num_iterators=1,
+        inputs={S: i + 1},
+        outputs={S: i},
+    )
     clip = sympy.Piecewise(
         (d0 - d1, (d0 - d1 < max_rpe_context_length) & (d0 - d1 >= 0)),
         (max_rpe_context_length, True),
@@ -175,10 +172,10 @@ def get_extend_attention_rpe_kernel(
     k_layout = tkl.MemoryLayout(shape=set_dynamic_dim(k_shape))
     v_layout = tkl.MemoryLayout(shape=set_dynamic_dim(v_shape))
     o_layout = tkl.MemoryLayout(shape=set_dynamic_dim(o_shape))
-    block_table_layout = tkl.MemoryLayout(shape=block_table_shape)
     k_cache_layout = tkl.MemoryLayout(shape=k_cache_shape)
     v_cache_layout = tkl.MemoryLayout(shape=v_cache_shape)
     num_seqs_layout = tkl.MemoryLayout(shape=[None])
+    kv_indices_layout = tkl.MemoryLayout(shape=[None])
     rpe_layout = tkl.MemoryLayout(shape=[max_rpe_context_length + 1])
 
     @tkw.wave(constraints)
@@ -192,21 +189,9 @@ def get_extend_attention_rpe_kernel(
         v_cache: tkl.Memory[
             N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_cache_layout
         ],
-        block_table: tkl.Memory[
-            S, N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
-        ],
-        request_indices: tkl.Memory[
-            S, GLOBAL_ADDRESS_SPACE, wave_size_dtype, num_seqs_layout
-        ],
-        sequence_lengths: tkl.Memory[
-            S, GLOBAL_ADDRESS_SPACE, wave_size_dtype, num_seqs_layout
-        ],
-        sequence_lengths_extend: tkl.Memory[
-            S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout
-        ],
-        start_indices_extend: tkl.Memory[
-            S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout
-        ],
+        qo_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        kv_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        kv_indices: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
         rpe: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
@@ -218,16 +203,19 @@ def get_extend_attention_rpe_kernel(
         layer_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](layer_scaling)
         rpe_scale_reg = tkl.Register[H, N_Q, N_KV, tkl.f32](rpe_scaling)
 
-        req_idx = tkw.read(request_indices, elements_per_thread=1)
-        tkw.set_symbol(REQ_IDX, req_idx)
-        start = tkw.read(start_indices_extend, elements_per_thread=1)
-        tkw.set_symbol(EXT_IDX, start)
-        seq_len_extend = tkw.read(sequence_lengths_extend, elements_per_thread=1)
+        seq_extend_start_idx = tkw.read(qo_indptr, elements_per_thread=1)
+        tkw.set_symbol(EXT_IDX, seq_extend_start_idx)
+        seq_len_extend = (
+            tkw.read(qo_indptr, elements_per_thread=1, mapping=ind_ptr_mapping)
+            - seq_extend_start_idx
+        )
         tkw.set_symbol(N_Q, seq_len_extend)
-        seq_len = tkw.read(sequence_lengths, elements_per_thread=1)
-        seq_len = tkw.cast(seq_len, tkl.i32)
-        seq_len_prefix = seq_len - seq_len_extend
-
+        seq_kv_start_idx = tkw.read(kv_indptr, elements_per_thread=1)
+        tkw.set_symbol(KV_START_IDX, seq_kv_start_idx)
+        seq_len_prefix = (
+            tkw.read(kv_indptr, elements_per_thread=1, mapping=ind_ptr_mapping)
+            - seq_kv_start_idx
+        )
         tkw.set_symbol(N_KV, seq_len_prefix)
 
         @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
@@ -242,14 +230,14 @@ def get_extend_attention_rpe_kernel(
                 mapping=q_mapping,
             )
             block_indices_v = tkw.read(
-                block_table,
+                kv_indices,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_PV,
-                mapping=block_table_mapping,
+                mapping=kv_indices_mapping,
             )
             block_indices_k = tkw.read(
-                block_table,
+                kv_indices,
                 elements_per_thread=1,
-                mapping=block_table_mapping,
+                mapping=kv_indices_mapping,
             )
             k_reg = tkw.read(
                 k_cache,

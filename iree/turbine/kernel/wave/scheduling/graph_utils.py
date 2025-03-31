@@ -6,7 +6,7 @@
 
 import torch.fx as fx
 from random import Random
-from collections import defaultdict
+from collections import defaultdict, deque
 from ..._support.indexing import index_symbol, IndexExpr
 from .resources import *
 from dataclasses import dataclass
@@ -15,7 +15,7 @@ import math
 from functools import partial
 from ..utils.symbol_utils import safe_subs
 import multiprocessing as mp
-from typing import Optional
+from typing import Optional, Callable
 
 T = index_symbol("$INITIATION_INTERVAL")
 
@@ -362,3 +362,73 @@ def create_scheduling_edges(
             edges.append(edge)
     erase_placeholder_nodes(graph, ignore_nodes)
     return edges
+
+
+def get_root_nodes_from_edges(edges: list[Edge]) -> list[fx.Node]:
+    """
+    Given scheduling edges, returns a list of node that
+    do not have a ancestor, i.e are root nodes of the graph.
+    """
+    source_nodes = set()
+    dst_nodes = set()
+    for edge in edges:
+        source_nodes.add(edge._from)
+        dst_nodes.add(edge._to)
+    root_nodes = source_nodes.difference(dst_nodes)
+    return root_nodes
+
+
+def filter_edges(filter: Callable[[Edge], bool], edges) -> list[Edge]:
+    filtered = []
+    for edge in edges:
+        if filter(edge):
+            filtered.append(edge)
+    return filtered
+
+
+def sort_graph_by_edge_weight(nodes: list[fx.Node], edges: list[Edge]):
+    """
+    Sort nodes based on scheduling weight.
+
+    Where scheduling weight is defined as:
+    scheduling_weight[node] = sum(edge.weight + scheduling_weight[edge.source] for edge in edges)
+
+    scheduling weight is suppose to quantify how early or late a node should live in a graph.
+    Similar to topoological ordering but more robust.
+
+    This is achieved by setting up a workqueue which starts with root of graph.
+    we then explore successors of nodes in workqueue and compute it's scheduling
+    weight as defined in above formula. If ancestor/producer to current node has
+    no value yet, we move current node to end of queue to try again later.
+    """
+    schedule_weight = {}
+    workqueue = deque(nodes)
+    non_solved_counter = 0
+    while len(workqueue) > 0:
+        node = workqueue.popleft()
+        is_producer_edge = lambda edge: edge._to == node
+        producers_edges = filter_edges(is_producer_edge, edges)
+        filter_producer_edge = [
+            edge for edge in producers_edges if edge.weight.iteration_difference == 0
+        ]
+
+        # Save for later if producer not registered yet.
+        if any([edge._from not in schedule_weight for edge in filter_producer_edge]):
+            # If we went over entire workqueue and still cannot find producer,
+            # means it is missing producer from the edges.
+            non_solved_counter += 1
+            if non_solved_counter > len(workqueue):
+                raise ValueError(
+                    "Cannot find producer(s) for remaining item in workqueue."
+                )
+            workqueue.append(node)
+            continue
+
+        non_solved_counter = 0
+        schedule_weight[node] = sum(
+            [
+                schedule_weight[edge._from] + edge.weight.delay
+                for edge in filter_producer_edge
+            ]
+        )
+    return sorted(nodes, key=lambda x: schedule_weight[x])

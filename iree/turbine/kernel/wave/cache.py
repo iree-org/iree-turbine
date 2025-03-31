@@ -12,11 +12,10 @@ import inspect
 import json
 import os
 import shutil
-import torch
 import threading
 import math
 
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import functools
@@ -77,8 +76,26 @@ def extract_free_vars(kernel_fn: Callable):
     return [
         (k, v)
         for k, v in inspect.getclosurevars(kernel_fn).nonlocals.items()
-        if not isinstance(v, IndexMapping)
+        if not isinstance(v, (IndexMapping, Callable))
     ]
+
+
+def get_nested_functions(root_fn: Callable):
+    """Simple BFS search to get all sub functions inside a wave kernel."""
+    workqueue = deque([root_fn])
+    fn_list = set([root_fn])
+    while workqueue:
+        cur_fn = workqueue.pop()
+        # Add var to workqueue and fn_list freevar that
+        # we have not seen before and who's type is a function.
+        sub_fns = [
+            f
+            for f in inspect.getclosurevars(cur_fn).nonlocals.values()
+            if inspect.isfunction(f) and f not in fn_list
+        ]
+        fn_list.update(sub_fns)
+        workqueue.extend(sub_fns)
+    return fn_list
 
 
 def anonymize_constraints(input_constraints: list[Constraint]):
@@ -135,28 +152,31 @@ class WaveCacheManager(object):
         """
         Get a unique identifier for a given kernel.
         """
-        try:
-            kernel_src = inspect.getsource(kernel_fn)
-            index_mappings = extract_mappings(kernel_fn)
-            arg_dtypes = extract_arg_types(kernel_fn)
-            free_vars = extract_free_vars(kernel_fn)
-        except:
-            # sets kernel_hash as None if fail to inspect source.
-            # We also taught load_kernel and store_kernel to skip
-            # if kernel_hash is None.
-            return None
-        processed_constraints = anonymize_constraints(constraints)
-        key = [
-            kernel_src,
-            processed_constraints,
-            options.subs,
-            options.dynamic_symbols,
-            options.schedule,
-            options.use_scheduling_barriers,
-            index_mappings,
-            arg_dtypes,
-            free_vars,
-        ]
+        fns = get_nested_functions(kernel_fn)
+        key = []
+        for fn in fns:
+            try:
+                kernel_src = inspect.getsource(kernel_fn)
+                index_mappings = extract_mappings(kernel_fn)
+                arg_dtypes = extract_arg_types(kernel_fn)
+                free_vars = extract_free_vars(kernel_fn)
+            except:
+                # sets kernel_hash as None if fail to inspect source.
+                # We also taught load_kernel and store_kernel to skip
+                # if kernel_hash is None.
+                return None
+            processed_constraints = anonymize_constraints(constraints)
+            key += [
+                kernel_src,
+                processed_constraints,
+                options.subs,
+                options.dynamic_symbols,
+                options.schedule,
+                options.use_scheduling_barriers,
+                index_mappings,
+                arg_dtypes,
+                free_vars,
+            ]
 
         # Benchmark related hash
         if options.run_bench:
@@ -238,7 +258,7 @@ class WaveCacheManager(object):
         kernel_sig = [KernelBufferUsage[usage] for usage in kernel_sig_str]
         asm = cur_asm_path.read_text()
         cur_kernel_info_path = cur_cache_basefile.with_suffix(".kernel_info.json")
-        kernel_info_str = json.loads(_read_file(cur_kernel_info_path, "r"))
+        kernel_info_str = json.loads(cur_kernel_info_path.readtext())
         # Convert string to lambda. This could have a math dependency
         # and so we include it above.
         kernel_info_str["grid"] = eval(kernel_info_str["grid_str"])

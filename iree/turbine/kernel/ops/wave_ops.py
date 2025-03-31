@@ -1521,7 +1521,7 @@ class Reduction(NestedRegionOp):
 class Write(CustomOp):
     register_: fx.Proxy
     memory: fx.Proxy
-    elements_per_thread: Optional[Any]
+    elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
 

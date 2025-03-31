@@ -47,6 +47,7 @@ from ..utils.print_utils import (
     try_apply_pass,
 )
 import torch.fx as fx
+import sympy
 from typing import Sequence, Callable, Optional
 from ....support.logging import get_logger
 from copy import deepcopy, copy
@@ -315,14 +316,27 @@ def populate_read_write_source_indices(
             )
             else node.elements_per_thread
         )
+
+        wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
+
+        assert len(wg_constraint) <= 1, f"Multiple workgroup constraints for dim {dim}"
+        if not wg_constraint:
+            continue
+
         stride = compute_stride(
             node.indexing_dims, hardware_constraint.vector_shapes, dim
         )
-        wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
-        if not wg_constraint:
-            continue
+
+        wg_dim = wg_constraint[0].workgroup_dim
+        assert wg_dim <= 2, f"Only support up to 3 workgroups for now, got {wg_dim}"
+
+        if elements_per_thread is None:
+            tile_size = wg_constraint[0].tile_size
+            threads_count = hardware_constraint.threads_per_block[wg_dim]
+            elements_per_thread = sympy.Max(sympy.ceiling(tile_size / threads_count), 1)
+
         index[dim] = hardware_constraint.apply_read_write_thread_mapping(
-            dim, wg_constraint[0].workgroup_dim, elements_per_thread, stride
+            dim, wg_dim, elements_per_thread, stride
         )
     return [(node, index, hardware_constraint.vector_shapes)]
 
@@ -572,6 +586,12 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         if isinstance(custom, MMA):
             return custom.acc.index
         return custom.index
+
+    for node in trace.walk(lambda x: isinstance(get_custom(x), (Read, Write))):
+        custom = get_custom(node)
+        if custom.elements_per_thread is None:
+            _, size = get_largest_index_and_size(get_index(custom))
+            custom.update_arg("elements_per_thread", size)
 
     binary_ops = trace.walk(lambda node: isinstance(get_custom(node), BinaryPyOp))
     for binary_op in binary_ops:

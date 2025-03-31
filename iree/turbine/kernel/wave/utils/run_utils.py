@@ -13,6 +13,7 @@ import glob
 from ..compile_options import WaveCompileOptions
 from .compile_utils import compile_to_vmfb
 from .classes import KernelLaunchInfo
+from ..profiling import benchmark_module
 
 
 # Cache for the system context and vm function.
@@ -151,8 +152,10 @@ def invoke_vmfb(
         # then the latency is in milliseconds.
         benchmark_flags["batch_size"] = 1
 
-        if options.bench_repetitions is not None:
-            benchmark_flags["benchmark_repetitions"] = int(options.bench_repetitions)
+        if options.benchmark_repetitions is not None:
+            benchmark_flags["benchmark_repetitions"] = int(
+                options.benchmark_repetitions
+            )
 
     if options.inplace:
         # Select device as the GPU, where input tensors are coming from.
@@ -183,31 +186,32 @@ def invoke_vmfb(
         if options.kernel_hash:
             RUNTIME_CACHE[options.kernel_hash] = (ctx, func)
 
-    if not options.run_bench:
-        if options.inplace:
-            _inplace_invoke(
-                ctx.vm_context,
-                device,
-                func,
-                kernel_inputs,
-                kernel_outputs,
-                options.dynamic_symbols_map.values(),
-            )
-        else:
-            _invoke(
-                ctx.vm_context,
-                device,
-                func,
-                kernel_inputs,
-                kernel_outputs,
-                options.dynamic_symbols_map.values(),
-            )
+    if options.inplace:
+        _inplace_invoke(
+            ctx.vm_context,
+            device,
+            func,
+            kernel_inputs,
+            kernel_outputs,
+            options.dynamic_symbols_map.values(),
+        )
+    else:
+        _invoke(
+            ctx.vm_context,
+            device,
+            func,
+            kernel_inputs,
+            kernel_outputs,
+            options.dynamic_symbols_map.values(),
+        )
 
     if options.run_bench:
         benchmark_results = benchmark_module(
             options,
             kernel_inputs,
             kernel_outputs,
+            vmfb,
+            options.func_name,
             **benchmark_flags,
         )
         _print_bench_result(benchmark_results, options.bench_file)

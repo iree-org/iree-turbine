@@ -19,6 +19,7 @@ import math
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
+import sympy
 
 from iree.turbine.kernel.wave.cache import (
     is_cache_enabled,
@@ -613,3 +614,89 @@ def testSameConfigDifferentFreeVar(tmp_path):
     assert (
         len(cache_manager.session_cache) == 2
     ), "Expected len == 2, after caching second kernel."
+
+
+# This test is important to check two things:
+# 1. We can cache nested functions
+# 2. We do not cache if function signature is different even though
+#    core is same.
+
+
+@require_e2e
+@require_cache
+def testDifferentSignatureSameCore(tmp_path):
+    reset_cache_manager(tmp_path)
+    shape = [256, 256]
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Each workgroup works on single row of input data, and rows are further
+    # split into blocks of size up to 256. We have single wave per WG,
+    # and with default wave size of 64, each thread is operating on up to 4
+    # elements.
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    def add(a, b):
+        return a + b
+
+    def core(a):
+        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        double = add(res, res)
+        tkw.write(double, a, elements_per_thread=ELEMS_PER_THREAD)
+
+    @tkw.wave(constraints)
+    def double(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+        core(a)
+
+    @tkw.wave(constraints)
+    def double_transpose(a: tkl.Memory[N, M, ADDRESS_SPACE, tkl.f16]):
+        core(a)
+
+    cache_manager = get_cache_manager()
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+    )
+    options = set_default_run_config(options)
+    assert (
+        len(cache_manager.session_cache) == 0
+    ), "Expected len == 0, before any compilation of kernel."
+
+    double0_fn = wave_compile(options, double)
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected len == 1, after caching first kernel."
+
+    double1_fn = wave_compile(options, double)
+    # This used to break because in nested function,
+    # the nested fn pointer become a freevar, making us
+    # recompile every time.
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected len == 1, since it's same kernel."
+
+    doubleT_0_fn = wave_compile(options, double_transpose)
+    assert (
+        len(cache_manager.session_cache) == 2
+    ), "Expected len == 2, since despite same core, it has different signature."
