@@ -548,6 +548,24 @@ def get_reduce_mapping(
 ) -> dict[ReduceOp, dict[IndexSymbol, IndexSequence]]:
     """
     Get the mapping of the reduce ops to the index sequence.
+
+    Resulting index will have reduction dim distributed across wg0 threads and
+    rest of the dims distributed similar to read/write nodes according to the
+    WorkgroupConstraints.
+
+    Example:
+    ```
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    ...
+    @tkw.reduction(N, init_args=[init_max, init_sum])
+    def repeat(
+        partial_max: tkl.Register[M, tkl.f32],
+    ) -> tkl.Register[M, tkl.f32]:
+        res = tkw.read(a) # [M, N]
+        partial_max = tkw.max(res, partial_max, dim=N) # {N: 2*$T0 : 2 : 1, M: $T1 : 1 : 1}
+        ...
+    ```
+
     """
     sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
     hardware_constraint = get_hardware_constraint(constraints)
