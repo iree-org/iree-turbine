@@ -83,14 +83,10 @@ def scaled_dot_product_attention_bhsd(
         attn_logits = attn_logits.masked_fill(~causal_mask, float("-inf"))
 
     if custom_mask is not None:
-        custom_mask = custom_mask[:, None, :, None].bool()
-        # 1x1024 B, S --- B H S D
-        # 1, 32, 1024, 1357 -- B H S_q S_k
-        # attn_logits = attn_logits.masked_fill(~custom_mask, float("-inf"))
-
-        # mask_expanded = custom_mask.unsqueeze(1).unsqueeze(-1)  # Shape: [1, 1, 1024, 1]
-        # mask_expanded = mask_expanded.expand(-1, 32, -1, 1357)  # Shape: [1, 32, 1024, 1357]
-        attn_logits = attn_logits.masked_fill(custom_mask, float("-inf"))
+        bool_mask = custom_mask.to(torch.bool)
+        bool_mask = bool_mask[:, None, :, None]
+        assert bool_mask.shape == (query.shape[0], 1, query.shape[2], 1)
+        attn_logits = attn_logits.masked_fill(bool_mask, float("-inf"))
 
     # Improve numerical stability using log-sum-exp trick
     attn_logits = attn_logits - attn_logits.max(dim=-1, keepdim=True).values

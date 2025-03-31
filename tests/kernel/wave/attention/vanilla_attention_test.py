@@ -296,7 +296,7 @@ def testAttentionCausal(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
+@pytest.mark.parametrize("shape", get_test_shapes("attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
@@ -328,7 +328,9 @@ def testAttentionBSHD(
     is_custom_mask = True
     custom_mask = None
 
-    # TODO: add assertion to check if causal and custom mask are not applied together.
+    assert not (
+        is_causal and is_custom_mask
+    ), "Causal and custom mask cannot be applied together."
 
     (
         base_attention_func,
@@ -374,17 +376,8 @@ def testAttentionBSHD(
         o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
         output = device_zeros(o_shape, dtype=torch.float32)
 
-        if is_causal:
-            asm = base_attention_func(
-                q.transpose(1, 2).contiguous(),
-                k.transpose(1, 2).contiguous(),
-                v.transpose(1, 2).contiguous(),
-                output,
-            )
-
         if is_custom_mask:
-            mask_output = device_zeros([1, shape.query_seq_len], dtype=torch.float32)
-            custom_mask = device_zeros([1, shape.query_seq_len], dtype=torch.float32)
+            custom_mask = device_randn([1, shape.query_seq_len], dtype=torch.float32)
             custom_mask = (custom_mask > 0).int()
 
             asm = base_attention_func(
@@ -393,7 +386,13 @@ def testAttentionBSHD(
                 v.transpose(1, 2).contiguous(),
                 custom_mask.to(torch.int8),
                 output,
-                mask_output,
+            )
+        else:
+            asm = base_attention_func(
+                q.transpose(1, 2).contiguous(),
+                k.transpose(1, 2).contiguous(),
+                v.transpose(1, 2).contiguous(),
+                output,
             )
 
         # Torch reference needs to be in BHSD format

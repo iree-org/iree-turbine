@@ -202,7 +202,9 @@ def get_bshd_attention_kernel(
     is_causal: bool = False,
     is_custom_mask: bool = False,
 ):
-    # TODO: add assertion to check if causal and custom mask are not applied together.
+    assert not (
+        is_causal and is_custom_mask
+    ), "Causal and custom mask cannot be applied together."
 
     # Input sizes
     # BxS_QxHxD x BxS_KVxH_KVxD
@@ -212,6 +214,7 @@ def get_bshd_attention_kernel(
     K1 = tkl.sym.K1
     K2 = tkl.sym.K2
     H = tkl.sym.H
+    XX = tkl.sym.XX
     # Workgroup tile sizes
     BLOCK_B = tkl.sym.BLOCK_B
     BLOCK_M = tkl.sym.BLOCK_M
@@ -340,7 +343,7 @@ def get_bshd_attention_kernel(
         qkv_scaling = tkl.Register[B, H, M, K1, tkl.f16](dk_sqrt * log2e)
         c_reg = tkl.Register[B, H, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, H, M, tkl.f32](0.0)
-        init_max = tkl.Register[B, H, M, tkl.f32](-1e6)
+        init_max = tkl.Register[B, H, M, tkl.f32](-1e5)
         ZEROF = tkl.Register[B, M, K2, tkl.f32](0.0)
         MIN_INF = tkl.Register[B, M, K2, tkl.f32](-1e6)
 
@@ -379,23 +382,23 @@ def get_bshd_attention_kernel(
                 custom_mask_tensor = tkw.cast(custom_mask_tensor, tkw.i1)
                 mask = mask & custom_mask_tensor
 
-            mask = tkw.cast(mask, tkw.i1)
-            bias = tkw.select(mask, ZEROF, MIN_INF)
-
-            tkw.write(bias, mask_output, elements_per_thread=STORE_ELEMS_PER_THREAD)
+            bias = tkw.select(mask, MIN_INF, ZEROF)
 
             x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
+
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
+
             imm_f16 = tkw.cast(e_delta, tkl.f16)
             v_reg = tkw.read(
                 v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV, mapping=v_mapping
             )
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
+
             return m_j, d_j, acc
 
         # repeat represents the results of the loop
@@ -420,7 +423,7 @@ def get_bshd_attention_kernel(
         v: tkl.Memory[B, K2, H, N, ADDRESS_SPACE, tkl.f16],
         custom_mask: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[B, M, H, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        mask_output: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        mask_output: tkl.Memory[B, M, K2, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         base_attention_core_custom_mask(q, k, v, custom_mask, c, mask_output)
 
@@ -458,12 +461,11 @@ def get_bshd_attention_kernel(
         del hyperparams[B]
         del hyperparams[K2]
 
-    if is_causal:
-        return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
-    else:
+    if is_custom_mask:
         return (
             base_attention_custom_mask,
             hyperparams,
             dynamic_symbols,
             dynamic_symbols_map,
         )
+    return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map

@@ -615,7 +615,14 @@ def handle_reciprocal(source: Value) -> OpResult:
             source.type, get_constant_attr(1.0, element_type)
         )
         ones = arith_d.ConstantOp(source.type, splat_ones)
-        reciprocal = arith_d.divf(ones, source)
+        splat_zeros = DenseElementsAttr.get_splat(
+            source.type, get_constant_attr(0.0, element_type)
+        )
+        zeros = arith_d.ConstantOp(source.type, splat_zeros)
+        div_result = arith_d.divf(ones, source)
+        cmp = arith_d.cmpf(arith_d.CmpFPredicate.OEQ, source, zeros)
+        # reciprocal = arith_d.divf(ones, source)
+        reciprocal = arith_d.select(cmp, zeros, div_result)
     else:
         raise ValidationError(
             f"Found unhandled operand type for reciprocal: {element_type}"
