@@ -25,7 +25,6 @@ from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
 from ..lang.wave_types import IndexMapping
 from .._support.indexing import IndexExpr
-from .utils.run_utils import _write_file, _read_file
 from .utils.classes import KernelLaunchInfo
 from .compile_options import WaveCompileOptions
 
@@ -49,21 +48,10 @@ class WaveCache:
     reconstruct and call the "cached" kernel.
     """
 
-    cache_id: str
     kernel_sig: tuple[KernelBufferUsage]
     vmfb: bytes
+    asm: str
     kernel_launch_info: Optional[KernelLaunchInfo] = None
-
-    @property
-    def asm_filepath(self):
-        return (CACHE_BASE_DIR / self.cache_id / self.cache_id).with_suffix(".mlir")
-
-    @staticmethod
-    @functools.lru_cache
-    def asm(filepath: str):
-        with open(filepath, "r") as f:
-            module_str = f.read()
-        return module_str
 
 
 def extract_mappings(kernel_fn: Callable):
@@ -141,12 +129,13 @@ class WaveCacheManager(object):
     for number of kernel cached here, because this lives on RAM, and we wouldn't want to run OOM.
 
     2. File/Offline cache - This cache is essential for loading saved/compiled cache between sessions/runs. This is done
-    by storing vital kernel information(vmfb, kernel_sig, and mlir) to CACHE_BASE_DIR/kernel_hash directory. If said kernel
+    by storing vital kernel information(vmfb, kernel_sig, and mlir) to base_dir/kernel_hash directory. If said kernel
     is queried during a new run and does not exist on session/online cache yet, we'd load files from the kernel_hash directory
     and reconstruct the WaveCache from it.
     """
 
-    def __init__(self):
+    def __init__(self, base_dir):
+        self.base_dir = Path(base_dir)
         self.file_cache: set[str] = set()
         self.session_cache: OrderedDict[str, WaveCache] = OrderedDict()
         self.lock = threading.Lock()
@@ -204,9 +193,9 @@ class WaveCacheManager(object):
         the cache manager for what are available.
         """
         # Early exit if no cache directory found.
-        if not os.path.exists(CACHE_BASE_DIR):
+        if not self.base_dir.exists():
             return
-        for entry in os.scandir(CACHE_BASE_DIR):
+        for entry in self.base_dir.iterdir():
             if entry.name not in self.file_cache:
                 self.file_cache.add(entry.name)
 
@@ -219,21 +208,21 @@ class WaveCacheManager(object):
         kernel_launch_info: KernelLaunchInfo,
     ):
         """
-        Stores/save compiled kernels into CACHE_BASE_DIR/kernel_hash
+        Stores/save compiled kernels into self.base_dir/kernel_hash
         including it's MLIR, VMFB, and kernel signature. If wave
         runtime is enabled, also copies the hsaco binary and
         stores the kernel launch information.
         """
-        cur_cache_dir = CACHE_BASE_DIR / kernel_hash
+        cur_cache_dir = self.base_dir / kernel_hash
         os.makedirs(cur_cache_dir, exist_ok=True)
         cur_cache_basefile = cur_cache_dir / kernel_hash
         cur_vmfb_path = cur_cache_basefile.with_suffix(".vmfb")
         cur_module_path = cur_cache_basefile.with_suffix(".mlir")
         cur_kernelsig_path = cur_cache_basefile.with_suffix(".json")
-        _write_file(cur_vmfb_path, "wb", vmfb)
-        _write_file(cur_module_path, "w", module_str)
+        cur_vmfb_path.write_bytes(vmfb)
+        cur_module_path.write_text(module_str)
         kernel_sig_str = json.dumps([usage.name for usage in kernel_sig])
-        _write_file(cur_kernelsig_path, "w", kernel_sig_str)
+        cur_kernelsig_path.write_text(kernel_sig_str)
         cur_hsaco_path = glob.glob(str(WAVE_RUNTIME_DIR / "*.hsaco"))
         # Copy the hsaco file to the cache directory only if it exists.
         if cur_hsaco_path:
@@ -244,16 +233,18 @@ class WaveCacheManager(object):
         # Lambdas cannot be serialized by json so remove this from the kernel launch info.
         del kernel_launch_info_dict["grid"]
         kernel_info_str = json.dumps(kernel_launch_info_dict)
-        _write_file(cur_kernel_info_path, "w", kernel_info_str)
+        cur_kernel_info_path.write_text(kernel_info_str)
 
+    # This is a static method with the base directory passed in explicitly so
+    # that the lru_cache doesn't prevent garbage collection of instances.
     @staticmethod
     @functools.lru_cache
-    def load_kernel_from_file(kernel_hash):
+    def load_kernel_from_file(base_dir, kernel_hash):
         """
         Loads the queried kernel(including VMFB, and kernel signature)
         from local cache file/directory.
         """
-        cur_cache_dir = CACHE_BASE_DIR / kernel_hash
+        cur_cache_dir = base_dir / kernel_hash
         vmfb = None
         kernel_sig_str = None
         if not os.path.exists(cur_cache_dir):
@@ -261,16 +252,18 @@ class WaveCacheManager(object):
         cur_cache_basefile = cur_cache_dir / kernel_hash
         cur_vmfb_path = cur_cache_basefile.with_suffix(".vmfb")
         cur_kernelsig_path = cur_cache_basefile.with_suffix(".json")
-        vmfb = _read_file(cur_vmfb_path, "rb")
-        kernel_sig_str = json.loads(_read_file(cur_kernelsig_path, "r"))
+        cur_asm_path = cur_cache_basefile.with_suffix(".mlir")
+        vmfb = cur_vmfb_path.read_bytes()
+        kernel_sig_str = json.loads(cur_kernelsig_path.read_text())
         kernel_sig = [KernelBufferUsage[usage] for usage in kernel_sig_str]
+        asm = cur_asm_path.read_text()
         cur_kernel_info_path = cur_cache_basefile.with_suffix(".kernel_info.json")
-        kernel_info_str = json.loads(_read_file(cur_kernel_info_path, "r"))
+        kernel_info_str = json.loads(cur_kernel_info_path.readtext())
         # Convert string to lambda. This could have a math dependency
         # and so we include it above.
         kernel_info_str["grid"] = eval(kernel_info_str["grid_str"])
         kernel_launch_info = KernelLaunchInfo(**kernel_info_str)
-        return WaveCache(kernel_hash, kernel_sig, vmfb, kernel_launch_info)
+        return WaveCache(kernel_sig, vmfb, asm, kernel_launch_info)
 
     ###############################################################################
     # Session cache related helpers
@@ -309,9 +302,9 @@ class WaveCacheManager(object):
                 self.store_kernel_to_session(
                     options.kernel_hash,
                     WaveCache(
-                        options.kernel_hash,
                         options.kernel_usages,
                         vmfb,
+                        module_str,
                         options.kernel_launch_info,
                     ),
                 )
@@ -330,7 +323,7 @@ class WaveCacheManager(object):
                 self.session_cache.move_to_end(kernel_hash)
                 self.cache_hits += 1
             elif kernel_hash in self.file_cache:
-                cached_kernel = self.load_kernel_from_file(kernel_hash)
+                cached_kernel = self.load_kernel_from_file(self.base_dir, kernel_hash)
                 self.store_kernel_to_session(kernel_hash, cached_kernel)
                 self.cache_hits += 1
             else:
@@ -341,14 +334,10 @@ class WaveCacheManager(object):
 def get_cache_manager() -> WaveCacheManager:
     global _global_cache_manager
     if not "_global_cache_manager" in globals():
-        _global_cache_manager = WaveCacheManager()
+        _global_cache_manager = WaveCacheManager(CACHE_BASE_DIR)
     return _global_cache_manager
 
 
-def reset_cache_manager() -> WaveCacheManager:
-    if not "_global_cache_manager" in globals():
-        return
-    if os.path.exists(CACHE_BASE_DIR):
-        shutil.rmtree(CACHE_BASE_DIR)
+def reset_cache_manager(base_dir):
     global _global_cache_manager
-    del _global_cache_manager
+    _global_cache_manager = WaveCacheManager(base_dir)
