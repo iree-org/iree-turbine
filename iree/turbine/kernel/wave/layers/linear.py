@@ -112,6 +112,8 @@ def get_linear_kernel(
         bias_reg = tkw.read(bias)
         bias_reg = tkw.broadcast(bias_reg, target_shape=[B, M, N])
         bias_reg = tkw.cast(bias_reg, tkl.f32)
+        # We can get "free" bias-add by setting bias as the initial
+        # value of accumulator to the mma
         gemm_core(a, b, bias_reg, result)
 
     hyperparams = {
