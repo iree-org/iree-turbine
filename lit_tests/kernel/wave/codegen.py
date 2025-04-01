@@ -256,6 +256,43 @@ def test_read_write():
 
 
 @run_test
+def test_read_write_apply():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def read_write_apply(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        res = tkw.read(a)
+        tkw.write(res, b)
+
+    from iree.turbine.kernel.wave.codegen import emitter
+
+    old_flag = emitter._use_affine_expr
+    try:
+        emitter._use_affine_expr = True
+        read_write_apply = wave_compile(
+            get_wave_compile_options(canonicalize=True), read_write_apply
+        )
+        print(read_write_apply.asm)
+    finally:
+        emitter._use_affine_expr = old_flag
+
+    # CHECK-LABEL:    test_read_write_apply
+    # CHECK:            #{{.*}} = affine_map<()[s0, s1] -> (s0 + s1 * 16 + (s0 floordiv 64) * 16)>
+    # CHECK:            #{{.*}} = affine_map<()[s0, s1] -> (s0 * 32 + s1 * 16)>
+
+
+@run_test
 def test_read_write_diagonal():
     # This test, tests for functionality of tkw.self_index, by
     # generating code that generate a triangular matrix if M > N.
