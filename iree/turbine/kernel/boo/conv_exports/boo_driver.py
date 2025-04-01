@@ -94,11 +94,19 @@ def run(cli_args: Sequence[str]):
     parser.add_argument(
         "--iter", type=int, help="Number of iterations to run", default=100
     )
+    parser.add_argument(
+        "--splat-input-value",
+        default=None,
+        type=int,
+        help="use a splat value for inputs (defaults to random values)",
+    )
     args = parser.parse_args(cli_args)
     sig = mio.get_signature(args)
     conv = get_launchable(sig)
 
-    conv_args = sig.get_sample_conv_args(seed=10, device="cuda")
+    conv_args = sig.get_sample_conv_args(
+        seed=10, device="cuda", splat_value=args.splat_input_value
+    )
 
     result = None
     for _ in range(args.iter):
