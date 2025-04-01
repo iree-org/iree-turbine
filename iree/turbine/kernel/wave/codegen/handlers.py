@@ -462,7 +462,9 @@ def handle_and(lhs: Value, rhs: Value) -> OpResult:
     ):
         result = arith_d.andi(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhandled operand type for div: {element_type}")
+        raise ValidationError(
+            f"Found unhandled operand type for bitwise and: {element_type}"
+        )
     return result
 
 
@@ -474,7 +476,9 @@ def handle_and(lhs: Value, rhs: Value) -> OpResult:
     ):
         result = arith_d.ori(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhandled operand type for div: {element_type}")
+        raise ValidationError(
+            f"Found unhandled operand type for bitwise or: {element_type}"
+        )
     return result
 
 

@@ -8,10 +8,6 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.constraints import MMAType
-from iree.turbine.kernel.wave.utils.mma_utils import (
-    get_mfma_load_elems_per_thread,
-    get_mfma_store_elems_per_thread,
-)
 from .attention_common import AttentionShape
 from dataclasses import dataclass
 import math
@@ -209,10 +205,6 @@ def get_bshd_attention_kernel(
     BLOCK_H = tkl.sym.BLOCK_H
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD_QK = index_symbol("LOAD_ELEMS_PER_THREAD_QK")
-    LOAD_ELEMS_PER_THREAD_PV = index_symbol("LOAD_ELEMS_PER_THREAD_PV")
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -287,13 +279,9 @@ def get_bshd_attention_kernel(
             acc: tkl.Register[B, H, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, H, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(
-                q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK, mapping=q_mapping
-            )
+            q_reg = tkw.read(q, mapping=q_mapping)
             q_reg *= qkv_scaling
-            k_reg = tkw.read(
-                k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK, mapping=k_mapping
-            )
+            k_reg = tkw.read(k, mapping=k_mapping)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, H, M, K2])
             k2_index = tkw.self_index(K2, tkl.i32)
@@ -312,9 +300,7 @@ def get_bshd_attention_kernel(
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(
-                v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV, mapping=v_mapping
-            )
+            v_reg = tkw.read(v, mapping=v_mapping)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
@@ -323,7 +309,7 @@ def get_bshd_attention_kernel(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c, mapping=mapping)
 
     def base_attention_core_custom_mask(q, k, v, custom_mask, c):
         qkv_scaling = tkl.Register[B, H, M, K1, tkl.f16](dk_sqrt * log2e)
@@ -342,13 +328,9 @@ def get_bshd_attention_kernel(
             acc: tkl.Register[B, H, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, H, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(
-                q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK, mapping=q_mapping
-            )
+            q_reg = tkw.read(q, mapping=q_mapping)
             q_reg *= qkv_scaling
-            k_reg = tkw.read(
-                k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK, mapping=k_mapping
-            )
+            k_reg = tkw.read(k, mapping=k_mapping)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, H, M, K2])
             k2_index = tkw.self_index(K2, tkl.i32)
@@ -357,10 +339,7 @@ def get_bshd_attention_kernel(
             mask = tkw.cast(mask, tkw.i1)
 
             if is_custom_mask:
-                custom_mask_tensor = tkw.read(
-                    custom_mask,
-                    elements_per_thread=1,
-                )
+                custom_mask_tensor = tkw.read(custom_mask)
                 custom_mask_tensor = tkw.broadcast(
                     custom_mask_tensor,
                     target_shape=[B, M, K2],
@@ -379,9 +358,7 @@ def get_bshd_attention_kernel(
             d_j = tkw.sum(e_delta, e_init, dim=K2)
 
             imm_f16 = tkw.cast(e_delta, tkl.f16)
-            v_reg = tkw.read(
-                v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV, mapping=v_mapping
-            )
+            v_reg = tkw.read(v, mapping=v_mapping)
             new_acc = acc * e_delta_max
             acc = tkw.mma(v_reg, imm_f16, new_acc)
 
@@ -397,7 +374,7 @@ def get_bshd_attention_kernel(
         upd_reciprocal_sum = tkw.select(is_nan, init_sum, reciprocal_sum)
 
         res = res_mm * upd_reciprocal_sum
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c, mapping=mapping)
 
     @tkw.wave(constraints)
     def base_attention(
@@ -420,9 +397,6 @@ def get_bshd_attention_kernel(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
-        LOAD_ELEMS_PER_THREAD_PV: get_mfma_load_elems_per_thread(mfma_variant[1]),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_B: 1,
         BLOCK_H: 1,
         BLOCK_M: 128,
