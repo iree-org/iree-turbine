@@ -288,8 +288,16 @@ def test_read_write_apply():
         emitter._use_affine_expr = old_flag
 
     # CHECK-LABEL:    test_read_write_apply
-    # CHECK:            #{{.*}} = affine_map<()[s0, s1] -> (s0 + s1 * 16 + (s0 floordiv 64) * 16)>
-    # CHECK:            #{{.*}} = affine_map<()[s0, s1] -> (s0 * 32 + s1 * 16)>
+    # CHECK-DAG:        #[[MAP_0:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 + (s0 floordiv 64) * 16)>
+    # CHECK-DAG:        #[[MAP_1:.*]] = affine_map<()[s0, s1] -> (s0 * 32 + s1 * 16)>
+    # CHECK:            %[[WORKGROUP_ID_0:.*]] = stream.dispatch.workgroup.id[0] : index
+    # CHECK:            %[[WORKGROUP_ID_1:.*]] = stream.dispatch.workgroup.id[1] : index
+    # CHECK:            %[[THREAD_ID_X:.*]] = gpu.thread_id  x
+    # CHECK:            %[[THREAD_ID_Y:.*]] = gpu.thread_id  y
+    # CHECK:            %[[D0:.*]] = affine.apply #[[MAP_0]]()[%[[THREAD_ID_X]], %[[WORKGROUP_ID_0]]]
+    # CHECK:            %[[D1:.*]] = affine.apply #[[MAP_1]]()[%[[THREAD_ID_Y]], %[[WORKGROUP_ID_1]]]
+    # CHECK:            %[[D2:.*]] = vector.load %{{.*}}[%[[D0]], %[[D1]]]
+    # CHECK:            vector.store %[[D2]], %{{.*}}[%[[D0]], %[[D1]]]
 
 
 @run_test
