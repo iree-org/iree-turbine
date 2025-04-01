@@ -221,16 +221,16 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         return arg
 
     def _check_vec_scalar(a, b):
-        if not isinstance(a.type, VectorType):
+        if not isinstance(a, VectorType):
             return False
 
-        if a.type.element_type == b.type:
+        if a.element_type == b:
             return True
 
         return (
-            isinstance(b.type, VectorType)
-            and b.type.shape == [1]
-            and a.type.element_type == b.type.element_type
+            isinstance(b, VectorType)
+            and b.shape == [1]
+            and a.element_type == b.element_type
         )
 
     def _broadcast(*args):
@@ -241,18 +241,16 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         res_args = [_get_ir_value(a) for a in args]
         res_type = res_args[0].type
         for arg in res_args[1:]:
-            if arg.type == res_type:
+            arg_type = arg.type
+            if arg_type == res_type:
                 continue
 
-            if arg.type == res_type:
-                continue
-
-            if _check_vec_scalar(res_type, arg):
+            if _check_vec_scalar(res_type, arg_type):
                 # broadcast to res_type
                 continue
 
-            if _check_vec_scalar(arg, res_type):
-                res_type = arg.type
+            if _check_vec_scalar(arg_type, res_type):
+                res_type = arg_type
                 continue
 
             raise CodegenError(f"Cannot broadcast {res_type} and {arg.type}")
@@ -261,10 +259,12 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
             if arg.type == res_type:
                 continue
 
-            if isinstance(arg, VectorType):
+            if isinstance(arg.type, VectorType):
                 arg = vector_d.extract(arg, static_position=[0], dynamic_position=[])
 
             res_args[i] = vector_d.splat(res_type, arg)
+
+        assert all(arg.type == res_type for arg in res_args)
 
         return tuple(res_args)
 
@@ -328,13 +328,13 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
 
     def add_expr(lhs, rhs):
         if not _use_affine_expr:
-            return addi(lhs, rhs)
+            return addi(*_broadcast(lhs, rhs))
 
         return op_expr(lhs, rhs, lambda a, b: a + b)
 
     def muli_expr(lhs, rhs):
         if not _use_affine_expr:
-            return muli(lhs, rhs)
+            return muli(*_broadcast(lhs, rhs))
 
         return op_expr(lhs, rhs, lambda a, b: a * b)
 
