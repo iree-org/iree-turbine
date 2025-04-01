@@ -465,6 +465,18 @@ def handle_and(lhs: Value, rhs: Value) -> OpResult:
     return result
 
 
+@handle_binary_op(operator.or_)
+def handle_and(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_integer_like_type(element_type) and (
+        element_type.is_signed or element_type.is_signless
+    ):
+        result = arith_d.ori(lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for div: {element_type}")
+    return result
+
+
 @handle_binary_op([operator.gt, gt])
 def handle_gt(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
@@ -518,6 +530,20 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
         result = arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for le: {element_type}")
+    return result
+
+
+@handle_binary_op([operator.eq])
+def handle_le(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OEQ, lhs, rhs)
+    elif _is_integer_like_type(element_type) and (
+        element_type.is_signed or element_type.is_signless
+    ):
+        result = arith_d.cmpi(arith_d.CmpIPredicate.eq, lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for eq: {element_type}")
     return result
 
 
@@ -615,13 +641,7 @@ def handle_reciprocal(source: Value) -> OpResult:
             source.type, get_constant_attr(1.0, element_type)
         )
         ones = arith_d.ConstantOp(source.type, splat_ones)
-        splat_zeros = DenseElementsAttr.get_splat(
-            source.type, get_constant_attr(0.0, element_type)
-        )
-        zeros = arith_d.ConstantOp(source.type, splat_zeros)
-        div_result = arith_d.divf(ones, source)
-        cmp = arith_d.cmpf(arith_d.CmpFPredicate.OEQ, source, zeros)
-        reciprocal = arith_d.select(cmp, zeros, div_result)
+        reciprocal = arith_d.divf(ones, source)
     else:
         raise ValidationError(
             f"Found unhandled operand type for reciprocal: {element_type}"

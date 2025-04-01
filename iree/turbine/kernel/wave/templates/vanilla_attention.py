@@ -339,7 +339,7 @@ def get_bshd_attention_kernel(
         res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
-    def base_attention_core_custom_mask(q, k, v, custom_mask, c, mask_output):
+    def base_attention_core_custom_mask(q, k, v, custom_mask, c):
         qkv_scaling = tkl.Register[B, H, M, K1, tkl.f16](dk_sqrt * log2e)
         c_reg = tkl.Register[B, H, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, H, M, tkl.f32](0.0)
@@ -366,7 +366,7 @@ def get_bshd_attention_kernel(
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, H, M, K2])
             k2_index = tkw.self_index(K2, tkl.i32)
-            mask = tkw.apply_expr(k2_index, lambda x: x < K2)
+            mask = tkw.apply_expr(k2_index, lambda x: x >= K2)
             mask = tkw.broadcast(mask, target_shape=[B, M, K2])
             mask = tkw.cast(mask, tkw.i1)
 
@@ -380,9 +380,9 @@ def get_bshd_attention_kernel(
                     target_shape=[B, M, K2],
                 )
                 custom_mask_tensor = tkw.cast(custom_mask_tensor, tkw.i1)
-                mask = mask & custom_mask_tensor
+                mask = mask | custom_mask_tensor
 
-            bias = tkw.select(mask, ZEROF, MIN_INF)
+            bias = tkw.select(mask, MIN_INF, ZEROF)
 
             x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=K2)
@@ -405,17 +405,12 @@ def get_bshd_attention_kernel(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
 
-        zero_tensor = tkl.Register[B, H, M, tkl.f32](0.0)
-        flag_tensor = tkw.apply_expr(res_sum, lambda x: x == 0.0)
-        flag_tensor = tkw.cast(flag_tensor, tkw.i1)
-        upd_reciprocal_sum = tkw.select(flag_tensor, zero_tensor, reciprocal_sum)
+        # we are handling nan case here when all the tokens are masked and res_sum is 0.0
+        is_nan = res_sum == init_sum
+        is_nan = tkw.cast(is_nan, tkw.i1)
+        upd_reciprocal_sum = tkw.select(is_nan, init_sum, reciprocal_sum)
 
-        # zero_mask = tkw.apply_expr(res_sum, lambda x: 0.0 if x == 0.0 else 1.0)
-        # reciprocal_sum = reciprocal_sum * zero_mask
-
-        # reciprocal_sum = tkw.apply_expr(res_sum, lambda x: zero_tensor if x==0.0 else reciprocal_sum)
-
-        res = res_mm * reciprocal_sum
+        res = res_mm * upd_reciprocal_sum
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     @tkw.wave(constraints)
@@ -434,9 +429,8 @@ def get_bshd_attention_kernel(
         v: tkl.Memory[B, K2, H, N, ADDRESS_SPACE, tkl.f16],
         custom_mask: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[B, M, H, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        mask_output: tkl.Memory[B, M, K2, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
-        base_attention_core_custom_mask(q, k, v, custom_mask, c, mask_output)
+        base_attention_core_custom_mask(q, k, v, custom_mask, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,

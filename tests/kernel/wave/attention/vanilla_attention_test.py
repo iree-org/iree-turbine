@@ -344,10 +344,6 @@ def testAttentionBSHD(
         is_causal=is_causal,
         is_custom_mask=is_custom_mask,
     )
-    # q_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size)
-    # k_shape = (1, shape.kv_seq_len, shape.num_kv_heads, shape.head_size)
-    # v_shape = (1, shape.kv_seq_len, shape.num_kv_heads, shape.head_size_kv)
-    # o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
     q_shape = (1, shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (1, shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
     v_shape = (1, shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
@@ -400,8 +396,6 @@ def testAttentionBSHD(
         torch_ref = scaled_dot_product_attention_bhsd(
             q, k, v, is_causal=is_causal, custom_mask=custom_mask
         )
-
-        # breakpoint()
 
         assert_close(
             output.transpose(1, 2),

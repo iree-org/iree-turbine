@@ -1024,10 +1024,7 @@ def test_unary_lowerings():
 
         # Testing reciprocal
         # CHECK: %[[ONES:.+]] = arith.constant dense<1.000000e+00> : vector<4xf16>
-        # CHECK: %[[ZEROS:.+]] = arith.constant dense<0.000000e+00> : vector<4xf16>
-        # CHECK: %[[DIV:.+]] = arith.divf %[[ONES]], %[[EXP2]] : vector<4xf16>
-        # CHECK: %[[CMP:.+]] = arith.cmpf
-        # CHECK: %[[RECIPROCAL:.+]] = arith.select
+        # CHECK: %[[RECIPROCAL:.+]] = arith.divf %[[ONES]], %[[EXP2]] : vector<4xf16>
 
         # Testing abs
         # CHECK: %[[ABSF:.+]] = math.absf %[[RECIPROCAL]]
