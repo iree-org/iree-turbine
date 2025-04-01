@@ -65,10 +65,7 @@ def test_paged_flash_decoding():
     # CHECK:                   %[[COUNT0:.*]] = arith.minsi %{{.*}}, %{{.*}} : vector<1xindex>
     # CHECK:                   %[[COUNT1:.*]] = vector.extract %[[COUNT0]][0] : index from vector<1xindex>
     # CHECK-COUNT-2:           vector.load
-    # CHECK:                   %[[D36:.*]] = arith.subi %[[COUNT1]], %[[C1]] : index
-    # CHECK:                   %[[D37:.*]] = arith.divui %[[D36]], %[[C16]] : index
-    # CHECK:                   %[[D38:.*]] = arith.addi %[[D37]], %[[C1]] : index
-    # CHECK:                   %[[COUNT2:.*]] = arith.select %{{.*}}, %[[C0]], %[[D38]] : index
+    # CHECK:                   %[[COUNT2:.*]] = arith.ceildivsi %[[COUNT1]], %[[C16]] : index
     # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT2]] step %[[C1]]
     # CHECK:                        amdgpu.lds_barrier
     # 1 masked load block table, 1 for k_cache, and 1 for v_cache.

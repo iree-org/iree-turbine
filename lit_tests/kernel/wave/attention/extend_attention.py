@@ -68,13 +68,12 @@ def test_extend_attention():
 
     # This part ensure correctness of WG distribution for extend attention.
     # CHECK:              stream.executable.export public @extend_attention workgroups(%[[ARG0:.+]]: index, %[[ARG1:.+]]: index, %[[ARG2:.+]]: index, %[[ARG3:.+]]: index)
-    # CHECK:                %[[D0:.+]] = arith.subi %[[ARG3]], %c1 : index
-    # CHECK:                %[[D1:.+]] = arith.divui %[[D0]], %c64 : index
-    # CHECK:                %[[D2:.+]] = arith.addi %[[D1]], %c1 : index
-    # CHECK:                %[[D3:.+]] = arith.cmpi eq, %[[ARG3]], %c0 : index
-    # CHECK:                %[[NQ_GRID:.+]] = arith.select %[[D3]], %c0, %[[D2]] : index
-    # CHECK:                %[[NUM_SEQ:.+]] = arith.muli %[[ARG2]], %c16 overflow<nsw, nuw> : index
-    # CHECK:                stream.return %[[NQ_GRID]], %c1, %[[NUM_SEQ]] : index, index, index
+    # CHECK-DAG:            %[[C1:.*]] = arith.constant 1 : index
+    # CHECK-DAG:            %[[C16:.*]] = arith.constant 16 : index
+    # CHECK-DAG:            %[[C64:.*]] = arith.constant 64 : index
+    # CHECK:                %[[NQ_GRID:.+]] = arith.ceildivsi %[[ARG3]], %[[C64]] : index
+    # CHECK:                %[[NUM_SEQ:.+]] = arith.muli %[[ARG2]], %[[C16]] overflow<nsw, nuw> : index
+    # CHECK:                stream.return %[[NQ_GRID]], %[[C1]], %[[NUM_SEQ]] : index, index, index
 
     # CHECK-LABEL:       func.func @extend_attention
     # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
