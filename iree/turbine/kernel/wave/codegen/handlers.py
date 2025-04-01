@@ -47,6 +47,7 @@ from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
     _is_index_type,
     _is_integer_like_type,
+    _is_signed_or_signless_type,
 )
 
 # TK infrastructure imports.
@@ -445,8 +446,8 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.divf(lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.divsi(lhs, rhs)
     else:
@@ -457,8 +458,8 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
 @handle_binary_op(operator.and_)
 def handle_and(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
-    if _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    if _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.andi(lhs, rhs)
     else:
@@ -471,8 +472,8 @@ def handle_and(lhs: Value, rhs: Value) -> OpResult:
 @handle_binary_op(operator.or_)
 def handle_or(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
-    if _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    if _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.ori(lhs, rhs)
     else:
@@ -487,8 +488,8 @@ def handle_gt(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OGT, lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)
     else:
@@ -501,8 +502,8 @@ def handle_ge(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OGE, lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs, rhs)
     else:
@@ -515,8 +516,8 @@ def handle_lt(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OLT, lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.slt, lhs, rhs)
     else:
@@ -529,8 +530,8 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OLE, lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
     else:
@@ -543,8 +544,8 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpf(arith_d.CmpFPredicate.OEQ, lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.eq, lhs, rhs)
     else:
@@ -557,8 +558,8 @@ def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.maximumf(lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.maxsi(lhs, rhs)
     else:
@@ -573,8 +574,8 @@ def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.minimumf(lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.minsi(lhs, rhs)
     else:
