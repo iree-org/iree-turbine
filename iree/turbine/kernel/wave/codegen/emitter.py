@@ -358,9 +358,6 @@ def _gen_sympy_index_impl(
         return op_expr(lhs, rhs, lambda a, b: a * b)
 
     def rem_expr(lhs, rhs):
-        if not use_affine_expr:
-            return
-
         return op_expr(lhs, rhs, lambda a, b: a % b)
 
     def floordiv_expr(lhs, rhs):
