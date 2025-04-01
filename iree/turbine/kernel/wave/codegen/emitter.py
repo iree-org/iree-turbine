@@ -305,7 +305,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
 
         return arith_d.addi(lhs, rhs, overflow_flags=overflow_flags)
 
-    def add_expr(lhs, rhs):
+    def op_expr(lhs, rhs, op):
         if isinstance(lhs, _ApplyExpr):
             lhs_args = lhs.args
             lhs_expr = lhs.expr
@@ -321,26 +321,32 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
             rhs_expr = AffineExpr.get_symbol(0)
 
         args = lhs_args + rhs_args
-        expr = lhs_expr + rhs_expr.shift_symbols(len(rhs_args), len(lhs_args))
+        expr = op(lhs_expr, rhs_expr.shift_symbols(len(rhs_args), len(lhs_args)))
         return _ApplyExpr(expr, args)
+
+    def add_expr(lhs, rhs):
+        return op_expr(lhs, rhs, lambda a, b: a + b)
+
+    def muli_expr(lhs, rhs):
+        return op_expr(lhs, rhs, lambda a, b: a * b)
 
     # `x + (a/b)` transformed into `(x*b + a) / b`
     def _add(lhs, rhs):
         is_rational_lhs = isinstance(lhs, _Rational)
         is_rational_rhs = isinstance(rhs, _Rational)
         if is_rational_lhs and not is_rational_rhs:
-            numerator = muli(*_broadcast(lhs.denominator, rhs))
+            numerator = muli_expr(lhs.denominator, rhs)
             numerator = add_expr(numerator, lhs.numerator)
             return _Rational(numerator, lhs.denominator)
         elif not is_rational_lhs and is_rational_rhs:
-            numerator = muli(*_broadcast(lhs, rhs.denominator))
+            numerator = muli_expr(lhs, rhs.denominator)
             numerator = add_expr(numerator, rhs.numerator)
             return _Rational(numerator, rhs.denominator)
         elif is_rational_lhs and is_rational_rhs:
-            lhs_numerator = muli(*_broadcast(lhs.numerator, rhs.denominator))
-            rhs_numerator = muli(*_broadcast(rhs.numerator, lhs.denominator))
+            lhs_numerator = muli_expr(lhs.numerator, rhs.denominator)
+            rhs_numerator = muli_expr(rhs.numerator, lhs.denominator)
             numerator = add_expr(lhs_numerator, rhs_numerator)
-            denominator = muli(*_broadcast(lhs.denominator, rhs.denominator))
+            denominator = muli_expr(lhs.denominator, rhs.denominator)
             return _Rational(numerator, denominator)
         else:
             return add_expr(lhs, rhs)
@@ -350,17 +356,17 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         is_rational_lhs = isinstance(lhs, _Rational)
         is_rational_rhs = isinstance(rhs, _Rational)
         if is_rational_lhs and not is_rational_rhs:
-            numerator = muli(*_broadcast(lhs.numerator, rhs))
+            numerator = muli_expr(lhs.numerator, rhs)
             return _Rational(numerator, lhs.denominator)
         elif not is_rational_lhs and is_rational_rhs:
-            numerator = muli(*_broadcast(lhs, rhs.numerator))
+            numerator = muli_expr(lhs, rhs.numerator)
             return _Rational(numerator, rhs.denominator)
         elif is_rational_lhs and is_rational_rhs:
-            numerator = muli(*_broadcast(lhs.numerator, rhs.numerator))
-            denominator = muli(*_broadcast(lhs.denominator, rhs.denominator))
+            numerator = muli_expr(lhs.numerator, rhs.numerator)
+            denominator = muli_expr(lhs.denominator, rhs.denominator)
             return _Rational(numerator, denominator)
         else:
-            return muli(*_broadcast(lhs, rhs))
+            return muli_expr(lhs, rhs)
 
     def _rem(lhs, rhs):
         return arith_d.remsi(*_broadcast(lhs, rhs))
