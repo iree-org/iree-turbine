@@ -32,6 +32,7 @@ def get_linear_kernel(
     shape: tuple[int],
     dynamic_dims: bool = False,
     mfma_variant: MMAType = MMAType.F32_16x16x16_F16,
+    use_bias: bool = False,
 ):
     # Input sizes
     B = tkl.sym.B
@@ -77,6 +78,21 @@ def get_linear_kernel(
     # This kernel uses the input sizes M, N, K throughout, as the tiling
     # and data movement strategy is determined during the compilation process.
     # These can be influenced by introducing constraints.
+    def gemm_core(a, b, c_reg, result):
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(
+            acc: tkl.Register[B, M, N, tkl.f32],
+        ) -> tkl.Register[B, M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(
+            tkw.cast(repeat, tkl.f16),
+            result,
+        )
+
     @tkw.wave(constraints)
     def gemm(
         a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
@@ -84,25 +100,21 @@ def get_linear_kernel(
         result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+        gemm_core(a, b, c_reg, result)
 
-        @tkw.reduction(K, init_args=[c_reg])
-        def repeat(
-            acc: tkl.Register[B, M, N, tkl.f32],
-        ) -> tkl.Register[B, M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            acc = tkw.mma(a_reg, b_reg, acc)
-            return acc
-
-        # TODO: Fuse bias add after reduction. Currently running into issue
-        #       with bias add where index/thread size of repeat cannot be
-        #       determined since it has all the dims of repeat instead of
-        #       just the acc dim.
-        tkw.write(
-            tkw.cast(repeat, tkl.f16),
-            result,
-            elements_per_thread=STORE_ELEMS_PER_THREAD,
-        )
+    @tkw.wave(constraints)
+    def gemm_with_bias(
+        a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        bias: tkl.Memory[N, ADDRESS_SPACE, tkl.f16],
+        result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+    ):
+        bias_reg = tkw.read(bias)
+        bias_reg = tkw.broadcast(bias_reg, target_shape=[B, M, N])
+        bias_reg = tkw.cast(bias_reg, tkl.f32)
+        # We can get "free" bias-add by setting bias as the initial
+        # value of accumulator to the mma
+        gemm_core(a, b, bias_reg, result)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -126,8 +138,11 @@ def get_linear_kernel(
         dynamic_symbols_map={},
     )
     options = set_default_run_config(options)
-    gemm = wave_compile(options, gemm)
-    return gemm
+    gemm_kernel = gemm
+    if use_bias:
+        gemm_kernel = gemm_with_bias
+    compiled_gemm = wave_compile(options, gemm_kernel)
+    return compiled_gemm
 
 
 LINEAR_SUPPORTED_DTYPE = {torch.float16}
@@ -161,7 +176,7 @@ class WaveLinear(nn.Module):
         self.reset_parameters()
 
         # Wave related initialization
-        self.kernel = get_linear_kernel([in_features, out_features])
+        self.kernel = get_linear_kernel([in_features, out_features], use_bias=bias)
 
     def reset_parameters(self) -> None:
         # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with
@@ -181,7 +196,7 @@ class WaveLinear(nn.Module):
 
         # Compute "flattened" batch shapes
         flat_batch = math.prod(batch)
-        out_features = self.bias.shape[0]
+        out_features = self.weight.shape[0]
         output_shape = [flat_batch, input_len, out_features]
 
         # Setup and run kernel
@@ -192,12 +207,17 @@ class WaveLinear(nn.Module):
             tkl.sym.B: flat_batch,
             tkl.sym.M: input_len,
         }
-        self.kernel(
-            input.view(flat_batch, input_len, input.shape[-1]), self.weight, output
-        )
-
-        if self.bias is not None:
-            output += self.bias
+        if self.bias is None:
+            self.kernel(
+                input.view(flat_batch, input_len, input.shape[-1]), self.weight, output
+            )
+        else:
+            self.kernel(
+                input.view(flat_batch, input_len, input.shape[-1]),
+                self.weight,
+                self.bias,
+                output,
+            )
 
         # Return non flattened shape
         return output.view(*batch, input_len, out_features)
