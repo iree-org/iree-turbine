@@ -631,13 +631,14 @@ def populate_reduce_source_indices(
     else:
         ret += [(get_custom(node.arg), index, vector_shapes)]
 
-    if node.init:
-        ret += [(get_custom(node.init), index, vector_shapes)]
-
     # Reduce args must contain index for the reduction dimension,
-    # but the reduction itself does not.
+    # but init and the reduction itself does not.
     res_index = copy(index)
     del res_index[node.dim]
+
+    if node.init:
+        ret += [(get_custom(node.init), res_index, vector_shapes)]
+
     ret += [(node, res_index, vector_shapes)]
 
     return ret
