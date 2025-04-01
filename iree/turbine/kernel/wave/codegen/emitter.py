@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from os import environ
 import sympy
 from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
 from dataclasses import dataclass
@@ -196,8 +197,8 @@ def add_emitter_subs(
     return dynamics
 
 
-_emulate_ceildiv = False
-_use_affine_expr = False
+_emulate_ceildiv = bool(int(environ.get("WAVE_EMULATE_CEIL_DIV", 0)))
+_use_affine_expr = bool(int(environ.get("WAVE_USE_AFFINE_EXPR", 0)))
 
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
 _ApplyExpr = namedtuple("_ApplyExpr", ["expr", "args"])
