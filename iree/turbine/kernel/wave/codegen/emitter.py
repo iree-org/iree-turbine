@@ -330,6 +330,15 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
     def muli_expr(lhs, rhs):
         return op_expr(lhs, rhs, lambda a, b: a * b)
 
+    def rem_expr(lhs, rhs):
+        return op_expr(lhs, rhs, lambda a, b: a % b)
+
+    def floordiv_expr(lhs, rhs):
+        return op_expr(lhs, rhs, lambda a, b: AffineExpr.get_floor_div(a, b))
+
+    def ceildiv_expr(lhs, rhs):
+        return op_expr(lhs, rhs, lambda a, b: AffineExpr.get_ceil_div(a, b))
+
     # `x + (a/b)` transformed into `(x*b + a) / b`
     def _add(lhs, rhs):
         is_rational_lhs = isinstance(lhs, _Rational)
@@ -369,16 +378,18 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
             return muli_expr(lhs, rhs)
 
     def _rem(lhs, rhs):
-        return arith_d.remsi(*_broadcast(lhs, rhs))
+        return rem_expr(lhs, rhs)
 
     def _floor(value):
         if isinstance(value, _Rational):
-            value = arith_d.divsi(*_broadcast(value.numerator, value.denominator))
+            value = floordiv_expr(value.numerator, value.denominator)
 
         return value
 
     def _ceiling(value):
         if isinstance(value, _Rational):
+            return ceildiv_expr(value.numerator, value.denominator)
+
             if _emulate_ceildiv:
                 # ceildivui(x, y) = x == 0 ? 0 : ((x - 1) / y) + 1
                 one = _get_const(1)
