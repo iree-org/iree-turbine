@@ -86,4 +86,6 @@ def boo_conv(
 
     These layouts should be permutations of "NCH", "NCHW", or "NCDHW".
     """
-    return _BooConv.apply(input, weight, bias, kwargs)
+
+    filtered_kwargs = {key: value for key, value in kwargs.items() if value is not None}
+    return _BooConv.apply(input, weight, bias, filtered_kwargs)
