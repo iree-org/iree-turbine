@@ -469,7 +469,7 @@ def handle_and(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op(operator.or_)
-def handle_and(lhs: Value, rhs: Value) -> OpResult:
+def handle_or(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_integer_like_type(element_type) and (
         element_type.is_signed or element_type.is_signless
