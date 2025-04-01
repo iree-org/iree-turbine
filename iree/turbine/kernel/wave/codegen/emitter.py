@@ -197,7 +197,7 @@ def add_emitter_subs(
     return dynamics
 
 
-_emulate_ceildiv = bool(int(environ.get("WAVE_EMULATE_CEIL_DIV", 0)))
+_emulate_ceildiv = bool(int(environ.get("WAVE_EMULATE_CEILDIV", 0)))
 _use_affine_expr = bool(int(environ.get("WAVE_USE_AFFINE_EXPR", 0)))
 
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
