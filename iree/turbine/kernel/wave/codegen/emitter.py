@@ -204,11 +204,30 @@ _Rational = namedtuple("_Rational", ["numerator", "denominator"])
 _ApplyExpr = namedtuple("_ApplyExpr", ["expr", "args"])
 
 
-def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpResult:
+class _AffineExprNotSupported(CodegenError):
+    pass
+
+
+def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Value:
+    try:
+        return _gen_sympy_index_impl(dynamics, expr, use_affine_expr=_use_affine_expr)
+    except _AffineExprNotSupported:
+        return _gen_sympy_index_impl(dynamics, expr, use_affine_expr=False)
+
+
+def _gen_sympy_index_impl(
+    dynamics: dict[IndexSymbol, Value], expr: sympy.Expr, *, use_affine_expr: bool
+) -> Value:
     stack: list[OpResult] = []
 
     def _get_ir_value(arg):
         if isinstance(arg, _ApplyExpr):
+            # TODO: Affine exprs are not supported for non-index types.
+            # See https://github.com/llvm/llvm-project/pull/129442
+            index = IndexType.get()
+            if any(a.type != index for a in arg.args):
+                raise _AffineExprNotSupported()
+
             args = _broadcast(*arg.args)
             expr = arg.expr
             expr = AffineMap.get(dim_count=0, symbol_count=len(args), exprs=[expr])
@@ -327,19 +346,19 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         return _ApplyExpr(expr, args)
 
     def add_expr(lhs, rhs):
-        if not _use_affine_expr:
+        if not use_affine_expr:
             return addi(*_broadcast(lhs, rhs))
 
         return op_expr(lhs, rhs, lambda a, b: a + b)
 
     def muli_expr(lhs, rhs):
-        if not _use_affine_expr:
+        if not use_affine_expr:
             return muli(*_broadcast(lhs, rhs))
 
         return op_expr(lhs, rhs, lambda a, b: a * b)
 
     def rem_expr(lhs, rhs):
-        if not _use_affine_expr:
+        if not use_affine_expr:
             return
 
         return op_expr(lhs, rhs, lambda a, b: a % b)
@@ -389,7 +408,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
             return muli_expr(lhs, rhs)
 
     def _rem(lhs, rhs):
-        if not _use_affine_expr:
+        if not use_affine_expr:
             return arith_d.remsi(*_broadcast(lhs, rhs))
 
         return rem_expr(lhs, rhs)
@@ -398,7 +417,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         if not isinstance(value, _Rational):
             return value
 
-        if not _use_affine_expr:
+        if not use_affine_expr:
             return arith_d.divsi(*_broadcast(value.numerator, value.denominator))
 
         return floordiv_expr(value.numerator, value.denominator)
@@ -407,7 +426,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
         if not isinstance(value, _Rational):
             return value
 
-        if _use_affine_expr:
+        if use_affine_expr:
             return ceildiv_expr(value.numerator, value.denominator)
 
         if _emulate_ceildiv:
@@ -567,6 +586,8 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
+                rhs = _get_ir_value(rhs)
+                lhs = _get_ir_value(lhs)
                 elem_type = get_type_or_element_type(rhs.type)
                 if _is_integer_like_type(elem_type):
                     res = arith_d.maxsi(*_broadcast(lhs, rhs))
@@ -578,6 +599,8 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
+                rhs = _get_ir_value(rhs)
+                lhs = _get_ir_value(lhs)
                 elem_type = get_type_or_element_type(rhs.type)
                 if _is_integer_like_type(elem_type):
                     res = arith_d.minsi(*_broadcast(lhs, rhs))
