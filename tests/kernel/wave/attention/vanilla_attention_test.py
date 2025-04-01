@@ -32,6 +32,7 @@ from ..common.utils import (
     enable_scheduling_barriers,
     dump_generated_mlir,
     param_bool,
+    scaled_dot_product_attention_bhsd,
 )
 from ..common.shapes import get_test_shapes
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
@@ -321,8 +322,17 @@ def testAttentionBSHD(
         head_size=shape[3],
         kv_seq_len=shape[4],
     )
+
+    is_causal = False
+    is_custom_mask = True
+    custom_mask = None
+
+    assert not (
+        is_causal and is_custom_mask
+    ), "Causal and custom mask cannot be applied together."
+
     (
-        base_attention,
+        base_attention_func,
         hyperparams,
         dynamic_symbols,
         dynamic_symbols_map,
@@ -330,12 +340,9 @@ def testAttentionBSHD(
         shape,
         mfma_variant,
         dynamic_dims,
-        is_causal=True,
+        is_causal=is_causal,
+        is_custom_mask=is_custom_mask,
     )
-    # q_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size)
-    # k_shape = (1, shape.kv_seq_len, shape.num_kv_heads, shape.head_size)
-    # v_shape = (1, shape.kv_seq_len, shape.num_kv_heads, shape.head_size_kv)
-    # o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
     q_shape = (1, shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (1, shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
     v_shape = (1, shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
@@ -357,28 +364,48 @@ def testAttentionBSHD(
         ),
     )
     options = set_default_run_config(options)
-    base_attention = wave_compile(options, base_attention)
-    
+    base_attention = wave_compile(options, base_attention_func)
+
     torch.manual_seed(1)
     q = device_randn(q_shape, dtype=torch.float16)
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
-    # Torch reference needs to be in BHSD
-    torch_ref = torch.nn.functional.scaled_dot_product_attention(
-        q, k, v, is_causal=True
-    )
 
     # This variant of wave kernel is BSHD
     o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
     output = device_zeros(o_shape, dtype=torch.float32)
-    asm = base_attention(
-        q.transpose(1, 2).contiguous(),
-        k.transpose(1, 2).contiguous(),
-        v.transpose(1, 2).contiguous(),
-        output,
+
+    if is_custom_mask:
+        custom_mask = device_randn([1, shape.query_seq_len], dtype=torch.float32)
+        # custom_mask = device_zeros([1, shape.query_seq_len], dtype=torch.float32)
+        custom_mask = (custom_mask > 0).int()
+
+        asm = base_attention(
+            q.transpose(1, 2).contiguous(),
+            k.transpose(1, 2).contiguous(),
+            v.transpose(1, 2).contiguous(),
+            custom_mask.to(torch.int8),
+            output,
+        )
+    else:
+        asm = base_attention(
+            q.transpose(1, 2).contiguous(),
+            k.transpose(1, 2).contiguous(),
+            v.transpose(1, 2).contiguous(),
+            output,
+        )
+
+    # Torch reference needs to be in BHSD format
+    torch_ref = scaled_dot_product_attention_bhsd(
+        q, k, v, is_causal=is_causal, custom_mask=custom_mask
     )
+
     assert_close(
-        output.transpose(1, 2), torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3
+        output.transpose(1, 2),
+        torch_ref,
+        check_dtype=False,
+        atol=1e-3,
+        rtol=1e-3,
     )
 
 
