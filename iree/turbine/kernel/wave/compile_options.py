@@ -46,7 +46,7 @@ class WaveCompileOptions:
     bench_file: str = None
 
     # === Cache options ===
-    kernel_hash: list[str] = None
+    kernel_hash: str = None
 
     # === Debug options ===
     create_vmfb_file: str = None

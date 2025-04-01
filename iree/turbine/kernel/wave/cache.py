@@ -148,7 +148,7 @@ class WaveCacheManager(object):
         constraints: list[Constraint],
         kernel_fn: Callable,
         options: WaveCompileOptions,
-    ):
+    ) -> str:
         """
         Get a unique identifier for a given kernel.
         """
@@ -201,7 +201,7 @@ class WaveCacheManager(object):
 
     def store_kernel_to_file(
         self,
-        kernel_hash,
+        kernel_hash: str,
         vmfb: bytes,
         kernel_sig: tuple[KernelBufferUsage],
         module_str: str,
