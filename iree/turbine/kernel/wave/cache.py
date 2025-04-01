@@ -148,7 +148,7 @@ class WaveCacheManager(object):
         constraints: list[Constraint],
         kernel_fn: Callable,
         options: WaveCompileOptions,
-    ):
+    ) -> str:
         """
         Get a unique identifier for a given kernel.
         """
@@ -201,7 +201,7 @@ class WaveCacheManager(object):
 
     def store_kernel_to_file(
         self,
-        kernel_hash,
+        kernel_hash: str,
         vmfb: bytes,
         kernel_sig: tuple[KernelBufferUsage],
         module_str: str,
@@ -258,7 +258,7 @@ class WaveCacheManager(object):
         kernel_sig = [KernelBufferUsage[usage] for usage in kernel_sig_str]
         asm = cur_asm_path.read_text()
         cur_kernel_info_path = cur_cache_basefile.with_suffix(".kernel_info.json")
-        kernel_info_str = json.loads(cur_kernel_info_path.readtext())
+        kernel_info_str = json.loads(cur_kernel_info_path.read_text())
         # Convert string to lambda. This could have a math dependency
         # and so we include it above.
         kernel_info_str["grid"] = eval(kernel_info_str["grid_str"])
