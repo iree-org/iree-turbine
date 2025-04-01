@@ -58,6 +58,7 @@ from ...ops.wave_ops import (
     broadcast,
     cast,
     conditional,
+    eq,
     exp2,
     extract,
     extract_slice,
@@ -533,7 +534,7 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
     return result
 
 
-@handle_binary_op([operator.eq])
+@handle_binary_op([operator.eq, eq])
 def handle_le(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):

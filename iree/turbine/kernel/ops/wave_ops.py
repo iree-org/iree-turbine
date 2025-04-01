@@ -202,6 +202,10 @@ def le(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
+def eq(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
 def cast(src: "Register", dtype: DataType) -> "Register":
     ...
 
@@ -795,6 +799,7 @@ class BinaryPyOp(BinaryOpBase, ABC):
 @define_py_op(operator.ge)
 @define_py_op(operator.lt)
 @define_py_op(operator.le)
+@define_interface_op("eq")
 @define_interface_op("gt")
 @define_interface_op("ge")
 @define_interface_op("lt")
