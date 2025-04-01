@@ -21,6 +21,7 @@ from iree.turbine.aot.support.ir_utils import (
 
 from ...compiler.ir import (
     AffineExpr,
+    AffineMap,
     Attribute,
     DenseElementsAttr,
     FloatAttr,
@@ -207,8 +208,10 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
     def _get_ir_value(arg):
         if isinstance(arg, _ApplyExpr):
             args = _broadcast(*arg.args)
+            expr = arg.expr
+            expr = AffineMap.get(dim_count=0, symbol_count=len(args), exprs=[expr])
 
-            return affine_d.apply(arg.expr, args).result
+            return affine_d.apply(expr, args)
 
         if not isinstance(arg, (Value, OpResult)):
             arg = arg.result
@@ -228,28 +231,40 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
             and a.type.element_type == b.type.element_type
         )
 
-    def _broadcast(a, b):
-        a = _get_ir_value(a)
-        b = _get_ir_value(b)
+    def _broadcast(*args):
+        assert len(args) > 0
+        if len(args) == 1:
+            return args
 
-        if a.type == b.type:
-            return a, b
+        res_args = [_get_ir_value(a) for a in args]
+        res_type = res_args[0].type
+        for arg in res_args[1:]:
+            if arg.type == res_type:
+                continue
 
-        if _check_vec_scalar(a, b):
-            if isinstance(b.type, VectorType):
-                b = vector_d.extract(b, static_position=[0], dynamic_position=[])
+            if arg.type == res_type:
+                continue
 
-            b = vector_d.splat(a.type, b)
-            return a, b
+            if _check_vec_scalar(res_type, arg):
+                # broadcast to res_type
+                continue
 
-        if _check_vec_scalar(b, a):
-            if isinstance(a.type, VectorType):
-                a = vector_d.extract(a, static_position=[0], dynamic_position=[])
+            if _check_vec_scalar(arg, res_type):
+                res_type = arg.type
+                continue
 
-            a = vector_d.splat(b.type, a)
-            return a, b
+            raise CodegenError(f"Cannot broadcast {res_type} and {arg.type}")
 
-        raise CodegenError(f"Cannot broadcast {a.type} and {b.type}")
+        for i, arg in enumerate(res_args):
+            if arg.type == res_type:
+                continue
+
+            if isinstance(arg, VectorType):
+                arg = vector_d.extract(arg, static_position=[0], dynamic_position=[])
+
+            res_args[i] = vector_d.splat(res_type, arg)
+
+        return tuple(res_args)
 
     def get_const_val(arg):
         if isinstance(arg, OpResult):
@@ -306,7 +321,6 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
             rhs_expr = AffineExpr.get_symbol(0)
 
         args = lhs_args + rhs_args
-        print(dir(rhs_expr))
         expr = lhs_expr + rhs_expr.shift_symbols(len(rhs_args), len(lhs_args))
         return _ApplyExpr(expr, args)
 
@@ -580,7 +594,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
     if len(stack) != 1 or isinstance(stack[0], _Rational):
         raise CodegenError(f"Expected single result, got {len(stack)}")
 
-    return stack[0]
+    return _get_ir_value(stack[0])
 
 
 def get_constant_attr(value: Any, element_type: IrType) -> Attribute:
