@@ -400,7 +400,6 @@ def add_get_results(trace: CapturedTrace):
             get_result = get_custom(
                 GetResult(reduction.fx_node, 0).add_to_graph(reduction.graph)
             )
-            get_result.vector_shapes = reduction.init_args[0].vector_shapes
             reduction.replace_all_uses_with_except(get_result, [get_result])
 
 
@@ -728,8 +727,6 @@ def expand_graph(
     The expansion does a DFS starting at the leaf nodes and expanding them
     to the root of the graph.
     """
-
-    add_get_results(trace)
 
     leaf_ops = [get_custom(node) for node in reversed(trace.walk(is_leaf_node))]
     if not leaf_ops:
