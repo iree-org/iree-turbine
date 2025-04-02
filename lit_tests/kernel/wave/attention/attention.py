@@ -12,6 +12,7 @@ from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_store_elems_per_thread,
 )
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
+    get_bshd_attention_kernel,
     get_vanilla_attention_kernel,
 )
 from iree.turbine.kernel.wave.templates.attention_common import (
@@ -384,3 +385,47 @@ def test_attention_causal():
     # CHECK-COUNT-8:            {{.*}} = arith.addf %{{.*}}, %{{.*}} : vector<4xf32>
     # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
     # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
+
+
+@run_test
+def test_attention_bshd():
+    shape = AttentionShape(
+        num_query_heads=8,
+        num_kv_heads=8,
+        query_seq_len=128,
+        head_size_kv=128,
+        head_size=64,
+        kv_seq_len=256,
+    )
+    mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
+    base_attention, hyperparams, _, _ = get_bshd_attention_kernel(
+        shape,
+        mfma_variant,
+        dynamic_dims=False,
+        is_causal=False,
+        is_custom_mask=True,
+    )
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        run_bench=False,
+        schedule=SchedulingType.NONE,
+        use_scheduling_barriers=False,
+        compile_to_mlir=True,
+    )
+    base_attention = wave_compile(options, base_attention)
+    print(base_attention.asm)
+
+    # CHECK-LABEL:       func.func @base_attention_custom_mask
+    # CHECK-DAG:                %[[INIT_MAX:.+]] = arith.constant dense<-1.000000e+05> : vector<1xf32>
+    # CHECK-DAG:                %[[NEG_INF:.+]] = arith.constant dense<-1.000000e+06> : vector<4xf32>
+    # CHECK-DAG:                %[[ZEROF:.+]] = arith.constant dense<0.000000e+00> : vector<4xf32>
+    # CHECK:                    {{.*}} = scf.for
+    # CHECK-COUNT-16:               {{.*}} = amdgpu.mfma
+    # CHECK-COUNT-4:                {{.*}} = arith.cmpi sge, {{.*}} : vector<4xindex>
+    # CHECK-COUNT-8:                {{.*}} = arith.ori {{.*}} : vector<4xi1>
+    # CHECK-COUNT-8:                {{.*}} = arith.select %{{.*}}, %[[ZEROF:.+]], %[[NEG_INF:.+]] : vector<4xi1>, vector<4xf32>
+    # CHECK-COUNT-8:                {{.*}} = arith.addf %{{.*}}, %{{.*}} : vector<4xf32>
+    # CHECK-COUNT-8:                {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-8:                {{.*}} = amdgpu.mfma
