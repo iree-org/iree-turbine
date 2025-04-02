@@ -169,7 +169,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
             bias = tkw.select(mask, ZEROF, MIN_INF)
             x_j = x_j + bias
             x_j *= qk_scaling
-            x_j += fp8_offset
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
