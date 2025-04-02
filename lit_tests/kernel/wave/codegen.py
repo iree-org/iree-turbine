@@ -1354,7 +1354,6 @@ def test_tiled_reduce_min():
     N = tkl.sym.N
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -1365,13 +1364,11 @@ def test_tiled_reduce_min():
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
-    def test(
+    def tiled_reduce_min(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
@@ -1382,13 +1379,13 @@ def test_tiled_reduce_min():
         def repeat(
             partial_min: tkl.Register[M, tkl.f16],
         ) -> tkl.Register[M, tkl.f16]:
-            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            lhs = tkw.read(a)
+            rhs = tkw.read(b)
             res = lhs * rhs
             partial_min = tkw.min(res, partial_min, dim=N)
             return partial_min
 
-        tkw.write(repeat, c, elements_per_thread=1)
+        tkw.write(repeat, c)
 
     shape = (256, 512)
     options = WaveCompileOptions(
@@ -1397,17 +1394,16 @@ def test_tiled_reduce_min():
             N: shape[1],
             BLOCK_M: 1,
             BLOCK_N: 128,
-            ELEMS_PER_THREAD: 2,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
         compile_to_mlir=True,
     )
     options = set_default_compile_config(options)
-    test = wave_compile(options, test)
+    test = wave_compile(options, tiled_reduce_min)
     print(test.asm)
 
-    # CHECK-LABEL: func @test
+    # CHECK-LABEL: func @tiled_reduce_min
     # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i32
     # CHECK-DAG: %[[C2:.+]] = arith.constant 2 : i32
     # CHECK-DAG: %[[C4:.+]] = arith.constant 4 : i32
@@ -1441,6 +1437,82 @@ def test_tiled_reduce_min():
     # Accumulator Reduction
     # CHECK: %[[ACC_REDUCE:.+]] = arith.minimumf %[[ACC]], %[[GLOBAL_REDUCE]]
     # CHECK: scf.yield %[[ACC_REDUCE]] : vector<1xf16>
+
+
+@run_test
+def test_tiled_reduce_min_unaligned():
+    M = tkl.sym.M
+    N = tkl.sym.N
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+
+    @tkw.wave(constraints)
+    def tiled_reduce_min_unaligned(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+    ):
+        init_min = tkl.Register[M, tkl.f16](1e6)
+
+        @tkw.reduction(N, init_args=[init_min])
+        def repeat(
+            partial_min: tkl.Register[M, tkl.f16],
+        ) -> tkl.Register[M, tkl.f16]:
+            lhs = tkw.read(a)
+            rhs = tkw.read(b)
+            res = lhs * rhs
+            partial_min = tkw.min(res, partial_min, dim=N)
+            return partial_min
+
+        tkw.write(repeat, c)
+
+    shape = (256, 527)
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            BLOCK_M: 1,
+            BLOCK_N: 128,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    options = set_default_compile_config(options)
+    test = wave_compile(options, tiled_reduce_min_unaligned)
+    print(test.asm)
+
+    # CHECK-LABEL: func @tiled_reduce_min_unaligned
+    # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
+    # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
+    # CHECK-DAG: %[[C2_IDX:.+]] = arith.constant 2 : index
+    # CHECK-DAG: %[[C5_IDX:.+]] = arith.constant 5 : index
+    # CHECK-DAG: %[[C128_IDX:.+]] = arith.constant 128 : index
+    # CHECK-DAG: %[[CST_0:.+]] = arith.constant dense<527> : vector<2xindex>
+    # CHECK-DAG: %[[CST_1:.+]] = arith.constant dense<[0, 1]> : vector<2xindex>
+    # CHECK-DAG: %[[INIT:.+]] = arith.constant dense<0x7C00> : vector<1xf16>
+    # CHECK: %[[THREAD_ID_X:.+]] = gpu.thread_id  x
+    # CHECK: %[[MUL:.+]] = arith.muli %[[THREAD_ID_X]], %[[C2_IDX]] overflow<nsw, nuw> : index
+    # Tiled Reduction Loop
+    # CHECK: scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C5_IDX]] step %[[C1_IDX]]
+    # CHECK: %[[D9:.*]] = arith.muli %[[ITER]], %[[C128_IDX]] overflow<nsw, nuw> : index
+    # CHECK: %[[D10:.*]] = arith.addi %[[D9]], %[[MUL]] overflow<nsw, nuw> : index
+    # CHECK: %[[D11:.*]] = vector.splat %[[D10]] : vector<2xindex>
+    # CHECK: %[[D12:.*]] = arith.addi %[[D11]], %[[CST_1]] overflow<nsw, nuw> : vector<2xindex>
+    # CHECK: %[[D13:.*]] = arith.cmpi slt, %[[D12]], %[[CST_0]] : vector<2xindex>
+    # CHECK-COUNT-2: vector.maskedload %{{.*}}[%{{.*}}, %[[D10]]], %[[D13]]
 
 
 # This test is to ensure that the we can handle multiple IV in reduction properly.

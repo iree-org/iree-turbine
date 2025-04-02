@@ -71,15 +71,6 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     return default_test_shapes
 
 
-def xfail_unaligned(func):
-    def wrapper(shape):
-        if shape[-1] % 2 != 0:
-            pytest.xfail("Unaligned shape is not expected to work on this test yet.")
-        func(shape)
-
-    return wrapper
-
-
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy")[:1])
 def test_dump_vmfb(shape, tmp_path, request):
@@ -1048,28 +1039,24 @@ def test_reduce_sum(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
-@xfail_unaligned
 def test_toy_online_softmax(shape):
     M = tkl.sym.M
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
     BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
+            threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1085,8 +1072,8 @@ def test_toy_online_softmax(shape):
             partial_max: tkl.Register[M, tkl.f32],
             partial_sum: tkl.Register[M, tkl.f32],
         ) -> tkl.Register[M, tkl.f32]:
-            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            lhs = tkw.read(a)
+            rhs = tkw.read(b)
             res = lhs * rhs
             partial_max = tkw.max(res, partial_max, dim=N)
             partial_sum = tkw.sum(res, partial_sum, dim=N)
@@ -1094,7 +1081,7 @@ def test_toy_online_softmax(shape):
 
         res_max, res_sum = repeat
         result = res_max / res_sum
-        tkw.write(result, c, elements_per_thread=1)
+        tkw.write(result, c)
 
     torch.manual_seed(1)
     a = device_randn(shape, dtype=torch.float32)
@@ -1107,8 +1094,7 @@ def test_toy_online_softmax(shape):
         subs={
             M: shape[0],
             N: shape[1],
-            BLOCK_N: min(128, shape[1]),
-            ELEMS_PER_THREAD: min(128, shape[1]) // wave_size,
+            BLOCK_N: max(min(128, shape[1]), wave_size),
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,

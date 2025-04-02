@@ -204,17 +204,18 @@ def test_read_write():
 def write_in_reduction(
     a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
     b: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
-    c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+    c: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
 ):
     # TODO(#364): simplify this by removing the max once it's possible to have a
     # loop/reduction without reducing over something.
     init_max = tkl.Register[M, tkl.f16](-1e6)
 
+    # TODO: Cannot deduce elements_per_thread for a_reg without a workgroup constraint yet.
     @tkw.reduction(K, init_args=[init_max])
     def repeat(acc: tkl.Register[M, tkl.f16]) -> tkl.Register[M, tkl.f16]:
         a_reg = tkw.read(a, elements_per_thread=4)
         tkw.write(a_reg, b, elements_per_thread=4)
-        return tkw.max(a_reg, acc, dim=K)
+        return a_reg
 
     tkw.write(repeat, c, elements_per_thread=4)
 
@@ -791,13 +792,13 @@ def test_tiled_max():
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(2, 1, 1),
-            vector_shapes={M: 16, K: 4},
+            vector_shapes={M: 16, K: 64},
         )
     ]
     with tk.gen.TestLaunchContext(
         {
             BLOCK_M: 64,
-            BLOCK_K: 32,
+            BLOCK_K: 256,
         }
     ):
         graph = tiled_max()
@@ -808,8 +809,8 @@ def test_tiled_max():
         expand_graph(graph, constraints)
         set_post_expansion_indices(graph, constraints)
         print_trace(graph)
-        # CHECK: max(arg=[read_M:0_K:0, read_M:0_K:1, read_M:0_K:2, read_M:0_K:3, read_M:0_K:4, read_M:0_K:5, read_M:0_K:6, read_M:0_K:7], init=acc_M:0_K:0
-        # CHECK: max(arg=[read_M:1_K:0, read_M:1_K:1, read_M:1_K:2, read_M:1_K:3, read_M:1_K:4, read_M:1_K:5, read_M:1_K:6, read_M:1_K:7], init=acc_M:1_K:0
+        # CHECK: max(arg=[read_M:0_K:0, read_M:0_K:1, read_M:0_K:2, read_M:0_K:3], init=acc_M:0_K:0
+        # CHECK: max(arg=[read_M:1_K:0, read_M:1_K:1, read_M:1_K:2, read_M:1_K:3], init=acc_M:1_K:0
         # CHECK: output(return_vals=([max_1_M:0_K:0, max_1_M:1_K:0],))
         # CHECK-NEXT: -----
 
