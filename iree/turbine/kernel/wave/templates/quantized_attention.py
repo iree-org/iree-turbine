@@ -188,9 +188,9 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         q: tkl.Memory[B, N_Q, D_Q, GLOBAL_ADDRESS_SPACE, LOGIT_DTYPE],
         k: tkl.Memory[B, N_KV, D_Q, ADDRESS_SPACE, LOGIT_DTYPE],
         v: tkl.Memory[B, N_KV, D_KV, ADDRESS_SPACE, LOGIT_DTYPE],
-        q_scale: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        k_scale: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        v_scale: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        q_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        k_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        v_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
         c: tkl.Memory[B, N_Q, D_KV, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         base_attention_core(q, k, v, q_scale, k_scale, v_scale, c)

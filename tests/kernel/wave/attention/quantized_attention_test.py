@@ -14,6 +14,7 @@ from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
 from iree.turbine.kernel.wave.utils.torch_utils import (
+    device_full,
     device_randn,
     device_zeros,
 )
@@ -130,11 +131,11 @@ def testAttentionPure(
             MAX_RANGE,
         )
     )
-    q_scaled = torch.Tensor(q_scale, shape=[shape.num_query_heads, 1])
-    k_scaled = torch.Tensor(k_scale, shape=[shape.num_query_heads, 1])
-    v_scaled = torch.Tensor(v_scale, shape=[shape.num_query_heads, 1])
+    q_scale_vec = device_full((shape.num_query_heads, 1), q_scale, dtype=torch.float32)
+    k_scale_vec = device_full((shape.num_query_heads, 1), k_scale, dtype=torch.float32)
+    v_scale_vec = device_full((shape.num_query_heads, 1), v_scale, dtype=torch.float32)
     output = device_zeros(o_shape, dtype=torch.float32)
-    asm = base_attention(q, k, v, q_scaled, k_scaled, v_scaled, output)
+    asm = base_attention(q, k, v, q_scale_vec, k_scale_vec, v_scale_vec, output)
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q.to(torch.float32) * q_scale,
         k.to(torch.float32) * k_scale,
