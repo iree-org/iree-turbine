@@ -42,23 +42,20 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 def allocate(
     shape: tuple[IndexExpr], dtype: DataType, address_space: IndexSymbol
-) -> "Memory":
-    ...
+) -> "Memory": ...
 
 
 def self_index(
     dim: IndexExpr,
     dtype: DataType,
     elements_per_thread: Optional[IndexExpr | int] = None,
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
 def extract(
     register: "Register",
     offsets: tuple[IndexExpr],
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
 def extract_slice(
@@ -66,12 +63,10 @@ def extract_slice(
     offsets: tuple[IndexExpr],
     sizes: tuple[IndexExpr],
     strides: tuple[IndexExpr],
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
-def shared_memory_barrier():
-    ...
+def shared_memory_barrier(): ...
 
 
 def read(
@@ -79,28 +74,25 @@ def read(
     elements_per_thread: Optional[IndexExpr | int] = None,
     mapping: Optional[IndexMapping] = None,
     mapping_dynamic_vals: "Register" | tuple["Register", ...] = (),
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
 def conditional(
     condition: "Register" | IndexExpr,
-) -> Callable[[Callable[[], None]], None]:
-    ...
+) -> Callable[[Callable[[], None]], None]: ...
 
 
 def iterate(
     axis: IndexExpr, init_args: Sequence["Register"]
-) -> Callable[[Callable[[AccT], AccT]], AccT]:
-    ...
+) -> Callable[[Callable[[AccT], AccT]], AccT]: ...
 
 
-def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
-    ...
+def register(
+    shape: tuple[IndexExpr, ...], dtype: DataType, value: float
+) -> "Register": ...
 
 
-def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
-    ...
+def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register": ...
 
 
 def write(
@@ -109,32 +101,27 @@ def write(
     elements_per_thread: Optional[IndexExpr | int] = None,
     mapping: Optional[IndexMapping] = None,
     mapping_dynamic_vals: "Register" | tuple["Register", ...] = (),
-):
-    ...
+): ...
 
 
-def apply_expr(value: "Register" | Sequence["Register"], expr: Callable) -> "Register":
-    ...
+def apply_expr(
+    value: "Register" | Sequence["Register"], expr: Callable
+) -> "Register": ...
 
 
-def set_symbol(symbol: IndexExpr, value: "Register"):
-    ...
+def set_symbol(symbol: IndexExpr, value: "Register"): ...
 
 
-def exp2(src: "Register") -> "Register":
-    ...
+def exp2(src: "Register") -> "Register": ...
 
 
-def log2(src: "Register") -> "Register":
-    ...
+def log2(src: "Register") -> "Register": ...
 
 
-def reciprocal(src: "Register") -> "Register":
-    ...
+def reciprocal(src: "Register") -> "Register": ...
 
 
-def abs(src: "Register") -> "Register":
-    ...
+def abs(src: "Register") -> "Register": ...
 
 
 def tanh_approx(src: "Register") -> "Register":
@@ -145,88 +132,73 @@ def tanh(src: "Register") -> "Register":
     ...
 
 
-def roundeven(src: "Register") -> "Register":
-    ...
+def roundeven(src: "Register") -> "Register": ...
 
 
-def maximum(lhs: "Register", rhs: "Register") -> "Register":
-    ...
+def maximum(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
-def minimum(lhs: "Register", rhs: "Register") -> "Register":
-    ...
+def minimum(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
 def broadcast(
     arg: "Register", target_shape: Optional[Sequence[IndexExpr | int]] = None
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
 def sum(
     src: "Register",
     acc: Optional["Register"] = None,
     dim: Optional[IndexExpr | int] = None,
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
 def max(
     src: "Register",
     acc: Optional["Register"] = None,
     dim: Optional[IndexExpr | int] = None,
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
 def min(
     src: "Register",
     acc: Optional["Register"] = None,
     dim: Optional[IndexExpr | int] = None,
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
-def shuffle(src: "Register", offset: int, width: int) -> "Register":
-    ...
+def shuffle(src: "Register", offset: int, width: int) -> "Register": ...
 
 
-def gt(lhs: "Register", rhs: "Register") -> "Register":
-    ...
+def gt(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
-def ge(lhs: "Register", rhs: "Register") -> "Register":
-    ...
+def ge(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
-def lt(lhs: "Register", rhs: "Register") -> "Register":
-    ...
+def lt(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
-def le(lhs: "Register", rhs: "Register") -> "Register":
-    ...
+def le(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
-def eq(lhs: "Register", rhs: "Register") -> "Register":
-    ...
+def eq(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
-def cast(src: "Register", dtype: DataType) -> "Register":
-    ...
+def cast(src: "Register", dtype: DataType) -> "Register": ...
 
 
-def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
-    ...
+def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register": ...
 
 
 def reshape(
     inputs: Sequence["Register"], target_vector_shape: dict[IndexSymbol, int]
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
-def select(cond: "Register", if_true: "Register", if_false: "Register") -> "Register":
-    ...
+def select(
+    cond: "Register", if_true: "Register", if_false: "Register"
+) -> "Register": ...
 
 
 def define_op(op_name: str) -> Callable[[T], T]:
@@ -1529,20 +1501,19 @@ class Iterate(NestedRegionOp):
 
     @property
     def index(self) -> list[dict[IndexSymbol, IndexSequence]]:
+        def get_index(node: fx.Node) -> dict[IndexSymbol, IndexSequence]:
+            custom = get_custom(node)
+            if isinstance(custom, MMA):
+                return custom.acc_index
+            return custom.index
+
         for node in self.get_root_graph().subgraphs[self.subgraph_name].nodes:
             if isinstance(output := get_custom(node), Output):
                 return_vals = output.return_vals[0]
                 return (
-                    [
-                        (
-                            get_custom(val).acc_index
-                            if isinstance(get_custom(val), MMA)
-                            else val.index
-                        )
-                        for val in return_vals
-                    ]
+                    [get_index(val) for val in return_vals]
                     if isinstance(return_vals, (Sequence))
-                    else return_vals.index
+                    else get_index(return_vals)
                 )
 
     @index.setter
@@ -1758,6 +1729,8 @@ class GetResult(CustomOp):
         if custom_index is None:
             return None
         if not isinstance(custom, Iterate):
+            return custom_index
+        if not isinstance(custom_index, Sequence):
             return custom_index
         assert isinstance(custom_index, Sequence) and self.res_idx < len(
             custom.indexing_dims
