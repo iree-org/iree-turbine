@@ -193,7 +193,7 @@ def add_emitter_subs(
     return dynamics
 
 
-_emulate_ceildiv = True
+_emulate_ceildiv = False
 
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
 
