@@ -33,6 +33,7 @@ enable_scheduling_barriers = int(os.environ.get("WAVE_USE_SCHED_BARRIERS", 0))
 
 # Add test shapes for validation and performance testing.
 perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
+expensive_test_param = lambda *a: pytest.param(*a, marks=pytest.mark.expensive_test)
 
 
 def param_bool(name, shortname=None, values=None):

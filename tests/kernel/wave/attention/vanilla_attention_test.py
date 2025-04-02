@@ -28,11 +28,12 @@ from iree.turbine.kernel.wave.constraints import MMAType
 import os
 from torch.testing import assert_close
 from ..common.utils import (
-    require_e2e,
-    require_cdna3,
-    enable_scheduling_barriers,
     dump_generated_mlir,
+    enable_scheduling_barriers,
+    expensive_test_param,
     param_bool,
+    require_cdna3,
+    require_e2e,
     scaled_dot_product_attention_bhsd,
 )
 from ..common.shapes import get_test_shapes
@@ -48,7 +49,8 @@ from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+    "enable_scheduling",
+    [SchedulingType.NONE, expensive_test_param(SchedulingType.MODULO)],
 )
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -833,7 +835,8 @@ def testAttentionSoftCap(
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+    "enable_scheduling",
+    [SchedulingType.NONE, expensive_test_param(SchedulingType.MODULO)],
 )
 @pytest.mark.parametrize(
     "mfma_variant",
