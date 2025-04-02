@@ -202,6 +202,10 @@ def le(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
+def eq(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
 def cast(src: "Register", dtype: DataType) -> "Register":
     ...
 
@@ -780,6 +784,7 @@ class BinaryOpBase(CustomOp, ABC):
 @define_py_op(operator.sub)
 @define_py_op(operator.mul)
 @define_py_op(operator.and_)
+@define_py_op(operator.or_)
 @define_py_op(operator.truediv)
 @define_interface_op("maximum")
 @define_interface_op("minimum")
@@ -789,10 +794,12 @@ class BinaryPyOp(BinaryOpBase, ABC):
         self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
 
 
+@define_py_op(operator.eq)
 @define_py_op(operator.gt)
 @define_py_op(operator.ge)
 @define_py_op(operator.lt)
 @define_py_op(operator.le)
+@define_interface_op("eq")
 @define_interface_op("gt")
 @define_interface_op("ge")
 @define_interface_op("lt")
