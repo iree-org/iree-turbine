@@ -16,7 +16,7 @@ from enum import IntEnum
 import torch
 
 from .utils import Permutation
-from ....ops.conv_fwd import conv_2d_nhwc_fhwc
+from ....ops.conv_fwd import conv_2d_nhwc_fhwc, generic_conv
 
 __all__ = [
     "Mode",
@@ -361,6 +361,47 @@ class ConvForwardCustomNHWC(torch.nn.Module):
         return self.perms[2](output)
 
 
+class ConvForwardCustomGeneric(torch.nn.Module):
+    def __init__(self, sig: ConvSignature):
+        super().__init__()
+        self.xl = str(sig.input_layout).lower()
+        self.wl = str(sig.kernel_layout).lower().replace("n", "f")
+        self.ol = str(sig.output_layout).lower().replace("c", "f")
+        self.stride = sig.stride
+        self.dilation = sig.dilation
+        self.has_bias = sig.bias
+        self.groups = sig.groups
+        self.explicit_padding = sig.explicit_padding
+
+    def forward(self, *args):
+        x_pad = torch.constant_pad_nd(args[0], self.explicit_padding, value=0)
+        w = args[1]
+        xl = self.xl
+        wl = self.wl
+        ol = self.ol
+        if self.groups != 1:
+            x_pos = self.xl.find("c")
+            x_pad = x_pad.unflatten(x_pos, [self.groups, -1])
+            xl = self.xl[:x_pos] + "g" + self.xl[x_pos:]
+            w_pos = self.wl.find("f")
+            w = w.unflatten(w_pos, [self.groups, -1])
+            wl = self.wl[:w_pos] + "g" + self.wl[w_pos:]
+            o_pos = self.ol.find("f")
+            ol = self.ol[:o_pos] + "g" + self.ol[o_pos:]
+        output = generic_conv(x_pad, w, self.stride, self.dilation, xl, wl, ol)
+        output = output.to(dtype=x_pad.dtype)
+        if self.groups != 1:
+            o_pos = ol.find("g")
+            output = output.flatten(o_pos, o_pos + 1)
+        if self.has_bias:
+            # Note bias has shape [f], but 'f' could be anywhere in output_layout.
+            dim_pos = self.ol.find("f")
+            sizes = [-1]
+            sizes.extend([1] * (len(self.ol) - dim_pos - 1))
+            output = output + args[2].unflatten(0, sizes)
+        return output
+
+
 class ConvBackwardInput(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
         super().__init__()
@@ -483,3 +524,53 @@ class ConvBackwardWeight(torch.nn.Module):
             sliced = conv[..., : self.K[0], : self.K[1], : self.K[2]]
 
         return self.perms[2](sliced)
+
+
+class ConvBackwardWeightCustomGeneric(torch.nn.Module):
+    def __init__(self, sig: ConvSignature):
+        super().__init__()
+        if sig.transposed:
+            raise NotImplementedError(
+                "unimplemented weight grad decomposition: transposed conv"
+            )
+        self.ND = sig.num_spatial_dims
+        self.stride = sig.dilation
+        self.dilation = sig.stride
+        self.groups = sig.groups
+        # Note: need to swap reduction dim to N
+        self.xl = str(sig.input_layout).replace("N", "c").replace("C", "n").lower()
+        self.wl = str(sig.output_layout).replace("N", "c").replace("C", "f").lower()
+        # output layout:
+        self.ol = str(sig.kernel_layout).replace("N", "f").replace("C", "n").lower()
+        self.explicit_padding = sig.explicit_padding
+        self.kernel_shape = sig.kernel_shape
+
+    def forward(self, dLdy, x):
+        x_pad = torch.constant_pad_nd(x, self.explicit_padding, 0)
+        # swap layout specs for batches and channels
+        xl = self.xl
+        wl = self.wl
+        ol = self.ol
+        if self.groups != 1:
+            x_pos = self.xl.find("n")
+            x_pad = x_pad.unflatten(x_pos, [self.groups, -1])
+            xl = self.xl[:x_pos] + "g" + self.xl[x_pos:]
+            w_pos = self.wl.find("f")
+            dLdy = dLdy.unflatten(w_pos, [self.groups, -1])
+            wl = self.wl[:w_pos] + "g" + self.wl[w_pos:]
+            o_pos = self.ol.find("n")
+            ol = self.ol[:o_pos] + "g" + self.ol[o_pos:]
+
+        dLdw = generic_conv(x_pad, dLdy, self.stride, self.dilation, xl, wl, ol)
+
+        if self.groups != 1:
+            o_pos = ol.find("g")
+            dLdw = dLdw.flatten(o_pos, o_pos + 1)
+
+        # The forward conv's output_shape calculation is subtractive w.r.t. kernel_shape.
+        # Therefore, we need to remove unneccessary values from the backward conv.
+        # We choose to slice them out after the conv in this impl.
+        # One could instead pre-pad spatial dims:
+        #  1. x by stride - pad_correction (see ConvBackwardInput)
+        #  2. dLdy by 1
+        return dLdw[[slice(0, dim) for dim in self.kernel_shape]]

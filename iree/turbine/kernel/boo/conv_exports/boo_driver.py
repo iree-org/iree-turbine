@@ -2,6 +2,9 @@ import argparse
 from collections.abc import Callable, Sequence
 import shlex
 import statistics
+
+from pathlib import Path
+
 import torch
 
 
@@ -19,6 +22,7 @@ command-line arguments are appended to the arguments from the file.
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--commands-file", type=str, help="read commands from file")
+    parser.add_argument("--log-file", type=str, help="specify a file to log results")
     args, extra_cli_args = parser.parse_known_args()
 
     if args.commands_file:
@@ -31,30 +35,56 @@ command-line arguments are appended to the arguments from the file.
 
     runner_parser = argparse.ArgumentParser()
     runner_parser.add_argument("--timing", "-t", type=int, help="Enable timing")
+    log_path = None if not args.log_file else Path(args.log_file)
+    print(f"{log_path=}")
+    log_strs = ["--------RUN LOG---------\n"]
     for file_args in mio_file_args:
         args = file_args + extra_cli_args
         timing_args, runner_args = runner_parser.parse_known_args(args)
         func = lambda: run(runner_args)
         if not timing_args.timing:
-            func()
+            try:
+                name, result = func()
+            except Exception as e:
+                log_strs.append(
+                    f"failed to run with args {runner_args}. See exception {e}."
+                )
+                continue
+            torch.set_printoptions(edgeitems=0)
+            log_strs.append(f"{name}:")
+            log_strs.append(f"\t{result}")
             continue
 
-        zones, func_name = trace_gpu(func)
+        try:
+            zones, func_name, result = trace_gpu(func)
+        except Exception as e:
+            log_strs.append(f"failed to run with args {runner_args}.")
+            continue
+        log_strs.append(f"{shlex.join(runner_args)}:")
         dispatch_zone_names = [n for n in zones.keys() if n.startswith(func_name)]
         if len(dispatch_zone_names) == 0:
-            print(">>> FAILED TO COLLECT TIMING INFO")
+            # print(">>> FAILED TO COLLECT TIMING INFO")
+            log_strs.append("\tFAILED TO COLLECT TIMING INFO")
             continue
         for zone_name in dispatch_zone_names:
             # Convert from nanoseconds to microseconds
             times = [t / 1000 for t in zones[zone_name]]
-            s = ">>> "
-            s += f"min={min(times):.2f}us "
-            s += f"max={max(times):.2f}us "
-            s += f"mean={statistics.mean(times):.2f}us "
-            s += f"stddev={statistics.stdev(times) if len(times) > 1 else 0:.2f}us"
+            s = (
+                f"\tmin={min(times):.2f}us; max={max(times):.2f}us; "
+                f"mean={statistics.mean(times):.2f}us; "
+                f"stddev={statistics.stdev(times) if len(times) > 1 else 0:.2f}us"
+            )
+            log_strs.append(s)
             if len(dispatch_zone_names) > 1:
-                s += f"\t({zone_name})"
-            print(s)
+                log_strs.append(f"\t({zone_name=})")
+
+    if log_path:
+        log_str = "\n".join(log_strs)
+        if not log_path.parent.is_dir():
+            print("log-file parent directory not found. Dumping output to stdout.")
+            print(log_str)
+            return
+        log_path.write_text(log_str)
 
 
 def run(cli_args: Sequence[str]):
@@ -81,12 +111,14 @@ def run(cli_args: Sequence[str]):
         result = conv(*conv_args)
 
     torch.set_printoptions(edgeitems=0)
-    print(f">>> {result}")
+    # print(f">>> {result}")
 
-    return sig.get_func_name()
+    return sig.get_func_name(), repr(result)
 
 
-def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
+def trace_gpu(
+    func: Callable[[], tuple[str, str]]
+) -> tuple[dict[str, list[int]], str, str]:
     """Profile 'func' under Tracy, and return the GPU zone execution times."""
     from multiprocessing import Process, Queue
     import os
@@ -114,8 +146,9 @@ def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
             process.start()
             process.join()
             if process.exitcode != 0:
-                sys.exit(process.exitcode)
-            result = queue.get()
+                tracy.kill()
+                raise RuntimeError(f"failed process with exitcode: {process.exitcode}")
+            func_name, result = queue.get()
             try:
                 # Tracy will never exit if it fails to connect, so kill the process after some time.
                 out, err = tracy.communicate(timeout=5)
@@ -144,7 +177,7 @@ def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
         time = int(row[column["GPU execution time"]])
         zones.setdefault(name, []).append(time)
 
-    return zones, result
+    return zones, func_name, result
 
 
 if __name__ == "__main__":
