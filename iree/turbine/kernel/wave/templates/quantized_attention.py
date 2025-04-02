@@ -129,6 +129,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](DK_SQRT * LOG2E * DEQUANT_QK)
         v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](v_scale)
         fp8_offset = tkl.Register[B, N_Q, N_KV, tkl.f32](FP8_OFFSET_VAL)
+        fp8_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](FP8_OFFSET_VAL)
         fp8_max = tkl.Register[B, N_Q, N_KV, tkl.f32](F8_MAX)
         c_reg = tkl.Register[B, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[B, N_Q, tkl.f32](0.0)
@@ -174,7 +175,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
-            imm_f8 = low_precision_clamp(e_delta, fp8_max)
+            imm_f8 = low_precision_clamp(e_delta/fp8_offset, fp8_max)
             v_reg = tkw.read(
                 v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV, mapping=v_mapping
             )
@@ -187,7 +188,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
-        res = res_mm * reciprocal_sum * v_dequant
+        res = res_mm * reciprocal_sum * v_dequant * fp8_dequant
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     @tkw.wave(constraints)
