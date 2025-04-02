@@ -184,7 +184,7 @@ def test_causal_extend_attention():
     # CHECK-COUNT-8:            amdgpu.mfma
 
     # softcap/logitcap modifier:
-    # CHECK-COUNT-2:            arith.divf
+    # CHECK-COUNT-4:            arith.mulf
     # CHECK-COUNT-2:            math.tanh
     # CHECK-COUNT-2:            arith.mulf
 
@@ -216,7 +216,7 @@ def test_causal_extend_attention():
     # CHECK-COUNT-8:            amdgpu.mfma
 
     # softcap/logitcap modifier:
-    # CHECK-COUNT-2:            arith.divf
+    # CHECK-COUNT-4:            arith.mulf
     # CHECK-COUNT-2:            math.tanh
     # CHECK-COUNT-2:            arith.mulf
 
@@ -301,7 +301,7 @@ def test_causal_extend_attention_32x32x8():
     # CHECK-COUNT-8:            amdgpu.mfma
 
     # softcap/logitcap modifier:
-    # CHECK-COUNT-1:            arith.divf
+    # CHECK-COUNT-2:            arith.mulf
     # CHECK-COUNT-1:            math.tanh
     # CHECK-COUNT-1:            arith.mulf
 
@@ -325,7 +325,7 @@ def test_causal_extend_attention_32x32x8():
     # CHECK-COUNT-8:            amdgpu.mfma
 
     # softcap/logitcap modifier:
-    # CHECK-COUNT-1:            arith.divf
+    # CHECK-COUNT-2:            arith.mulf
     # CHECK-COUNT-1:            math.tanh
     # CHECK-COUNT-1:            arith.mulf
 

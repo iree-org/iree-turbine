@@ -256,7 +256,8 @@ def get_extend_attention_kernel(
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
             x_j = x_j * layer_scale_reg
             if logit_cap > 0:
-                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+                logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
+                x_j = logit_cap_reg * tkw.tanh(x_j * logit_cap_reg_inv)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
@@ -308,7 +309,8 @@ def get_extend_attention_kernel(
             x_j = tkw.permute(inner_acc, target_shape=[H, N_Q, N_KV])
             x_j = x_j * layer_scale_reg
             if logit_cap > 0:
-                x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
+                logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
+                x_j = logit_cap_reg * tkw.tanh(x_j * logit_cap_reg_inv)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
