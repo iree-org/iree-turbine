@@ -1,3 +1,9 @@
+# Copyright 2025 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from __future__ import annotations
 from ..._support.tracing import CapturedTrace
 from ..._support.indexing import (
@@ -35,10 +41,9 @@ def multi_buffer(trace: CapturedTrace):
     writes = []
     for node in trace.get_subgraph(get_custom(reductions[0]).subgraph_name).nodes:
         custom = get_custom(node)
-        if not hasattr(custom, "memory_type"):
-            continue
         if (
-            reduction_axis in custom.indexing_dims
+            isinstance(custom, Read | Write)
+            and reduction_axis in custom.indexing_dims
             and custom.memory_type.address_space == SHARED_ADDRESS_SPACE
         ):
             if isinstance(custom, Read):

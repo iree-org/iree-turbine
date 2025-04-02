@@ -213,7 +213,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
     use_affine_expr = _use_affine_expr
     stack: list[OpResult] = []
 
-    def _get_ir_value(arg):
+    def _get_ir_value(arg) -> Value:
         if isinstance(arg, _ApplyExpr):
             args = _broadcast(*arg.args)
             expr = arg.expr
@@ -239,7 +239,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
             and a.element_type == b.element_type
         )
 
-    def _broadcast(*args):
+    def _broadcast(*args) -> tuple[Value, ...]:
         assert len(args) > 0
         if len(args) == 1:
             return args
@@ -624,7 +624,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
                 _enforce_non_rational(lhs, term)
                 _enforce_non_rational(rhs, term)
                 elem_type = get_type_or_element_type(rhs.type)
-                res = arith_d.xori(lhs, rhs)
+                res = arith_d.xori(*_broadcast(lhs, rhs))
                 stack.append(res)
             case sympy.UnevaluatedExpr():
                 continue
