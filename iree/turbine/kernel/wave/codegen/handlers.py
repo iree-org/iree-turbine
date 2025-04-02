@@ -681,22 +681,31 @@ def handle_tanh(source: Value) -> OpResult:
         # TODO: Tune this tolerance for better accuracy.
         tolerance = vector_constant(arith_d.constant(element_type, 5e-3))
 
-        # Compute tanh approximation.
+        # If less than tolerance, exit early and return source.
         abs_source = math_d.absf(source)
-        term = arith_d.mulf(arith_d.mulf(negative_two, abs_source), inv_log2)
-        exp_term = math_d.exp2(term)
-        denominator = arith_d.addf(one, exp_term)
-        inverted_denominator = arith_d.divf(one, denominator)
-        product = arith_d.subf(
-            inverted_denominator, arith_d.mulf(exp_term, inverted_denominator)
-        )
-        less_than_zero = arith_d.cmpf(arith_d.CmpFPredicate.OLT, source, zero)
-        sign = arith_d.select(less_than_zero, negative_one, one)
-        result = arith_d.mulf(sign, product)
         less_than_tolerance = arith_d.cmpf(
             arith_d.CmpFPredicate.OLT, abs_source, tolerance
         )
-        result = arith_d.select(less_than_tolerance, source, result)
+        tolerance_i1 = vector_d.extract(
+            less_than_tolerance, static_position=[0], dynamic_position=[]
+        )
+        if_op = scf_d.IfOp(tolerance_i1, [source.type], hasElse=True)
+        with InsertionPoint(if_op.then_block) as ip:
+            scf_d.YieldOp([source])
+        with InsertionPoint(if_op.else_block) as ip:
+            # Otherwise, compute tanh approximation.
+            term = arith_d.mulf(arith_d.mulf(negative_two, abs_source), inv_log2)
+            exp_term = math_d.exp2(term)
+            denominator = arith_d.addf(one, exp_term)
+            inverted_denominator = arith_d.divf(one, denominator)
+            product = arith_d.subf(
+                inverted_denominator, arith_d.mulf(exp_term, inverted_denominator)
+            )
+            less_than_zero = arith_d.cmpf(arith_d.CmpFPredicate.OLT, source, zero)
+            sign = arith_d.select(less_than_zero, negative_one, one)
+            result = arith_d.mulf(sign, product)
+            scf_d.YieldOp([result])
+        result = if_op.results[0]
     else:
         raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
     return result
