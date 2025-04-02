@@ -204,12 +204,8 @@ _Rational = namedtuple("_Rational", ["numerator", "denominator"])
 _ApplyExpr = namedtuple("_ApplyExpr", ["expr", "args"])
 
 
-def gen_sympy_index(
-    dynamics: dict[IndexSymbol, Value],
-    expr: sympy.Expr,
-    *,
-    use_affine_expr: bool = _use_affine_expr,
-) -> Value:
+def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Value:
+    use_affine_expr = _use_affine_expr
     stack: list[OpResult] = []
 
     def _get_ir_value(arg):
