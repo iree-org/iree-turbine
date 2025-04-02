@@ -130,8 +130,11 @@ def testAttentionPure(
             MAX_RANGE,
         )
     )
+    q_scaled = torch.Tensor(q_scale, shape=[shape.num_query_heads, 1])
+    k_scaled = torch.Tensor(k_scale, shape=[shape.num_query_heads, 1])
+    v_scaled = torch.Tensor(v_scale, shape=[shape.num_query_heads, 1])
     output = device_zeros(o_shape, dtype=torch.float32)
-    asm = base_attention(q, k, v, q_scale, k_scale, v_scale, output)
+    asm = base_attention(q, k, v, q_scaled, k_scaled, v_scaled, output)
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q.to(torch.float32) * q_scale,
         k.to(torch.float32) * k_scale,
