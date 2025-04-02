@@ -762,10 +762,10 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
 
         # Updatedto broadcast implicitly when we perform mul binary op with scalar.
         lhs_dim, lhs_size = (
-            get_largest_index_and_size(get_index(lhs)) if lhs.indexing_dims else ((), 1)
+            get_largest_index_and_size(lhs_index) if lhs.indexing_dims else ((), 1)
         )
         rhs_dim, rhs_size = (
-            get_largest_index_and_size(get_index(rhs)) if rhs.indexing_dims else ((), 1)
+            get_largest_index_and_size(rhs_index) if rhs.indexing_dims else ((), 1)
         )
 
         extra_error_info = (

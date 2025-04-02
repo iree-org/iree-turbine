@@ -48,6 +48,7 @@ def test_fp8_pertensor_attention():
     # CHECK-DAG: %[[F8_MAX:.*]] = arith.constant dense<{{.*}}> : vector<4xf32>
     # CHECK-DAG: %[[F8_OFFSET:.*]] = arith.constant dense<{{.*}}> : vector<4xf32>
     # CHECK-DAG: %[[FUSED_SCALE:.*]] = arith.constant dense<{{.*}}> : vector<4xf32>
+
     # CHECK: = scf.for
     # CHECK-COUNT-16: = amdgpu.mfma
 
