@@ -67,6 +67,7 @@ class WaveCompileOptions:
     print_ir_before: list[str] = field(default_factory=list)
     print_trace_begin: bool = False
     print_grid: bool = False
+    print_block: bool = False
     print_signature: bool = False
     print_mlir: bool = False
     print_ir_after_all: bool = False

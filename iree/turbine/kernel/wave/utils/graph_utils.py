@@ -3,7 +3,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from .symbol_utils import subs_idxc
 from ..._support.tracing import CapturedTrace
 from ...lang.global_symbols import *
 import iree.turbine.kernel.lang as tkl
@@ -23,7 +22,7 @@ from ...ops.wave_ops import (
     MMA,
     IterArg,
 )
-from ..._support.indexing import IndexSymbol
+from ..._support.indexing import IndexSymbol, subs_idxc
 from typing import Callable, Sequence
 import torch.fx as fx
 

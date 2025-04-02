@@ -237,9 +237,7 @@ class SchedulingTest(unittest.TestCase):
         constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, 0)]
         constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, 1)]
 
-        constraints += [
-            tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
-        ]
+        constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
         @tkw.wave_trace_only(constraints)
         def gemm(
@@ -284,6 +282,7 @@ class SchedulingTest(unittest.TestCase):
         with tk.gen.TestLaunchContext(hyperparams, canonicalize=True, schedule=True):
             trace: CapturedTrace = gemm()
             IndexingContext.current().finalize()
+            tkw.infer_thread_block(constraints, IndexingContext().current())
             initialize_iter_args(trace)
             infer_types(trace)
             promote_placeholders(trace, constraints)

@@ -10,9 +10,10 @@ from enum import Enum
 from typing import Optional, Callable
 from sympy import ceiling, Piecewise, floor, Integer
 
-from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
+from .._support.indexing import IndexingContext, IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from ..lang.global_symbols import *
+from ..lang.block import ThreadBlock
 
 """
 Formatting for different target intrinsics:
@@ -103,10 +104,10 @@ class HardwareConstraint(Constraint):
     """
 
     threads_per_wave: int
-    waves_per_block: Optional[tuple[int, int, int]] = None
     mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
     vector_shapes: Optional[dict[IndexSymbol, int]] = None
     max_bits_per_load: int = 128
+    thread_block: Optional[ThreadBlock] = None
 
     def max_elems_per_load(self, element_type: DataType) -> int:
         return self.max_bits_per_load // element_type.bitwidth()
@@ -241,19 +242,11 @@ class HardwareConstraint(Constraint):
 
     @property
     def threads_per_block(self) -> tuple[int]:
-        return (
-            self.waves_per_block[0] * self.threads_per_wave,
-        ) + self.waves_per_block[1:]
+        return self.thread_block.static_shape
 
     @property
     def linearized_thread_id(self) -> IndexExpr:
-        thread_ids = [THREAD_0, THREAD_1, THREAD_2]
-        threads_per_block = [
-            1,
-            self.threads_per_block[0],
-            self.threads_per_block[0] * self.threads_per_block[1],
-        ]
-        return sum([x * y for x, y in zip(thread_ids, threads_per_block)])
+        return self.thread_block.linearized_thread_id
 
     # Inline substitution for vector_size given index map. In the future we can add support for other members.
     def subs_vector_shapes(self, index_map: dict[IndexSymbol, int]):
@@ -296,7 +289,6 @@ class HardwareConstraint(Constraint):
         constraint_index: int | MMAOperand,
         mma_type: MMAType,
     ) -> IndexSequence:
-        lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
         offset = self.mma_index_offset(mma_type)
@@ -577,3 +569,42 @@ def get_constrained_shape(
             x.tile_size for x in dim_constraints if isinstance(x, TilingConstraint)
         ][0]
     return tuple(constrained_shape)
+
+
+def _get_thread_block(
+    threads_per_wave: int,
+    wg_constraints: list[WorkgroupConstraint],
+    wave_constraints: list[WaveConstraint],
+    idxc: Optional[IndexingContext] = None,
+) -> ThreadBlock:
+    """Infers the thread block from the workgroup and wave constraints."""
+    thread_block = [
+        Integer(threads_per_wave),
+        Integer(1),
+        Integer(1),
+    ]
+    for wave in wave_constraints:
+        for wg in wg_constraints:
+            if wg.dim != wave.dim or not wg.primary:
+                continue
+            thread_block[wg.workgroup_dim] *= ceiling(wg.tile_size / wave.tile_size)
+    block = ThreadBlock(tuple(thread_block))
+    if idxc is not None:
+        block.infer_static_shape(threads_per_wave, idxc=idxc)
+    return block
+
+
+def infer_thread_block(
+    constraints: list[Constraint], idxc: Optional[IndexingContext] = None
+):
+    """Infers and sets the thread_block in each hardware constraint from `constraints`."""
+    wg_constraints = [c for c in constraints if isinstance(c, WorkgroupConstraint)]
+    wave_constraints = [c for c in constraints if isinstance(c, WaveConstraint)]
+    hw_constraints = [c for c in constraints if isinstance(c, HardwareConstraint)]
+    for hw in hw_constraints:
+        if hw.thread_block is not None and idxc is not None:
+            hw.thread_block.infer_static_shape(hw.threads_per_wave, idxc=idxc)
+            continue
+        hw.thread_block = _get_thread_block(
+            hw.threads_per_wave, wg_constraints, wave_constraints, idxc
+        )

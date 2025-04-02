@@ -66,7 +66,6 @@ def test_gemm():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
         )
     ]
@@ -213,7 +212,6 @@ def test_cdna2_int_gemm():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.I32_16x16x16_I8,
         )
     ]
@@ -288,7 +286,6 @@ def test_cdna3_int_gemm():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mma_variant,
         )
     ]
@@ -363,7 +360,6 @@ def test_batched_gemm():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
             vector_shapes={B: 0},
         )
@@ -523,7 +519,6 @@ def test_chained_gemm():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         )
@@ -606,7 +601,6 @@ def test_chained_gemm_32x32x8():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         )
@@ -692,7 +686,6 @@ def test_chained_gemm_32x32x16():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant[0],
             vector_shapes={B: 0},
         )
@@ -786,7 +779,6 @@ def test_chained_gemm_16x16x32():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant[0],
             vector_shapes={B: 0},
         )
@@ -873,7 +865,6 @@ def test_gemm_pipelined():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
         )
     ]
@@ -966,7 +957,6 @@ def test_gemm_prefetch():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
         )
     ]
@@ -1063,7 +1053,6 @@ def test_dynamic_gemm_pipelined():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
         )
     ]
@@ -1168,7 +1157,6 @@ def test_gemm_with_gpr_offsets():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x32_K4_F8,
         )
     ]
@@ -1249,7 +1237,6 @@ def test_gemm_and_reduce():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
         )
     ]
@@ -1335,7 +1322,6 @@ def test_gemm_with_maximized_shared_read_32x32x16():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_32x32x16_K8_F16,
         )
     ]
@@ -1421,7 +1407,6 @@ def test_gemm_with_maximized_shared_read_16x16x32():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x32_K8_F16,
         )
     ]
@@ -1501,7 +1486,6 @@ def test_broadcast_batched_gemm_with_vmma():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x32_K8_F16,
             vector_shapes={B: 0, B_KV: 0, M: 16, N: 16},
         )

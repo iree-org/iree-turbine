@@ -4,10 +4,9 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from iree.turbine.kernel._support.indexing import IndexExpr, IndexSymbol
+from iree.turbine.kernel._support.indexing import IndexExpr, IndexSymbol, subs_idxc
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
-from .utils.symbol_utils import subs_idxc
 from .constraints import (
     Constraint,
     WorkgroupConstraint,

@@ -58,9 +58,7 @@ def get_wave_compile_options(
 @run_test
 def test_read():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -106,9 +104,7 @@ def test_read():
 @run_test
 def test_read_mapped():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -163,9 +159,7 @@ def test_read_mapped():
 @run_test
 def test_read_mapped_buffer():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -207,9 +201,7 @@ def test_read_mapped_buffer():
 @run_test
 def test_read_write():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -260,9 +252,7 @@ def test_read_write_diagonal():
     # This test, tests for functionality of tkw.self_index, by
     # generating code that generate a triangular matrix if M > N.
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -323,9 +313,7 @@ def test_read_write_diagonal():
 @run_test
 def test_read_write_masked():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 4, N: 4}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 4, N: 4})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -395,9 +383,7 @@ def test_read_write_masked():
 @run_test
 def test_read_write_masked_shared():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 4, N: 4}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 4, N: 4})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -438,9 +424,7 @@ def test_read_write_masked_shared():
 @run_test
 def test_read_write_mapping():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -496,9 +480,7 @@ def test_read_write_mapping():
 @run_test
 def test_read_write_dynamic_mapping():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -563,7 +545,6 @@ def test_read_write_dynamic_mapping_broadcast():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 16, N: 16, ONE: 1},
         )
     ]
@@ -617,7 +598,6 @@ def test_read_write_dynamic_mapping_chain():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 16, N: 4, SIZE1: 1, SIZE2: 1},
         )
     ]
@@ -692,7 +672,6 @@ def test_read_write_dynamic_symbol():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: 1, S: 1},
         )
     ]
@@ -753,7 +732,6 @@ def test_read_write_dynamic_symbol_expr():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: 1, S: 1},
         )
     ]
@@ -816,7 +794,6 @@ def test_read_write_conditional():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: 1},
         )
     ]
@@ -865,9 +842,7 @@ def test_read_write_conditional():
 @run_test
 def test_dynamic_copy():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -926,9 +901,7 @@ def test_dynamic_copy():
 @run_test
 def test_add_float():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -951,9 +924,7 @@ def test_add_float():
 @run_test
 def test_add_integer():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -976,7 +947,9 @@ def test_add_integer():
 def test_unary_lowerings():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+            threads_per_wave=64,
+            vector_shapes={M: 16, N: 16},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -1037,7 +1010,6 @@ def test_reduce_sum():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1114,7 +1086,6 @@ def test_mutliple_local_reduce_sum():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1178,8 +1149,8 @@ def test_reduction_and_elemwise():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -1265,8 +1236,8 @@ def test_tiled_reduce_max():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -1360,8 +1331,8 @@ def test_tiled_reduce_min():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -1456,8 +1427,8 @@ def test_multiple_reduction_iv():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -1556,8 +1527,8 @@ def test_reduce_propagate_broadcast():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -1628,7 +1599,6 @@ def test_explicit_broadcast():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1701,7 +1671,6 @@ def test_broadcast_add():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1772,7 +1741,9 @@ def test_broadcast_add():
 def test_binary_lowerings():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+            threads_per_wave=64,
+            vector_shapes={M: 16, N: 16},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -1807,7 +1778,9 @@ def test_binary_lowerings():
 def test_int_comparisons():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+            threads_per_wave=64,
+            vector_shapes={M: 16, N: 16},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -1849,7 +1822,9 @@ def test_int_comparisons():
 def test_verbose_int_comparisons():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+            threads_per_wave=64,
+            vector_shapes={M: 16, N: 16},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -1895,7 +1870,9 @@ def test_verbose_int_comparisons():
 def test_get_item():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+            threads_per_wave=64,
+            vector_shapes={M: 16, N: 16},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         ),
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]

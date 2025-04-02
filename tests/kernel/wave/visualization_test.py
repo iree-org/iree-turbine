@@ -84,7 +84,9 @@ def test_gemm():
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, THREAD_1)]
     constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
+        tkw.HardwareConstraint(
+            threads_per_wave=64, thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1)
+        )
     ]
     with tk.gen.TestLaunchContext(
         {
@@ -95,6 +97,7 @@ def test_gemm():
     ):
         graph = gemm()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext().current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)

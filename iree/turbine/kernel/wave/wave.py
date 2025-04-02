@@ -8,11 +8,11 @@
 from sympy.utilities.lambdify import lambdastr
 import iree.turbine.kernel.lang as tkl
 from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
-from ..lang import Grid, IndexMapping
+from ..lang import dim3_from_num_waves, Grid, IndexMapping, ThreadBlock
 from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Reduction, CustomOp, get_custom, IterArg
-from .._support.indexing import IndexingContext, IndexExpr
+from .._support.indexing import IndexingContext, IndexExpr, subs_idxc, safe_subs
 from .symbolic_constraints import SymbolicAlias
 from .._support.tracing import (
     CapturedTrace,
@@ -30,6 +30,7 @@ from .constraints import (
     WaveConstraint,
     WorkgroupConstraint,
     get_grid_shape,
+    infer_thread_block,
 )
 
 # Passes
@@ -60,7 +61,6 @@ from .shared_memory_indexing import (
 )
 
 # Utils
-from .utils.symbol_utils import subs_idxc, safe_subs
 from .utils.classes import KernelLaunchInfo
 from .utils.print_utils import print_trace, try_apply_pass
 from .utils.graph_utils import (
@@ -210,6 +210,14 @@ class LaunchableWave(Launchable):
             for constraint in self.constraints
             if isinstance(constraint, SymbolicAlias)
         ]
+
+    @property
+    def thread_block(self) -> Optional[ThreadBlock]:
+        return (
+            self.hardware_constraints[0].thread_block
+            if len(self.hardware_constraints) > 0
+            else None
+        )
 
     def _trace(self) -> CapturedTrace:
         region_graph = KernelRegionGraph()
@@ -399,7 +407,7 @@ class LaunchableWave(Launchable):
 
         mb = builder.ModuleBuilder(context=context, module_op=module_op)
         exe = dispatch_codegen.StreamExecutable(mb, name=entrypoint_name)
-        workgroup_size = self.hardware_constraints[0].threads_per_block
+        workgroup_size = self.thread_block.static_shape
         subgroup_size = self.hardware_constraints[0].threads_per_wave
 
         # Setup LLVM func compilation configs.
@@ -514,6 +522,12 @@ class LaunchableWave(Launchable):
             print(f"***After trace/Before first pass***\n")
             print_trace(trace)
 
+        idxc = IndexingContext.current()
+        # Infer the thread block.
+        infer_thread_block(self.constraints, idxc)
+        if options.print_block:
+            print(f"Block: {self.thread_block}")
+
         # Initial passes, pre-optimization.
         graph_passes = self.build_initial_pass_pipeline(
             trace, print_ir_before, print_ir_after
@@ -536,7 +550,6 @@ class LaunchableWave(Launchable):
             partial(remove_chained_extractslice, trace),
         ]
 
-        idxc = IndexingContext.current()
         graph_passes += [
             partial(decompose_reduce_ops, trace, self.constraints, idxc.subs)
         ]
@@ -592,9 +605,7 @@ class LaunchableWave(Launchable):
         options.kernel_launch_info.grid_str = lambdastr(
             [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
         )
-        options.kernel_launch_info.blocks = [
-            int(x) for x in get_hardware_constraint(self.constraints).threads_per_block
-        ]
+        options.kernel_launch_info.blocks = self.thread_block.static_shape
         options.kernel_launch_info.func_name = self._name
 
         return (

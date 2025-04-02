@@ -12,7 +12,13 @@ import torch
 from typing import Any, Callable, Optional
 
 
-from ..._support.indexing import IndexExpr, IndexSequence, IndexSymbol
+from ..._support.indexing import (
+    IndexExpr,
+    IndexSequence,
+    IndexSymbol,
+    safe_subs,
+    subs_idxc,
+)
 from ...lang.global_symbols import *
 from ...ops.wave_ops import CustomOp, Read, Reduction, Write
 from ..assumptions import Assumption
@@ -22,7 +28,6 @@ from ..constraints import (
     TilingConstraint,
     WorkgroupConstraint,
 )
-from .symbol_utils import safe_subs, subs_idxc
 
 
 # TODO: Monkey-patching f16 support, need to fix in iree.

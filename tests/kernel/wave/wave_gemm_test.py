@@ -110,11 +110,7 @@ def testGemm(
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, mma_type=mfma_variant)]
 
     # With dynamic dimensions, we need to add an assumption on how big
     # the reduction dimension is to determine whether we can schedule or not.
@@ -252,11 +248,7 @@ def testVMFMAGemm(
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, mma_type=mfma_variant)]
 
     # With dynamic dimensions, we need to add an assumption on how big
     # the reduction dimension is to determine whether we can schedule or not.
@@ -395,11 +387,7 @@ def testCDNA2IntGemm(
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, mma_type=mfma_variant)]
 
     # With dynamic dimensions, we need to add an assumption on how big
     # the reduction dimension is to determine whether we can schedule or not.
@@ -534,11 +522,7 @@ def testCDNA3IntGemm(
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, mma_type=mfma_variant)]
 
     @tkw.wave(constraints)
     def gemm(
@@ -648,11 +632,7 @@ def testF8Gemm(
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, mma_type=mfma_variant)]
 
     @tkw.wave(constraints)
     def gemm(
@@ -749,11 +729,7 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), vector_shapes={B: 0}
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={B: 0})]
 
     @tkw.wave(constraints)
     def batched_gemm(

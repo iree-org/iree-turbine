@@ -31,7 +31,6 @@ def test_mma():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
         )
     ]
@@ -110,7 +109,6 @@ def test_mma_32x32x8():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_32x32x8_F16,
         )
     ]
@@ -263,7 +261,6 @@ def test_mma_32x32x16():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_32x32x16_F8,
         )
     ]
@@ -416,7 +413,6 @@ def test_mma_16x16x32():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x32_F8,
         )
     ]

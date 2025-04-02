@@ -346,7 +346,6 @@ def testAttentionBias(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: Mvec, N: Nvec},
         )
@@ -546,7 +545,6 @@ def testAttentionSoftCap(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: Mvec, N: Nvec},
         )
@@ -745,7 +743,6 @@ def testAttentionF8(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant[0],
             vector_shapes={B: 0, M: Mvec, N: Nvec},
         )

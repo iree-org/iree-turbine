@@ -58,7 +58,6 @@ def test_attention_32x32x8():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 32, N: 32},
         )
@@ -192,7 +191,6 @@ def test_dynamic_attention_32x32x8():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 32, N: 32},
         )

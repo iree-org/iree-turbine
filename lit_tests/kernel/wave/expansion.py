@@ -64,7 +64,6 @@ def test_read_write_equal_sizes():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 16, N: 16},
         )
     ]
@@ -77,6 +76,7 @@ def test_read_write_equal_sizes():
     ):
         graph = read_write_same_size()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -146,7 +146,6 @@ def test_read_write():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 16, N: 16, K: 16},
         )
     ]
@@ -159,6 +158,7 @@ def test_read_write():
     ):
         graph = read_write_different_dims()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -227,7 +227,6 @@ def test_write_in_reduction():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 1, 1),
             vector_shapes={M: 16, K: 16},
         )
     ]
@@ -239,6 +238,7 @@ def test_write_in_reduction():
     ):
         graph = write_in_reduction()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -309,7 +309,6 @@ def test_no_writes():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 1, 1),
             vector_shapes={M: 16, K: 16},
         )
     ]
@@ -321,6 +320,7 @@ def test_no_writes():
     ):
         graph = no_writes()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -349,9 +349,7 @@ def test_gemm():
     constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, THREAD_1)]
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
     with tk.gen.TestLaunchContext(
         {
             BLOCK_M: 64,
@@ -361,6 +359,7 @@ def test_gemm():
     ):
         graph = gemm()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -537,7 +536,6 @@ def test_batched_gemm():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             vector_shapes={B: 0},
             mma_type=MMAType.F32_16x16x16_F16,
         )
@@ -552,6 +550,7 @@ def test_batched_gemm():
     ):
         graph = batched_gemm()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -722,9 +721,7 @@ def test_gemm_non_direct_acc():
     constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, THREAD_1)]
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
     with tk.gen.TestLaunchContext(
         {
             BLOCK_M: 64,
@@ -734,6 +731,7 @@ def test_gemm_non_direct_acc():
     ):
         graph = gemm_non_direct_acc()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -790,7 +788,6 @@ def test_tiled_max():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 1, 1),
             vector_shapes={M: 16, K: 4},
         )
     ]
@@ -802,6 +799,7 @@ def test_tiled_max():
     ):
         graph = tiled_max()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -823,9 +821,7 @@ def test_gemm_reduction_expansion_only():
     constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2, THREAD_1)]
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(2, 2, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
     with tk.gen.TestLaunchContext(
         {
             BLOCK_M: 32,
@@ -835,6 +831,7 @@ def test_gemm_reduction_expansion_only():
     ):
         graph = gemm()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -964,7 +961,6 @@ def test_attention():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 16, N: 16},
         )
@@ -981,6 +977,7 @@ def test_attention():
     ):
         graph = attention()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -1064,8 +1061,8 @@ def py_arithmetic_different_dims():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 16, N: 16, K: 16},
+            thread_block=tkw.dim3_from_num_waves(64, 1, 1, 1),
         )
     ]
     with tk.gen.TestLaunchContext(
@@ -1077,6 +1074,7 @@ def py_arithmetic_different_dims():
     ):
         graph = py_arithmetic_different_dims()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -1166,7 +1164,6 @@ def test_chained_gemm_32x32x8():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         )
@@ -1183,6 +1180,7 @@ def test_chained_gemm_32x32x8():
     ):
         graph = chained_gemm_32x32x8()
         IndexingContext.current().finalize()
+        tkw.infer_thread_block(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)

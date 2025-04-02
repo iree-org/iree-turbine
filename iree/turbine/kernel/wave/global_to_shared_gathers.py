@@ -11,7 +11,7 @@ from ..wave.constraints import (
     TilingConstraint,
 )
 from .._support.tracing import CapturedTrace
-from .._support.indexing import IndexSequence, IndexSymbol, IndexExpr
+from .._support.indexing import IndexSequence, IndexSymbol, IndexExpr, subs_idxc
 from ..lang.wave_types import IndexMapping
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
@@ -19,7 +19,6 @@ from math import prod
 import torch.fx as fx
 from collections import defaultdict
 from copy import deepcopy
-from .utils.symbol_utils import subs_idxc
 from .utils.general_utils import is_gather
 from .minimize_global_loads import (
     has_write_shared_user,
@@ -296,9 +295,7 @@ def global_to_shared_gathers(trace: CapturedTrace, constraints: list[Constraint]
         if isinstance(c, TilingConstraint) or isinstance(c, WorkgroupConstraint)
     }
 
-    total_number_of_threads = hardware_constraint.threads_per_wave * prod(
-        hardware_constraint.waves_per_block
-    )
+    total_number_of_threads = prod(hardware_constraint.threads_per_block)
     element_type = get_custom(global_gathers[0]).type.dtype
     load_elems_per_thread = hardware_constraint.max_elems_per_load(element_type)
     max_elements_per_load = total_number_of_threads * load_elems_per_thread

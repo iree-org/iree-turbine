@@ -87,7 +87,6 @@ def get_prefill_attention_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(M_WAVES, N_WAVES, 1),
             mma_type=mfma_variant[1],
             vector_shapes={H: 0, H_KV: 0, N_Q: Mvec, D_KV: Nvec, S: 0},
         )

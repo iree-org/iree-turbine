@@ -11,7 +11,13 @@ from ..wave.constraints import (
     TilingConstraint,
 )
 from .._support.tracing import CapturedTrace
-from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
+from .._support.indexing import (
+    IndexingContext,
+    IndexSequence,
+    IndexSymbol,
+    IndexExpr,
+    subs_idxc,
+)
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
 from .utils.general_utils import (
@@ -22,9 +28,6 @@ from .utils.general_utils import (
 )
 from .utils.graph_utils import (
     DCE,
-)
-from .utils.symbol_utils import (
-    subs_idxc,
 )
 from math import prod
 import torch.fx as fx
@@ -365,9 +368,7 @@ def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
         if isinstance(c, TilingConstraint) or isinstance(c, WorkgroupConstraint)
     }
 
-    total_number_of_threads = hardware_constraint.threads_per_wave * prod(
-        hardware_constraint.waves_per_block
-    )
+    total_number_of_threads = prod(hardware_constraint.threads_per_block)
     element_type = get_custom(global_read_nodes[0]).type.dtype
     load_elems_per_thread = hardware_constraint.max_elems_per_load(element_type)
     max_elements_per_load = total_number_of_threads * load_elems_per_thread
