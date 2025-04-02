@@ -93,6 +93,7 @@ jobs:
         run: |
           export WAVE_CACHE_DIR=$PWD/.wave
           rm -rf ./.wave
+          nproc
           WAVE_CACHE_ON=1 pytest --capture=tee-sys -vv --run-e2e --durations=100 ./tests/kernel/wave/runtime
 
       - name: Run e2e tests on AMD GPU
