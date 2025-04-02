@@ -452,6 +452,11 @@ def propagate_indices(
     visited: set[CustomOp],
     symbolic_constraints: list[SymbolicAlias],
 ):
+    def get_index(custom: CustomOp):
+        if isinstance(custom, MMA):
+            return custom.acc.index
+        return custom.index
+
     """
     Propagate the index and vector shapes through the graph
     starting with priveleged nodes (like MMA, Read, Write).
