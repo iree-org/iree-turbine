@@ -93,17 +93,17 @@ jobs:
         run: |
           export WAVE_CACHE_DIR=$PWD/.wave
           rm -rf ./.wave
-          WAVE_CACHE_ON=1 pytest --capture=tee-sys -vv --run-e2e --durations=0 ./tests/kernel/wave/runtime
+          WAVE_CACHE_ON=1 pytest --capture=tee-sys -vv --run-e2e --durations=100 ./tests/kernel/wave/runtime
 
       - name: Run e2e tests on AMD GPU MI300
         if: "contains(matrix.os, 'mi300') && !cancelled()"
         run: |
-          WAVE_CACHE_ON=0 pytest -n 4 --capture=tee-sys -vv --run-e2e --gpu-distribute 1 --durations=0 ./tests/kernel/wave/
+          WAVE_CACHE_ON=0 pytest -n 4 --capture=tee-sys -vv --run-e2e --gpu-distribute 1 --durations=100 ./tests/kernel/wave/
 
       - name: Run e2e tests on AMD GPU MI250
         if: "contains(matrix.os, 'mi250') && !cancelled()"
         run: |
-          WAVE_CACHE_ON=0 pytest -n 2 --capture=tee-sys --run-e2e -vv --durations=0 ./tests/kernel/wave/
+          WAVE_CACHE_ON=0 pytest -n 2 --capture=tee-sys --run-e2e -vv --durations=100 ./tests/kernel/wave/
 
       - name: Run LIT tests
         if: ${{ !cancelled() }}
