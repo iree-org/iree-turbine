@@ -7,7 +7,7 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.promotion import promote_placeholders
 from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
 from iree.turbine.kernel.wave.barriers import add_shared_memory_barriers
-from iree.turbine.kernel.wave.expansion.expansion import expand_graph
+from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
@@ -95,6 +95,7 @@ def test_gemm():
         visualize = False
         IndexingContext.current().finalize()
         initialize_iter_args(trace)
+        add_get_results(trace)
         infer_types(trace)
         promote_placeholders(trace, constraints)
         set_node_indices(trace, constraints)

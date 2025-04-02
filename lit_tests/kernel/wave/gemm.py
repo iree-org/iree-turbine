@@ -133,6 +133,76 @@ def test_gemm():
 
 
 @run_test
+def test_gemm_bias():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm_bias(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        bias: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        bias_reg = tkw.read(bias)
+        result = repeat + bias_reg
+        tkw.write(result, c)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 64,
+            N: 128,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 16,
+            LOAD_ELEMS_PER_THREAD: 4,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    gemm_bias = wave_compile(options, gemm_bias)
+    print(gemm_bias.asm)
+
+    # CHECK-LABEL:     func.func @gemm_bias
+    # CHECK:             scf.for
+    # CHECK-COUNT-1:       vector.load
+    # CHECK-COUNT-1:       vector.store
+    # CHECK-COUNT-1:       vector.load
+    # CHECK-COUNT-1:       vector.store
+    # CHECK-COUNT-2:       vector.load
+    # CHECK-COUNT-1:       amdgpu.mfma
+    # CHECK:             scf.yield
+    # Load bias from global
+    # CHECK-COUNT-1:       vector.load
+    # Add result to bias
+    # CHECK-COUNT-1:       arith.addf
+
+
+@run_test
 def test_cdna2_int_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
