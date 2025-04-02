@@ -21,7 +21,6 @@ from iree.turbine.kernel.wave.utils.torch_utils import (
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
-from torch.testing import assert_close
 from ..common.utils import (
     require_e2e,
     require_cdna3,
@@ -77,7 +76,8 @@ def testAttentionPure(
         dynamic_symbols,
         dynamic_symbols_map,
     ) = get_brevitas_pertensor_fp8_attention_kernel(
-        shape, mfma_variant, q_scale=q_scale, k_scale=k_scale, v_scale=v_scale
+        shape,
+        mfma_variant,
     )
     q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
@@ -93,6 +93,8 @@ def testAttentionPure(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
+        inplace=False,  # we are supporting wave_runtime for scalar codegen for now
+        wave_runtime=True,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
         benchmark_batch_size=10,
@@ -113,7 +115,8 @@ def testAttentionPure(
     v = quantized_tensor(v_shape, dtype=torch.float16, scale=MAX_RANGE)
 
     output = device_zeros(o_shape, dtype=torch.float32)
-    asm = base_attention(q, k, v, output)
+    asm = base_attention(q, k, v, q_scale, k_scale, v_scale, output)
+ 
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q.to(torch.float32) * q_scale,
         k.to(torch.float32) * k_scale,

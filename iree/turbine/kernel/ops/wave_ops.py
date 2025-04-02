@@ -777,7 +777,10 @@ class BinaryOpBase(CustomOp, ABC):
     def infer_shape(self) -> Any:
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
-        has_same_type = has_same_custom_type(lhs_type, rhs_type)
+        if isinstance(lhs_type, DataType) and isinstance(rhs_type, DataType):
+            has_same_type = True
+        else:
+            has_same_type = has_same_custom_type(lhs_type, rhs_type)
         if has_same_type:
             return lhs_type.symbolic_shape
 
@@ -806,7 +809,10 @@ class BinaryOpBase(CustomOp, ABC):
 @dataclass
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
-        self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
+        if not self.infer_shape():
+            self.type = self.lhs.type
+        else:
+            self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
 
 
 @define_py_op(operator.eq)
@@ -997,6 +1003,8 @@ class Placeholder(CustomOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        if not hasattr(self._type, "symbolic_shape"):
+            return []
         return list(self._type.symbolic_shape) if self._type else []
 
     def get_captured_fx_node(self) -> Optional[fx.Node]:

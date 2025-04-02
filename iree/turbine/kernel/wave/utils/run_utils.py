@@ -109,13 +109,18 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     for input in inputs:
         if isinstance(input, torch.Tensor):
             push_tensor_to_arg_list(input)
-        else:
+        elif not isinstance(input, float):
             raise ValueError(f"Unsupported input type: {type(input)}")
     for output in outputs:
         if isinstance(output, torch.Tensor):
             push_tensor_to_arg_list(output)
         else:
             raise ValueError(f"Unsupported output type: {type(output)}")
+    # we want scalars to be at the end during codegen/dispatch to iree
+    # to maintain the consistency.
+    for input in inputs:
+        if isinstance(input, float):
+            arg_list.push_float(input)
     for dynamic_dim in dynamic_dims:
         if isinstance(dynamic_dim, int):
             arg_list.push_int(dynamic_dim)
@@ -266,7 +271,11 @@ def invoke_with_wave_runtime(
 
     # Ensure that the tensors are contiguous.
     kern_args = []
+    scalar_args = []
     for arg_tensor in kernel_inputs + kernel_outputs:
+        if isinstance(arg_tensor, (float, int)):
+            scalar_args.append(arg_tensor)
+            continue
         if not arg_tensor.is_contiguous():
             arg_tensor = arg_tensor.contiguous()
         kern_args.append(arg_tensor.data_ptr())
@@ -274,7 +283,7 @@ def invoke_with_wave_runtime(
     kernel_args = wave_runtime.Int64Vector(kern_args)
     dyn_dims = wave_runtime.Int64Vector(dynamic_dims)
     # Launch the kernel.
-    wave_runtime.launch(kernel_launch_info, kernel_args, dyn_dims)
+    wave_runtime.launch(kernel_launch_info, kernel_args, dyn_dims, scalar_args)
 
 
 def compile_and_invoke(
