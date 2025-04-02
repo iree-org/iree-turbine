@@ -76,7 +76,8 @@ def testAttentionPure(
         dynamic_symbols,
         dynamic_symbols_map,
     ) = get_brevitas_pertensor_fp8_attention_kernel(
-        shape, mfma_variant, q_scale=q_scale, k_scale=k_scale, v_scale=v_scale
+        shape,
+        mfma_variant,
     )
     q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
@@ -130,7 +131,7 @@ def testAttentionPure(
         )
     )
     output = device_zeros(o_shape, dtype=torch.float32)
-    asm = base_attention(q, k, v, output)
+    asm = base_attention(q, k, v, q_scale, k_scale, v_scale, output)
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q.to(torch.float32) * q_scale,
         k.to(torch.float32) * k_scale,

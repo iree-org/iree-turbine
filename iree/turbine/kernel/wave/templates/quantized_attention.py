@@ -25,9 +25,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     f8_dtpye: torch.dtype = torch.float8_e4m3fnuz,
     dynamic_dims: bool = False,
     is_causal: bool = False,
-    q_scale=1.0,
-    k_scale=1.0,
-    v_scale=1.0,
 ):
     # IREE -> Wave convention:
     # B -> B
@@ -115,9 +112,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     # `sum` are scaled by the same value so the end result is the same.
     FP8_OFFSET_VAL = ATTENTION_SOFTMAX_MAX / F8_MAX
 
-    # Dequant Tensor Scaling
-    DEQUANT_QK = q_scale * k_scale
-
     # Clamp input to dstTy(usually `fp8`) MAX value to prevent NaNs.
     # We do not clamp for `-MAX` because this function meant to only be
     # used by attention's exp2 who's value is always > 0.
@@ -125,9 +119,14 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         clamped = tkw.minimum(source_reg, upper_bound)
         return tkw.cast(clamped, F8_DTYPE)
 
-    def base_attention_core(q, k, v, c):
-        qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](DK_SQRT * LOG2E * DEQUANT_QK)
-        v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](v_scale)
+    def base_attention_core(q, k, v, q_scale, k_scale, v_scale, c):
+        q_scale_val = tkw.read(q_scale)
+        k_scale_val = tkw.read(k_scale)
+        v_scale_val = tkw.read(v_scale)
+        qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](
+            DK_SQRT * LOG2E * (q_scale_val * k_scale_val)
+        )
+        v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](v_scale_val)
         fp8_offset = tkl.Register[B, N_Q, N_KV, tkl.f32](FP8_OFFSET_VAL)
         fp8_max = tkl.Register[B, N_Q, N_KV, tkl.f32](F8_MAX)
         c_reg = tkl.Register[B, D_KV, N_Q, tkl.f32](0.0)
@@ -195,9 +194,12 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         q: tkl.Memory[B, N_Q, D_Q, GLOBAL_ADDRESS_SPACE, LOGIT_DTYPE],
         k: tkl.Memory[B, N_KV, D_Q, ADDRESS_SPACE, LOGIT_DTYPE],
         v: tkl.Memory[B, N_KV, D_KV, ADDRESS_SPACE, LOGIT_DTYPE],
+        q_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        k_scale: tkl.Memory[B, 1, ADDRESS_SPACE, tkl.f32],
+        v_scale: tkl.Memory[B, 1, ADDRESS_SPACE, tkl.f32],
         c: tkl.Memory[B, N_Q, D_KV, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
-        base_attention_core(q, k, v, c)
+        base_attention_core(q, k, v, q_scale, k_scale, v_scale, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
