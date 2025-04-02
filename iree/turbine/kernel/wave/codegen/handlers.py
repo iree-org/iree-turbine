@@ -85,6 +85,7 @@ from ...ops.wave_ops import (
     shared_memory_barrier,
     shuffle,
     tanh,
+    tanh_approx,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
@@ -640,6 +641,62 @@ def handle_tanh(source: Value) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
         result = math_d.tanh(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
+    return result
+
+
+@handle_unary_op(tanh_approx)
+def handle_tanh(source: Value) -> OpResult:
+    """
+    This function computes an approximation to tanh using exp2 and reciprocal
+    that is faster to compute than tanh.
+
+        tanh(x) = 1 - exp2(-2 * |x| * INV_LOG2)
+                  -----------------------------
+                  1 + exp2(-2 * |x| * INV_LOG2)
+
+    where INV_LOG2 = 1 / log(2).
+
+    We leverage the fact that tanh(-x) = -tanh(x) and so compute tanh on
+    the absolute value of the input and then negate the result if the input
+    was negative.
+
+    For small values of |x| as defined by the tolerance 5e-3, we approximate
+    tanh(x) as x.
+
+    There is no nan-checking on the input, so the caller should ensure that
+    the input is not nan.
+
+    """
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        # Constants.
+        vector_constant = lambda x: vector_d.splat(source.type, x)
+        negative_one = vector_constant(arith_d.constant(element_type, -1.0))
+        negative_two = vector_constant(arith_d.constant(element_type, -2.0))
+        one = vector_constant(arith_d.constant(element_type, 1.0))
+        zero = vector_constant(arith_d.constant(element_type, 0.0))
+        inv_log2 = vector_constant(arith_d.constant(element_type, 1.0 / math.log(2)))
+        # TODO: Tune this tolerance for better accuracy.
+        tolerance = vector_constant(arith_d.constant(element_type, 5e-3))
+
+        # Compute tanh approximation.
+        abs_source = math_d.absf(source)
+        term = arith_d.mulf(arith_d.mulf(negative_two, abs_source), inv_log2)
+        exp_term = math_d.exp2(term)
+        denominator = arith_d.addf(one, exp_term)
+        inverted_denominator = arith_d.divf(one, denominator)
+        product = arith_d.subf(
+            inverted_denominator, arith_d.mulf(exp_term, inverted_denominator)
+        )
+        less_than_zero = arith_d.cmpf(arith_d.CmpFPredicate.OLT, source, zero)
+        sign = arith_d.select(less_than_zero, negative_one, one)
+        result = arith_d.mulf(sign, product)
+        less_than_tolerance = arith_d.cmpf(
+            arith_d.CmpFPredicate.OLT, abs_source, tolerance
+        )
+        result = arith_d.select(less_than_tolerance, source, result)
     else:
         raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
     return result
