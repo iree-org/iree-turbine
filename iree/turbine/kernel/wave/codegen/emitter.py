@@ -204,30 +204,16 @@ _Rational = namedtuple("_Rational", ["numerator", "denominator"])
 _ApplyExpr = namedtuple("_ApplyExpr", ["expr", "args"])
 
 
-class _AffineExprNotSupported(CodegenError):
-    pass
-
-
-def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Value:
-    try:
-        return _gen_sympy_index_impl(dynamics, expr, use_affine_expr=_use_affine_expr)
-    except _AffineExprNotSupported:
-        return _gen_sympy_index_impl(dynamics, expr, use_affine_expr=False)
-
-
-def _gen_sympy_index_impl(
-    dynamics: dict[IndexSymbol, Value], expr: sympy.Expr, *, use_affine_expr: bool
+def gen_sympy_index(
+    dynamics: dict[IndexSymbol, Value],
+    expr: sympy.Expr,
+    *,
+    use_affine_expr: bool = _use_affine_expr,
 ) -> Value:
     stack: list[OpResult] = []
 
     def _get_ir_value(arg):
         if isinstance(arg, _ApplyExpr):
-            # TODO: Affine exprs are not supported for non-index types.
-            # See https://github.com/llvm/llvm-project/pull/129442
-            index = IndexType.get()
-            if any(a.type != index for a in arg.args):
-                raise _AffineExprNotSupported()
-
             args = _broadcast(*arg.args)
             expr = arg.expr
             expr = AffineMap.get(dim_count=0, symbol_count=len(args), exprs=[expr])
@@ -345,25 +331,50 @@ def _gen_sympy_index_impl(
         expr = op(lhs_expr, rhs_expr.shift_symbols(len(rhs_args), len(lhs_args)))
         return _ApplyExpr(expr, args)
 
+    def check_index_types(*args):
+        return all(
+            isinstance(a, _ApplyExpr) or isinstance(a.type, IndexType) for a in args
+        )
+
     def add_expr(lhs, rhs):
-        if not use_affine_expr:
+        if not use_affine_expr or not check_index_types(lhs, rhs):
             return addi(*_broadcast(lhs, rhs))
 
         return op_expr(lhs, rhs, lambda a, b: a + b)
 
     def muli_expr(lhs, rhs):
-        if not use_affine_expr:
+        if not use_affine_expr or not check_index_types(lhs, rhs):
             return muli(*_broadcast(lhs, rhs))
 
         return op_expr(lhs, rhs, lambda a, b: a * b)
 
     def rem_expr(lhs, rhs):
+        if not use_affine_expr or not check_index_types(lhs, rhs):
+            return arith_d.remsi(*_broadcast(lhs, rhs))
+
         return op_expr(lhs, rhs, lambda a, b: a % b)
 
     def floordiv_expr(lhs, rhs):
+        if not use_affine_expr or not check_index_types(lhs, rhs):
+            return arith_d.divsi(*_broadcast(lhs, rhs))
+
         return op_expr(lhs, rhs, lambda a, b: AffineExpr.get_floor_div(a, b))
 
     def ceildiv_expr(lhs, rhs):
+        if not use_affine_expr or not check_index_types(lhs, rhs):
+            if _emulate_ceildiv:
+                # ceildivui(x, y) = x == 0 ? 0 : ((x - 1) / y) + 1
+                one = _get_const(1)
+                zero = _get_const(0)
+                lhs_minus_one = arith_d.subi(*_broadcast(lhs, one))
+                div = arith_d.divui(*_broadcast(lhs_minus_one, rhs))
+                result = arith_d.addi(*_broadcast(div, one))
+                cmp = arith_d.cmpi(arith_d.CmpIPredicate.eq, *_broadcast(lhs, zero))
+                zero, result = _broadcast(zero, result)
+                return arith_d.select(cmp, zero, result)
+            else:
+                return arith_d.ceildivsi(*_broadcast(lhs, rhs))
+
         return op_expr(lhs, rhs, lambda a, b: AffineExpr.get_ceil_div(a, b))
 
     # `x + (a/b)` transformed into `(x*b + a) / b`
@@ -405,8 +416,7 @@ def _gen_sympy_index_impl(
             return muli_expr(lhs, rhs)
 
     def _rem(lhs, rhs):
-        if not use_affine_expr:
-            return arith_d.remsi(*_broadcast(lhs, rhs))
+        assert not isinstance(lhs, _Rational) and not isinstance(rhs, _Rational)
 
         return rem_expr(lhs, rhs)
 
@@ -414,32 +424,13 @@ def _gen_sympy_index_impl(
         if not isinstance(value, _Rational):
             return value
 
-        if not use_affine_expr:
-            return arith_d.divsi(*_broadcast(value.numerator, value.denominator))
-
         return floordiv_expr(value.numerator, value.denominator)
 
     def _ceiling(value):
         if not isinstance(value, _Rational):
             return value
 
-        if use_affine_expr:
-            return ceildiv_expr(value.numerator, value.denominator)
-
-        if _emulate_ceildiv:
-            # ceildivui(x, y) = x == 0 ? 0 : ((x - 1) / y) + 1
-            one = _get_const(1)
-            zero = _get_const(0)
-            lhs_minus_one = arith_d.subi(*_broadcast(value.numerator, one))
-            div = arith_d.divui(*_broadcast(lhs_minus_one, value.denominator))
-            result = arith_d.addi(*_broadcast(div, one))
-            cmp = arith_d.cmpi(
-                arith_d.CmpIPredicate.eq, *_broadcast(value.numerator, zero)
-            )
-            zero, result = _broadcast(zero, result)
-            return arith_d.select(cmp, zero, result)
-        else:
-            return arith_d.ceildivsi(*_broadcast(value.numerator, value.denominator))
+        return ceildiv_expr(value.numerator, value.denominator)
 
     def _group_rationals(stack, count):
         """Group rationals and non-rationals args into 2 contiguous sets.
