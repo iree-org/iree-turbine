@@ -25,9 +25,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     f8_dtpye: torch.dtype = torch.float8_e4m3fnuz,
     dynamic_dims: bool = False,
     is_causal: bool = False,
-    q_scale=1.0,
-    k_scale=1.0,
-    v_scale=1.0,
 ):
     # IREE -> Wave convention:
     # B -> B
@@ -49,10 +46,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     BLOCK_N_KV = tkl.sym.BLOCK_N_KV
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD_QK = index_symbol("LOAD_ELEMS_PER_THREAD_QK")
-    LOAD_ELEMS_PER_THREAD_PV = index_symbol("LOAD_ELEMS_PER_THREAD_PV")
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(N_Q, BLOCK_N_Q, 0)]
@@ -115,9 +108,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     # `sum` are scaled by the same value so the end result is the same.
     FP8_OFFSET_VAL = ATTENTION_SOFTMAX_MAX / F8_MAX
 
-    # Dequant Tensor Scaling
-    DEQUANT_QK = q_scale * k_scale
-
     # Clamp input to dstTy(usually `fp8`) MAX value to prevent NaNs.
     # We do not clamp for `-MAX` because this function meant to only be
     # used by attention's exp2 who's value is always > 0.
@@ -125,9 +115,14 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         clamped = tkw.minimum(source_reg, upper_bound)
         return tkw.cast(clamped, F8_DTYPE)
 
-    def base_attention_core(q, k, v, c):
-        qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](DK_SQRT * LOG2E * DEQUANT_QK)
-        v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](v_scale)
+    def base_attention_core(q, k, v, q_scale, k_scale, v_scale, c):
+        q_scale_val = tkw.read(q_scale)
+        k_scale_val = tkw.read(k_scale)
+        v_scale_val = tkw.read(v_scale)
+        qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](
+            DK_SQRT * LOG2E * (q_scale_val * k_scale_val)
+        )
+        v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](v_scale_val)
         fp8_offset = tkl.Register[B, N_Q, N_KV, tkl.f32](FP8_OFFSET_VAL)
         fp8_max = tkl.Register[B, N_Q, N_KV, tkl.f32](F8_MAX)
         c_reg = tkl.Register[B, D_KV, N_Q, tkl.f32](0.0)
@@ -145,8 +140,8 @@ def get_brevitas_pertensor_fp8_attention_kernel(
             acc: tkl.Register[B, D_KV, N_Q, tkl.f32],
         ):
             imm_reg = tkl.Register[B, N_KV, N_Q, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+            q_reg = tkw.read(q)
+            k_reg = tkw.read(k)
             if logit_dtype != F8_DTYPE:
                 q_reg = tkw.cast(q_reg, F8_DTYPE)
                 k_reg = tkw.cast(k_reg, F8_DTYPE)
@@ -175,9 +170,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
             imm_f8 = low_precision_clamp(e_delta, fp8_max)
-            v_reg = tkw.read(
-                v, elements_per_thread=LOAD_ELEMS_PER_THREAD_PV, mapping=v_mapping
-            )
+            v_reg = tkw.read(v, mapping=v_mapping)
             if logit_dtype != F8_DTYPE:
                 v_reg = tkw.cast(v_reg, F8_DTYPE)
             new_acc = acc * e_delta_max
@@ -188,22 +181,22 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
         res = res_mm * reciprocal_sum * v_dequant
-        tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c, mapping=mapping)
 
     @tkw.wave(constraints)
     def base_attention(
         q: tkl.Memory[B, N_Q, D_Q, GLOBAL_ADDRESS_SPACE, LOGIT_DTYPE],
         k: tkl.Memory[B, N_KV, D_Q, ADDRESS_SPACE, LOGIT_DTYPE],
         v: tkl.Memory[B, N_KV, D_KV, ADDRESS_SPACE, LOGIT_DTYPE],
+        q_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        k_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        v_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
         c: tkl.Memory[B, N_Q, D_KV, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
-        base_attention_core(q, k, v, c)
+        base_attention_core(q, k, v, q_scale, k_scale, v_scale, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
-        LOAD_ELEMS_PER_THREAD_PV: get_mfma_load_elems_per_thread(mfma_variant[1]),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
         BLOCK_B: 1,
         BLOCK_N_Q: 128,
         BLOCK_D_KV: 64,
