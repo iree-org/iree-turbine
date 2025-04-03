@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 require_e2e = pytest.mark.require_e2e
+expensive_test = pytest.mark.expensive_test
 require_cdna2 = pytest.mark.skipif(
     "gfx90" not in get_default_arch(),
     reason="Default architecture is not CDNA2, default architecture is '{}'".format(
