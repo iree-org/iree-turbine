@@ -23,6 +23,8 @@ from .ir import (
     Block,
     DictAttr,
     FunctionType,
+    F32Type,
+    FloatAttr,
     IndexType,
     InsertionPoint,
     IntegerAttr,
@@ -131,8 +133,8 @@ class StreamExecutable:
         linear_bindings = (
             kb_input_bindings
             + kb_output_bindings
-            + dynamic_dim_bindings
             + scalar_bindings
+            + dynamic_dim_bindings
         )
 
         dynamic_dim_indices = {
@@ -324,8 +326,9 @@ class DispatchEntrypoint(BoundKernelSignature):
             )
 
         if binding.binding_type == BindingType.SCALAR_VALUE:
-            result_type = IndexType.get()
-            zero_value = arith_d.constant(result_type, IntegerAttr.get(result_type, 0))
+            # TODO: need to fix for all float dytpes
+            result_type = F32Type.get()
+            zero_value = arith_d.constant(result_type, FloatAttr.get(result_type, 0))
             linear_arg_value = self._abi_value_by_reference[binding.reference]
             return stream_d.binding_subspan(
                 binding.as_mlir_type(),

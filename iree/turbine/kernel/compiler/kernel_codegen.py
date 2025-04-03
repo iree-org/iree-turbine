@@ -49,6 +49,7 @@ from .builder import (
 from .ir import (
     Block,
     FunctionType,
+    F32Type,
     IndexType,
     InsertionPoint,
     IrType,
@@ -158,7 +159,7 @@ class BindingDesc:
         elif binding_type == BindingType.SYMBOL_VALUE:
             return IndexType.get()
         elif binding_type == BindingType.SCALAR_VALUE:
-            return IndexType.get()
+            return F32Type.get()
         else:
             raise AssertionError("Unhandled switch BindingType")
 

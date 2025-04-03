@@ -76,8 +76,8 @@ def isolated_test_call(
         arg_locs = [
             (Location.name(b.name) if b.name is not None else Location.unknown())
             for b in sig.kernel_buffer_bindings
-            + sig.dynamic_dim_bindings
             + sig.scalar_bindings
+            + sig.dynamic_dim_bindings
         ]
         entry_block = func_op.add_entry_block(arg_locs)
         offset = len(sig.kernel_buffer_bindings)
