@@ -409,15 +409,6 @@ def testGemmBias(
     if dynamic_dims:
         constraints += [tkw.Assumption(K > BLOCK_K * 4)]
 
-    i = tkw.IndexMapping.iterator(0)
-    j = tkw.IndexMapping.iterator(1)
-    bias_mapping = tkw.IndexMapping(
-        num_iterators=2, inputs={N: i, M: j}, outputs={N: i, M: j}
-    )
-    output_mapping = tkw.IndexMapping(
-        num_iterators=2, inputs={N: i, M: j}, outputs={M: j, N: i}
-    )
-
     # Wave-level micro-kernel.
     # Since warps are not directly addressable, there is no
     # explicit notion of a warp id (like a workgroup or thread id).
@@ -443,9 +434,9 @@ def testGemmBias(
             return acc
 
         # repeat represents the results of the loop
-        bias_reg = tkw.read(bias, mapping=bias_mapping)
+        bias_reg = tkw.read(bias)
         result = repeat + bias_reg
-        tkw.write(result, c, mapping=output_mapping)
+        tkw.write(result, c)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
