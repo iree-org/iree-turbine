@@ -113,7 +113,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     # full fp8 range. We can do this with a offset as post `exp2` this equates
     # to multiplying by a static value. We are able to do this as `max` and
     # `sum` are scaled by the same value so the end result is the same.
-    FP8_OFFSET_VAL = ATTENTION_SOFTMAX_MAX / F8_MAX
+    FP8_OFFSET_VAL = math.log2(F8_MAX / ATTENTION_SOFTMAX_MAX)
 
     # Dequant Tensor Scaling
     DEQUANT_QK = q_scale * k_scale
@@ -168,10 +168,9 @@ def get_brevitas_pertensor_fp8_attention_kernel(
             bias = tkw.select(mask, ZEROF, MIN_INF)
             x_j = x_j + bias
             x_j *= qk_scaling
-            x_j += fp8_offset
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
-            e_delta = tkw.exp2(x_j - m_j)
+            e_delta = tkw.exp2(x_j - m_j + fp8_offset)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
             imm_f8 = low_precision_clamp(e_delta, fp8_max)
