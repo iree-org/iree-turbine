@@ -113,7 +113,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     # full fp8 range. We can do this with a offset as post `exp2` this equates
     # to multiplying by a static value. We are able to do this as `max` and
     # `sum` are scaled by the same value so the end result is the same.
-    FP8_OFFSET_VAL = math.log2(F8_MAX/ATTENTION_SOFTMAX_MAX)
+    FP8_OFFSET_VAL = math.log2(F8_MAX / ATTENTION_SOFTMAX_MAX)
 
     # Dequant Tensor Scaling
     DEQUANT_QK = q_scale * k_scale
@@ -128,7 +128,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     def base_attention_core(q, k, v, c):
         qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](DK_SQRT * LOG2E * DEQUANT_QK)
         v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](v_scale)
-        fp8_offset = tkl.Register[B, N_Q, N_KV, tkl.f32](1/FP8_OFFSET_VAL)
+        fp8_offset = tkl.Register[B, N_Q, N_KV, tkl.f32](1 / FP8_OFFSET_VAL)
         fp8_max = tkl.Register[B, N_Q, N_KV, tkl.f32](F8_MAX)
         c_reg = tkl.Register[B, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[B, N_Q, tkl.f32](0.0)
