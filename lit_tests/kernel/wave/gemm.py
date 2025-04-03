@@ -196,10 +196,12 @@ def test_gemm_bias():
     # CHECK-COUNT-2:       vector.load
     # CHECK-COUNT-1:       amdgpu.mfma
     # CHECK:             scf.yield
-    # Load bias from global
-    # CHECK-COUNT-1:       vector.load
+    # Load transposed bias from global
+    # CHECK-COUNT-4:       vector.load
     # Add result to bias
     # CHECK-COUNT-1:       arith.addf
+    # Store result
+    # CHECK-COUNT-4:       vector.store
 
 
 @run_test
