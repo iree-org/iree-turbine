@@ -12,6 +12,12 @@ def pytest_addoption(parser):
         "--run-e2e", action="store_true", default=False, help="run e2e tests"
     )
     parser.addoption(
+        "--run-expensive-tests",
+        action="store_true",
+        default=False,
+        help="run expensive tests",
+    )
+    parser.addoption(
         "--runperf", action="store_true", default=False, help="run performance tests"
     )
     parser.addoption(
@@ -30,6 +36,9 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "require_e2e: e2e test, runs with '--run-e2e'")
+    config.addinivalue_line(
+        "markers", "expensive_test: expensive test, runs with '--run-expensive-tests'"
+    )
     config.addinivalue_line(
         "markers", "perf_only: performance test, runs only with '--runperf'"
     )
@@ -64,10 +73,14 @@ def _has_marker(item, marker):
 def pytest_collection_modifyitems(config, items):
     _set_default_device(config)
     run_e2e = config.getoption("--run-e2e")
+    run_expensive = config.getoption("--run-expensive-tests")
     run_perf = config.getoption("--runperf")
     for item in items:
         if _has_marker(item, "require_e2e") and not run_e2e:
             item.add_marker(pytest.mark.skip("e2e tests are disabled"))
+
+        if _has_marker(item, "expensive_test") and not run_expensive:
+            item.add_marker(pytest.mark.skip("expensive tests are disabled"))
 
         is_validate_only = _has_marker(item, "validate_only")
         is_perf_only = _has_marker(item, "perf_only")
