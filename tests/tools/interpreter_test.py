@@ -1,14 +1,13 @@
 from iree.turbine.tools.interpreter import Interpreter
-import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
-import torch
+import pytest
 
 
+@pytest.mark.xfail(reason="affine.apply is not supported in the interpreter yet")
 def testGemm():
-
     # Input sizes
     M = tkl.sym.M
     N = tkl.sym.N

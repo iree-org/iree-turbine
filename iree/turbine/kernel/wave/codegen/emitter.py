@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from os import environ
 import sympy
 from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from iree.turbine.aot.support.ir_utils import (
 
 
 from ...compiler.ir import (
+    AffineExpr,
+    AffineMap,
     Attribute,
     DenseElementsAttr,
     FloatAttr,
@@ -34,6 +37,7 @@ from ...compiler.ir import (
     ShapedType,
     Value,
     VectorType,
+    affine_d,
     arith_d,
     func_d,
     gpu_d,
@@ -198,55 +202,77 @@ def add_emitter_subs(
     return dynamics
 
 
-_emulate_ceildiv = False
+_emulate_ceildiv = bool(int(environ.get("WAVE_EMULATE_CEILDIV", 0)))
+_use_affine_expr = bool(int(environ.get("WAVE_USE_AFFINE_EXPR", 1)))
 
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
+_ApplyExpr = namedtuple("_ApplyExpr", ["expr", "args"])
 
 
-def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpResult:
+def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Value:
+    use_affine_expr = _use_affine_expr
     stack: list[OpResult] = []
 
     def _get_ir_value(arg):
+        if isinstance(arg, _ApplyExpr):
+            args = _broadcast(*arg.args)
+            expr = arg.expr
+            expr = AffineMap.get(dim_count=0, symbol_count=len(args), exprs=[expr])
+
+            return affine_d.apply(expr, args)
+
         if not isinstance(arg, (Value, OpResult)):
             arg = arg.result
 
         return arg
 
     def _check_vec_scalar(a, b):
-        if not isinstance(a.type, VectorType):
+        if not isinstance(a, VectorType):
             return False
 
-        if a.type.element_type == b.type:
+        if a.element_type == b:
             return True
 
         return (
-            isinstance(b.type, VectorType)
-            and b.type.shape == [1]
-            and a.type.element_type == b.type.element_type
+            isinstance(b, VectorType)
+            and b.shape == [1]
+            and a.element_type == b.element_type
         )
 
-    def _broadcast(a, b):
-        a = _get_ir_value(a)
-        b = _get_ir_value(b)
+    def _broadcast(*args):
+        assert len(args) > 0
+        if len(args) == 1:
+            return args
 
-        if a.type == b.type:
-            return a, b
+        res_args = [_get_ir_value(a) for a in args]
+        res_type = res_args[0].type
+        for arg in res_args[1:]:
+            arg_type = arg.type
+            if arg_type == res_type:
+                continue
 
-        if _check_vec_scalar(a, b):
-            if isinstance(b.type, VectorType):
-                b = vector_d.extract(b, static_position=[0], dynamic_position=[])
+            if _check_vec_scalar(res_type, arg_type):
+                # broadcast to res_type
+                continue
 
-            b = vector_d.splat(a.type, b)
-            return a, b
+            if _check_vec_scalar(arg_type, res_type):
+                res_type = arg_type
+                continue
 
-        if _check_vec_scalar(b, a):
-            if isinstance(a.type, VectorType):
-                a = vector_d.extract(a, static_position=[0], dynamic_position=[])
+            raise CodegenError(f"Cannot broadcast {res_type} and {arg.type}")
 
-            a = vector_d.splat(b.type, a)
-            return a, b
+        for i, arg in enumerate(res_args):
+            if arg.type == res_type:
+                continue
 
-        raise CodegenError(f"Cannot broadcast {a.type} and {b.type}")
+            if isinstance(arg.type, VectorType):
+                arg = vector_d.extract(arg, static_position=[0], dynamic_position=[])
+
+            res_args[i] = vector_d.splat(res_type, arg)
+
+        assert all(arg.type == res_type for arg in res_args)
+
+        return tuple(res_args)
 
     def get_const_val(arg):
         if isinstance(arg, OpResult):
@@ -287,70 +313,125 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
 
         return arith_d.addi(lhs, rhs, overflow_flags=overflow_flags)
 
+    def op_expr(lhs, rhs, op):
+        if isinstance(lhs, _ApplyExpr):
+            lhs_args = lhs.args
+            lhs_expr = lhs.expr
+        else:
+            lhs_args = [lhs]
+            lhs_expr = AffineExpr.get_symbol(0)
+
+        if isinstance(rhs, _ApplyExpr):
+            rhs_args = rhs.args
+            rhs_expr = rhs.expr
+        else:
+            rhs_args = [rhs]
+            rhs_expr = AffineExpr.get_symbol(0)
+
+        args = lhs_args + rhs_args
+        expr = op(lhs_expr, rhs_expr.shift_symbols(len(rhs_args), len(lhs_args)))
+        return _ApplyExpr(expr, args)
+
+    def check_index_types(*args):
+        return all(
+            isinstance(a, _ApplyExpr) or isinstance(a.type, IndexType) for a in args
+        )
+
+    def add_expr(lhs, rhs):
+        if not use_affine_expr or not check_index_types(lhs, rhs):
+            return addi(*_broadcast(lhs, rhs))
+
+        return op_expr(lhs, rhs, lambda a, b: a + b)
+
+    def muli_expr(lhs, rhs):
+        if not use_affine_expr or not check_index_types(lhs, rhs):
+            return muli(*_broadcast(lhs, rhs))
+
+        return op_expr(lhs, rhs, lambda a, b: a * b)
+
+    def rem_expr(lhs, rhs):
+        if not use_affine_expr or not check_index_types(lhs, rhs):
+            return arith_d.remsi(*_broadcast(lhs, rhs))
+
+        return op_expr(lhs, rhs, lambda a, b: a % b)
+
+    def floordiv_expr(lhs, rhs):
+        if not use_affine_expr or not check_index_types(lhs, rhs):
+            return arith_d.divsi(*_broadcast(lhs, rhs))
+
+        return op_expr(lhs, rhs, lambda a, b: AffineExpr.get_floor_div(a, b))
+
+    def ceildiv_expr(lhs, rhs):
+        if not use_affine_expr or not check_index_types(lhs, rhs):
+            if _emulate_ceildiv:
+                # ceildivui(x, y) = x == 0 ? 0 : ((x - 1) / y) + 1
+                one = _get_const(1)
+                zero = _get_const(0)
+                lhs_minus_one = arith_d.subi(*_broadcast(lhs, one))
+                div = arith_d.divui(*_broadcast(lhs_minus_one, rhs))
+                result = arith_d.addi(*_broadcast(div, one))
+                cmp = arith_d.cmpi(arith_d.CmpIPredicate.eq, *_broadcast(lhs, zero))
+                zero, result = _broadcast(zero, result)
+                return arith_d.select(cmp, zero, result)
+            else:
+                return arith_d.ceildivsi(*_broadcast(lhs, rhs))
+
+        return op_expr(lhs, rhs, lambda a, b: AffineExpr.get_ceil_div(a, b))
+
     # `x + (a/b)` transformed into `(x*b + a) / b`
     def _add(lhs, rhs):
         is_rational_lhs = isinstance(lhs, _Rational)
         is_rational_rhs = isinstance(rhs, _Rational)
         if is_rational_lhs and not is_rational_rhs:
-            numerator = muli(*_broadcast(lhs.denominator, rhs))
-            numerator = addi(*_broadcast(numerator, lhs.numerator))
+            numerator = muli_expr(lhs.denominator, rhs)
+            numerator = add_expr(numerator, lhs.numerator)
             return _Rational(numerator, lhs.denominator)
         elif not is_rational_lhs and is_rational_rhs:
-            numerator = muli(*_broadcast(lhs, rhs.denominator))
-            numerator = addi(*_broadcast(numerator, rhs.numerator))
+            numerator = muli_expr(lhs, rhs.denominator)
+            numerator = add_expr(numerator, rhs.numerator)
             return _Rational(numerator, rhs.denominator)
         elif is_rational_lhs and is_rational_rhs:
-            lhs_numerator = muli(*_broadcast(lhs.numerator, rhs.denominator))
-            rhs_numerator = muli(*_broadcast(rhs.numerator, lhs.denominator))
-            numerator = addi(*_broadcast(lhs_numerator, rhs_numerator))
-            denominator = muli(*_broadcast(lhs.denominator, rhs.denominator))
+            lhs_numerator = muli_expr(lhs.numerator, rhs.denominator)
+            rhs_numerator = muli_expr(rhs.numerator, lhs.denominator)
+            numerator = add_expr(lhs_numerator, rhs_numerator)
+            denominator = muli_expr(lhs.denominator, rhs.denominator)
             return _Rational(numerator, denominator)
         else:
-            return addi(*_broadcast(lhs, rhs))
+            return add_expr(lhs, rhs)
 
     # `x * (a/b)` transformed into `(x * a) / b`
     def _mul(lhs, rhs):
         is_rational_lhs = isinstance(lhs, _Rational)
         is_rational_rhs = isinstance(rhs, _Rational)
         if is_rational_lhs and not is_rational_rhs:
-            numerator = muli(*_broadcast(lhs.numerator, rhs))
+            numerator = muli_expr(lhs.numerator, rhs)
             return _Rational(numerator, lhs.denominator)
         elif not is_rational_lhs and is_rational_rhs:
-            numerator = muli(*_broadcast(lhs, rhs.numerator))
+            numerator = muli_expr(lhs, rhs.numerator)
             return _Rational(numerator, rhs.denominator)
         elif is_rational_lhs and is_rational_rhs:
-            numerator = muli(*_broadcast(lhs.numerator, rhs.numerator))
-            denominator = muli(*_broadcast(lhs.denominator, rhs.denominator))
+            numerator = muli_expr(lhs.numerator, rhs.numerator)
+            denominator = muli_expr(lhs.denominator, rhs.denominator)
             return _Rational(numerator, denominator)
         else:
-            return muli(*_broadcast(lhs, rhs))
+            return muli_expr(lhs, rhs)
+
+    def _rem(lhs, rhs):
+        assert not isinstance(lhs, _Rational) and not isinstance(rhs, _Rational)
+
+        return rem_expr(lhs, rhs)
 
     def _floor(value):
-        if isinstance(value, _Rational):
-            value = arith_d.divsi(*_broadcast(value.numerator, value.denominator))
+        if not isinstance(value, _Rational):
+            return value
 
-        return value
+        return floordiv_expr(value.numerator, value.denominator)
 
     def _ceiling(value):
-        if isinstance(value, _Rational):
-            if _emulate_ceildiv:
-                # ceildivui(x, y) = x == 0 ? 0 : ((x - 1) / y) + 1
-                one = _get_const(1)
-                zero = _get_const(0)
-                lhs_minus_one = arith_d.subi(*_broadcast(value.numerator, one))
-                div = arith_d.divui(*_broadcast(lhs_minus_one, value.denominator))
-                result = arith_d.addi(*_broadcast(div, one))
-                cmp = arith_d.cmpi(
-                    arith_d.CmpIPredicate.eq, *_broadcast(value.numerator, zero)
-                )
-                zero, result = _broadcast(zero, result)
-                value = arith_d.select(cmp, zero, result)
-            else:
-                value = arith_d.ceildivsi(
-                    *_broadcast(value.numerator, value.denominator)
-                )
+        if not isinstance(value, _Rational):
+            return value
 
-        return value
+        return ceildiv_expr(value.numerator, value.denominator)
 
     def _group_rationals(stack, count):
         """Group rationals and non-rationals args into 2 contiguous sets.
@@ -441,8 +522,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
-                mod = arith_d.remsi(*_broadcast(lhs, rhs))
-                stack.append(mod)
+                stack.append(_rem(lhs, rhs))
             case sympy.floor():
                 stack.append(_floor(stack.pop()))
             case sympy.ceiling():
@@ -495,6 +575,8 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
+                rhs = _get_ir_value(rhs)
+                lhs = _get_ir_value(lhs)
                 elem_type = get_type_or_element_type(rhs.type)
                 if _is_integer_like_type(elem_type):
                     res = arith_d.maxsi(*_broadcast(lhs, rhs))
@@ -506,6 +588,8 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
                 lhs = stack.pop()
                 _enforce_non_rational(rhs, term)
                 _enforce_non_rational(lhs, term)
+                rhs = _get_ir_value(rhs)
+                lhs = _get_ir_value(lhs)
                 elem_type = get_type_or_element_type(rhs.type)
                 if _is_integer_like_type(elem_type):
                     res = arith_d.minsi(*_broadcast(lhs, rhs))
@@ -555,7 +639,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> OpR
     if len(stack) != 1 or isinstance(stack[0], _Rational):
         raise CodegenError(f"Expected single result, got {len(stack)}")
 
-    return stack[0]
+    return _get_ir_value(stack[0])
 
 
 def get_constant_attr(value: Any, element_type: IrType) -> Attribute:
