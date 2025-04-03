@@ -79,6 +79,7 @@ from ...ops.wave_ops import (
     register,
     reshape,
     roundeven,
+    sigmoid,
     scheduling_barrier,
     scheduling_group_barrier,
     self_index,
@@ -673,11 +674,38 @@ def handle_abs(source: Value) -> OpResult:
     return abs
 
 
+@handle_unary_op(sigmoid)
+def handle_sigmoid(source: Value) -> OpResult:
+    # Sigmoid(x) = 1 / (1 + math.exp2(-x * log2e))
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        splat_ones = DenseElementsAttr.get_splat(
+            source.type, get_constant_attr(1.0, element_type)
+        )
+        ones = arith_d.ConstantOp(source.type, splat_ones)
+
+        LOG2E = 1.44269504089
+        splat_log2e = DenseElementsAttr.get_splat(
+            source.type, get_constant_attr(LOG2E, element_type)
+        )
+        log2e = arith_d.ConstantOp(source.type, splat_log2e)
+
+        # math.exp2(-x * log2e)
+        neg_exp = math_d.exp2(arith_d.mulf(arith_d.negf(source, fastmath=arith_d.FastMathFlags.fast), log2e, fastmath=arith_d.FastMathFlags.fast), fastmath=arith_d.FastMathFlags.fast)
+        denom = arith_d.addf(ones, neg_exp, fastmath=arith_d.FastMathFlags.fast)
+        sigmoid = arith_d.divf(ones, denom, fastmath=arith_d.FastMathFlags.fast)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for roundeven: {element_type}"
+        )
+    return sigmoid
+
+
 @handle_unary_op(tanh)
 def handle_tanh(source: Value) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
-        result = math_d.tanh(source)
+        result = math_d.tanh(source, fastmath=arith_d.FastMathFlags.fast)
     else:
         raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
     return result
@@ -1052,7 +1080,7 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
                 src_vector_type.element_type.width < dst_elem_type.width,
                 is_dst_float and is_src_float,
             )
-        ](dst_vector_type, vector_src)
+        ](dst_vector_type, vector_src, fastmath=arith_d.FastMathFlags.fast)
     else:
         casted_vector = conversion_ops[(is_src_float, is_dst_float)](
             dst_vector_type, vector_src

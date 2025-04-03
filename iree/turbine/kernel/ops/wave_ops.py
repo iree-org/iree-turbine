@@ -136,6 +136,10 @@ def abs(src: "Register") -> "Register":
     ...
 
 
+def sigmoid(src: "Register") -> "Register":
+    ...
+
+
 def tanh(src: "Register") -> "Register":
     ...
 
@@ -814,6 +818,7 @@ class ComparisonPyOp(BinaryOpBase, ABC):
 @define_interface_op("log2")
 @define_interface_op("reciprocal")
 @define_interface_op("roundeven")
+@define_interface_op("sigmoid")
 @define_interface_op("tanh")
 @define_py_op(operator.neg)
 @dataclass
