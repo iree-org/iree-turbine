@@ -80,7 +80,7 @@ def determine_shuffle_config(
     return cluster_size, cluster_stride[0]
 
 
-def get_graph_node(custom: CustomOp, graph: fx.Graph):
+def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
     custom.add_to_graph(graph)
     custom = custom.fx_node
     return custom
@@ -117,7 +117,7 @@ def emit_local_reduction(
     reduction_src: list[fx.Node],
     graph: fx.Graph,
     local_reduction_size,
-):
+) -> fx.Node:
     """
     Does reduction over all the element carried along by ReductionOp at local
     thread/SIMT level. This is done by reducing expanded sources combining them
@@ -135,7 +135,7 @@ def emit_scalarized_local_reduction(
     reduction_src: list[fx.Node],
     graph: fx.Graph,
     local_reduction_size,
-):
+) -> fx.Node:
     """
     Special case of local reduction wher we try to scalarize/get rid of most vector ops.
     this is useful for maximum, to expose more opportunities for v_max3_f32,
@@ -184,7 +184,6 @@ def emit_global_reduction(
 def decompose_reduce_ops(
     trace: CapturedTrace,
     constraints: list[Constraint],
-    index_map: dict[IndexSymbol, int],
 ):
     """
     The lowering for multi_reduction is done in two steps:
@@ -205,11 +204,6 @@ def decompose_reduce_ops(
     hardware_constraint = next(
         c for c in constraints if isinstance(c, HardwareConstraint)
     )
-    constraint_tile_size = {
-        c.dim: c.tile_size
-        for c in constraints
-        if isinstance(c, TilingConstraint) or isinstance(c, WorkgroupConstraint)
-    }
     induction_vars = [
         c.induction_var for c in constraints if isinstance(c, TilingConstraint)
     ]
@@ -242,9 +236,20 @@ def decompose_reduce_ops(
             get_thread_shape = lambda index: max(
                 subs_idxc(x.size) for x in index.values()
             )
-            local_reduce_sizes = [
-                get_thread_shape(get_custom(arg).index) for arg in reduction_src
-            ]
+            local_reduce_sizes = []
+            for arg in reduction_src:
+                try:
+                    op = get_custom(arg)
+
+                    thread_shape = get_thread_shape(op.index)
+                    local_reduce_sizes.append(thread_shape)
+                except Exception as e:
+                    index_str = "\n".join(f"{k}: {v}" for k, v in op.index.items())
+                    raise RuntimeError(
+                        f"Error in decompose_reduce_ops: {arg} with index\n"
+                        f"{index_str}\n{reduction_src=}\n{reduction_acc=}\n{reduction_dim=}"
+                    ) from e
+
             if not all_equal(local_reduce_sizes):
                 raise NotImplementedError(
                     "NYI: Expect all reduce_src to have same local reduce size."
@@ -258,6 +263,19 @@ def decompose_reduce_ops(
                     binary_fn, reduction_src, custom.graph, local_reduce_sizes[0]
                 )
 
+            if (
+                reduction_acc is not None
+                and get_custom(local_reduction).type.symbolic_shape
+                != get_custom(reduction_acc).type.symbolic_shape
+            ):
+                raise RuntimeError(
+                    "Local reduction and accumulator reduction must have same shape."
+                    f"\nlocal_reduction: {get_custom(local_reduction).type.symbolic_shape}"
+                    f"\nreduction_acc: {get_custom(reduction_acc).type.symbolic_shape}"
+                    f"\nlocal_reduction: {get_custom(local_reduction)}"
+                    f"\nreduction_acc: {get_custom(reduction_acc)}"
+                    f"\n{custom}"
+                )
             # Global Reduce
             cluster_size, cluster_stride = determine_shuffle_config(
                 reduction_src[0].index,

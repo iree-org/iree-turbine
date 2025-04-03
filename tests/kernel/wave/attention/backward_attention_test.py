@@ -29,9 +29,10 @@ from iree.turbine.kernel.wave.utils.torch_utils import (
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
 from ..common.utils import (
-    require_e2e,
-    enable_scheduling_barriers,
     dump_generated_mlir,
+    enable_scheduling_barriers,
+    expensive_test,
+    require_e2e,
 )
 from torch.testing import assert_close
 
@@ -1177,6 +1178,7 @@ def testAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...]):
 
 @require_e2e
 @param_mfma_shape
+@expensive_test
 def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
     if mfma_variant == MMAType.F32_32x32x8_F16:
         pytest.skip("Asymmetric MFMA is broken")
@@ -1424,6 +1426,7 @@ def testAttentionBackward_dk(mfma_variant: MMAType, shape: tuple[int, ...]):
 
 @require_e2e
 @param_mfma_shape
+@expensive_test
 def testAttentionBackward_dq(mfma_variant: MMAType, shape: tuple[int, ...]):
     """This tests a kernel only for the gradient of q."""
     torch.manual_seed(0)

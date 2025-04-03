@@ -44,7 +44,7 @@ def test_fp8_pertensor_attention():
 
     # CHECK-LABEL:       func.func @base_attention
     # CHECK:                %[[F8_MAX:.+]] = arith.constant dense<2.400000e+02> : vector<4xf32>
-    # CHECK:                %[[F8_OFFSET:.+]] = arith.constant dense<0.00416666688> : vector<4xf32>
+    # CHECK:                %[[F8_OFFSET:.+]] = arith.constant dense<7.90689039> : vector<4xf32>
     # CHECK:                %[[FUSED_SCALE:.+]] = arith.constant dense<0.180336878> : vector<4xf32>
     # CHECK:                {{.*}} = scf.for
     # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma
@@ -54,10 +54,13 @@ def test_fp8_pertensor_attention():
 
     # fused QK scaling + dequant scaling
     # CHECK-COUNT-8:            {{.*}} = arith.mulf %{{.*}}, %[[FUSED_SCALE]] : vector<4xf32>
+
+    # CHECK-COUNT-4:            {{.*}} = gpu.shuffle xor {{.*}}
+
     # FP8 Offset
     # CHECK-COUNT-8:            {{.*}} = arith.addf %{{.*}}, %[[F8_OFFSET]] : vector<4xf32>
 
-    # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
+    # CHECK-COUNT-4:            {{.*}} = gpu.shuffle xor {{.*}}
     # CHECK-COUNT-8:            {{.*}} = arith.minimumf %{{.*}}, %[[F8_MAX]] : vector<4xf32>
     # CHECK-COUNT-8:            {{.*}} = arith.truncf %{{.+}}: vector<4xf32> to vector<4xf8E4M3FNUZ>
     # CHECK-COUNT-16:           {{.*}} = amdgpu.mfma

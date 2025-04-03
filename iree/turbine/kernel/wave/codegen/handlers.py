@@ -47,6 +47,7 @@ from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
     _is_index_type,
     _is_integer_like_type,
+    _is_signed_or_signless_type,
 )
 
 # TK infrastructure imports.
@@ -58,6 +59,7 @@ from ...ops.wave_ops import (
     broadcast,
     cast,
     conditional,
+    eq,
     exp2,
     extract,
     extract_slice,
@@ -389,9 +391,15 @@ def handle_binary_op(op):
             rhs = cast_py_value(emitter, rhs)
 
             if lhs.ir_value.type != rhs.ir_value.type:
+                op = get_custom(node)
                 raise ValidationError(
-                    "Expected lhs and rhs to have same type."
-                    f" Got: {lhs.ir_value.type} vs {rhs.ir_value.type}"
+                    f"Expected lhs and rhs to have same type for\n"
+                    f"{op}\nGot\n"
+                    f"lhs: {lhs.ir_value.type} vs rhs: {rhs.ir_value.type}\n"
+                    f"{lhs=}\n"
+                    f"{rhs=}\n"
+                    f"lhs={get_custom(op.lhs)}\n"
+                    f"rhs={get_custom(op.rhs)}"
                 )
 
             lhs = lhs.ir_value
@@ -444,8 +452,8 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.divf(lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.divsi(lhs, rhs)
     else:
@@ -456,12 +464,28 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
 @handle_binary_op(operator.and_)
 def handle_and(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
-    if _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    if _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.andi(lhs, rhs)
     else:
-        raise ValidationError(f"Found unhandled operand type for div: {element_type}")
+        raise ValidationError(
+            f"Found unhandled operand type for bitwise and: {element_type}"
+        )
+    return result
+
+
+@handle_binary_op(operator.or_)
+def handle_or(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
+    ):
+        result = arith_d.ori(lhs, rhs)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for bitwise or: {element_type}"
+        )
     return result
 
 
@@ -470,8 +494,8 @@ def handle_gt(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OGT, lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sgt, lhs, rhs)
     else:
@@ -484,8 +508,8 @@ def handle_ge(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OGE, lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs, rhs)
     else:
@@ -498,8 +522,8 @@ def handle_lt(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OLT, lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.slt, lhs, rhs)
     else:
@@ -512,12 +536,26 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OLE, lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.cmpi(arith_d.CmpIPredicate.sle, lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for le: {element_type}")
+    return result
+
+
+@handle_binary_op([operator.eq, eq])
+def handle_le(lhs: Value, rhs: Value) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OEQ, lhs, rhs)
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
+    ):
+        result = arith_d.cmpi(arith_d.CmpIPredicate.eq, lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for eq: {element_type}")
     return result
 
 
@@ -526,8 +564,8 @@ def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.maximumf(lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.maxsi(lhs, rhs)
     else:
@@ -542,8 +580,8 @@ def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.minimumf(lhs, rhs)
-    elif _is_integer_like_type(element_type) and (
-        element_type.is_signed or element_type.is_signless
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
     ):
         result = arith_d.minsi(lhs, rhs)
     else:
@@ -736,6 +774,11 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
         # Add mapping for iter args.
         subgraph: fx.Graph = emitter.trace.get_subgraph(subgraph)
         iter_args: list[fx.Node] = get_custom(node).iter_args(subgraph)
+        assert len(iter_args) == len(forOp.inner_iter_args), (
+            f"Len of reduction and for op iter args must match,"
+            f" Reduction args: {iter_args};"
+            f" For Op args: {[a.type for a in forOp.inner_iter_args]}"
+        )
         for i, v in enumerate(forOp.inner_iter_args):
             emitter.bind_node_proxy(iter_args[i], IRProxyValue(v))
         captured_vars: list[fx.Node] = get_custom(node).captured_vars(subgraph)
@@ -753,6 +796,12 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
         flat_ret_values = [
             cast_py_value(emitter, value).ir_value for value in flat_ret_values
         ]
+        assert len(flat_ret_values) == len(flat_init_args), (
+            f"Loop must have the same number of return values as init args, but got\n"
+            f"{len(flat_ret_values)} vs {len(flat_init_args)}\n"
+            f"{flat_ret_values=}\n"
+            f"{flat_init_args=}\n"
+        )
         scf_d.YieldOp(flat_ret_values)
 
     emitter.bind_node_proxies(node, [IRProxyValue(v) for v in forOp.results_])
@@ -875,7 +924,7 @@ def handle_broadcast(emitter: WaveEmitter, node: fx.Node):
         raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
     assert (
         vector_type.rank == 0 or vector_type.rank == 1
-    ), f"expected vector_type.rank == 1 but got {vector_type}"
+    ), f"expected vector_type.rank == 1 but got {vector_type}, {node}"
 
     # Handles scalar broadcast case.
     if vector_type.rank == 0:
