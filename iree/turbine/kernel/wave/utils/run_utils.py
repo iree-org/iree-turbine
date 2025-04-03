@@ -122,7 +122,15 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
         else:
             raise ValueError(f"Unsupported dynamic dim type: {type(dynamic_dim)}")
 
-    vm_context.invoke(entry_function, arg_list, ret_list)
+    try:
+        vm_context.invoke(entry_function, arg_list, ret_list)
+    except ValueError as e:
+        raise RuntimeError(
+            f"Error invoking IREE\n{entry_function}\n"
+            f"{arg_list=}\n"
+            f"inputs: {', '.join([str(i.shape) for i in inputs])}\n"
+            f"outputs: {', '.join([str(o.shape) for o in outputs])}"
+        ) from e
 
 
 def _print_bench_result(result, filename):
