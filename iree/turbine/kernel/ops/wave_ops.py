@@ -354,8 +354,7 @@ def define_interface_op(op_name: str) -> Callable[[T], T]:
 def get_custom(node: fx.Node) -> "CustomOp":
     """Get the corresponding CustomOp for a given fx.Node."""
     if isinstance(node, CustomOp):
-        print("Careful! You passed a custom op where an fx.Node was required.")
-        return node
+        raise ValueError(f"fx.Node required but got custom op {node}")
     if not isinstance(node, fx.Node):
         raise ValueError(f"Expected an fx.Node but got {type(node)}")
 
@@ -549,7 +548,7 @@ class CustomOp(ABC):
         self.graph.erase_node(self.fx_node)
 
     @classmethod
-    def handle(cls, graph, *args, **kwargs) -> fx.Node:
+    def handle(cls, graph: RegionGraph, *args, **kwargs) -> fx.Node:
         node = cls(*args, **kwargs)
         node._add_proxy_to_graph(graph)
         node.fx_node.node.tkw_op = cls
@@ -1407,7 +1406,12 @@ class Reduction(NestedRegionOp):
     implicit_captures: Sequence[fx.Proxy]
 
     @classmethod
-    def handle(cls, graph, *args, **kwargs):
+    def handle(cls, graph: RegionGraph, *args, **kwargs):
+        if not isinstance(graph, RegionGraph):
+            raise TypeError(
+                f"handle expected {RegionGraph.__name__} but got {type(graph)}"
+            )
+
         def wrapper(f):
             with graph.subtracer() as subtracer:
                 subgraph_name, implicit_captures = subtracer.trace(f)
@@ -1689,8 +1693,14 @@ class GetResult(CustomOp):
     res_idx: int
 
     def infer_type(self):
-        src_type = get_custom(self.value).type
+        op = get_custom(self.value)
+        src_type = op.type
         if isinstance(src_type, list):
+            if self.res_idx >= len(src_type):
+                raise RuntimeError(
+                    f"GetResult of {self.res_idx} from result with {len(src_type)} results"
+                    f"\n{op=}\nsrc={self.value}\n{src_type=}"
+                )
             self.type = src_type[self.res_idx]
         else:
             self.type = src_type
@@ -1703,7 +1713,7 @@ class GetResult(CustomOp):
         )
         src_indexing = get_custom(self.value).indexing_dims
         if has_multiple_value(src_indexing):
-            assert self.res_idx <= len(src_indexing) - 1
+            assert self.res_idx < len(src_indexing), f"{self=}"
             src_indexing = src_indexing[self.res_idx]
         assert is_valid_indexing_dim(src_indexing)
         return src_indexing
@@ -1715,11 +1725,11 @@ class GetResult(CustomOp):
         if custom_index is None:
             return None
         if not isinstance(custom, Reduction):
-            return custom.index
+            return custom_index
         assert isinstance(custom_index, Sequence) and self.res_idx < len(
             custom.indexing_dims
-        )
-        return custom.index[self.res_idx]
+        ), f"Invalid {custom_index=} with {self.res_idx=} and {custom.indexing_dims=}\n{custom}"
+        return custom_index[self.res_idx]
 
     @index.setter
     def index(self, value: dict[IndexSymbol, IndexSequence]):
@@ -1882,6 +1892,15 @@ class ReduceOp(CustomOp, ABC):
         reduced_dims = [dims for dims in src_type.symbolic_shape if dims != self.dim]
         dst_type = Register[(*reduced_dims, src_type.dtype)]
         self.type = dst_type
+        if (
+            self.init is not None
+            and get_custom(self.init).type.symbolic_shape != self.type.symbolic_shape
+        ):
+            raise RuntimeError(
+                f"Init type for {self.tkw_op_name} {get_custom(self.init).type.symbolic_shape}"
+                f" must match reduce type {self.type.symbolic_shape}"
+                f"\n{self}"
+            )
 
     @property
     def num_reduction_dims(self) -> int:
