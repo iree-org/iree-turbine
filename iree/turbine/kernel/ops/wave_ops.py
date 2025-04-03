@@ -366,6 +366,8 @@ def get_custom(node: fx.Node) -> "CustomOp":
 
 
 def has_same_custom_type(lhs_type: Memory, rhs_type: Memory) -> bool:
+    if isinstance(lhs_type, DataType) and isinstance(rhs_type, DataType):
+        return True
     same_shape = lhs_type.symbolic_shape == rhs_type.symbolic_shape
     same_dtype = lhs_type.dtype == rhs_type.dtype
     return same_shape and same_dtype
@@ -760,6 +762,8 @@ class BinaryOpBase(CustomOp, ABC):
         rhs_type = get_custom(self.rhs).type
         has_same_type = has_same_custom_type(lhs_type, rhs_type)
         if has_same_type:
+            if isinstance(lhs_type, DataType) and isinstance(rhs_type, DataType):
+                return []
             return lhs_type.symbolic_shape
 
         lhs_dim_set = set(lhs_type.symbolic_shape)
@@ -786,7 +790,10 @@ class BinaryOpBase(CustomOp, ABC):
 @dataclass
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
-        self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
+        if not self.infer_shape():
+            self.type = DataType("float32")
+        else:
+            self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
 
 
 @define_py_op(operator.gt)
@@ -974,6 +981,8 @@ class Placeholder(CustomOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        if not hasattr(self._type, "symbolic_shape"):
+            return []
         return list(self._type.symbolic_shape) if self._type else []
 
     def get_captured_fx_node(self) -> Optional[fx.Node]:
@@ -1698,7 +1707,10 @@ class GetResult(CustomOp):
         if has_multiple_value(src_indexing):
             assert self.res_idx <= len(src_indexing) - 1
             src_indexing = src_indexing[self.res_idx]
-        assert is_valid_indexing_dim(src_indexing)
+        try:
+            assert is_valid_indexing_dim(src_indexing)
+        except:
+            breakpoint()
         return src_indexing
 
     @property
@@ -1819,7 +1831,11 @@ class Broadcast(CustomOp, ABC):
         return self.target_shape
 
     def infer_type(self):
-        src_dtype = get_custom(self.arg).type.dtype
+        # src_dtype = get_custom(self.arg).type.dtype
+        if hasattr(self, "dtype"):
+            src_dtype = get_custom(self.arg).type.dtype
+        else:
+            src_dtype = DataType("float32")
         self.type = Register[(*self.target_shape, src_dtype)]
 
 

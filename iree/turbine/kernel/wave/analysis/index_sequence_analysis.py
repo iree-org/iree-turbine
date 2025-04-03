@@ -110,7 +110,8 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
             continue
         if isinstance(custom, (Output, NestedRegionOp)):
             continue
-        assert custom.index, f"Index not set for node {custom.fx_node}"
+        if node.op != "call_function":
+            assert custom.index, f"Index not set for node {custom.fx_node}"
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
@@ -408,7 +409,11 @@ def should_update_index(
 ):
     # Get symbolic shape without any aliased variables.
     aliased_dims = [x.source for x in symbolic_constraints]
-    symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
+
+    if source.type:
+        symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
+    else:
+        symbolic_shape = []
 
     # If all the source indexing dimensions are not present in source vector shapes,
     # we should not update the index.
@@ -741,8 +746,11 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         lhs = get_custom(custom.lhs)
         rhs = get_custom(custom.rhs)
 
-        lhs_dim, lhs_size = get_largest_index_and_size(get_index(lhs))
-        rhs_dim, rhs_size = get_largest_index_and_size(get_index(rhs))
+        if lhs.indexing_dims and rhs.indexing_dims:
+            lhs_dim, lhs_size = get_largest_index_and_size(get_index(lhs))
+            rhs_dim, rhs_size = get_largest_index_and_size(get_index(rhs))
+        else:
+            return
 
         # If they are equal we are done.
         if lhs_dim == rhs_dim and lhs_size == rhs_size:

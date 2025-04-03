@@ -47,6 +47,10 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
+    QS = tkl.sym.QS
+    KS = tkl.sym.KS
+    VS = tkl.sym.VS
+
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(N_Q, BLOCK_N_Q, 0)]
     constraints += [tkw.WorkgroupConstraint(D_KV, BLOCK_D_KV, 1)]
@@ -116,13 +120,15 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         return tkw.cast(clamped, F8_DTYPE)
 
     def base_attention_core(q, k, v, q_scale, k_scale, v_scale, c):
-        q_scale_val = tkw.read(q_scale)
-        k_scale_val = tkw.read(k_scale)
-        v_scale_val = tkw.read(v_scale)
-        qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](
-            DK_SQRT * LOG2E * (q_scale_val * k_scale_val)
-        )
-        v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](v_scale_val)
+        # q_scale_val = tkw.read(q_scale)
+        # k_scale_val = tkw.read(k_scale)
+        # v_scale_val = tkw.read(v_scale)
+        qk_dequant_scalar = q_scale * k_scale
+        qk_dequant = tkw.broadcast(qk_dequant_scalar, target_shape=[B, N_Q, N_KV])
+        qk_dequant = tkw.cast(qk_dequant, tkl.f32)
+        qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](DK_SQRT * LOG2E) * qk_dequant
+
+        v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](v_scale)
         fp8_offset = tkl.Register[B, N_Q, N_KV, tkl.f32](FP8_OFFSET_VAL)
         fp8_max = tkl.Register[B, N_Q, N_KV, tkl.f32](F8_MAX)
         c_reg = tkl.Register[B, D_KV, N_Q, tkl.f32](0.0)
@@ -188,9 +194,10 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         q: tkl.Memory[B, N_Q, D_Q, GLOBAL_ADDRESS_SPACE, LOGIT_DTYPE],
         k: tkl.Memory[B, N_KV, D_Q, ADDRESS_SPACE, LOGIT_DTYPE],
         v: tkl.Memory[B, N_KV, D_KV, ADDRESS_SPACE, LOGIT_DTYPE],
-        q_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        k_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        v_scale: tkl.Memory[B, 1, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        q_scale: tkl.f32,  # type: ignore
+        # tkl.Memory[QS, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        k_scale: tkl.f32,  # type: ignore
+        v_scale: tkl.f32,  # type: ignore
         c: tkl.Memory[B, N_Q, D_KV, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         base_attention_core(q, k, v, q_scale, k_scale, v_scale, c)

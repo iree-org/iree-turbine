@@ -123,14 +123,22 @@ class StreamExecutable:
         kb_input_bindings = sig.kernel_buffer_input_bindings
         kb_output_bindings = sig.kernel_buffer_output_bindings
         dynamic_dim_bindings = sig.dynamic_dim_bindings
+        scalar_bindings = sig.scalar_bindings
 
         # Input bindings are always user specified.
         # Output bindings are the real outputs.
         # Dynamic dim bindings are the dynamic dims of the input and output tensors.
-        linear_bindings = kb_input_bindings + kb_output_bindings + dynamic_dim_bindings
+        linear_bindings = (
+            kb_input_bindings
+            + kb_output_bindings
+            + dynamic_dim_bindings
+            + scalar_bindings
+        )
 
         dynamic_dim_indices = {
-            "begin": len(kb_input_bindings) + len(kb_output_bindings),
+            "begin": len(kb_input_bindings)
+            + len(kb_output_bindings)
+            + len(scalar_bindings),
             "end": len(linear_bindings),
         }
 
@@ -313,6 +321,17 @@ class DispatchEntrypoint(BoundKernelSignature):
                 linear_arg_value,
                 byte_offset=zero_value,
                 dynamic_dims=self.get_dynamic_dims(binding),
+            )
+
+        if binding.binding_type == BindingType.SCALAR_VALUE:
+            result_type = IndexType.get()
+            zero_value = arith_d.constant(result_type, IntegerAttr.get(result_type, 0))
+            linear_arg_value = self._abi_value_by_reference[binding.reference]
+            return stream_d.binding_subspan(
+                binding.as_mlir_type(),
+                linear_arg_value,
+                byte_offset=zero_value,
+                dynamic_dims=[],
             )
 
         raise ValidationError(f"Unhandled binding type: {binding}")

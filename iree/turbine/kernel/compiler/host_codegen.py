@@ -75,7 +75,9 @@ def isolated_test_call(
         func_op = func_d.FuncOp("isolated_benchmark", ftype)
         arg_locs = [
             (Location.name(b.name) if b.name is not None else Location.unknown())
-            for b in sig.kernel_buffer_bindings + sig.dynamic_dim_bindings
+            for b in sig.kernel_buffer_bindings
+            + sig.dynamic_dim_bindings
+            + sig.scalar_bindings
         ]
         entry_block = func_op.add_entry_block(arg_locs)
         offset = len(sig.kernel_buffer_bindings)

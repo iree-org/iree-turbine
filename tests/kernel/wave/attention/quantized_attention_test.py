@@ -131,11 +131,19 @@ def testAttentionPure(
             MAX_RANGE,
         )
     )
-    q_scale_vec = device_full((shape.num_query_heads, 1), q_scale, dtype=torch.float32)
-    k_scale_vec = device_full((shape.num_query_heads, 1), k_scale, dtype=torch.float32)
-    v_scale_vec = device_full((shape.num_query_heads, 1), v_scale, dtype=torch.float32)
+    # q_scale_vec = device_full((shape.num_query_heads, 1), q_scale, dtype=torch.float32)
+    # k_scale_vec = device_full((shape.num_query_heads, 1), k_scale, dtype=torch.float32)
+    # v_scale_vec = device_full((shape.num_query_heads, 1), v_scale, dtype=torch.float32)
     output = device_zeros(o_shape, dtype=torch.float32)
-    asm = base_attention(q, k, v, q_scale_vec, k_scale_vec, v_scale_vec, output)
+    asm = base_attention(
+        q,
+        k,
+        v,
+        q_scale.to(torch.f32),
+        k_scale.to(torch.f32),
+        v_scale.to(torch.f32),
+        output,
+    )
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q.to(torch.float32) * q_scale,
         k.to(torch.float32) * k_scale,

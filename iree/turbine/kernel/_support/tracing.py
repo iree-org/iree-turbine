@@ -106,13 +106,18 @@ class KernelTracer(SubgraphTracer):
     def proxy(self, node: fx.Node) -> fx.Proxy:
         t = node.type
         if t is not None:
-            if isinstance(t, KernelBufferMeta):
+            # adding condition for tkw.f32 nodes to pass
+            if isinstance(t, DataType):
+                node.meta["arg_id"] = self.current_arg_id
+                node.meta["dtype"] = t
+                self.current_arg_id += 1
+            if isinstance(t, KernelBufferMeta) and not isinstance(t, DataType):
                 # Set arg_id meta to placeholder/argument nodes
                 # S.T we don't rely on topological order for correct
                 # argument ordering later on.
                 node.meta["arg_id"] = self.current_arg_id
                 self.current_arg_id += 1
-            if issubclass(t, KernelBuffer):
+            if not isinstance(t, DataType) and issubclass(t, KernelBuffer):
                 return KernelBufferProxy(node, self, t)
         return super().proxy(node)
 

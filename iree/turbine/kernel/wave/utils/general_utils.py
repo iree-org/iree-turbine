@@ -290,7 +290,8 @@ def get_largest_index_and_size(indices: dict[IndexExpr, IndexSequence]):
     into a list, and then returns the dimension with the largest size.
     In case of ties, it picks the fastest changing dimension.
     """
-
+    if not indices:
+        return ()
     sorted_values = sorted(
         [
             (i, dim, subs_idxc(index.size))

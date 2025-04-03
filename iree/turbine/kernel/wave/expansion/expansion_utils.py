@@ -94,15 +94,21 @@ def get_dim_scaling(
                 )
             dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
 
+    if not node.indexing_dims:
+        return {}
     # Also include dimensions that have no constraints on them and are known.
     idxc = IndexingContext.current()
     is_static_dim = lambda dim: dim in idxc.subs
     is_non_batch = lambda dim: node.vector_shapes[dim] > 0
+    # is_non_batch = lambda dim: node.vector_shapes.get(dim, 0) > 0
     not_computed = lambda dim: dim not in dim_scaling
 
     for dim in node.indexing_dims:
-        if not_computed(dim) and is_static_dim(dim) and is_non_batch(dim):
-            dim_scaling[dim] = idxc.get_static_value(dim) // node.vector_shapes[dim]
+        try:
+            if not_computed(dim) and is_static_dim(dim) and is_non_batch(dim):
+                dim_scaling[dim] = idxc.get_static_value(dim) // node.vector_shapes[dim]
+        except:
+            breakpoint()
 
     # For reduce ops, also include the reduction dimension.
     if isinstance(node, ReduceOp):

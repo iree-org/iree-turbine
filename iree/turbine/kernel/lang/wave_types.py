@@ -2,6 +2,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    Generic,
     Iterable,
     Optional,
     Type,

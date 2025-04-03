@@ -69,6 +69,10 @@ class DataType:
             return 16
         return int(self._name[1:])
 
+    @property
+    def symbolic_shape(self):
+        return []
+
 
 bf16 = DataType("bf16")
 bool = DataType("bool", "i1")
