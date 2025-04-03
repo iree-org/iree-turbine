@@ -54,6 +54,8 @@ class WaveCompileOptions:
     dump_binaries: str = None
     dump_intermediates: str = False
     compile_to_mlir: bool = False
+    debug_info: bool = False
+    use_local_scope: bool = False
 
     # === Performance options ===
     denorm_fp_math_f32: str = None

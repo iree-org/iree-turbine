@@ -8,6 +8,7 @@ import sympy
 from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
 from dataclasses import dataclass
 from collections import namedtuple
+from ..._support.location import FileLineColInfo
 
 import torch.fx as fx
 
@@ -112,7 +113,10 @@ class WaveEmitter:
         except KeyError:
             raise CodegenError(f"No handler registered for op {target_op}")
 
-        handler(self, node)
+        location = getattr(node, "location", None)  # type: FileLineColInfo
+        ir_location = location.to_mlir() if location else Location.unknown()
+        with ir_location:
+            handler(self, node)
 
     def lookup_node_values(self, node: fx.Node) -> List[Value]:
         assert NDEBUG or isinstance(node, fx.Node)
