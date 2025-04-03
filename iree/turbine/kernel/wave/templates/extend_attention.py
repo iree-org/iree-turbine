@@ -184,6 +184,12 @@ def get_extend_attention_kernel(
     num_seqs_layout = tkl.MemoryLayout(shape=[None])
     kv_indices_layout = tkl.MemoryLayout(shape=[None])
 
+    # def tanh_approx(x):
+    #     x = tkw.clamp(x, ,)
+    #     x = tkw.clamp(x, ,)
+    #     x2 = x * x
+    #     return x * (27 + x2) / (27 + 9 * x2);
+
     @tkw.wave(constraints)
     def extend_attention(
         q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, wave_input_dtype, q_layout],
@@ -257,7 +263,7 @@ def get_extend_attention_kernel(
             x_j = x_j * layer_scale_reg
             if logit_cap > 0:
                 logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
-                x_j = logit_cap_reg * tkw.tanh(x_j * logit_cap_reg_inv)
+                x_j = logit_cap_reg * tkw.tanh_approx(x_j * logit_cap_reg_inv)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
@@ -310,7 +316,7 @@ def get_extend_attention_kernel(
             x_j = x_j * layer_scale_reg
             if logit_cap > 0:
                 logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
-                x_j = logit_cap_reg * tkw.tanh(x_j * logit_cap_reg_inv)
+                x_j = logit_cap_reg * tkw.tanh_approx(x_j * logit_cap_reg_inv)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
