@@ -100,6 +100,12 @@ def run(cli_args: Sequence[str]):
         type=int,
         help="use a splat value for inputs (defaults to random values)",
     )
+    parser.add_argument(
+        "--check-result",
+        default=False,
+        action="store_true",
+        help="check result against torch implementation",
+    )
     args = parser.parse_args(cli_args)
     sig = mio.get_signature(args)
     conv = get_launchable(sig)
@@ -114,6 +120,11 @@ def run(cli_args: Sequence[str]):
 
     torch.set_printoptions(edgeitems=0)
     print(f">>> {result}")
+    if args.check_result:
+        reference_module = sig.get_nn_module(use_custom=False)
+        expected = reference_module(*conv_args)
+        torch.testing.assert_close(result, expected)
+        print(">>> results are correct")
 
     return sig.get_func_name()
 
