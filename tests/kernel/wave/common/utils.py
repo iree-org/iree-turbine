@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 require_e2e = pytest.mark.require_e2e
+expensive_test = pytest.mark.expensive_test
 require_cdna2 = pytest.mark.skipif(
     "gfx90" not in get_default_arch(),
     reason="Default architecture is not CDNA2, default architecture is '{}'".format(
@@ -33,6 +34,7 @@ enable_scheduling_barriers = int(os.environ.get("WAVE_USE_SCHED_BARRIERS", 0))
 
 # Add test shapes for validation and performance testing.
 perf_test = lambda *a: pytest.param(*a, marks=pytest.mark.perf_only)
+expensive_test_param = lambda *a: pytest.param(*a, marks=pytest.mark.expensive_test)
 
 
 def param_bool(name, shortname=None, values=None):
