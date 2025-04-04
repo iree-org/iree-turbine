@@ -36,14 +36,13 @@ def multi_buffer(trace: CapturedTrace):
 
     reduction_axis = get_custom(reductions[0]).axis
 
-    # Find reads that index using the reduction dim and are from shared memory
+    # Find reads and writes operating on shared memory
     reads = []
     writes = []
     for node in trace.get_subgraph(get_custom(reductions[0]).subgraph_name).nodes:
         custom = get_custom(node)
         if (
             isinstance(custom, Read | Write)
-            and reduction_axis in custom.indexing_dims
             and custom.memory_type.address_space == SHARED_ADDRESS_SPACE
         ):
             if isinstance(custom, Read):
