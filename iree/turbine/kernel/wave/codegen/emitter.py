@@ -64,14 +64,14 @@ class WaveEmitter:
     root_sig: BoundKernelSignature
     trace: CapturedTrace
     constraints: list[Constraint]
-    params: WaveCompileOptions
+    options: WaveCompileOptions
     ip: InsertionPoint = None
     OP_HANDLERS: ClassVar[dict[str, Callable[["WaveEmitter", fx.Node], None]]] = {}
     _node_values: ClassVar[dict[fx.Node, List[IRProxyValue]]] = {}
 
     def __post_init__(self):
         self.ip = InsertionPoint(self.root_sig.entry_block)
-        self.dynamic_symbols = self.params.dynamic_symbols
+        self.dynamic_symbols = self.options.dynamic_symbols
 
     def emit_program_invariants(self):
         self.workgroup_ids = [
