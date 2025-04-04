@@ -37,9 +37,7 @@ from ..utils.general_utils import (
     get_workgroup_constraints,
     partial,
 )
-from ..utils.mma_utils import (
-    get_mma_dimensional_mapping,
-)
+from ..utils.mma_utils import get_mma_dimensional_mapping
 from ..utils.graph_utils import (
     get_inputs,
     get_users,

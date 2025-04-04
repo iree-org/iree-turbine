@@ -50,9 +50,11 @@ def get_vector_shape(
 def _get_symbolic_shape_and_vector_shapes(
     custom: CustomOp,
 ):
-    register_shape = custom.register_type.symbolic_shape
     vector_shapes = custom.vector_shapes
     memory_shape = custom.memory_type.symbolic_shape
+    if isinstance(custom, Read):
+        return memory_shape, custom.vector_shapes
+    register_shape = custom.register_type.symbolic_shape
     # Check to see if the memory shape does not match with the vector shapes.
     if not set(memory_shape).issubset(set(vector_shapes.keys())):
         return register_shape, vector_shapes
@@ -65,27 +67,27 @@ def _get_symbolic_shape_and_vector_shapes(
 def partition_strided_operators(trace: CapturedTrace, constraints: list[Constraint]):
     """
     This function analyzes the index sequence of operators in the graph
-    that are writes on 2d tensors. If the operator has an access pattern where
+    that are reads or writes on 2d tensors. If the operator has an access pattern where
     the strides are greater than one on a single dimension, this function splits the
     operands into individual elements and constructs a write for
     each individual element.
     """
 
+    op_types = Read | Write
+    op_index_fn = {Read: lambda x: x.index, Write: lambda x: x.register_index}
+
     def has_strided_access(node: fx.Node) -> bool:
         """
-        Checks for writes on 2d tensors with strided access on a single dimension that
+        Checks for reads or writes on 2d tensors with strided access on a single dimension that
         read more than a single element.
         """
+
         custom = get_custom(node)
-        if isinstance(custom, Write):
-            strides = [
-                simplify_index(custom.register_index[dim]).stride
-                for dim in custom.register_index
-            ]
-            elements_per_thread = [
-                simplify_index(custom.register_index[dim]).size
-                for dim in custom.register_index
-            ]
+        if isinstance(custom, op_types):
+            op_type = Read if isinstance(custom, Read) else Write
+            index = op_index_fn[op_type](custom)
+            strides = [simplify_index(index[dim]).stride for dim in index]
+            elements_per_thread = [simplify_index(index[dim]).size for dim in index]
             strides = [x for x, y in zip(strides, elements_per_thread) if y > 1]
             num_strided_accesses = sum(1 for stride in strides if stride > 1)
             if num_strided_accesses > 1:
@@ -98,8 +100,11 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
     strided_operators = trace.walk(has_strided_access)
     for operator in strided_operators:
         custom = get_custom(operator)
+        op_type = Read if isinstance(custom, Read) else Write
+        index = op_index_fn[op_type](custom)
+
         simplified_index = {
-            dim: simplify_index(custom.register_index.get(dim, custom.index[dim]))
+            dim: simplify_index(index.get(dim, custom.index[dim]))
             for dim in custom.index
         }
 
@@ -175,27 +180,61 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             for i in range(elements_per_thread):
                 # Non-contiguous access patterns can have varying offsets. We
                 # handle that here.
-                extract = ExtractSlice(custom.register_, [i], [1], [1]).add_to_graph(
+                offset = offsets[i]
+                if op_type == Write:
+                    extract = ExtractSlice(
+                        custom.register_, [i], [1], [1]
+                    ).add_to_graph(custom.graph)
+
+                    write = Write(
+                        extract,
+                        custom.memory,
+                        mapping=custom.mapping,
+                        elements_per_thread=1,
+                    ).add_to_graph(custom.graph)
+                    write.index = {
+                        dim: IndexSequence(
+                            simplified_index[dim].start.subs({GPR_NUM: 0}) + offset[j],
+                            1,
+                            1,
+                        )
+                        for j, dim in enumerate(symbolic_shape)
+                    }
+                    ops_to_combine.append(write)
+                else:
+                    read = Read(
+                        custom.memory,
+                        elements_per_thread=1,
+                        mapping=custom.mapping,
+                        _write_dependency=custom._write_dependency,
+                    ).add_to_graph(custom.graph)
+                    read.index = {
+                        dim: IndexSequence(
+                            simplified_index[dim].start.subs({GPR_NUM: 0}) + offset[j],
+                            1,
+                            1,
+                        )
+                        for j, dim in enumerate(symbolic_shape)
+                    }
+                    ops_to_combine.append(read)
+
+        # Update users of original op.
+        if isinstance(custom, Write):
+            # Useful to handle write/read dependency
+            custom.replace_all_uses_with(ops_to_combine)
+        elif isinstance(custom, (Read, SelfIndex)):
+            with custom.graph.inserting_before(operator):
+                reshape = Reshape(ops_to_combine, custom.vector_shapes).add_to_graph(
                     custom.graph
                 )
+            reshape.expanded_dims = custom.expanded_dims
+            reshape.vector_shapes = custom.vector_shapes
 
-                offset = offsets[i]
-                write = Write(
-                    extract,
-                    custom.memory,
-                    mapping=custom.mapping,
-                    elements_per_thread=1,
-                ).add_to_graph(custom.graph)
-                write.index = {
-                    dim: IndexSequence(
-                        simplified_index[dim].start.subs({GPR_NUM: 0}) + offset[j], 1, 1
-                    )
-                    for j, dim in enumerate(symbolic_shape)
-                }
-                ops_to_combine.append(write)
+            # Save the original index on the reshape op so later we can
+            # detect if op was part of `gpr_offset` partition.
+            reshape.index = custom.index
+            custom.replace_all_uses_with(reshape)
 
-        # Useful to handle write/read dependency
-        custom.replace_all_uses_with(ops_to_combine)
         custom.graph.erase_node(operator)
 
 
