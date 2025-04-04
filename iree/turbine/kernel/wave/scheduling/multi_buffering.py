@@ -70,7 +70,7 @@ def _multi_buffer_memory_location(
     original_buffer: CustomOp,
     read_nodes: list[Read],
     write_nodes: list[Write],
-    axis: IndexSymbol,
+    reduction_axis: IndexSymbol,
     buffer_count: int,
 ):
     """
@@ -82,26 +82,6 @@ def _multi_buffer_memory_location(
             "Current multi buffering implementation supports only buffer_count=2"
         )
 
-    # double the memory in the non-reduction dimension
-    if len(original_buffer.shape) != 2:
-        raise CodegenError(
-            "Current multi buffering implementation supports only reads/writes with size 2"
-        )
-    reduction_dim_index = original_buffer.shape.index(axis)
-    original_dim = original_buffer.shape[1 - reduction_dim_index]
-
-    block_size = original_buffer.distributed_shape[1 - reduction_dim_index]
-    new_shape = tuple(
-        dim * 2 if i != reduction_dim_index else dim
-        for i, dim in enumerate(original_buffer.shape)
-    )
-    new_distributed_shape = tuple(
-        dim * 2 if i != reduction_dim_index else dim
-        for i, dim in enumerate(original_buffer.distributed_shape)
-    )
-    original_buffer.update_arg(0, new_shape)
-    original_buffer.update_arg(1, new_distributed_shape)
-
     # Add the buffer offset to the index of each read/write operation
     stage_mapping: dict[int, list[CustomOp]] = {}
     for custom_op in read_nodes + write_nodes:
@@ -112,21 +92,50 @@ def _multi_buffer_memory_location(
             stage_mapping[cycle] = []
         stage_mapping[cycle].append(custom_op)
 
-    induction_var = tkl.IndexSymbol(f"$ARG{axis.name}", integer=True, nonnegative=True)
+    reduction_dim_indices = [
+        i for i, dim in enumerate(original_buffer.shape) if dim == reduction_axis
+    ]
+    induction_var = tkl.IndexSymbol(
+        f"$ARG{reduction_axis.name}", integer=True, nonnegative=True
+    )
+    buffer_selector = induction_var % buffer_count  # 0 to buffer_count-1
     for stage in stage_mapping.keys():
         offset = 0
         for op in stage_mapping[stage]:
-            buffer_offset = (induction_var % 2) * block_size
-            if stage < 2:
-                offset = buffer_offset
-            elif stage >= 2 and stage <= 4:
-                offset = xor(buffer_offset, block_size)
-            else:
-                raise CodegenError(
-                    "The current multibuffering implementation does not support read/write with Stage > 4."
-                )
+            # Determine buffer offset based on stage
+            use_alternate_buffer = stage >= 2 and stage <= 4
 
-            op.index[original_dim].start = op.index[original_dim].start + offset
+            # Update each non-reduction dimension with appropriate offset
+            for i, dim in enumerate(original_buffer.shape):
+                if i not in reduction_dim_indices and dim in op.index:
+                    block_size = original_buffer.distributed_shape[i]
+
+                    # Calculate offset based on buffer selection
+                    if use_alternate_buffer:
+                        # XOR with block_size for ping-pong effect
+                        offset = xor(buffer_selector * block_size, block_size)
+                    else:
+                        offset = buffer_selector * block_size
+                    op.index[dim].start = op.index[dim].start + offset
+
+    # Create new shape with increased non-reduction dimensions
+    new_shape = []
+    new_distributed_shape = []
+
+    for i, dim in enumerate(original_buffer.shape):
+        if i in reduction_dim_indices:
+            # Keep reduction dimensions as is
+            new_shape.append(dim)
+            new_distributed_shape.append(original_buffer.distributed_shape[i])
+        else:
+            # Increase non-reduction dimensions
+            new_shape.append(dim * buffer_count)
+            new_distributed_shape.append(
+                original_buffer.distributed_shape[i] * buffer_count
+            )
+
+    original_buffer.update_arg(0, tuple(new_shape))
+    original_buffer.update_arg(1, tuple(new_distributed_shape))
 
 
 def _partition_by_memory(nodes: list[CustomOp]) -> dict[CustomOp, list[CustomOp]]:

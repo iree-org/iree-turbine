@@ -731,7 +731,8 @@ def testF8Gemm(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_batched_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
 )
 def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, request):
     run_bench = request.config.getoption("--runperf")
