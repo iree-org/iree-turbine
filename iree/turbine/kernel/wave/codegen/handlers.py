@@ -104,6 +104,7 @@ from ..constraints import (
     TilingConstraint,
 )
 from ..utils.symbol_utils import subs_idxc
+from ..compile_options import WaveCompileOptions
 
 # Indexing imports.
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
@@ -404,18 +405,27 @@ def handle_binary_op(op):
 
             lhs = lhs.ir_value
             rhs = rhs.ir_value
-            result = binary_fn(lhs, rhs)
+            result = binary_fn(lhs, rhs, emitter.options)
 
             emitter.bind_node_proxy(node, IRProxyValue(result))
 
     return decorator
 
 
+def get_fast_math_flags(options: WaveCompileOptions) -> int | None:
+    """
+    This function returns the fast math flags for the given options.
+    Currently, we turn on all optimizations, but can make this
+    more selective.
+    """
+    return arith_d.FastMathFlags.fast if options.use_fast_math else None
+
+
 @handle_binary_op(operator.add)
-def handle_add(lhs: Value, rhs: Value) -> OpResult:
+def handle_add(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.addf(lhs, rhs)
+        result = arith_d.addf(lhs, rhs, fastmath=get_fast_math_flags(options))
     elif _is_integer_like_type(element_type):
         result = arith_d.addi(lhs, rhs)
     else:
@@ -424,10 +434,10 @@ def handle_add(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op(operator.sub)
-def handle_sub(lhs: Value, rhs: Value) -> OpResult:
+def handle_sub(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.subf(lhs, rhs)
+        result = arith_d.subf(lhs, rhs, fastmath=get_fast_math_flags(options))
     elif _is_integer_like_type(element_type):
         result = arith_d.subi(lhs, rhs)
     else:
@@ -436,10 +446,10 @@ def handle_sub(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op(operator.mul)
-def handle_mul(lhs: Value, rhs: Value) -> OpResult:
+def handle_mul(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.mulf(lhs, rhs)
+        result = arith_d.mulf(lhs, rhs, fastmath=get_fast_math_flags(options))
     elif _is_integer_like_type(element_type):
         result = arith_d.muli(lhs, rhs)
     else:
@@ -448,10 +458,10 @@ def handle_mul(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op(operator.truediv)
-def handle_div(lhs: Value, rhs: Value) -> OpResult:
+def handle_div(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.divf(lhs, rhs)
+        result = arith_d.divf(lhs, rhs, fastmath=get_fast_math_flags(options))
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -462,7 +472,7 @@ def handle_div(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op(operator.and_)
-def handle_and(lhs: Value, rhs: Value) -> OpResult:
+def handle_and(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
@@ -476,7 +486,7 @@ def handle_and(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op(operator.or_)
-def handle_or(lhs: Value, rhs: Value) -> OpResult:
+def handle_or(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
@@ -490,7 +500,7 @@ def handle_or(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op([operator.gt, gt])
-def handle_gt(lhs: Value, rhs: Value) -> OpResult:
+def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OGT, lhs, rhs)
@@ -504,7 +514,7 @@ def handle_gt(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op([ge, operator.ge])
-def handle_ge(lhs: Value, rhs: Value) -> OpResult:
+def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OGE, lhs, rhs)
@@ -518,7 +528,7 @@ def handle_ge(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op([operator.lt, lt])
-def handle_lt(lhs: Value, rhs: Value) -> OpResult:
+def handle_lt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OLT, lhs, rhs)
@@ -532,7 +542,7 @@ def handle_lt(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op([operator.le, le])
-def handle_le(lhs: Value, rhs: Value) -> OpResult:
+def handle_le(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpi(arith_d.CmpFPredicate.OLE, lhs, rhs)
@@ -546,7 +556,7 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op([operator.eq, eq])
-def handle_le(lhs: Value, rhs: Value) -> OpResult:
+def handle_eq(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.cmpf(arith_d.CmpFPredicate.OEQ, lhs, rhs)
@@ -560,7 +570,7 @@ def handle_le(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op(maximum)
-def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
+def handle_maximum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.maximumf(lhs, rhs)
@@ -576,7 +586,7 @@ def handle_maximum(lhs: Value, rhs: Value) -> OpResult:
 
 
 @handle_binary_op(minimum)
-def handle_minimum(lhs: Value, rhs: Value) -> OpResult:
+def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
         result = arith_d.minimumf(lhs, rhs)
@@ -607,17 +617,17 @@ def handle_unary_op(op):
             src = cast_py_value(emitter, src)
 
             src = src.ir_value
-            result = unary_fn(src)
+            result = unary_fn(src, emitter.options)
             emitter.bind_node_proxy(node, IRProxyValue(result))
 
     return decorator
 
 
 @handle_unary_op(operator.neg)
-def handle_neg(source: Value) -> OpResult:
+def handle_neg(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
-        result = arith_d.negf(source)
+        result = arith_d.negf(source, fastmath=get_fast_math_flags(options))
     else:
         raise ValidationError(
             f"Found unhandled operand type for negate: {element_type}"
@@ -626,7 +636,7 @@ def handle_neg(source: Value) -> OpResult:
 
 
 @handle_unary_op(exp2)
-def handle_exp2(source: Value) -> OpResult:
+def handle_exp2(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
         result = math_d.exp2(source)
@@ -636,7 +646,7 @@ def handle_exp2(source: Value) -> OpResult:
 
 
 @handle_unary_op(log2)
-def handle_log2(source: Value) -> OpResult:
+def handle_log2(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
         result = math_d.log2(source)
@@ -646,7 +656,7 @@ def handle_log2(source: Value) -> OpResult:
 
 
 @handle_unary_op(reciprocal)
-def handle_reciprocal(source: Value) -> OpResult:
+def handle_reciprocal(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
         splat_ones = DenseElementsAttr.get_splat(
@@ -662,7 +672,7 @@ def handle_reciprocal(source: Value) -> OpResult:
 
 
 @handle_unary_op(abs)
-def handle_abs(source: Value) -> OpResult:
+def handle_abs(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
         abs = math_d.absf(source)
@@ -674,7 +684,7 @@ def handle_abs(source: Value) -> OpResult:
 
 
 @handle_unary_op(tanh)
-def handle_tanh(source: Value) -> OpResult:
+def handle_tanh(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
         result = math_d.tanh(source)
@@ -684,7 +694,7 @@ def handle_tanh(source: Value) -> OpResult:
 
 
 @handle_unary_op(roundeven)
-def handle_roundeven(source: Value) -> OpResult:
+def handle_roundeven(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
         roundeven = math_d.roundeven(source)
