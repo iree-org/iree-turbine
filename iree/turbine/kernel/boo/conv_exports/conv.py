@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from typing import (
+    Any,
     List,
     NamedTuple,
     Optional,
@@ -117,12 +118,18 @@ class ConvSignature:
                 return provided
             return default_layout
 
-        def listify(value: int | List[int]) -> List[int]:
-            if isinstance(value, int):
-                return [value] * num_spatial_dims
+        def listify(value: Any) -> List[int]:
             if isinstance(value, list):
                 assert len(value) == num_spatial_dims
                 return value
+            if isinstance(value, int):
+                return [value] * num_spatial_dims
+            try:
+                return list(value)
+            except TypeError as e:
+                raise TypeError(
+                    f"ConvSignature kwarg has value {value} with type {type(value).__name__}, but expected int or iterable."
+                ) from e
 
         if isinstance(mode, str):
             mode = Mode.parse(mode)
