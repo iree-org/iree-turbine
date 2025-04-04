@@ -8,6 +8,7 @@ import torch
 from torch import nn
 from torch.testing import assert_close
 import math
+import warnings
 
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
@@ -176,11 +177,17 @@ def get_quant_linear_kernel(
 
 
 def extract_quant_params(quant_params: dict):
-    weight_scale = torch.tensor(quant_params["weight_scale"]).view(
-        quant_params["weight_scale_shape"]
+    weight_scale = (
+        quant_params["weight_scale"]
+        .clone()
+        .detach()
+        .view(quant_params["weight_scale_shape"])
     )
-    input_scale = torch.tensor(quant_params["input_scale"]).view(
-        quant_params["input_scale_shape"]
+    input_scale = (
+        quant_params["input_scale"]
+        .clone()
+        .detach()
+        .view(quant_params["input_scale_shape"])
     )
     qdtype = quant_params["qdtype"]
     return weight_scale, input_scale, qdtype
@@ -188,7 +195,7 @@ def extract_quant_params(quant_params: dict):
 
 LINEAR_SUPPORTED_DTYPE = {torch.float16}
 
-# Only per-tensor quantization is supported
+
 class WaveQuantLinear(nn.Module):
     """Fork of nn.Linear implementation but modified to handle Wave Kernel"""
 
@@ -229,6 +236,8 @@ class WaveQuantLinear(nn.Module):
         )
         if self.weight_scale.numel() != 1 or self.input_scale.numel() != 1:
             raise ValueError("Only per-tensor quantization is currently supported")
+        if self.qdtype != torch.float8_e4m3fnuz:
+            warnings.warn("Untested quantization type")
         self.kernel = get_quant_linear_kernel(
             [in_features, out_features],
             [self.weight_scale, self.input_scale, self.qdtype],

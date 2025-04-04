@@ -32,12 +32,16 @@ class RefQuantLinear(nn.Module):
         )
         self.qdtype = quant_params["qdtype"]
         weight_scale = (
-            torch.tensor(quant_params["weight_scale"])
+            quant_params["weight_scale"]
+            .clone()
+            .detach()
             .view(quant_params["weight_scale_shape"])
             .to(self.device)
         )
         input_scale = (
-            torch.tensor(quant_params["input_scale"])
+            quant_params["input_scale"]
+            .clone()
+            .detach()
             .view(quant_params["input_scale_shape"])
             .to(self.device)
         )
@@ -71,7 +75,7 @@ class RefQuantLinear(nn.Module):
         )
         if self.bias:
             output += self.linear.bias
-        return quant_output
+        return output
 
     def quantize_tensor(self, tensor: torch.Tensor, scale: torch.Tensor):
         quant_tensor = (
