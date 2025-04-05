@@ -714,7 +714,7 @@ class ConvBackwardWeightCustomGeneric(torch.nn.Module):
 
         dLdw = generic_conv(
             x_pad, dLdy, self.stride, self.dilation, xl, wl, ol, explicit_shape
-        )
+        ).to(dtype=dLdy.dtype)
 
         if self.groups != 1:
             o_pos = ol.find("g")

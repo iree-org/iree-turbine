@@ -41,12 +41,13 @@ command-line arguments are appended to the arguments from the file.
         args = file_args + extra_cli_args
         timing_args, runner_args = runner_parser.parse_known_args(args)
         func = lambda: run(runner_args)
+        log_strs.append(f"{shlex.join(runner_args)}")
         if not timing_args.timing:
             try:
                 name, result = func()
-            except Exception as e:
+            except Exception:
                 log_strs.append(
-                    f"failed to run with args {runner_args}. See exception {e}."
+                    f"Failed run. Try running this command with TURBINE_DEBUG='log_level=DEBUG'."
                 )
                 continue
             torch.set_printoptions(edgeitems=0)
@@ -56,26 +57,26 @@ command-line arguments are appended to the arguments from the file.
 
         try:
             zones, func_name, result = trace_gpu(func)
-        except Exception as e:
-            log_strs.append(f"failed to run with args {runner_args}.")
+        except Exception:
+            log_strs.append(
+                f"Failed run. Try running this command with TURBINE_DEBUG='log_level=DEBUG'."
+            )
             continue
-        log_strs.append(f"{shlex.join(runner_args)}:")
         dispatch_zone_names = [n for n in zones.keys() if n.startswith(func_name)]
         if len(dispatch_zone_names) == 0:
-            # print(">>> FAILED TO COLLECT TIMING INFO")
-            log_strs.append("\tFAILED TO COLLECT TIMING INFO")
+            log_strs.append("\tFailed to collect timing info.")
             continue
         for zone_name in dispatch_zone_names:
             # Convert from nanoseconds to microseconds
             times = [t / 1000 for t in zones[zone_name]]
             s = (
-                f"\tmin={min(times):.2f}us; max={max(times):.2f}us; "
-                f"mean={statistics.mean(times):.2f}us; "
+                f"\tmin={min(times):.2f}us,max={max(times):.2f}us,"
+                f"mean={statistics.mean(times):.2f}us,"
                 f"stddev={statistics.stdev(times) if len(times) > 1 else 0:.2f}us"
             )
-            log_strs.append(s)
             if len(dispatch_zone_names) > 1:
-                log_strs.append(f"\t({zone_name=})")
+                s += f",{zone_name=}"
+            log_strs.append(s)
 
     if log_path:
         log_str = "\n".join(log_strs)
@@ -110,7 +111,6 @@ def run(cli_args: Sequence[str]):
         result = conv(*conv_args)
 
     torch.set_printoptions(edgeitems=0)
-    # print(f">>> {result}")
 
     return sig.get_func_name(), repr(result)
 
