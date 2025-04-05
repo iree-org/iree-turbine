@@ -17,6 +17,7 @@ __all__ = [
     "is_cache_enabled",
     "clear_cache_dir",
     "get_launchable",
+    "set_boo_cache",
 ]
 
 _default_cache_base_dir = Path.home() / ".cache" / "turbine_kernels" / "boo"
@@ -113,6 +114,7 @@ def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> s
 
 
 def get_launchable(signature: ConvSignature) -> Launchable:
+    set_boo_cache()
     func_name = signature.get_func_name()
     module_asm = _get_module_asm(signature, func_name)
     cache_dir = CACHE_BASE_DIR / func_name if is_cache_enabled() else None

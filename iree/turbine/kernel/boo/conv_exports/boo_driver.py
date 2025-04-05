@@ -36,7 +36,6 @@ command-line arguments are appended to the arguments from the file.
     runner_parser = argparse.ArgumentParser()
     runner_parser.add_argument("--timing", "-t", type=int, help="Enable timing")
     log_path = None if not args.log_file else Path(args.log_file)
-    print(f"{log_path=}")
     log_strs = ["--------RUN LOG---------\n"]
     for file_args in mio_file_args:
         args = file_args + extra_cli_args
