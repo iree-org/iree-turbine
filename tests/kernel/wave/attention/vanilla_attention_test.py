@@ -298,7 +298,7 @@ def testAttentionCausal(
 
         def sliding_window_mask(q_seq_length, kv_seq_length, window_size):
             mask = device_ones((q_seq_length, kv_seq_length), dtype=torch.bool)
-            mask = mask.tril().triu(-sliding_window)
+            mask = mask.tril().triu(-window_size)
             return mask.to(dtype=torch.bool)
 
         mask = sliding_window_mask(
