@@ -81,28 +81,14 @@ def scaled_dot_product_attention_bhsd(
 
     if is_causal:
         seq_len_q, seq_len_k = attn_logits.shape[-2], attn_logits.shape[-1]
-        if sliding_window < 0:
-            causal_mask: Tensor = torch.tril(
-                torch.ones(
-                    (seq_len_q, seq_len_k), device=attn_logits.device, dtype=torch.bool
-                )
+        causal_mask: Tensor = torch.tril(
+            torch.ones(
+                (seq_len_q, seq_len_k), device=attn_logits.device, dtype=torch.bool
             )
-            attn_logits = attn_logits.masked_fill(~causal_mask, float("-inf"))
-        else:
-
-            def sliding_window_mask(q_seq_length, kv_seq_length, window_size):
-                mask = torch.ones(
-                    (q_seq_length, kv_seq_length),
-                    dtype=torch.bool,
-                    device=attn_logits.device,
-                )
-                mask = mask.tril().triu(-window_size)
-                return mask.to(dtype=torch.bool)
-
-            causal_sliding_mask = sliding_window_mask(
-                seq_len_q, seq_len_k, sliding_window
-            )
-            attn_logits = attn_logits.masked_fill(~causal_sliding_mask, float("-inf"))
+        )
+        if sliding_window >= 0:
+            causal_mask = causal_mask.triu(-sliding_window)
+        attn_logits = attn_logits.masked_fill(~causal_mask, float("-inf"))
 
     if custom_mask is not None:
         bool_mask = custom_mask.to(torch.bool)
