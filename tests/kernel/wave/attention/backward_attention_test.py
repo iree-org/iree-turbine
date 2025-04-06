@@ -847,6 +847,17 @@ def get_evoformer_attention_bwd_kernel(
         outputs={B: i, BN: j, K2_kvs: l, H: k, K1_qkd: m},
     )
 
+    v_read_mapping_flip_h_k2 = tkw.IndexMapping(
+        num_iterators=5,
+        inputs={B: i, BN: j, K2_kvs: l, H: k, N_vd: m},
+        outputs={B: i, BN: j, H: k, K2_kvs: l, N_vd: m},
+    )
+    dv_write_mapping_flip_h_k2 = tkw.IndexMapping(
+        num_iterators=5,
+        inputs={B: i, BN: j, H: k, K2_kvs: l, N_vd: m},
+        outputs={B: i, BN: j, K2_kvs: l, H: k, N_vd: m},
+    )
+
     s_dp_ds_write_mapping_flip_h_m = tkw.IndexMapping(
         num_iterators=5,
         inputs={B: i, BN: j, H: k, M_qs: l, K2_kvs: m},
@@ -901,13 +912,13 @@ def get_evoformer_attention_bwd_kernel(
     def attention_bwd(
         q: tkl.Memory[B, BN, H, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, BN, K2_kvs, H, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[B, BN, H, K2_kvs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, BN, K2_kvs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         do: tkl.Memory[B, BN, M_qs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         lse: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         D: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dq: tkl.Memory[B, BN, H, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dk: tkl.Memory[B, BN, K2_kvs, H, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        dv: tkl.Memory[B, BN, H, K2_kvs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        dv: tkl.Memory[B, BN, K2_kvs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         # We have extra output arguments so we can check intermediates. Obiously
         # doing this is not at all performant.
         s: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f32],
@@ -958,7 +969,7 @@ def get_evoformer_attention_bwd_kernel(
             )
             dv_j = tkw.mma(p_ij, do_i_for_dv, dv_prev)
 
-            v_j = tkw.read(v, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
+            v_j = tkw.read(v, mapping=v_read_mapping_flip_h_k2, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
             # TODO(#603): Wave has implicit layout requirements for MMAs, so we
             # have load do_i again in this layout.
             do_i_for_dp = tkw.read(do, mapping=do_read_mapping_flip_h_m, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
@@ -1017,7 +1028,7 @@ def get_evoformer_attention_bwd_kernel(
 
         dv_j, dk_j = loop_q_seq_len
         tkw.write(
-            tkw.cast(dv_j, tkl.f16), dv, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+            tkw.cast(dv_j, tkl.f16), dv, mapping=dv_write_mapping_flip_h_k2, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
         )
         tkw.write(
             tkw.cast(dk_j, tkl.f16), dk, mapping=dk_write_mapping_flip_h_k2, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
@@ -1874,7 +1885,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
 
     q = device_randn(batch, n, q_seq_len, heads, qk_head_dim, dtype=torch.float16).transpose(-2, -3).contiguous()
     k = device_randn(batch, n, kv_seq_len, heads, qk_head_dim, dtype=torch.float16)
-    v = device_randn(batch, n, kv_seq_len, heads, v_head_dim, dtype=torch.float16).transpose(-2, -3).contiguous()
+    v = device_randn(batch, n, kv_seq_len, heads, v_head_dim, dtype=torch.float16)
     do = device_randn(batch, n, q_seq_len, heads, v_head_dim, dtype=torch.float16)
 
     (
@@ -1887,7 +1898,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
         p_ref,
         ds_ref,
         dp_ref,
-    ) = attention_torch_ops_ref(q, k.transpose(-2, -3), v, do.transpose(-2, -3), scale=scale)
+    ) = attention_torch_ops_ref(q, k.transpose(-2, -3), v.transpose(-2, -3), do.transpose(-2, -3), scale=scale)
 
     attention_bwd, hyperparams = get_evoformer_attention_bwd_kernel(
         batch=batch,
@@ -1950,7 +1961,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
     assert_close(s, s_ref.transpose(-2, -3), **cmp_params)
     assert_close(p, p_ref.transpose(-2, -3), **cmp_params)
 
-    assert_close(dv, dv_ref, **dv_cmp_params)
+    assert_close(dv, dv_ref.transpose(-2, -3), **dv_cmp_params)
 
     dp_sub_ref = (dp_ref - D.reshape((batch, n, heads, q_seq_len, 1))).to(torch.float16)
     assert_close(dp, dp_ref, **cmp_params)
