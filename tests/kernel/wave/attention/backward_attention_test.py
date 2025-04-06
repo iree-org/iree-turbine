@@ -923,7 +923,7 @@ def get_evoformer_attention_bwd_kernel(
         # doing this is not at all performant.
         s: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f32],
         p: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        ds: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        ds: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         ds_scaled: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dp: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f32],
         dp_sub: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
@@ -979,7 +979,7 @@ def get_evoformer_attention_bwd_kernel(
             tkw.write(dp_ij, dp, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
 
             D_i = tkw.read(D, elements_per_thread=1)
-            dp_ij_sub = tkw.cast(dp_ij, tkl.f16) - tkw.broadcast(D_i, [B, BN, H, BN, H, M_qs, K2_kvs])
+            dp_ij_sub = tkw.cast(dp_ij, tkl.f16) - tkw.broadcast(D_i, [B, BN, H, M_qs, K2_kvs])
             tkw.write(dp_ij_sub, dp_sub, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
 
             # Just multiplying p_ij * dp_ij_sub breaks the previously calculated
@@ -989,7 +989,7 @@ def get_evoformer_attention_bwd_kernel(
             # have to read back p_ij in this layout.
             p_ij_for_ds = tkw.read(p, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
             ds_ij = p_ij_for_ds * dp_ij_sub
-            tkw.write(ds_ij, ds, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
+            tkw.write(ds_ij, ds, mapping=s_dp_ds_write_mapping_flip_h_m, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
             ds_scaled_ij = scale_ds_reg * ds_ij
             tkw.write(
                 ds_scaled_ij, ds_scaled, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
@@ -1929,8 +1929,8 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
     dv = torch.zeros_like(v)
     s = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float32)
     p = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float16)
-    ds = device_zeros(batch, n, heads, q_seq_len, kv_seq_len, dtype=torch.float16)
-    ds_scaled = torch.zeros_like(ds)
+    ds = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float16)
+    ds_scaled = torch.zeros_like(ds.transpose(-2, -3))
     dp = device_zeros(batch, n, heads, q_seq_len, kv_seq_len, dtype=torch.float32)
     dp_sub = device_zeros(batch, n, heads, q_seq_len, kv_seq_len, dtype=torch.float16)
 
@@ -1967,7 +1967,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
     assert_close(dp, dp_ref, **cmp_params)
     assert_close(dp_sub, dp_sub_ref, **cmp_params)
 
-    assert_close(ds, ds_ref, **ds_cmp_params)
+    assert_close(ds, ds_ref.transpose(-2, -3), **ds_cmp_params)
 
     assert_close(dk, dk_ref.transpose(-2, -3), **dk_cmp_params)
     assert_close(dq, dq_ref, **dq_cmp_params)
