@@ -859,6 +859,17 @@ def get_evoformer_attention_bwd_kernel(
         outputs={B: i, BN: j, M_qs: m, H: k, K2_kvs: l},
     )
 
+    do_read_mapping_flip_h_m = tkw.IndexMapping(
+        num_iterators=5,
+        inputs={B: i, BN: j, M_qs: l, H: k, N_vd: m},
+        outputs={B: i, BN: j, H: k, M_qs: l, N_vd: m},
+    )
+    do_read_mapping_flip_h_m_n = tkw.IndexMapping(
+        num_iterators=5,
+        inputs={B: i, BN: j, M_qs: m, H: k, N_vd: l},
+        outputs={B: i, BN: j, H: k, N_vd: l, M_qs: m},
+    )
+
     flip_k2_m_write_mapping = tkw.IndexMapping(
         num_iterators=5,
         inputs={B: i, BN: j, H: k, K2_kvs: l, M_qs: m},
@@ -891,7 +902,7 @@ def get_evoformer_attention_bwd_kernel(
         q: tkl.Memory[B, BN, H, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, BN, K2_kvs, H, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, BN, H, K2_kvs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        do: tkl.Memory[B, BN, H, M_qs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        do: tkl.Memory[B, BN, M_qs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         lse: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         D: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dq: tkl.Memory[B, BN, H, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
@@ -942,7 +953,7 @@ def get_evoformer_attention_bwd_kernel(
 
             do_i_for_dv = tkw.read(
                 do,
-                mapping=flip_m_n_read_mapping,
+                mapping=do_read_mapping_flip_h_m_n,
                 elements_per_thread=MFMA_INPUT_ELS_PER_THREAD,
             )
             dv_j = tkw.mma(p_ij, do_i_for_dv, dv_prev)
@@ -950,7 +961,7 @@ def get_evoformer_attention_bwd_kernel(
             v_j = tkw.read(v, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
             # TODO(#603): Wave has implicit layout requirements for MMAs, so we
             # have load do_i again in this layout.
-            do_i_for_dp = tkw.read(do, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
+            do_i_for_dp = tkw.read(do, mapping=do_read_mapping_flip_h_m, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
             dp_acc = tkl.Register[B, BN, H, K2_kvs, M_qs, tkl.f32](0.0)
             dp_ij = tkw.mma(v_j, do_i_for_dp, dp_acc)
             dp_ij = tkw.permute(dp_ij, [B, BN, H, M_qs, K2_kvs])
@@ -1864,7 +1875,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
     q = device_randn(batch, n, q_seq_len, heads, qk_head_dim, dtype=torch.float16).transpose(-2, -3).contiguous()
     k = device_randn(batch, n, kv_seq_len, heads, qk_head_dim, dtype=torch.float16)
     v = device_randn(batch, n, kv_seq_len, heads, v_head_dim, dtype=torch.float16).transpose(-2, -3).contiguous()
-    do = device_randn(batch, n, q_seq_len, heads, v_head_dim, dtype=torch.float16).transpose(-2, -3).contiguous()
+    do = device_randn(batch, n, q_seq_len, heads, v_head_dim, dtype=torch.float16)
 
     (
         o_ref,
@@ -1876,7 +1887,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
         p_ref,
         ds_ref,
         dp_ref,
-    ) = attention_torch_ops_ref(q, k.transpose(-2, -3), v, do, scale=scale)
+    ) = attention_torch_ops_ref(q, k.transpose(-2, -3), v, do.transpose(-2, -3), scale=scale)
 
     attention_bwd, hyperparams = get_evoformer_attention_bwd_kernel(
         batch=batch,
@@ -1900,7 +1911,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
     options = set_default_run_config(options)
     attention_bwd = wave_compile(options, attention_bwd)
 
-    D = torch.sum(do * o_ref, -1)
+    D = torch.sum(do.transpose(-2, -3) * o_ref, -1)
 
     dq = torch.zeros_like(q)
     dk = torch.zeros_like(k)
