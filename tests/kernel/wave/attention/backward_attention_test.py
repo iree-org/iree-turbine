@@ -853,6 +853,12 @@ def get_evoformer_attention_bwd_kernel(
         outputs={B: i, BN: j, M_qs: l, H: k, K2_kvs: m},
     )
 
+    p_write_mapping_flip_h_m_k2 = tkw.IndexMapping(
+        num_iterators=5,
+        inputs={B: i, BN: j, H: k, K2_kvs: l, M_qs: m},
+        outputs={B: i, BN: j, M_qs: m, H: k, K2_kvs: l},
+    )
+
     flip_k2_m_write_mapping = tkw.IndexMapping(
         num_iterators=5,
         inputs={B: i, BN: j, H: k, K2_kvs: l, M_qs: m},
@@ -894,7 +900,7 @@ def get_evoformer_attention_bwd_kernel(
         # We have extra output arguments so we can check intermediates. Obiously
         # doing this is not at all performant.
         s: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        p: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        p: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         ds: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         ds_scaled: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dp: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f32],
@@ -930,7 +936,7 @@ def get_evoformer_attention_bwd_kernel(
             tkw.write(
                 p_ij,
                 p,
-                mapping=flip_k2_m_write_mapping,
+                mapping=p_write_mapping_flip_h_m_k2,
                 elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
             )
 
@@ -1900,7 +1906,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
     dk = torch.zeros_like(k)
     dv = torch.zeros_like(v)
     s = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float32)
-    p = device_zeros(batch, n, heads, q_seq_len, kv_seq_len, dtype=torch.float16)
+    p = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float16)
     ds = device_zeros(batch, n, heads, q_seq_len, kv_seq_len, dtype=torch.float16)
     ds_scaled = torch.zeros_like(ds)
     dp = device_zeros(batch, n, heads, q_seq_len, kv_seq_len, dtype=torch.float32)
@@ -1931,7 +1937,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
         print(f"IR dumped to {filename}")
 
     assert_close(s, s_ref.transpose(-2, -3), **cmp_params)
-    assert_close(p, p_ref, **cmp_params)
+    assert_close(p, p_ref.transpose(-2, -3), **cmp_params)
 
     assert_close(dv, dv_ref, **dv_cmp_params)
 
