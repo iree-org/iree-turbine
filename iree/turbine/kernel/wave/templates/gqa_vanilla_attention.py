@@ -25,6 +25,10 @@ def get_gqa_bshd_attention_kernel(
     is_causal: Optional[bool] = False,
     layer_scaling: Optional[float] = None,
     sliding_window_size: Optional[int] = -1,
+    q_scale: Optional[float] = 1.0,
+    k_scale: Optional[float] = 1.0,
+    v_scale: Optional[float] = 1.0,
+    use_fp8: Optional[bool] = False,
 ):
 
     if sliding_window_size > 0 and not is_causal:
@@ -40,6 +44,32 @@ def get_gqa_bshd_attention_kernel(
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
     layer_scaling = (layer_scaling or dk_sqrt) * LOG2E
 
+    f8_dtype: torch.dtype = torch.float8_e4m3fnuz
+    F8_DTYPE = torch_dtype_to_wave(f8_dtype)
+    F8_MAX = torch.finfo(f8_dtype).max
+
+    # maximum expected value from attention softmax
+    ATTENTION_SOFTMAX_MAX = 1.0
+
+    # FP8 offset
+    # If we need to truncate to fp8 post softmax we apply a scaling to use the
+    # full fp8 range. We can do this with a offset as post `exp2` this equates
+    # to multiplying by a static value. We are able to do this as `max` and
+    # `sum` are scaled by the same value so the end result is the same.
+    FP8_OFFSET_VAL = math.log2(F8_MAX / ATTENTION_SOFTMAX_MAX)
+
+    # Dequant Tensor Scaling
+    DEQUANT_QK = q_scale * k_scale
+    if use_fp8:
+        layer_scaling *= DEQUANT_QK
+
+    # Clamp input to dstTy(usually `fp8`) MAX value to prevent NaNs.
+    # We do not clamp for `-MAX` because this function meant to only be
+    # used by attention's exp2 who's value is always > 0.
+    def low_precision_clamp(source_reg, upper_bound):
+        clamped = tkw.minimum(source_reg, upper_bound)
+        return tkw.cast(clamped, F8_DTYPE)
+
     B = tkl.sym.B
     BLOCK_B = tkl.sym.BLOCK_B
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -54,10 +84,16 @@ def get_gqa_bshd_attention_kernel(
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / 4)]
     constraints += [tkw.WaveConstraint(D_KV, BLOCK_D_KV / 1)]
 
-    if mfma_variant[1] == MMAType.F32_16x16x16_F16:
+    if (
+        mfma_variant[1] == MMAType.F32_16x16x16_F16
+        or mfma_variant[0] == MMAType.F32_16x16x32_F8
+    ):
         Mvec = 16
         Nvec = 16
-    if mfma_variant[1] == MMAType.F32_32x32x8_F16:
+    if (
+        mfma_variant[1] == MMAType.F32_32x32x8_F16
+        or mfma_variant[0] == MMAType.F32_32x32x16_F8
+    ):
         Mvec = 32
         Nvec = 32
 
@@ -104,7 +140,10 @@ def get_gqa_bshd_attention_kernel(
         c: tkl.Memory[B, N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype],
     ):
 
-        qkv_scaling = tkl.Register[B, H, N_Q, D_Q, tkl.f16](layer_scaling)
+        qk_scaling = tkl.Register[B, H, N_Q, N_KV, tkl.f32](layer_scaling)
+        v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](v_scale)
+        fp8_offset = tkl.Register[B, N_Q, N_KV, tkl.f32](FP8_OFFSET_VAL)
+        fp8_max = tkl.Register[B, N_Q, N_KV, tkl.f32](F8_MAX)
         c_reg = tkl.Register[B, H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[B, H, N_Q, tkl.f32](0.0)
         init_max = tkl.Register[B, H, N_Q, tkl.f32](-1e6)
@@ -120,8 +159,10 @@ def get_gqa_bshd_attention_kernel(
         ):
             imm_reg = tkl.Register[B, H, N_KV, N_Q, tkl.f32](0.0)
             q_reg = tkw.read(q, mapping=q_mapping)
-            q_reg *= qkv_scaling
             k_reg = tkw.read(k, mapping=k_mapping)
+            if use_fp8:
+                q_reg = tkw.cast(q_reg, F8_DTYPE)
+                k_reg = tkw.cast(k_reg, F8_DTYPE)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, H, N_Q, N_KV])
             k2_index = tkw.self_index(N_KV, tkl.i32)
@@ -136,21 +177,26 @@ def get_gqa_bshd_attention_kernel(
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, ZEROF, MIN_INF)
             x_j = x_j + bias
+            x_j *= qk_scaling
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
-            e_delta = tkw.exp2(x_j - m_j)
+            e_delta = tkw.exp2(x_j - m_j + fp8_offset)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
-            imm_f16 = tkw.cast(e_delta, tkl.f16)
+            if use_fp8:
+                imm_f = low_precision_clamp(e_delta, fp8_max)
+            else:
+                imm_f = tkw.cast(e_delta, wave_input_dtype)
             v_reg = tkw.read(v, mapping=v_mapping)
+            if use_fp8:
+                v_reg = tkw.cast(v_reg, F8_DTYPE)
             new_acc = acc * e_delta_max
-            acc = tkw.mma(v_reg, imm_f16, new_acc)
+            acc = tkw.mma(v_reg, imm_f, new_acc)
             return m_j, d_j, acc
 
-        # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
-        res = res_mm * reciprocal_sum
+        res = res_mm * reciprocal_sum * v_dequant
         tkw.write(res, c, mapping=mapping)
 
     hyperparams = {

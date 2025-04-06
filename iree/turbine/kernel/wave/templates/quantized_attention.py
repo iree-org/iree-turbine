@@ -22,7 +22,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     shape: AttentionShape,
     mfma_variant: MMAType,
     logit_dtype: torch.dtype = torch.float16,
-    f8_dtpye: torch.dtype = torch.float8_e4m3fnuz,
+    f8_dtype: torch.dtype = torch.float8_e4m3fnuz,
     dynamic_dims: bool = False,
     is_causal: bool = False,
     q_scale=1.0,
@@ -102,8 +102,8 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     # Setting up FP8 scaling
     LOG2E = 1.44269504089
     DK_SQRT = math.sqrt(1.0 / shape.head_size)
-    F8_DTYPE = torch_dtype_to_wave(f8_dtpye)
-    F8_MAX = torch.finfo(f8_dtpye).max
+    F8_DTYPE = torch_dtype_to_wave(f8_dtype)
+    F8_MAX = torch.finfo(f8_dtype).max
 
     # maximum expected value from attention softmax
     ATTENTION_SOFTMAX_MAX = 1.0
