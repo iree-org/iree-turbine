@@ -831,6 +831,22 @@ def get_evoformer_attention_bwd_kernel(
     k = tkw.IndexMapping.iterator(2)
     l = tkw.IndexMapping.iterator(3)
     m = tkw.IndexMapping.iterator(4)
+    k_read_mapping_flip_h_k2 = tkw.IndexMapping(
+        num_iterators=5,
+        inputs={B: i, BN: j, K2_kvs: l, H: k, K1_qkd: m},
+        outputs={B: i, BN: j, H: k, K2_kvs: l, K1_qkd: m},
+    )
+    k_read_mapping_flip_h_k2_k1 = tkw.IndexMapping(
+        num_iterators=5,
+        inputs={B: i, BN: j, K2_kvs: m, H: k, K1_qkd: l},
+        outputs={B: i, BN: j, H: k, K1_qkd: l, K2_kvs: m},
+    )
+    dk_write_mapping_flip_h_k2 = tkw.IndexMapping(
+        num_iterators=5,
+        inputs={B: i, BN: j, H: k, K2_kvs: l, K1_qkd: m},
+        outputs={B: i, BN: j, K2_kvs: l, H: k, K1_qkd: m},
+    )
+
     flip_k2_m_write_mapping = tkw.IndexMapping(
         num_iterators=5,
         inputs={B: i, BN: j, H: k, K2_kvs: l, M_qs: m},
@@ -861,13 +877,13 @@ def get_evoformer_attention_bwd_kernel(
     @tkw.wave(constraints)
     def attention_bwd(
         q: tkl.Memory[B, BN, H, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, BN, H, K2_kvs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, BN, K2_kvs, H, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, BN, H, K2_kvs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         do: tkl.Memory[B, BN, H, M_qs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         lse: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         D: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dq: tkl.Memory[B, BN, H, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        dk: tkl.Memory[B, BN, H, K2_kvs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        dk: tkl.Memory[B, BN, K2_kvs, H, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dv: tkl.Memory[B, BN, H, K2_kvs, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         # We have extra output arguments so we can check intermediates. Obiously
         # doing this is not at all performant.
@@ -889,7 +905,7 @@ def get_evoformer_attention_bwd_kernel(
         ):
             # TODO(#602): Wave has implicit layout requirements for MMAs, so we
             # have to actually compute s transpose and then permute it.
-            k_j = tkw.read(k, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
+            k_j = tkw.read(k, mapping=k_read_mapping_flip_h_k2, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
             q_i = tkw.read(q, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
 
             s_acc = tkl.Register[B, BN, H, M_qs, K2_kvs, tkl.f32](0.0)
@@ -965,7 +981,7 @@ def get_evoformer_attention_bwd_kernel(
             # have to read k again.
             k_j_for_dq = tkw.read(
                 k,
-                mapping=flip_k2_k1_read_mapping,
+                mapping=k_read_mapping_flip_h_k2_k1,
                 elements_per_thread=MFMA_INPUT_ELS_PER_THREAD,
             )
             dq_prev = tkw.read(dq, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
@@ -981,7 +997,7 @@ def get_evoformer_attention_bwd_kernel(
             tkw.cast(dv_j, tkl.f16), dv, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
         )
         tkw.write(
-            tkw.cast(dk_j, tkl.f16), dk, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+            tkw.cast(dk_j, tkl.f16), dk, mapping=dk_write_mapping_flip_h_k2, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
         )
 
     hyperparams = {
@@ -1834,7 +1850,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
     dv_cmp_params = dict(atol=4e-3, rtol=3e-3, check_dtype=False)
 
     q = device_randn(batch, n, q_seq_len, heads, qk_head_dim, dtype=torch.float16).transpose(-2, -3).contiguous()
-    k = device_randn(batch, n, kv_seq_len, heads, qk_head_dim, dtype=torch.float16).transpose(-2, -3).contiguous()
+    k = device_randn(batch, n, kv_seq_len, heads, qk_head_dim, dtype=torch.float16)
     v = device_randn(batch, n, kv_seq_len, heads, v_head_dim, dtype=torch.float16).transpose(-2, -3).contiguous()
     do = device_randn(batch, n, q_seq_len, heads, v_head_dim, dtype=torch.float16).transpose(-2, -3).contiguous()
 
@@ -1848,7 +1864,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
         p_ref,
         ds_ref,
         dp_ref,
-    ) = attention_torch_ops_ref(q, k, v, do, scale=scale)
+    ) = attention_torch_ops_ref(q, k.transpose(-2, -3), v, do, scale=scale)
 
     attention_bwd, hyperparams = get_evoformer_attention_bwd_kernel(
         batch=batch,
@@ -1919,7 +1935,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
 
     assert_close(ds, ds_ref, **ds_cmp_params)
 
-    assert_close(dk, dk_ref, **dk_cmp_params)
+    assert_close(dk, dk_ref.transpose(-2, -3), **dk_cmp_params)
     assert_close(dq, dq_ref, **dq_cmp_params)
 
 
