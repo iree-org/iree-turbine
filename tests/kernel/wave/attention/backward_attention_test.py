@@ -887,6 +887,12 @@ def get_evoformer_attention_bwd_kernel(
         outputs={B: i, BN: j, H: k, M_qs: l},
     )
 
+    ds_scaled_read_mapping_flip_h_m_k2 = tkw.IndexMapping(
+        num_iterators=5,
+        inputs={B: i, BN: j, M_qs: m, H: k, K2_kvs: l},
+        outputs={B: i, BN: j, H: k, K2_kvs: l, M_qs: m},
+    )
+
     flip_k2_m_write_mapping = tkw.IndexMapping(
         num_iterators=5,
         inputs={B: i, BN: j, H: k, K2_kvs: l, M_qs: m},
@@ -930,7 +936,7 @@ def get_evoformer_attention_bwd_kernel(
         s: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f32],
         p: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         ds: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        ds_scaled: tkl.Memory[B, BN, H, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        ds_scaled: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dp: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f32],
         dp_sub: tkl.Memory[B, BN, M_qs, H, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
@@ -998,14 +1004,14 @@ def get_evoformer_attention_bwd_kernel(
             tkw.write(ds_ij, ds, mapping=s_dp_ds_write_mapping_flip_h_m, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
             ds_scaled_ij = scale_ds_reg * ds_ij
             tkw.write(
-                ds_scaled_ij, ds_scaled, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+                ds_scaled_ij, ds_scaled, mapping=s_dp_ds_write_mapping_flip_h_m, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
             )
 
             # TODO(#603): Wave has implicit layout requirements for MMAs, so we
             # have to read back ds_ij in this layout.
             ds_scaled_ij_for_dk = tkw.read(
                 ds_scaled,
-                mapping=flip_m_k2_read_mapping,
+                mapping=ds_scaled_read_mapping_flip_h_m_k2,
                 elements_per_thread=MFMA_INPUT_ELS_PER_THREAD,
             )
             # TODO(#603): Wave has implicit layout requirements for MMAs, so we
@@ -1936,7 +1942,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
     s = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float32)
     p = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float16)
     ds = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float16)
-    ds_scaled = torch.zeros_like(ds.transpose(-2, -3))
+    ds_scaled = torch.zeros_like(ds)
     dp = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float32)
     dp_sub = device_zeros(batch, n, q_seq_len, heads, kv_seq_len, dtype=torch.float16)
 
