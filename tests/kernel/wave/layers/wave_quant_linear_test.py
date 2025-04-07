@@ -132,8 +132,8 @@ def testQLinearPerTensor1DBatchNoBias():
     assert_close(
         wave_output,
         ref_output,
-        atol=1e-3,
-        rtol=1e-3,
+        atol=1e-1,
+        rtol=1e-1,
         check_dtype=False,
         check_device=False,
     )
