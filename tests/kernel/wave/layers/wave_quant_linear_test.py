@@ -55,15 +55,13 @@ class RefQuantLinear(nn.Module):
         self.clamp_max = torch.tensor(
             torch_dtype_range(self.qdtype)[1], dtype=dtype, device=self.device
         )
-        quant_weight = self.quantize_tensor(
-            self.linear.weight.detach(), weight_scale
-        ).to(self.qdtype)
+        quant_weight = self.quantize_tensor(self.linear.weight.detach(), weight_scale)
         self.register_buffer("input_scale", input_scale)
         self.register_buffer("quant_weight", quant_weight)
         self.register_buffer("weight_scale", weight_scale)
 
     def forward(self, x):
-        quant_input = self.quantize_tensor(x, self.input_scale).to(self.qdtype)
+        quant_input = self.quantize_tensor(x, self.input_scale)
         quant_output = torch.nn.functional.linear(
             quant_input.to(torch.float32), self.quant_weight.to(torch.float32), None
         ).to(
@@ -81,10 +79,8 @@ class RefQuantLinear(nn.Module):
         return output
 
     def quantize_tensor(self, tensor: torch.Tensor, scale: torch.Tensor):
-        quant_tensor = (
-            torch.clamp((tensor / scale), self.clamp_min, self.clamp_max)
-            .to(self.qdtype)
-            .to(self.dtype)
+        quant_tensor = torch.clamp((tensor / scale), self.clamp_min, self.clamp_max).to(
+            self.qdtype
         )
         return quant_tensor
 

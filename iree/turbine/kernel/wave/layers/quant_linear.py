@@ -244,6 +244,8 @@ class WaveQuantLinear(nn.Module):
             [self.weight_scale, self.input_scale, self.qdtype],
             use_bias=bias,
         )
+        if bias:
+            raise ValueError("Bias is currently not supported")
 
     def reset_parameters(self) -> None:
         # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with
