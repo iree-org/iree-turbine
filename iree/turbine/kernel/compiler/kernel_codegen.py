@@ -316,8 +316,8 @@ class KernelSignature:
         for node in placeholder_nodes:
             index = None
             for i, binding in enumerate(self.bindings):
-                if binding.binding_type == BindingType.SCALAR_VALUE:
-                    break
+                # if binding.binding_type == BindingType.SCALAR_VALUE:
+                #     break
                 if binding.reference[1] == node:
                     index = i
                     break
@@ -334,14 +334,15 @@ class KernelSignature:
 
             # Create new Memory type with the correct usage
             memory_type = self.bindings[index].kernel_buffer_type
-            self.bindings[index].kernel_buffer_type = Memory[
-                (
-                    *memory_type.symbolic_shape,
-                    memory_type.address_space,
-                    memory_type.dtype,
-                    usage,
-                )
-            ]
+            if memory_type:
+                self.bindings[index].kernel_buffer_type = Memory[
+                    (
+                        *memory_type.symbolic_shape,
+                        memory_type.address_space,
+                        memory_type.dtype,
+                        usage,
+                    )
+                ]
         return
 
     def __repr__(self):
