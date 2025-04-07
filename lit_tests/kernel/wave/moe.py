@@ -115,10 +115,11 @@ BLOCK_B, BLOCK_N, BLOCK_D1, BLOCK_D2, BLOCK_TOPK = (
     tkl.sym.BLOCK_TOPK,
 )
 
-LOAD_ELEMS_PER_THREAD, STORE_ELEMS_PER_THREAD = (
-    tkl.sym.LOAD_TOKS_PER_THREAD,
-    tkl.sym.STORE_ELEMS_PER_THREAD,
-)
+LOAD_STORE_ELEMS_PER_THREAD = tkl.sym.LOAD_STORE_ELEMS_PER_THREAD
+# LOAD_ELEMS_PER_THREAD, STORE_ELEMS_PER_THREAD = (
+#     tkl.sym.LOAD_TOKS_PER_THREAD,
+#     tkl.sym.STORE_ELEMS_PER_THREAD,
+# )
 
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
@@ -158,7 +159,7 @@ def build_block_constraints(*args, **kwargs) -> Sequence[tkw.Constraint]:
     ]
     constraints += [
         tkw.WorkgroupConstraint(D2, BLOCK_D2, 0),
-        tkw.WaveConstraint(D2, 2),
+        tkw.WaveConstraint(D2, 1),
     ]
     # constraints += [tkw.TilingConstraint(N, BLOCK_N)]
 
@@ -193,8 +194,8 @@ def config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
             BLOCK_TOPK: 1, # y
             BLOCK_D2: 128, # x
             ### L/S sizes.
-            LOAD_ELEMS_PER_THREAD: 1,
-            STORE_ELEMS_PER_THREAD: 1,
+            # Single symbol here since they always have to agree.
+            LOAD_STORE_ELEMS_PER_THREAD: 2,
             # LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mma_variant),
             # STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mma_variant),
         },
@@ -204,9 +205,9 @@ def config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
             # N: 1,
             # D1: 16,  # TODO: connected to MFMA op type
             # z, y, x
-            B:    1, # z
-            TOPK: 1, # y
-            D2:  64, # x
+            B:     1, # z
+            TOPK:  1, # y
+            D2:  128, # x
         },
         "canonicalize": {True},
     }
@@ -266,15 +267,18 @@ def fused_moe_kernel(
     ###
     # RESULT[B, TOPK, D2] = TMP_3[TOPK, B, D2] * topk_score[B, TOPK]
     ###
-    res = tkw.read(TMP_3, elements_per_thread=LOAD_ELEMS_PER_THREAD)  # : [B, TOPK, D2]
-    topk_weights = tkw.read(
-        TOPK_WEIGHTS, elements_per_thread=LOAD_ELEMS_PER_THREAD
-    )  # : [B, TOPK]
+    res = tkw.read(
+        TMP_3, elements_per_thread=LOAD_STORE_ELEMS_PER_THREAD
+    )  # : [B, TOPK, D2]
+    # Note: we dont' load TOPK_WEIGHTS along D2, we must **always** load 1 elt
+    # and then explicitly broadcast.
+    topk_weights = tkw.read(TOPK_WEIGHTS, elements_per_thread=1)  # : [B, TOPK]
+    topk_weights = tkw.broadcast(topk_weights, target_shape=[B, TOPK, D2])
     # topk_weights = tkw.permute(topk_weights, target_shape=[TOPK, B])
     # res = tkw.permute(res, target_shape=[B, TOPK, D2])  # : [B, TOPK, D2]
     res = res * topk_weights  # : [B, TOPK, D2]
     tkw.write(
-        res, RESULT, elements_per_thread=STORE_ELEMS_PER_THREAD
+        res, RESULT, elements_per_thread=LOAD_STORE_ELEMS_PER_THREAD
     )  # : [B, TOPK, D2]
 
 
