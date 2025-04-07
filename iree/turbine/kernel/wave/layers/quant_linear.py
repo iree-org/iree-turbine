@@ -32,6 +32,7 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 
 def get_quant_linear_kernel(
     shape: tuple[int],
+    input_dtype: torch.dtype,
     quant_params,
     dynamic_dims: bool = False,
     mfma_variant: MMAType = MMAType.F32_16x16x32_F8,
@@ -75,6 +76,7 @@ def get_quant_linear_kernel(
     if dynamic_dims:
         constraints += [tkw.Assumption(K > BLOCK_K * 4)]
 
+    input_wtype = torch_dtype_to_wave(input_dtype)
     [weight_scale, input_scale, quant_dtype] = quant_params
     [qdtype_min, qdtype_max] = torch_dtype_range(quant_dtype)
 
@@ -93,14 +95,14 @@ def get_quant_linear_kernel(
     def gemm_core(a, b, c_reg, result):
         # TODO: Registers for quantization scaling of inputs. Remove once scalar
         # codegen is enabled.
-        a_scale = tkl.Register[B, M, K, tkl.f16](1 / input_scale.item())
-        a_clamp_max = tkl.Register[B, M, K, tkl.f16](qdtype_max)
-        a_clamp_min = tkl.Register[B, M, K, tkl.f16](qdtype_min)
-        b_scale = tkl.Register[N, K, tkl.f16](1 / weight_scale.item())
-        b_clamp_max = tkl.Register[N, K, tkl.f16](qdtype_max)
-        b_clamp_min = tkl.Register[N, K, tkl.f16](qdtype_min)
-        a_scale_deq = tkl.Register[B, M, N, tkl.f16](input_scale.item())
-        b_scale_deq = tkl.Register[B, M, N, tkl.f16](weight_scale.item())
+        a_scale = tkl.Register[B, M, K, input_wtype](1 / input_scale.item())
+        a_clamp_max = tkl.Register[B, M, K, input_wtype](qdtype_max)
+        a_clamp_min = tkl.Register[B, M, K, input_wtype](qdtype_min)
+        b_scale = tkl.Register[N, K, input_wtype](1 / weight_scale.item())
+        b_clamp_max = tkl.Register[N, K, input_wtype](qdtype_max)
+        b_clamp_min = tkl.Register[N, K, input_wtype](qdtype_min)
+        a_scale_deq = tkl.Register[B, M, N, input_wtype](input_scale.item())
+        b_scale_deq = tkl.Register[B, M, N, input_wtype](weight_scale.item())
 
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(
@@ -116,7 +118,7 @@ def get_quant_linear_kernel(
             return acc
 
         o = repeat
-        o = tkw.cast(o, tkl.f16) * a_scale_deq * b_scale_deq
+        o = tkw.cast(o, input_wtype) * a_scale_deq * b_scale_deq
         tkw.write(
             o,
             result,
@@ -124,19 +126,19 @@ def get_quant_linear_kernel(
 
     @tkw.wave(constraints)
     def gemm(
-        a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[B, M, K, ADDRESS_SPACE, input_wtype],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, input_wtype],
+        result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, input_wtype],
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
         gemm_core(a, b, c_reg, result)
 
     @tkw.wave(constraints)
     def gemm_with_bias(
-        a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        bias: tkl.Memory[N, ADDRESS_SPACE, tkl.f16],
-        result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[B, M, K, ADDRESS_SPACE, input_wtype],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, input_wtype],
+        bias: tkl.Memory[N, ADDRESS_SPACE, input_wtype],
+        result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, input_wtype],
     ):
         bias_reg = tkw.read(bias)
         bias_reg = tkw.broadcast(bias_reg, target_shape=[B, M, N])
@@ -191,7 +193,7 @@ def extract_quant_params(quant_params: dict):
     return weight_scale, input_scale, qdtype
 
 
-LINEAR_SUPPORTED_DTYPE = {torch.float16}
+LINEAR_SUPPORTED_DTYPE = {torch.bfloat16, torch.float16}
 
 
 class WaveQuantLinear(nn.Module):
@@ -238,6 +240,7 @@ class WaveQuantLinear(nn.Module):
             warnings.warn("Untested quantization type")
         self.kernel = get_quant_linear_kernel(
             [in_features, out_features],
+            dtype,
             [self.weight_scale, self.input_scale, self.qdtype],
             use_bias=bias,
         )

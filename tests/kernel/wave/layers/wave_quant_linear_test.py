@@ -7,7 +7,10 @@
 import torch
 from torch import nn
 from torch.testing import assert_close
-
+from ..common.utils import (
+    require_e2e,
+    require_cdna3,
+)
 from iree.turbine.kernel.wave.layers.quant_linear import WaveQuantLinear
 from iree.turbine.kernel.wave.utils.general_utils import torch_dtype_range
 from ..common.utils import require_e2e
@@ -90,6 +93,7 @@ class RefQuantLinear(nn.Module):
 
 
 @require_e2e
+@require_cdna3
 def testQLinearPerTensor1DBatchNoBias():
     torch.manual_seed(1)
     batch = 16
