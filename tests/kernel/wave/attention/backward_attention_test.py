@@ -881,6 +881,12 @@ def get_evoformer_attention_bwd_kernel(
         outputs={B: i, BN: j, H: k, N_vd: l, M_qs: m},
     )
 
+    D_read_mapping_flip_h_m = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={B: i, BN: j, M_qs: l, H: k},
+        outputs={B: i, BN: j, H: k, M_qs: l},
+    )
+
     flip_k2_m_write_mapping = tkw.IndexMapping(
         num_iterators=5,
         inputs={B: i, BN: j, H: k, K2_kvs: l, M_qs: m},
@@ -915,7 +921,7 @@ def get_evoformer_attention_bwd_kernel(
         v: tkl.Memory[B, BN, K2_kvs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         do: tkl.Memory[B, BN, M_qs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         lse: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        D: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        D: tkl.Memory[B, BN, M_qs, H, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dq: tkl.Memory[B, BN, H, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dk: tkl.Memory[B, BN, K2_kvs, H, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dv: tkl.Memory[B, BN, K2_kvs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
@@ -978,7 +984,7 @@ def get_evoformer_attention_bwd_kernel(
             dp_ij = tkw.permute(dp_ij, [B, BN, H, M_qs, K2_kvs])
             tkw.write(dp_ij, dp, mapping=s_dp_ds_write_mapping_flip_h_m, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
 
-            D_i = tkw.read(D, elements_per_thread=1)
+            D_i = tkw.read(D, mapping=D_read_mapping_flip_h_m, elements_per_thread=1)
             dp_ij_sub = tkw.cast(dp_ij, tkl.f16) - tkw.broadcast(D_i, [B, BN, H, M_qs, K2_kvs])
             tkw.write(dp_ij_sub, dp_sub, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
 
@@ -1922,7 +1928,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
     options = set_default_run_config(options)
     attention_bwd = wave_compile(options, attention_bwd)
 
-    D = torch.sum(do.transpose(-2, -3) * o_ref, -1)
+    D = torch.sum(do * o_ref.transpose(-2, -3), -1)
 
     dq = torch.zeros_like(q)
     dk = torch.zeros_like(k)
@@ -1963,7 +1969,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
 
     assert_close(dv, dv_ref.transpose(-2, -3), **dv_cmp_params)
 
-    dp_sub_ref = (dp_ref - D.reshape((batch, n, heads, q_seq_len, 1))).to(torch.float16)
+    dp_sub_ref = (dp_ref - D.transpose(-2, -1).reshape((batch, n, heads, q_seq_len, 1))).to(torch.float16)
     assert_close(dp, dp_ref.transpose(-2, -3), **cmp_params)
     assert_close(dp_sub, dp_sub_ref, **cmp_params)
 
