@@ -881,7 +881,7 @@ def get_evoformer_attention_bwd_kernel(
         outputs={B: i, BN: j, H: k, N_vd: l, M_qs: m},
     )
 
-    D_read_mapping_flip_h_m = tkw.IndexMapping(
+    D_lse_read_mapping_flip_h_m = tkw.IndexMapping(
         num_iterators=4,
         inputs={B: i, BN: j, M_qs: l, H: k},
         outputs={B: i, BN: j, H: k, M_qs: l},
@@ -926,7 +926,7 @@ def get_evoformer_attention_bwd_kernel(
         k: tkl.Memory[B, BN, K2_kvs, H, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, BN, K2_kvs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         do: tkl.Memory[B, BN, M_qs, H, N_vd, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        lse: tkl.Memory[B, BN, H, M_qs, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        lse: tkl.Memory[B, BN, M_qs, H, GLOBAL_ADDRESS_SPACE, tkl.f16],
         D: tkl.Memory[B, BN, M_qs, H, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dq: tkl.Memory[B, BN, H, M_qs, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
         dk: tkl.Memory[B, BN, K2_kvs, H, K1_qkd, GLOBAL_ADDRESS_SPACE, tkl.f16],
@@ -965,7 +965,7 @@ def get_evoformer_attention_bwd_kernel(
             s_ij = scale_s_reg * s_unscaled_ij
             tkw.write(s_ij, s, mapping=s_dp_ds_write_mapping_flip_h_m, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
             s_ij = tkw.permute(s_ij, [B, BN, H, K2_kvs, M_qs])
-            lse_i = tkw.read(lse, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
+            lse_i = tkw.read(lse, mapping=D_lse_read_mapping_flip_h_m, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
             p_ij = tkw.exp2(log2e * (tkw.cast(s_ij, tkl.f16) - lse_i))
             tkw.write(
                 p_ij,
@@ -990,7 +990,7 @@ def get_evoformer_attention_bwd_kernel(
             dp_ij = tkw.permute(dp_ij, [B, BN, H, M_qs, K2_kvs])
             tkw.write(dp_ij, dp, mapping=s_dp_ds_write_mapping_flip_h_m, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
 
-            D_i = tkw.read(D, mapping=D_read_mapping_flip_h_m, elements_per_thread=1)
+            D_i = tkw.read(D, mapping=D_lse_read_mapping_flip_h_m, elements_per_thread=1)
             dp_ij_sub = tkw.cast(dp_ij, tkl.f16) - tkw.broadcast(D_i, [B, BN, H, M_qs, K2_kvs])
             tkw.write(dp_ij_sub, dp_sub, mapping=s_dp_ds_write_mapping_flip_h_m, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
 
@@ -1951,7 +1951,7 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
         k,
         v,
         do,
-        lse_ref,
+        lse_ref.transpose(-1, -2).contiguous(),
         D,
         dq,
         dk,
@@ -1975,9 +1975,9 @@ def testEvoformerAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]
 
     assert_close(dv, dv_ref.transpose(-2, -3), **dv_cmp_params)
 
-    dp_sub_ref = (dp_ref - D.transpose(-2, -1).reshape((batch, n, heads, q_seq_len, 1))).to(torch.float16)
+    dp_sub_ref = (dp_ref.transpose(-2, -3) - D.reshape((batch, n, q_seq_len, heads, 1))).to(torch.float16)
     assert_close(dp, dp_ref.transpose(-2, -3), **cmp_params)
-    assert_close(dp_sub, dp_sub_ref.transpose(-2, -3), **cmp_params)
+    assert_close(dp_sub, dp_sub_ref, **cmp_params)
 
     assert_close(ds, ds_ref.transpose(-2, -3), **ds_cmp_params)
 
