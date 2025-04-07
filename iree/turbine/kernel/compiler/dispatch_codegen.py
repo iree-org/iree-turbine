@@ -330,11 +330,6 @@ class DispatchEntrypoint(BoundKernelSignature):
             result_type = F32Type.get()
             zero_value = arith_d.constant(result_type, FloatAttr.get(result_type, 0))
             linear_arg_value = self._abi_value_by_reference[binding.reference]
-            return stream_d.binding_subspan(
-                binding.as_mlir_type(),
-                linear_arg_value,
-                byte_offset=zero_value,
-                dynamic_dims=[],
-            )
+            return linear_arg_value
 
         raise ValidationError(f"Unhandled binding type: {binding}")
