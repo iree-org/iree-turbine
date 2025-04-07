@@ -154,7 +154,10 @@ def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
                 try:
                     queue.put(func())
                 except Exception as exc:
-                    queue.put(str(exc))
+                    # Return a short error string for printing. The full error
+                    # and traceback appear on stderr since we 'raise' here.
+                    err_str = str(exc).splitlines()[0]
+                    queue.put(err_str)
                     raise
 
             process = Process(target=proc_fn)
