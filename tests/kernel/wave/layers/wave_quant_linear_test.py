@@ -133,11 +133,6 @@ def testQLinearPerTensor1DBatchNoBias():
     test_inputs = torch.randn(batch, input_len, in_features, dtype=dtype, device=device)
     ref_output = ref_linear.forward(test_inputs)
     wave_output = wave_linear.forward(test_inputs)
-    assert_close(
-        wave_output,
-        ref_output,
-        atol=1e-1,
-        rtol=1e-1,
-        check_dtype=False,
-        check_device=False,
-    )
+
+    rmse_error = torch.sqrt(torch.mean((wave_output - ref_output) ** 2)).item()
+    assert rmse_error < 1e-2, "RMSE is not less than the threshold"
