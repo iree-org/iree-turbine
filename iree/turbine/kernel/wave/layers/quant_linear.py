@@ -6,14 +6,12 @@
 
 import torch
 from torch import nn
-from torch.testing import assert_close
 import math
 import warnings
 
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
 )
@@ -24,7 +22,6 @@ from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
-from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.utils.general_utils import (
@@ -102,8 +99,8 @@ def get_quant_linear_kernel(
         b_scale = tkl.Register[N, K, tkl.f16](1 / weight_scale.item())
         b_clamp_max = tkl.Register[N, K, tkl.f16](qdtype_max)
         b_clamp_min = tkl.Register[N, K, tkl.f16](qdtype_min)
-        a_scale_deq = tkl.Register[B, M, N, tkl.f32](input_scale.item())
-        b_scale_deq = tkl.Register[B, M, N, tkl.f32](weight_scale.item())
+        a_scale_deq = tkl.Register[B, M, N, tkl.f16](input_scale.item())
+        b_scale_deq = tkl.Register[B, M, N, tkl.f16](weight_scale.item())
 
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(
@@ -116,11 +113,12 @@ def get_quant_linear_kernel(
             b_reg *= b_scale
             b_reg = clamp_tensor(b_reg, b_clamp_min, b_clamp_max)
             acc = tkw.mma(a_reg, b_reg, acc)
-            acc *= a_scale_deq * b_scale_deq
             return acc
 
+        o = repeat
+        o = tkw.cast(o, tkl.f16) * a_scale_deq * b_scale_deq
         tkw.write(
-            tkw.cast(repeat, tkl.f16),
+            o,
             result,
         )
 
