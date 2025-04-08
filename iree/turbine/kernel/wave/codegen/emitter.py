@@ -623,6 +623,8 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
                 rhs = stack.pop()
                 _enforce_non_rational(lhs, term)
                 _enforce_non_rational(rhs, term)
+                rhs = _get_ir_value(rhs)
+                lhs = _get_ir_value(lhs)
                 elem_type = get_type_or_element_type(rhs.type)
                 res = arith_d.xori(*_broadcast(lhs, rhs))
                 stack.append(res)
