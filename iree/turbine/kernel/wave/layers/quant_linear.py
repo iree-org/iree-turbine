@@ -98,9 +98,6 @@ def get_quant_linear_kernel(
         a_scale = tkl.Register[B, M, K, input_wtype](1 / input_scale.item())
         a_clamp_max = tkl.Register[B, M, K, input_wtype](qdtype_max)
         a_clamp_min = tkl.Register[B, M, K, input_wtype](qdtype_min)
-        b_scale = tkl.Register[N, K, input_wtype](1 / weight_scale.item())
-        b_clamp_max = tkl.Register[N, K, input_wtype](qdtype_max)
-        b_clamp_min = tkl.Register[N, K, input_wtype](qdtype_min)
         a_scale_deq = tkl.Register[B, M, N, input_wtype](input_scale.item())
         b_scale_deq = tkl.Register[B, M, N, input_wtype](weight_scale.item())
 
@@ -112,8 +109,7 @@ def get_quant_linear_kernel(
             b_reg = tkw.read(b)
             a_reg *= a_scale
             a_reg = clamp_tensor(a_reg, a_clamp_min, a_clamp_max)
-            b_reg *= b_scale
-            b_reg = clamp_tensor(b_reg, b_clamp_min, b_clamp_max)
+            b_reg = tkw.cast(b_reg, torch_dtype_to_wave(quant_dtype))
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
@@ -209,7 +205,7 @@ class WaveQuantLinear(nn.Module):
         dtype=None,
     ):
         device = device or torch.device("cuda:0")
-        dtype = dtype or torch.float16
+        self.dtype = dtype or torch.float16
 
         if device.type != "cuda":
             raise ValueError(f"{self.__class__.__name__} only support GPU device.")
@@ -244,8 +240,19 @@ class WaveQuantLinear(nn.Module):
             [self.weight_scale, self.input_scale, self.qdtype],
             use_bias=bias,
         )
-        if bias:
-            raise ValueError("Bias is currently not supported")
+        self.quantized_weight = (
+            self.quantize_tensor(self.weight.detach().cpu(), self.weight_scale)
+            .to(dtype)
+            .to(device)
+        )
+
+    def quantize_tensor(self, tensor: torch.Tensor, scale: torch.Tensor):
+        quant_tensor = torch.clamp(
+            (tensor / scale),
+            torch_dtype_range(self.qdtype)[0],
+            torch_dtype_range(self.qdtype)[1],
+        )
+        return quant_tensor
 
     def reset_parameters(self) -> None:
         # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with
@@ -278,12 +285,14 @@ class WaveQuantLinear(nn.Module):
         }
         if self.bias is None:
             self.kernel(
-                input.view(flat_batch, input_len, input.shape[-1]), self.weight, output
+                input.view(flat_batch, input_len, input.shape[-1]),
+                self.quantized_weight,
+                output,
             )
         else:
             self.kernel(
                 input.view(flat_batch, input_len, input.shape[-1]),
-                self.weight,
+                self.quantized_weight,
                 self.bias,
                 output,
             )
