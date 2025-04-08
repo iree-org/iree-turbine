@@ -53,7 +53,7 @@ from ...compiler.base import CodegenError, NDEBUG
 
 from ...lang.wave_types import IndexSymbol
 from ..constraints import Constraint, TilingConstraint
-from ..._support.indexing import IndexingContext, IndexExpr
+from ..._support.indexing import IndexingContext, IndexExpr, xor
 from ..compile_options import WaveCompileOptions
 
 
@@ -213,7 +213,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
     use_affine_expr = _use_affine_expr
     stack: list[OpResult] = []
 
-    def _get_ir_value(arg):
+    def _get_ir_value(arg) -> Value:
         if isinstance(arg, _ApplyExpr):
             args = _broadcast(*arg.args)
             expr = arg.expr
@@ -239,7 +239,7 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
             and a.element_type == b.element_type
         )
 
-    def _broadcast(*args):
+    def _broadcast(*args) -> tuple[Value, ...]:
         assert len(args) > 0
         if len(args) == 1:
             return args
@@ -618,6 +618,16 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
                     stack.append(_Rational(_get_const(1), base))
                 else:
                     stack.append(base)
+            case xor():
+                lhs = stack.pop()
+                rhs = stack.pop()
+                _enforce_non_rational(lhs, term)
+                _enforce_non_rational(rhs, term)
+                rhs = _get_ir_value(rhs)
+                lhs = _get_ir_value(lhs)
+                elem_type = get_type_or_element_type(rhs.type)
+                res = arith_d.xori(*_broadcast(lhs, rhs))
+                stack.append(res)
             case sympy.UnevaluatedExpr():
                 continue
             case sympy.functions.elementary.piecewise.ExprCondPair():
