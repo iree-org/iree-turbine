@@ -3,7 +3,7 @@ import shutil
 import warnings
 
 from pathlib import Path
-from typing import Union
+from typing import Union, OrderedDict
 
 from iree.compiler.tools.core import compile_file, CompilerToolError
 
@@ -115,21 +115,58 @@ def _get_module_asm(
     return module_asm
 
 
+class ConvLaunchableRuntimeCache:
+    def __init__(self, cache_limit: int | None = None):
+        self.cache_limit = cache_limit
+        self.session_cache: OrderedDict[str, Launchable] = OrderedDict()
+
+    def set_cache_limit(self, new_cache_limit: int | None):
+        self.cache_limit = new_cache_limit
+
+    def add_to_session_cache(self, key: str, launchable: Launchable):
+        self.session_cache[key] = launchable
+        self.session_cache.move_to_end(key)
+        if (
+            self.cache_limit is not None
+            and len(self.session_cache.keys()) > self.cache_limit
+        ):
+            self.session_cache.popitem(last=False)
+
+    def get(self, key: str) -> Launchable | None:
+        return self.session_cache.get(key, None)
+
+    @staticmethod
+    def get_launchable_cache(cache_limit: int | None = None):
+        global _launchable_cache
+        if "_launchable_cache" in globals():
+            _launchable_cache.set_cache_limit(cache_limit)
+            return _launchable_cache
+        return ConvLaunchableRuntimeCache(cache_limit)
+
+
 def get_launchable(
     signature: ConvSignature, *, use_custom=True, cache_only=False
 ) -> Launchable:
     func_name = signature.get_func_name()
+    session_cache_key = func_name + cache_only * "_no_jit"
+    launch_cache = ConvLaunchableRuntimeCache.get_launchable_cache()
+    launch = launch_cache.get(session_cache_key)
+    if launch:
+        return launch
     cache_dir = CACHE_BASE_DIR / func_name if is_cache_enabled() else None
     if cache_only:
-        return Launchable.from_file_cache_only(
+        launch = Launchable.from_file_cache_only(
             cache_dir,
             parameter_providers=(),
             entry_point=func_name,
         )
-    module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
-    return Launchable.jit_compile(
-        module_asm,
-        parameter_providers=(),
-        entry_point=func_name,
-        file_cache_dir=cache_dir,
-    )
+    else:
+        module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
+        launch = Launchable.jit_compile(
+            module_asm,
+            parameter_providers=(),
+            entry_point=func_name,
+            file_cache_dir=cache_dir,
+        )
+    launch_cache.add_to_session_cache(session_cache_key, launch)
+    return launch
