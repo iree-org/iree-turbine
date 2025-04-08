@@ -318,8 +318,6 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    vector_type = VectorType(acc.type)
-
     hardware_constraints = [
         constraint
         for constraint in emitter.constraints
@@ -327,6 +325,22 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     ]
     if not hardware_constraints:
         raise CodegenError("No hardware constraints found.")
+
+    if mma_type is None:
+        mma_type = hardware_constraints[0].mma_type
+
+    if mma_type == MMAType.GenericDot:
+        res_type = acc.type
+        acc = vector_d.extract(acc, static_position=[0], dynamic_position=[])
+        val = arith_d.mulf(values[0], values[1])
+        if val.type.element_type != acc.type:
+            cast_type = VectorType.get(val.type.shape, acc.type)
+            val = arith_d.extf(cast_type, val)
+
+        val = vector_d.reduction(acc.type, vector_d.CombiningKind.ADD, val, acc=acc)
+        val = vector_d.splat(res_type, val)
+        emitter.bind_node_proxy(node, IRProxyValue(val))
+        return
 
     m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
     result = emit_mfma(m, n, k, acc, values)

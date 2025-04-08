@@ -42,6 +42,8 @@ Values: 0xABCD where:
 
 
 class MMAType(Enum):
+    GenericDot = 0x0000
+
     # Intrinsics introduced in CDNA1
     F32_16x16x16_F16 = 0x1020
     F32_32x32x8_F16 = 0x1021
@@ -145,6 +147,8 @@ class HardwareConstraint(Constraint):
         if mma_type == None:
             mma_type = self.mma_type
         match mma_type:
+            case MMAType.GenericDot:
+                return (8, 8, 4)
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 return (16, 16, 16)
             case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
@@ -172,6 +176,8 @@ class HardwareConstraint(Constraint):
             mma_type = self.mma_type
         match mma_type:
             # (M x K, N x K) -> M x N
+            case MMAType.GenericDot:
+                offset = [0, 0, 0]
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 offset = [
                     Piecewise(
@@ -310,6 +316,17 @@ class HardwareConstraint(Constraint):
         offset = self.mma_index_offset(mma_type)
         match mma_type:
             # (M x K, N x K) -> M x N
+            case MMAType.GenericDot:
+                size = [
+                    1,  # M
+                    1,  # N
+                    4,  # K
+                ]
+                stride = [
+                    4,  # M
+                    1,  # N
+                    1,  # K
+                ]
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 size = [
                     Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
