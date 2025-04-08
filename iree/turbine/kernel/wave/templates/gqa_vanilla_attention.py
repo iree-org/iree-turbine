@@ -180,7 +180,10 @@ def get_gqa_bshd_attention_kernel(
             x_j *= qk_scaling
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
-            e_delta = tkw.exp2(x_j - m_j + fp8_offset)
+            if use_fp8:
+                e_delta = tkw.exp2(x_j - m_j + fp8_offset)
+            else:
+                e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
             if use_fp8:
@@ -196,7 +199,12 @@ def get_gqa_bshd_attention_kernel(
 
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
-        res = res_mm * reciprocal_sum * v_dequant
+        if use_fp8:
+            res = res_mm * reciprocal_sum * v_dequant
+        else:
+            res = res_mm * reciprocal_sum
+        if wave_output_dtype != tkl.f32:
+            res = tkw.cast(res, wave_output_dtype)
         tkw.write(res, c, mapping=mapping)
 
     hyperparams = {
