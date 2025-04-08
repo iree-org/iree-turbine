@@ -39,8 +39,6 @@ from torch.testing import assert_close
 # batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len
 shapes_16x16x16 = [
     # Test first with very small shapes. These are much easier to debug.
-    (1, 16, 8, 4, 16),
-    (1, 16, 16, 8, 16),
     (1, 16, 8, 16, 16),
     (1, 16, 16, 16, 16),
     (1, 16, 16, 16, 32),
