@@ -298,7 +298,12 @@ def concatenate_outputs(
             assert (
                 metadata.query_index > 0
             ), f"Expected query index > 0, got {metadata.query_index}"
-            new_node = [x.fx_node for x in new_user.node_args[i]] + [new_node.fx_node]
+            args = (
+                new_user.node_args[i]
+                if isinstance(new_user.node_args[i], Sequence)
+                else [new_user.node_args[i]]
+            )
+            new_node = [x.fx_node for x in args] + [new_node.fx_node]
         return new_node
     return replace_node(user, new_user, node, new_node, i)
 
@@ -340,6 +345,7 @@ def update_users(
                 continue
             if not isinstance(indices, Sequence):
                 indices = [indices]
+
             for i in indices:
                 # Check if an update is required.
                 if isinstance(new_user.node_args[i], Sequence):
@@ -620,6 +626,7 @@ def dfs(
         node, metadata = nodes_to_expand.pop(0)
         if (node, metadata) in visited:
             continue
+
         visited.add((node, metadata))
         dim_scaling = get_dim_scaling(constraints, node)
         nodes_to_expand = expand_node(

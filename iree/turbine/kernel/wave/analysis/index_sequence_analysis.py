@@ -119,8 +119,12 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
+            dims = list(custom.index.keys())
+            if isinstance(custom, ReduceOp):
+                dims = dims + [custom.dim]
+
             update_vector_shapes = [
-                dim for dim in custom.index if dim in hw_constraint.vector_shapes
+                dim for dim in dims if dim in hw_constraint.vector_shapes
             ]
             if update_vector_shapes:
                 custom.vector_shapes = {}
@@ -607,7 +611,6 @@ def get_reduce_mapping(
         )
 
         for dim in custom.indexing_dims:
-            elements_per_thread = 1
             stride = compute_stride(
                 custom.indexing_dims, hardware_constraint.vector_shapes, dim
             )
@@ -617,13 +620,21 @@ def get_reduce_mapping(
             ), f"Multiple workgroup constraints for dimension {dim}"
             if wg_constraint:
                 workgroup_dim = wg_constraint[0].workgroup_dim
+                # tile_size = wg_constraint[0].tile_size
+                # threads_count = hardware_constraint.threads_per_block[workgroup_dim] if workgroup_dim < 3 else 1
+                elements_per_thread = (
+                    1  # sympy.Max(sympy.ceiling(tile_size / threads_count), 1)
+                )
             else:
+                elements_per_thread = hardware_constraint.vector_shapes[dim]
+                index[dim] = IndexSequence(0, elements_per_thread, stride)
                 continue
 
             index[dim] = hardware_constraint.apply_read_write_thread_mapping(
                 dim, workgroup_dim, elements_per_thread, stride
             )
 
+        print("index", index)
         reduce_mapping[custom] = index
 
     return reduce_mapping

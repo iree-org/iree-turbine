@@ -16,6 +16,7 @@ from copy import copy
 
 
 def decompose_dot_mma(trace: CapturedTrace, constraints: list[Constraint]):
+    return
     hardware_constraint = next(
         c for c in constraints if isinstance(c, HardwareConstraint)
     )
