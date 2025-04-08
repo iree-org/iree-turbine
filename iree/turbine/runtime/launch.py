@@ -93,6 +93,34 @@ class Launchable:
             entry_point=entry_point,
         )
 
+    @staticmethod
+    def from_file_cache_only(
+        file_cache_dir: Union[str, Path],
+        *,
+        parameter_providers: Sequence[ParameterProvider] = (),
+        entry_point: str = "main",
+    ) -> "Launchable":
+        cache_dir = Path(file_cache_dir)
+        if not cache_dir.is_dir():
+            raise ValueError(f"Specified cache_dir, {cache_dir}, does not exist.")
+
+        def callback(device: Device):
+            key_hash = hashlib.sha1(
+                device.type_cache_key.encode(), usedforsecurity=False
+            ).hexdigest()
+            vmfb_path = Path(file_cache_dir) / f"{key_hash}.vmfb"
+            if not vmfb_path.is_file():
+                raise OSError(
+                    f"No vmfb found at {vmfb_path}. Please try running with jit compilation enabled, "
+                    f"or verify {Path(file_cache_dir).parent} is the correct cache directory to use."
+                )
+            vm_instance = device.vm_instance
+            logger.debug("Loading vmfb from cache: %s", str(vmfb_path))
+            vmfb = vmfb_path.read_bytes()
+            return entry_point, VmModule.copy_buffer(vm_instance, vmfb)
+
+        return Launchable(callback, parameter_providers=parameter_providers)
+
     def preload(self, device: torch.device):
         """Pre-loads (or JIT compiles) for the given torch.device."""
         turbine_device = get_device_from_torch(device)

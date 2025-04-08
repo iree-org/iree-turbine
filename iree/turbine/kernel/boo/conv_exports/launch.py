@@ -17,6 +17,7 @@ __all__ = [
     "is_cache_enabled",
     "clear_cache_dir",
     "get_launchable",
+    "set_boo_cache",
 ]
 
 _default_cache_base_dir = Path.home() / ".cache" / "turbine_kernels" / "boo"
@@ -68,7 +69,9 @@ def _out_of_process_compile(func_name, key_hashes_and_flags):
             logger.debug("failed compilation with diagnostics: %s", str(e))
 
 
-def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> str:
+def _get_module_asm(
+    signature: ConvSignature, func_name: str | None = None, use_custom: bool = True
+) -> str:
     func_name = func_name or signature.get_func_name()
     cache_dir = CACHE_BASE_DIR / func_name
     mlir_path = cache_dir / f"{func_name}.mlir"
@@ -78,7 +81,7 @@ def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> s
         return mlir_path.read_text()
 
     e = export(
-        signature.get_nn_module(use_custom=True),
+        signature.get_nn_module(use_custom=use_custom),
         args=signature.get_sample_conv_args(splat_value=0),
         function_name=func_name,
     )
@@ -112,10 +115,18 @@ def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> s
     return module_asm
 
 
-def get_launchable(signature: ConvSignature) -> Launchable:
+def get_launchable(
+    signature: ConvSignature, *, use_custom=True, cache_only=False
+) -> Launchable:
     func_name = signature.get_func_name()
-    module_asm = _get_module_asm(signature, func_name)
     cache_dir = CACHE_BASE_DIR / func_name if is_cache_enabled() else None
+    if cache_only:
+        return Launchable.from_file_cache_only(
+            cache_dir,
+            parameter_providers=(),
+            entry_point=func_name,
+        )
+    module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
     return Launchable.jit_compile(
         module_asm,
         parameter_providers=(),
