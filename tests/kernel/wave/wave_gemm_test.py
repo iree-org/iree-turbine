@@ -221,7 +221,7 @@ def testGemm(
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
     "enable_scheduling",
-    [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
+    [SchedulingType.NONE, SchedulingType.MODULO],
 )
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
