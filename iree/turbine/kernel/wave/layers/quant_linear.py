@@ -6,32 +6,36 @@
 
 import torch
 from torch import nn
-from torch.testing import assert_close
 import math
+import warnings
 
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
-)
-from iree.turbine.kernel.wave.utils.run_utils import (
-    set_default_run_config,
 )
 from iree.turbine.kernel.wave.utils.mma_utils import (
     get_mfma_load_elems_per_thread,
     get_mfma_store_elems_per_thread,
 )
-from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
+from iree.turbine.kernel.wave.utils.run_utils import (
+    set_default_run_config,
+)
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
+from iree.turbine.kernel.wave.utils.general_utils import (
+    torch_dtype_to_wave,
+    torch_dtype_range,
+)
 
 
-def get_linear_kernel(
+def get_quant_linear_kernel(
     shape: tuple[int],
+    input_dtype: torch.dtype,
+    quant_params,
     dynamic_dims: bool = False,
-    mfma_variant: MMAType = MMAType.F32_16x16x16_F16,
+    mfma_variant: MMAType = MMAType.F32_16x16x32_F8,
     use_bias: bool = False,
 ):
     # Input sizes
@@ -72,6 +76,16 @@ def get_linear_kernel(
     if dynamic_dims:
         constraints += [tkw.Assumption(K > BLOCK_K * 4)]
 
+    input_wtype = torch_dtype_to_wave(input_dtype)
+    [weight_scale, input_scale, quant_dtype] = quant_params
+    [qdtype_min, qdtype_max] = torch_dtype_range(quant_dtype)
+
+    def clamp_tensor(source_reg, lower_bound, upper_bound):
+        clamped = tkw.minimum(source_reg, upper_bound)
+        clamped = tkw.maximum(clamped, lower_bound)
+        clamped = tkw.cast(clamped, torch_dtype_to_wave(quant_dtype))
+        return clamped
+
     # Wave-level micro-kernel.
     # Since warps are not directly addressable, there is no
     # explicit notion of a warp id (like a workgroup or thread id).
@@ -79,35 +93,52 @@ def get_linear_kernel(
     # and data movement strategy is determined during the compilation process.
     # These can be influenced by introducing constraints.
     def gemm_core(a, b, c_reg, result):
+        # TODO: Registers for quantization scaling of inputs. Remove once scalar
+        # codegen is enabled.
+        a_scale = tkl.Register[B, M, K, input_wtype](1 / input_scale.item())
+        a_clamp_max = tkl.Register[B, M, K, input_wtype](qdtype_max)
+        a_clamp_min = tkl.Register[B, M, K, input_wtype](qdtype_min)
+        b_scale = tkl.Register[N, K, input_wtype](1 / weight_scale.item())
+        b_clamp_max = tkl.Register[N, K, input_wtype](qdtype_max)
+        b_clamp_min = tkl.Register[N, K, input_wtype](qdtype_min)
+        a_scale_deq = tkl.Register[B, M, N, input_wtype](input_scale.item())
+        b_scale_deq = tkl.Register[B, M, N, input_wtype](weight_scale.item())
+
         @tkw.reduction(K, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
             a_reg = tkw.read(a)
             b_reg = tkw.read(b)
+            a_reg *= a_scale
+            a_reg = clamp_tensor(a_reg, a_clamp_min, a_clamp_max)
+            b_reg *= b_scale
+            b_reg = clamp_tensor(b_reg, b_clamp_min, b_clamp_max)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
+        o = repeat
+        o = tkw.cast(o, input_wtype) * a_scale_deq * b_scale_deq
         tkw.write(
-            tkw.cast(repeat, tkl.f16),
+            o,
             result,
         )
 
     @tkw.wave(constraints)
     def gemm(
-        a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[B, M, K, ADDRESS_SPACE, input_wtype],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, input_wtype],
+        result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, input_wtype],
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
         gemm_core(a, b, c_reg, result)
 
     @tkw.wave(constraints)
     def gemm_with_bias(
-        a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        bias: tkl.Memory[N, ADDRESS_SPACE, tkl.f16],
-        result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[B, M, K, ADDRESS_SPACE, input_wtype],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, input_wtype],
+        bias: tkl.Memory[N, ADDRESS_SPACE, input_wtype],
+        result: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, input_wtype],
     ):
         bias_reg = tkw.read(bias)
         bias_reg = tkw.broadcast(bias_reg, target_shape=[B, M, N])
@@ -145,13 +176,38 @@ def get_linear_kernel(
     return compiled_gemm
 
 
-LINEAR_SUPPORTED_DTYPE = {torch.float16}
+def extract_quant_params(quant_params: dict):
+    weight_scale = (
+        quant_params["weight_scale"]
+        .clone()
+        .detach()
+        .view(quant_params["weight_scale_shape"])
+    )
+    input_scale = (
+        quant_params["input_scale"]
+        .clone()
+        .detach()
+        .view(quant_params["input_scale_shape"])
+    )
+    qdtype = quant_params["qdtype"]
+    return weight_scale, input_scale, qdtype
 
 
-class WaveLinear(nn.Module):
+LINEAR_SUPPORTED_DTYPE = {torch.bfloat16, torch.float16}
+
+
+class WaveQuantLinear(nn.Module):
     """Fork of nn.Linear implementation but modified to handle Wave Kernel"""
 
-    def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        quant_params,
+        bias=True,
+        device=None,
+        dtype=None,
+    ):
         device = device or torch.device("cuda:0")
         dtype = dtype or torch.float16
 
@@ -174,9 +230,22 @@ class WaveLinear(nn.Module):
         else:
             self.register_parameter("bias", None)
         self.reset_parameters()
-
         # Wave related initialization
-        self.kernel = get_linear_kernel([in_features, out_features], use_bias=bias)
+        self.weight_scale, self.input_scale, self.qdtype = extract_quant_params(
+            quant_params
+        )
+        if self.weight_scale.numel() != 1 or self.input_scale.numel() != 1:
+            raise ValueError("Only per-tensor quantization is currently supported")
+        if self.qdtype != torch.float8_e4m3fnuz:
+            warnings.warn("Untested quantization type")
+        self.kernel = get_quant_linear_kernel(
+            [in_features, out_features],
+            dtype,
+            [self.weight_scale, self.input_scale, self.qdtype],
+            use_bias=bias,
+        )
+        if bias:
+            raise ValueError("Bias is currently not supported")
 
     def reset_parameters(self) -> None:
         # Setting a=sqrt(5) in kaiming_uniform is the same as initializing with

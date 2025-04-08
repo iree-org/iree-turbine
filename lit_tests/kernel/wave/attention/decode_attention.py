@@ -57,18 +57,16 @@ def test_paged_flash_decoding():
     phase_0 = wave_compile(options, phase_0)
     print(phase_0.asm)
 
-    # CHECK-LABEL:          func.func @phase_0
+    # CHECK-LABEL:          test_paged_flash_decoding
+    # CHECK-DAG:               #[[map:.*]] = affine_map<()[s0] -> (s0 ceildiv 16)>
+    # CHECK:                func.func @phase_0
     # CHECK-DAG:               %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:               %[[C1:.*]] = arith.constant 1 : index
-    # CHECK-DAG:               %[[C16:.*]] = arith.constant 16 : index
     # CHECK-COUNT-2:           vector.load
     # CHECK:                   %[[COUNT0:.*]] = arith.minsi %{{.*}}, %{{.*}} : vector<1xindex>
     # CHECK:                   %[[COUNT1:.*]] = vector.extract %[[COUNT0]][0] : index from vector<1xindex>
     # CHECK-COUNT-2:           vector.load
-    # CHECK:                   %[[D36:.*]] = arith.subi %[[COUNT1]], %[[C1]] : index
-    # CHECK:                   %[[D37:.*]] = arith.divui %[[D36]], %[[C16]] : index
-    # CHECK:                   %[[D38:.*]] = arith.addi %[[D37]], %[[C1]] : index
-    # CHECK:                   %[[COUNT2:.*]] = arith.select %{{.*}}, %[[C0]], %[[D38]] : index
+    # CHECK:                   %[[COUNT2:.*]] = affine.apply #[[map]]()[%[[COUNT1]]]
     # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT2]] step %[[C1]]
     # CHECK:                        amdgpu.lds_barrier
     # 1 masked load block table, 1 for k_cache, and 1 for v_cache.

@@ -71,15 +71,6 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
     return default_test_shapes
 
 
-def xfail_unaligned(func):
-    def wrapper(shape):
-        if shape[-1] % 2 != 0:
-            pytest.xfail("Unaligned shape is not expected to work on this test yet.")
-        func(shape)
-
-    return wrapper
-
-
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy")[:1])
 def test_dump_vmfb(shape, tmp_path, request):
@@ -95,7 +86,6 @@ def test_dump_vmfb(shape, tmp_path, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -114,8 +104,8 @@ def test_dump_vmfb(shape, tmp_path, request):
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.read(a)
+        tkw.write(res, b)
 
     vmfb_file = tmp_path / "test.vmfb"
     options = WaveCompileOptions(
@@ -151,7 +141,6 @@ def test_copy(shape, use_buffer_ops, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -170,8 +159,8 @@ def test_copy(shape, use_buffer_ops, request):
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.read(a)
+        tkw.write(res, b)
 
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape, dtype=torch.float16)
@@ -210,7 +199,6 @@ def test_dynamic_copy(shape, use_buffer_ops, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -229,8 +217,8 @@ def test_dynamic_copy(shape, use_buffer_ops, request):
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.read(a)
+        tkw.write(res, b)
 
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape, dtype=torch.float16)
@@ -265,7 +253,6 @@ def test_transpose_read(shape, use_buffer_ops, request):
     wave_size = 64
     BLOCK_N = 1
     BLOCK_M = sympy.Max(sympy.Min(M, 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_M // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -290,8 +277,8 @@ def test_transpose_read(shape, use_buffer_ops, request):
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[N, M, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
-        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.read(a, mapping=mapping)
+        tkw.write(res, b)
 
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape[::-1], dtype=torch.float16)
@@ -325,7 +312,6 @@ def test_transpose_write(shape, use_buffer_ops, request):
     wave_size = 64
     BLOCK_M = 1
     BLOCK_N = sympy.Max(sympy.Min(N, 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -350,8 +336,8 @@ def test_transpose_write(shape, use_buffer_ops, request):
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[N, M, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        tkw.write(res, b, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.read(a)
+        tkw.write(res, b, mapping=mapping)
 
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape[::-1], dtype=torch.float16)
@@ -390,7 +376,6 @@ def test_offset_read(shape, use_buffer_ops, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -420,14 +405,13 @@ def test_offset_read(shape, use_buffer_ops, request):
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
+        offset = tkw.read(off)
         res = tkw.read(
             a,
             mapping=mapping,
             mapping_dynamic_vals=(offset,),
-            elements_per_thread=ELEMS_PER_THREAD,
         )
-        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+        tkw.write(res, b)
 
     a = device_randn(shape, dtype=torch.float16)
     off = device_randint(shape[0], shape, dtype=torch.int32)
@@ -499,14 +483,13 @@ def test_offset_read_one(shape, use_buffer_ops, request):
         off: tkl.Memory[M, N1, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=1)
+        offset = tkw.read(off)
         res = tkw.read(
             a,
             mapping=mapping,
             mapping_dynamic_vals=(offset,),
-            elements_per_thread=ELEMS_PER_THREAD,
         )
-        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+        tkw.write(res, b)
 
     a = device_randn(shape, dtype=torch.float16)
     count = int(ELEMS_PER_THREAD)
@@ -551,7 +534,6 @@ def test_read_write_same(shape, use_buffer_ops, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -567,9 +549,9 @@ def test_read_write_same(shape, use_buffer_ops, request):
 
     @tkw.wave(constraints)
     def double(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
-        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.read(a)
         double = res + res
-        tkw.write(double, a, elements_per_thread=ELEMS_PER_THREAD)
+        tkw.write(double, a)
 
     a = device_randn(shape, dtype=torch.float16)
     ref = a + a
@@ -611,7 +593,6 @@ def test_set_symbol(shape, request):
     # TODO: Only ELEMS_PER_THREAD == 1
     # BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
     BLOCK_N = wave_size
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -645,14 +626,13 @@ def test_set_symbol(shape, request):
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
+        offset = tkw.read(off)
         tkw.set_symbol(S, offset)
         res = tkw.read(
             a,
             mapping=mapping,
-            elements_per_thread=ELEMS_PER_THREAD,
         )
-        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+        tkw.write(res, b)
 
     a = device_randn(shape, dtype=torch.float16)
     off = device_randint(shape[0], shape, dtype=torch.int32)
@@ -696,7 +676,6 @@ def test_apply_expr(shape, request):
     # TODO: Only ELEMS_PER_THREAD == 1
     # BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
     BLOCK_N = wave_size
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -730,15 +709,14 @@ def test_apply_expr(shape, request):
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
+        offset = tkw.read(off)
         offset = tkw.apply_expr(offset, lambda a: M - a - 1)
         tkw.set_symbol(S, offset)
         res = tkw.read(
             a,
             mapping=mapping,
-            elements_per_thread=ELEMS_PER_THREAD,
         )
-        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+        tkw.write(res, b)
 
     a = device_randn(shape, dtype=torch.float16)
     off = device_randint(shape[0], shape, dtype=torch.int32)
@@ -779,7 +757,6 @@ def test_conditional(shape, request):
     # TODO: Only ELEMS_PER_THREAD == 1
     # BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
     BLOCK_N = wave_size
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -799,14 +776,14 @@ def test_conditional(shape, request):
         mask: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        cond = tkw.read(mask, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.read(a)
+        cond = tkw.read(mask)
 
         cond = tkw.apply_expr(cond, lambda a: a > 0)
 
         @tkw.conditional(cond)
         def then():
-            tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+            tkw.write(res, b)
 
     a = device_randn(shape, dtype=torch.float16)
     mask = device_randint(2, shape, dtype=torch.int32)
@@ -844,7 +821,6 @@ def test_offset_write(shape, use_buffer_ops, request):
     BLOCK_M = 1
     # Tile size cannot be dynamic, so we use a fixed value here.
     BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -874,14 +850,13 @@ def test_offset_write(shape, use_buffer_ops, request):
         off: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=ELEMS_PER_THREAD)
-        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        offset = tkw.read(off)
+        res = tkw.read(a)
         tkw.write(
             res,
             b,
             mapping=mapping,
             mapping_dynamic_vals=(offset,),
-            elements_per_thread=ELEMS_PER_THREAD,
         )
 
     a = device_randn(shape, dtype=torch.float16)
@@ -961,14 +936,13 @@ def test_offset_write_one(shape, use_buffer_ops, request):
         off: tkl.Memory[M, N1, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        offset = tkw.read(off, elements_per_thread=1)
-        res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        offset = tkw.read(off)
+        res = tkw.read(a)
         tkw.write(
             res,
             b,
             mapping=mapping,
             mapping_dynamic_vals=(offset,),
-            elements_per_thread=ELEMS_PER_THREAD,
         )
 
     a = device_randn(shape, dtype=torch.float16)
@@ -1065,28 +1039,24 @@ def test_reduce_sum(shape, request):
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
-@xfail_unaligned
 def test_toy_online_softmax(shape):
     M = tkl.sym.M
     N = tkl.sym.N
     wave_size = 64
     BLOCK_M = 1
     BLOCK_N = tkl.sym.BLOCK_N
-    ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
+            threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, N, 0)]
     constraints += [tkw.TilingConstraint(N, BLOCK_N)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -1102,8 +1072,8 @@ def test_toy_online_softmax(shape):
             partial_max: tkl.Register[M, tkl.f32],
             partial_sum: tkl.Register[M, tkl.f32],
         ) -> tkl.Register[M, tkl.f32]:
-            lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-            rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+            lhs = tkw.read(a)
+            rhs = tkw.read(b)
             res = lhs * rhs
             partial_max = tkw.max(res, partial_max, dim=N)
             partial_sum = tkw.sum(res, partial_sum, dim=N)
@@ -1111,7 +1081,7 @@ def test_toy_online_softmax(shape):
 
         res_max, res_sum = repeat
         result = res_max / res_sum
-        tkw.write(result, c, elements_per_thread=1)
+        tkw.write(result, c)
 
     torch.manual_seed(1)
     a = device_randn(shape, dtype=torch.float32)
@@ -1124,8 +1094,7 @@ def test_toy_online_softmax(shape):
         subs={
             M: shape[0],
             N: shape[1],
-            BLOCK_N: min(128, shape[1]),
-            ELEMS_PER_THREAD: min(128, shape[1]) // wave_size,
+            BLOCK_N: max(min(128, shape[1]), wave_size),
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,

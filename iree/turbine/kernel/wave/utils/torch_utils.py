@@ -49,3 +49,13 @@ def device_randperm(*args, **kwargs):
 
 def device_zeros(*args, **kwargs):
     return to_default_device(torch.zeros(*args, **kwargs))
+
+
+def device_ones(*args, **kwargs):
+    return to_default_device(torch.ones(*args, **kwargs))
+
+
+def quantized_tensor(shape: tuple[int], dtype: torch.dtype, scale: float):
+    return torch.ceil(
+        torch.clamp(device_randn(shape, dtype=dtype) * scale, -scale, scale)
+    )
