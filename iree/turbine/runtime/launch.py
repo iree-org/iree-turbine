@@ -4,6 +4,14 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+# HERE BE HACKS
+import ctypes
+import sys
+inc_ref = ctypes.pythonapi.Py_IncRef
+inc_ref.argtypes = [ctypes.py_object]
+inc_ref.restype = None
+
+
 import hashlib
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, Union
@@ -19,9 +27,14 @@ from iree.compiler.api import (
 
 from iree.runtime import (
     create_io_parameters_module,
+    ExternalTimepointFlags,
+    ExternalTimepointType,
     HalBufferView,
     HalElementType,
+    HalExternalTimepoint,
+    HalFence,
     ParameterProvider,
+    SemaphoreCompatibility,
     VmContext,
     VmFunction,
     VmModule,
@@ -44,6 +57,52 @@ _NamedVmModule = Tuple[str, VmModule]
 _TargetBinary = Tuple[VmContext, VmFunction]
 _Loader = Callable[[Device], _NamedVmModule]
 
+dll = None
+
+def get_dll():
+    global dll
+    if dll is not None:
+        return dll
+    dll = ctypes.CDLL("libamdhip64.so")
+    dll.hipEventCreate.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_int32]
+    dll.hipEventCreate.restype = ctypes.c_int32
+
+    dll.hipEventRecord.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    dll.hipEventRecord.restype = ctypes.c_int32
+
+    dll.hipEventDestroy.argtypes = [ctypes.c_void_p]
+    dll.hipEventDestroy.restype = ctypes.c_int32
+
+    dll.hipStreamWaitEvent.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
+    dll.hipStreamWaitEvent.restype = ctypes.c_int32
+    return dll
+
+def get_raw_event():
+    dll = get_dll()
+    evt = ctypes.c_void_p(0)
+    ret = dll.hipEventCreate(evt, 2)
+    if ret != 0:
+        raise RuntimeError("Could not create event")
+    return evt
+
+def record_event(stream:int, evt: ctypes.c_void_p):
+    dll = get_dll()
+    ret = dll.hipEventRecord(evt, ctypes.c_void_p(stream))
+    if ret != 0:
+        raise RuntimeError("Could not record event")
+
+def wait_event(stream:int, evt: ctypes.c_void_p):
+    dll = get_dll()
+    ret = dll.hipStreamWaitEvent(ctypes.c_void_p(stream), evt, 0)
+    if ret != 0:
+        raise RuntimeError("Could not wait on event")
+
+def destroy_event(evt: ctypes.c_void_p):
+    pass
+    #dll = get_dll()
+    #ret = dll.hipEventDestroy(evt)
+    #if ret != 0:
+    #    raise RuntimeError("Could not destroy event")
 
 class Launchable:
     """Facilities for launching a compiled program (VMFB) on an attached device.
@@ -75,7 +134,7 @@ class Launchable:
         source: Any,
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
-        entry_point: str = "main",
+        entry_point: str = "main$async",
         file_cache_dir: Union[str, Path, None] = None,
     ) -> "Launchable":
         """
@@ -145,7 +204,7 @@ class Launchable:
         vm_module_callback: Callable[[Device], VmModule],
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
-        entry_point: str = "main",
+        entry_point: str = "main$async",
     ):
         def loader(device: Device) -> _NamedVmModule:
             return entry_point, vm_module_callback(device)
@@ -226,9 +285,45 @@ class Launchable:
                 f"Cannot invoke Launchable {self} without any Tensor args or an explicit device="
             )
 
+        wait_sem = turbine_device.hal_device.create_semaphore(0)
+        
+        wait_evt = get_raw_event()
+        record_event(torch.cuda.current_stream().cuda_stream, wait_evt)
+
+        t = HalExternalTimepoint()
+        t.compatibility = 2 # SemaphoreCompatibility.DEVICE_WAIT | SemaphoreCompatibility.DEVICE_WAIT
+        t.flags = 0 #ExternalTimepointFlags.NONE | ExternalTimepointFlags.NONE
+        if torch.version.hip is not None:
+            t.hip_event = wait_evt.value
+            wait_sem.import_timepoint(1, t)
+        else:
+            # TODO
+            #t.cuda_event = evt.cuda_event
+            wait_sem.import_timepoint(1, t)
+        
+        t2 = HalExternalTimepoint()
+        wait_sem.export_timepoint(
+            2,
+            3, #ExternalTimepointType.HIP_EVENT,
+            0, #ExternalTimepointFlags.NONE,
+            t2
+        )
+        
+        wait_fence = HalFence.create_at(wait_sem, 1)
+        signal_fence = HalFence.create_at(wait_sem, 2)
+        
+        arg_list.push_ref(wait_fence)
+        arg_list.push_ref(signal_fence)
+
         vm_context, vm_function = self._resolve_target_binary(turbine_device)
+        
         ret_list = VmVariantList(1)
         vm_context.invoke(vm_function, arg_list, ret_list)
+
+        wait_event(torch.cuda.current_stream().cuda_stream, ctypes.c_void_p(t2.hip_event))
+        #signal_fence.wait()
+        #destroy_event(ctypes.c_void_p(t2.hip_event))
+
         torch_results = []
         for i in range(len(ret_list)):
             result = ret_list.get_variant(i)
