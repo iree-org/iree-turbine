@@ -183,7 +183,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
-        reciprocal_sum = tkw.broadcast(reciprocal_sum, target_shape=[B, D_KV, N_Q])
         res = res_mm * reciprocal_sum * v_dequant
         tkw.write(res, c, mapping=mapping)
 

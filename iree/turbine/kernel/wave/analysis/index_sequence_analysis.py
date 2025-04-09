@@ -749,8 +749,10 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         if lhs.indexing_dims and rhs.indexing_dims:
             lhs_dim, lhs_size = get_largest_index_and_size(get_index(lhs))
             rhs_dim, rhs_size = get_largest_index_and_size(get_index(rhs))
-        else:
-            return
+        if not lhs.indexing_dims:
+            lhs_dim, lhs_size = (), 1
+        if not rhs.indexing_dims:
+            rhs_dim, rhs_size = (), 1
 
         # If they are equal we are done.
         if lhs_dim == rhs_dim and lhs_size == rhs_size:
