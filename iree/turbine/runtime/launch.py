@@ -285,32 +285,13 @@ class Launchable:
                 f"Cannot invoke Launchable {self} without any Tensor args or an explicit device="
             )
 
-        wait_sem = turbine_device.hal_device.create_semaphore(0)
-        
-        wait_evt = get_raw_event()
-        record_event(torch.cuda.current_stream().cuda_stream, wait_evt)
+        print(f"PreWait {turbine_device._main_timepoint}")
+        external_timepoint = turbine_device.setup_iree_action()
+        print(f"Wait {turbine_device._main_timepoint - 1} Signal {turbine_device._main_timepoint}")
+        print(f"ETP {str(external_timepoint)}")
 
-        t = HalExternalTimepoint()
-        t.compatibility = 2 # SemaphoreCompatibility.DEVICE_WAIT | SemaphoreCompatibility.DEVICE_WAIT
-        t.flags = 0 #ExternalTimepointFlags.NONE | ExternalTimepointFlags.NONE
-        if torch.version.hip is not None:
-            t.hip_event = wait_evt.value
-            wait_sem.import_timepoint(1, t)
-        else:
-            # TODO
-            #t.cuda_event = evt.cuda_event
-            wait_sem.import_timepoint(1, t)
-        
-        t2 = HalExternalTimepoint()
-        wait_sem.export_timepoint(
-            2,
-            3, #ExternalTimepointType.HIP_EVENT,
-            0, #ExternalTimepointFlags.NONE,
-            t2
-        )
-        
-        wait_fence = HalFence.create_at(wait_sem, 1)
-        signal_fence = HalFence.create_at(wait_sem, 2)
+        wait_fence = HalFence.create_at(turbine_device._main_timeline, turbine_device._main_timepoint - 1)
+        signal_fence = HalFence.create_at(turbine_device._main_timeline, turbine_device._main_timepoint)
         
         arg_list.push_ref(wait_fence)
         arg_list.push_ref(signal_fence)
@@ -320,9 +301,14 @@ class Launchable:
         ret_list = VmVariantList(1)
         vm_context.invoke(vm_function, arg_list, ret_list)
 
-        wait_event(torch.cuda.current_stream().cuda_stream, ctypes.c_void_p(t2.hip_event))
-        #signal_fence.wait()
-        #destroy_event(ctypes.c_void_p(t2.hip_event))
+        # If we have an external timepoint, then the device can handle
+        # asynchronous execution, allow it to proceed
+        # Otherwise the device does not handle asynchonous execution
+        # and we should wait for the signal fence ourselves.
+        if external_timepoint is not None:
+            turbine_device.finalize_iree_action(external_timepoint)
+        else:
+            signal_fence.wait()
 
         torch_results = []
         for i in range(len(ret_list)):
