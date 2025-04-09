@@ -291,7 +291,30 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]):
+def emit_product(a: Value, b: Value, acc: Value) -> Value:
+    res_type = acc.type
+    res_element_type = res_type.element_type
+
+    def cast(v):
+        v_type = v.type
+        if v_type.element_type != res_element_type:
+            cast_type = VectorType.get(v_type.shape, res_element_type)
+            v = arith_d.extf(cast_type, v)
+
+        return v
+
+    a = cast(a)
+    b = cast(b)
+    val = arith_d.mulf(a, b)
+    val = cast(val)
+
+    acc = vector_d.extract(acc, static_position=[0], dynamic_position=[])
+    val = vector_d.reduction(acc.type, vector_d.CombiningKind.ADD, val, acc=acc)
+    val = vector_d.splat(res_type, val)
+    return val
+
+
+def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]) -> Value:
     m = get_constant_attr(m, IntegerType.get_signless(32))
     n = get_constant_attr(n, IntegerType.get_signless(32))
     k = get_constant_attr(k, IntegerType.get_signless(32))
@@ -330,16 +353,8 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
         mma_type = hardware_constraints[0].mma_type
 
     if mma_type == MMAType.GenericDot:
-        res_type = acc.type
-        acc = vector_d.extract(acc, static_position=[0], dynamic_position=[])
-        val = arith_d.mulf(values[0], values[1])
-        if val.type.element_type != acc.type:
-            cast_type = VectorType.get(val.type.shape, acc.type)
-            val = arith_d.extf(cast_type, val)
-
-        val = vector_d.reduction(acc.type, vector_d.CombiningKind.ADD, val, acc=acc)
-        val = vector_d.splat(res_type, val)
-        emitter.bind_node_proxy(node, IRProxyValue(val))
+        result = emit_product(values[0], values[1], acc)
+        emitter.bind_node_proxy(node, IRProxyValue(result))
         return
 
     m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
