@@ -311,13 +311,23 @@ def emit_product(
     for i in range(4):
         a = src_a
         b = src_b
-        if i != 0:
-            offset = arith_d.constant(i32, i)
-            a = gpu_d.shuffle(a, offset, width, gpu_d.ShuffleMode.XOR)[0]
-            b = gpu_d.shuffle(b, offset, width, gpu_d.ShuffleMode.XOR)[0]
-
         a = cast(a)
         b = cast(b)
+        if i != 0:
+            offset = arith_d.constant(i32, i)
+            a_vals = []
+            b_vals = []
+            for j in range(a.type.shape[0]):
+                a_elem = vector_d.extract(a, static_position=[j], dynamic_position=[])
+                b_elem = vector_d.extract(b, static_position=[j], dynamic_position=[])
+                a_elem = gpu_d.shuffle(a_elem, offset, width, gpu_d.ShuffleMode.XOR)[0]
+                b_elem = gpu_d.shuffle(b_elem, offset, width, gpu_d.ShuffleMode.XOR)[0]
+                a_vals.append(a_elem)
+                b_vals.append(b_elem)
+
+            a = vector_d.from_elements(a.type, a_vals)
+            b = vector_d.from_elements(b.type, b_vals)
+
         val = arith_d.mulf(a, b)
         val = cast(val)
 
