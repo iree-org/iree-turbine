@@ -348,7 +348,7 @@ def testGemmDot(
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
     generate_iree_ref("mmt", [a, b], [iree_ref], options)
-    assert_close(c, iree_ref, check_device=False, atol=1e-2, rtol=1e-2)
+    assert_close(c, iree_ref, check_device=False, atol=1e-3, rtol=1e-3)
 
 
 @require_e2e
