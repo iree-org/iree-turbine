@@ -292,7 +292,7 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 
 
 def emit_product(
-    src_a: Value, src_b: Value, acc: Value, threads_per_wave: int
+    emitter: WaveEmitter, src_a: Value, src_b: Value, acc: Value, threads_per_wave: int
 ) -> Value:
     res_type = acc.type
     res_element_type = res_type.element_type
@@ -313,20 +313,23 @@ def emit_product(
         b = src_b
         a = cast(a)
         b = cast(b)
-        if i != 0:
-            offset = arith_d.constant(i32, i)
-            a_vals = []
-            b_vals = []
-            for j in range(a.type.shape[0]):
-                a_elem = vector_d.extract(a, static_position=[j], dynamic_position=[])
-                b_elem = vector_d.extract(b, static_position=[j], dynamic_position=[])
-                a_elem = gpu_d.shuffle(a_elem, offset, width, gpu_d.ShuffleMode.XOR)[0]
-                b_elem = gpu_d.shuffle(b_elem, offset, width, gpu_d.ShuffleMode.XOR)[0]
-                a_vals.append(a_elem)
-                b_vals.append(b_elem)
+        offset = arith_d.constant(i32, i)
+        id = arith_d.index_cast(i32, emitter.thread_ids[0])
+        offset = arith_d.addi(offset, id)
+        mask = arith_d.constant(i32, (1 << 2) - 1)
+        offset = arith_d.andi(offset, mask)
+        a_vals = []
+        b_vals = []
+        for j in range(a.type.shape[0]):
+            a_elem = vector_d.extract(a, static_position=[j], dynamic_position=[])
+            b_elem = vector_d.extract(b, static_position=[j], dynamic_position=[])
+            a_elem = gpu_d.shuffle(a_elem, offset, width, gpu_d.ShuffleMode.XOR)[0]
+            b_elem = gpu_d.shuffle(b_elem, offset, width, gpu_d.ShuffleMode.XOR)[0]
+            a_vals.append(a_elem)
+            b_vals.append(b_elem)
 
-            a = vector_d.from_elements(a.type, a_vals)
-            b = vector_d.from_elements(b.type, b_vals)
+        a = vector_d.from_elements(a.type, a_vals)
+        b = vector_d.from_elements(b.type, b_vals)
 
         val = arith_d.mulf(a, b)
         val = cast(val)
@@ -378,7 +381,7 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
 
     if mma_type == MMAType.GenericDot:
         result = emit_product(
-            values[0], values[1], acc, hardware_constraints[0].threads_per_wave
+            emitter, values[0], values[1], acc, hardware_constraints[0].threads_per_wave
         )
         emitter.bind_node_proxy(node, IRProxyValue(result))
         return
