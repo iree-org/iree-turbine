@@ -83,7 +83,7 @@ class WaveEmitter:
         self.dynamic_dims: dict[IndexSymbol, Value] = {}
         symbol_iterator = iter(self.dynamic_symbols)
         for arg in self.root_sig.entry_block.arguments:
-            if arg.type == IndexType.get() and any(True for _ in symbol_iterator):
+            if arg.type == IndexType.get():
                 self.dynamic_dims[next(symbol_iterator)] = arg
 
     def emit(self, graph: Optional[fx.Graph] = None):
