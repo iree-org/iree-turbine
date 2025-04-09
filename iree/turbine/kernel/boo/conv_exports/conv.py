@@ -16,7 +16,8 @@ from enum import IntEnum
 import torch
 
 from .utils import Permutation
-from ....ops.conv_fwd import conv_2d_nhwc_fhwc
+from ....ops.conv_fwd import conv_2d_nhwc_fhwc, generic_conv
+from ....ops.insert_slice import insert_slice
 
 __all__ = [
     "Mode",
@@ -285,23 +286,19 @@ class ConvSignature:
     def get_nn_module(self, *, use_custom: bool = False) -> torch.nn.Module:
         """For a given ConvSignature, returns a torch.nn.Module implementation."""
         if self.mode == Mode.WEIGHT_BACKWARD:
-            return ConvBackwardWeight(self)
+            return (
+                ConvBackwardWeightCustomGeneric(self)
+                if use_custom
+                else ConvBackwardWeight(self)
+            )
         if self.mode == Mode.INPUT_BACKWARD:
-            return ConvBackwardInput(self)
-        is_supported_nhwc = (
-            use_custom
-            and self.input_layout == "NHWC"
-            and self.kernel_layout == "NHWC"
-            and self.output_layout == "NHWC"
-            and self.groups == 1
-            and not self.transposed
-            and self.dtype.is_floating_point
-            and self.dtype.itemsize <= 4
-        )
-        if self.mode == Mode.FORWARD and is_supported_nhwc:
-            return ConvForwardCustomNHWC(self)
+            return (
+                ConvBackwardInputCustomGeneric(self)
+                if use_custom
+                else ConvBackwardInput(self)
+            )
         if self.mode == Mode.FORWARD:
-            return ConvForward(self)
+            return ConvForwardCustomGeneric(self) if use_custom else ConvForward(self)
         raise ValueError(f"signature has unexpected mode: {self.mode}")
 
 
@@ -361,6 +358,47 @@ class ConvForwardCustomNHWC(torch.nn.Module):
         return self.perms[2](output)
 
 
+class ConvForwardCustomGeneric(torch.nn.Module):
+    def __init__(self, sig: ConvSignature):
+        super().__init__()
+        self.xl = str(sig.input_layout).lower()
+        self.wl = str(sig.kernel_layout).lower().replace("n", "f")
+        self.ol = str(sig.output_layout).lower().replace("c", "f")
+        self.stride = sig.stride
+        self.dilation = sig.dilation
+        self.has_bias = sig.bias
+        self.groups = sig.groups
+        self.explicit_padding = sig.explicit_padding
+
+    def forward(self, *args):
+        x_pad = torch.constant_pad_nd(args[0], self.explicit_padding, value=0)
+        w = args[1]
+        xl = self.xl
+        wl = self.wl
+        ol = self.ol
+        if self.groups != 1:
+            x_pos = self.xl.find("c")
+            x_pad = x_pad.unflatten(x_pos, [self.groups, -1])
+            xl = self.xl[:x_pos] + "g" + self.xl[x_pos:]
+            w_pos = self.wl.find("f")
+            w = w.unflatten(w_pos, [self.groups, -1])
+            wl = self.wl[:w_pos] + "g" + self.wl[w_pos:]
+            o_pos = self.ol.find("f")
+            ol = self.ol[:o_pos] + "g" + self.ol[o_pos:]
+        output = generic_conv(x_pad, w, self.stride, self.dilation, xl, wl, ol, [])
+        output = output.to(dtype=x_pad.dtype)
+        if self.groups != 1:
+            o_pos = ol.find("g")
+            output = output.flatten(o_pos, o_pos + 1)
+        if self.has_bias:
+            # Note bias has shape [f], but 'f' could be anywhere in output_layout.
+            dim_pos = self.ol.find("f")
+            sizes = [-1]
+            sizes.extend([1] * (len(self.ol) - dim_pos - 1))
+            output = output + args[2].unflatten(0, sizes)
+        return output
+
+
 class ConvBackwardInput(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
         super().__init__()
@@ -406,6 +444,149 @@ class ConvBackwardInput(torch.nn.Module):
             **self.kwargs,
         )
         return self.perms[2](dLdx)
+
+
+class ConvBackwardInputCustomGeneric(torch.nn.Module):
+    def __init__(self, sig: ConvSignature):
+        super().__init__()
+        if sig.transposed:
+            raise NotImplementedError(
+                "unimplemented weight grad decomposition: transposed conv"
+            )
+        self.ND = sig.num_spatial_dims
+        # after preprocessing dLdy, we perform the convolution with strides == 1
+        self.stride = [1] * len(sig.stride)
+        self.dtype = sig.dtype
+        self.dilation = sig.dilation
+        self.groups = sig.groups
+        self.xl = str(sig.output_layout).lower()
+        # Note: reduction dim is filter channel (which we call c). E.g. NCHW -> FCHW -> cfhw
+        self.wl = str(sig.kernel_layout).replace("N", "c").replace("C", "f").lower()
+        # output layout:
+        self.ol = str(sig.input_layout).replace("C", "f").lower()
+        self.input_padding = sig.padding
+        self.input_shape = sig.input_shape
+
+        # compute the dims which need a flip for the weight tensor
+        self.flip_dims = []
+        for i, (char, size) in enumerate(zip(sig.kernel_layout, sig.kernel_shape)):
+            if char in {"N", "C"} or size == 1:
+                continue
+            self.flip_dims.append(i)
+
+        K_spatial = sig.kernel_perms(sig.kernel_shape)[2:]
+
+        # When computing dLdx, we sum over all elements of dLdy and ker s.t.:
+        #   s*dLdy_idx + d*ker_idx = dLdx_idx + p,
+        # Assume for now that s=1 (we will resolve this later)
+        # When computing for dLdx_idx = 0, we need to access
+        # all possible values for dLdy_idx and ker_idx satisfying:
+        #   dLdy_idx + d*ker_idx = p
+        # This would be fine, but the last element of ker_idx (K - 1) would give
+        #   dLdy_idx = p - d*(K-1)
+        # If this expression is negative, we need to add zero padding to dLdy:
+        #   padded_idx = dLdy_idx + d*(K - 1) - p
+        padding = list(
+            [
+                sig.dilation[i] * (K_spatial[i] - 1) - sig.padding[i]
+                for i in range(self.ND)
+            ]
+        )
+        # TODO: if p > d*(K-1), we could write in an extract slice op or introduce an offset in the conv generic.
+        # This isn't a common situation, as p > d*(K-1) means the fwd conv was excessively padded.
+        for p in padding:
+            if p < 0:
+                raise NotImplementedError(
+                    "Negative padding not currently supported in conv transpose -> conv decomposition."
+                )
+
+        # Determine if we need to resolve strides
+        self._stride = sig.stride
+        self._do_insert_slice = False
+        for s in self._stride:
+            if s > 1:
+                self._do_insert_slice = True
+                break
+
+        # If strides are > 1, we scatter dLdy into a zero init tensor
+        H_spatial = sig.input_perms(sig.input_shape)[2:]
+        self._slice_offset = []
+        self._slice_stride = []
+        self._strided_sizes = []
+        self.explicit_padding = []
+        if self._do_insert_slice:
+            shape_pt_layout = sig.output_perms.inv()(sig.output_shape)
+            for i, size in enumerate(shape_pt_layout):
+                if i < 2 or sig.stride[i - 2] == 1:
+                    self._slice_offset.append(0)
+                    self._slice_stride.append(1)
+                    self._strided_sizes.append(size)
+                    continue
+                stride = sig.stride[i - 2]
+                self._slice_offset.append(padding[i - 2])
+                self._slice_stride.append(stride)
+                # We need the strided dLdy tensor large enough to see all possible h + d*k values
+                self._strided_sizes.append(
+                    (H_spatial[i - 2] - 1)
+                    + sig.dilation[i - 2] * (K_spatial[i - 2] - 1)
+                    + 1
+                )
+            # Permute lists back to original layout
+            self._slice_offset = sig.output_perms(self._slice_offset)
+            self._slice_stride = sig.output_perms(self._slice_stride)
+            self._strided_sizes = sig.output_perms(self._strided_sizes)
+        else:
+            # if we have all strides == 1, we can just pad the dLdy tensor
+            torch_pads_NCHW = [[0, 0], [0, 0]] + [[p, p] for p in padding]
+            # permute back to input ordering
+            permuted_pads = sig.output_perms(torch_pads_NCHW)
+            # to make compatible with torch.nn.functional.pad reverse ordering
+            permuted_pads.reverse()
+            # flatten the list
+            self.explicit_padding = list(
+                [p for dim_pads in permuted_pads for p in dim_pads]
+            )
+
+    def forward(self, dLdy, w):
+        flip_w = torch.flip(w, self.flip_dims).contiguous()
+
+        if self._do_insert_slice:
+            zero_init = torch.zeros(
+                self._strided_sizes, dtype=dLdy.dtype, device=dLdy.device
+            )
+            dLdy = insert_slice(dLdy, zero_init, self._slice_offset, self._slice_stride)
+        else:
+            dLdy = torch.constant_pad_nd(dLdy, self.explicit_padding, 0)
+
+        xl = self.xl
+        wl = self.wl
+        ol = self.ol
+        explicit_shape = self.input_shape
+        if self.groups != 1:
+            x_pos = xl.find("c")
+            # remember: "c" for wl is the weight/output channels
+            w_pos = wl.find("c")
+            o_pos = ol.find("f")
+            xl = self.xl[:x_pos] + "g" + self.xl[x_pos:]
+            wl = self.wl[:w_pos] + "g" + self.wl[w_pos:]
+            ol = self.ol[:o_pos] + "g" + self.ol[o_pos:]
+            dLdy = dLdy.unflatten(x_pos, [self.groups, -1])
+            flip_w = flip_w.unflatten(w_pos, [self.groups, -1])
+            explicit_shape = (
+                explicit_shape[:o_pos]
+                + [self.groups, explicit_shape[o_pos] // self.groups]
+                + explicit_shape[o_pos + 1 :]
+            )
+
+        dLdx = generic_conv(
+            dLdy, flip_w, self.stride, self.dilation, xl, wl, ol, explicit_shape
+        ).to(dtype=self.dtype)
+
+        if self.groups != 1:
+            o_pos = ol.find("g")
+            dLdx = dLdx.flatten(o_pos, o_pos + 1)
+
+        return dLdx
 
 
 class ConvBackwardWeight(torch.nn.Module):
@@ -483,3 +664,55 @@ class ConvBackwardWeight(torch.nn.Module):
             sliced = conv[..., : self.K[0], : self.K[1], : self.K[2]]
 
         return self.perms[2](sliced)
+
+
+class ConvBackwardWeightCustomGeneric(torch.nn.Module):
+    def __init__(self, sig: ConvSignature):
+        super().__init__()
+        if sig.transposed:
+            raise NotImplementedError(
+                "unimplemented weight grad decomposition: transposed conv"
+            )
+        self.ND = sig.num_spatial_dims
+        self.stride = sig.dilation
+        self.dilation = sig.stride
+        self.groups = sig.groups
+        # Note: need to swap reduction dim to N
+        self.xl = str(sig.input_layout).replace("N", "c").replace("C", "n").lower()
+        self.wl = str(sig.output_layout).replace("N", "c").replace("C", "f").lower()
+        # output layout:
+        self.ol = str(sig.kernel_layout).replace("N", "f").replace("C", "n").lower()
+        self.explicit_padding = sig.explicit_padding
+        self.kernel_shape = sig.kernel_shape
+
+    def forward(self, dLdy, x):
+        x_pad = torch.constant_pad_nd(x, self.explicit_padding, 0)
+        # swap layout specs for batches and channels
+        xl = self.xl
+        wl = self.wl
+        ol = self.ol
+        explicit_shape = self.kernel_shape
+        if self.groups != 1:
+            x_pos = self.xl.find("n")
+            x_pad = x_pad.unflatten(x_pos, [self.groups, -1])
+            xl = self.xl[:x_pos] + "g" + self.xl[x_pos:]
+            w_pos = self.wl.find("f")
+            dLdy = dLdy.unflatten(w_pos, [self.groups, -1])
+            wl = self.wl[:w_pos] + "g" + self.wl[w_pos:]
+            o_pos = self.ol.find("f")
+            ol = self.ol[:o_pos] + "g" + self.ol[o_pos:]
+            explicit_shape = (
+                explicit_shape[:o_pos]
+                + [self.groups, explicit_shape[o_pos] // self.groups]
+                + explicit_shape[o_pos + 1 :]
+            )
+
+        dLdw = generic_conv(
+            x_pad, dLdy, self.stride, self.dilation, xl, wl, ol, explicit_shape
+        ).to(dtype=dLdy.dtype)
+
+        if self.groups != 1:
+            o_pos = ol.find("g")
+            dLdw = dLdw.flatten(o_pos, o_pos + 1)
+
+        return dLdw

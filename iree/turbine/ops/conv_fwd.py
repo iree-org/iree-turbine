@@ -16,11 +16,11 @@ from ..runtime.op_reg import (
     CustomOp,
     KernelBuilder,
     KernelSelection,
-    def_library,
     impl_helper,
 )
 
-LIBRARY = def_library("turbine_ops")
+from ..support.logging import aot_logger as logger
+
 _templates = impl_helper.JinjaTemplateLoader(__name__)
 
 
@@ -37,7 +37,7 @@ def unpack_tensor_type(tensor_type: IrType) -> Tuple[str, str, IrType]:
     return str(rtt), ident, rtt.element_type
 
 
-@CustomOp.register(library=LIBRARY)
+@CustomOp.register()
 class conv_2d_nhwc_fhwc(CustomOp):
     """
     Basic 2-D channels-last forward convolution op.
@@ -144,7 +144,7 @@ class conv_2d_nhwc_fhwc(CustomOp):
         kb.yield_results(*impl_helper.call_function(func_op, *arg_bindings))
 
 
-@CustomOp.register(library=LIBRARY)
+@CustomOp.register()
 class generic_conv(CustomOp):
     """
     A basic layout-customizable convolution op.
@@ -152,11 +152,12 @@ class generic_conv(CustomOp):
     The argument signature is:
         input tensor,
         weight tensor,
-        list of stride ints,
-        list of dilation ints.
+        stride int[],
+        dilation int[],
         input_layout str,
         weight_layout str,
         output_layout str,
+        output_shape list[]?
 
     Special Layout Characters:
         the character 'c' is always assumed to correspond to a reduction dimension in the input and weight
@@ -178,11 +179,9 @@ class generic_conv(CustomOp):
         non-quantized
         floating point input and weight dtypes (bitwidth <= 32)
         float32 accumulator
-
-
     """
 
-    signature = "generic_conv(Tensor x, Tensor w, int[] s, int[] d, str xl, str wl, str ol) -> (Tensor)"
+    signature = "generic_conv(Tensor x, Tensor w, int[] s, int[] d, str xl, str wl, str ol, int[]? os) -> (Tensor)"
 
     @no_type_check
     def select(self, ksel: KernelSelection):
@@ -204,6 +203,19 @@ class generic_conv(CustomOp):
         wl = wl_desc.v
         ws = list(w_desc.t.shape)
         ol = ol_desc.v
+
+        try:
+            os_desc = ksel.attr_list_int(7)
+            os = os_desc.v
+            assert len(os) == len(
+                ol
+            ), f"output size must match output layout. Got {os} for layout {ol}."
+        except Exception as e:
+            logger.debug(
+                "Invalid output shape provided for generic_conv. Falling back to default output shape calculation. Failed with exception %s.",
+                str(e),
+            )
+            os = [-1] * len(ol)
 
         torch._check(
             len(xl) == len(xs),
@@ -261,13 +273,22 @@ class generic_conv(CustomOp):
             sp_map[c] = x_d if x_d is not None else w_d
 
         result_shape = []
-        for c in ol:
+        for i, c in enumerate(ol):
+            provided = os[i]
             if c in special_characters:
-                result_shape.append(sp_map.get(c, 1))
-                continue
-            result_shape.append(
-                (((xs_map[c] - 1) - d_map[c] * (ws_map[c] - 1)) // s_map[c]) + 1
-            )
+                size = sp_map.get(c, 1)
+                torch._check(
+                    size == provided or provided == -1,
+                    lambda: f"Cannot modify output size at dim '{c}' ({i}). Got provided size {provided}, actual = {size}.",
+                )
+            else:
+                size = (
+                    provided
+                    if provided != -1
+                    else (((xs_map[c] - 1) - d_map[c] * (ws_map[c] - 1)) // s_map[c])
+                    + 1
+                )
+            result_shape.append(size)
 
         torch._check(
             sum([s <= 0 for s in result_shape]) == 0,
@@ -289,7 +310,6 @@ class generic_conv(CustomOp):
 
         res_desc = ksel.result_descs[0]
         special_characters = {"n", "c", "g", "f"}
-        spatial_dims = len(set(attr_dict["ol"]).difference(special_characters))
 
         # make an attr string for building the spec_sig
         attr_str = ""
@@ -330,7 +350,7 @@ class generic_conv(CustomOp):
 
         # linalg.generic properties:
         iterator_order = list([char for char in ol])  # all output dims are parallel
-        iterator_types = list(["parallel" for char in ol])
+        iterator_types = ["parallel"] * len(ol)
         for char in wl:
             if char in special_characters.intersection(iterator_order):
                 continue
@@ -391,6 +411,5 @@ class generic_conv(CustomOp):
             function_name,
             **kwargs,
         )
-        print(kwargs)
         arg_bindings = kb.arg_bindings[0:2]
         kb.yield_results(*impl_helper.call_function(func_op, *arg_bindings))

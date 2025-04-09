@@ -54,6 +54,7 @@ def testCustomConv2dNHWCFHWCImplementationEager(s, d):
         y, y_expected, rtol=1e-3, atol=1e-3
     ), "Implementation should match."
 
+
 @pytest.mark.parametrize("s", strides)
 @pytest.mark.parametrize("d", dilations)
 def testGenericCustomConvImplementationEager(s, d):
