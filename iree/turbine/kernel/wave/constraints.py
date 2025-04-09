@@ -146,9 +146,11 @@ class HardwareConstraint(Constraint):
         # TODO: Eventually the shapes and indices should be provided by a tool
         if mma_type == None:
             mma_type = self.mma_type
+
         match mma_type:
+            # M x N x K
             case MMAType.GenericDot:
-                return (8, 8, 4)
+                return (4, 64, 4)
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 return (16, 16, 16)
             case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
@@ -174,10 +176,18 @@ class HardwareConstraint(Constraint):
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
+
         match mma_type:
             # (M x K, N x K) -> M x N
             case MMAType.GenericDot:
-                offset = [lane // 8, lane % 8, 0]
+                offset = [
+                    Piecewise(
+                        (lane % 4, ~MMA_ACC),
+                        (lane * 4, MMA_ACC),
+                    ),  # M
+                    lane,  # N
+                    0,  # K
+                ]
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 offset = [
                     Piecewise(
@@ -313,12 +323,13 @@ class HardwareConstraint(Constraint):
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
+
         offset = self.mma_index_offset(mma_type)
         match mma_type:
             # (M x K, N x K) -> M x N
             case MMAType.GenericDot:
                 size = [
-                    1,  # M
+                    Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
                     1,  # N
                     4,  # K
                 ]

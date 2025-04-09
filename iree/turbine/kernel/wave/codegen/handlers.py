@@ -291,7 +291,9 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-def emit_product(a: Value, b: Value, acc: Value) -> Value:
+def emit_product(
+    src_a: Value, src_b: Value, acc: Value, threads_per_wave: int
+) -> Value:
     res_type = acc.type
     res_element_type = res_type.element_type
 
@@ -303,15 +305,27 @@ def emit_product(a: Value, b: Value, acc: Value) -> Value:
 
         return v
 
-    a = cast(a)
-    b = cast(b)
-    val = arith_d.mulf(a, b)
-    val = cast(val)
+    i32 = IntegerType.get_signless(32)
+    width = arith_d.constant(i32, threads_per_wave)
+    elements = []
+    for i in range(4):
+        a = src_a
+        b = src_b
+        if i != 0:
+            offset = arith_d.constant(i32, i)
+            a = gpu_d.shuffle(a, offset, width, gpu_d.ShuffleMode.XOR)[0]
+            b = gpu_d.shuffle(b, offset, width, gpu_d.ShuffleMode.XOR)[0]
 
-    acc = vector_d.extract(acc, static_position=[0], dynamic_position=[])
-    val = vector_d.reduction(acc.type, vector_d.CombiningKind.ADD, val, acc=acc)
-    val = vector_d.splat(res_type, val)
-    return val
+        a = cast(a)
+        b = cast(b)
+        val = arith_d.mulf(a, b)
+        val = cast(val)
+
+        tmp = vector_d.extract(acc, static_position=[i], dynamic_position=[])
+        val = vector_d.reduction(tmp.type, vector_d.CombiningKind.ADD, val, acc=tmp)
+        elements.append(val)
+
+    return vector_d.from_elements(res_type, elements)
 
 
 def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]) -> Value:
@@ -353,7 +367,9 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
         mma_type = hardware_constraints[0].mma_type
 
     if mma_type == MMAType.GenericDot:
-        result = emit_product(values[0], values[1], acc)
+        result = emit_product(
+            values[0], values[1], acc, hardware_constraints[0].threads_per_wave
+        )
         emitter.bind_node_proxy(node, IRProxyValue(result))
         return
 
