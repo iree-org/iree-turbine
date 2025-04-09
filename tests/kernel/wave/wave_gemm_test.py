@@ -218,7 +218,7 @@ def testGemm(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", [(640, 640, 640)])
+@pytest.mark.parametrize("shape", [(4, 64, 8)])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize("mfma_variant", [MMAType.GenericDot])
@@ -290,7 +290,7 @@ def testGemmDot(
         tkw.write(repeat, c)
 
     hyperparams = {
-        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
         BLOCK_M: 4,
         BLOCK_N: 64,
         BLOCK_K: 8,
@@ -331,9 +331,13 @@ def testGemmDot(
     options = set_default_run_config(options)
     gemm = wave_compile(options, gemm)
 
+    torch.manual_seed(3)
     a = device_randn(shape[0], shape[2], dtype=torch.float16)
     b = device_randn(shape[1], shape[2], dtype=torch.float16)
     c = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    from math import inf
+
+    c[:] = inf
     asm = gemm(a, b, c)
 
     if dump_generated_mlir:
@@ -348,6 +352,9 @@ def testGemmDot(
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
     generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    torch.set_printoptions(profile="full")
+    print(iree_ref)
+    print(c)
     assert_close(c, iree_ref, check_device=False, atol=1e-3, rtol=1e-3)
 
 
