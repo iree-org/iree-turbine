@@ -181,10 +181,7 @@ class HardwareConstraint(Constraint):
             # (M x K, N x K) -> M x N
             case MMAType.GenericDot:
                 offset = [
-                    Piecewise(
-                        (lane % 4, ~MMA_ACC),
-                        (lane * 4, MMA_ACC),
-                    ),  # M
+                    lane % 4,  # M
                     lane,  # N
                     0,  # K
                 ]
@@ -334,7 +331,7 @@ class HardwareConstraint(Constraint):
                     4,  # K
                 ]
                 stride = [
-                    1,  # M
+                    Piecewise((1, ~MMA_ACC), (1, MMA_ACC)),  # M
                     1,  # N
                     1,  # K
                 ]
