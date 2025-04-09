@@ -366,8 +366,6 @@ def get_custom(node: fx.Node) -> "CustomOp":
 
 
 def has_same_custom_type(lhs_type: Memory, rhs_type: Memory) -> bool:
-    if isinstance(lhs_type, DataType) and isinstance(rhs_type, DataType):
-        return True
     same_shape = lhs_type.symbolic_shape == rhs_type.symbolic_shape
     same_dtype = lhs_type.dtype == rhs_type.dtype
     return same_shape and same_dtype
@@ -760,10 +758,11 @@ class BinaryOpBase(CustomOp, ABC):
     def infer_shape(self) -> Any:
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
-        has_same_type = has_same_custom_type(lhs_type, rhs_type)
+        if isinstance(lhs_type, DataType) and isinstance(rhs_type, DataType):
+            has_same_type = True
+        else:
+            has_same_type = has_same_custom_type(lhs_type, rhs_type)
         if has_same_type:
-            if isinstance(lhs_type, DataType) and isinstance(rhs_type, DataType):
-                return []
             return lhs_type.symbolic_shape
 
         lhs_dim_set = set(lhs_type.symbolic_shape)
@@ -791,7 +790,7 @@ class BinaryOpBase(CustomOp, ABC):
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
         if not self.infer_shape():
-            self.type = DataType("float32")
+            self.type = self.rhs.type
         else:
             self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
 

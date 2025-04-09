@@ -122,7 +122,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         # v_scale_val = tkw.read(v_scale)
         qk_dequant_scalar = q_scale * k_scale
         qk_dequant = tkw.broadcast(qk_dequant_scalar, target_shape=[B, N_Q, N_KV])
-        qk_dequant = tkw.cast(qk_dequant, tkl.f32)
         qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](QK_SCALING_CONST) * qk_dequant
 
         v_scale_val = tkw.broadcast(v_scale, target_shape=[B, D_KV, N_Q])
@@ -183,10 +182,8 @@ def get_brevitas_pertensor_fp8_attention_kernel(
 
         # repeat represents the results of the loop
         res_max, res_sum, res_mm = repeat
-        reciprocal_sum = tkw.broadcast(
-            tkw.reciprocal(res_sum), target_shape=[B, D_KV, N_Q]
-        )
-        # reciprocal_sum = tkw.reciprocal(res_sum)
+        reciprocal_sum = tkw.reciprocal(res_sum)
+        reciprocal_sum = tkw.broadcast(reciprocal_sum, target_shape=[B, D_KV, N_Q])
         res = res_mm * reciprocal_sum * v_dequant
         tkw.write(res, c, mapping=mapping)
 

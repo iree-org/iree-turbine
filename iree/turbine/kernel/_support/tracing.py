@@ -110,6 +110,7 @@ class KernelTracer(SubgraphTracer):
             if node.op == "placeholder" and isinstance(t, DataType):
                 node.meta["arg_id"] = self.current_arg_id
                 node.meta["dtype"] = t
+                node.meta["symbolic_type"] = []
                 self.current_arg_id += 1
             if isinstance(t, KernelBufferMeta) and not isinstance(t, DataType):
                 # Set arg_id meta to placeholder/argument nodes
