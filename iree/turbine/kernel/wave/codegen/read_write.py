@@ -44,7 +44,7 @@ from ..utils.general_utils import find_index_bounds, get_fastest_index
 from ..utils.symbol_utils import safe_subs, subs_idxc
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
-from ...lang.wave_types import IndexMapping, Memory
+from ...lang.wave_types import IndexMapping
 from ...lang.global_symbols import *
 
 from .emitter import (

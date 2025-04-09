@@ -29,6 +29,7 @@ from .kernel_codegen import BindingDesc
 def memref_to_tensor(memrefs: list[IrType]):
     tensors = []
     for m in memrefs:
+        # TODO: handle generic case
         if isinstance(m, F32Type):
             tensors.append(m)
             continue

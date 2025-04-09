@@ -23,8 +23,6 @@ from .ir import (
     Block,
     DictAttr,
     FunctionType,
-    F32Type,
-    FloatAttr,
     IndexType,
     InsertionPoint,
     IntegerAttr,
@@ -326,9 +324,6 @@ class DispatchEntrypoint(BoundKernelSignature):
             )
 
         if binding.binding_type == BindingType.SCALAR_VALUE:
-            # TODO: need to fix for all float dytpes
-            result_type = F32Type.get()
-            zero_value = arith_d.constant(result_type, FloatAttr.get(result_type, 0))
             linear_arg_value = self._abi_value_by_reference[binding.reference]
             return linear_arg_value
 

@@ -107,7 +107,7 @@ class KernelTracer(SubgraphTracer):
         t = node.type
         if t is not None:
             # adding condition for tkw.f32 nodes to pass
-            if isinstance(t, DataType):
+            if node.op == "placeholder" and isinstance(t, DataType):
                 node.meta["arg_id"] = self.current_arg_id
                 node.meta["dtype"] = t
                 self.current_arg_id += 1

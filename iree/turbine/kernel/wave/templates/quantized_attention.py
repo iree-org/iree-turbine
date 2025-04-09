@@ -47,10 +47,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
-    QS = tkl.sym.QS
-    KS = tkl.sym.KS
-    VS = tkl.sym.VS
-
     # Expose user-constraints
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(N_Q, BLOCK_N_Q, 0)]
     constraints += [tkw.WorkgroupConstraint(D_KV, BLOCK_D_KV, 1)]
