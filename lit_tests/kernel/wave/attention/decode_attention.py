@@ -13,8 +13,14 @@ from iree.turbine.kernel.wave.templates.paged_decode_attention import (
 from iree.turbine.kernel.wave.templates.decode_attention import (
     get_decode_attention_kernels,
 )
+from iree.turbine.kernel.wave.templates.gqa_decode_attention import (
+    get_gqa_decode_attention_kernels,
+)
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
+from iree.turbine.kernel.wave.templates.attention_common import (
+    AttentionShape,
+)
 
 
 @run_test
@@ -167,17 +173,93 @@ def test_flash_decoding():
     print(phase_1.asm)
 
     # CHECK-LABEL:       func.func @phase_1
-    # CHECK:               {{.*}} = scf.for
-    # CHECK-COUNT-2:           {{.*}} = vector.maskedload
-    # CHECK-COUNT-1:           {{.*}} = arith.maximumf
-    # CHECK-COUNT-1:           {{.*}} = arith.subf
-    # CHECK-COUNT-1:           {{.*}} = math.exp2
-    # CHECK-COUNT-1:           {{.*}} = arith.subf
-    # CHECK-COUNT-1:           {{.*}} = math.exp2
-    # CHECK-COUNT-1:           {{.*}} = arith.mulf
-    # CHECK-COUNT-1:           {{.*}} = arith.addf
-    # CHECK-COUNT-2:           {{.*}} = arith.mulf
-    # CHECK-COUNT-1:           {{.*}} = arith.addf
-    # CHECK-COUNT-1:      {{.*}} = arith.divf
-    # TODO: Remove vector.scatter when optimizing for performance
+    # CHECK:               scf.for
+    # CHECK-COUNT-2:           vector.maskedload
+    # CHECK-COUNT-1:           arith.maximumf
+    # CHECK-COUNT-1:           arith.subf
+    # CHECK-COUNT-1:           math.exp2
+    # CHECK-COUNT-1:           arith.subf
+    # CHECK-COUNT-1:           math.exp2
+    # CHECK-COUNT-1:           arith.mulf
+    # CHECK-COUNT-1:           arith.addf
+    # CHECK-COUNT-2:           arith.mulf
+    # CHECK-COUNT-1:           arith.addf
+    # CHECK-COUNT-1:      arith.divf
     # CHECK-COUNT-1:      vector.scatter
+
+
+@run_test
+def test_gqa_flash_decoding():
+    shape = (8, 128, 128, 64, 256)
+    mfma_variant = tkw.MMAType.F32_16x16x16_F16
+    shape = AttentionShape(
+        num_seqs=1,
+        num_query_heads=32,
+        num_kv_heads=1,
+        head_size=256,
+        head_size_kv=256,
+        query_seq_len=1,
+        kv_seq_len=8000,
+    )
+    num_kv_splits = 8
+    k_shape = (shape.num_seqs, shape.kv_seq_len, shape.num_kv_heads, shape.head_size)
+    v_shape = (shape.num_seqs, shape.kv_seq_len, shape.num_kv_heads, shape.head_size_kv)
+    mfma_variant = (tkw.MMAType.F32_16x16x16_F16, tkw.MMAType.F32_16x16x16_F16)
+    (
+        phase_0,
+        phase_1,
+        hyperparams_0,
+        hyperparams_1,
+    ) = get_gqa_decode_attention_kernels(
+        shape, mfma_variant, num_kv_splits, k_shape, v_shape
+    )
+
+    options = WaveCompileOptions(
+        subs=hyperparams_0,
+        canonicalize=True,
+        run_bench=False,
+        schedule=SchedulingType.NONE,
+        use_scheduling_barriers=False,
+        compile_to_mlir=True,
+    )
+    phase_0 = wave_compile(options, phase_0)
+    print(phase_0.asm)
+
+    # CHECK:                func.func @phase_0
+    # CHECK:                   scf.for
+    # CHECK:                      amdgpu.lds_barrier
+    # CHECK-COUNT-16:             vector.maskedload
+    # CHECK-COUNT-16:             vector.store
+    # CHECK:                      amdgpu.lds_barrier
+    # CHECK-COUNT-4:              amdgpu.mfma
+    # CHECK:                  scf.if
+    # CHECK-COUNT-1:          arith.divf
+    # CHECK-COUNT-1:          math.log2
+    # CHECK-COUNT-32:         vector.store
+
+    options = WaveCompileOptions(
+        subs=hyperparams_1,
+        canonicalize=True,
+        run_bench=False,
+        schedule=SchedulingType.NONE,
+        use_scheduling_barriers=False,
+        compile_to_mlir=True,
+    )
+    phase_1 = wave_compile(options, phase_1)
+    print(phase_1.asm)
+
+    # CHECK-LABEL:       func.func @phase_1
+    # CHECK:               scf.for
+    # CHECK-COUNT-2:           vector.maskedload
+    # CHECK-COUNT-1:           arith.maximumf
+    # CHECK-COUNT-1:           arith.subf
+    # CHECK-COUNT-1:           math.exp2
+    # CHECK-COUNT-1:           arith.subf
+    # CHECK-COUNT-1:           math.exp2
+    # CHECK-COUNT-1:           arith.mulf
+    # CHECK-COUNT-1:           arith.addf
+    # CHECK-COUNT-2:           arith.mulf
+    # CHECK-COUNT-1:           arith.addf
+    # CHECK-COUNT-1:      arith.divf
+    # CHECK-COUNT-1:      arith.truncf
+    # CHECK-COUNT-1: vector.maskedstore

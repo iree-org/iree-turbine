@@ -61,6 +61,17 @@ _e2e_test_shapes["gqa_bshd_attention"] = [
         head_size=256,
     ),
 ]
+_e2e_test_shapes["gqa_bshd_decode_attention"] = [
+    AttentionShape(
+        num_seqs=1,
+        num_query_heads=32,
+        num_kv_heads=1,
+        query_seq_len=1,
+        kv_seq_len=8000,
+        head_size_kv=256,
+        head_size=256,
+    ),
+]
 
 test_names = [
     "attention",
@@ -71,6 +82,7 @@ test_names = [
     "all_attention",
     "evoformer",
     "gqa_bshd_attention",
+    "gqa_bshd_decode_attention",
 ]
 for test in test_names:
     _perf_test_shapes[test] = _e2e_test_shapes[test]
