@@ -30,8 +30,7 @@ def memref_to_tensor(memrefs: list[IrType]):
     tensors = []
     for m in memrefs:
         if isinstance(m, F32Type):
-            t = RankedTensorType.get([1], m)
-            tensors.append(t)
+            tensors.append(m)
             continue
         assert isinstance(m, MemRefType)
         t = RankedTensorType.get(m.shape, m.element_type)

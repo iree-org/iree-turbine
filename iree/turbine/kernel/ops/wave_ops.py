@@ -1707,10 +1707,7 @@ class GetResult(CustomOp):
         if has_multiple_value(src_indexing):
             assert self.res_idx <= len(src_indexing) - 1
             src_indexing = src_indexing[self.res_idx]
-        try:
-            assert is_valid_indexing_dim(src_indexing)
-        except:
-            breakpoint()
+        assert is_valid_indexing_dim(src_indexing)
         return src_indexing
 
     @property

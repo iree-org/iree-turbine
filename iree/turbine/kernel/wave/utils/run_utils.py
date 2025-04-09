@@ -109,11 +109,15 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     for input in inputs:
         if isinstance(input, torch.Tensor):
             push_tensor_to_arg_list(input)
+        elif isinstance(input, float):
+            arg_list.push_float(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
     for output in outputs:
         if isinstance(output, torch.Tensor):
             push_tensor_to_arg_list(output)
+        elif isinstance(output, float):
+            arg_list.push_float(output)
         else:
             raise ValueError(f"Unsupported output type: {type(output)}")
     for dynamic_dim in dynamic_dims:

@@ -1,4 +1,6 @@
 from typing import Any, List, Dict
+
+import torch
 from .._support.indexing import IndexingContext, IndexExpr
 from ..compiler import kernel_codegen, host_codegen
 from .compile_options import WaveCompileOptions
@@ -35,12 +37,18 @@ class WaveKernel:
         # Partition arguments into kernel inputs and outputs.
         kernel_inputs = []
         kernel_outputs = []
-        for arg, usage in zip(args, self.options.kernel_usages):
+
+        scalar_args = tuple(x for x in args if not isinstance(x, torch.Tensor))
+        tensor_args = tuple(x for x in args if isinstance(x, torch.Tensor))
+
+        for arg, usage in zip(tensor_args, self.options.kernel_usages):
             if usage == kernel_codegen.KernelBufferUsage.INPUT:
                 kernel_inputs.append(arg)
 
             if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                 kernel_outputs.append(arg)
+
+        kernel_inputs.extend(scalar_args)
 
         invoke_vmfb(self.executable, self.options, kernel_inputs, kernel_outputs)
         return self.asm

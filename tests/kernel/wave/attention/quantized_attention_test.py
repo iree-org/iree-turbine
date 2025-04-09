@@ -106,6 +106,9 @@ def testAttentionPure(
     options = set_default_run_config(options)
     base_attention = wave_compile(options, base_attention)
 
+    # with open("scalar_codegen.mlir", "w") as f:
+    #     f.write(base_attention.asm)
+
     torch.manual_seed(0)
     # Smaller range to help with FP8 minimum range
     MAX_RANGE = 128
@@ -139,9 +142,9 @@ def testAttentionPure(
         q,
         k,
         v,
-        q_scale.to(torch.f32),
-        k_scale.to(torch.f32),
-        v_scale.to(torch.f32),
+        q_scale,
+        k_scale,
+        v_scale,
         output,
     )
     torch_ref = torch.nn.functional.scaled_dot_product_attention(

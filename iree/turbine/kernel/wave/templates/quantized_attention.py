@@ -99,6 +99,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     # Setting up FP8 scaling
     LOG2E = 1.44269504089
     DK_SQRT = math.sqrt(1.0 / shape.head_size)
+    QK_SCALING_CONST = LOG2E * DK_SQRT
     F8_DTYPE = torch_dtype_to_wave(f8_dtpye)
     F8_MAX = torch.finfo(f8_dtpye).max
 
@@ -126,7 +127,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         qk_dequant_scalar = q_scale * k_scale
         qk_dequant = tkw.broadcast(qk_dequant_scalar, target_shape=[B, N_Q, N_KV])
         qk_dequant = tkw.cast(qk_dequant, tkl.f32)
-        qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](DK_SQRT * LOG2E) * qk_dequant
+        qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](QK_SCALING_CONST) * qk_dequant
 
         v_scale_val = tkw.broadcast(v_scale, target_shape=[B, D_KV, N_Q])
         v_dequant = tkl.Register[B, D_KV, N_Q, tkl.f32](1.0) * v_scale_val
@@ -199,7 +200,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         k: tkl.Memory[B, N_KV, D_Q, ADDRESS_SPACE, LOGIT_DTYPE],
         v: tkl.Memory[B, N_KV, D_KV, ADDRESS_SPACE, LOGIT_DTYPE],
         q_scale: tkl.f32,  # type: ignore
-        # tkl.Memory[QS, GLOBAL_ADDRESS_SPACE, tkl.f32],
         k_scale: tkl.f32,  # type: ignore
         v_scale: tkl.f32,  # type: ignore
         c: tkl.Memory[B, N_Q, D_KV, GLOBAL_ADDRESS_SPACE, tkl.f32],
