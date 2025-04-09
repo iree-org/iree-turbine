@@ -62,7 +62,7 @@ def testGenericCustomConvImplementationEager(s, d):
     gen.manual_seed(10)
     x = torch.randn([N, H, W, C], generator=gen, dtype=torch.float32, device=device)
     w = torch.randn([F, Hk, Wk, C], generator=gen, dtype=torch.float32, device=device)
-    y = generic_conv(x, w, s, d, "nhwc", "fhwc", "nfhw")
+    y = generic_conv(x, w, s, d, "nhwc", "fhwc", "nfhw", [])
     y_expected = torch.convolution(
         x.permute([0, 3, 1, 2]),
         w.permute([0, 3, 1, 2]),
