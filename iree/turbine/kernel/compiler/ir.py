@@ -36,8 +36,9 @@ from iree.compiler.ir import (
 )
 
 from iree.compiler.dialects import (
-    arith as arith_d,
+    affine as affine_d,
     amdgpu as amdgpu_d,
+    arith as arith_d,
     builtin as builtin_d,
     flow as flow_d,
     func as func_d,
@@ -47,8 +48,8 @@ from iree.compiler.dialects import (
     math as math_d,
     memref as memref_d,
     rocdl as rocdl_d,
-    stream as stream_d,
     scf as scf_d,
+    stream as stream_d,
     transform as transform_d,
     vector as vector_d,
 )

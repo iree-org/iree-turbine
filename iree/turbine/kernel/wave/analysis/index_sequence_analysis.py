@@ -15,6 +15,7 @@ from ...ops.wave_ops import (
     Output,
     Placeholder,
     Read,
+    ReduceOp,
     Reduction,
     Write,
     get_custom,
@@ -33,6 +34,7 @@ from ...lang.global_symbols import *
 from ..utils.general_utils import (
     get_hardware_constraint,
     get_largest_index_and_size,
+    get_workgroup_constraints,
     partial,
 )
 from ..utils.mma_utils import (
@@ -108,7 +110,7 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
             continue
         if isinstance(custom, (Output, NestedRegionOp)):
             continue
-        assert custom.index, f"Index not set for node {custom.fx_node}"
+        assert custom.index, f"Index not set for node {custom.fx_node}: {custom}"
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
@@ -119,7 +121,9 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
                 custom.vector_shapes = {}
                 for dim in update_vector_shapes:
                     custom.vector_shapes[dim] = hw_constraint.vector_shapes[dim]
-        assert custom.vector_shapes, f"Vector shapes not set for node {custom.fx_node}"
+        assert (
+            custom.vector_shapes
+        ), f"Vector shapes not set for node {custom.fx_node}: {custom}"
 
 
 def set_node_indices(
@@ -145,10 +149,19 @@ def set_node_indices(
         print_trace(trace)
 
     graph_passes = []
-    if mma_mapping != {}:
+    if mma_mapping:
         graph_passes += [
             partial(
                 set_thread_dependent_index_from_mma, constraints, mma_mapping, trace
+            )
+        ]
+    elif reduce_mapping := get_reduce_mapping(trace, constraints):
+        graph_passes += [
+            partial(
+                set_thread_dependent_index_from_reduce,
+                constraints,
+                trace,
+                reduce_mapping,
             )
         ]
     else:
@@ -516,15 +529,145 @@ def set_thread_dependent_index_from_read_write(
     assert sources, "No read nodes found in the graph."
 
     visited = set()
-    workgroup_constraints = [
-        c for c in constraints if isinstance(c, WorkgroupConstraint)
-    ]
+    workgroup_constraints = get_workgroup_constraints(constraints)
     symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)
         new_sources = populate_read_write_source_indices(
             source, hardware_constraint, workgroup_constraints
+        )
+        visited = propagate_indices(
+            new_sources,
+            visited,
+            symbolic_constraints,
+        )
+
+
+def get_reduce_mapping(
+    trace: CapturedTrace, constraints: list[Constraint]
+) -> dict[ReduceOp, dict[IndexSymbol, IndexSequence]]:
+    """
+    Get the mapping of the reduce ops to the index sequence.
+
+    Resulting index will have reduction dim distributed across wg0 threads and
+    rest of the dims distributed similar to read/write nodes according to the
+    WorkgroupConstraints.
+
+    Example:
+    ```
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    ...
+    @tkw.reduction(N, init_args=[init_max, init_sum])
+    def repeat(
+        partial_max: tkl.Register[M, tkl.f32],
+    ) -> tkl.Register[M, tkl.f32]:
+        res = tkw.read(a) # [M, N]
+        partial_max = tkw.max(res, partial_max, dim=N) # {N: 2*$T0 : 2 : 1, M: $T1 : 1 : 1}
+        ...
+    ```
+
+    """
+    sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
+    hardware_constraint = get_hardware_constraint(constraints)
+    workgroup_constraints = get_workgroup_constraints(constraints)
+
+    reduce_mapping = {}
+    for source in sources:
+        custom = get_custom(source)
+        index = {}
+
+        dim = custom.dim
+
+        # Compute the index sequence for the reduction dimension based on the
+        # threads per wave and the vector size.
+        threads_per_wave = hardware_constraint.threads_per_wave
+        vector_size = hardware_constraint.vector_shapes[dim]
+        assert (
+            vector_size % threads_per_wave == 0
+        ), f"Vector size {dim}={vector_size} must be divisible by threads per wave {threads_per_wave}"
+        elements_per_thread = vector_size // threads_per_wave
+        stride = compute_stride(
+            custom.indexing_dims, hardware_constraint.vector_shapes, dim
+        )
+        index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+            dim, 0, elements_per_thread, stride
+        )
+
+        for dim in custom.indexing_dims:
+            elements_per_thread = 1
+            stride = compute_stride(
+                custom.indexing_dims, hardware_constraint.vector_shapes, dim
+            )
+            wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
+            assert (
+                len(wg_constraint) <= 1
+            ), f"Multiple workgroup constraints for dimension {dim}"
+            if wg_constraint:
+                workgroup_dim = wg_constraint[0].workgroup_dim
+            else:
+                continue
+
+            index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+                dim, workgroup_dim, elements_per_thread, stride
+            )
+
+        reduce_mapping[custom] = index
+
+    return reduce_mapping
+
+
+def populate_reduce_source_indices(
+    node: ReduceOp,
+    hardware_constraint: HardwareConstraint,
+    workgroup_constraints: list[WorkgroupConstraint],
+    index: dict[IndexSymbol, IndexSequence],
+):
+    """
+    Populate the source indices for the reduce op.
+    """
+    vector_shapes = hardware_constraint.vector_shapes
+    ret = []
+    if isinstance(node.arg, Sequence):
+        ret += [(get_custom(a), index, vector_shapes) for a in node.arg]
+    else:
+        ret += [(get_custom(node.arg), index, vector_shapes)]
+
+    # Reduce args must contain index for the reduction dimension,
+    # but init and the reduction itself does not.
+    res_index = copy(index)
+    del res_index[node.dim]
+
+    if node.init:
+        ret += [(get_custom(node.init), res_index, vector_shapes)]
+
+    ret += [(node, res_index, vector_shapes)]
+
+    return ret
+
+
+def set_thread_dependent_index_from_reduce(
+    constraints: Sequence[Constraint],
+    trace: CapturedTrace,
+    reduce_mapping: dict[ReduceOp, dict[IndexSymbol, IndexSequence]],
+):
+    """
+    Set the thread dependent index, rooting on reduce ops.
+    """
+    hardware_constraint = get_hardware_constraint(constraints)
+    sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
+    sources = [get_custom(x) for x in sources]
+    assert sources, "No reduce nodes found in the graph."
+
+    visited = set()
+    workgroup_constraints = get_workgroup_constraints(constraints)
+    symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
+    for source in sources:
+        visited = visited.union(set([x for x in sources]))
+        visited.remove(source)
+        index = reduce_mapping[source]
+        new_sources = populate_reduce_source_indices(
+            source, hardware_constraint, workgroup_constraints, index
         )
         visited = propagate_indices(
             new_sources,
@@ -544,7 +687,13 @@ def set_post_expansion_indices(trace: CapturedTrace, constraints: list[Constrain
             return False
         for dim, scale in custom.expanded_dims.items():
             if dim in custom.index:
-                custom.index[dim].start += scale * custom.vector_shapes[dim]
+                try:
+                    custom.index[dim].start += scale * custom.vector_shapes[dim]
+                except KeyError as e:
+                    raise RuntimeError(
+                        f"op index or vector shapes missing expanded dim {dim}:\n"
+                        f"{custom.index}\n{custom.vector_shapes}\n{custom}"
+                    )
         return False
 
     trace.walk(apply_offset)
@@ -600,8 +749,25 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         lhs = get_custom(custom.lhs)
         rhs = get_custom(custom.rhs)
 
-        lhs_dim, lhs_size = get_largest_index_and_size(get_index(lhs))
-        rhs_dim, rhs_size = get_largest_index_and_size(get_index(rhs))
+        lhs_index = get_index(lhs)
+        rhs_index = get_index(rhs)
+
+        lhs_dim, lhs_size = get_largest_index_and_size(lhs_index)
+        rhs_dim, rhs_size = get_largest_index_and_size(rhs_index)
+
+        extra_error_info = (
+            f"\n{binary_op=}"
+            f"\n{lhs=}"
+            f"\n{lhs_index=}"
+            f"\n{lhs_dim=}"
+            f"\n{lhs_size=}"
+            f"\n{lhs.type.symbolic_shape=}"
+            f"\n{rhs=}"
+            f"\n{rhs_index=}"
+            f"\n{rhs_dim=}"
+            f"\n{rhs_size=}"
+            f"\n{rhs.type.symbolic_shape=}"
+        )
 
         # If they are equal we are done.
         if lhs_dim == rhs_dim and lhs_size == rhs_size:
@@ -612,7 +778,8 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         # Cannot handle discrepancies when both shapes are > 1.
         if lhs_size > 1 and rhs_size > 1:
             raise NotImplementedError(
-                "Currently only support resolving discrepancies when one of the shapes is 1."
+                f"Currently only support resolving discrepancies when one of the shapes is 1."
+                f"{extra_error_info}"
             )
 
         broadcast_rhs = lhs_size > rhs_size
@@ -633,7 +800,9 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
 
             if not is_only_missing_dim and not is_innermost_dim:
                 raise NotImplementedError(
-                    "Currently only support resolving discrepancies when the broadcasting dimension is the innermost dimension."
+                    f"Currently only support resolving discrepancies when the broadcasting"
+                    f" dimension is the innermost dimension. {extra_error_info}"
+                    f"\n{broadcast_dim=}"
                 )
 
         # Broadcast

@@ -150,6 +150,8 @@ convbfp16 -n 128 -c 35 -H 48 -W 32 -k 35 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1
 ```
 
 The `-t 1` option to collect timing is implemented by launching the kernel in a subprocess, which is then traced using `tracy`. Using this requires:
-- IREE runtime python bindings with tracy enabled. If using the pre-built `iree-base-runtime` package, this requires setting `IREE_PY_RUNTIME=tracy` in your environment
+- IREE runtime python bindings with tracy enabled.
+  If using the pre-built `iree-base-runtime` package, this requires setting `IREE_PY_RUNTIME=tracy` in your environment.
+  If using a local build of the python bindings, you may need to configure cmake with `-DTRACY_DELAYED_INIT=ON -DTRACY_MANUAL_LIFETIME=ON` to work around issues with the tracy client being closed before traces are captured.
 - `iree-tracy-capture`; see https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-capture-cli-tool
 - `tracy-csvexport`; see https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-csvexport-tool

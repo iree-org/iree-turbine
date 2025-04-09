@@ -16,6 +16,7 @@ from iree.turbine.kernel.wave.utils.run_utils import (
 from iree.turbine.kernel.wave.utils.torch_utils import (
     device_randn,
     device_zeros,
+    quantized_tensor,
 )
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
@@ -107,28 +108,10 @@ def testAttentionPure(
     torch.manual_seed(0)
     # Smaller range to help with FP8 minimum range
     MAX_RANGE = 128
+    q = quantized_tensor(q_shape, dtype=torch.float16, scale=MAX_RANGE)
+    k = quantized_tensor(k_shape, dtype=torch.float16, scale=MAX_RANGE)
+    v = quantized_tensor(v_shape, dtype=torch.float16, scale=MAX_RANGE)
 
-    q = torch.ceil(
-        torch.clamp(
-            device_randn(q_shape, dtype=torch.float16) * MAX_RANGE,
-            -MAX_RANGE,
-            MAX_RANGE,
-        )
-    )
-    k = torch.ceil(
-        torch.clamp(
-            device_randn(k_shape, dtype=torch.float16) * MAX_RANGE,
-            -MAX_RANGE,
-            MAX_RANGE,
-        )
-    )
-    v = torch.ceil(
-        torch.clamp(
-            device_randn(v_shape, dtype=torch.float16) * MAX_RANGE,
-            -MAX_RANGE,
-            MAX_RANGE,
-        )
-    )
     output = device_zeros(o_shape, dtype=torch.float32)
     asm = base_attention(q, k, v, output)
     torch_ref = torch.nn.functional.scaled_dot_product_attention(

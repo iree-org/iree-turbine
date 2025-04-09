@@ -73,7 +73,12 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
     "enable_scheduling",
-    [SchedulingType.NONE, SchedulingType.PREFETCH, SchedulingType.MODULO],
+    [
+        SchedulingType.NONE,
+        SchedulingType.PREFETCH,
+        SchedulingType.MODULO,
+        SchedulingType.MODULO_MULTI_BUFFERED,
+    ],
 )
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -215,7 +220,8 @@ def testGemm(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.MODULO],
 )
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -358,7 +364,8 @@ def testVMFMAGemm(
 @require_cdna2
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
 )
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -502,7 +509,8 @@ def testCDNA2IntGemm(
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
 )
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -723,7 +731,8 @@ def testF8Gemm(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_batched_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.MODULO]
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
 )
 def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, request):
     run_bench = request.config.getoption("--runperf")

@@ -7,6 +7,7 @@
 from ..constraints import Constraint
 from ..._support.tracing import CapturedTrace
 from ...ops.wave_ops import Reduction, IterArg, get_custom, CustomOp
+from .multi_buffering import multi_buffer
 from .modulo_scheduling import ModuloScheduler
 from .prefetch_scheduling import PrefetchScheduler
 from .graph_utils import create_scheduling_edges, Edge
@@ -165,6 +166,8 @@ def schedule_reduction(
 
     # Update new reduction count.
     new_reduction.count = max_induction_variable - (num_stages - 1)
+    if scheduling_type == SchedulingType.MODULO_MULTI_BUFFERED:
+        multi_buffer(trace)
 
 
 def schedule_graph(
@@ -176,7 +179,6 @@ def schedule_graph(
     """
     Given a graph, pipelines the reductions in the graph.
     """
-
     if scheduling_type == SchedulingType.NONE:
         return
 

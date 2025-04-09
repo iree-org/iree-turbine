@@ -167,7 +167,8 @@ def get_users(
             return_vals = custom.return_vals[0]
             parent_reduction = custom.graph.parent_op
             if not isinstance(return_vals, (list, tuple)):
-                users.append(next(iter(parent_reduction.users)))
+                if parent_reduction.users:
+                    users.append(next(iter(parent_reduction.users)))
             else:
                 # Handles case where DCE eliminate unused GetResult.
                 get_results = {
@@ -224,8 +225,11 @@ def get_inputs(
         iter_arg_idx = custom.iter_idx
         inputs.append(local_reduction.init_args[iter_arg_idx])
     elif isinstance(custom, GetResult):
+        assert custom.value is not None, f"GetResult node {custom} has no value"
         reduction = get_custom(custom.value)
-        assert isinstance(reduction, Reduction), "GetResult must be used by a Reduction"
+        assert isinstance(
+            reduction, Reduction
+        ), f"GetResult must be using a Reduction, but\n{custom}\nis using\n{reduction}"
         # Map get result to output
         reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
         if len(reduction.init_args) == 1:
