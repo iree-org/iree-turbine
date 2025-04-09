@@ -604,7 +604,8 @@ class ConvBackwardInputCustomGeneric(torch.nn.Module):
             dLdy = dLdy.unflatten(self.x_pos, [self.groups, -1])
             w = w.unflatten(self.w_pos, [self.groups, -1])
 
-        flip_w = torch.flip(w, self.flip_dims)
+        if len(self.flip_dims) != 0:
+            w = torch.flip(w, self.flip_dims)
 
         if self._do_insert_slice:
             zero_init = torch.zeros(
@@ -616,7 +617,7 @@ class ConvBackwardInputCustomGeneric(torch.nn.Module):
 
         dLdx = generic_conv(
             dLdy,
-            flip_w,
+            w,
             self.stride,
             self.dilation,
             self.xl,
