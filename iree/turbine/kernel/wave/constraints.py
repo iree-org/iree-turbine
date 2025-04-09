@@ -331,7 +331,7 @@ class HardwareConstraint(Constraint):
                     4,  # K
                 ]
                 stride = [
-                    Piecewise((1, ~MMA_ACC), (1, MMA_ACC)),  # M
+                    1,  # M
                     1,  # N
                     1,  # K
                 ]
