@@ -397,12 +397,12 @@ class ConvForwardCustomGeneric(torch.nn.Module):
         self.wl = str(sig.kernel_layout).lower().replace("n", "f")
         self.ol = str(sig.output_layout).lower().replace("c", "f")
         self.explicit_padding = sig.explicit_padding
+        self.x_pos = sig.input_grouped_dim
+        self.w_pos = sig.kernel_grouped_dim
+        self.o_pos = sig.output_grouped_dim
         if self.groups != 1:
-            self.x_pos = sig.input_grouped_dim
             self.xl = self.xl[: self.x_pos] + "g" + self.xl[self.x_pos :]
-            self.w_pos = sig.kernel_grouped_dim
             self.wl = self.wl[: self.w_pos] + "g" + self.wl[self.w_pos :]
-            self.o_pos = sig.output_grouped_dim
             self.ol = self.ol[: self.o_pos] + "g" + self.ol[self.o_pos :]
             pad_g_idx = len(self.explicit_padding) - 1 - 2 * self.x_pos
             self.explicit_padding = (
@@ -428,6 +428,7 @@ class ConvForwardCustomGeneric(torch.nn.Module):
             output = output.flatten(self.o_pos, self.o_pos + 1)
         if self.has_bias:
             # Note bias has shape [f], but f in output shape need not be at the back.
+
             sizes = [-1]
             sizes.extend([1] * (len(self.ol.replace("g", "")) - self.o_pos - 1))
             output = output + args[2].unflatten(0, sizes)
@@ -501,12 +502,12 @@ class ConvBackwardInputCustomGeneric(torch.nn.Module):
         self.ol = str(sig.input_layout).replace("C", "f").lower()
         self.explicit_shape = list(sig.input_shape)
 
+        self.x_pos = sig.output_grouped_dim
+        self.w_pos = sig.kernel_grouped_dim
+        self.o_pos = sig.input_grouped_dim
         if self.groups != 1:
-            self.x_pos = sig.output_grouped_dim
             self.xl = self.xl[: self.x_pos] + "g" + self.xl[self.x_pos :]
-            self.w_pos = sig.kernel_grouped_dim
             self.wl = self.wl[: self.w_pos] + "g" + self.wl[self.w_pos :]
-            self.o_pos = sig.input_grouped_dim
             self.ol = self.ol[: self.o_pos] + "g" + self.ol[self.o_pos :]
             self.explicit_shape[self.o_pos] = (
                 self.explicit_shape[self.o_pos] // self.groups
@@ -733,12 +734,12 @@ class ConvBackwardWeightCustomGeneric(torch.nn.Module):
         self.ol = str(sig.kernel_layout).replace("N", "f").replace("C", "n").lower()
         self.explicit_padding = sig.explicit_padding
         self.explicit_shape = list(sig.kernel_shape)
+        self.x_pos = sig.input_grouped_dim
+        self.w_pos = sig.output_grouped_dim
+        self.o_pos = sig.kernel_grouped_dim
         if self.groups != 1:
-            self.x_pos = sig.input_grouped_dim
             self.xl = self.xl[: self.x_pos] + "g" + self.xl[self.x_pos :]
-            self.w_pos = sig.output_grouped_dim
             self.wl = self.wl[: self.w_pos] + "g" + self.wl[self.w_pos :]
-            self.o_pos = sig.kernel_grouped_dim
             self.ol = self.ol[: self.o_pos] + "g" + self.ol[self.o_pos :]
             self.explicit_shape[self.o_pos] = (
                 self.explicit_shape[self.o_pos] // self.groups
