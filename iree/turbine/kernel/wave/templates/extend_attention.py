@@ -55,6 +55,9 @@ def get_extend_attention_kernel(
     assert (
         wave_size_dtype.is_int_asm()
     ), f"Expected seq to be int but got: {wave_size_dtype}"
+    assert not (
+        is_causal and use_custom_mask
+    ), f"Cannot have both causal and custom mask at the same time"
 
     S = tkl.sym.S
     EXT_IDX = tkl.sym.EXT_IDX
@@ -63,6 +66,7 @@ def get_extend_attention_kernel(
     MASK_LEN = tkl.sym.MASK_LEN
     MASK_START_IDX = tkl.sym.MASK_START_IDX
     SEQ_LEN = tkl.sym.SEQ_LEN
+    PREFIX_LEN = tkl.sym.PREFIX_LEN
     # Workgroup tile sizes
     BLOCK_S = tkl.sym.BLOCK_S
     # Address space (for GPU, shared(1) or global(0))
@@ -176,9 +180,15 @@ def get_extend_attention_kernel(
         outputs={S: i},
     )
 
-    custom_mask_mapping = tkw.IndexMapping(
+    custom_mask_mapping_loop1 = tkw.IndexMapping(
         num_iterators=2,
-        inputs={MASK_LEN: i * SEQ_LEN + j + MASK_START_IDX},
+        inputs={MASK_LEN: i * SEQ_LEN + MASK_START_IDX + j},
+        outputs={N_Q: i, N_KV: j},
+    )
+
+    custom_mask_mapping_loop2 = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={MASK_LEN: i * SEQ_LEN + MASK_START_IDX + j + PREFIX_LEN},
         outputs={N_Q: i, N_KV: j},
     )
 
@@ -436,14 +446,14 @@ def get_extend_attention_kernel(
             if logit_cap > 0:
                 x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
-            c_mask = tkw.read(
-                custom_mask,
-                elements_per_thread=STORE_ELEMS_PER_THREAD,
-                mapping=custom_mask_mapping,
-            )
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
             mask = tkw.cast(mask, tkw.i1)
+            c_mask = tkw.read(
+                custom_mask,
+                elements_per_thread=STORE_ELEMS_PER_THREAD,
+                mapping=custom_mask_mapping_loop1,
+            )
             c_mask = tkw.cast(c_mask, tkw.i1)
             mask &= c_mask
             bias = tkw.select(mask, zero, neg_infinity)
@@ -470,6 +480,7 @@ def get_extend_attention_kernel(
             seq_len_extend = tkw.apply_expr(
                 seq_len_extend, lambda x: sympy.Min(x, (WORKGROUP_0 + 1) * BLOCK_N_Q)
             )
+        tkw.set_symbol(PREFIX_LEN, seq_len_prefix)
         tkw.set_symbol(N_KV, seq_len_extend)
 
         @tkw.reduction(N_KV, init_args=[res_max, res_sum, res_mm])
@@ -495,11 +506,6 @@ def get_extend_attention_kernel(
             if logit_cap > 0:
                 x_j = logit_cap_reg * tkw.tanh(x_j / logit_cap_reg)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
-            c_mask = tkw.read(
-                custom_mask,
-                elements_per_thread=STORE_ELEMS_PER_THREAD,
-                mapping=custom_mask_mapping,
-            )
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
             if is_causal:
@@ -507,6 +513,11 @@ def get_extend_attention_kernel(
                 n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
                 mask = (n_q_index >= n_kv_index) & mask
             mask = tkw.cast(mask, tkw.i1)
+            c_mask = tkw.read(
+                custom_mask,
+                elements_per_thread=STORE_ELEMS_PER_THREAD,
+                mapping=custom_mask_mapping_loop2,
+            )
             c_mask = tkw.cast(c_mask, tkw.i1)
             mask &= c_mask
             bias = tkw.select(mask, zero, neg_infinity)
