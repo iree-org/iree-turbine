@@ -47,7 +47,8 @@ std::unordered_map<std::string, std::tuple<hipModule_t, hipFunction_t>> cache;
 using Int64Vector = std::vector<uint64_t>;
 using Int32Vector = std::vector<uint32_t>;
 
-int launch(const KernelLaunchInfo &info, const Int64Vector &tensors, const Int64Vector &dynamicDims)
+int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
+    const Int64Vector &dynamicDims, float floatArg)
 {
     hipStream_t stream = at::hip::getCurrentHIPStream();
     hipModule_t module;
@@ -68,7 +69,7 @@ int launch(const KernelLaunchInfo &info, const Int64Vector &tensors, const Int64
     // Since we always pass our dynamic dims as index type, iree converts them to i64
     // and then splits them to two i32s, i64 = hi | lo where
     // lo = trunc(i64) and hi = trunc(i64 >> 32).
-    size_t kernArgSize = tensors.size() * sizeof(uint64_t) + 2 * dynamicDims.size() * sizeof(uint32_t);
+    size_t kernArgSize = tensors.size() * sizeof(uint64_t) + 2 * dynamicDims.size() * sizeof(uint32_t) + sizeof(float);
     uint8_t kernelArguments[kernArgSize];
     uint64_t *ptr = (uint64_t *)kernelArguments;
     for (int i = 0; i < tensors.size(); i++, ptr++)
@@ -80,6 +81,9 @@ int launch(const KernelLaunchInfo &info, const Int64Vector &tensors, const Int64
         ptr2++;
         *ptr2 = (uint32_t)(dynamicDims[i] >> 32);
     }
+
+    float *ptr3 = (float *)ptr2;
+    *ptr3 = floatArg;
 
     void *hipLaunchParams[] = {
         HIP_LAUNCH_PARAM_BUFFER_POINTER,

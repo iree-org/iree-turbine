@@ -22,6 +22,7 @@ from .ir import (
     Attribute,
     Block,
     DictAttr,
+    FloatAttr,
     FunctionType,
     IndexType,
     InsertionPoint,
@@ -130,15 +131,15 @@ class StreamExecutable:
         # Dynamic dim bindings are the dynamic dims of the input and output tensors.
         linear_bindings = (
             kb_input_bindings
-            + scalar_bindings
             + kb_output_bindings
+            + scalar_bindings
             + dynamic_dim_bindings
         )
 
         dynamic_dim_indices = {
             "begin": len(kb_input_bindings)
-            + len(scalar_bindings)
-            + len(kb_output_bindings),
+            + len(kb_output_bindings)
+            + len(scalar_bindings),
             "end": len(linear_bindings),
         }
 

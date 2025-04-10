@@ -60,11 +60,9 @@ def isolated_test_call(
     dynamic_symbols: list[IndexSymbol] = [],
 ):
     with InsertionPoint(mb.body_block), Location.unknown():
-        input_types = (
-            [b.as_mlir_type() for b in sig.kernel_buffer_bindings[:-1]]
-            + [b.as_mlir_type() for b in sig.scalar_bindings]
-            + [b.as_mlir_type() for b in sig.kernel_buffer_bindings[-1:]]
-        )
+        input_types = [b.as_mlir_type() for b in sig.kernel_buffer_bindings] + [
+            b.as_mlir_type() for b in sig.scalar_bindings
+        ]
         input_tensors = memref_to_tensor(input_types)
         argument_dims = get_dynamic_dims(sig.kernel_buffer_bindings, dynamic_symbols)
         # Adding unique dynamic dims as inputs.
@@ -84,9 +82,8 @@ def isolated_test_call(
         func_op = func_d.FuncOp("isolated_benchmark", ftype)
         arg_locs = [
             (Location.name(b.name) if b.name is not None else Location.unknown())
-            for b in sig.kernel_buffer_bindings[:-1]
+            for b in sig.kernel_buffer_bindings
             + sig.scalar_bindings
-            + sig.kernel_buffer_bindings[-1:]
             + sig.dynamic_dim_bindings
         ]
         entry_block = func_op.add_entry_block(arg_locs)
@@ -100,12 +97,8 @@ def isolated_test_call(
             dispatch = SymbolRefAttr.get([exe.sym_name.value, entrypoint])
             entrypoints = ArrayAttr.get([dispatch])
 
-            buffer_binding_count = len(sig.kernel_buffer_bindings) + len(
-                sig.scalar_bindings
-            )
-            input_binding_count = len(sig.kernel_buffer_input_bindings) + len(
-                sig.scalar_bindings
-            )
+            buffer_binding_count = len(sig.kernel_buffer_bindings)
+            input_binding_count = len(sig.kernel_buffer_input_bindings)
             tied_operands = ArrayAttr.get(
                 [
                     IntegerAttr.get(IndexType.get(), out_idx)
