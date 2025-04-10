@@ -283,14 +283,12 @@ class Device:
             return None
 
     def finalize_iree_action(self, external_timepoint: HalExternalTimepoint):
-        self._try_clean_external_timepoints()
-        self._device_interop.wait_exported_timepoint(external_timepoint)
-        self._external_timepoints.append((external_timepoint, self._main_timepoint))
-
-    def __del__(self):
-        print("-----------")
-        self._main_timeline.wait(self._main_timepoint)
-        self._try_clean_external_timepoints()
+        if external_timepoint is not None:    
+            self._try_clean_external_timepoints()
+            self._device_interop.wait_exported_timepoint(external_timepoint)
+            self._external_timepoints.append((external_timepoint, self._main_timepoint))
+        else:
+            self._main_timeline.wait(self._main_timepoint)
 
     def __new__(
         cls,

@@ -57,53 +57,6 @@ _NamedVmModule = Tuple[str, VmModule]
 _TargetBinary = Tuple[VmContext, VmFunction]
 _Loader = Callable[[Device], _NamedVmModule]
 
-dll = None
-
-def get_dll():
-    global dll
-    if dll is not None:
-        return dll
-    dll = ctypes.CDLL("libamdhip64.so")
-    dll.hipEventCreate.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_int32]
-    dll.hipEventCreate.restype = ctypes.c_int32
-
-    dll.hipEventRecord.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-    dll.hipEventRecord.restype = ctypes.c_int32
-
-    dll.hipEventDestroy.argtypes = [ctypes.c_void_p]
-    dll.hipEventDestroy.restype = ctypes.c_int32
-
-    dll.hipStreamWaitEvent.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
-    dll.hipStreamWaitEvent.restype = ctypes.c_int32
-    return dll
-
-def get_raw_event():
-    dll = get_dll()
-    evt = ctypes.c_void_p(0)
-    ret = dll.hipEventCreate(evt, 2)
-    if ret != 0:
-        raise RuntimeError("Could not create event")
-    return evt
-
-def record_event(stream:int, evt: ctypes.c_void_p):
-    dll = get_dll()
-    ret = dll.hipEventRecord(evt, ctypes.c_void_p(stream))
-    if ret != 0:
-        raise RuntimeError("Could not record event")
-
-def wait_event(stream:int, evt: ctypes.c_void_p):
-    dll = get_dll()
-    ret = dll.hipStreamWaitEvent(ctypes.c_void_p(stream), evt, 0)
-    if ret != 0:
-        raise RuntimeError("Could not wait on event")
-
-def destroy_event(evt: ctypes.c_void_p):
-    pass
-    #dll = get_dll()
-    #ret = dll.hipEventDestroy(evt)
-    #if ret != 0:
-    #    raise RuntimeError("Could not destroy event")
-
 class Launchable:
     """Facilities for launching a compiled program (VMFB) on an attached device.
 
@@ -285,10 +238,7 @@ class Launchable:
                 f"Cannot invoke Launchable {self} without any Tensor args or an explicit device="
             )
 
-        print(f"PreWait {turbine_device._main_timepoint}")
         external_timepoint = turbine_device.setup_iree_action()
-        print(f"Wait {turbine_device._main_timepoint - 1} Signal {turbine_device._main_timepoint}")
-        print(f"ETP {str(external_timepoint)}")
 
         wait_fence = HalFence.create_at(turbine_device._main_timeline, turbine_device._main_timepoint - 1)
         signal_fence = HalFence.create_at(turbine_device._main_timeline, turbine_device._main_timepoint)
@@ -301,15 +251,8 @@ class Launchable:
         ret_list = VmVariantList(1)
         vm_context.invoke(vm_function, arg_list, ret_list)
 
-        # If we have an external timepoint, then the device can handle
-        # asynchronous execution, allow it to proceed
-        # Otherwise the device does not handle asynchonous execution
-        # and we should wait for the signal fence ourselves.
-        if external_timepoint is not None:
-            turbine_device.finalize_iree_action(external_timepoint)
-        else:
-            signal_fence.wait()
-
+        turbine_device.finalize_iree_action(external_timepoint)
+        
         torch_results = []
         for i in range(len(ret_list)):
             result = ret_list.get_variant(i)
@@ -327,7 +270,6 @@ class Launchable:
             return None
         else:
             return torch_results
-
 
 def _jit_callback(program_source: Any) -> _Loader:
     session = Session()
