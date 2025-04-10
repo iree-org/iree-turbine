@@ -35,7 +35,7 @@ from .common.utils import (
     dump_generated_mlir,
     param_bool,
 )
-from iree.turbine.kernel.wave.constraints import MMAType
+from iree.turbine.kernel.wave.constraints import MMAType, GenericDot
 import os
 import json
 from torch.testing import assert_close
@@ -221,7 +221,7 @@ def testGemm(
 @pytest.mark.parametrize("shape", [(4, 64, 8)])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
-@pytest.mark.parametrize("mfma_variant", [MMAType.GenericDot])
+@pytest.mark.parametrize("mfma_variant", [GenericDot()])
 def testGemmDot(
     shape: tuple[int],
     enable_scheduling: SchedulingType,
