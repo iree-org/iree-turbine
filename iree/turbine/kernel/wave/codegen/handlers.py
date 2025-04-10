@@ -289,6 +289,62 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
+def decompose_value(src: Value, bitsize: int) -> list[Value]:
+    """
+    Decomposes a value into smaller values of the given bitsize.
+    For example, if the input is a vector of 128 bits and the bitsize is 32,
+    it will return 4 values of 32 bits each.
+    """
+    src_width = src.type.element_type.width * sum(src.type.shape)
+    if src_width < bitsize:
+        src = llvm_d.bitcast(IntegerType.get_signless(src_width), src)
+        src = arith_d.extui(IntegerType.get_signless(bitsize), src)
+        src_width = bitsize
+
+    if src_width % bitsize != 0:
+        raise ValueError(f"Cannot decompose {src_width} bits into {bitsize} bits.")
+
+    num_elements = src_width // bitsize
+    temp_vec_type = VectorType.get([num_elements], IntegerType.get_signless(bitsize))
+    src = llvm_d.bitcast(temp_vec_type, src)
+    elements = []
+    for i in range(num_elements):
+        element = vector_d.extract(src, static_position=[i], dynamic_position=[])
+        elements.append(element)
+
+    return elements
+
+
+def compose_values(res_type: IrType, elements: list[Value]) -> Value:
+    """
+    Composes a list of values into a single value of the given type.
+    """
+    bitsize = elements[0].type.width
+    num_elements = len(elements)
+    temp_vec_type = VectorType.get([num_elements], IntegerType.get_signless(bitsize))
+    result = vector_d.from_elements(temp_vec_type, elements)
+    dst_width = res_type.element_type.width * sum(res_type.shape)
+    if dst_width < bitsize:
+        result = llvm_d.bitcast(IntegerType.get_signless(bitsize), result)
+        result = arith_d.trunci(IntegerType.get_signless(dst_width), result)
+
+    result = llvm_d.bitcast(res_type, result)
+    return result
+
+
+def create_shuffle(
+    src: Value, offset: Value, width: Value, mode: gpu_d.ShuffleMode
+) -> Value:
+    bitsize = 32
+    values = decompose_value(src, bitsize)
+    result = []
+    for value in values:
+        value = gpu_d.shuffle(value, offset, width, mode)[0]
+        result.append(value)
+
+    return compose_values(src.type, result)
+
+
 def emit_dot(
     emitter: WaveEmitter,
     config: GenericDot,
@@ -308,28 +364,23 @@ def emit_dot(
 
         return v
 
-    i32 = IntegerType.get_signless(32)
-    width = arith_d.constant(i32, threads_per_wave)
+    vec_size = config.out_vec_size
+    if vec_size > 1:
+        i32 = IntegerType.get_signless(32)
+        width = arith_d.constant(i32, threads_per_wave)
 
     elements = []
-    vec_size = config.out_vec_size
     for i in range(vec_size):
         a = src_a
         b = src_b
-        a = cast(a)
-        b = cast(b)
-        a_vals = []
         if vec_size > 1:
             offset_expr = ((THREAD_0 % threads_per_wave) // vec_size) * vec_size + i
             offset = gen_sympy_index(add_emitter_subs(emitter), offset_expr)
             offset = arith_d.index_cast(i32, offset)
-            for j in range(a.type.shape[0]):
-                a_elem = vector_d.extract(a, static_position=[j], dynamic_position=[])
-                a_elem = gpu_d.shuffle(a_elem, offset, width, gpu_d.ShuffleMode.IDX)[0]
-                a_vals.append(a_elem)
+            a = create_shuffle(a, offset, width, gpu_d.ShuffleMode.IDX)
 
-            a = vector_d.from_elements(a.type, a_vals)
-
+        a = cast(a)
+        b = cast(b)
         val = arith_d.mulf(a, b)
         val = cast(val)
 
