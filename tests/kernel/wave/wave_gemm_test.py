@@ -218,10 +218,20 @@ def testGemm(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", [(4, 64, 8)])
+@pytest.mark.parametrize("shape", [(64, 64, 64), (123, 123, 123)])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
-@pytest.mark.parametrize("mfma_variant", [GenericDot()])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        GenericDot(k_size=1),
+        GenericDot(k_size=2),
+        GenericDot(k_size=4),
+        GenericDot(out_vec_size=1),
+        GenericDot(out_vec_size=2),
+        GenericDot(out_vec_size=4),
+    ],
+)
 def testGemmDot(
     shape: tuple[int],
     enable_scheduling: SchedulingType,
