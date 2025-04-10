@@ -103,7 +103,6 @@ def context_attention_fwd(
         V = V.expand(Q.shape[0], *V.shape[1:])
         dk_sqrt = math.sqrt(1.0 / Q.shape[-1])
         a = torch.bmm(Q * dk_sqrt, K.transpose(-1, -2))
-        # breakpoint()
         if score_mod == ScoreMod.SoftCap:
             a = a / logit_cap
             a = torch.tanh(a)
@@ -126,7 +125,6 @@ def context_attention_fwd(
             )
             # Apply the mask to set the upper triangular part to -infinity
             a[mask == 1] = float("-inf")
-            # breakpoint()
         reference = torch.bmm(F.softmax(a, dim=-1).to(dtype=V.dtype), V)
         reference = reference.squeeze(0).permute(1, 0, 2)
         o[start:end] = reference
@@ -517,6 +515,8 @@ def testExtendRpeAttention(
         qo_indptr,
         kv_indptr,
         kv_indices,
+        _,
+        _,
         b_start_loc,
         b_seq_len_prefix,
         extend_token_num,
