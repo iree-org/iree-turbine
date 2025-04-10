@@ -133,3 +133,51 @@ def testQLinearPerTensor1DBatchNoBias():
     rmse_error = torch.sqrt(torch.mean((wave_output - ref_output) ** 2)).item()
     assert absmax_error < 1e-1, "absmax is not less than the threshold"
     assert rmse_error < 1e-2, "RMSE is not less than the threshold"
+
+
+@require_e2e
+@require_cdna3
+def testQLinearPerTensor1DBatch():
+    torch.manual_seed(1)
+    batch = 16
+    input_len = 32
+    in_features = 64
+    out_features = 128
+    device = torch.device("cuda:0")
+    dtype = torch.float16
+    quant_params = {
+        "weight_scale": torch.rand(1),
+        "weight_scale_shape": [1],
+        "input_scale": torch.rand(1),
+        "input_scale_shape": [1],
+        "qdtype": torch.float8_e4m3fnuz,
+    }
+    # Setup reference linear layer and wave linear layer.
+    ref_linear = RefQuantLinear(
+        in_features,
+        out_features,
+        quant_params=quant_params,
+        device=device,
+        bias=True,
+    )
+    wave_linear = WaveQuantLinear(
+        in_features,
+        out_features,
+        quant_params=quant_params,
+        device=device,
+        dtype=dtype,
+        bias=True,
+    )
+    # Copy data from reference torch
+    with torch.no_grad():
+        wave_linear.weight.copy_(ref_linear.linear.weight.data)
+        wave_linear.bias.copy_(ref_linear.linear.bias.data)
+
+    # Run and compare output
+    test_inputs = torch.randn(batch, input_len, in_features, dtype=dtype, device=device)
+    ref_output = ref_linear.forward(test_inputs)
+    wave_output = wave_linear.forward(test_inputs)
+    absmax_error = torch.abs(torch.max(wave_output - ref_output))
+    rmse_error = torch.sqrt(torch.mean((wave_output - ref_output) ** 2)).item()
+    assert absmax_error < 1e-1, "absmax is not less than the threshold"
+    assert rmse_error < 1e-2, "RMSE is not less than the threshold"
