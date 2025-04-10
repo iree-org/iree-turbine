@@ -181,7 +181,7 @@ class HardwareConstraint(Constraint):
             # (M x K, N x K) -> M x N
             case MMAType.GenericDot:
                 offset = [
-                    lane % 4,  # M
+                    Piecewise((lane % 4, ~MMA_ACC), (0, MMA_ACC)),  # M
                     lane,  # N
                     0,  # K
                 ]
@@ -331,9 +331,9 @@ class HardwareConstraint(Constraint):
                     4,  # K
                 ]
                 stride = [
-                    1,  # M
+                    Piecewise((1, ~MMA_ACC), (64, MMA_ACC)),  # M
                     1,  # N
-                    1,  # K
+                    4,  # K
                 ]
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 size = [

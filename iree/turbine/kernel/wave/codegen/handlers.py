@@ -315,7 +315,7 @@ def emit_product(
         b = cast(b)
         offset = arith_d.constant(i32, i)
         id = arith_d.index_cast(i32, emitter.thread_ids[0])
-        offset = arith_d.addi(offset, id)
+        offset = arith_d.xori(offset, id)
         mask = arith_d.constant(i32, (1 << 2) - 1)
         offset = arith_d.andi(offset, mask)
         a_vals = []
