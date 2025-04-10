@@ -328,7 +328,7 @@ def emit_dot(
                 a_elem = gpu_d.shuffle(a_elem, offset, width, gpu_d.ShuffleMode.IDX)[0]
                 a_vals.append(a_elem)
 
-        a = vector_d.from_elements(a.type, a_vals)
+            a = vector_d.from_elements(a.type, a_vals)
 
         val = arith_d.mulf(a, b)
         val = cast(val)
