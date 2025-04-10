@@ -808,7 +808,7 @@ def get_evoformer_attention_bwd_kernel(
         # TODO(#381) and TODO(#384): We need the degenerate tiling to make Wave
         # recognize the dims, but it needs to be at least the vector size or we
         # get errors about tile size being divisible by vector size.
-
+        #
         # Workgroup constraint can only be up to 5 currently
         # tkw.WorkgroupConstraint(K1_qkd, BLOCK_K1_c_qkd, 1),
         tkw.WorkgroupConstraint(N_vd, BLOCK_N_vd, 1),
@@ -959,7 +959,7 @@ def get_evoformer_attention_bwd_kernel(
             k_j = tkw.read(
                 k,
                 mapping=k_read_mapping_flip_h_k2,
-                elements_per_thread=MFMA_INPUT_ELS_PER_THREAD
+                elements_per_thread=MFMA_INPUT_ELS_PER_THREAD,
             )
             q_i = tkw.read(q, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
 
@@ -976,13 +976,13 @@ def get_evoformer_attention_bwd_kernel(
                 s_ij,
                 s,
                 mapping=s_dp_ds_write_mapping_flip_h_m,
-                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
             )
             s_ij = tkw.permute(s_ij, [B, BN, H, K2_kvs, M_qs])
             lse_i = tkw.read(
                 lse,
                 mapping=D_lse_read_mapping_flip_h_m,
-                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
             )
             p_ij = tkw.exp2(log2e * (tkw.cast(s_ij, tkl.f16) - lse_i))
             tkw.write(
@@ -1002,14 +1002,14 @@ def get_evoformer_attention_bwd_kernel(
             v_j = tkw.read(
                 v,
                 mapping=v_read_mapping_flip_h_k2,
-                elements_per_thread=MFMA_INPUT_ELS_PER_THREAD
+                elements_per_thread=MFMA_INPUT_ELS_PER_THREAD,
             )
             # TODO(#603): Wave has implicit layout requirements for MMAs, so we
             # have load do_i again in this layout.
             do_i_for_dp = tkw.read(
                 do,
                 mapping=do_read_mapping_flip_h_m,
-                elements_per_thread=MFMA_INPUT_ELS_PER_THREAD
+                elements_per_thread=MFMA_INPUT_ELS_PER_THREAD,
             )
             dp_acc = tkl.Register[B, BN, H, K2_kvs, M_qs, tkl.f32](0.0)
             dp_ij = tkw.mma(v_j, do_i_for_dp, dp_acc)
@@ -1018,7 +1018,7 @@ def get_evoformer_attention_bwd_kernel(
                 dp_ij,
                 dp,
                 mapping=s_dp_ds_write_mapping_flip_h_m,
-                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
             )
 
             D_i = tkw.read(
@@ -1031,7 +1031,7 @@ def get_evoformer_attention_bwd_kernel(
                 dp_ij_sub,
                 dp_sub,
                 mapping=s_dp_ds_write_mapping_flip_h_m,
-                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
             )
 
             # Just multiplying p_ij * dp_ij_sub breaks the previously calculated
@@ -1045,14 +1045,14 @@ def get_evoformer_attention_bwd_kernel(
                 ds_ij,
                 ds,
                 mapping=s_dp_ds_write_mapping_flip_h_m,
-                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
             )
             ds_scaled_ij = scale_ds_reg * ds_ij
             tkw.write(
                 ds_scaled_ij,
                 ds_scaled,
                 mapping=s_dp_ds_write_mapping_flip_h_m,
-                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+                elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
             )
 
             # TODO(#603): Wave has implicit layout requirements for MMAs, so we
@@ -1091,13 +1091,13 @@ def get_evoformer_attention_bwd_kernel(
             tkw.cast(dv_j, tkl.f16),
             dv,
             mapping=dv_write_mapping_flip_h_k2,
-            elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+            elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
         )
         tkw.write(
             tkw.cast(dk_j, tkl.f16),
             dk,
             mapping=dk_write_mapping_flip_h_k2,
-            elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD
+            elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD,
         )
 
     hyperparams = {
@@ -1796,7 +1796,7 @@ def testEvoformerAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...])
         k.transpose(-2, -3),
         v.transpose(-2, -3),
         do.transpose(-2, -3),
-        scale=scale
+        scale=scale,
     )
 
     attention_fwd, hyperparams = get_evoformer_attention_fwd_kernel(
