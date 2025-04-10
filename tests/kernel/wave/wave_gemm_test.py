@@ -301,7 +301,7 @@ def testGemmDot(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_M: 64,
+        BLOCK_M: mfma_variant.out_vec_size * 2,
         BLOCK_N: 64,
         BLOCK_K: 8,
         M: shape[0],
