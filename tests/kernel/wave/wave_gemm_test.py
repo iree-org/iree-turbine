@@ -345,7 +345,6 @@ def testGemmDot(
     a = device_randn(shape[0], shape[2], dtype=torch.float16)
     b = device_randn(shape[1], shape[2], dtype=torch.float16)
     c = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    from math import inf
 
     asm = gemm(a, b, c)
 
