@@ -307,24 +307,23 @@ def emit_product(
 
     i32 = IntegerType.get_signless(32)
     width = arith_d.constant(i32, threads_per_wave)
+
     elements = []
     for i in range(4):
         a = src_a
         b = src_b
         a = cast(a)
         b = cast(b)
-        offset = arith_d.constant(i32, i)
-        id = arith_d.index_cast(i32, emitter.thread_ids[0])
-        offset = arith_d.xori(offset, id)
-        mask = arith_d.constant(i32, (1 << 2) - 1)
-        offset = arith_d.andi(offset, mask)
         a_vals = []
         b_vals = []
+        offset_expr = ((THREAD_0 % threads_per_wave) // 4) * 4 + i
+        offset = gen_sympy_index(add_emitter_subs(emitter), offset_expr)
+        offset = arith_d.index_cast(i32, offset)
         for j in range(a.type.shape[0]):
             a_elem = vector_d.extract(a, static_position=[j], dynamic_position=[])
             b_elem = vector_d.extract(b, static_position=[j], dynamic_position=[])
-            a_elem = gpu_d.shuffle(a_elem, offset, width, gpu_d.ShuffleMode.XOR)[0]
-            b_elem = gpu_d.shuffle(b_elem, offset, width, gpu_d.ShuffleMode.XOR)[0]
+            a_elem = gpu_d.shuffle(a_elem, offset, width, gpu_d.ShuffleMode.IDX)[0]
+            b_elem = gpu_d.shuffle(b_elem, offset, width, gpu_d.ShuffleMode.IDX)[0]
             a_vals.append(a_elem)
             b_vals.append(b_elem)
 
