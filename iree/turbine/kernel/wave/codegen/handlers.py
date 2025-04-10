@@ -96,13 +96,7 @@ from ...compiler.vector_codegen import (
     cast_py_value,
     cast_vector,
 )
-from ..constraints import (
-    Constraint,
-    HardwareConstraint,
-    MMAType,
-    WorkgroupConstraint,
-    TilingConstraint,
-)
+from ..constraints import GenericDot, HardwareConstraint
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
 
@@ -273,8 +267,13 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-def emit_product(
-    emitter: WaveEmitter, src_a: Value, src_b: Value, acc: Value, threads_per_wave: int
+def emit_dot(
+    emitter: WaveEmitter,
+    config: GenericDot,
+    src_a: Value,
+    src_b: Value,
+    acc: Value,
+    threads_per_wave: int,
 ) -> Value:
     res_type = acc.type
     res_element_type = res_type.element_type
@@ -291,13 +290,14 @@ def emit_product(
     width = arith_d.constant(i32, threads_per_wave)
 
     elements = []
-    for i in range(4):
+    vec_size = config.out_vec_size
+    for i in range(vec_size):
         a = src_a
         b = src_b
         a = cast(a)
         b = cast(b)
         a_vals = []
-        offset_expr = ((THREAD_0 % threads_per_wave) // 4) * 4 + i
+        offset_expr = ((THREAD_0 % threads_per_wave) // vec_size) * vec_size + i
         offset = gen_sympy_index(add_emitter_subs(emitter), offset_expr)
         offset = arith_d.index_cast(i32, offset)
         for j in range(a.type.shape[0]):
@@ -355,9 +355,14 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     if mma_type is None:
         mma_type = hardware_constraints[0].mma_type
 
-    if mma_type == MMAType.GenericDot:
-        result = emit_product(
-            emitter, values[0], values[1], acc, hardware_constraints[0].threads_per_wave
+    if isinstance(mma_type, GenericDot):
+        result = emit_dot(
+            emitter,
+            mma_type,
+            values[0],
+            values[1],
+            acc,
+            hardware_constraints[0].threads_per_wave,
         )
         emitter.bind_node_proxy(node, IRProxyValue(result))
         return
