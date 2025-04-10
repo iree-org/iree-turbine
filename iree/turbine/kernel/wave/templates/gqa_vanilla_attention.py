@@ -15,6 +15,7 @@ from .attention_common import *
 import math
 import torch
 from typing import Optional
+import sympy
 
 
 def get_gqa_bshd_attention_kernel(
@@ -80,7 +81,13 @@ def get_gqa_bshd_attention_kernel(
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 3)]
     constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 3, primary=False)]
-    constraints += [tkw.TilingConstraint(N_KV, BLOCK_N_KV)]
+    constraints += [
+        tkw.TilingConstraint(
+            N_KV,
+            BLOCK_N_KV,
+            iters=sympy.Min((WORKGROUP_0 + 1) * BLOCK_N_Q, N_KV) // BLOCK_N_KV,
+        )
+    ]
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / 4)]
     constraints += [tkw.WaveConstraint(D_KV, BLOCK_D_KV / 1)]
 
@@ -180,7 +187,10 @@ def get_gqa_bshd_attention_kernel(
             x_j *= qk_scaling
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
-            e_delta = tkw.exp2(x_j - m_j + fp8_offset)
+            if use_fp8:
+                e_delta = tkw.exp2(x_j - m_j + fp8_offset)
+            else:
+                e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
             if use_fp8:
@@ -196,7 +206,12 @@ def get_gqa_bshd_attention_kernel(
 
         res_max, res_sum, res_mm = repeat
         reciprocal_sum = tkw.reciprocal(res_sum)
-        res = res_mm * reciprocal_sum * v_dequant
+        if use_fp8:
+            res = res_mm * reciprocal_sum * v_dequant
+        else:
+            res = res_mm * reciprocal_sum
+        if wave_output_dtype != tkl.f32:
+            res = tkw.cast(res, wave_output_dtype)
         tkw.write(res, c, mapping=mapping)
 
     hyperparams = {
@@ -204,8 +219,8 @@ def get_gqa_bshd_attention_kernel(
         BLOCK_B: 1,
         BLOCK_H: 1,
         BLOCK_N_Q: 128,
-        BLOCK_D_KV: 64,
-        BLOCK_N_KV: 64,
+        BLOCK_D_KV: 128,
+        BLOCK_N_KV: 32,
         B: shape.num_seqs,
         H: shape.num_query_heads,
         H_KV: shape.num_kv_heads,
