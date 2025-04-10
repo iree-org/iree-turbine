@@ -323,7 +323,11 @@ class ConvSignature:
                 else ConvBackwardInput(self)
             )
         if self.mode == Mode.FORWARD:
-            return ConvForwardCustomGeneric(self) if use_custom else ConvForward(self)
+            return (
+                ConvForwardCustomGeneric(self)
+                if use_custom and not self.transposed
+                else ConvForward(self)
+            )
         raise ValueError(f"signature has unexpected mode: {self.mode}")
 
 
@@ -386,6 +390,8 @@ class ConvForwardCustomNHWC(torch.nn.Module):
 class ConvForwardCustomGeneric(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
         super().__init__()
+        if sig.transposed:
+            raise NotImplementedError("Generic conv tranpose fwd NYI.")
         self.groups = sig.groups
         self.xl = str(sig.input_layout).lower()
         self.wl = str(sig.kernel_layout).lower().replace("n", "f")
