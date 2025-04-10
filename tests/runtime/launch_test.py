@@ -125,7 +125,7 @@ class LaunchableTest(unittest.TestCase):
             temp_cache = Path(td)
             launch_no_jit = Launchable.from_file_cache_only(file_cache_dir=temp_cache)
             # check that the empty cache causes failure on preload
-            with self.assertRaises(OSError):
+            with self.assertRaises(RuntimeError):
                 launch_no_jit.preload(self.device)
             # get a launchable with file cache and preload
             launch_jit = Launchable.jit_compile(
