@@ -139,7 +139,7 @@ def _load_commands(commands_file):
         raise ValueError(
             f"'commands-file' specification, '{commands_file}', cannot be found."
         )
-    commands = path.read_text().splitlines()
+    commands = [c for c in path.read_text().splitlines() if c.startswith("conv")]
     return commands
 
 

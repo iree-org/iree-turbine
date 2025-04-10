@@ -120,6 +120,21 @@ class LaunchableTest(unittest.TestCase):
             intercept_stream.close()
             logger.setLevel(old_level)
 
+    def testLaunchFileCacheOnly(self):
+        with tempfile.TemporaryDirectory() as td:
+            temp_cache = Path(td)
+            launch_no_jit = Launchable.from_file_cache_only(file_cache_dir=temp_cache)
+            # check that the empty cache causes failure on preload
+            with self.assertRaises(RuntimeError):
+                launch_no_jit.preload(self.device)
+            # get a launchable with file cache and preload
+            launch_jit = Launchable.jit_compile(
+                MLIR_NO_PARAMS_ASM, file_cache_dir=temp_cache
+            )
+            launch_jit.preload(self.device)
+            # preload using the no_jit launchable
+            launch_no_jit.preload(self.device)
+
 
 @unittest.skipIf(
     len(devices) == 1,
