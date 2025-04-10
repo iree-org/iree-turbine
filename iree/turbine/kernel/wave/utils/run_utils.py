@@ -107,11 +107,9 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     # Linearize arguments, In linearized arg_list, we first push in all inputs,
     # then all the outputs, and lastly all the dynamic dims.
     for input in inputs:
-        if isinstance(input, torch.Tensor):
+        if not isinstance(input, float) and isinstance(input, torch.Tensor):
             push_tensor_to_arg_list(input)
-        elif isinstance(input, float):
-            arg_list.push_float(input)
-        else:
+        elif not isinstance(input, float):
             raise ValueError(f"Unsupported input type: {type(input)}")
     for output in outputs:
         if isinstance(output, torch.Tensor):
@@ -263,10 +261,10 @@ def invoke_with_wave_runtime(
 
     # Ensure that the tensors are contiguous.
     kern_args = []
-    scalar_args = 0.0
+    scalar_args = []
     for arg_tensor in kernel_inputs + kernel_outputs:
         if isinstance(arg_tensor, float):
-            scalar_args = arg_tensor
+            scalar_args.append(arg_tensor)
             continue
         if not arg_tensor.is_contiguous():
             arg_tensor = arg_tensor.contiguous()

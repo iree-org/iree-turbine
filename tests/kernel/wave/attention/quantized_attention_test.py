@@ -14,14 +14,12 @@ from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
 from iree.turbine.kernel.wave.utils.torch_utils import (
-    device_full,
     device_randn,
     device_zeros,
 )
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.constraints import MMAType
 import os
-from torch.testing import assert_close
 from ..common.utils import (
     require_e2e,
     require_cdna3,
@@ -94,6 +92,8 @@ def testAttentionPure(
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
+        inplace=False,  # we are supporting wave_runtime for scalar codegen for now
+        wave_runtime=True,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
         benchmark_batch_size=10,
@@ -105,9 +105,6 @@ def testAttentionPure(
 
     options = set_default_run_config(options)
     base_attention = wave_compile(options, base_attention)
-
-    # with open("scalar_codegen.mlir", "w") as f:
-    #     f.write(base_attention.asm)
 
     torch.manual_seed(0)
     # Smaller range to help with FP8 minimum range
@@ -134,10 +131,7 @@ def testAttentionPure(
             MAX_RANGE,
         )
     )
-    # q_scale_vec = device_full((shape.num_query_heads, 1), q_scale, dtype=torch.float32)
-    # k_scale_vec = device_full((shape.num_query_heads, 1), k_scale, dtype=torch.float32)
-    # v_scale_vec = device_full((shape.num_query_heads, 1), v_scale, dtype=torch.float32)
-    output = device_zeros(o_shape, dtype=torch.float32)
+    output = device_zeros(o_shape, dtype=torch.float32) + 3.14
     asm = base_attention(
         q,
         k,
