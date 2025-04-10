@@ -27,7 +27,7 @@ def compare(y: torch.Tensor, y_ref: torch.Tensor) -> Dict[str, Union[bool, float
 
 def _run(commands: Sequence[str], allow_jit_compile: bool):
     if not torch.cuda.is_available():
-        raise OSError("No cuda drivers found: Cannot run tests.")
+        raise RuntimeError("No cuda drivers found: Cannot run tests.")
     results = dict()
     cuda = torch.device("cuda:0")
     cpu = torch.device("cpu")

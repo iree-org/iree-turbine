@@ -100,17 +100,16 @@ class Launchable:
         parameter_providers: Sequence[ParameterProvider] = (),
         entry_point: str = "main",
     ) -> "Launchable":
+        """Only loads vmfbs from the provided file_cache_dir. Will raise an error if not found."""
         cache_dir = Path(file_cache_dir)
         if not cache_dir.is_dir():
             raise ValueError(f"Specified cache_dir, {cache_dir}, does not exist.")
 
         def callback(device: Device):
-            key_hash = hashlib.sha1(
-                device.type_cache_key.encode(), usedforsecurity=False
-            ).hexdigest()
+            key_hash = device.get_type_key_hash()
             vmfb_path = Path(file_cache_dir) / f"{key_hash}.vmfb"
             if not vmfb_path.is_file():
-                raise OSError(
+                raise RuntimeError(
                     f"No vmfb found at {vmfb_path}. Please try running with jit compilation enabled, "
                     f"or verify {Path(file_cache_dir).parent} is the correct cache directory to use."
                 )
@@ -154,7 +153,6 @@ class Launchable:
         return Launchable(loader, parameter_providers)
 
     def _resolve_target_binary(self, turbine_device: Device) -> _TargetBinary:
-
         # Try binary cache for specific device:
         device_key = turbine_device.instance_cache_key
         existing = self._target_binaries.get(device_key)
@@ -295,9 +293,7 @@ def _caching_jit_callback(program_source: Any, cache_dir: Path | str):
     cache_dir.mkdir(exist_ok=True, parents=True)
 
     def callback(device: Device):
-        key_hash = hashlib.sha1(
-            device.type_cache_key.encode(), usedforsecurity=False
-        ).hexdigest()
+        key_hash = device.get_type_key_hash()
         vmfb_path: Path = cache_dir / f"{key_hash}.vmfb"
         vm_instance = device.vm_instance
         if vmfb_path.is_file():
