@@ -133,6 +133,76 @@ def test_gemm():
 
 
 @run_test
+def test_gemm_dot():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            mma_type=tkw.GenericDot(out_vec_size=4, k_size=4),
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm_dot(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.reduction(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 64,
+            N: 128,
+            K: 64,
+            BLOCK_M: 4,
+            BLOCK_N: 64,
+            BLOCK_K: 8,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    gemm_dot = wave_compile(options, gemm_dot)
+    print(gemm_dot.asm)
+
+    # CHECK-LABEL:    test_gemm_dot
+    # CHECK:          func.func @gemm_dot
+    # CHECK-COUNT-2     memref.alloc()
+    # CHECK:            scf.for
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK:              vector.load
+    # CHECK:              vector.store
+    # CHECK:              vector.load
+    # CHECK:              vector.store
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK-COUNT-4:      vector.load
+    # CHECK-COUNT-16:     gpu.shuffle
+    # CHECK:              arith.mulf
+    # CHECK:              vector.reduction <add>
+    # CHECK-COUNT-16:     gpu.shuffle
+    # CHECK:              arith.mulf
+    # CHECK:              vector.reduction <add>
+    # CHECK-COUNT-4:    vector.store
+
+
+@run_test
 def test_cdna2_int_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
