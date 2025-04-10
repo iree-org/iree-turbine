@@ -39,6 +39,7 @@ class DataType:
     def __init__(self, name, ir_type_asm=None):
         self._name = name
         self._ir_type_asm = ir_type_asm if ir_type_asm else name
+        self._symbolic_shape = ()
 
     def ir_type_asm(self):
         return self._ir_type_asm
@@ -70,8 +71,19 @@ class DataType:
         return int(self._name[1:])
 
     @property
+    def dtype(self):
+        return DataType("f32")
+
+    @property
     def symbolic_shape(self):
-        return []
+        return self._symbolic_shape
+
+    @symbolic_shape.setter
+    def symbolic_shape(self, value):
+        if not value:
+            self._symbolic_shape = ()
+        else:
+            self.symbolic_shape = value
 
 
 bf16 = DataType("bf16")

@@ -1827,11 +1827,7 @@ class Broadcast(CustomOp, ABC):
         return self.target_shape
 
     def infer_type(self):
-        # src_dtype = get_custom(self.arg).type.dtype
-        if hasattr(self, "dtype"):
-            src_dtype = get_custom(self.arg).type.dtype
-        else:
-            src_dtype = DataType("float32")
+        src_dtype = get_custom(self.arg).type.dtype
         self.type = Register[(*self.target_shape, src_dtype)]
 
 
