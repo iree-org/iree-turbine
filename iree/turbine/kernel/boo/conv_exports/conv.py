@@ -235,7 +235,7 @@ class ConvSignature:
             input_shape=list(input.shape),
             kernel_shape=list(weight.shape),
             dtype=input.dtype,
-            bias=bool(bias),
+            bias=(bias is not None),
             **kwargs,
         )
 

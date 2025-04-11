@@ -7,11 +7,42 @@ This directory contains some code for generating and launching convolution kerne
 - `generate.py` : (for IREE developers) A script for generating some MLIR.
 - `launch.py` : Contains `get_launchable` function for converting a `ConvSignature` to a kernel launchable from python. This launchable interacts with a file cache the user can control with the environment variables `BOO_CACHE_ON=<0 or 1>` and  `BOO_CACHE_DIR=<absolute path>`.
 - `miopen_parser.py` : Contains a parser for converting an MiOpen driver command to a `ConvSignature`.
-- `preload.py` : Contains a `CachePrepopulator` class for prepopulating the launchable file cache.
+- `preload.py` : Contains a `CachePrepopulator` class for pre-populating the launchable file cache. Can be run as a script with a specified commands `.txt` file.
+- `numerics_runner.py` : A script for comparing boo gpu numerics against pytorch for convolutions in a specified `.txt` file.
+
+## Useful Environment Variables:
+
+- `BOO_CACHE_ON=<0 or 1>` : Whether to store launchable artifacts to a file cache. If unset, this will default to 1 (cache on).
+- `BOO_CACHE_DIR=<absolute dir path>` : Indicates where to store launchable artifacts. If unset, will default to `~/.cache/turbine_kernels/boo/`.
+- `TURBINE_DEBUG` : See `iree.turbine.runtime.logging` for more details. It is useful to set `TURBINE_DEBUG="log_level=DEBUG"` to see debug prints when something goes wrong.
 
 ## Usage from python
 
 Some examples of creating and launching conv kernels from python.
+
+### Basic Use:
+
+You can use `boo_conv` for user-friendly eager execution.
+
+```python
+import torch
+
+from iree.turbine.kernel.boo.ops import boo_conv
+
+# make some 3, 4, or 5d tensors (e.g. randn or splats)
+x = torch.tensor(...)
+w = torch.tensor(...)
+
+# perform convolution
+y = boo_conv(x,w)
+
+# usual conv kwargs are also available:
+y = boo_conv(x,w,stride=[1,2],dilation=[2,2], padding=[1,0])
+
+# additional kwargs for alternative layouts also available:
+y = boo_conv(x,w, shared_layout="NHWC")
+y = boo_conv(x,w, input_layout="NCHW", kernel_layout="NHWC", output_layout="NCHW")
+```
 
 ### Basic Use: define signatures from explicit shapes
 
@@ -91,13 +122,65 @@ populator.run()
 sample_signature = populator.signatures[0]
 
 # One can also check the cache for this signature
-cache_status = populator.get_cache_status()
-print(cache_status[sample_signature.get_func_name()])
+cache_status = populator.get_cache_status(sample_signature.get_func_name())
+print(cache_status)
 
 conv = get_launchable(sample_signature)
 ```
 
-## generate.py script
+## Benchmarking convolutions
+
+The `boo_driver.py` script allows for running convolutions from the command line. It uses the same interface as `MIOpenDriver`:
+
+```console
+$ python boo_driver.py convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+>>> tensor([...], device='cuda:0', size=(128, 24, 48, 384), dtype=torch.bfloat16)
+>>> min=85.24us max=371.23us mean=255.28us stddev=92.66us
+```
+
+The driver commands can also be supplied through a file, using `--commands-file`:
+
+```console
+$ python boo_driver.py --commands-file sample_commands.txt
+convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+>>> tensor([...], device='cuda:0', size=(128, 24, 48, 384), dtype=torch.bfloat16)
+>>> min=77.76us max=115.29us mean=82.99us stddev=5.07us
+convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 4 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+>>> tensor([...], device='cuda:0', size=(384, 1, 1, 128), dtype=torch.bfloat16)
+>>> min=4383.18us max=4713.31us mean=4407.70us stddev=31.58us
+convbfp16 -n 128 -c 35 -H 48 -W 32 -k 35 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+>>> tensor([...], device='cuda:0', size=(128, 48, 32, 35), dtype=torch.bfloat16)
+>>> min=51.39us max=1989.03us mean=459.48us stddev=654.92us
+...
+```
+
+The `-t 1` option to collect timing is implemented by launching the kernel in a subprocess, which is then traced using `tracy`. Note: you can output `min_time (us)` to a csv file with `--csv=results.csv`.
+
+### Requirements for collecting timing info:
+
+#### pip installed `iree-base-runtime`:
+
+- set `IREE_PY_RUNTIME=tracy` in your environment.
+- build `tracy-csvexport` and add it to your `PATH`:
+
+```
+git clone https://github.com/wolfpld/tracy.git
+cd tracy/csvexport
+cmake -B csvexport/build -S csvexport -DCMAKE_BUILD_TYPE=Release
+cmake --build csvexport/build --parallel --config Release
+export PATH="$PWD/build/:$PATH"
+```
+
+#### local iree build with python bindings:
+
+- set `IREE_PY_RUNTIME=tracy` in your environment.
+- You may need to configure cmake with `-DTRACY_DELAYED_INIT=ON -DTRACY_MANUAL_LIFETIME=ON` to work around issues with the tracy client being closed before traces are captured.
+- build `iree-tracy-capture`. See https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-capture-cli-tool
+- build `tracy-csvexport`. See https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-csvexport-tool
+
+
+## generate.py script (deprecated)
 
 This tool is an early iteration for generating some sample MLIR files for compiler triage.
 
@@ -123,35 +206,3 @@ There are also flags in `generate.py` for:
 1. Running a single MiOpen driver signature. E.g.  `python generate.py -c "convbfp16 -n 16 -c 96 -H 48 -W 32 -k 288 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -g 1 -F 1 -t 1 --in_layout NHWC --out_layout NHWC --fil_layout NHWC"` will print the IR for that one convolution.
 2. Filtering the provided signatures by number of spatial dims (`-N` / `--num-spatial-dims`)
 3. Filtering the provided signatures by type (`-F`/ `--forw`) forward conv = "fwd", input backward = "bwd", weight backward = "wrw".
-
-## Benchmarking convolutions
-
-The `boo_driver.py` script allows for executing convolutions. It uses the same interface as `MIOpenDriver`:
-```console
-$ python boo_driver.py convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
-convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
->>> tensor([...], device='cuda:0', size=(128, 24, 48, 384), dtype=torch.bfloat16)
->>> min=85.24us max=371.23us mean=255.28us stddev=92.66us
-```
-
-The driver commands can also be supplied through a file, using `--commands-file`:
-```console
-$ python boo_driver.py --commands-file sample_commands.txt
-convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
->>> tensor([...], device='cuda:0', size=(128, 24, 48, 384), dtype=torch.bfloat16)
->>> min=77.76us max=115.29us mean=82.99us stddev=5.07us
-convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 4 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
->>> tensor([...], device='cuda:0', size=(384, 1, 1, 128), dtype=torch.bfloat16)
->>> min=4383.18us max=4713.31us mean=4407.70us stddev=31.58us
-convbfp16 -n 128 -c 35 -H 48 -W 32 -k 35 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
->>> tensor([...], device='cuda:0', size=(128, 48, 32, 35), dtype=torch.bfloat16)
->>> min=51.39us max=1989.03us mean=459.48us stddev=654.92us
-...
-```
-
-The `-t 1` option to collect timing is implemented by launching the kernel in a subprocess, which is then traced using `tracy`. Using this requires:
-- IREE runtime python bindings with tracy enabled.
-  If using the pre-built `iree-base-runtime` package, this requires setting `IREE_PY_RUNTIME=tracy` in your environment.
-  If using a local build of the python bindings, you may need to configure cmake with `-DTRACY_DELAYED_INIT=ON -DTRACY_MANUAL_LIFETIME=ON` to work around issues with the tracy client being closed before traces are captured.
-- `iree-tracy-capture`; see https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-capture-cli-tool
-- `tracy-csvexport`; see https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-csvexport-tool

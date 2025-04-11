@@ -124,24 +124,27 @@ class CachePopulator:
         pool.starmap(_out_of_process_compile, items)
         pool.close()
 
-    def get_cache_status(self, cache_dir: Union[str, Path, None] = None):
+    def get_cache_status(
+        self, func_name: str, cache_dir: Union[str, Path, None] = None
+    ):
 
         if not cache_dir:
             from iree.turbine.kernel.boo.conv_exports.launch import CACHE_BASE_DIR
 
             cache_dir = CACHE_BASE_DIR
-        cache_dir = Path(cache_dir)
 
-        key_to_hash = {}
+        cache_dir = Path(cache_dir) / func_name
+
+        mlir_import_status = (
+            cache_dir.is_dir() and (cache_dir / f"{func_name}.mlir").is_file()
+        )
+        status = {"mlir_import": mlir_import_status}
         for d in self.torch_devices:
-            key_to_hash[d] = get_device_from_torch(d).get_type_key_hash()
-        status = {}
-        for dir in cache_dir.glob("*/"):
-            name = dir.name
-            status[name] = {}
-            status[name]["MLIR"] = (dir / f"{name}.mlir").is_file()
-            for key, hash in key_to_hash.items():
-                status[name][key] = (dir / f"{hash}.vmfb").is_file()
+            vmfb_path = (
+                cache_dir / f"{get_device_from_torch(d).get_type_key_hash()}.vmfb"
+            )
+            status[d] = mlir_import_status and vmfb_path.is_file()
+
         return status
 
 
