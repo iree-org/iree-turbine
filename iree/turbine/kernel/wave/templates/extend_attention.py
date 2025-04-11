@@ -20,6 +20,7 @@ import math
 import torch
 import sympy
 from typing import Optional
+import warnings
 
 
 def get_extend_attention_kernel(
@@ -424,6 +425,7 @@ def get_extend_attention_kernel(
         mask_offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
+        warnings.warn("Custom mask with random values is untested, YMMV")
         extend_attention_core(
             q,
             k,

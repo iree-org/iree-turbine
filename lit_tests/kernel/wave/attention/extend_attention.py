@@ -378,7 +378,7 @@ def test_extend_attention_custom_mask():
         k_cache_shape,
         v_cache_shape,
         o_shape,
-        use_custom_mask=True
+        use_custom_mask=True,
     )
 
     options = WaveCompileOptions(
@@ -393,7 +393,6 @@ def test_extend_attention_custom_mask():
     )
     extend_attention = wave_compile(options, extend_attention)
     print(extend_attention.asm)
-
 
     # CHECK-LABEL:       test_extend_attention_custom_mask
     # CHECK-DAG:            #[[map34:.*]] = affine_map<()[s0, s1, s2, s3, s4, s5] -> (s3 * 32 + s4 + s5 + (s0 + s1 * 64 - (s0 floordiv 16) * 16 + (s0 floordiv 64) * 16) * s2 + ((s0 mod 64) floordiv 16) * 4)>
