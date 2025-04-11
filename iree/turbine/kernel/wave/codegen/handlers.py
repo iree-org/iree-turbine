@@ -394,7 +394,7 @@ def emit_dot(
         return result
 
     for i in range(1):
-        shuffle_offset = 1 << (i + 1)
+        shuffle_offset = 1 << i
         shuffle_offset = arith_d.constant(i32, shuffle_offset)
         shuffled = create_shuffle(result, shuffle_offset, width, gpu_d.ShuffleMode.XOR)
         result = arith_d.addf(result, shuffled)
