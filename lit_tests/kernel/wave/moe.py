@@ -254,17 +254,17 @@ def fused_moe_kernel(
         ###
         tmp_2_reg = tkw.read(
             TMP_2,
-            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+            # elements_per_thread=LOAD_ELEMS_PER_THREAD,
         )  # : [TOPK, B, N]
         expert_id = tkw.read(
             TOPK_IDS,
-            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+            # elements_per_thread=LOAD_ELEMS_PER_THREAD,
         )  # : [B, TOPK]
         w2_reg = tkw.read(
             W2,
             mapping=offset_mapping_w2,
             mapping_dynamic_vals=(expert_id,),
-            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+            # elements_per_thread=LOAD_ELEMS_PER_THREAD,
         )  # : [TOPK, D2, N] but indexed as [E=(B, TOPK), D2, N] and E expert_id
         acc = tkw.mma(tmp_2_reg, w2_reg, acc)
         return acc
@@ -275,13 +275,16 @@ def fused_moe_kernel(
     # RESULT[B, TOPK, D2] = TMP_3[TOPK, B, D2] * topk_score[B, TOPK]
     ###
     topk_weights = tkw.read(
-        TOPK_WEIGHTS, elements_per_thread=STORE_ELEMS_PER_THREAD
+        TOPK_WEIGHTS,
+        # elements_per_thread=STORE_ELEMS_PER_THREAD,
     )  # : [B, TOPK]
     topk_weights = tkw.broadcast(topk_weights, target_shape=[B, TOPK, D2])
     res = res * tkw.cast(topk_weights, tkl.f32)  # : [B, TOPK, D2]
 
     tkw.write(
-        res, RESULT, elements_per_thread=STORE_ELEMS_PER_THREAD
+        res,
+        RESULT,
+        #   elements_per_thread=STORE_ELEMS_PER_THREAD,
     )  # : [B, TOPK, D2]
 
 
