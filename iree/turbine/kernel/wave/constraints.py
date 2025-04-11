@@ -65,14 +65,14 @@ class GenericDot:
     mma implemented through vector dot products intead of hw intrinsics.
 
     `out_vec_size`: size of the output matrix vector
-    `k_size`: size of the reduction dimension vector
+    `k_vec_size`: size of the reduction dimension vector
     """
 
     out_vec_size: int = 4
-    k_size: int = 4
+    k_vec_size: int = 4
 
     def get_shape(self, threads_per_wave: int) -> tuple[int, int, int]:
-        return (self.out_vec_size, threads_per_wave, self.k_size)  # M x N x K
+        return (self.out_vec_size, threads_per_wave, self.k_vec_size)  # M x N x K
 
     def get_index_offset(
         self, lane: IndexExpr, threads_per_wave: int
@@ -89,7 +89,7 @@ class GenericDot:
         return [
             Piecewise((1, ~MMA_ACC), (self.out_vec_size, MMA_ACC)),  # M
             1,  # N
-            self.k_size,  # K
+            self.k_vec_size,  # K
         ]
 
     def get_index_stride(
@@ -98,11 +98,11 @@ class GenericDot:
         return [
             Piecewise((1, ~MMA_ACC), (threads_per_wave, MMA_ACC)),  # M
             1,  # N
-            self.k_size,  # K
+            self.k_vec_size,  # K
         ]
 
     def __hash__(self):
-        return hash((self.out_vec_size, self.k_size))
+        return hash((self.out_vec_size, self.k_vec_size))
 
 
 class MMAOperand(Enum):

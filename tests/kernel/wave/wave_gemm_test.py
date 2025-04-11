@@ -224,9 +224,9 @@ def testGemm(
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        GenericDot(k_size=1),
-        GenericDot(k_size=2),
-        GenericDot(k_size=4),
+        GenericDot(k_vec_size=1),
+        GenericDot(k_vec_size=2),
+        GenericDot(k_vec_size=4),
         GenericDot(out_vec_size=1),
         GenericDot(out_vec_size=2),
         GenericDot(out_vec_size=4),
