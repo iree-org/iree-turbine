@@ -259,6 +259,8 @@ def create_inputs(
     logit_cap = 30.0
 
     b_seq_mask_len = b_seq_len_extend * b_seq_len
+    # NOTE: Custom mask is of causal nature in this test. Random mask numerics
+    # is not tested.
     custom_mask = device_full(
         (b_seq_mask_len.sum().item(),), fill_value=1, dtype=torch.int8
     )
