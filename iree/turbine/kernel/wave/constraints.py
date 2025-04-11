@@ -107,7 +107,7 @@ class GenericDot:
         ]
 
     def __hash__(self):
-        return hash((self.out_vec_size, self.k_vec_size))
+        return hash((self.out_vec_size, self.k_vec_size, self.k_mult))
 
 
 class MMAOperand(Enum):
