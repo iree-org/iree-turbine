@@ -20,6 +20,7 @@ from .ir import (
     func_d,
     F32Type,
     IntegerAttr,
+    IntegerType,
 )
 
 from .._support.indexing import IndexSymbol
@@ -29,8 +30,8 @@ from .kernel_codegen import BindingDesc
 def memref_to_tensor(memrefs: list[IrType]):
     tensors = []
     for m in memrefs:
-        # TODO: handle generic case
-        if isinstance(m, F32Type):
+        # append scalars as-it-is to tensors list
+        if isinstance(m, (F32Type, IntegerType)):
             tensors.append(m)
             continue
         assert isinstance(m, MemRefType)

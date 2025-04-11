@@ -43,13 +43,14 @@ struct KernelLaunchInfo
     int blockX, blockY, blockZ;
 };
 
+enum class ScalarKind { F32, I32 };
+
 std::unordered_map<std::string, std::tuple<hipModule_t, hipFunction_t>> cache;
 using Int64Vector = std::vector<uint64_t>;
 using Int32Vector = std::vector<uint32_t>;
-using Float32Vector = std::vector<float>;
 
 int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
-    const Int64Vector &dynamicDims, const Float32Vector &floatArgs)
+    const Int64Vector &dynamicDims, nb::list scalarArgs)
 {
     hipStream_t stream = at::hip::getCurrentHIPStream();
     hipModule_t module;
@@ -67,25 +68,50 @@ int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
             cache[info.kernelHash] = std::make_tuple(module, function);
     }
 
+    ScalarKind scalarKind;
+    size_t scalarSize = 4;
+
+    if (scalarArgs.size() == 0) {
+        scalarKind = ScalarKind::F32;
+    } else {
+        nb::handle first = scalarArgs[0];
+        if (nb::isinstance<nb::float_>(first)) {
+            scalarKind = ScalarKind::F32;
+        } else if (nb::isinstance<nb::int_>(first)) {
+            scalarKind = ScalarKind::I32;
+        } else {
+            throw std::runtime_error("Unsupported scalar type. Expected f32 or i32.");
+        }
+    }
+
     // Since we always pass our dynamic dims as index type, iree converts them to i64
     // and then splits them to two i32s, i64 = hi | lo where
     // lo = trunc(i64) and hi = trunc(i64 >> 32).
-    size_t kernArgSize = tensors.size() * sizeof(uint64_t) + 2 * dynamicDims.size() * sizeof(uint32_t) + + floatArgs.size() * sizeof(float);
-    uint8_t kernelArguments[kernArgSize];
-    uint64_t *ptr = (uint64_t *)kernelArguments;
-    for (int i = 0; i < tensors.size(); i++, ptr++)
-        *ptr = tensors[i];
-    uint32_t *ptr2 = (uint32_t *)ptr;
-    for (int i = 0; i < dynamicDims.size(); i++, ptr2++)
-    {
-        *ptr2 = (uint32_t)dynamicDims[i];
-        ptr2++;
-        *ptr2 = (uint32_t)(dynamicDims[i] >> 32);
+    size_t kernArgSize = tensors.size() * sizeof(uint64_t) + 2 * dynamicDims.size() * sizeof(uint32_t) + scalarArgs.size() * scalarSize;
+    std::vector<uint8_t> scalarBytes(scalarArgs.size() * scalarSize);
+
+    for (size_t i = 0; i < scalarArgs.size(); ++i) {
+        if (scalarKind == ScalarKind::F32) {
+            float val = nb::cast<float>(scalarArgs[i]);
+            std::memcpy(&scalarBytes[i * 4], &val, sizeof(float));
+        } else if (scalarKind == ScalarKind::I32) {
+            int32_t val = nb::cast<int32_t>(scalarArgs[i]);
+            std::memcpy(&scalarBytes[i * 4], &val, sizeof(int32_t));
+        }
     }
 
-    float *ptr3 = (float *)ptr2;
-    for (int i = 0; i < floatArgs.size(); i++, ptr3++)
-        *ptr3 = floatArgs[i];
+    uint8_t kernelArguments[kernArgSize];
+    uint64_t *ptr = (uint64_t *)kernelArguments;
+    for (auto val : tensors) *ptr++ = val;
+
+    uint32_t *ptr2 = (uint32_t *)ptr;
+    for (auto dim : dynamicDims) {
+        *ptr2++ = static_cast<uint32_t>(dim);
+        *ptr2++ = static_cast<uint32_t>(dim >> 32);
+    }
+
+    uint8_t *ptr3 = (uint8_t *)ptr2;
+    std::memcpy(ptr3, scalarBytes.data(), scalarBytes.size());
 
     void *hipLaunchParams[] = {
         HIP_LAUNCH_PARAM_BUFFER_POINTER,
@@ -108,7 +134,6 @@ NB_MODULE(wave_runtime, m)
 {
     nb::bind_vector<Int64Vector>(m, "Int64Vector");
     nb::bind_vector<Int32Vector>(m, "Int32Vector");
-    nb::bind_vector<Float32Vector>(m, "Float32Vector");
     nb::class_<KernelLaunchInfo>(m, "KernelLaunchInfo")
         .def(nb::init<const std::string &, const std::string &, const std::string &, int, int, int, int, int, int, int>())
         .def_rw("kernel", &KernelLaunchInfo::kernel)

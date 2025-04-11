@@ -117,9 +117,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         return tkw.cast(clamped, F8_DTYPE)
 
     def base_attention_core(q, k, v, q_scale, k_scale, v_scale, c):
-        # q_scale_val = tkw.read(q_scale)
-        # k_scale_val = tkw.read(k_scale)
-        # v_scale_val = tkw.read(v_scale)
         qk_dequant_scalar = q_scale * k_scale
         qk_dequant = tkw.broadcast(qk_dequant_scalar, target_shape=[B, N_Q, N_KV])
         qk_scaling = tkl.Register[B, N_Q, N_KV, tkl.f32](QK_SCALING_CONST) * qk_dequant

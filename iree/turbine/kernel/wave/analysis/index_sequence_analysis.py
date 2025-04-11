@@ -53,6 +53,7 @@ import sympy
 from typing import Sequence, Callable, Optional
 from ....support.logging import get_logger
 from copy import deepcopy, copy
+from iree.turbine.kernel._support.dtype import DataType
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -110,8 +111,9 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
             continue
         if isinstance(custom, (Output, NestedRegionOp)):
             continue
-        if node.op != "call_function":
-            assert custom.index, f"Index not set for node {custom.fx_node}"
+        if isinstance(custom.type, DataType):
+            continue
+        assert custom.index, f"Index not set for node {custom.fx_node}"
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
@@ -746,13 +748,13 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         lhs = get_custom(custom.lhs)
         rhs = get_custom(custom.rhs)
 
-        if lhs.indexing_dims and rhs.indexing_dims:
-            lhs_dim, lhs_size = get_largest_index_and_size(get_index(lhs))
-            rhs_dim, rhs_size = get_largest_index_and_size(get_index(rhs))
-        if not lhs.indexing_dims:
-            lhs_dim, lhs_size = (), 1
-        if not rhs.indexing_dims:
-            rhs_dim, rhs_size = (), 1
+        # Updatedto broadcast implicitly when we perform mul binary op with scalar.
+        lhs_dim, lhs_size = (
+            get_largest_index_and_size(get_index(lhs)) if lhs.indexing_dims else ((), 1)
+        )
+        rhs_dim, rhs_size = (
+            get_largest_index_and_size(get_index(rhs)) if rhs.indexing_dims else ((), 1)
+        )
 
         # If they are equal we are done.
         if lhs_dim == rhs_dim and lhs_size == rhs_size:

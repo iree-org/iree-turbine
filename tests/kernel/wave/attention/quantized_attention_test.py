@@ -131,7 +131,7 @@ def testAttentionPure(
             MAX_RANGE,
         )
     )
-    output = device_zeros(o_shape, dtype=torch.float32) + 3.14
+    output = device_zeros(o_shape, dtype=torch.float32)
     asm = base_attention(
         q,
         k,

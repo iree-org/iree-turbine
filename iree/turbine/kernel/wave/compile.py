@@ -1,4 +1,4 @@
-from typing import Any, List, Dict
+from typing import Any
 
 import torch
 from .._support.indexing import IndexingContext, IndexExpr
@@ -34,13 +34,17 @@ class WaveKernel:
         Returns the assembly code of the compiled kernel.
         """
 
+        # Segregate args into kernel tensor and scalars.
+        tensor_args, scalar_args = [], []
+
+        for arg in args:
+            (tensor_args if isinstance(arg, torch.Tensor) else scalar_args).append(arg)
+
+        tensor_args = tuple(tensor_args)
+        scalar_args = tuple(scalar_args)
+
+        kernel_inputs, kernel_outputs = [], []
         # Partition arguments into kernel inputs and outputs.
-        kernel_inputs = []
-        kernel_outputs = []
-
-        scalar_args = tuple(x for x in args if not isinstance(x, torch.Tensor))
-        tensor_args = tuple(x for x in args if isinstance(x, torch.Tensor))
-
         for arg, usage in zip(tensor_args, self.options.kernel_usages):
             if usage == kernel_codegen.KernelBufferUsage.INPUT:
                 kernel_inputs.append(arg)

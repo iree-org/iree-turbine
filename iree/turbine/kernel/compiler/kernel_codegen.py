@@ -53,6 +53,7 @@ from .ir import (
     IndexType,
     InsertionPoint,
     IrType,
+    IntegerType,
     Location,
     Operation,
     Value,
@@ -114,6 +115,7 @@ class BindingDesc:
     # If a SYMBOL_VALUE, then this is the corresponding IndexSymbol.
     symbol_type: Optional[Type[IndexSymbol]] = None
 
+    # If there is a scalar, then this is the corresponding type.
     scalar_type: Optional[Type[DataType]] = None
 
     def as_mlir_type(self) -> IrType:
@@ -158,8 +160,12 @@ class BindingDesc:
             return IndexType.get()
         elif binding_type == BindingType.SYMBOL_VALUE:
             return IndexType.get()
-        elif binding_type == BindingType.SCALAR_VALUE:
+        elif (
+            binding_type == BindingType.SCALAR_VALUE and self.scalar_type.is_float_asm()
+        ):
             return F32Type.get()
+        elif binding_type == BindingType.SCALAR_VALUE and self.scalar_type.is_int_asm():
+            return IntegerType.get_signless(32)
         else:
             raise AssertionError("Unhandled switch BindingType")
 

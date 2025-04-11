@@ -72,7 +72,11 @@ class DataType:
 
     @property
     def dtype(self):
-        return DataType("f32")
+        if self.is_float_asm():
+            return DataType("f32")
+        if self.is_int_asm():
+            return DataType("i32")
+        raise ValueError("Only f32 and i32 scalars are supported.")
 
     @property
     def symbolic_shape(self):

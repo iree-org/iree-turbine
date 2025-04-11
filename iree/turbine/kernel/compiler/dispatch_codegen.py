@@ -5,12 +5,11 @@ This assumes that you have some form of code generation for the
 embedding and generating the calls/dispatches.
 """
 
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional
 
-from .._support.indexing import IndexingContext, IndexSymbol, IndexExpr
+from .._support.indexing import IndexSymbol, IndexExpr
 
 from .base import (
-    CodegenError,
     ValidationError,
 )
 
@@ -19,21 +18,17 @@ from .builder import (
 )
 
 from .ir import (
-    Attribute,
     Block,
     DictAttr,
-    FloatAttr,
     FunctionType,
     IndexType,
     InsertionPoint,
     IntegerAttr,
     IrType,
     Location,
-    Operation,
     StringAttr,
     Value,
     arith_d,
-    flow_d,
     func_d,
     stream_d,
     iree_codegen_d,

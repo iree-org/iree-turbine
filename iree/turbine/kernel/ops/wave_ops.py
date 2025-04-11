@@ -790,7 +790,7 @@ class BinaryOpBase(CustomOp, ABC):
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
         if not self.infer_shape():
-            self.type = self.rhs.type
+            self.type = self.lhs.type
         else:
             self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
 

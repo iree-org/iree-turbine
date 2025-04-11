@@ -28,6 +28,7 @@ from ...ops.wave_ops import (
 )
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
 import itertools
+from iree.turbine.kernel._support.dtype import DataType
 from ..utils.graph_utils import (
     get_inputs,
 )
@@ -94,13 +95,13 @@ def get_dim_scaling(
                 )
             dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
 
-    if not node.indexing_dims:
+    if isinstance(node.type, DataType):
         return {}
+
     # Also include dimensions that have no constraints on them and are known.
     idxc = IndexingContext.current()
     is_static_dim = lambda dim: dim in idxc.subs
     is_non_batch = lambda dim: node.vector_shapes[dim] > 0
-    # is_non_batch = lambda dim: node.vector_shapes.get(dim, 0) > 0
     not_computed = lambda dim: dim not in dim_scaling
 
     for dim in node.indexing_dims:
