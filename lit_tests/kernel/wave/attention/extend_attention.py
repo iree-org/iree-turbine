@@ -400,18 +400,15 @@ def test_extend_attention_custom_mask():
     # CHECK-LABEL:       func.func @extend_attention_custom_mask
     # CHECK-COUNT-4:        vector.maskedload
     # CHECK:                scf.for
-    # CHECK-COUNT-3:            vector.maskedload
-    # CHECK-COUNT-2:            vector.maskedload
-    # CHECK-NEXT:               vector.store %{{.*}}, %{{.*}}
-    # CHECK-COUNT-1:            vector.maskedload
-    # CHECK-COUNT-1:            vector.store %{{.*}}, %{{.*}}
-    # CHECK-COUNT-32:           vector.load %{{.*}}
-    # CHECK-COUNT-8:            vector.load %{{.*}}
+    # load and apply custom mask
+    # CHECK:                    vector.maskedload
+    # CHECK:                    arith.trunci %{{.*}} : vector<4xi8> to vector<4xi1>
+    # CHECK:                    arith.andi %{{.*}}, %{{.*}} : vector<4xi1>
     # CHECK-COUNT-8:            amdgpu.mfma
 
     # CHECK:                scf.for
-    # CHECK-COUNT-1:            vector.maskedload
-    # CHECK-COUNT-1:            vector.store %{{.*}}, %{{.*}}
-    # CHECK-COUNT-32:           vector.load %{{.*}}
-    # CHECK-COUNT-8:            vector.load %{{.*}}
+    # load and apply custom mask
+    # CHECK:                    vector.maskedload
+    # CHECK:                    arith.trunci %{{.*}} : vector<4xi8> to vector<4xi1>
+    # CHECK:                    arith.andi %{{.*}}, %{{.*}} : vector<4xi1>
     # CHECK-COUNT-8:            amdgpu.mfma
