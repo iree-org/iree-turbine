@@ -218,7 +218,7 @@ def testGemm(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", [(4, 64, 8), (123, 123, 123)])
+@pytest.mark.parametrize("shape", [(1, 32, 16), (123, 123, 123)])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -266,11 +266,6 @@ def testGemmDot(
         )
     ]
 
-    # With dynamic dimensions, we need to add an assumption on how big
-    # the reduction dimension is to determine whether we can schedule or not.
-    if dynamic_dims:
-        constraints += [tkw.Assumption(K > BLOCK_K * 4)]
-
     # Wave-level micro-kernel.
     # Since warps are not directly addressable, there is no
     # explicit notion of a warp id (like a workgroup or thread id).
@@ -301,10 +296,10 @@ def testGemmDot(
         tkw.write(repeat, c)
 
     hyperparams = {
-        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_M: mfma_variant.out_vec_size * 2,
-        BLOCK_N: 64,
-        BLOCK_K: 8,
+        ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
+        BLOCK_M: 1,
+        BLOCK_N: 32,
+        BLOCK_K: 16,
         M: shape[0],
         N: shape[1],
         K: shape[2],
