@@ -116,7 +116,7 @@ def testAttentionPure(
 
     output = device_zeros(o_shape, dtype=torch.float32)
     asm = base_attention(q, k, v, q_scale, k_scale, v_scale, output)
- 
+
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q.to(torch.float32) * q_scale,
         k.to(torch.float32) * k_scale,
