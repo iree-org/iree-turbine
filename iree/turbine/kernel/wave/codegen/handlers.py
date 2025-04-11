@@ -395,8 +395,7 @@ def emit_dot(
         val = arith_d.mulf(a, b)
         val = cast(val)
 
-        tmp = vector_d.extract(acc, static_position=[i], dynamic_position=[])
-        val = vector_d.reduction(tmp.type, vector_d.CombiningKind.ADD, val, acc=tmp)
+        val = vector_d.reduction(val.type.element_type, vector_d.CombiningKind.ADD, val)
         elements.append(val)
 
     result = vector_d.from_elements(res_type, elements)
@@ -405,6 +404,9 @@ def emit_dot(
         shuffle_offset = arith_d.constant(i32, shuffle_offset)
         shuffled = create_shuffle(result, shuffle_offset, width, gpu_d.ShuffleMode.XOR)
         result = arith_d.addf(result, shuffled)
+
+    tmp = vector_d.extract(acc, static_position=[i], dynamic_position=[])
+    result = arith_d.addf(result, acc)
 
     return result
 
