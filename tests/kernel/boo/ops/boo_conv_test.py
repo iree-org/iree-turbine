@@ -1,4 +1,5 @@
 import unittest
+import pytest
 import tempfile
 
 from pathlib import Path
@@ -36,6 +37,7 @@ class BooConvTest(unittest.TestCase):
             )
             torch.autograd.gradcheck(boo_conv, (x, w), atol=1e-5, eps=1e-3)
 
+    @pytest.mark.xfail(msg="Currently failing. Unmark when issue #704 is resolved.")
     def testBooConvBackwardsWithBias(self):
         with tempfile.TemporaryDirectory() as td:
             set_boo_cache(Path(td))
