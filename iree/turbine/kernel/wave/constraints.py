@@ -85,7 +85,7 @@ class GenericDot:
         return [
             Piecewise((lane % self.out_vec_size, ~MMA_ACC), (0, MMA_ACC)),  # M
             lane // self.k_mult,  # N
-            lane % self.k_mult,  # K
+            (lane % self.k_mult) * self.k_vec_size,  # K
         ]
 
     def get_index_size(
