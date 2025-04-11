@@ -18,7 +18,9 @@ from .ir import (
     RankedTensorType,
     flow_d,
     func_d,
+    F32Type,
     IntegerAttr,
+    IntegerType,
 )
 
 from .._support.indexing import IndexSymbol
@@ -28,6 +30,10 @@ from .kernel_codegen import BindingDesc
 def memref_to_tensor(memrefs: list[IrType]):
     tensors = []
     for m in memrefs:
+        # append scalars as-it-is to tensors list
+        if isinstance(m, (F32Type, IntegerType)):
+            tensors.append(m)
+            continue
         assert isinstance(m, MemRefType)
         t = RankedTensorType.get(m.shape, m.element_type)
         tensors.append(t)
@@ -55,7 +61,9 @@ def isolated_test_call(
     dynamic_symbols: list[IndexSymbol] = [],
 ):
     with InsertionPoint(mb.body_block), Location.unknown():
-        input_types = [b.as_mlir_type() for b in sig.kernel_buffer_bindings]
+        input_types = [b.as_mlir_type() for b in sig.kernel_buffer_bindings] + [
+            b.as_mlir_type() for b in sig.scalar_bindings
+        ]
         input_tensors = memref_to_tensor(input_types)
         argument_dims = get_dynamic_dims(sig.kernel_buffer_bindings, dynamic_symbols)
         # Adding unique dynamic dims as inputs.
@@ -75,7 +83,9 @@ def isolated_test_call(
         func_op = func_d.FuncOp("isolated_benchmark", ftype)
         arg_locs = [
             (Location.name(b.name) if b.name is not None else Location.unknown())
-            for b in sig.kernel_buffer_bindings + sig.dynamic_dim_bindings
+            for b in sig.kernel_buffer_bindings
+            + sig.scalar_bindings
+            + sig.dynamic_dim_bindings
         ]
         entry_block = func_op.add_entry_block(arg_locs)
         offset = len(sig.kernel_buffer_bindings)
