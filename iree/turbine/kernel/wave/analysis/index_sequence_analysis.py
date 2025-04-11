@@ -757,6 +757,9 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         lhs = get_custom(custom.lhs)
         rhs = get_custom(custom.rhs)
 
+        lhs_index = get_index(lhs) if lhs.indexing_dims else None
+        rhs_index = get_index(rhs) if rhs.indexing_dims else None
+
         # Updatedto broadcast implicitly when we perform mul binary op with scalar.
         lhs_dim, lhs_size = (
             get_largest_index_and_size(get_index(lhs)) if lhs.indexing_dims else ((), 1)

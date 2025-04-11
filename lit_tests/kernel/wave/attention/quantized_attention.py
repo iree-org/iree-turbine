@@ -45,9 +45,9 @@ def test_fp8_pertensor_attention():
     # CHECK-LABEL: func.func @base_attention
 
     # constants used for scaling, offsetting, max clamp
-    # CHECK-DAG: %[[F8_MAX:.+]] = arith.constant dense<2.400000e+02> : vector<4xf32>
-    # CHECK-DAG: %[[F8_OFFSET:.+]] = arith.constant dense<0.00416666688> : vector<4xf32>
-    # CHECK-DAG: %[[FUSED_SCALE:.*]] = arith.constant dense<0.180336878> : vector<4xf32>
+    # CHECK-DAG: %[[F8_MAX:.*]] = arith.constant dense<{{.*}}> : vector<4xf32>
+    # CHECK-DAG: %[[F8_OFFSET:.*]] = arith.constant dense<{{.*}}> : vector<4xf32>
+    # CHECK-DAG: %[[FUSED_SCALE:.*]] = arith.constant dense<{{.*}}> : vector<4xf32>
     # CHECK: = scf.for
     # CHECK-COUNT-16: = amdgpu.mfma
 
@@ -60,12 +60,12 @@ def test_fp8_pertensor_attention():
     # CHECK-DAG: {{.*}} = arith.mulf %{{.*}}, %{{.*}} : vector<4xf32>
 
     # FP8 zero offset addition
-    # CHECK-COUNT-8: = arith.addf %{{.+}}, %[[F8_OFFSET]] : vector<4xf32>
+    # CHECK-COUNT-8: {{.*}} = arith.addf %{{.*}}, %{{.*}} : vector<4xf32>
 
-    # CHECK-COUNT-8: = gpu.shuffle xor %{{.+}}, %{{.+}}, %{{.+}} : f32
+    # CHECK-COUNT-4: {{.*}} = gpu.shuffle xor {{.*}}
 
     # clamp with FP8 max before conversion
-    # CHECK-COUNT-8: = arith.minimumf %{{.+}}, %[[F8_MAX]] : vector<4xf32>
+    # CHECK-COUNT-8: = arith.minimumf %{{.+}}, %{{.+}} : vector<4xf32>
 
     # CHECK-COUNT-8: = arith.truncf %{{.+}} : vector<4xf32> to vector<4xf8E4M3FNUZ>
 

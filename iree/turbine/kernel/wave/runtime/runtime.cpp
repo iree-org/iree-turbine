@@ -69,20 +69,11 @@ int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
     }
 
     ScalarKind scalarKind;
-    size_t scalarSize = 4;
+    size_t scalarSize;
 
-    if (scalarArgs.size() == 0) {
-        scalarKind = ScalarKind::F32;
-    } else {
-        nb::handle first = scalarArgs[0];
-        if (nb::isinstance<nb::float_>(first)) {
-            scalarKind = ScalarKind::F32;
-        } else if (nb::isinstance<nb::int_>(first)) {
-            scalarKind = ScalarKind::I32;
-        } else {
-            throw std::runtime_error("Unsupported scalar type. Expected f32 or i32.");
-        }
-    }
+    nb::handle first_ele = scalarArgs.size() == 0 ? nb::float_(0.f) : scalarArgs[0];
+    scalarKind = nb::isinstance<nb::int_>(first_ele) ? ScalarKind::I32 : ScalarKind::F32;
+    scalarSize = sizeof(float);  // both int and float dtypes are 4 bytes
 
     // Since we always pass our dynamic dims as index type, iree converts them to i64
     // and then splits them to two i32s, i64 = hi | lo where
@@ -90,13 +81,16 @@ int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
     size_t kernArgSize = tensors.size() * sizeof(uint64_t) + 2 * dynamicDims.size() * sizeof(uint32_t) + scalarArgs.size() * scalarSize;
     std::vector<uint8_t> scalarBytes(scalarArgs.size() * scalarSize);
 
-    for (size_t i = 0; i < scalarArgs.size(); ++i) {
-        if (scalarKind == ScalarKind::F32) {
-            float val = nb::cast<float>(scalarArgs[i]);
-            std::memcpy(&scalarBytes[i * 4], &val, sizeof(float));
-        } else if (scalarKind == ScalarKind::I32) {
-            int32_t val = nb::cast<int32_t>(scalarArgs[i]);
-            std::memcpy(&scalarBytes[i * 4], &val, sizeof(int32_t));
+    uint32_t* dst = reinterpret_cast<uint32_t*>(scalarBytes.data());
+
+    if (scalarKind == ScalarKind::F32) {
+        for (auto&& arg : scalarArgs) {
+            float val = nb::cast<float>(arg);
+            std::memcpy(dst++, &val, sizeof(float));
+        }
+    } else {
+        for (auto&& arg : scalarArgs) {
+            *dst++ = static_cast<uint32_t>(nb::cast<int32_t>(arg));
         }
     }
 
