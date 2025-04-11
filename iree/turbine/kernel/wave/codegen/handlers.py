@@ -87,6 +87,7 @@ from ...ops.wave_ops import (
     shared_memory_barrier,
     shuffle,
     tanh,
+    tanh_approx,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
@@ -682,12 +683,108 @@ def handle_abs(source: Value, options: WaveCompileOptions) -> OpResult:
         raise ValidationError(f"Found unhandled operand type for abs: {element_type}")
     return abs
 
+@handle_unary_op(tanh_approx)
+def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
+    """
+    Reference (cuda C++):
+      float a = logits;
+      s = fabsf(a);
+      t = -2.0f * log2(e) * s;
+      e = __builtin_amdgcn_exp2f(t);
+      d = e + 1.0f;
+      r = __builtin_amdgcn_rcpf(d);
+      r = e * (-r) + r;
+      if (s < 4.997253418e-3f) r = a;
+      r = copysign(r, a);
+      logits = params.logits_soft_cap * log2(e) * r;
+      return logits;
+
+    Standard definition: tanh(x) = (exp(2x) - 1) / (exp(2x) + 1)
+    For x ≥ 0, this is equivalent to: tanh(x) = (1 - exp(-2x)) / (1 + exp(-2x))
+
+    To leverage hardware exp2, note that: exp(-2x) = 2^(-2x * log2(e))
+    Let: t = -2 * log2(e) * |x|
+    Then: e = exp2(t) ≈ exp(-2|x|)
+    So, for x ≥ 0: tanh(x) ≈ (1 - e) / (1 + e)
+
+    To avoid division, compute: r0 = reciprocal(1 + e) [using hardware intrinsic] and then: r = (1 - e) * r0
+    For very small |x| (below a threshold), we use: tanh(x) ≈ x
+    Finally, copy the sign of x
+    """
+
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        # a = x (source)
+        a = source
+        
+        # s = |a|
+        s = math_d.absf(a)
+
+        # Constants:
+        # Compute log2(e)
+        log2e_val = math.log2(math.e)
+
+        # Compute factor = -2 * log2(e)
+        factor_val = -2.0 * log2e_val
+        
+        factor = arith_d.ConstantOp(
+            source.type,
+            DenseElementsAttr.get_splat(
+                source.type, get_constant_attr(factor_val, element_type)
+            ),
+        )
+        # t = factor * s
+        t = arith_d.mulf(s, factor, fastmath=get_fast_math_flags(options))
+
+        # e = exp2(t) using fast hardware intrinsic via math_d
+        e = math_d.exp2(t)
+        
+        one = arith_d.ConstantOp(
+            source.type,
+            DenseElementsAttr.get_splat(
+                source.type, get_constant_attr(1.0, element_type)
+            ),
+        )
+
+        # d = e + 1.0
+        d = arith_d.addf(e, one, fastmath=get_fast_math_flags(options))
+
+        # r = reciprocal(d)
+        r = arith_d.divf(one, d, fastmath=get_fast_math_flags(options))
+        
+        neg_one = arith_d.ConstantOp(
+            source.type,
+            DenseElementsAttr.get_splat(
+                source.type, get_constant_attr(-1.0, element_type)
+            ),
+        )
+        
+        # r = e * (-r) + r  (computes (e-1)/(e+1) without direct division)
+        neg_r = arith_d.mulf(r, neg_one, fastmath=get_fast_math_flags(options))
+        temp = arith_d.mulf(e, neg_r, fastmath=get_fast_math_flags(options))
+        r = arith_d.addf(temp, r, fastmath=get_fast_math_flags(options))
+        
+        # # If s < threshold, then r = a (for small x, tanh(x) ~ x)
+        # thresh_val = 4.997253418e-3
+        # thresh = arith_d.ConstantOp(
+        #     source.type,
+        #     DenseElementsAttr.get_splat(source.type, get_constant_attr(thresh_val, element_type))
+        # )
+        # cmp = arith_d.cmpf(arith_d.CmpFPredicate.OLT, s, thresh)
+        # r = arith_d.select(cmp, a, r)
+        
+        # Copy the sign of a to r: r = copysign(r, a)
+        result = math_d.copysign(r, a)
+    else:
+        raise ValidationError(f"Unhandled operand type for tanh_approx: {element_type}")
+    return result
+
 
 @handle_unary_op(tanh)
 def handle_tanh(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
-        result = math_d.tanh(source)
+        result = math_d.tanh(source, fastmath=get_fast_math_flags(options))
     else:
         raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
     return result
@@ -1062,7 +1159,7 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
                 src_vector_type.element_type.width < dst_elem_type.width,
                 is_dst_float and is_src_float,
             )
-        ](dst_vector_type, vector_src)
+        ](dst_vector_type, vector_src, fastmath=arith_d.FastMathFlags.fast)
     else:
         casted_vector = conversion_ops[(is_src_float, is_dst_float)](
             dst_vector_type, vector_src
