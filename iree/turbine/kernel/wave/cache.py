@@ -56,9 +56,11 @@ class WaveCache:
 
 def extract_mappings(kernel_fn: Callable):
     """Look for IndexMapping used in the kernel by iterating over freevars."""
+    # Handle when kernel_fn.__closure is None.
+    closures = kernel_fn.__closure__ or []
     return [
         freevar.cell_contents
-        for freevar in kernel_fn.__closure__
+        for freevar in closures
         if isinstance(freevar.cell_contents, IndexMapping)
     ]
 
@@ -83,7 +85,9 @@ def extract_free_vars(kernel_fn: Callable):
 def get_nested_functions(root_fn: Callable):
     """Simple BFS search to get all sub functions inside a wave kernel."""
     workqueue = deque([root_fn])
-    fn_list = set([root_fn])
+    # Using list instead of set because set orders are non
+    # deterministic which can mess up hashes.
+    fn_list = [root_fn]
     while workqueue:
         cur_fn = workqueue.pop()
         # Add var to workqueue and fn_list freevar that
@@ -93,7 +97,7 @@ def get_nested_functions(root_fn: Callable):
             for f in inspect.getclosurevars(cur_fn).nonlocals.values()
             if inspect.isfunction(f) and f not in fn_list
         ]
-        fn_list.update(sub_fns)
+        fn_list.extend(sub_fns)
         workqueue.extend(sub_fns)
     return fn_list
 
@@ -153,28 +157,33 @@ class WaveCacheManager(object):
         Get a unique identifier for a given kernel.
         """
         fns = get_nested_functions(kernel_fn)
-        key = []
+
+        # Add subfunctions invariant property to hash.
+        arg_dtypes = extract_arg_types(kernel_fn)
+        processed_constraints = anonymize_constraints(constraints)
+        key = [
+            arg_dtypes,
+            processed_constraints,
+            options.subs,
+            options.dynamic_symbols,
+            options.schedule,
+            options.use_scheduling_barriers,
+        ]
+
+        # Add kernel/helper function specific hashes.
         for fn in fns:
             try:
-                kernel_src = inspect.getsource(kernel_fn)
-                index_mappings = extract_mappings(kernel_fn)
-                arg_dtypes = extract_arg_types(kernel_fn)
-                free_vars = extract_free_vars(kernel_fn)
+                kernel_src = inspect.getsource(fn)
+                free_vars = extract_free_vars(fn)
+                index_mappings = extract_mappings(fn)
             except:
                 # sets kernel_hash as None if fail to inspect source.
                 # We also taught load_kernel and store_kernel to skip
                 # if kernel_hash is None.
                 return None
-            processed_constraints = anonymize_constraints(constraints)
             key += [
                 kernel_src,
-                processed_constraints,
-                options.subs,
-                options.dynamic_symbols,
-                options.schedule,
-                options.use_scheduling_barriers,
                 index_mappings,
-                arg_dtypes,
                 free_vars,
             ]
 
