@@ -38,6 +38,7 @@ def get_extend_attention_kernel(
     logit_cap: Optional[float] = 0.0,
     layer_scaling: Optional[float] = None,
     num_waves: Optional[int] = 4,
+    use_custom_mask: Optional[bool] = False,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
@@ -54,11 +55,18 @@ def get_extend_attention_kernel(
     assert (
         wave_size_dtype.is_int_asm()
     ), f"Expected seq to be int but got: {wave_size_dtype}"
+    assert not (
+        is_causal and use_custom_mask
+    ), f"Cannot have both causal and custom mask at the same time"
 
     S = tkl.sym.S
     EXT_IDX = tkl.sym.EXT_IDX
     KV_START_IDX = tkl.sym.KV_START_IDX
     MAX_EXTEND_SEQ_LEN = tkl.sym.MAX_EXTEND_SEQ_LEN
+    MASK_LEN = tkl.sym.MASK_LEN
+    MASK_START_IDX = tkl.sym.MASK_START_IDX
+    SEQ_LEN = tkl.sym.SEQ_LEN
+    PREFIX_LEN = tkl.sym.PREFIX_LEN
     # Workgroup tile sizes
     BLOCK_S = tkl.sym.BLOCK_S
     # Address space (for GPU, shared(1) or global(0))
@@ -172,6 +180,18 @@ def get_extend_attention_kernel(
         outputs={S: i},
     )
 
+    custom_mask_mapping_loop1 = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={MASK_LEN: i * SEQ_LEN + MASK_START_IDX + j},
+        outputs={N_Q: i, N_KV: j},
+    )
+
+    custom_mask_mapping_loop2 = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={MASK_LEN: i * SEQ_LEN + MASK_START_IDX + j + PREFIX_LEN},
+        outputs={N_Q: i, N_KV: j},
+    )
+
     # Set the dynamic shapes for the kernel. Here we set it to N_Q
     # which is the first argument of the query and output.
     set_dynamic_dim = lambda shape: [x if i != 0 else None for i, x in enumerate(shape)]
@@ -184,21 +204,18 @@ def get_extend_attention_kernel(
     num_seqs_layout = tkl.MemoryLayout(shape=[None])
     kv_indices_layout = tkl.MemoryLayout(shape=[None])
 
-    @tkw.wave(constraints)
-    def extend_attention(
-        q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, wave_input_dtype, q_layout],
-        k: tkl.Memory[N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_layout],
-        v: tkl.Memory[N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_layout],
-        k_cache: tkl.Memory[
-            N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_cache_layout
-        ],
-        v_cache: tkl.Memory[
-            N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_cache_layout
-        ],
-        qo_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
-        kv_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
-        kv_indices: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
-        c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
+    def extend_attention_core(
+        q,
+        k,
+        v,
+        k_cache,
+        v_cache,
+        qo_indptr,
+        kv_indptr,
+        kv_indices,
+        custom_mask,
+        mask_offsets,
+        c,
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
@@ -223,6 +240,11 @@ def get_extend_attention_kernel(
             - seq_kv_start_idx
         )
         tkw.set_symbol(N_KV, seq_len_prefix)
+        if use_custom_mask:
+            seq_len = seq_len_prefix + seq_len_extend
+            tkw.set_symbol(SEQ_LEN, seq_len)
+            seq_mask_start_idx = tkw.read(mask_offsets, elements_per_thread=1)
+            tkw.set_symbol(MASK_START_IDX, seq_mask_start_idx)
 
         @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
         def first_loop(
@@ -262,6 +284,14 @@ def get_extend_attention_kernel(
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
             mask = tkw.cast(mask, tkw.i1)
+            if use_custom_mask:
+                c_mask = tkw.read(
+                    custom_mask,
+                    elements_per_thread=STORE_ELEMS_PER_THREAD,
+                    mapping=custom_mask_mapping_loop1,
+                )
+                c_mask = tkw.cast(c_mask, tkw.i1)
+                mask &= c_mask
             bias = tkw.select(mask, zero, neg_infinity)
             x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
@@ -287,6 +317,8 @@ def get_extend_attention_kernel(
                 seq_len_extend, lambda x: sympy.Min(x, (WORKGROUP_0 + 1) * BLOCK_N_Q)
             )
         tkw.set_symbol(N_KV, seq_len_extend)
+        if use_custom_mask:
+            tkw.set_symbol(PREFIX_LEN, seq_len_prefix)
 
         @tkw.reduction(N_KV, init_args=[res_max, res_sum, res_mm])
         def second_loop(
@@ -319,6 +351,14 @@ def get_extend_attention_kernel(
                 n_q_index = tkw.broadcast(n_q_index, target_shape=[N_Q, N_KV])
                 mask = (n_q_index >= n_kv_index) & mask
             mask = tkw.cast(mask, tkw.i1)
+            if use_custom_mask:
+                c_mask = tkw.read(
+                    custom_mask,
+                    elements_per_thread=STORE_ELEMS_PER_THREAD,
+                    mapping=custom_mask_mapping_loop2,
+                )
+                c_mask = tkw.cast(c_mask, tkw.i1)
+                mask &= c_mask
             bias = tkw.select(mask, zero, neg_infinity)
             x_j = x_j + bias
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
@@ -344,6 +384,60 @@ def get_extend_attention_kernel(
             res = tkw.cast(res, wave_output_dtype)
         tkw.write(res, c, mapping=mapping, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
+    @tkw.wave(constraints)
+    def extend_attention(
+        q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, wave_input_dtype, q_layout],
+        k: tkl.Memory[N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_layout],
+        v: tkl.Memory[N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_layout],
+        k_cache: tkl.Memory[
+            N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_cache_layout
+        ],
+        v_cache: tkl.Memory[
+            N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_cache_layout
+        ],
+        qo_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        kv_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        kv_indices: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
+        c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
+    ):
+        extend_attention_core(
+            q, k, v, k_cache, v_cache, qo_indptr, kv_indptr, kv_indices, None, None, c
+        )
+
+    @tkw.wave(constraints)
+    def extend_attention_custom_mask(
+        q: tkl.Memory[N_Q, H, D_Q, GLOBAL_ADDRESS_SPACE, wave_input_dtype, q_layout],
+        k: tkl.Memory[N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_layout],
+        v: tkl.Memory[N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_layout],
+        k_cache: tkl.Memory[
+            N_KV, H_KV, D_Q, ADDRESS_SPACE, wave_input_dtype, k_cache_layout
+        ],
+        v_cache: tkl.Memory[
+            N_KV, H_KV, D_KV, ADDRESS_SPACE, wave_input_dtype, v_cache_layout
+        ],
+        qo_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        kv_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        kv_indices: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
+        custom_mask: tkl.Memory[
+            MASK_LEN, GLOBAL_ADDRESS_SPACE, tkl.i8, num_seqs_layout
+        ],
+        mask_offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
+    ):
+        extend_attention_core(
+            q,
+            k,
+            v,
+            k_cache,
+            v_cache,
+            qo_indptr,
+            kv_indptr,
+            kv_indices,
+            custom_mask,
+            mask_offsets,
+            c,
+        )
+
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
@@ -360,12 +454,21 @@ def get_extend_attention_kernel(
         D_Q: shape.head_size,
     }
 
-    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN]
+    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN, MASK_LEN]
     dynamic_symbols_map = {
         N_Q: q_shape[0],
         N_KV: k_shape[0],
         S: shape.num_seqs,
         MAX_EXTEND_SEQ_LEN: shape.max_seq_len,
+        MASK_LEN: shape.flattened_mask_len,
     }
+
+    if use_custom_mask:
+        return (
+            extend_attention_custom_mask,
+            hyperparams,
+            dynamic_symbols,
+            dynamic_symbols_map,
+        )
 
     return extend_attention, hyperparams, dynamic_symbols, dynamic_symbols_map

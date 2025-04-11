@@ -70,7 +70,7 @@ def test_extend_attention():
     # CHECK-LABEL: test_extend_attention
     # CHECK-DAG:            #[[map0:.*]] = affine_map<()[s0] -> (s0 ceildiv 64)>
     # CHECK-DAG:            #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16)>
-    # CHECK:              stream.executable.export public @extend_attention workgroups(%[[ARG0:.+]]: index, %[[ARG1:.+]]: index, %[[ARG2:.+]]: index, %[[ARG3:.+]]: index)
+    # CHECK:              stream.executable.export public @extend_attention workgroups(%[[ARG0:.+]]: index, %[[ARG1:.+]]: index, %[[ARG2:.+]]: index, %[[ARG3:.+]]: index, %[[ARG4:.+]]: index)
     # CHECK-DAG:            %[[C1:.*]] = arith.constant 1 : index
     # CHECK:                %[[NQ_GRID:.+]] = affine.apply #[[map0]]()[%[[ARG3]]]
     # CHECK:                %[[NUM_SEQ:.+]] = affine.apply #[[map1]]()[%[[ARG2]]]
@@ -342,3 +342,73 @@ def test_causal_extend_attention_32x32x8():
     # CHECK-COUNT-2:            gpu.shuffle xor {{.*}}
     # CHECK-COUNT-8:            amdgpu.mfma
     # CHECK-COUNT-2:       vector.maskedstore
+
+
+@run_test
+def test_extend_attention_custom_mask():
+    shape = AttentionShape(
+        num_query_heads=16,
+        num_kv_heads=4,
+        head_size=64,
+        head_size_kv=64,
+        num_seqs=2,
+        max_seq_len=32,
+        block_size=64,
+    )
+    total_token_num = 12189
+    extend_token_num = 3198
+    q_shape = (extend_token_num, shape.num_query_heads, shape.head_size)
+    k_shape = (extend_token_num, shape.num_kv_heads, shape.head_size)
+    v_shape = (extend_token_num, shape.num_kv_heads, shape.head_size_kv)
+    o_shape = (extend_token_num, shape.num_query_heads, shape.head_size_kv)
+    k_cache_shape = (total_token_num, shape.num_kv_heads, shape.head_size)
+    v_cache_shape = (total_token_num, shape.num_kv_heads, shape.head_size)
+    mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
+    (
+        extend_attention,
+        hyperparams,
+        dynamic_symbols,
+        dynamic_symbols_map,
+    ) = get_extend_attention_kernel(
+        shape,
+        mfma_variant,
+        q_shape,
+        k_shape,
+        v_shape,
+        k_cache_shape,
+        v_cache_shape,
+        o_shape,
+        use_custom_mask=True,
+    )
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        run_bench=False,
+        schedule=SchedulingType.NONE,
+        use_scheduling_barriers=False,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+        compile_to_mlir=True,
+    )
+    extend_attention = wave_compile(options, extend_attention)
+    print(extend_attention.asm)
+
+    # CHECK-LABEL:       test_extend_attention_custom_mask
+    # CHECK-DAG:            #[[map34:.*]] = affine_map<()[s0, s1, s2, s3, s4, s5] -> (s3 * 32 + s4 + s5 + (s0 + s1 * 64 - (s0 floordiv 16) * 16 + (s0 floordiv 64) * 16) * s2 + ((s0 mod 64) floordiv 16) * 4)>
+    # CHECK-DAG:            #[[map35:.*]] = affine_map<()[s0, s1, s2, s3, s4, s5] -> (s3 * 32 + s4 + s5 + (s0 + s1 * 64 - (s0 floordiv 16) * 16 + (s0 floordiv 64) * 16) * s2 + ((s0 mod 64) floordiv 16) * 4 + 16)>
+    # CHECK-LABEL:       func.func @extend_attention_custom_mask
+    # CHECK-COUNT-4:        vector.maskedload
+    # CHECK:                scf.for
+    # load and apply custom mask
+    # CHECK:                    vector.maskedload
+    # CHECK:                    arith.trunci %{{.*}} : vector<4xi8> to vector<4xi1>
+    # CHECK:                    arith.andi %{{.*}}, %{{.*}} : vector<4xi1>
+    # CHECK-COUNT-8:            amdgpu.mfma
+
+    # CHECK:                scf.for
+    # load and apply custom mask
+    # CHECK:                    vector.maskedload
+    # CHECK:                    arith.trunci %{{.*}} : vector<4xi8> to vector<4xi1>
+    # CHECK:                    arith.andi %{{.*}}, %{{.*}} : vector<4xi1>
+    # CHECK-COUNT-8:            amdgpu.mfma
