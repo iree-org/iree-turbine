@@ -296,10 +296,16 @@ def decompose_value(src: Value, bitsize: int) -> list[Value]:
     it will return 4 values of 32 bits each.
     """
     src_width = src.type.element_type.width * sum(src.type.shape)
+    if src_width == bitsize:
+        if VectorType.isinstance(src.type):
+            return [vector_d.extract(src, static_position=[0], dynamic_position=[])]
+
+        return [src]
+
     if src_width < bitsize:
         src = llvm_d.bitcast(IntegerType.get_signless(src_width), src)
         src = arith_d.extui(IntegerType.get_signless(bitsize), src)
-        src_width = bitsize
+        return [src]
 
     if src_width % bitsize != 0:
         raise ValueError(f"Cannot decompose {src_width} bits into {bitsize} bits.")
@@ -321,6 +327,10 @@ def compose_values(res_type: IrType, elements: list[Value]) -> Value:
     """
     bitsize = elements[0].type.width
     num_elements = len(elements)
+    if num_elements == 1:
+        if res_type.element_type == elements[0].type:
+            return vector_d.splat(res_type, elements[0])
+
     temp_vec_type = VectorType.get([num_elements], IntegerType.get_signless(bitsize))
     result = vector_d.from_elements(temp_vec_type, elements)
     dst_width = res_type.element_type.width * sum(res_type.shape)
