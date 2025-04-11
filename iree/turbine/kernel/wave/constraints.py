@@ -101,7 +101,7 @@ class GenericDot:
         self, threads_per_wave: int
     ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
         return [
-            Piecewise((1, ~MMA_ACC), (threads_per_wave, MMA_ACC)),  # M
+            Piecewise((1, ~MMA_ACC), (threads_per_wave // self.k_mult, MMA_ACC)),  # M
             1,  # N
             self.k_vec_size,  # K
         ]

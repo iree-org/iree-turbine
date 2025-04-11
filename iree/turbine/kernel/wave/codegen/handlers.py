@@ -393,8 +393,8 @@ def emit_dot(
     if k_mult == 1:
         return result
 
-    for i in range(k_mult):
-        shuffle_offset = 1 << i
+    for i in range(1):
+        shuffle_offset = 1 << (i + 1)
         shuffle_offset = arith_d.constant(i32, shuffle_offset)
         shuffled = create_shuffle(result, shuffle_offset, width, gpu_d.ShuffleMode.XOR)
         result = arith_d.addf(result, shuffled)
