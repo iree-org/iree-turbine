@@ -342,7 +342,7 @@ def testGemmDot(
     options = set_default_run_config(options)
     gemm = wave_compile(options, gemm)
 
-    torch.manual_seed(0)
+    torch.manual_seed(3)
     a = device_randn(shape[0], shape[2], dtype=torch.float16)
     b = device_randn(shape[1], shape[2], dtype=torch.float16)
     c = device_zeros(shape[0], shape[1], dtype=torch.float32)
