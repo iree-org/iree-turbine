@@ -87,6 +87,7 @@ from ...ops.wave_ops import (
     shared_memory_barrier,
     shuffle,
     tanh,
+    tanh_approx,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
@@ -683,11 +684,39 @@ def handle_abs(source: Value, options: WaveCompileOptions) -> OpResult:
     return abs
 
 
+@handle_unary_op(tanh_approx)
+def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
+    # tanh_approx(x) taylor series = x - (1/3 * x^3) + (2/15 * x^5)
+    # https://www.planetmath.org/taylorseriesofhyperbolicfunctions
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        splat_neg_one_third = DenseElementsAttr.get_splat(
+            source.type, get_constant_attr(-1.0/3.0, element_type)
+        )
+        neg_one_third = arith_d.ConstantOp(source.type, splat_neg_one_third)
+        two_fifteen = DenseElementsAttr.get_splat(
+            source.type, get_constant_attr(2.0/15.0, element_type)
+        )
+        two_fifteen = arith_d.ConstantOp(source.type, two_fifteen)
+        pow2_src = arith_d.mulf(source, source, fastmath=get_fast_math_flags(options))
+        pow3_src = arith_d.mulf(pow2_src, source, fastmath=get_fast_math_flags(options))
+        pow5_src = arith_d.mulf(pow3_src, pow2_src, fastmath=get_fast_math_flags(options))
+        first_expr = arith_d.mulf(neg_one_third, pow3_src, fastmath=get_fast_math_flags(options))
+        res =  arith_d.addf(source, first_expr, fastmath=get_fast_math_flags(options))
+        second_expr = arith_d.mulf(two_fifteen, pow5_src, fastmath=get_fast_math_flags(options))
+        tanh_approx = arith_d.addf(res, second_expr, fastmath=get_fast_math_flags(options))
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for roundeven: {element_type}"
+        )
+    return tanh_approx
+
+
 @handle_unary_op(tanh)
 def handle_tanh(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
-        result = math_d.tanh(source)
+        result = math_d.tanh(source, fastmath=arith_d.FastMathFlags.fast)
     else:
         raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
     return result
@@ -1062,7 +1091,7 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
                 src_vector_type.element_type.width < dst_elem_type.width,
                 is_dst_float and is_src_float,
             )
-        ](dst_vector_type, vector_src)
+        ](dst_vector_type, vector_src, fastmath=arith_d.FastMathFlags.fast)
     else:
         casted_vector = conversion_ops[(is_src_float, is_dst_float)](
             dst_vector_type, vector_src
