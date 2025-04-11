@@ -390,10 +390,7 @@ def emit_dot(
         elements.append(val)
 
     result = vector_d.from_elements(res_type, elements)
-    if k_mult == 1:
-        return result
-
-    for i in range(1):
+    for i in range(int(math.log2(float(k_mult)))):
         shuffle_offset = 1 << i
         shuffle_offset = arith_d.constant(i32, shuffle_offset)
         shuffled = create_shuffle(result, shuffle_offset, width, gpu_d.ShuffleMode.XOR)
