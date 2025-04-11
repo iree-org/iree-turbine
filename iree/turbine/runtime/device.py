@@ -23,6 +23,8 @@ from iree.runtime import (
     MemoryType,
     VmInstance,
     VmModule,
+    SemaphoreCompatibility,
+    ExternalTimepointFlags,
     create_hal_module,
     get_driver,
 )
@@ -74,8 +76,8 @@ class _HipSemaphoreInterop:
             raise RuntimeError("Could not record hip event")
 
         timepoint = HalExternalTimepoint()
-        timepoint.compatibility = 2 # SemaphoreCompatibility.DEVICE_WAIT
-        timepoint.flags = 0 #ExternalTimepointFlags.NONE
+        timepoint.compatibility = SemaphoreCompatibility.DEVICE_WAIT
+        timepoint.flags = ExternalTimepointFlags.NONE
         timepoint.hip_event = evt.value
         return timepoint
     
