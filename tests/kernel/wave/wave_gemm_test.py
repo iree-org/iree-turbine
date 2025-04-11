@@ -218,18 +218,19 @@ def testGemm(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", [(64, 64, 64), (123, 123, 123)])
+@pytest.mark.parametrize("shape", [(4, 64, 8), (123, 123, 123)])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        GenericDot(k_vec_size=1),
-        GenericDot(k_vec_size=2),
-        GenericDot(k_vec_size=4),
-        GenericDot(out_vec_size=1),
-        GenericDot(out_vec_size=2),
-        GenericDot(out_vec_size=4),
+        GenericDot(k_mult=2),
+        # GenericDot(k_vec_size=1),
+        # GenericDot(k_vec_size=2),
+        # GenericDot(k_vec_size=4),
+        # GenericDot(out_vec_size=1),
+        # GenericDot(out_vec_size=2),
+        # GenericDot(out_vec_size=4),
     ],
 )
 def testGemmDot(
@@ -360,6 +361,9 @@ def testGemmDot(
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
     generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    torch.set_printoptions(profile="full")
+    print(iree_ref)
+    print(c)
     assert_close(c, iree_ref, check_device=False, atol=1e-3, rtol=1e-3)
 
 

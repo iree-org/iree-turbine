@@ -365,7 +365,8 @@ def emit_dot(
         return v
 
     vec_size = config.out_vec_size
-    if vec_size > 1:
+    k_mult = config.k_mult
+    if vec_size > 1 or k_mult > 1:
         i32 = IntegerType.get_signless(32)
         width = arith_d.constant(i32, threads_per_wave)
 
@@ -388,7 +389,17 @@ def emit_dot(
         val = vector_d.reduction(tmp.type, vector_d.CombiningKind.ADD, val, acc=tmp)
         elements.append(val)
 
-    return vector_d.from_elements(res_type, elements)
+    result = vector_d.from_elements(res_type, elements)
+    if k_mult == 1:
+        return result
+
+    for i in range(k_mult):
+        shuffle_offset = 1 << i
+        shuffle_offset = arith_d.constant(i32, shuffle_offset)
+        shuffled = create_shuffle(result, shuffle_offset, width, gpu_d.ShuffleMode.XOR)
+        result = arith_d.addf(result, shuffled)
+
+    return result
 
 
 def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]) -> Value:
