@@ -117,7 +117,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             key=lambda item: item[1],
         )
 
-        # Compute offsets we will aplly to each index element for each partitioned
+        # Compute offsets we will apply to each index element for each partitioned
         # write.
         offsets = np.array(
             [

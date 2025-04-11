@@ -115,11 +115,10 @@ BLOCK_B, BLOCK_N, BLOCK_D1, BLOCK_D2, BLOCK_TOPK = (
     tkl.sym.BLOCK_TOPK,
 )
 
-LOAD_STORE_ELEMS_PER_THREAD = tkl.sym.LOAD_STORE_ELEMS_PER_THREAD
-# LOAD_ELEMS_PER_THREAD, STORE_ELEMS_PER_THREAD = (
-#     tkl.sym.LOAD_TOKS_PER_THREAD,
-#     tkl.sym.STORE_ELEMS_PER_THREAD,
-# )
+LOAD_ELEMS_PER_THREAD, STORE_ELEMS_PER_THREAD = (
+    tkl.sym.LOAD_TOKS_PER_THREAD,
+    tkl.sym.STORE_ELEMS_PER_THREAD,
+)
 
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
@@ -161,7 +160,7 @@ def build_block_constraints(*args, **kwargs) -> Sequence[tkw.Constraint]:
         tkw.WorkgroupConstraint(D2, BLOCK_D2, 0),
         tkw.WaveConstraint(D2, 1),
     ]
-    # constraints += [tkw.TilingConstraint(N, BLOCK_N)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
 
     constraints += [
         tkw.HardwareConstraint(
@@ -180,29 +179,27 @@ def config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
     return {
         "static_symbols": {
             ### Problem sizes.
-            # N: vN,
+            N: vN,
             # D1: vD1,
             # z, y, x
             B:       vB, # z
             TOPK: vTOPK, # y
             D2:     vD2, # x
             ### Block sizes.
-            # BLOCK_N: 1,
+            BLOCK_N: 1,
             # BLOCK_D1: 1,
             # z, y, x
             BLOCK_B:    1, # z
             BLOCK_TOPK: 1, # y
             BLOCK_D2: 128, # x
             ### L/S sizes.
-            # Single symbol here since they always have to agree.
-            LOAD_STORE_ELEMS_PER_THREAD: 2,
-            # LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mma_variant),
-            # STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mma_variant),
+            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mma_variant),
+            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mma_variant),
         },
         # Need to specify vector_shape explicitly because somehow this does
         # not get propagated.
         "vector_shapes": {
-            # N: 1,
+            N: 1,
             # D1: 16,  # TODO: connected to MFMA op type
             # z, y, x
             B:     1, # z
@@ -224,81 +221,85 @@ offset_mapping_w2 = tkw.IndexMapping(
 )
 
 
+# Note: W2 really has torch.Tensor.shape [E, D2, N] but we want to index it with
+# indices [B, TOPK, D2, N].
+# We don't want to introduce index E because we'd get the cartesian product
+# [E, B, TOPK], which is not what we want.
+# So we just use TOPK to index into W2 (alternatively we could use B).
+w2_layout = tkl.MemoryLayout(
+    shape=(
+        vE,
+        D2,
+        N,
+    )
+)
+
+
 def fused_moe_kernel(
-    # TMP_2: tkl.Memory[B, TOPK, N, ADDRESS_SPACE, tkl.f16],
-    TMP_3: tkl.Memory[B, TOPK, D2, ADDRESS_SPACE, tkl.f32],
-    # Note: W2 really has torch.Tensor.shape [E, D2, N] but we want to index it
-    # with indices [B, TOPK, D2, N].
-    # We don't want to introduce index E because we'd get the cartesian product
-    # [E, B, TOPK], which is not what we want.
-    # So we just use TOPK to index into W2 (alternatively we could use B).
-    # W2: tkl.Memory[TOPK, D2, N, ADDRESS_SPACE, tkl.f16],
-    # TOPK_IDS: tkl.Memory[B, TOPK, ADDRESS_SPACE, tkl.i64],
+    TMP_2: tkl.Memory[B, TOPK, N, ADDRESS_SPACE, tkl.f16],
+    W2: tkl.Memory[TOPK, D2, N, ADDRESS_SPACE, tkl.f16, w2_layout],
+    TOPK_IDS: tkl.Memory[B, TOPK, ADDRESS_SPACE, tkl.i64],
     TOPK_WEIGHTS: tkl.Memory[B, TOPK, ADDRESS_SPACE, tkl.f32],
     RESULT: tkl.Memory[B, TOPK, D2, ADDRESS_SPACE, tkl.f32],
 ):
-    # res_reg = tkl.Register[TOPK, B, D2, tkl.f32](0.0)
-    # @tkw.reduction(N, init_args=[res_reg])
-    # def repeat(
-    #     acc: tkl.Register[TOPK, B, D2, tkl.f32]
-    # ) -> tkl.Register[TOPK, B, D2, tkl.f32]:
-    #     ###
-    #     # TMP_3[TOPK, B, D2] = TMP_2[TOPK, B, N:]
-    #     #   @ W2[subset(E by topk_idx[B, TOPK]), D2, N].transpose(0, 1)
-    #     ###
-    #     expert_id = tkw.read(
-    #         TOPK_IDS,
-    #         elements_per_thread=LOAD_ELEMS_PER_THREAD,
-    #     )  # : [B, TOPK]
-    #     tmp_2_reg = tkw.read(
-    #         TMP_2,
-    #         elements_per_thread=LOAD_ELEMS_PER_THREAD,
-    #     )  # : [TOPK, B, N]
-    #     w2_reg = tkw.read(
-    #         W2,
-    #         mapping=offset_mapping_w2,
-    #         mapping_dynamic_vals=(expert_id, ),
-    #         elements_per_thread=LOAD_ELEMS_PER_THREAD,
-    #     )  # : [TOPK, D2, N] but indexed as [E=(B, TOPK), D2, N] and E expert_id
-    #     acc = tkw.mma(tmp_2_reg, w2_reg, acc)
-    #     return acc
-    # res = repeat
+    res_reg = tkl.Register[TOPK, B, D2, tkl.f32](0.0)
+
+    @tkw.reduction(N, init_args=[res_reg])
+    def repeat(
+        acc: tkl.Register[TOPK, B, D2, tkl.f32]
+    ) -> tkl.Register[TOPK, B, D2, tkl.f32]:
+        ###
+        # TMP_3[TOPK, B, D2] = TMP_2[TOPK, B, N:]
+        #   @ W2[subset(E by topk_idx[B, TOPK]), D2, N].transpose(0, 1)
+        ###
+        tmp_2_reg = tkw.read(
+            TMP_2,
+            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+        )  # : [TOPK, B, N]
+        expert_id = tkw.read(
+            TOPK_IDS,
+            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+        )  # : [B, TOPK]
+        w2_reg = tkw.read(
+            W2,
+            mapping=offset_mapping_w2,
+            mapping_dynamic_vals=(expert_id,),
+            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+        )  # : [TOPK, D2, N] but indexed as [E=(B, TOPK), D2, N] and E expert_id
+        acc = tkw.mma(tmp_2_reg, w2_reg, acc)
+        return acc
+
+    res = repeat
 
     ###
     # RESULT[B, TOPK, D2] = TMP_3[TOPK, B, D2] * topk_score[B, TOPK]
     ###
-    res = tkw.read(
-        TMP_3, elements_per_thread=LOAD_STORE_ELEMS_PER_THREAD
-    )  # : [B, TOPK, D2]
-    # Note: we dont' load TOPK_WEIGHTS along D2, we must **always** load 1 elt
-    # and then explicitly broadcast.
-    topk_weights = tkw.read(TOPK_WEIGHTS, elements_per_thread=1)  # : [B, TOPK]
+    topk_weights = tkw.read(
+        TOPK_WEIGHTS, elements_per_thread=STORE_ELEMS_PER_THREAD
+    )  # : [B, TOPK]
     topk_weights = tkw.broadcast(topk_weights, target_shape=[B, TOPK, D2])
-    # topk_weights = tkw.permute(topk_weights, target_shape=[TOPK, B])
-    # res = tkw.permute(res, target_shape=[B, TOPK, D2])  # : [B, TOPK, D2]
-    res = res * topk_weights  # : [B, TOPK, D2]
+    res = res * tkw.cast(topk_weights, tkl.f32)  # : [B, TOPK, D2]
+
     tkw.write(
-        res, RESULT, elements_per_thread=LOAD_STORE_ELEMS_PER_THREAD
+        res, RESULT, elements_per_thread=STORE_ELEMS_PER_THREAD
     )  # : [B, TOPK, D2]
 
 
+# Note: W2 really has torch.Tensor.shape [E, D2, N] but we want to index it
+# with indices [B, TOPK, D2, N].
+# We don't want to introduce index E because we'd get the cartesian product
+# [E, B, TOPK], which is not what we want.
+# So we just use TOPK to index into W2 (alternatively we could use B).
 def get_fused_moe_kernel(constraints):
     @tkw.wave(constraints)
     def fused_moe_kernel_executable(
-        # TMP_2: tkl.Memory[TOPK, B, N, ADDRESS_SPACE, tkl.f16],
-        TMP_3: tkl.Memory[B, TOPK, D2, ADDRESS_SPACE, tkl.f32],
-        # Note: W2 really has torch.Tensor.shape [E, D2, N] but we want to index it
-        # with indices [B, TOPK, D2, N].
-        # We don't want to introduce index E because we'd get the cartesian product
-        # [E, B, TOPK], which is not what we want.
-        # So we just use TOPK to index into W2 (alternatively we could use B).
-        # W2: tkl.Memory[TOPK, D2, N, ADDRESS_SPACE, tkl.f16],
-        # TOPK_IDS: tkl.Memory[B, TOPK, ADDRESS_SPACE, tkl.i64],
+        TMP_2: tkl.Memory[B, TOPK, N, ADDRESS_SPACE, tkl.f16],
+        W2: tkl.Memory[TOPK, D2, N, ADDRESS_SPACE, tkl.f16, w2_layout],
+        TOPK_IDS: tkl.Memory[B, TOPK, ADDRESS_SPACE, tkl.i64],
         TOPK_WEIGHTS: tkl.Memory[B, TOPK, ADDRESS_SPACE, tkl.f32],
         RESULT: tkl.Memory[B, TOPK, D2, ADDRESS_SPACE, tkl.f32],
     ):
-        # return fused_moe_kernel(TMP_2, W2, TOPK_IDS, TOPK_WEIGHTS, RESULT)
-        return fused_moe_kernel(TMP_3, TOPK_WEIGHTS, RESULT)
+        return fused_moe_kernel(TMP_2, W2, TOPK_IDS, TOPK_WEIGHTS, RESULT)
 
     return fused_moe_kernel_executable
 
@@ -308,7 +309,7 @@ def silu_and_mul(x: torch.Tensor):
     return F.silu(x[..., :d]) * x[..., d:]
 
 
-def torch_naive_moe(a, w1, w2, score, topk):
+def torch_naive_moe(a, w1, w2, score, topk, result_dtype):
     # where
     # a: Tensor[B, D1],
     # W1: Tensor[E, 2 * N, D1],
@@ -328,7 +329,7 @@ def torch_naive_moe(a, w1, w2, score, topk):
             out[mask] = silu_and_mul(a[mask] @ w1[i].transpose(0, 1)) @ w2[i].transpose(
                 0, 1
             )
-    return out.view(B, -1, w2.shape[1]) * topk_weights.view(B, -1, 1).to(out.dtype)
+    return out.view(B, -1, w2.shape[1]) * topk_weights.view(B, -1, 1).to(result_dtype)
     # .sum(dim=1)
 
 
@@ -364,9 +365,9 @@ def torch_naive_moe_step_2(w1, w2, topk_weights, topk_ids, out_tmp):
     return out
 
 
-def torch_naive_moe_step_3(a, w2, topk_weights, out):
+def torch_naive_moe_step_3(a, w2, topk_weights, out, result_dtype):
     B, D = a.shape
-    return out.view(B, -1, w2.shape[1]) * topk_weights.view(B, -1, 1).to(out.dtype)
+    return out.view(B, -1, w2.shape[1]) * topk_weights.view(B, -1, 1).to(result_dtype)
     # .sum(dim=1)
 
 
@@ -377,18 +378,20 @@ if __name__ == "__main__":
         cfg = copy.deepcopy(config())
         lit_harness(build_block_constraints, fused_moe_kernel, **cfg)
 
-        a = torch.randn(vB, vD1).cuda()
-        w1 = torch.randn(vE, 2 * vN, vD1).cuda()
-        w2 = torch.randn(vE, vD2, vN).cuda()
+        a = torch.randn(vB, vD1, dtype=torch.float16).cuda()
+        w1 = torch.randn(vE, 2 * vN, vD1, dtype=torch.float16).cuda()
+        w2 = torch.randn(vE, vD2, vN, dtype=torch.float16).cuda()
         score = torch.randn(vB, vE).cuda()
         topk = vTOPK
-        reference = torch_naive_moe(a, w1, w2, score, topk)
+        reference = torch_naive_moe(a, w1, w2, score, topk, result_dtype=torch.float32)
 
         cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
-        ref_full_1 = torch_naive_moe(a, w1, w2, score, topk)
+        ref_full_1 = torch_naive_moe(a, w1, w2, score, topk, result_dtype=torch.float32)
         topk_weights, topk_ids, out_tmp = torch_naive_moe_step_1(a, w1, w2, score, topk)
         out_tmp_2 = torch_naive_moe_step_2(w1, w2, topk_weights, topk_ids, out_tmp)
-        ref_full_2 = torch_naive_moe_step_3(a, w2, topk_weights, out_tmp_2)
+        ref_full_2 = torch_naive_moe_step_3(
+            a, w2, topk_weights, out_tmp_2, result_dtype=torch.float32
+        )
         assert_close(ref_full_1, ref_full_2, **cmp_params)
 
         from torch.profiler import profile, ProfilerActivity
@@ -405,7 +408,11 @@ if __name__ == "__main__":
 
             result = torch.zeros_like(ref_full_1).cuda()
             executable_kernel(
-                out_tmp_2.view(vB, vTOPK, vD2), topk_weights.view(vB, vTOPK), result
+                out_tmp.view(vB, vTOPK, vN),
+                w2,
+                topk_ids.view(vB, vTOPK),
+                topk_weights.view(vB, vTOPK),
+                result,
             )
             assert_close(result, ref_full_1, **cmp_params)
 
