@@ -96,13 +96,7 @@ from ...compiler.vector_codegen import (
     cast_py_value,
     cast_vector,
 )
-from ..constraints import (
-    Constraint,
-    HardwareConstraint,
-    MMAType,
-    WorkgroupConstraint,
-    TilingConstraint,
-)
+from ..constraints import GenericDot, HardwareConstraint
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
 
@@ -273,7 +267,109 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]):
+def decompose_value(src: Value, bitsize: int) -> list[Value]:
+    """
+    Decomposes a value into smaller values of the given bitsize.
+    For example, if the input is a vector of 128 bits and the bitsize is 32,
+    it will return 4 values of 32 bits each.
+    """
+    src_width = src.type.element_type.width * sum(src.type.shape)
+    if src_width < bitsize:
+        src = llvm_d.bitcast(IntegerType.get_signless(src_width), src)
+        src = arith_d.extui(IntegerType.get_signless(bitsize), src)
+        src_width = bitsize
+
+    if src_width % bitsize != 0:
+        raise ValueError(f"Cannot decompose {src_width} bits into {bitsize} bits.")
+
+    num_elements = src_width // bitsize
+    temp_vec_type = VectorType.get([num_elements], IntegerType.get_signless(bitsize))
+    src = llvm_d.bitcast(temp_vec_type, src)
+    elements = []
+    for i in range(num_elements):
+        element = vector_d.extract(src, static_position=[i], dynamic_position=[])
+        elements.append(element)
+
+    return elements
+
+
+def compose_values(res_type: IrType, elements: list[Value]) -> Value:
+    """
+    Composes a list of values into a single value of the given type.
+    """
+    bitsize = elements[0].type.width
+    num_elements = len(elements)
+    temp_vec_type = VectorType.get([num_elements], IntegerType.get_signless(bitsize))
+    result = vector_d.from_elements(temp_vec_type, elements)
+    dst_width = res_type.element_type.width * sum(res_type.shape)
+    if dst_width < bitsize:
+        result = llvm_d.bitcast(IntegerType.get_signless(bitsize), result)
+        result = arith_d.trunci(IntegerType.get_signless(dst_width), result)
+
+    result = llvm_d.bitcast(res_type, result)
+    return result
+
+
+def create_shuffle(
+    src: Value, offset: Value, width: Value, mode: gpu_d.ShuffleMode
+) -> Value:
+    bitsize = 32
+    values = decompose_value(src, bitsize)
+    result = []
+    for value in values:
+        value = gpu_d.shuffle(value, offset, width, mode)[0]
+        result.append(value)
+
+    return compose_values(src.type, result)
+
+
+def emit_dot(
+    emitter: WaveEmitter,
+    config: GenericDot,
+    src_a: Value,
+    src_b: Value,
+    acc: Value,
+    threads_per_wave: int,
+) -> Value:
+    res_type = acc.type
+    res_element_type = res_type.element_type
+
+    def cast(v):
+        v_type = v.type
+        if v_type.element_type != res_element_type:
+            cast_type = VectorType.get(v_type.shape, res_element_type)
+            v = arith_d.extf(cast_type, v)
+
+        return v
+
+    vec_size = config.out_vec_size
+    if vec_size > 1:
+        i32 = IntegerType.get_signless(32)
+        width = arith_d.constant(i32, threads_per_wave)
+
+    elements = []
+    for i in range(vec_size):
+        a = src_a
+        b = src_b
+        if vec_size > 1:
+            offset_expr = ((THREAD_0 % threads_per_wave) // vec_size) * vec_size + i
+            offset = gen_sympy_index(add_emitter_subs(emitter), offset_expr)
+            offset = arith_d.index_cast(i32, offset)
+            a = create_shuffle(a, offset, width, gpu_d.ShuffleMode.IDX)
+
+        a = cast(a)
+        b = cast(b)
+        val = arith_d.mulf(a, b)
+        val = cast(val)
+
+        tmp = vector_d.extract(acc, static_position=[i], dynamic_position=[])
+        val = vector_d.reduction(tmp.type, vector_d.CombiningKind.ADD, val, acc=tmp)
+        elements.append(val)
+
+    return vector_d.from_elements(res_type, elements)
+
+
+def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]) -> Value:
     m = get_constant_attr(m, IntegerType.get_signless(32))
     n = get_constant_attr(n, IntegerType.get_signless(32))
     k = get_constant_attr(k, IntegerType.get_signless(32))
@@ -300,8 +396,6 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    vector_type = VectorType(acc.type)
-
     hardware_constraints = [
         constraint
         for constraint in emitter.constraints
@@ -309,6 +403,21 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     ]
     if not hardware_constraints:
         raise CodegenError("No hardware constraints found.")
+
+    if mma_type is None:
+        mma_type = hardware_constraints[0].mma_type
+
+    if isinstance(mma_type, GenericDot):
+        result = emit_dot(
+            emitter,
+            mma_type,
+            values[0],
+            values[1],
+            acc,
+            hardware_constraints[0].threads_per_wave,
+        )
+        emitter.bind_node_proxy(node, IRProxyValue(result))
+        return
 
     m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
     result = emit_mfma(m, n, k, acc, values)

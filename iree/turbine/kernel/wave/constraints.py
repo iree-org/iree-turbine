@@ -59,6 +59,52 @@ class MMAType(Enum):
     I32_32x32x16_I8 = 0x12C1
 
 
+@dataclass
+class GenericDot:
+    """
+    mma implemented through vector dot products intead of hw intrinsics.
+
+    `out_vec_size`: size of the output matrix vector
+    `k_size`: size of the reduction dimension vector
+    """
+
+    out_vec_size: int = 4
+    k_size: int = 4
+
+    def get_shape(self, threads_per_wave: int) -> tuple[int, int, int]:
+        return (self.out_vec_size, threads_per_wave, self.k_size)  # M x N x K
+
+    def get_index_offset(
+        self, lane: IndexExpr, threads_per_wave: int
+    ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
+        return [
+            Piecewise((lane % self.out_vec_size, ~MMA_ACC), (0, MMA_ACC)),  # M
+            lane,  # N
+            0,  # K
+        ]
+
+    def get_index_size(
+        self, threads_per_wave: int
+    ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
+        return [
+            Piecewise((1, ~MMA_ACC), (self.out_vec_size, MMA_ACC)),  # M
+            1,  # N
+            self.k_size,  # K
+        ]
+
+    def get_index_stride(
+        self, threads_per_wave: int
+    ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
+        return [
+            Piecewise((1, ~MMA_ACC), (threads_per_wave, MMA_ACC)),  # M
+            1,  # N
+            self.k_size,  # K
+        ]
+
+    def __hash__(self):
+        return hash((self.out_vec_size, self.k_size))
+
+
 class MMAOperand(Enum):
     M = 0
     N = 1
@@ -144,7 +190,11 @@ class HardwareConstraint(Constraint):
         # TODO: Eventually the shapes and indices should be provided by a tool
         if mma_type == None:
             mma_type = self.mma_type
+
         match mma_type:
+            # M x N x K
+            case GenericDot():
+                return mma_type.get_shape(self.threads_per_wave)
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 return (16, 16, 16)
             case MMAType.F32_32x32x8_F16 | MMAType.I32_32x32x8_I8:
@@ -170,8 +220,11 @@ class HardwareConstraint(Constraint):
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
+
         match mma_type:
             # (M x K, N x K) -> M x N
+            case GenericDot():
+                offset = mma_type.get_index_offset(lane, self.threads_per_wave)
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 offset = [
                     Piecewise(
@@ -305,9 +358,13 @@ class HardwareConstraint(Constraint):
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
+
         offset = self.mma_index_offset(mma_type)
         match mma_type:
             # (M x K, N x K) -> M x N
+            case GenericDot():
+                size = mma_type.get_index_size(self.threads_per_wave)
+                stride = mma_type.get_index_stride(self.threads_per_wave)
             case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
                 size = [
                     Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
