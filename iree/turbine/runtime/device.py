@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from functools import lru_cache
+from hashlib import sha1
 from typing import Any, Callable, Dict, Optional, Union
 from threading import local, Lock
 import warnings
@@ -52,6 +53,11 @@ _CURRENT_THREAD = local()
 # The Device class also adds other accounting needed for interop in PyTorch's
 # eager environment (i.e. transfer and compute queue counters, etc).
 ###############################################################################
+
+
+DEFAULT_KEY_HASHER: Callable[[str], str] = lambda key: sha1(
+    key.encode(), usedforsecurity=False
+).hexdigest()
 
 
 def get_vm_instance() -> VmInstance:
@@ -261,6 +267,9 @@ class Device:
     def create_hal_module(self) -> VmModule:
         s = self._s
         return create_hal_module(s.instance, s.device)
+
+    def get_type_key_hash(self, *, hasher: Callable[[str], str] = DEFAULT_KEY_HASHER):
+        return hasher(self.type_cache_key)
 
     @staticmethod
     def current() -> "Device":

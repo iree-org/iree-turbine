@@ -17,6 +17,7 @@ __all__ = [
     "is_cache_enabled",
     "clear_cache_dir",
     "get_launchable",
+    "set_boo_cache",
 ]
 
 _default_cache_base_dir = Path.home() / ".cache" / "turbine_kernels" / "boo"
@@ -68,7 +69,9 @@ def _out_of_process_compile(func_name, key_hashes_and_flags):
             logger.debug("failed compilation with diagnostics: %s", str(e))
 
 
-def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> str:
+def _get_module_asm(
+    signature: ConvSignature, func_name: str | None = None, use_custom: bool = True
+) -> str:
     func_name = func_name or signature.get_func_name()
     cache_dir = CACHE_BASE_DIR / func_name
     mlir_path = cache_dir / f"{func_name}.mlir"
@@ -78,7 +81,7 @@ def _get_module_asm(signature: ConvSignature, func_name: str | None = None) -> s
         return mlir_path.read_text()
 
     e = export(
-        signature.get_nn_module(use_custom=True),
+        signature.get_nn_module(use_custom=use_custom),
         args=signature.get_sample_conv_args(splat_value=0),
         function_name=func_name,
     )
@@ -120,17 +123,17 @@ class ConvLaunchableRuntimeCache:
     def set_cache_limit(self, new_cache_limit: int | None):
         self.cache_limit = new_cache_limit
 
-    def add_to_session_cache(self, func_name: str, launchable: Launchable):
-        self.session_cache[func_name] = launchable
-        self.session_cache.move_to_end(func_name)
+    def add_to_session_cache(self, key: str, launchable: Launchable):
+        self.session_cache[key] = launchable
+        self.session_cache.move_to_end(key)
         if (
             self.cache_limit is not None
-            and len(self.session_cache.keys) > self.cache_limit
+            and len(self.session_cache.keys()) > self.cache_limit
         ):
             self.session_cache.popitem(last=False)
 
-    def get(self, func_name: str) -> Launchable | None:
-        return self.session_cache.get(func_name, None)
+    def get(self, key: str) -> Launchable | None:
+        return self.session_cache.get(key, None)
 
     @staticmethod
     def get_launchable_cache(cache_limit: int | None = None):
@@ -141,19 +144,29 @@ class ConvLaunchableRuntimeCache:
         return ConvLaunchableRuntimeCache(cache_limit)
 
 
-def get_launchable(signature: ConvSignature) -> Launchable:
+def get_launchable(
+    signature: ConvSignature, *, use_custom=True, cache_only=False
+) -> Launchable:
     func_name = signature.get_func_name()
+    session_cache_key = func_name + cache_only * "_no_jit"
     launch_cache = ConvLaunchableRuntimeCache.get_launchable_cache()
-    launch = launch_cache.get(func_name)
+    launch = launch_cache.get(session_cache_key)
     if launch:
         return launch
-    module_asm = _get_module_asm(signature, func_name)
     cache_dir = CACHE_BASE_DIR / func_name if is_cache_enabled() else None
-    launch = Launchable.jit_compile(
-        module_asm,
-        parameter_providers=(),
-        entry_point=func_name,
-        file_cache_dir=cache_dir,
-    )
-    launch_cache.add_to_session_cache(func_name, launch)
+    if cache_only:
+        launch = Launchable.from_file_cache_only(
+            cache_dir,
+            parameter_providers=(),
+            entry_point=func_name,
+        )
+    else:
+        module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
+        launch = Launchable.jit_compile(
+            module_asm,
+            parameter_providers=(),
+            entry_point=func_name,
+            file_cache_dir=cache_dir,
+        )
+    launch_cache.add_to_session_cache(session_cache_key, launch)
     return launch
