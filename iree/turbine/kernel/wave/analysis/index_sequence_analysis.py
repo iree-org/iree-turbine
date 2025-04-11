@@ -113,7 +113,8 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
             continue
         if isinstance(custom.type, DataType):
             continue
-        assert custom.index, f"Index not set for node {custom.fx_node}"
+        assert custom.index, f"Index not set for node {custom.fx_node}: {custom}"
+
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
@@ -124,7 +125,9 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
                 custom.vector_shapes = {}
                 for dim in update_vector_shapes:
                     custom.vector_shapes[dim] = hw_constraint.vector_shapes[dim]
-        assert custom.vector_shapes, f"Vector shapes not set for node {custom.fx_node}"
+        assert (
+            custom.vector_shapes
+        ), f"Vector shapes not set for node {custom.fx_node}: {custom}"
 
 
 def set_node_indices(
@@ -692,7 +695,13 @@ def set_post_expansion_indices(trace: CapturedTrace, constraints: list[Constrain
             return False
         for dim, scale in custom.expanded_dims.items():
             if dim in custom.index:
-                custom.index[dim].start += scale * custom.vector_shapes[dim]
+                try:
+                    custom.index[dim].start += scale * custom.vector_shapes[dim]
+                except KeyError as e:
+                    raise RuntimeError(
+                        f"op index or vector shapes missing expanded dim {dim}:\n"
+                        f"{custom.index}\n{custom.vector_shapes}\n{custom}"
+                    )
         return False
 
     trace.walk(apply_offset)
@@ -747,13 +756,30 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         # Get the largest dim and shape from the lhs and rhs.
         lhs = get_custom(custom.lhs)
         rhs = get_custom(custom.rhs)
-
+        
+        lhs_index = get_index(lhs) if lhs.indexing_dims else None
+        rhs_index = get_index(rhs) if rhs.indexing_dims else None
+        
         # Updatedto broadcast implicitly when we perform mul binary op with scalar.
         lhs_dim, lhs_size = (
-            get_largest_index_and_size(get_index(lhs)) if lhs.indexing_dims else ((), 1)
+            get_largest_index_and_size(lhs_index) if lhs.indexing_dims else ((), 1)
         )
         rhs_dim, rhs_size = (
-            get_largest_index_and_size(get_index(rhs)) if rhs.indexing_dims else ((), 1)
+            get_largest_index_and_size(rhs_index) if rhs.indexing_dims else ((), 1)
+        )
+
+        extra_error_info = (
+            f"\n{binary_op=}"
+            f"\n{lhs=}"
+            f"\n{lhs_index=}"
+            f"\n{lhs_dim=}"
+            f"\n{lhs_size=}"
+            f"\n{lhs.type.symbolic_shape=}"
+            f"\n{rhs=}"
+            f"\n{rhs_index=}"
+            f"\n{rhs_dim=}"
+            f"\n{rhs_size=}"
+            f"\n{rhs.type.symbolic_shape=}"
         )
 
         # If they are equal we are done.
@@ -765,7 +791,8 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         # Cannot handle discrepancies when both shapes are > 1.
         if lhs_size > 1 and rhs_size > 1:
             raise NotImplementedError(
-                "Currently only support resolving discrepancies when one of the shapes is 1."
+                f"Currently only support resolving discrepancies when one of the shapes is 1."
+                f"{extra_error_info}"
             )
 
         broadcast_rhs = lhs_size > rhs_size
@@ -786,7 +813,9 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
 
             if not is_only_missing_dim and not is_innermost_dim:
                 raise NotImplementedError(
-                    "Currently only support resolving discrepancies when the broadcasting dimension is the innermost dimension."
+                    f"Currently only support resolving discrepancies when the broadcasting"
+                    f" dimension is the innermost dimension. {extra_error_info}"
+                    f"\n{broadcast_dim=}"
                 )
 
         # Broadcast

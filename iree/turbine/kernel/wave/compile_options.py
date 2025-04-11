@@ -61,6 +61,7 @@ class WaveCompileOptions:
     wave_runtime: str = None
     use_buffer_load_ops: bool = False
     use_buffer_store_ops: bool = False
+    use_fast_math: bool = False
 
     # === Print options ===
     print_ir_after: list[str] = field(default_factory=list)

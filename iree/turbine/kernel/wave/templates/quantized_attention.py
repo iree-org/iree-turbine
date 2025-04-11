@@ -22,7 +22,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     shape: AttentionShape,
     mfma_variant: MMAType,
     logit_dtype: torch.dtype = torch.float16,
-    f8_dtpye: torch.dtype = torch.float8_e4m3fnuz,
+    f8_dtype: torch.dtype = torch.float8_e4m3fnuz,
     dynamic_dims: bool = False,
     is_causal: bool = False,
 ):
@@ -96,8 +96,8 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     LOG2E = 1.44269504089
     DK_SQRT = math.sqrt(1.0 / shape.head_size)
     QK_SCALING_CONST = LOG2E * DK_SQRT
-    F8_DTYPE = torch_dtype_to_wave(f8_dtpye)
-    F8_MAX = torch.finfo(f8_dtpye).max
+    F8_DTYPE = torch_dtype_to_wave(f8_dtype)
+    F8_MAX = torch.finfo(f8_dtype).max
 
     # maximum expected value from attention softmax
     ATTENTION_SOFTMAX_MAX = 1.0
@@ -107,7 +107,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     # full fp8 range. We can do this with a offset as post `exp2` this equates
     # to multiplying by a static value. We are able to do this as `max` and
     # `sum` are scaled by the same value so the end result is the same.
-    FP8_OFFSET_VAL = ATTENTION_SOFTMAX_MAX / F8_MAX
+    FP8_OFFSET_VAL = math.log2(F8_MAX / ATTENTION_SOFTMAX_MAX)
 
     # Clamp input to dstTy(usually `fp8`) MAX value to prevent NaNs.
     # We do not clamp for `-MAX` because this function meant to only be
@@ -163,10 +163,9 @@ def get_brevitas_pertensor_fp8_attention_kernel(
             bias = tkw.select(mask, ZEROF, MIN_INF)
             x_j = x_j + bias
             x_j *= qk_scaling
-            x_j += fp8_offset
             m_j = tkw.max(x_j, partial_max, dim=N_KV)
             e_delta_max = tkw.exp2(partial_max - m_j)
-            e_delta = tkw.exp2(x_j - m_j)
+            e_delta = tkw.exp2(x_j - m_j + fp8_offset)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=N_KV)
             imm_f8 = low_precision_clamp(e_delta, fp8_max)

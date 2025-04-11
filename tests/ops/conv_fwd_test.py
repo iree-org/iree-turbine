@@ -8,7 +8,7 @@ import pytest
 
 import torch
 
-from iree.turbine.ops.conv_fwd import conv_2d_nhwc_fhwc
+from iree.turbine.ops.conv_fwd import conv_2d_nhwc_fhwc, generic_conv
 
 N = 2
 H = 16
@@ -33,7 +33,7 @@ device = torch.device("cuda:0") if torch.cuda.is_available() else None
 
 @pytest.mark.parametrize("s", strides)
 @pytest.mark.parametrize("d", dilations)
-def testCustomConvImplementationEager(s, d):
+def testCustomConv2dNHWCFHWCImplementationEager(s, d):
     gen = torch.Generator(device=device)
     gen.manual_seed(10)
     x = torch.randn([N, H, W, C], generator=gen, dtype=torch.float32, device=device)
@@ -50,6 +50,30 @@ def testCustomConvImplementationEager(s, d):
         [0, 0],
         1,
     ).permute([0, 2, 3, 1])
+    assert torch.allclose(
+        y, y_expected, rtol=1e-3, atol=1e-3
+    ), "Implementation should match."
+
+
+@pytest.mark.parametrize("s", strides)
+@pytest.mark.parametrize("d", dilations)
+def testGenericCustomConvImplementationEager(s, d):
+    gen = torch.Generator(device=device)
+    gen.manual_seed(10)
+    x = torch.randn([N, H, W, C], generator=gen, dtype=torch.float32, device=device)
+    w = torch.randn([F, Hk, Wk, C], generator=gen, dtype=torch.float32, device=device)
+    y = generic_conv(x, w, s, d, "nhwc", "fhwc", "nfhw", [])
+    y_expected = torch.convolution(
+        x.permute([0, 3, 1, 2]),
+        w.permute([0, 3, 1, 2]),
+        None,
+        s,
+        [0, 0],
+        d,
+        False,
+        [0, 0],
+        1,
+    )
     assert torch.allclose(
         y, y_expected, rtol=1e-3, atol=1e-3
     ), "Implementation should match."

@@ -91,14 +91,12 @@ class CachePopulator:
             str(list([s._signature for s in self.signatures])),
         )
 
-        key_hashes_and_flags = []
+        key_hashes_and_flags = set()
         for d in self.torch_devices:
             turbine_device = get_device_from_torch(d)
-            key_hashes_and_flags.append(
+            key_hashes_and_flags.add(
                 (
-                    hashlib.sha1(
-                        turbine_device.type_cache_key.encode(), usedforsecurity=False
-                    ).hexdigest(),
+                    turbine_device.get_type_key_hash(),
                     turbine_device.compile_target_flags,
                 )
             )
@@ -136,10 +134,7 @@ class CachePopulator:
 
         key_to_hash = {}
         for d in self.torch_devices:
-            key = get_device_from_torch(d).type_cache_key
-            key_to_hash[key] = hashlib.sha1(
-                key.encode(), usedforsecurity=False
-            ).hexdigest()
+            key_to_hash[d] = get_device_from_torch(d).get_type_key_hash()
         status = {}
         for dir in cache_dir.glob("*/"):
             name = dir.name

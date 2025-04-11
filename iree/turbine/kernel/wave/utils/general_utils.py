@@ -317,7 +317,7 @@ TORCH_DTYPE_TO_WAVE = {
     torch.float8_e5m2: tkl.f8e5m2,
     torch.float8_e5m2fnuz: tkl.f8e5m2fnuz,
     torch.float8_e4m3fn: tkl.f8e4m3fn,
-    torch.torch.float8_e4m3fnuz: tkl.f8e4m3fnuz,
+    torch.float8_e4m3fnuz: tkl.f8e4m3fnuz,
     torch.float16: tkl.f16,
     torch.float32: tkl.f32,
     torch.float64: tkl.f64,
@@ -327,12 +327,33 @@ TORCH_DTYPE_TO_WAVE = {
     torch.bool: tkl.bool,
 }
 
+TORCH_DTYPE_RANGE = {
+    torch.bfloat16: [-3.3895313892515355e38, 3.3895313892515355e38],
+    torch.float8_e5m2: [-57344.0, 57344.0],
+    torch.float8_e5m2fnuz: [-57344.0, 57344.0],
+    torch.float8_e4m3fn: [-448.0, 448.0],
+    torch.float8_e4m3fnuz: [-240.0, 240.0],
+    torch.float16: [-65504.0, 65504.0],
+    torch.float32: [-3.4028234663852886e38, 3.4028234663852886e38],
+    torch.float64: [-1.7976931348623157e308, 1.7976931348623157e308],
+    torch.int16: [-32768, 32767],
+    torch.int32: [-2147483648, 2147483647],
+    torch.int64: [-9223372036854775808, 9223372036854775807],
+}
+
 
 def torch_dtype_to_wave(torch_dtype: torch.dtype) -> Any:
     try:
         return TORCH_DTYPE_TO_WAVE[torch_dtype]
     except KeyError:
         raise ValueError(f"Unable to map torch dtype {torch_dtype} to Wave.")
+
+
+def torch_dtype_range(torch_dtype: torch.dtype) -> Any:
+    try:
+        return TORCH_DTYPE_RANGE[torch_dtype]
+    except KeyError:
+        raise ValueError(f"Unable to retrieve torch dtype {torch_dtype} range.")
 
 
 def is_shared_write(node: CustomOp) -> bool:

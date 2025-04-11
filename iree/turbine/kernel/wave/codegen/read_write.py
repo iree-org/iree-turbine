@@ -473,9 +473,9 @@ def _create_vec_read_write(
     # and linearize breaks, need to investigate later.
     has_int_strides = all(isinstance(s, int) for s in strides)
     buffer_ops_enabled = (
-        emitter.params.use_buffer_load_ops
+        emitter.options.use_buffer_load_ops
         if is_read
-        else emitter.params.use_buffer_store_ops
+        else emitter.options.use_buffer_store_ops
     )
     if buffer_ops_enabled and has_int_strides and use_buffer_ops:
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]

@@ -41,7 +41,7 @@ def test_fp8_pertensor_attention():
     )
     base_attention = wave_compile(options, base_attention)
     print(base_attention.asm)
-
+    
     # CHECK-LABEL: func.func @base_attention
 
     # constants used for scaling, offsetting, max clamp

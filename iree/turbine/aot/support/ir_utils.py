@@ -497,6 +497,10 @@ def _is_integer_like_type(type):
     return isinstance(type, (IntegerType, IndexType))
 
 
+def _is_signed_or_signless_type(type):
+    return getattr(type, "is_signed", False) or getattr(type, "is_signless", False)
+
+
 def _attribute_from_device_affinity(
     affinity: DeviceAffinity, context: Context
 ) -> Attribute:
