@@ -68,19 +68,24 @@ class GenericDot:
     `k_vec_size`: size of the reduction dimension vector
     """
 
-    out_vec_size: int = 4
+    out_vec_size: int = 1
     k_vec_size: int = 4
+    k_mult: int = 1
 
     def get_shape(self, threads_per_wave: int) -> tuple[int, int, int]:
-        return (self.out_vec_size, threads_per_wave, self.k_vec_size)  # M x N x K
+        return (
+            self.out_vec_size,
+            threads_per_wave // self.k_mult,
+            self.k_vec_size * self.k_mult,
+        )  # M x N x K
 
     def get_index_offset(
         self, lane: IndexExpr, threads_per_wave: int
     ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
         return [
             Piecewise((lane % self.out_vec_size, ~MMA_ACC), (0, MMA_ACC)),  # M
-            lane,  # N
-            0,  # K
+            lane // self.k_mult,  # N
+            lane % self.k_mult,  # K
         ]
 
     def get_index_size(
