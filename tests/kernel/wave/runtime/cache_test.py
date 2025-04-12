@@ -700,3 +700,85 @@ def testDifferentSignatureSameCore(tmp_path):
     assert (
         len(cache_manager.session_cache) == 2
     ), "Expected len == 2, since despite same core, it has different signature."
+
+
+# This tests that when a free variable/constants
+# is being used inside a nested kernel, it re-compiles.
+# when we change the value and doesn't recompile
+# when we use the same values.
+
+
+@require_e2e
+@require_cache
+def testChangeFreeVarOfNestedFunction(tmp_path):
+    reset_cache_manager(tmp_path)
+    shape = [256, 256]
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Each workgroup works on single row of input data, and rows are further
+    # split into blocks of size up to 256. We have single wave per WG,
+    # and with default wave size of 64, each thread is operating on up to 4
+    # elements.
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    def get_double_kernel(FREEVAR_VAL):
+        def core(a):
+            offset = tkl.Register[M, N, tkl.f16](FREEVAR_VAL)
+            res = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+            double = res + res + offset
+            tkw.write(double, a, elements_per_thread=ELEMS_PER_THREAD)
+
+        @tkw.wave(constraints)
+        def double_kernel(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+            core(a)
+
+        return double_kernel
+
+    cache_manager = get_cache_manager()
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+    )
+    options = set_default_run_config(options)
+    assert (
+        len(cache_manager.session_cache) == 0
+    ), "Expected len == 0, before any compilation of kernel."
+    double_offset_1 = get_double_kernel(1.0)
+    double_offset_1_fn = wave_compile(options, double_offset_1)
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected len == 1, after caching first kernel."
+
+    double_offset_1_2nd = get_double_kernel(1.0)
+    double_offset_1_2nd_fn = wave_compile(options, double_offset_1_2nd)
+    assert (
+        len(cache_manager.session_cache) == 1
+    ), "Expected len == 1, since it's same kernel."
+
+    double_offset_2 = get_double_kernel(2.0)
+    double_offset_2_fn = wave_compile(options, double_offset_2)
+    assert (
+        len(cache_manager.session_cache) == 2
+    ), "Expected len == 2, since despite same core, it has different signature."
