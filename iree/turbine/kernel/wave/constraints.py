@@ -66,6 +66,7 @@ class GenericDot:
 
     `out_vec_size`: size of the output matrix vector
     `k_vec_size`: size of the reduction dimension vector
+    `k_mult`: number of reduction dimension vectors
     """
 
     out_vec_size: int = 1

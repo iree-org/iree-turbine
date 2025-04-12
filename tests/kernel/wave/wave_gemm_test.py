@@ -298,7 +298,7 @@ def testGemmDot(
 
     hyperparams = {
         ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
-        BLOCK_M: 1,
+        BLOCK_M: 4,
         BLOCK_N: 64,
         BLOCK_K: 16,
         M: shape[0],
