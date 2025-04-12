@@ -136,7 +136,7 @@ def test_gemm_dot():
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            mma_type=tkw.GenericDot(out_vec_size=4, k_size=4),
+            mma_type=tkw.GenericDot(k_mult=4, k_vec_size=4),
         )
     ]
 
@@ -160,11 +160,11 @@ def test_gemm_dot():
     options = WaveCompileOptions(
         subs={
             M: 64,
-            N: 128,
+            N: 64,
             K: 64,
             BLOCK_M: 4,
             BLOCK_N: 64,
-            BLOCK_K: 8,
+            BLOCK_K: 16,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
