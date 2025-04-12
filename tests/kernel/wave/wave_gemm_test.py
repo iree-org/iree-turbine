@@ -297,7 +297,7 @@ def testGemmDot(
         tkw.write(repeat, c)
 
     hyperparams = {
-        ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         BLOCK_M: 4,
         BLOCK_N: 64,
         BLOCK_K: 16,
