@@ -405,7 +405,6 @@ def emit_dot(
         shuffled = create_shuffle(result, shuffle_offset, width, gpu_d.ShuffleMode.XOR)
         result = arith_d.addf(result, shuffled)
 
-    tmp = vector_d.extract(acc, static_position=[i], dynamic_position=[])
     result = arith_d.addf(result, acc)
 
     return result
