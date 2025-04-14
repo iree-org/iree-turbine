@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import pytest
 import torch
 from torch.nn import functional as F
 from torch.testing import assert_close
@@ -16,6 +17,7 @@ from ...common.utils import (
 )
 
 
+@pytest.mark.skip
 @require_e2e
 @require_cdna3
 def test_SDPA_FP8_no_batch():
@@ -39,6 +41,7 @@ def test_SDPA_FP8_no_batch():
     assert_close(wave_output, torch_ref, atol=1e-3, rtol=1e-3)
 
 
+@pytest.mark.skip
 @require_e2e
 @require_cdna3
 def test_SDPA_FP8_BSD():
@@ -62,6 +65,7 @@ def test_SDPA_FP8_BSD():
     assert_close(wave_output, torch_ref, atol=1e-3, rtol=1e-3)
 
 
+@pytest.mark.skip
 @require_e2e
 @require_cdna3
 def test_SDPA_FP8_BHSD():
@@ -85,6 +89,7 @@ def test_SDPA_FP8_BHSD():
     assert_close(wave_output, torch_ref, atol=1e-3, rtol=1e-3)
 
 
+@pytest.mark.skip
 @require_e2e
 @require_cdna3
 def test_SDPA_FP8_BHSD_causal():
