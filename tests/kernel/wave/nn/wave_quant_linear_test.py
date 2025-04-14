@@ -11,7 +11,7 @@ from ..common.utils import (
     require_e2e,
     require_cdna3,
 )
-from iree.turbine.kernel.wave.layers.quant_linear import WaveQuantLinear
+import iree.turbine.kernel.wave.nn as wave_nn
 from iree.turbine.kernel.wave.utils.general_utils import torch_dtype_range
 from ..common.utils import require_e2e
 
@@ -113,7 +113,7 @@ def testQLinearPerTensor1DBatchNoBias():
         device=device,
         bias=False,
     )
-    wave_linear = WaveQuantLinear(
+    wave_linear = wave_nn.WaveQuantLinear(
         in_features,
         out_features,
         quant_params=quant_params,
