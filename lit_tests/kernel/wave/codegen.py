@@ -1987,8 +1987,7 @@ def test_scalar_codegen_f32():
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        inplace=False,
-        wave_runtime=True,
+        compile_to_mlir=True,
     )
     options = set_default_run_config(options)
     scalar_codegen_f32 = wave_compile(options, scalar_codegen_f32)
@@ -2043,8 +2042,7 @@ def test_scalar_codegen_i32():
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        inplace=False,
-        wave_runtime=True,
+        compile_to_mlir=True,
     )
     options = set_default_run_config(options)
     scalar_codegen_i32 = wave_compile(options, scalar_codegen_i32)
