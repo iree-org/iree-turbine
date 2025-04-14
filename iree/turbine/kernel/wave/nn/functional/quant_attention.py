@@ -33,6 +33,7 @@ def get_wave_kernel(
     k_scale: float,
     v_scale: float,
     logit_dtype: torch.dtype,
+    quant_dtype: torch.dtype,
     is_causal: bool,
 ):
     assert shape.num_query_heads % shape.num_kv_heads == 0
@@ -51,6 +52,7 @@ def get_wave_kernel(
         v_scale=v_scale,
         is_causal=is_causal,
         logit_dtype=logit_dtype,
+        f8_dtype=quant_dtype,
     )
     hyperparams.update(get_default_scheduling_params())
     del hyperparams[tkl.sym.B]
@@ -72,7 +74,16 @@ def get_wave_kernel(
     return quantized_attention
 
 
-def wave_sdpa_fp8(query, key, value, q_scale, k_scale, v_scale, is_causal=False):
+def wave_sdpa_fp8(
+    query,
+    key,
+    value,
+    q_scale,
+    k_scale,
+    v_scale,
+    quant_dtype: torch.dtype = torch.float8_e4m3fnuz,
+    is_causal=False,
+):
     """
     SDPA FP8 op that Handles any dimension of batch as long as SxD is fastest dim.
     i.e layout will be B x <B1 x B2 x .. x B_N> x S x D. This op also expects
@@ -103,7 +114,13 @@ def wave_sdpa_fp8(query, key, value, q_scale, k_scale, v_scale, is_causal=False)
         kv_seq_len=key_shape[-2],
     )
     quantized_attention = get_wave_kernel(
-        shape, q_scale, k_scale, v_scale, logit_dtype=query.dtype, is_causal=is_causal
+        shape,
+        q_scale,
+        k_scale,
+        v_scale,
+        logit_dtype=query.dtype,
+        quant_dtype=quant_dtype,
+        is_causal=is_causal,
     )
     quantized_attention.options.dynamic_symbols_map = {
         tkl.sym.B: flattend_batch_size,
