@@ -7,8 +7,8 @@
 import torch
 from torch.testing import assert_close
 
-from iree.turbine.kernel.wave.layers.quant_attention import wave_sdpa_fp8
-from ..common.utils import require_e2e, require_cdna3
+import iree.turbine.kernel.wave.nn as wave_nn
+from ...common.utils import require_e2e, require_cdna3
 
 
 @require_e2e
@@ -22,7 +22,9 @@ def test_SDPA_FP8_no_batch():
     q_scale = 0.02578124962747097
     k_scale = 0.02363281324505806
     v_scale = 0.010286458767950535
-    wave_output = wave_sdpa_fp8(query, key, value, q_scale, k_scale, v_scale)
+    wave_output = wave_nn.functional.wave_sdpa_fp8(
+        query, key, value, q_scale, k_scale, v_scale
+    )
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         query.to(torch.float32) * q_scale,
         key.to(torch.float32) * k_scale,
@@ -42,7 +44,9 @@ def test_SDPA_FP8_1D_batch():
     q_scale = 0.02578124962747097
     k_scale = 0.02363281324505806
     v_scale = 0.010286458767950535
-    wave_output = wave_sdpa_fp8(query, key, value, q_scale, k_scale, v_scale)
+    wave_output = wave_nn.functional.wave_sdpa_fp8(
+        query, key, value, q_scale, k_scale, v_scale
+    )
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         query.to(torch.float32) * q_scale,
         key.to(torch.float32) * k_scale,
@@ -62,7 +66,9 @@ def test_SDPA_FP8_3D_batch():
     q_scale = 0.02578124962747097
     k_scale = 0.02363281324505806
     v_scale = 0.010286458767950535
-    wave_output = wave_sdpa_fp8(query, key, value, q_scale, k_scale, v_scale)
+    wave_output = wave_nn.functional.wave_sdpa_fp8(
+        query, key, value, q_scale, k_scale, v_scale
+    )
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         query.to(torch.float32) * q_scale,
         key.to(torch.float32) * k_scale,
