@@ -84,7 +84,7 @@ def isolated_test_call(
         func_op = func_d.FuncOp("isolated_benchmark", ftype)
         actual_loc = FileLineColInfo.capture_current_location().to_mlir()
         arg_locs = [
-            (Location.name(b.name) if b.name is not None else Location.unknown())
+            (Location.name(b.name, actual_loc) if b.name is not None else actual_loc)
             for b in sig.kernel_buffer_bindings
             + sig.scalar_bindings
             + sig.dynamic_dim_bindings
