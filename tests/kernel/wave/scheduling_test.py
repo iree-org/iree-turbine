@@ -29,7 +29,7 @@ from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.wave.promotion import promote_placeholders
 from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
-from iree.turbine.kernel.wave.expansion.expansion import expand_graph
+from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.wave.minimize_global_loads import minimize_global_loads
 from iree.turbine.kernel.wave.scheduling.schedule import schedule_graph
@@ -285,6 +285,7 @@ class SchedulingTest(unittest.TestCase):
             trace: CapturedTrace = gemm()
             IndexingContext.current().finalize()
             initialize_iter_args(trace)
+            add_get_results(trace)
             infer_types(trace)
             promote_placeholders(trace, constraints)
             hoist_loop_invariant_ops(trace, constraints)
