@@ -22,6 +22,7 @@ from ..lang.global_symbols import *
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType, i1
 from .._support.regions import RegionGraph
+from .._support.location import FileLineColInfo
 from .base import OpDispatcher
 import numpy as np
 
@@ -385,6 +386,10 @@ class CustomOp(ABC):
     tkw_op_name: str = field(default="unknown", init=False)
     _tracing_function: Optional[Callable[..., Any]] = field(default=None, init=False)
 
+    @property
+    def location(self) -> Optional[FileLineColInfo]:
+        return getattr(self.fx_node, "location", None)
+
     @classmethod
     def from_fx_node(cls: Type[CustomOpT], node: fx.Node) -> CustomOpT:
         instance = cls(*node.args)
@@ -479,7 +484,13 @@ class CustomOp(ABC):
         """
         Copy core attributes from the current node to the new node.
         """
-        core_attributes = ["index", "vector_shapes", "reduction_dim", "iter_idx"]
+        core_attributes = [
+            "index",
+            "vector_shapes",
+            "reduction_dim",
+            "iter_idx",
+            "location",
+        ]
         for attr_name in core_attributes:
             if hasattr(self.fx_node, attr_name):
                 attr = getattr(self.fx_node, attr_name)
@@ -553,6 +564,7 @@ class CustomOp(ABC):
         node._add_proxy_to_graph(graph)
         node.fx_node.node.tkw_op = cls
         node.fx_node.node.tkw_op_name = cls.tkw_op_name
+        node.fx_node.node.location = FileLineColInfo.capture_current_location()
         return node.fx_node
 
     @property

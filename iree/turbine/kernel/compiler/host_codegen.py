@@ -22,6 +22,7 @@ from .ir import (
 )
 
 from .._support.indexing import IndexSymbol
+from .._support.location import FileLineColInfo
 from .kernel_codegen import BindingDesc
 
 
@@ -73,8 +74,9 @@ def isolated_test_call(
 
         ftype = FunctionType.get(input_tensors, output_tensors)
         func_op = func_d.FuncOp("isolated_benchmark", ftype)
+        actual_loc = FileLineColInfo.capture_current_location().to_mlir()
         arg_locs = [
-            (Location.name(b.name) if b.name is not None else Location.unknown())
+            (Location.name(b.name, actual_loc) if b.name is not None else actual_loc)
             for b in sig.kernel_buffer_bindings + sig.dynamic_dim_bindings
         ]
         entry_block = func_op.add_entry_block(arg_locs)
