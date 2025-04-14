@@ -951,7 +951,7 @@ def test_unary_lowerings():
 
     # Tests tanh
     # CHECK: %[[TANH:.+]] = math.tanh %[[ABSF]]
- 
+
     # Tests tanh approx
     # CHECK: %[[ABS:.+]] = math.absf %[[TANH]]
     # CHECK: %[[FACTOR:.+]] = arith.constant dense<-2.884770e+00> : vector<4xf16>
@@ -965,7 +965,7 @@ def test_unary_lowerings():
     # CHECK: %[[TEMP:.+]] = arith.mulf %[[EXP2]], %[[NEG_RECIP]] : vector<4xf16>
     # CHECK: %[[R:.+]] = arith.addf %[[TEMP]], %[[RECIP]] : vector<4xf16>
     # CHECK: %[[TANH_APPROX:.+]] = math.copysign %[[R]], %[[TANH]] : vector<4xf16>
-    
+
     # Tests roundeven
     # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[TANH_APPROX]]
 

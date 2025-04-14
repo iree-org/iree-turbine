@@ -683,6 +683,7 @@ def handle_abs(source: Value, options: WaveCompileOptions) -> OpResult:
         raise ValidationError(f"Found unhandled operand type for abs: {element_type}")
     return abs
 
+
 @handle_unary_op(tanh_approx)
 def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
     """
@@ -716,7 +717,7 @@ def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
     if _is_float_type(element_type):
         # a = x (source)
         a = source
-        
+
         # s = |a|
         s = math_d.absf(a)
 
@@ -726,7 +727,7 @@ def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
 
         # Compute factor = -2 * log2(e)
         factor_val = -2.0 * log2e_val
-        
+
         factor = arith_d.ConstantOp(
             source.type,
             DenseElementsAttr.get_splat(
@@ -738,7 +739,7 @@ def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
 
         # e = exp2(t) using fast hardware intrinsic via math_d
         e = math_d.exp2(t)
-        
+
         one = arith_d.ConstantOp(
             source.type,
             DenseElementsAttr.get_splat(
@@ -751,19 +752,19 @@ def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
 
         # r = reciprocal(d)
         r = arith_d.divf(one, d, fastmath=get_fast_math_flags(options))
-        
+
         neg_one = arith_d.ConstantOp(
             source.type,
             DenseElementsAttr.get_splat(
                 source.type, get_constant_attr(-1.0, element_type)
             ),
         )
-        
+
         # r = e * (-r) + r  (computes (e-1)/(e+1) without direct division)
         neg_r = arith_d.mulf(r, neg_one, fastmath=get_fast_math_flags(options))
         temp = arith_d.mulf(e, neg_r, fastmath=get_fast_math_flags(options))
         r = arith_d.addf(temp, r, fastmath=get_fast_math_flags(options))
-        
+
         # # If s < threshold, then r = a (for small x, tanh(x) ~ x)
         # thresh_val = 4.997253418e-3
         # thresh = arith_d.ConstantOp(
@@ -772,7 +773,7 @@ def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
         # )
         # cmp = arith_d.cmpf(arith_d.CmpFPredicate.OLT, s, thresh)
         # r = arith_d.select(cmp, a, r)
-        
+
         # Copy the sign of a to r: r = copysign(r, a)
         result = math_d.copysign(r, a)
     else:
@@ -1146,20 +1147,25 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
         (False, True): arith_d.sitofp,
     }
 
-    cast_ops = {
-        (True, True): arith_d.extf,
-        (True, False): arith_d.extsi,
-        (False, True): arith_d.truncf,
-        (False, False): arith_d.trunci,
+    float_cast_ops = {
+        True: arith_d.extf,
+        False: arith_d.truncf,
     }
 
-    if (is_src_float and is_dst_float) or (is_src_int and is_dst_int):
-        casted_vector = cast_ops[
-            (
-                src_vector_type.element_type.width < dst_elem_type.width,
-                is_dst_float and is_src_float,
-            )
-        ](dst_vector_type, vector_src, fastmath=arith_d.FastMathFlags.fast)
+    int_cast_ops = {
+        True: arith_d.extsi,
+        False: arith_d.trunci,
+    }
+
+    if is_src_float and is_dst_float:
+        casted_vector = float_cast_ops[
+            src_vector_type.element_type.width < dst_elem_type.width
+        ](dst_vector_type, vector_src, fastmath=get_fast_math_flags(emitter.options))
+    elif is_src_int and is_dst_int:
+        # Currently extsi/trunci do not support fast_math option.
+        casted_vector = int_cast_ops[
+            src_vector_type.element_type.width < dst_elem_type.width
+        ](dst_vector_type, vector_src)
     else:
         casted_vector = conversion_ops[(is_src_float, is_dst_float)](
             dst_vector_type, vector_src
