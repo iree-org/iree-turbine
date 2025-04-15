@@ -322,8 +322,6 @@ class KernelSignature:
         for node in placeholder_nodes:
             index = None
             for i, binding in enumerate(self.bindings):
-                # if binding.binding_type == BindingType.SCALAR_VALUE:
-                #     break
                 if binding.reference[1] == node:
                     index = i
                     break
