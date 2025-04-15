@@ -1,7 +1,7 @@
 import hashlib
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Dict, Sequence, Union
+from typing import Dict, List, Tuple, Sequence, Union
 
 import torch
 
@@ -51,6 +51,7 @@ class CachePopulator:
         commands: Sequence[str] = (),
         commands_file: Union[str, Path, None] = None,
         allow_download: bool = False,
+        extra_compile_flags: Sequence[str] = (),
     ):
         self.cache_dir = set_boo_cache(cache_dir)
         self.torch_devices = devices or _get_unique_torch_device_list()
@@ -63,6 +64,7 @@ class CachePopulator:
             raise NotImplementedError(
                 "Downloading optimized kernels is not yet supported."
             )
+        self.extra_compile_flags = extra_compile_flags
 
     def _assemble_signatures(self):
         if self.commands_file:
@@ -94,10 +96,13 @@ class CachePopulator:
         key_hashes_and_flags = set()
         for d in self.torch_devices:
             turbine_device = get_device_from_torch(d)
+            compile_flags = tuple(turbine_device.compile_target_flags) + tuple(
+                self.extra_compile_flags
+            )
             key_hashes_and_flags.add(
                 (
                     turbine_device.get_type_key_hash(),
-                    turbine_device.compile_target_flags,
+                    compile_flags,
                 )
             )
 
@@ -147,6 +152,36 @@ class CachePopulator:
 
         return status
 
+    def verify_all(self, cache_dir):
+
+        if not cache_dir:
+            from iree.turbine.kernel.boo.conv_exports.launch import CACHE_BASE_DIR
+
+            cache_dir = CACHE_BASE_DIR
+
+        # assume we already have assembled signatures
+        func_names = [s.get_func_name() for s in self.signatures]
+        failed_funcs = {}
+        for fn in func_names:
+            curr_dir = Path(cache_dir) / fn
+            is_okay = curr_dir.is_dir() and (curr_dir / f"{fn}.mlir").is_file()
+            if not is_okay:
+                failed_funcs[fn] = "mlir import failure"
+                continue
+            failed_devices = set()
+            for d in self.torch_devices:
+                vmfb_path = (
+                    curr_dir / f"{get_device_from_torch(d).get_type_key_hash()}.vmfb"
+                )
+                if vmfb_path.is_file() and vmfb_path.stat().st_size > 0:
+                    continue
+                vmfb_path.unlink(missing_ok=True)
+                failed_devices.add(str(d))
+            if len(failed_devices) == 0:
+                continue
+            failed_funcs[fn] = f"failed compilation for devices: {failed_devices}"
+        return failed_funcs
+
 
 def mlir_import(sig: ConvSignature) -> str:
     func_name = sig.get_func_name()
@@ -184,15 +219,23 @@ def _mlir_import(sig_storage: ConvSignatureStorage) -> str:
     return mlir_import(sig)
 
 
-def cl_main(args):
+def cl_main(args, extra_flags: List[str]):
     if args.cache_dir:
         set_boo_cache(args.cache_dir)
     devices = [args.device] if args.device else _get_unique_torch_device_list()
-    populator = CachePopulator(devices=devices, commands_file=args.commands_file)
+    populator = CachePopulator(
+        devices=devices,
+        commands_file=args.commands_file,
+        extra_compile_flags=extra_flags,
+    )
     populator.run(
         max_processes=args.max_processes,
         use_multiprocess_import=args.import_multiprocessing,
     )
+    failed_funcs = populator.verify_all(args.cache_dir)
+    print("Failures:")
+    for fn, failure_str in failed_funcs.items():
+        print(f"{fn}  :  {failure_str}")
 
 
 def _get_preload_args():
@@ -243,8 +286,16 @@ def _get_preload_args():
         type=int,
         help="Specify a maximum number of concurrent processes.",
     )
-    return parser.parse_args()
+    # parser.add_argument(
+    #     "--extra-compile-flags",
+    #     "-f",
+    #     nargs="*",
+    #     type=str,
+    #     help="Specify additional compile flags to use when generating vmfbs.",
+    # )
+    return parser.parse_known_args()
 
 
 if __name__ == "__main__":
-    cl_main(_get_preload_args())
+    args, extra_compile_flags = _get_preload_args()
+    cl_main(args, extra_compile_flags)

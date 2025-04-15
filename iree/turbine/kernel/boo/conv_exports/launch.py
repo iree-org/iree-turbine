@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 import warnings
 
 from pathlib import Path
@@ -54,19 +55,26 @@ def _out_of_process_compile(func_name, key_hashes_and_flags):
         return
 
     for key_hash, flags in key_hashes_and_flags:
-        try:
-            vmfb_path: Path = CACHE_BASE_DIR / func_name / f"{key_hash}.vmfb"
-            if vmfb_path.is_file():
-                logger.debug("found vmfb in cache: %s", str(vmfb_path))
-                continue
-            logger.debug("Compiling vmfb to cache: %s", str(vmfb_path))
-            options = {
-                "output_file": str(vmfb_path),
-                "extra_args": flags,
-            }
-            compile_file(str(mlir_path), **options)
-        except CompilerToolError as e:
-            logger.debug("failed compilation with diagnostics: %s", str(e))
+        vmfb_path: Path = CACHE_BASE_DIR / func_name / f"{key_hash}.vmfb"
+        if vmfb_path.is_file():
+            logger.debug("found vmfb in cache: %s", str(vmfb_path))
+            continue
+        logger.debug("Compiling vmfb to cache: %s", str(vmfb_path))
+        cl_list = ["iree-compile", f"'{mlir_path}'", "-o", f"'{vmfb_path}'"] + list(
+            flags
+        )
+        command = subprocess.list2cmdline(cl_list)
+        logger.debug("compile command:\n%s", command)
+        ret = subprocess.run(command, capture_output=True, shell=True)
+        if ret.returncode != 0:
+            logger.debug("failed compilation with diagnostics: %s", ret.stderr.decode())
+            return
+        logger.debug(
+            "For func_name:\n%s\ngot stdout:\n%s\ngot stderr:\n%s",
+            func_name,
+            ret.stdout.decode(),
+            ret.stderr.decode(),
+        )
 
 
 def _get_module_asm(
