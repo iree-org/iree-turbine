@@ -439,8 +439,7 @@ class LaunchableWave(Launchable):
     def build_initial_pass_pipeline(
         self,
         trace: CapturedTrace,
-        print_ir_before: Sequence[str] = [],
-        print_ir_after: Sequence[str] = [],
+        options: WaveCompileOptions,
     ):
         idxc = IndexingContext.current()
 
@@ -466,13 +465,98 @@ class LaunchableWave(Launchable):
                 set_node_indices,
                 trace,
                 self.constraints,
-                print_ir_before,
-                print_ir_after,
+                options.print_ir_before,
+                options.print_ir_after,
             ),
             partial(expand_graph, trace, self.constraints),
             partial(set_post_expansion_indices, trace, self.constraints),
             partial(remove_chained_getresult, trace),
         ]
+
+    def build_optimization_pass_pipeline(
+        self,
+        trace: CapturedTrace,
+        options: WaveCompileOptions,
+    ):
+        return [
+            partial(decompose_vmma_ops, trace, self.constraints),
+            partial(hoist_loop_invariant_ops, trace, self.constraints),
+            partial(global_to_shared_gathers, trace, self.constraints),
+            partial(minimize_global_loads, trace, self.constraints),
+            partial(reuse_shared_allocs, trace),
+            partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
+        ]
+
+    def build_partitioning_pass_pipeline(
+        self,
+        trace: CapturedTrace,
+        options: WaveCompileOptions,
+    ):
+        return [
+            partial(partition_ops_with_gpr_offsets, trace, self.constraints),
+            partial(partition_strided_operators, trace, self.constraints),
+            partial(remove_chained_extractslice, trace),
+        ]
+
+    def build_reduction_pass_pipeline(
+        self,
+        trace: CapturedTrace,
+        options: WaveCompileOptions,
+    ):
+        # Schedule the reduction ops.
+        # Scheduling should always be used with use_scheduling_barriers=True,
+        # as this is the only way we can ensure that LLVM enforces our desired schedule.
+        # However, due a bug in LLVM, you will need to patch your local LLVM repo
+        # with the following commit: https://github.com/kerbowa/llvm-project/commit/ee52732cddae42deed2e3387a83b20ec05860b4e
+        # Specifically:
+        # git fetch https://github.com/kerbowa/llvm-project.git ee52732cddae42deed2e3387a83b20ec05860b4e
+        # git cherry-pick ee52732cddae42deed2e3387a83b20ec05860b4e
+        # [Manually resolve conflicts consistent with the PR]
+        return [
+            partial(decompose_reduce_ops, trace, self.constraints),
+            partial(
+                schedule_graph,
+                trace,
+                self.constraints,
+                options.use_scheduling_barriers,
+                options.schedule,
+            ),
+        ]
+
+    def build_shared_memory_pass_pipeline(
+        self,
+        trace: CapturedTrace,
+        options: WaveCompileOptions,
+    ):
+        return [
+            # Align sizes to WG/Tile sizes
+            # This pass changes indexing keys, which can interfere with other passes,
+            # so it should be called close to the end of pipeline.
+            partial(align_index_sizes, trace, self.constraints),
+            partial(add_shared_memory_barriers, trace),
+            partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
+        ]
+
+    def build_full_pass_pipeline(
+        self,
+        trace: CapturedTrace,
+        options: WaveCompileOptions,
+    ):
+        # Initial passes, pre-optimization.
+        graph_passes = self.build_initial_pass_pipeline(trace, options)
+
+        # Optimizations.
+        graph_passes += self.build_optimization_pass_pipeline(trace, options)
+
+        # Partition strided operators.
+        graph_passes += self.build_partitioning_pass_pipeline(trace, options)
+
+        # Reduction decomposition and scheduling.
+        graph_passes += self.build_reduction_pass_pipeline(trace, options)
+
+        # Shared memory passes.
+        graph_passes += self.build_shared_memory_pass_pipeline(trace, options)
+        return graph_passes
 
     def _trace_and_get_kernel_signature(
         self,
@@ -516,62 +600,11 @@ class LaunchableWave(Launchable):
             print(f"***After trace/Before first pass***\n")
             print_trace(trace)
 
-        # Initial passes, pre-optimization.
-        graph_passes = self.build_initial_pass_pipeline(
-            trace, print_ir_before, print_ir_after
-        )
-
-        # Optimizations.
-        graph_passes += [
-            partial(decompose_vmma_ops, trace, self.constraints),
-            partial(hoist_loop_invariant_ops, trace, self.constraints),
-            partial(global_to_shared_gathers, trace, self.constraints),
-            partial(minimize_global_loads, trace, self.constraints),
-            partial(reuse_shared_allocs, trace),
-            partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
-        ]
-
-        # Partition strided operators.
-        graph_passes += [
-            partial(partition_ops_with_gpr_offsets, trace, self.constraints),
-            partial(partition_strided_operators, trace, self.constraints),
-            partial(remove_chained_extractslice, trace),
-        ]
-
-        graph_passes += [partial(decompose_reduce_ops, trace, self.constraints)]
-
-        # Schedule the reduction ops.
-        # Scheduling should always be used with use_scheduling_barriers=True,
-        # as this is the only way we can ensure that LLVM enforces our desired schedule.
-        # However, due a bug in LLVM, you will need to patch your local LLVM repo
-        # with the following commit: https://github.com/kerbowa/llvm-project/commit/ee52732cddae42deed2e3387a83b20ec05860b4e
-        # Specifically:
-        # git fetch https://github.com/kerbowa/llvm-project.git ee52732cddae42deed2e3387a83b20ec05860b4e
-        # git cherry-pick ee52732cddae42deed2e3387a83b20ec05860b4e
-        # [Manually resolve conflicts consistent with the PR]
-        scheduling_type = options.schedule
-        use_scheduling_barriers = options.use_scheduling_barriers
-        graph_passes.append(
-            partial(
-                schedule_graph,
-                trace,
-                self.constraints,
-                use_scheduling_barriers,
-                scheduling_type,
-            )
-        )
-
-        graph_passes += [
-            # Align sizes to WG/Tile sizes
-            # This pass changes indexing keys, which can interfere with other passes,
-            # so it should be called close to the end of pipeline.
-            partial(align_index_sizes, trace, self.constraints),
-            partial(add_shared_memory_barriers, trace),
-            partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
-        ]
+        # Create the pass pipeline.
+        graph_passes = self.build_full_pass_pipeline(trace, options)
 
         for p in graph_passes:
-            try_apply_pass(p, trace, print_ir_before, print_ir_after)
+            try_apply_pass(p, trace, options.print_ir_before, options.print_ir_after)
 
         if "all" in print_ir_after or "last" in print_ir_after:
             # Take advantage of Python leaking loop variables
