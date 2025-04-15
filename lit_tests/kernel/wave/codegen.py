@@ -927,6 +927,7 @@ def test_unary_lowerings():
         res = tkw.abs(res)
         res_b = tkw.abs(b_reg)
         res = tkw.tanh(res)
+        res = tkw.tanh_approx(res)
         res = tkw.roundeven(res)
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_b, b, elements_per_thread=4)
@@ -951,8 +952,22 @@ def test_unary_lowerings():
     # Tests tanh
     # CHECK: %[[TANH:.+]] = math.tanh %[[ABSF]]
 
+    # Tests tanh approx
+    # CHECK: %[[ABS:.+]] = math.absf %[[TANH]]
+    # CHECK: %[[FACTOR:.+]] = arith.constant dense<-2.884770e+00> : vector<4xf16>
+    # CHECK: %[[T:.+]] = arith.mulf %[[ABS]], %[[FACTOR]]
+    # CHECK: %[[EXP2:.+]] = math.exp2 %[[T]]
+    # CHECK: %[[ONE:.+]] = arith.constant dense<1.000000e+00> : vector<4xf16>
+    # CHECK: %[[D:.+]] = arith.addf %[[EXP2]], %[[ONE]]
+    # CHECK: %[[RECIP:.+]] = arith.divf %[[ONE]], %[[D]] : vector<4xf16>
+    # CHECK: %[[NEG_ONE:.+]] = arith.constant dense<-1.000000e+00> : vector<4xf16>
+    # CHECK: %[[NEG_RECIP:.+]] = arith.mulf %[[RECIP]], %[[NEG_ONE:.+]] : vector<4xf16>
+    # CHECK: %[[TEMP:.+]] = arith.mulf %[[EXP2]], %[[NEG_RECIP]] : vector<4xf16>
+    # CHECK: %[[R:.+]] = arith.addf %[[TEMP]], %[[RECIP]] : vector<4xf16>
+    # CHECK: %[[TANH_APPROX:.+]] = math.copysign %[[R]], %[[TANH]] : vector<4xf16>
+
     # Tests roundeven
-    # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[TANH]]
+    # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[TANH_APPROX]]
 
 
 @run_test

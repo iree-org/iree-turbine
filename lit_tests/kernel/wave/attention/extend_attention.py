@@ -188,7 +188,19 @@ def test_causal_extend_attention():
 
     # softcap/logitcap modifier:
     # CHECK-COUNT-4:            arith.mulf
-    # CHECK-COUNT-2:            math.tanh
+
+    # Tanh Approximation
+    # CHECK:                    math.absf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               math.exp2
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               arith.divf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               math.copysign
+
+    # Apply softcap/logitcap modifier
     # CHECK-COUNT-2:            arith.mulf
 
     # unaligned attention masking:
@@ -220,7 +232,19 @@ def test_causal_extend_attention():
 
     # softcap/logitcap modifier:
     # CHECK-COUNT-4:            arith.mulf
-    # CHECK-COUNT-2:            math.tanh
+
+    # Tanh Approximation
+    # CHECK:                    math.absf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               math.exp2
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               arith.divf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               math.copysign
+
+    # Apply softcap/logitcap modifier
     # CHECK-COUNT-2:            arith.mulf
 
     # unaligned and causal masking:
@@ -305,7 +329,19 @@ def test_causal_extend_attention_32x32x8():
 
     # softcap/logitcap modifier:
     # CHECK-COUNT-2:            arith.mulf
-    # CHECK-COUNT-1:            math.tanh
+
+    # Tanh Approximation
+    # CHECK:                    math.absf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               math.exp2
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               arith.divf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               math.copysign
+
+    # Apply softcap/logitcap modifier
     # CHECK-COUNT-1:            arith.mulf
 
     # unaligned attention masking:
@@ -329,7 +365,19 @@ def test_causal_extend_attention_32x32x8():
 
     # softcap/logitcap modifier:
     # CHECK-COUNT-2:            arith.mulf
-    # CHECK-COUNT-1:            math.tanh
+
+    # Tanh Approximation
+    # CHECK:                    math.absf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               math.exp2
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               arith.divf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               math.copysign
+
+    # Apply softcap/logitcap modifier
     # CHECK-COUNT-1:            arith.mulf
 
     # unaligned and causal masking:
