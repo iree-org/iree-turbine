@@ -1554,6 +1554,7 @@ def test_cast(shape, request):
 
 
 @require_e2e
+@require_cdna3
 @pytest.mark.parametrize(
     "shape", get_test_shapes("test_copy")[:2]
 )  # testing on just two shapes
