@@ -13,7 +13,6 @@ import json
 import os
 import shutil
 import threading
-import math
 
 from collections import OrderedDict, deque
 from dataclasses import dataclass, asdict
@@ -21,13 +20,11 @@ from pathlib import Path
 import functools
 from typing import Any, Callable, Optional
 
-from iree.turbine.kernel._support.dtype import DataType
 from iree.turbine.kernel.lang.kernel_buffer import KernelBufferMeta
 
 from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
 from ..lang.wave_types import IndexMapping
-from .._support.indexing import IndexExpr
 from .utils.classes import KernelLaunchInfo
 from .compile_options import WaveCompileOptions
 

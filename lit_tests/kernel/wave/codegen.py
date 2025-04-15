@@ -13,7 +13,6 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 from iree.turbine.kernel.wave.utils.compile_utils import (
     set_default_compile_config,
 )
-from iree.turbine.kernel.wave.utils.run_utils import set_default_run_config
 
 M = tkl.sym.M
 N = tkl.sym.N
