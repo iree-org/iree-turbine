@@ -740,6 +740,8 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
     """
 
     def get_index(custom: CustomOp):
+        if not custom.indexing_dims:
+            return None
         if isinstance(custom, MMA):
             return custom.acc.index
         return custom.index
@@ -757,16 +759,12 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         lhs = get_custom(custom.lhs)
         rhs = get_custom(custom.rhs)
 
-        lhs_index = get_index(lhs) if lhs.indexing_dims else None
-        rhs_index = get_index(rhs) if rhs.indexing_dims else None
+        lhs_index = get_index(lhs)
+        rhs_index = get_index(rhs)
 
         # Updatedto broadcast implicitly when we perform mul binary op with scalar.
-        lhs_dim, lhs_size = (
-            get_largest_index_and_size(lhs_index) if lhs.indexing_dims else ((), 1)
-        )
-        rhs_dim, rhs_size = (
-            get_largest_index_and_size(rhs_index) if rhs.indexing_dims else ((), 1)
-        )
+        lhs_dim, lhs_size = get_largest_index_and_size(lhs_index, lhs)
+        rhs_dim, rhs_size = get_largest_index_and_size(rhs_index, rhs)
 
         extra_error_info = (
             f"\n{binary_op=}"

@@ -32,7 +32,7 @@ def memref_to_tensor(memrefs: list[IrType]):
     tensors = []
     for m in memrefs:
         # append scalars as-it-is to tensors list
-        if isinstance(m, (F32Type, IntegerType)):
+        if isinstance(m, F32Type) or (isinstance(m, IntegerType) and m.is_signless):
             tensors.append(m)
             continue
         assert isinstance(m, MemRefType)

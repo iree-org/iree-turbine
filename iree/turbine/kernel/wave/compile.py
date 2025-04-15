@@ -36,21 +36,21 @@ class WaveKernel:
 
         # Segregate args into kernel tensor and scalars.
         tensor_args, scalar_args = [], []
-
-        for arg in args:
-            (tensor_args if isinstance(arg, torch.Tensor) else scalar_args).append(arg)
-
-        tensor_args = tuple(tensor_args)
-        scalar_args = tuple(scalar_args)
-
         kernel_inputs, kernel_outputs = [], []
-        # Partition arguments into kernel inputs and outputs.
-        for arg, usage in zip(tensor_args, self.options.kernel_usages):
-            if usage == kernel_codegen.KernelBufferUsage.INPUT:
-                kernel_inputs.append(arg)
 
-            if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
-                kernel_outputs.append(arg)
+        # Partition arguments into kernel inputs and outputs.
+        usage_idx = 0
+        for arg in args:
+            if isinstance(arg, torch.Tensor):
+                tensor_args.append(arg)
+                usage = self.options.kernel_usages[usage_idx]
+                usage_idx += 1
+                if usage == kernel_codegen.KernelBufferUsage.INPUT:
+                    kernel_inputs.append(arg)
+                if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
+                    kernel_outputs.append(arg)
+            else:
+                scalar_args.append(arg)
 
         kernel_inputs.extend(scalar_args)
 

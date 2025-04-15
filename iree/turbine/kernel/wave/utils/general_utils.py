@@ -284,12 +284,16 @@ def get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
     return max(i for i, size in enumerate(index_sizes) if size == max_size)
 
 
-def get_largest_index_and_size(indices: dict[IndexExpr, IndexSequence]):
+def get_largest_index_and_size(
+    indices: dict[IndexExpr, IndexSequence], custom_op: CustomOp = None
+):
     """
     This function takes in indices of a Node, extract their sizes
     into a list, and then returns the dimension with the largest size.
     In case of ties, it picks the fastest changing dimension.
     """
+    if custom_op and not custom_op.indexing_dims:
+        return ((), 1)
 
     sorted_values = sorted(
         [

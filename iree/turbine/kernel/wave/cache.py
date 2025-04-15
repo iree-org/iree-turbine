@@ -22,6 +22,7 @@ import functools
 from typing import Any, Callable, Optional
 
 from iree.turbine.kernel._support.dtype import DataType
+from iree.turbine.kernel.lang.kernel_buffer import KernelBufferMeta
 
 from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
@@ -72,7 +73,7 @@ def extract_arg_types(kernel_fn: Callable):
     return [
         (arg.annotation, arg.annotation.physical_layout)
         for arg in inspect.signature(kernel_fn).parameters.values()
-        if not isinstance(arg.annotation, DataType)
+        if isinstance(arg.annotation, KernelBufferMeta)
     ]
 
 

@@ -810,6 +810,8 @@ class BinaryOpBase(CustomOp, ABC):
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
         if not self.infer_shape():
+            # In scalar codegen, we do not have
+            # the concept of a shape (yet).
             self.type = self.lhs.type
         else:
             self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]

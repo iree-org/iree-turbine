@@ -1989,7 +1989,6 @@ def test_scalar_codegen_f32():
         canonicalize=True,
         compile_to_mlir=True,
     )
-    options = set_default_run_config(options)
     scalar_codegen_f32 = wave_compile(options, scalar_codegen_f32)
     print(scalar_codegen_f32.asm)
 
@@ -2044,7 +2043,6 @@ def test_scalar_codegen_i32():
         canonicalize=True,
         compile_to_mlir=True,
     )
-    options = set_default_run_config(options)
     scalar_codegen_i32 = wave_compile(options, scalar_codegen_i32)
     print(scalar_codegen_i32.asm)
 
