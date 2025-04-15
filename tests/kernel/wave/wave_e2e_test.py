@@ -1551,3 +1551,74 @@ def test_cast(shape, request):
 
     test(a, b)
     assert_close(a.to(dtype=torch.float16), b)
+
+
+@require_e2e
+@pytest.mark.parametrize(
+    "shape", get_test_shapes("test_copy")[:2]
+)  # testing on just two shapes
+@pytest.mark.parametrize(
+    "tkl_dtype, torch_dtype, arg_vals",
+    [  # arg_vals are c, d, e, res
+        (tkl.i32, torch.int32, (1, 2, 1, 3)),
+        (tkl.f32, torch.float32, (1.0, 2.0, 1.0, 3.0)),
+    ],
+    ids=["i32", "f32"],
+)
+def test_scalar_codegen(shape, tkl_dtype, torch_dtype, arg_vals, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl_dtype],
+        c: tkl_dtype,  # type: ignore
+        d: tkl_dtype,  # type: ignore
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl_dtype],
+    ):
+        res = tkw.read(a)
+        c = tkw.broadcast(c, target_shape=[M, N])
+        d = tkw.broadcast(d, target_shape=[M, N])
+        e = tkl.Register[M, N, tkl_dtype](arg_vals[2]) * c
+        res = res + e + d
+        tkw.write(res, b)
+
+    a = device_zeros(shape, dtype=torch_dtype)
+    b = device_zeros(shape, dtype=torch_dtype)
+    scalar_c = arg_vals[0]
+    scalar_d = arg_vals[1]
+
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+        inplace=False,
+        wave_runtime=True,
+    )
+    test = wave_compile(options, test)
+    test(a, scalar_c, scalar_d, b)
+
+    assert torch.all(b == arg_vals[3]).item()
