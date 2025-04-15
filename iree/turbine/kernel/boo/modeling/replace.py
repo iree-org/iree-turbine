@@ -45,18 +45,34 @@ class BooConv2d(torch.nn.Module):
             self.register_parameter("bias", None)
 
     def forward(self, x):
+        input_layout = "NCHW"
+        kernel_layout = "NCHW"
+        output_layout = "NCHW"
+        if x.is_contiguous(memory_format=torch.channels_last):
+            x = x.permute([0, 2, 3, 1])
+            input_layout = "NHWC"
+        w = self.weight
+        if w.is_contiguous(memory_format=torch.channels_last):
+            w = w.permute([0, 2, 3, 1])
+            kernel_layout = "NHWC"
+            output_layout = "NHWC"
         if self._bias:
-            args = (x, self.weight, self.bias)
+            args = (x, w, self.bias)
         else:
-            args = (x, self.weight)
-        return boo_conv(
+            args = (x, w)
+        result = boo_conv(
             *args,
             stride=self.stride,
             padding=self.padding,
             dilation=self.dilation,
             groups=self.groups,
-            shared_layout="NCHW"
+            input_layout=input_layout,
+            kernel_layout=kernel_layout,
+            output_layout=output_layout,
         )
+        if output_layout == "NHWC":
+            result = result.permute([0, 3, 1, 2])
+        return result
 
 
 def replace_conv2d_with_boo_conv(model):
