@@ -39,6 +39,8 @@ class WaveKernel:
         kernel_inputs, kernel_outputs = [], []
 
         # Partition arguments into kernel inputs and outputs.
+        # ToDo: we should expose the `usage` as a property in binding desc
+        #       so that we can reduce the code and use `zip``.
         usage_idx = 0
         for arg in args:
             if not isinstance(arg, torch.Tensor):
