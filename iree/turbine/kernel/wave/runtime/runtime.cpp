@@ -84,12 +84,12 @@ int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
     }
 
     uint32_t* ptr3 = ptr2;
-    if (nb::isinstance<nb::int_>(scalarArgs[0])){
-        for (auto arg : scalarArgs) {
+    // ToDo: we would like to use bit_cast in the follow-up PR.
+    for (auto arg : scalarArgs){
+        if (nb::isinstance<nb::int_>(arg)){
             *ptr3++ = static_cast<uint32_t>(nb::cast<uint32_t>(arg));
         }
-    } else if (nb::isinstance<nb::float_>(scalarArgs[0])){
-        for (auto arg : scalarArgs) {
+        else if (nb::isinstance<nb::float_>(scalarArgs[0])){
             float val = nb::cast<float>(arg);
             std::memcpy(ptr3++, &val, sizeof(float));
         }
