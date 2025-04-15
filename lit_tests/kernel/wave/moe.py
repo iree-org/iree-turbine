@@ -123,30 +123,39 @@ LOAD_ELEMS_PER_THREAD, STORE_ELEMS_PER_THREAD = (
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
 
-def lit_harness(build_constraints_fun, kernel_fun, *args, **kwargs):
-    constraints = build_constraints_fun(*args, **kwargs)
+def lit_harness(build_constraints_fun, get_kernel_fun, test_config):
     with tk.gen.TestLaunchContext(
-        kwargs["static_symbols"] if "static_symbols" in kwargs else {}
+        test_config["static_symbols"] if "static_symbols" in test_config else {}
     ):
-        lw = LaunchableWave(constraints, "kernel_fun", kernel_fun)
-
-        trace: CapturedTrace = lw._trace()
+        executable_kernel = get_kernel_fun(build_constraints_fun(test_config))
+        trace: CapturedTrace = executable_kernel._trace()
+        options = WaveCompileOptions(
+            subs=test_config["static_symbols"]
+            if "static_symbols" in test_config
+            else {},
+        )
+        options.print_ir_before = ["all"]
         idxc: IndexingContext = IndexingContext.current()
-        graph_passes = lw.build_initial_pass_pipeline(trace, print_ir_before=["all"])
+        graph_passes = executable_kernel.build_full_pass_pipeline(trace, options)
         for p in graph_passes:
             try_apply_pass(p, trace, print_ir_before=["all"])
 
-        lw.infer_grid_shape(idxc)
+        executable_kernel.infer_grid_shape(idxc)
 
-        options = set_default_compile_config(WaveCompileOptions(canonicalize=True))
+        options = set_default_compile_config(options)
+        options.canonicalize = True
         with Context() as context:
-            mb, trace, exe, kernel_sig, entrypoint_name = lw.compile_to_mlir(
-                trace, context, options=options
-            )
+            (
+                mb,
+                trace,
+                exe,
+                kernel_sig,
+                entrypoint_name,
+            ) = executable_kernel.compile_to_mlir(trace, context, options=options)
             print(mb.module_op)
 
 
-def build_block_constraints(*args, **kwargs) -> Sequence[tkw.Constraint]:
+def build_block_constraints(test_config) -> Sequence[tkw.Constraint]:
     constraints: list[tkw.Constraint] = []
     constraints += [
         tkw.WorkgroupConstraint(B, BLOCK_B, 2),
@@ -168,13 +177,15 @@ def build_block_constraints(*args, **kwargs) -> Sequence[tkw.Constraint]:
             threads_per_wave=64,
             # One must always specify mma_type or vector_shapes.
             mma_type=tkw.MMAType.F32_16x16x16_F16,
-            vector_shapes=kwargs["vector_shapes"] if "vector_shapes" in kwargs else {},
+            vector_shapes=test_config["vector_shapes"]
+            if "vector_shapes" in test_config
+            else {},
         )
     ]
     return constraints
 
 
-def config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
+def create_test_config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
     # fmt: off
     return {
         "static_symbols": {
@@ -219,7 +230,6 @@ offset_mapping_w2 = tkw.IndexMapping(
     outputs={TOPK: i, D2: j, N: k},
     dynamic_val_mappings=({B: i, TOPK: j}),
 )
-
 
 # Note: W2 really has torch.Tensor.shape [E, D2, N] but we want to index it with
 # indices [B, TOPK, D2, N].
@@ -378,8 +388,8 @@ if __name__ == "__main__":
 
     @run_test
     def static_correct_1():
-        cfg = copy.deepcopy(config())
-        lit_harness(build_block_constraints, fused_moe_kernel, **cfg)
+        test_config = copy.deepcopy(create_test_config())
+        lit_harness(build_block_constraints, get_fused_moe_kernel, test_config)
 
         a = torch.randn(vB, vD1, dtype=torch.float16).cuda()
         w1 = torch.randn(vE, 2 * vN, vD1, dtype=torch.float16).cuda()
@@ -400,12 +410,18 @@ if __name__ == "__main__":
         from torch.profiler import profile, ProfilerActivity
 
         with profile(activities=[ProfilerActivity.CUDA]) as prof:
-            cfg = config()
-            executable_kernel = get_fused_moe_kernel(build_block_constraints(**cfg))
+            test_config = create_test_config()
+            executable_kernel = get_fused_moe_kernel(
+                build_block_constraints(test_config)
+            )
 
             options = WaveCompileOptions(
-                subs=cfg["static_symbols"] if "static_symbols" in cfg else {},
+                subs=test_config["static_symbols"]
+                if "static_symbols" in test_config
+                else {},
             )
+            options = set_default_compile_config(options)
+            options.canonicalize = True
             options = set_default_run_config(options)
             executable_kernel = wave_compile(options, executable_kernel)
 
