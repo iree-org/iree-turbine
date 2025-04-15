@@ -190,6 +190,8 @@ def simplify_index(index: IndexExpr) -> IndexExpr:
     Simplifies the index by applying the following bindings:
         - MMA acc_index bindings so the index of the MMA node is the acc_index.
     """
+    if isinstance(index, int):
+        return index
     mapping = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}
     return subs_idxc(index.subs(mapping))
 
