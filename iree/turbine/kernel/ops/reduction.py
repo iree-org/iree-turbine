@@ -12,6 +12,7 @@ __all__ = [
     "vector_max",
     "vector_sum",
     "vector_dot",
+    "vector_cumsum",
 ]
 
 
@@ -27,4 +28,9 @@ def vector_sum(vector: "Vector", axis=None, acc=None) -> "Vector":
 
 @define_op
 def vector_dot(lhs: "Vector", rhs: "Vector", acc=None) -> "Vector":
+    ...
+
+
+@define_op
+def vector_cumsum(vector: "Vector", axis=None, acc=None) -> "Vector":
     ...

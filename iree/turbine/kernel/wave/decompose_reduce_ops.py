@@ -33,7 +33,7 @@ import torch.fx as fx
 import math
 from typing import Callable
 
-TKW_COMBINER = {"sum": Add, "max": Maximum, "min": Minimum}
+TKW_COMBINER = {"sum": Add, "max": Maximum, "min": Minimum, "cumsum": Add}
 
 
 def determine_shuffle_config(
