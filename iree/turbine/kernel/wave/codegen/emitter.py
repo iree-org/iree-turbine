@@ -154,12 +154,9 @@ class WaveEmitter:
         if self.induction_vars:
             for constraint in self.constraints:
                 if isinstance(constraint, TilingConstraint):
-                    assert (
-                        constraint.dim in self.induction_vars
-                    ), f"Could not find induction var for {constraint.dim} dimension"
-                    induction_var_syms.append(constraint.induction_var)
-                    induction_vars.append(self.induction_vars[constraint.dim])
-
+                    if constraint.dim in self.induction_vars:
+                        induction_var_syms.append(constraint.induction_var)
+                        induction_vars.append(self.induction_vars[constraint.dim])
         return induction_vars, induction_var_syms
 
 

@@ -67,6 +67,7 @@ from ...ops.wave_ops import (
     get_custom,
     get_result,
     gt,
+    iteration,
     le,
     log2,
     lt,
@@ -899,6 +900,9 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
             emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)
         # Emit the subgraph.
         return_values = emitter._emit_graph(subgraph)
+        if all(x is None for x in return_values):
+            scf_d.YieldOp([])
+            return
         # Flattern return values.
         flat_ret_values, _ = pytree.tree_flatten((return_values))
         flat_ret_values = [
@@ -913,6 +917,11 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
         scf_d.YieldOp(flat_ret_values)
 
     emitter.bind_node_proxies(node, [IRProxyValue(v) for v in forOp.results_])
+
+
+@handle_op(iteration)
+def handle_iteration(emitter: WaveEmitter, node: fx.Node):
+    handle_reduction(emitter, node)
 
 
 ###############################################################################

@@ -18,10 +18,12 @@ from ...ops.wave_ops import (
     GetResult,
     CustomOp,
     Reduction,
+    Iteration,
     Placeholder,
     Conditional,
     MMA,
     IterArg,
+    Iteration,
 )
 from ..._support.indexing import IndexSymbol
 from typing import Callable, Sequence
@@ -59,7 +61,7 @@ def DCE(trace: CapturedTrace):
 
         if (
             custom.users
-            or isinstance(custom, (Output, SetSymbol, SharedMemoryBarrier))
+            or isinstance(custom, (Output, SetSymbol, SharedMemoryBarrier, Placeholder))
             or is_global_write(node)
         ):
             return False
@@ -71,6 +73,7 @@ def DCE(trace: CapturedTrace):
 
     while removable_nodes := trace.walk(is_removable_operator):
         for node in removable_nodes:
+            print("Erasing ", node)
             get_custom(node).erase()
 
 
@@ -148,7 +151,7 @@ def get_users(
         custom = user
         if not isinstance(custom, CustomOp):
             custom = get_custom(user)
-        if isinstance(custom, Reduction):
+        if isinstance(custom, Reduction | Iteration):
             # Map init arg to iter arg
             reduction = custom
             graph = custom.get_root_graph().subgraphs[custom.subgraph_name]
@@ -240,7 +243,7 @@ def get_inputs(
                 inputs.append(outputs)
         else:
             inputs.append(reduction.outputs(reduction_subgraph)[custom.res_idx])
-    elif isinstance(custom, Reduction):
+    elif isinstance(custom, (Reduction, Iteration)):
         reduction_subgraph = custom.get_root_graph().subgraphs[custom.subgraph_name]
         inputs.append(custom.outputs(reduction_subgraph))
     else:

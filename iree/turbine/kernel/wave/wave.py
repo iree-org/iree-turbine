@@ -11,7 +11,7 @@ from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
-from ..ops.wave_ops import Reduction, CustomOp, get_custom, IterArg
+from ..ops.wave_ops import Reduction, CustomOp, get_custom, Iteration
 from .._support.indexing import IndexingContext, IndexExpr
 from .symbolic_constraints import SymbolicAlias
 from .._support.tracing import (
@@ -239,12 +239,12 @@ class LaunchableWave(Launchable):
 
         """
 
-        def is_reduction(node: fx.Node):
+        def is_reduction_or_iteration(node: fx.Node):
             custom = get_custom(node)
-            return isinstance(custom, Reduction)
+            return isinstance(custom, Reduction | Iteration)
 
-        reduction_nodes = trace.walk(is_reduction)
-        for node in reduction_nodes:
+        reduction_or_iteration_nodes = trace.walk(is_reduction_or_iteration)
+        for node in reduction_or_iteration_nodes:
             custom = get_custom(node)
             self.induction_vars[custom] = tkl.IndexSymbol(
                 "$ARG" + str(custom.axis), integer=True, nonnegative=True
@@ -269,17 +269,19 @@ class LaunchableWave(Launchable):
                         hardware_constraint, workgroup_constraint
                     )
 
-    def initialize_reductions(self, trace: CapturedTrace) -> None:
+    def initialize_reductions_or_iterations(self, trace: CapturedTrace) -> None:
         """
         For each reduction, initializes the reduction count by looking at the
         tiling constraints associated with the reduction.
 
         """
-        is_reduction = lambda node: isinstance(get_custom(node), Reduction)
-        for reduction in trace.walk(is_reduction):
+        is_reduction_or_iteration = lambda node: isinstance(
+            get_custom(node), Reduction | Iteration
+        )
+        for reduction_or_iteration in trace.walk(is_reduction_or_iteration):
             for tiling_constraint in self.tiling_constraints:
-                if tiling_constraint.dim == get_custom(reduction).axis:
-                    reduction.count = subs_idxc(tiling_constraint.count)
+                if tiling_constraint.dim == get_custom(reduction_or_iteration).axis:
+                    reduction_or_iteration.count = subs_idxc(tiling_constraint.count)
 
     def get_workgroup_dims(self) -> list[int]:
         """
@@ -453,7 +455,7 @@ class LaunchableWave(Launchable):
             partial(initialize_iter_args, trace),
             partial(self.create_induction_vars, trace),
             partial(self.initialize_wave_constraints, trace),
-            partial(self.initialize_reductions, trace),
+            partial(self.initialize_reductions_or_iterations, trace),
             partial(self.initialize_symbolic_constraints, trace),
             partial(self.initialize_workgroup_constraints, trace),
             finalize_indices,

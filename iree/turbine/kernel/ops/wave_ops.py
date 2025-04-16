@@ -95,6 +95,12 @@ def reduction(
     ...
 
 
+def iteration(
+    axis: IndexExpr, init_args: Sequence["Register"]
+) -> Callable[[Callable[[AccT], AccT]], AccT]:
+    ...
+
+
 def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
     ...
 
@@ -1483,6 +1489,138 @@ class Reduction(NestedRegionOp):
         if not isinstance(return_vals, Sequence):
             return_vals = [return_vals]
         for return_val in return_vals:
+            return_dims = get_custom(return_val).indexing_dims
+            reduced_dims = [dims for dims in return_dims if dims != self.axis]
+            expand_dims.append(reduced_dims)
+        if len(expand_dims) == 1:
+            expand_dims = expand_dims[0]
+        return expand_dims
+
+    def iter_args(self, graph: fx.Graph) -> list[fx.Node]:
+        iter_args = []
+        for nested_node in graph.nodes:
+            custom = get_custom(nested_node)
+            if isinstance(custom, IterArg):
+                iter_args.append(nested_node)
+        # Sort by iter_idx.
+        iter_args = sorted(iter_args, key=lambda x: get_custom(x).iter_idx)
+        return iter_args
+
+    def infer_type(self):
+        res_types = [get_custom(x).type for x in self.init_args]
+        if len(res_types) == 1:
+            res_types = res_types[0]
+        self.type = res_types
+
+    def outputs(self, graph: fx.Graph) -> list[fx.Node]:
+        for node in graph.nodes:
+            if isinstance(get_custom(node), Output):
+                return get_custom(node).return_vals[0]
+
+    @property
+    def index(self) -> list[dict[IndexSymbol, IndexSequence]]:
+        for node in self.get_root_graph().subgraphs[self.subgraph_name].nodes:
+            if isinstance(output := get_custom(node), Output):
+                return_vals = output.return_vals[0]
+                return (
+                    [
+                        (
+                            get_custom(val).acc_index
+                            if isinstance(get_custom(val), MMA)
+                            else val.index
+                        )
+                        for val in return_vals
+                    ]
+                    if isinstance(return_vals, (Sequence))
+                    else return_vals.index
+                )
+
+    @index.setter
+    def index(self, value: Any):
+        CustomOp.index.fset(self, value)
+
+    @property
+    def count(self) -> int:
+        if hasattr(self.fx_node, "count"):
+            return self.fx_node.count
+        return None
+
+    @count.setter
+    def count(self, value: int):
+        self.fx_node.count = value
+
+
+@define_op("iteration")
+@dataclass
+class Iteration(NestedRegionOp):
+    axis: IndexSymbol
+    init_args: Sequence[Any]
+    subgraph_name: str
+    implicit_captures: Sequence[fx.Proxy]
+
+    @classmethod
+    def handle(cls, graph: RegionGraph, *args, **kwargs):
+        if not isinstance(graph, RegionGraph):
+            raise TypeError(
+                f"handle expected {RegionGraph.__name__} but got {type(graph)}"
+            )
+
+        def wrapper(f):
+            with graph.subtracer() as subtracer:
+                subgraph_name, implicit_captures = subtracer.trace(f)
+            node = Iteration(
+                *args,
+                **kwargs,
+                subgraph_name=subgraph_name,
+                implicit_captures=implicit_captures,
+            )
+            # Remember which placeholders are init args. This connection gets
+            # lost otherwise
+            for nested_node in graph.subgraphs[subgraph_name].nodes:
+                if nested_node.op == "placeholder":
+                    if nested_node not in [
+                        var.node
+                        for var in graph.inner_freevars[graph.subgraphs[subgraph_name]]
+                    ]:
+                        nested_node.tkw_op = IterArg
+
+            node._add_proxy_to_graph(graph)
+            node.fx_node.node.tkw_op = cls
+            node.fx_node.node.tkw_op_name = cls.tkw_op_name
+            graph.subgraphs[subgraph_name].parent_op = node.fx_node.node
+            return node.fx_node
+
+        return wrapper
+
+    def get_root_graph(self):
+        """
+        Return the "root"/outermost layer of our computation graph.
+        This is done by iteratively accessing parent_graph of current
+        graph. This is done until we find the "root" graph who
+        will have "subgraph" attribute.
+        """
+        cur_graph = self.graph
+        while not hasattr(cur_graph, "subgraphs"):
+            if not hasattr(cur_graph, "parent_op"):
+                raise ValueError("All subgraphs should have parent_op")
+            cur_graph = cur_graph.parent_op.graph
+        return cur_graph
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol] | list[list[IndexSymbol]]:
+        expand_dims: list[IndexSymbol] = []
+        return_node = [
+            nested_node
+            for nested_node in self.graph.subgraphs[self.subgraph_name].nodes
+            if isinstance(get_custom(nested_node), Output)
+        ]
+        assert len(return_node) == 1
+        return_vals = get_custom(return_node[0]).return_vals[0]
+        if not isinstance(return_vals, Sequence):
+            return_vals = [return_vals]
+        for return_val in return_vals:
+            if not return_val:
+                continue
             return_dims = get_custom(return_val).indexing_dims
             reduced_dims = [dims for dims in return_dims if dims != self.axis]
             expand_dims.append(reduced_dims)
