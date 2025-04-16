@@ -50,6 +50,7 @@ from ...ops.wave_ops import (
     abs,
     allocate,
     apply_expr,
+    atomic_min,
     broadcast,
     cast,
     conditional,
@@ -409,6 +410,44 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
 
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
+def handle_atomic_op(op):
+    def decorator(binary_fn: Callable[[Value, Value], OpResult]):
+        @handle_op(op)
+        def handle_generic_atomic(emitter: WaveEmitter, node: fx.Node):
+            try:
+                lhs, rhs = node.args
+            except ValueError as e:
+                raise ValidationError("Malformed arguments") from e
+            lhs = cast_py_value(emitter, lhs)
+            rhs = cast_py_value(emitter, rhs)
+            lhs_data_type = get_type_or_element_type(lhs.ir_value.type)
+            rhs_data_type = get_type_or_element_type(rhs.ir_value.type)
+            if not MemRefType.isinstance(rhs.ir_value.type):
+                op = get_custom(node)
+                raise ValidationError(f"Expected rhs to be Memref type for\n"
+                    f"{op}\nGot\n"
+                    f"rhs: {rhs.ir_value.type}\n")
+            if lhs_data_type != rhs_data_type:
+                op = get_custom(node)
+                raise ValidationError(
+                    f"Expected lhs and rhs to have same data type for\n"
+                    f"{op}\nGot\n"
+                    f"lhs: {lhs_data_type} vs rhs: {rhs_data_type}\n"
+                )
+            if _is_float_type(lhs_data_type):
+                raise NotImplementedError(f"Atomic ops don't support float types yet\n")
+
+            lhs = lhs.ir_value
+            rhs = rhs.ir_value
+
+            # Get current index to pass to the atomic op
+            idx_start_sym = [x.start for x in node.index.values()]
+            idx_start = [gen_sympy_index(add_emitter_subs(emitter),x) for x in idx_start_sym]
+            
+            result = binary_fn(lhs, rhs, idx_start, emitter.options)
+            emitter.bind_node_proxy(node, IRProxyValue(result))
+
+    return decorator
 
 ###############################################################################
 # Binary math Ops
@@ -650,6 +689,24 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
         raise ValidationError(
             f"Found unhandled operand type for minimum: {element_type}"
         )
+    return result
+
+@handle_atomic_op(atomic_min)
+def handle_atomic_min(val: Value, buffer: Value, idx: Value, options: WaveCompileOptions) -> OpResult:
+
+    value_type = val.type
+    value_element_type = get_type_or_element_type(value_type)
+    atomic_kind = None
+    if _is_float_type(value_element_type):
+        atomic_kind = arith_d.AtomicRMWKind.minimumf
+    elif _is_integer_like_type(value_element_type) and _is_signed_or_signless_type(
+        value_element_type):
+        atomic_kind = arith_d.AtomicRMWKind.mins
+
+    a = vector_d.extract(val, static_position=[0], dynamic_position=[])
+    result = memref_d.atomic_rmw(atomic_kind, a, buffer, idx)
+    result = vector_d.broadcast(value_type, result)
+
     return result
 
 

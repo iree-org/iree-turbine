@@ -41,7 +41,7 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 
 def allocate(
-    shape: tuple[IndexExpr], dtype: DataType, address_space: IndexSymbol
+    shape: tuple[IndexExpr], distributed_shape: tuple[IndexExpr], dtype: DataType, address_space: IndexSymbol
 ) -> "Memory":
     ...
 
@@ -191,6 +191,10 @@ def minimum(lhs: "Register", rhs: "Register") -> "Register":
 
 
 def atan2(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def atomic_min(lhs: "Register", rhs: "Memory") -> "Register":
     ...
 
 
@@ -1232,6 +1236,58 @@ class SchedulingBarrier(CustomOp):
 
     operations: list[Operation]
 
+
+@define_op("atomic_min")
+@dataclass
+class AtomicMin(CustomOp):
+    """
+    Represents an atomic operation in the graph.
+    Takes in value and buffer to perform the operation on.
+    """
+
+    lhs : Any
+    rhs : Any
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        combined_dims = []
+        if isinstance(self.lhs, fx.Node):
+            combined_dims += get_custom(self.lhs).indexing_dims
+        if isinstance(self.rhs, fx.Node):
+            combined_dims += get_custom(self.rhs).indexing_dims
+
+        unique_dims = list(dict.fromkeys(combined_dims))
+        return unique_dims
+
+    @property
+    def py_operator(self) -> str:
+        return self.tkw_op_name
+
+    def infer_shape(self) -> Any:
+        lhs_type = get_custom(self.lhs).type
+        rhs_type = get_custom(self.rhs).type
+        if isinstance(lhs_type, DataType) and isinstance(rhs_type, DataType):
+            has_same_type = True
+        else:
+            has_same_type = has_same_custom_type(lhs_type, rhs_type)
+        if has_same_type:
+            return lhs_type.symbolic_shape
+
+        lhs_dim_set = set(lhs_type.symbolic_shape)
+        rhs_dim_set = set(rhs_type.symbolic_shape)
+        if lhs_dim_set.isdisjoint(rhs_dim_set):
+            raise ValueError(
+                "BinaryPyOp requires lhs and rhs shape to be at least broadcastable."
+                f" got {lhs_type.symbolic_shape} vs {rhs_type.symbolic_shape}"
+            )
+
+        # TODO: this logic looks suspicious. Specifically, there's no check that
+        # rhs_dim_set subsumes lhs_dim_set, they may partially overlap.
+        broadcasted_type = lhs_type if lhs_dim_set > rhs_dim_set else rhs_type
+        return broadcasted_type.symbolic_shape
+
+    def infer_type(self):
+        self.type = get_custom(self.lhs).type
 
 @define_op("scheduling_group_barrier")
 @dataclass
