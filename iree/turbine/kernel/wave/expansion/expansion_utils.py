@@ -90,8 +90,9 @@ def get_dim_scaling(
                 or (tile_size / wave_count) % vector_size != 0
             ):
                 raise ValueError(
-                    f"Tile size must be divisible by wave count and vector size, got: "
-                    f"tile_size={tile_size}, wave_count={wave_count}, vector_size={vector_size}"
+                    f"Tile size for dim {constraint.dim} must be divisible by "
+                    f"wave count and vector size, got: tile_size={tile_size}, "
+                    f"wave_count={wave_count}, vector_size={vector_size}"
                 )
             dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
 

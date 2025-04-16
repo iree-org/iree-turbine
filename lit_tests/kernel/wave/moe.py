@@ -197,25 +197,26 @@ def create_test_config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
             TOPK: vTOPK, # y
             D2:     vD2, # x
             ### Block sizes.
-            BLOCK_N: 1,
-            # BLOCK_D1: 1,
+            # tiling
+            BLOCK_N: 16,
             # z, y, x
-            BLOCK_B:    1, # z
+            BLOCK_B:   16, # z
             BLOCK_TOPK: 1, # y
+            # Note: if BLOCK_D2 < 128, we get error : HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION: The agent attempted to access memory beyond the largest legal address. code: 0x29
             BLOCK_D2: 128, # x
-            ### L/S sizes.
+            ### L/S sizes (ideally omitted).
             LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mma_variant),
             STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mma_variant),
         },
         # Need to specify vector_shape explicitly because somehow this does
         # not get propagated.
         "vector_shapes": {
-            N: 1,
+            # N: 1,
             # D1: 16,  # TODO: connected to MFMA op type
             # z, y, x
-            B:     1, # z
+            B:    16, # z
             TOPK:  1, # y
-            D2:  128, # x
+            D2:  16, # x
         },
         "canonicalize": {True},
     }
@@ -254,48 +255,44 @@ def fused_moe_kernel(
 ):
     res_reg = tkl.Register[TOPK, B, D2, tkl.f32](0.0)
 
+    # fmt: off
     @tkw.reduction(N, init_args=[res_reg])
-    def repeat(
-        acc: tkl.Register[TOPK, B, D2, tkl.f32]
-    ) -> tkl.Register[TOPK, B, D2, tkl.f32]:
+    def repeat(acc: tkl.Register[TOPK, B, D2, tkl.f32]) -> tkl.Register[TOPK, B, D2, tkl.f32]:
         ###
         # TMP_3[TOPK, B, D2] = TMP_2[TOPK, B, N:]
         #   @ W2[subset(E by topk_idx[B, TOPK]), D2, N].transpose(0, 1)
         ###
-        tmp_2_reg = tkw.read(
-            TMP_2,
-            # elements_per_thread=LOAD_ELEMS_PER_THREAD,
-        )  # : [TOPK, B, N]
-        expert_id = tkw.read(
-            TOPK_IDS,
-            # elements_per_thread=LOAD_ELEMS_PER_THREAD,
-        )  # : [B, TOPK]
+        # elements_per_thread=LOAD_ELEMS_PER_THREAD, automatically derived by the
+        # system from the mma op for all reads below.
+        tmp_2_reg = tkw.read(TMP_2,)                            # : [TOPK, B, N]
+        expert_id = tkw.read(TOPK_IDS,)                         # : [B, TOPK]
         w2_reg = tkw.read(
             W2,
             mapping=offset_mapping_w2,
             mapping_dynamic_vals=(expert_id,),
-            # elements_per_thread=LOAD_ELEMS_PER_THREAD,
-        )  # : [TOPK, D2, N] but indexed as [E=(B, TOPK), D2, N] and E expert_id
-        acc = tkw.mma(tmp_2_reg, w2_reg, acc)
+        )                                                       # : [TOPK, D2, N] but indexed as [E=(B, TOPK), D2, N] and E expert_id
+        acc = tkw.mma(tmp_2_reg, w2_reg, acc)                   # : [TOPK, B, N] * [TOPK, D2, N] -> [TOPK, B, D2]
         return acc
 
     res = repeat
 
+    ### res combined with read and automatic mma inference does not work.
+    ### errors out with "ValueError: index 16 is out of bounds for array with size 16"
+    ### Instead roundtrip through memory.
+    ### elements_per_thread=STORE_ELEMS_PER_THREAD, automatically derived by the
+    ### system from the mma op above.
+    tkw.write(res, RESULT,)                                                 # : [B, TOPK, D2]
+
     ###
     # RESULT[B, TOPK, D2] = TMP_3[TOPK, B, D2] * topk_score[B, TOPK]
     ###
-    topk_weights = tkw.read(
-        TOPK_WEIGHTS,
-        # elements_per_thread=STORE_ELEMS_PER_THREAD,
-    )  # : [B, TOPK]
-    topk_weights = tkw.broadcast(topk_weights, target_shape=[B, TOPK, D2])
-    res = res * tkw.cast(topk_weights, tkl.f32)  # : [B, TOPK, D2]
-
-    tkw.write(
-        res,
-        RESULT,
-        #   elements_per_thread=STORE_ELEMS_PER_THREAD,
-    )  # : [B, TOPK, D2]
+    ### Elementwise part, use elements_per_thread=4
+    res = tkw.read(RESULT, elements_per_thread=4,)                          # : [B, TOPK, D2]
+    topk_weights = tkw.read(TOPK_WEIGHTS, elements_per_thread=4,)           # : [B, TOPK]
+    topk_weights = tkw.broadcast(topk_weights, target_shape=[B, TOPK, D2])  # : [B, TOPK, D2]
+    res = res * tkw.cast(topk_weights, tkl.f32)                             # : [B, TOPK, D2]
+    tkw.write(res, RESULT, elements_per_thread=4,)                          # : [B, TOPK, D2]
+    # fmt: on
 
 
 # Note: W2 really has torch.Tensor.shape [E, D2, N] but we want to index it
