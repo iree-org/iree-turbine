@@ -77,7 +77,7 @@ jobs:
   # Depends on all other jobs to provide an aggregate job status.
   ci_summary:
     if: always()
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     needs:
       - test
     steps:
