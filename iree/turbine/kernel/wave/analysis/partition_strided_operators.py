@@ -39,29 +39,33 @@ import sympy
 logger = get_logger("turbine.wave.partition_strided_operators")
 
 
-def get_vector_shape(
-    vector_shapes: dict[IndexSymbol, int],
+def get_concrete_shape(
+    vector_shapes_map: dict[IndexSymbol, int],
     symbolic_shape: list[IndexSymbol],
 ) -> list[int]:
-    vector_shapes = [max(vector_shapes[dim], 1) for dim in symbolic_shape]
-    return vector_shapes
+    concrete_shape = [max(vector_shapes_map[dim], 1) for dim in symbolic_shape]
+    return concrete_shape
 
 
-def _get_symbolic_shape_and_vector_shapes(
+def _get_read_symbolic_shape(
     custom: CustomOp,
 ):
-    vector_shapes = custom.vector_shapes
+    return custom.memory_type.symbolic_shape
+
+
+def _get_write_symbolic_shape(
+    custom: CustomOp,
+):
+    vector_shapes_map = custom.vector_shapes
     memory_shape = custom.memory_type.symbolic_shape
-    if isinstance(custom, Read):
-        return memory_shape, custom.vector_shapes
     register_shape = custom.register_type.symbolic_shape
     # Check to see if the memory shape does not match with the vector shapes.
-    if not set(memory_shape).issubset(set(vector_shapes.keys())):
-        return register_shape, vector_shapes
+    if not set(memory_shape).issubset(set(vector_shapes_map.keys())):
+        return register_shape
     # Pick the shape with the most dimensions.
     if len(memory_shape) > len(register_shape):
-        return memory_shape, vector_shapes
-    return register_shape, vector_shapes
+        return memory_shape
+    return register_shape
 
 
 def partition_strided_operators(trace: CapturedTrace, constraints: list[Constraint]):
@@ -108,9 +112,14 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
             for dim in custom.index
         }
 
-        symbolic_shape, vector_shapes = _get_symbolic_shape_and_vector_shapes(custom)
+        vector_shapes_map = custom.vector_shapes
+        symbolic_shape = (
+            _get_read_symbolic_shape(custom)
+            if op_type == Read
+            else _get_write_symbolic_shape(custom)
+        )
 
-        shape = get_vector_shape(vector_shapes, symbolic_shape)
+        concrete_shape = get_concrete_shape(vector_shapes_map, symbolic_shape)
         elements_per_thread = subs_idxc(custom.elements_per_thread)
         max_stride_dim, max_stride = max(
             [(dim, seq.stride) for dim, seq in simplified_index.items()],
@@ -121,7 +130,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         # write.
         offsets = np.array(
             [
-                np.unravel_index(int(i * max_stride), shape)
+                np.unravel_index(int(i * max_stride), concrete_shape)
                 for i in range(elements_per_thread)
             ]
         )
@@ -154,7 +163,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                         (j if i == fastest_mem_dim_idx else 0)
                         for j in range(elements_per_thread)
                     ]
-                    for i in range(len(shape))
+                    for i in range(len(concrete_shape))
                 ]
             ).T
             if not np.array_equal(offsets, expected_offsets):
