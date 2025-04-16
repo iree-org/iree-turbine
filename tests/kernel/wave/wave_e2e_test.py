@@ -1557,7 +1557,7 @@ def test_cast(shape, request):
 @require_cdna3
 @pytest.mark.parametrize(
     "shape", get_test_shapes("test_copy")[:2]
-)  # testing on just two shapes
+)  # testing on just two shapes.
 @pytest.mark.parametrize(
     "tkl_dtype, torch_dtype, arg_vals",
     [  # arg_vals are c, d, e, res
