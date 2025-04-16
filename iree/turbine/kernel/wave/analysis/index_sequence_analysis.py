@@ -53,6 +53,7 @@ import sympy
 from typing import Sequence, Callable, Optional
 from ....support.logging import get_logger
 from copy import deepcopy, copy
+from iree.turbine.kernel._support.dtype import DataType
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -110,7 +111,10 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
             continue
         if isinstance(custom, (Output, NestedRegionOp)):
             continue
+        if isinstance(custom.type, DataType):
+            continue
         assert custom.index, f"Index not set for node {custom.fx_node}: {custom}"
+
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
@@ -410,7 +414,11 @@ def should_update_index(
 ):
     # Get symbolic shape without any aliased variables.
     aliased_dims = [x.source for x in symbolic_constraints]
-    symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
+
+    if source.type:
+        symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
+    else:
+        symbolic_shape = []
 
     # If all the source indexing dimensions are not present in source vector shapes,
     # we should not update the index.
@@ -732,6 +740,8 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
     """
 
     def get_index(custom: CustomOp):
+        if not custom.indexing_dims:
+            return None
         if isinstance(custom, MMA):
             return custom.acc.index
         return custom.index
@@ -752,8 +762,9 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         lhs_index = get_index(lhs)
         rhs_index = get_index(rhs)
 
-        lhs_dim, lhs_size = get_largest_index_and_size(lhs_index)
-        rhs_dim, rhs_size = get_largest_index_and_size(rhs_index)
+        # Updatedto broadcast implicitly when we perform mul binary op with scalar.
+        lhs_dim, lhs_size = get_largest_index_and_size(lhs_index, lhs)
+        rhs_dim, rhs_size = get_largest_index_and_size(rhs_index, rhs)
 
         extra_error_info = (
             f"\n{binary_op=}"

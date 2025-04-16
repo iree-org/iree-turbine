@@ -1949,3 +1949,111 @@ def test_get_item():
 
 
 # TODO: Add more tests once we have more than a stub implementation.
+
+
+@run_test
+def test_scalar_codegen_f32():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: 27},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, 1, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, 27, 0)]
+    constraints += [tkw.WaveConstraint(M, 1)]
+    constraints += [tkw.WaveConstraint(N, 27)]
+
+    @tkw.wave(constraints)
+    def scalar_codegen_f32(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        c: tkl.f32,  # type: ignore
+        d: tkl.f32,  # type: ignore
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+    ):
+        res = tkw.read(a)
+        c = tkw.broadcast(c, target_shape=[M, N])
+        d = tkw.broadcast(d, target_shape=[M, N])
+        temp = tkl.Register[M, N, tkl.f32](1.0) * c
+        res = res + temp + d
+        tkw.write(res, b)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 1,
+            N: 27,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    scalar_codegen_f32 = wave_compile(options, scalar_codegen_f32)
+    print(scalar_codegen_f32.asm)
+
+    # Passed scalars' dtype
+    # CHECK: func.func @scalar_codegen_f32(
+    # CHECK-SAME: %arg2: f32, %arg3: f32)
+
+    # Broadcast and add
+    # CHECK: vector.splat %arg2 : vector<1xf32>
+    # CHECK: vector.splat %arg3 : vector<1xf32>
+    # CHECK: arith.addf
+
+    # Final dispatch args dtype
+    # CHECK: flow.dispatch @scalar_codegen_f32::@scalar_codegen_f32(
+    # CHECK-SAME: %arg0, %arg1, %arg2, %arg3)
+
+
+@run_test
+def test_scalar_codegen_i32():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: 27},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, 1, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, 27, 0)]
+    constraints += [tkw.WaveConstraint(M, 1)]
+    constraints += [tkw.WaveConstraint(N, 27)]
+
+    @tkw.wave(constraints)
+    def scalar_codegen_i32(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        c: tkl.i32,  # type: ignore
+        d: tkl.i32,  # type: ignore
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+    ):
+        res = tkw.read(a)
+        c = tkw.broadcast(c, target_shape=[M, N])
+        d = tkw.broadcast(d, target_shape=[M, N])
+        temp = tkl.Register[M, N, tkl.i32](1) * c
+        res = res + temp + d
+        tkw.write(res, b)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 1,
+            N: 27,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    scalar_codegen_i32 = wave_compile(options, scalar_codegen_i32)
+    print(scalar_codegen_i32.asm)
+
+    # Passed scalars' dtype: i32
+    # CHECK: func.func @scalar_codegen_i32(
+    # CHECK-SAME: %arg2: i32, %arg3: i32)
+
+    # Broadcast and add
+    # CHECK: vector.splat %arg2 : vector<1xi32>
+    # CHECK: vector.splat %arg3 : vector<1xi32>
+    # CHECK: arith.addi
+
+    # Final dispatch args dtype
+    # CHECK: flow.dispatch @scalar_codegen_i32::@scalar_codegen_i32(
+    # CHECK-SAME: %arg0, %arg1, %arg2, %arg3)
