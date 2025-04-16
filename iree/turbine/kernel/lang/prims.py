@@ -13,6 +13,7 @@ __all__ = [
     "constant",
     "exp2",
     "max",
+    "cumsum",
     "sum",
     "dot",
     "for_loop",
@@ -42,6 +43,7 @@ constant = ops.vector_constant
 max = ops.vector_max
 sum = ops.vector_sum
 dot = ops.vector_dot
+cumsum = ops.vector_cumsum
 
 # Control Flow Operations
 for_loop = ops.for_loop
