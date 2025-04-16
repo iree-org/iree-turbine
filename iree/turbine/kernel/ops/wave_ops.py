@@ -171,6 +171,14 @@ def sum(
     ...
 
 
+def cumsum(
+    src: "Register",
+    acc: "Register",
+    dim: Optional[IndexExpr | int] = None,
+) -> "Register":
+    ...
+
+
 def max(
     src: "Register",
     acc: Optional["Register"] = None,
@@ -1873,6 +1881,7 @@ class Broadcast(CustomOp, ABC):
         self.type = Register[(*self.target_shape, src_dtype)]
 
 
+@define_interface_op("cumsum")
 @define_interface_op("max")
 @define_interface_op("min")
 @define_interface_op("sum")
@@ -1882,7 +1891,7 @@ class ReduceOp(CustomOp, ABC):
     Represents a Reduce computation.
 
     arg: Source tensor/value to reduce
-    init: init/accumulator for reducte
+    init: init/accumulator for reduce
     dim: which symbolic dim to reduce.
     """
 

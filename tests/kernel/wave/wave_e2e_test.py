@@ -1038,6 +1038,63 @@ def test_reduce_sum(shape, request):
 
 
 @require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("test_reduce_sum"))
+def test_reduce_cumsum(shape, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    wave_size = 64
+    BLOCK_M = 1
+    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
+    ELEMS_PER_THREAD = BLOCK_N // wave_size
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+        res = lhs * rhs
+        res = tkw.cumsum(res, dim=N)
+        tkw.write(res, c, elements_per_thread=1)
+
+    torch.manual_seed(1)
+    a = device_randn(shape, dtype=torch.float16)
+    b = device_randn(shape, dtype=torch.float16)
+    c = device_zeros((shape[0],), dtype=torch.float16)
+    ref = torch.sum((a * b), dim=-1)
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    asm = test(a, b, c)
+    assert_close(ref, c, atol=0.1, rtol=1e-05)
+
+
+@require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
 def test_toy_online_softmax(shape):
     M = tkl.sym.M

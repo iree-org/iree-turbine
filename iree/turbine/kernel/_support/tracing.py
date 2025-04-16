@@ -359,6 +359,14 @@ class CompiledContext(BaseContext):
             kwargs={},
         )
 
+    def handle_vector_cumsum(self, op, vector, axis=None, acc=None):
+        return self.region_graph.create_proxy(
+            "call_function",
+            target=op,
+            args=(vector, axis, acc),
+            kwargs={},
+        )
+
     def handle_vector_dot(self, op, lhs, rhs, acc=None):
         return self.region_graph.create_proxy(
             "call_function",
