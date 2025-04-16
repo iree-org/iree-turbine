@@ -62,8 +62,6 @@ def tree_speculative_sampling_target_only(
     threshold_acc=1.0,
     deterministic=True):
     
-    threshold_acc = max(threshold_acc, 1e-9)
-    
     for bx in range(batch_size):
         prob_acc = 0.0
         cur_prob_offset = 0  # bx * num_draft_tokens * d handled via indexing
@@ -101,29 +99,50 @@ def tree_speculative_sampling_target_only(
         
         output_accepted_token_num[bx] = num_accepted_tokens
         
+        # Sample from relu(target_probs - draft_probs)
+        last_offset = cur_prob_offset
+        q = target_probs[bx, last_offset]
+        p = draft_probs[bx, last_offset] if num_accepted_tokens != num_speculative_tokens - 1 else torch.zeros_like(q)
+        relu_diff = torch.relu(q - p)
+        sum_relu = relu_diff.sum()
+
+        u = coin * sum_relu
+        sampled_id = d - 1
+        aggregate = 0.0
+        for i in range(d):
+            val = relu_diff[i]
+            if val <= 0:
+                continue
+            aggregate += val
+            if aggregate > u:
+                sampled_id = i
+                break
+
+        predicts[last_accepted_retrive_idx] = sampled_id
+
         # Sample from residual distribution
-        if num_accepted_tokens < num_speculative_tokens - 1:
-            residual_probs = (target_probs[bx, cur_prob_offset] - 
-                             draft_probs[bx, cur_prob_offset]).clamp(min=0)
-            sum_residual = residual_probs.sum()
-            
-            if deterministic:
-                # Mimic the deterministic sampling in CUDA kernel
-                u = coin * sum_residual
-                cumsum = 0.0
-                sampled_id = d - 1  # default to last token
-                for i in range(d):
-                    cumsum += residual_probs[i]
-                    if cumsum > u:
-                        sampled_id = i
-                        break
-            else:
-                if sum_residual > 1e-8:
-                    sampled_id = torch.multinomial(residual_probs, 1).item()
-                else:
-                    sampled_id = d - 1
-            
-            predicts[last_accepted_retrive_idx] = sampled_id
+#       if num_accepted_tokens < num_speculative_tokens - 1:
+#           residual_probs = (target_probs[bx, cur_prob_offset] -
+#                            draft_probs[bx, cur_prob_offset]).clamp(min=0)
+#           sum_residual = residual_probs.sum()
+#
+#           if deterministic:
+#               # Mimic the deterministic sampling in CUDA kernel
+#               u = coin * sum_residual
+#               cumsum = 0.0
+#               sampled_id = d - 1  # default to last token
+#               for i in range(d):
+#                   cumsum += residual_probs[i]
+#                   if cumsum > u:
+#                       sampled_id = i
+#                       break
+#           else:
+#               if sum_residual > 1e-8:
+#                   sampled_id = torch.multinomial(residual_probs, 1).item()
+#               else:
+#                   sampled_id = d - 1
+#
+#           predicts[last_accepted_retrive_idx] = sampled_id
 
 
 test_cases = [
@@ -216,6 +235,7 @@ def testReferenceSpeculativeDecoding(
     target_probs = F.softmax(target_logits / expanded_temperature, dim=-1)
     draft_probs = torch.full_like(target_probs, 0, dtype=torch.float32, device=device)
     coins = torch.rand(bs, num_draft_tokens, device=device, dtype=torch.float32)
+
     vocab_size = target_probs.shape[2]
 
     tree_speculative_sampling_target_only(
