@@ -29,7 +29,7 @@ from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.ops.wave_ops import (
     Allocate,
     Read,
-    Reduction,
+    Iterate,
     Write,
     get_custom,
     GetResult,
@@ -73,7 +73,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -142,7 +142,7 @@ def test_gemm_multibuffering():
                 case Read() | Write():
                     if custom.memory_type.address_space == SHARED_ADDRESS_SPACE:
                         print(custom)
-                case Reduction():
+                case Iterate():
                     print("reduction begin")
                     for node in trace.get_subgraph(custom.subgraph_name).nodes:
                         print_affected_node(node)

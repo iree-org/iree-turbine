@@ -148,7 +148,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -192,11 +192,11 @@ def test_gemm():
         # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
-        # CHECK-NEXT: reduction
+        # CHECK-NEXT: iterate
         # CHECK-NEXT: %write
-        # CHECK-SAME: (%reduction, %c, 4, None, ())
+        # CHECK-SAME: (%iterate, %c, 4, None, ())
 
-        # Reduction subgraph:
+        # iterate subgraph:
         # CHECK: %b
         # CHECK-NEXT: %a
         # CHECK-NEXT: %acc

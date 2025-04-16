@@ -199,7 +199,7 @@ def test_trace_gemm():
     ):
         c = tkl.Register[M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c])
+        @tkw.iterate(K, init_args=[c])
         def repeat(acc) -> tkl.Register[M, N, tkl.f32]:
             a = tkw.read(A)
             b = tkw.read(B)
@@ -216,7 +216,7 @@ def test_trace_gemm():
     # CHECK-NEXT: %b
     # CHECK-NEXT: %c
     # CHECK-NEXT: %register
-    # CHECK-NEXT: %reduction
+    # CHECK-NEXT: %iterate
     # CHECK-NEXT: %write
     # CHECK-NEXT: return None
 
@@ -225,7 +225,7 @@ def test_trace_gemm():
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: placeholder
     # CHECK-NEXT: register
-    # CHECK-NEXT: reduction
+    # CHECK-NEXT: iterate
     # CHECK-NEXT: write
     # CHECK-NEXT: output
 

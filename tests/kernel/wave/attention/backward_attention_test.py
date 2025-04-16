@@ -232,7 +232,7 @@ def get_attention_fwd_kernel(
         init_l = tkl.Register[B, M_qs, tkl.f32](0.0)
         init_o = tkl.Register[B, N_vd, M_qs, tkl.f32](0.0)
 
-        @tkw.reduction(K2_kvs, init_args=[init_m, init_l, init_o])
+        @tkw.iterate(K2_kvs, init_args=[init_m, init_l, init_o])
         def repeat(
             m_prev: tkl.Register[B, M_qs, tkl.f32],
             l_prev: tkl.Register[B, M_qs, tkl.f32],
@@ -412,7 +412,7 @@ def get_attention_bwd_kernel(
         dv_init = tkl.Register[B, K2_kvs, N_vd, tkl.f32](0.0)
         dk_init = tkl.Register[B, K2_kvs, K1_qkd, tkl.f32](0.0)
 
-        @tkw.reduction(M_qs, init_args=[dv_init, dk_init])
+        @tkw.iterate(M_qs, init_args=[dv_init, dk_init])
         def loop_q_seq_len(
             dv_prev: tkl.Register[B, K2_kvs, N_vd, tkl.f32],
             dk_prev: tkl.Register[B, K2_kvs, K1_qkd, tkl.f32],
@@ -627,7 +627,7 @@ def get_attention_bwd_dv_kernel(
 
         dv_init = tkl.Register[B, K2_kvs, N_vd, tkl.f32](0.0)
 
-        @tkw.reduction(M_qs, init_args=[dv_init])
+        @tkw.iterate(M_qs, init_args=[dv_init])
         def loop_q_seq_len(dv_prev: tkl.Register[B, K2_kvs, N_vd, tkl.f32]):
             k_j = tkw.read(k, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
             q_i = tkw.read(q, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
@@ -784,7 +784,7 @@ def get_attention_bwd_dk_kernel(
 
         dk_init = tkl.Register[B, K2_kvs, K1_qkd, tkl.f32](0.0)
 
-        @tkw.reduction(M_qs, init_args=[dk_init])
+        @tkw.iterate(M_qs, init_args=[dk_init])
         def loop_q_seq_len(dk_prev: tkl.Register[B, K2_kvs, K1_qkd, tkl.f32]):
             k_j = tkw.read(k, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
             q_i = tkw.read(q, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
@@ -969,12 +969,12 @@ def get_attention_bwd_dq_kernel(
         dp_sub: tkl.Memory[B, M_qs, K2_kvs, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
 
-        # TODO(#364): Workaround for missing non-reduction loop. This needs to
+        # TODO(#364): Workaround for missing non-iterate loop. This needs to
         # have only dimensions that are in the vector shapes or it doesn't have
         # vector shapes for its indexing dims.
         dummy_init = tkl.Register[B, tkl.f16](0.0)
 
-        @tkw.reduction(M_qs, init_args=[dummy_init])
+        @tkw.iterate(M_qs, init_args=[dummy_init])
         def loop_q_seq_len(dummy_prev: tkl.Register[B, tkl.f16]):
             k_j = tkw.read(k, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
             q_i = tkw.read(q, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)

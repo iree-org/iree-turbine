@@ -1067,7 +1067,7 @@ def test_toy_online_softmax(shape):
         init_max = tkl.Register[M, tkl.f32](-1e6)
         init_sum = tkl.Register[M, tkl.f32](0)
 
-        @tkw.reduction(N, init_args=[init_max, init_sum])
+        @tkw.iterate(N, init_args=[init_max, init_sum])
         def repeat(
             partial_max: tkl.Register[M, tkl.f32],
             partial_sum: tkl.Register[M, tkl.f32],
@@ -1165,7 +1165,7 @@ def test_im2col(request):
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 1)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WaveConstraint(K, BLOCK_K)]
-    # TODO: TilingConstraint doesn't work without actual reduction loop, instead
+    # TODO: TilingConstraint doesn't work without actual iterate loop, instead
     # we treat K as WG '1' dimension, but corresponding WG size will be always
     # equal to 1.
     # constraints += [tkw.TilingConstraint(K, BLOCK_K)]
@@ -1289,7 +1289,7 @@ def test_im2col_mma(request):
     ):
         c_reg = tkl.Register[M, NF, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, NF, tkl.f32]) -> tkl.Register[M, NF, tkl.f32]:
             a_reg = tkw.read(
                 x,

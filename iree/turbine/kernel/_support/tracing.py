@@ -33,7 +33,7 @@ from ..lang.types import (
     Index,
 )
 from ..lang.wave_types import IndexMapping
-from ..ops.wave_ops import CustomOp, Placeholder, Reduction, Unknown
+from ..ops.wave_ops import CustomOp, Placeholder, Iterate, Unknown
 
 from .regions import RegionGraph, SubgraphTracer
 

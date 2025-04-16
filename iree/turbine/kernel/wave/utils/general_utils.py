@@ -14,7 +14,7 @@ from typing import Any, Callable, Optional
 
 from ..._support.indexing import IndexExpr, IndexSequence, IndexSymbol
 from ...lang.global_symbols import *
-from ...ops.wave_ops import CustomOp, Read, Reduction, Write
+from ...ops.wave_ops import CustomOp, Read, Iterate, Write
 from ..assumptions import Assumption
 from ..constraints import (
     Constraint,
@@ -178,7 +178,7 @@ def find_index_bounds(
 
 
 def get_induction_variable(
-    reduction: Reduction, constraints: list[Constraint]
+    reduction: Iterate, constraints: list[Constraint]
 ) -> IndexSymbol:
     induction_var = None
     for constraint in constraints:
@@ -194,7 +194,7 @@ def get_induction_variable(
 
 
 def get_tiling_constraint(
-    reduction: Reduction, constraints: list[Constraint]
+    reduction: Iterate, constraints: list[Constraint]
 ) -> TilingConstraint:
     for constraint in constraints:
         if (

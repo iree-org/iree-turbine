@@ -21,7 +21,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
         b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -51,10 +51,10 @@ for i in range(M):
             c[i, j] += a[i, k] * b[j, k]
 ```
 
-Here we do a reduction over the $K$ dimension in the inner-most loop. The equivalent of such for loops in `tkw` is the `tkw.reduction` operator shown below.
+Here we do a reduction over the $K$ dimension in the inner-most loop. The equivalent of such for loops in `tkw` is the `tkw.iterate` operator shown below.
 
 ```python
-@tkw.reduction(K, init_args=[c_reg])
+@tkw.iterate(K, init_args=[c_reg])
 def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
     a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
     b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -62,10 +62,10 @@ def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
     return acc
 ```
 
-The reduction operator has two arguments: the dimension over which the reduction is taking place and any loop carried variables.
+The iterate operator has two arguments: the dimension over which the iteration is taking place and any loop carried variables.
 
 ```python
-@tkw.reduction(K, init_args=[c_reg])
+@tkw.iterate(K, init_args=[c_reg])
 ```
 In the example above, we are reducing over the `K` dimension and initializing our loop carried variable to `c_reg`. After this decorator, we specify the body of the loop.
 
@@ -95,7 +95,7 @@ After the loop, we write out the result to `c`.
 ```python
 tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
 ```
-Here the name of the function that is the body of the `tkw.reduction` represents the result of the reduction.
+Here the name of the function that is the body of the `tkw.iterate` represents the result of the reduction.
 This is passed to `tkw.write` which writes out the result to `c`. The semantics of `elements_per_thread` are the same as those for `tkw.read`.
 
 This concludes the kernel implementation. Now, we move on to the constraints.
@@ -132,13 +132,13 @@ constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
 ```
 The above constraint states that "distribute dimension `M` with a tile size of `BLOCK_M/2` among waves". With the above and this constraint, each wave would see a tile with shape `[BLOCK_M/2, N]`.
 
-We can also specify constraints for reductions. We do this through the use of `TilingConstraint`.
+We can also specify constraints for iterations. We do this through the use of `TilingConstraint`.
 
 ```python
 constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 ```
 
-The tiling constraint specifies the tile size to use for reductions.
+The tiling constraint specifies the tile size to use for iterations.
 
 Finally, we have the hardware constraint which specifies hardware constraints.
 

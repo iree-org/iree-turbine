@@ -60,7 +60,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -117,16 +117,16 @@ def test_gemm():
         # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
-        # CHECK-NEXT: reduction
+        # CHECK-NEXT: iterate
         # CHECK-SAME (K, [%register_M:0_N:0_K:0, %register_M:0_N:1_K:0, %register_M:1_N:0_K:0, %register_M:1_N:1_K:0]
         # CHECK-NEXT: %get_result_M:0_N:0_K:0
-        # CHECK-SAME: (%reduction, 0)
+        # CHECK-SAME: (%iterate, 0)
         # CHECK-NEXT: %get_result_M:0_N:1_K:0
-        # CHECK-SAME: (%reduction, 1)
+        # CHECK-SAME: (%iterate, 1)
         # CHECK-NEXT: %get_result_M:1_N:0_K:0
-        # CHECK-SAME: (%reduction, 2)
+        # CHECK-SAME: (%iterate, 2)
         # CHECK-NEXT: %get_result_M:1_N:1_K:0
-        # CHECK-SAME: (%reduction, 3)
+        # CHECK-SAME: (%iterate, 3)
         # CHECK-NEXT: extract_slice
         # CHECK-SAME: (%get_result_M:0_N:0_K:0, [0], [1], [1])
         # CHECK-NEXT: %write_5
@@ -207,11 +207,11 @@ def test_gemm():
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1})
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: allocate(
-        # CHECK-NEXT: reduction(
-        # CHECK-NEXT: get_result(value=reduction, res_idx=0)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=1)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=2)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=3)
+        # CHECK-NEXT: iterate(
+        # CHECK-NEXT: get_result(value=iterate, res_idx=0)
+        # CHECK-NEXT: get_result(value=iterate, res_idx=1)
+        # CHECK-NEXT: get_result(value=iterate, res_idx=2)
+        # CHECK-NEXT: get_result(value=iterate, res_idx=3)
         # CHECK-NEXT: extract_slice(register_=get_result_M:0_N:0_K:0, offset=[0], size=[1], stride=[1])
         # CHECK-NEXT: write(register_=extract_slice, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 32 : 1 : 1})
@@ -261,7 +261,7 @@ def test_gemm():
         # CHECK-NEXT: write(register_=extract_slice_15, memory=c, elements_per_thread=1,
         # CHECK-SAME: index={M: 64*$WG0 + 4*floor((Mod($T0, 64))/16) + 19 : 1 : 1, N: 64*$WG1 + Mod($T0, 16) + 48 : 1 : 1})
 
-        # Reduction subgraph:
+        # iterate subgraph:
         # CHECK: %b
         # CHECK-NEXT: %a
         # CHECK-NEXT: %acc_M:0_N:0_K:0
@@ -317,7 +317,7 @@ def test_gemm():
         # CHECK-NEXT: %mma_M:1_N:1_K:2
         # CHECK-NEXT: %mma_M:1_N:1_K:3
 
-        # Reduction subgraph (custom format):
+        # iterate subgraph (custom format):
         # CHECK: Custom format:
         # CHECK: placeholder(_name=b, _type=Memory[N, K].of(f16))
         # CHECK-NEXT: placeholder(_name=a

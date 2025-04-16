@@ -67,6 +67,7 @@ from ...ops.wave_ops import (
     get_custom,
     get_result,
     gt,
+    iterate,
     le,
     log2,
     lt,
@@ -75,7 +76,6 @@ from ...ops.wave_ops import (
     mma,
     permute,
     reciprocal,
-    reduction,
     register,
     reshape,
     roundeven,
@@ -841,8 +841,8 @@ def handle_conditional(emitter: WaveEmitter, node: fx.Node):
         scf_d.YieldOp([])
 
 
-@handle_op(reduction)
-def handle_reduction(emitter: WaveEmitter, node: fx.Node):
+@handle_op(iterate)
+def handle_iterate(emitter: WaveEmitter, node: fx.Node):
     try:
         axis, init_args, subgraph, implicit_capture = node.args
     except ValueError as e:

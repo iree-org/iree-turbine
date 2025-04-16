@@ -122,7 +122,7 @@ def testGemm(
     ]
 
     # With dynamic dimensions, we need to add an assumption on how big
-    # the reduction dimension is to determine whether we can schedule or not.
+    # the iterate dimension is to determine whether we can schedule or not.
     if dynamic_dims:
         constraints += [tkw.Assumption(K > BLOCK_K * 4)]
 
@@ -140,9 +140,9 @@ def testGemm(
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-        # This microkernel encodes the fact that if the reduction
+        # This microkernel encodes the fact that if the iterate
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
             a_reg = tkw.read(a)
@@ -265,7 +265,7 @@ def testVMFMAGemm(
     ]
 
     # With dynamic dimensions, we need to add an assumption on how big
-    # the reduction dimension is to determine whether we can schedule or not.
+    # the iterate dimension is to determine whether we can schedule or not.
     if dynamic_dims:
         constraints += [tkw.Assumption(K > BLOCK_K * 4)]
 
@@ -283,9 +283,9 @@ def testVMFMAGemm(
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-        # This microkernel encodes the fact that if the reduction
+        # This microkernel encodes the fact that if the iterate
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
             a_reg = tkw.read(a)
@@ -409,7 +409,7 @@ def testCDNA2IntGemm(
     ]
 
     # With dynamic dimensions, we need to add an assumption on how big
-    # the reduction dimension is to determine whether we can schedule or not.
+    # the iterate dimension is to determine whether we can schedule or not.
     if dynamic_dims:
         constraints += [tkw.Assumption(K > BLOCK_K * 4)]
 
@@ -427,9 +427,9 @@ def testCDNA2IntGemm(
     ):
         c_reg = tkl.Register[M, N, tkl.i32](0.0)
 
-        # This microkernel encodes the fact that if the reduction
+        # This microkernel encodes the fact that if the iterate
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.i32]:
             # a_reg: tkw.Register[M, K, tkl.i8]
             a_reg = tkw.read(a)
@@ -556,9 +556,9 @@ def testCDNA3IntGemm(
     ):
         c_reg = tkl.Register[M, N, tkl.i32](0.0)
 
-        # This microkernel encodes the fact that if the reduction
+        # This microkernel encodes the fact that if the iterate
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.i32]:
             # a_reg: tkw.Register[M, K, tkl.i8]
             a_reg = tkw.read(a)
@@ -670,7 +670,7 @@ def testF8Gemm(
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             a_reg = tkw.read(a)
             a_reg = tkw.cast(a_reg, tkl.f8e4m3fnuz)
@@ -772,7 +772,7 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:

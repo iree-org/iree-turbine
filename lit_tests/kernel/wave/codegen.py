@@ -1140,7 +1140,7 @@ def test_reduction_and_elemwise():
     ):
         init_max = tkl.Register[M, tkl.f16](-1e6)
 
-        @tkw.reduction(N, init_args=[init_max])
+        @tkw.iterate(N, init_args=[init_max])
         def repeat(
             partial_max: tkl.Register[M, tkl.f16],
         ) -> tkl.Register[M, tkl.f16]:
@@ -1228,7 +1228,7 @@ def test_tiled_reduce_max():
     ):
         init_max = tkl.Register[M, tkl.f16](-1e6)
 
-        @tkw.reduction(N, init_args=[init_max])
+        @tkw.iterate(N, init_args=[init_max])
         def repeat(
             partial_max: tkl.Register[M, tkl.f16],
         ) -> tkl.Register[M, tkl.f16]:
@@ -1320,7 +1320,7 @@ def test_tiled_reduce_min():
     ):
         init_min = tkl.Register[M, tkl.f16](1e6)
 
-        @tkw.reduction(N, init_args=[init_min])
+        @tkw.iterate(N, init_args=[init_min])
         def repeat(
             partial_min: tkl.Register[M, tkl.f16],
         ) -> tkl.Register[M, tkl.f16]:
@@ -1411,7 +1411,7 @@ def test_tiled_reduce_min_unaligned():
     ):
         init_min = tkl.Register[M, tkl.f16](1e6)
 
-        @tkw.reduction(N, init_args=[init_min])
+        @tkw.iterate(N, init_args=[init_min])
         def repeat(
             partial_min: tkl.Register[M, tkl.f16],
         ) -> tkl.Register[M, tkl.f16]:
@@ -1489,7 +1489,7 @@ def test_multiple_reduction_iv():
         init_max = tkl.Register[M, tkl.f16](-1e6)
         init_sum = tkl.Register[M, tkl.f16](0)
 
-        @tkw.reduction(N, init_args=[init_max, init_sum])
+        @tkw.iterate(N, init_args=[init_max, init_sum])
         def repeat(
             partial_max: tkl.Register[M, tkl.f16],
             partial_sum: tkl.Register[M, tkl.f16],
@@ -1589,7 +1589,7 @@ def test_reduce_propagate_broadcast():
         init_max = tkl.Register[M, tkl.f32](-1e6)
         init_sum = tkl.Register[M, tkl.f32](0)
 
-        @tkw.reduction(N, init_args=[init_max, init_sum])
+        @tkw.iterate(N, init_args=[init_max, init_sum])
         def repeat(
             partial_max: tkl.Register[M, tkl.f32],
             partial_sum: tkl.Register[M, tkl.f32],
