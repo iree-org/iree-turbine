@@ -26,6 +26,7 @@ from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
 from iree.turbine.kernel.wave.utils.torch_utils import (
+    device_full,
     device_randint,
     device_randn,
     device_randperm,
@@ -1834,3 +1835,65 @@ def test_scanop_cumsum(shape, request):
 
     test(input, output)
     assert_close(torch_ref, output, atol=1e-03, rtol=1e-05)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", [(3, 64)])
+@param_bool("use_buffer_ops", "buf_ops")
+def test_atomic_min(shape, use_buffer_ops, request):
+    run_bench = request.config.getoption("--runperf")
+
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_M = 1
+    BLOCK_N = sympy.Max(sympy.Min(N, 256), wave_size)
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+    ):
+        res = tkw.read(a, elements_per_thread=1)
+        shmem = tkw.allocate(
+            shape=(M, N),
+            distributed_shape=(BLOCK_M, BLOCK_N),
+            dtype=tkl.i32,
+            address_space=tkl.AddressSpace.SHARED_MEMORY,
+        )
+        inf_reg = tkl.Register[M, N, tkl.i32](-1e6)
+        tkw.write(inf_reg, shmem, elements_per_thread=1)
+        res = tkw.atomic_min(res, shmem, elements_per_thread=1)
+        res = tkw.read(shmem, elements_per_thread=1)
+        tkw.write(res, a, elements_per_thread=1)
+
+    a = device_randint(low=0, high=10, size=shape, dtype=torch.int32)
+    b = device_full(size=shape, fill_value=-1e6, dtype=torch.int32)
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+        use_buffer_load_ops=use_buffer_ops,
+        use_buffer_store_ops=use_buffer_ops,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+    test(a)
+    assert_close(a, b)
