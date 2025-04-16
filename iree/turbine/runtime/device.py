@@ -8,10 +8,12 @@ from functools import lru_cache
 from hashlib import sha1
 from typing import Any, Callable, Dict, Optional, Union
 from threading import local, Lock
+
 import warnings
+import platform
+import atexit
 
 import ctypes
-
 import torch
 
 from iree.runtime import (
@@ -48,9 +50,14 @@ __all__ = [
     "DeviceState",
 ]
 
+# TODO: move this down into iree as an extention to the 
+#       driver api.
 class _HipSemaphoreInterop:
     def __init__(self):
-        self.library = ctypes.CDLL("libamdhip64.so")
+        if platform.system() == "Windows":
+            self.library = ctypes.CDLL("amdhip64.dll")
+        else:
+            self.library = ctypes.CDLL("libamdhip64.so")
         self.library.hipEventCreate.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_int32]
         self.library.hipEventCreate.restype = ctypes.c_int32
 
@@ -364,6 +371,14 @@ class Device:
         # and device characteristics hash.
         self.instance_cache_key = repr(d)
         self._recompute_target_keys()
+
+        # This is a bit unfortunate, but our external timepoints
+        #  are ephemeral, so we need to hold onto them after 
+        #  any calls into the device (therefore we have nowhere)
+        #  clean to destroy them. So make sure we destroy
+        #  any remaining external timepoints before the application
+        #  closes.
+        atexit.register(self._try_clean_external_timepoints)
 
     def _recompute_target_keys(self):
         self.type_cache_key = f"{self.driver_id}:{';'.join(self.compile_target_flags)}"
