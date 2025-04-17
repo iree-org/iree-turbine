@@ -62,6 +62,7 @@ def tree_speculative_sampling_target_only(
     threshold_acc=1.0,
     deterministic=True):
     
+    threshold_acc = max(threshold_acc, 1e-9)
     for bx in range(batch_size):
         prob_acc = 0.0
         cur_prob_offset = 0  # bx * num_draft_tokens * d handled via indexing
@@ -76,7 +77,7 @@ def tree_speculative_sampling_target_only(
             while cur_index != -1:
                 draft_index = retrive_index[bx, cur_index]
                 draft_token_id = candidates[bx, cur_index]
-                target_prob_single = target_probs[bx, cur_index, draft_token_id]
+                target_prob_single = target_probs[bx, cur_prob_offset, draft_token_id]
                 prob_acc += target_prob_single
                 
                 if (coin <= prob_acc / threshold_acc or 
