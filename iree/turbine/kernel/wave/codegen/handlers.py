@@ -367,6 +367,7 @@ def handle_binary_op(op):
 
             if lhs.ir_value.type != rhs.ir_value.type:
                 op = get_custom(node)
+                breakpoint()
                 raise ValidationError(
                     f"Expected lhs and rhs to have same type for\n"
                     f"{op}\nGot\n"

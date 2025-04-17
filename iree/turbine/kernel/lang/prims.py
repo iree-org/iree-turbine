@@ -43,6 +43,8 @@ constant = ops.vector_constant
 max = ops.vector_max
 sum = ops.vector_sum
 dot = ops.vector_dot
+
+# Scan Operations
 cumsum = ops.vector_cumsum
 
 # Control Flow Operations
