@@ -22,6 +22,8 @@ from dataclasses import dataclass
 import torch.fx as fx
 import sympy
 
+from iree.turbine.kernel._support.dtype import DataType
+
 from .._support.indexing import (
     IndexingContext,
     IndexSymbol,
@@ -47,9 +49,11 @@ from .builder import (
 from .ir import (
     Block,
     FunctionType,
+    F32Type,
     IndexType,
     InsertionPoint,
     IrType,
+    IntegerType,
     Location,
     Operation,
     Value,
@@ -78,6 +82,7 @@ class BindingType(Enum):
     KERNEL_BUFFER = 0
     INDEX_VALUE = 1
     SYMBOL_VALUE = 2
+    SCALAR_VALUE = 3
 
 
 def _is_symbolic(value: list[sympy.Expr | int]) -> bool:
@@ -109,6 +114,9 @@ class BindingDesc:
 
     # If a SYMBOL_VALUE, then this is the corresponding IndexSymbol.
     symbol_type: Optional[Type[IndexSymbol]] = None
+
+    # If there is a scalar, then this is the corresponding type.
+    scalar_type: Optional[Type[DataType]] = None
 
     def as_mlir_type(self) -> IrType:
         idx_context = IndexingContext.current()
@@ -152,6 +160,12 @@ class BindingDesc:
             return IndexType.get()
         elif binding_type == BindingType.SYMBOL_VALUE:
             return IndexType.get()
+        elif (
+            binding_type == BindingType.SCALAR_VALUE and self.scalar_type.is_float_asm()
+        ):
+            return F32Type.get()
+        elif binding_type == BindingType.SCALAR_VALUE and self.scalar_type.is_int_asm():
+            return IntegerType.get_signless(32)
         else:
             raise AssertionError("Unhandled switch BindingType")
 
@@ -205,6 +219,11 @@ class KernelSignature:
         """Gets all dynamic dimension bindings."""
         return [b for b in self.bindings if b.binding_type == BindingType.SYMBOL_VALUE]
 
+    @property
+    def scalar_bindings(self) -> list[BindingDesc]:
+        """Gets all scalar bindings."""
+        return [b for b in self.bindings if b.binding_type == BindingType.SCALAR_VALUE]
+
     def add_from_dynamic_symbols(self, dynamic_symbols: list[IndexSymbol]):
         for symbol in dynamic_symbols:
             self.bindings.append(
@@ -233,6 +252,15 @@ class KernelSignature:
                         BindingType.KERNEL_BUFFER,
                         name=node.target,
                         kernel_buffer_type=t,
+                    )
+                )
+            elif isinstance(t, DataType):
+                self.bindings.append(
+                    BindingDesc(
+                        ("node", node),
+                        BindingType.SCALAR_VALUE,
+                        name=node.target,
+                        scalar_type=t,
                     )
                 )
             elif issubclass(t, IndexSymbol):
@@ -310,14 +338,15 @@ class KernelSignature:
 
             # Create new Memory type with the correct usage
             memory_type = self.bindings[index].kernel_buffer_type
-            self.bindings[index].kernel_buffer_type = Memory[
-                (
-                    *memory_type.symbolic_shape,
-                    memory_type.address_space,
-                    memory_type.dtype,
-                    usage,
-                )
-            ]
+            if memory_type:
+                self.bindings[index].kernel_buffer_type = Memory[
+                    (
+                        *memory_type.symbolic_shape,
+                        memory_type.address_space,
+                        memory_type.dtype,
+                        usage,
+                    )
+                ]
         return
 
     def __repr__(self):
@@ -330,6 +359,8 @@ class KernelSignature:
                 type_str += f".{b.kernel_buffer_type.usage.name}.{b.kernel_buffer_type}"
             elif b.binding_type == BindingType.SYMBOL_VALUE:
                 type_str += f".{b.symbol_type}"
+            elif b.binding_type == BindingType.SCALAR_VALUE:
+                type_str += f".{b.scalar_type}"
 
             parts.append(f"{name}: {type_str}")
         return f"KernelSignature({', '.join(parts)})"

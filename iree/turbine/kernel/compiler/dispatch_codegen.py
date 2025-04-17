@@ -5,12 +5,11 @@ This assumes that you have some form of code generation for the
 embedding and generating the calls/dispatches.
 """
 
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional
 
-from .._support.indexing import IndexingContext, IndexSymbol, IndexExpr
+from .._support.indexing import IndexSymbol, IndexExpr
 
 from .base import (
-    CodegenError,
     ValidationError,
 )
 
@@ -19,7 +18,6 @@ from .builder import (
 )
 
 from .ir import (
-    Attribute,
     Block,
     DictAttr,
     FunctionType,
@@ -28,11 +26,9 @@ from .ir import (
     IntegerAttr,
     IrType,
     Location,
-    Operation,
     StringAttr,
     Value,
     arith_d,
-    flow_d,
     func_d,
     stream_d,
     iree_codegen_d,
@@ -123,14 +119,22 @@ class StreamExecutable:
         kb_input_bindings = sig.kernel_buffer_input_bindings
         kb_output_bindings = sig.kernel_buffer_output_bindings
         dynamic_dim_bindings = sig.dynamic_dim_bindings
+        scalar_bindings = sig.scalar_bindings
 
         # Input bindings are always user specified.
         # Output bindings are the real outputs.
         # Dynamic dim bindings are the dynamic dims of the input and output tensors.
-        linear_bindings = kb_input_bindings + kb_output_bindings + dynamic_dim_bindings
+        linear_bindings = (
+            kb_input_bindings
+            + kb_output_bindings
+            + scalar_bindings
+            + dynamic_dim_bindings
+        )
 
         dynamic_dim_indices = {
-            "begin": len(kb_input_bindings) + len(kb_output_bindings),
+            "begin": len(kb_input_bindings)
+            + len(kb_output_bindings)
+            + len(scalar_bindings),
             "end": len(linear_bindings),
         }
 
@@ -314,5 +318,9 @@ class DispatchEntrypoint(BoundKernelSignature):
                 byte_offset=zero_value,
                 dynamic_dims=self.get_dynamic_dims(binding),
             )
+
+        if binding.binding_type == BindingType.SCALAR_VALUE:
+            linear_arg_value = self._abi_value_by_reference[binding.reference]
+            return linear_arg_value
 
         raise ValidationError(f"Unhandled binding type: {binding}")

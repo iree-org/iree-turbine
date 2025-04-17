@@ -1,4 +1,6 @@
-from typing import Any, List, Dict
+from typing import Any
+
+import torch
 from .._support.indexing import IndexingContext, IndexExpr
 from ..compiler import kernel_codegen, host_codegen
 from .compile_options import WaveCompileOptions
@@ -32,15 +34,26 @@ class WaveKernel:
         Returns the assembly code of the compiled kernel.
         """
 
+        # Segregate args into kernel tensor and scalars.
+        scalar_args = []
+        kernel_inputs, kernel_outputs = [], []
+
         # Partition arguments into kernel inputs and outputs.
-        kernel_inputs = []
-        kernel_outputs = []
-        for arg, usage in zip(args, self.options.kernel_usages):
+        # ToDo: we should expose the `usage` as a property in binding desc
+        #       so that we can reduce the code and use `zip``.
+        usage_idx = 0
+        for arg in args:
+            if not isinstance(arg, torch.Tensor):
+                scalar_args.append(arg)
+                continue
+            usage = self.options.kernel_usages[usage_idx]
+            usage_idx += 1
             if usage == kernel_codegen.KernelBufferUsage.INPUT:
                 kernel_inputs.append(arg)
-
             if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                 kernel_outputs.append(arg)
+
+        kernel_inputs.extend(scalar_args)
 
         invoke_vmfb(self.executable, self.options, kernel_inputs, kernel_outputs)
         return self.asm

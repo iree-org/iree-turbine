@@ -47,7 +47,8 @@ std::unordered_map<std::string, std::tuple<hipModule_t, hipFunction_t>> cache;
 using Int64Vector = std::vector<uint64_t>;
 using Int32Vector = std::vector<uint32_t>;
 
-int launch(const KernelLaunchInfo &info, const Int64Vector &tensors, const Int64Vector &dynamicDims)
+int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
+    const Int64Vector &dynamicDims, nb::list scalarArgs)
 {
     hipStream_t stream = at::hip::getCurrentHIPStream();
     hipModule_t module;
@@ -65,20 +66,33 @@ int launch(const KernelLaunchInfo &info, const Int64Vector &tensors, const Int64
             cache[info.kernelHash] = std::make_tuple(module, function);
     }
 
+    size_t scalarSize = sizeof(uint32_t); // 32-bit for both float and int
+
     // Since we always pass our dynamic dims as index type, iree converts them to i64
     // and then splits them to two i32s, i64 = hi | lo where
     // lo = trunc(i64) and hi = trunc(i64 >> 32).
-    size_t kernArgSize = tensors.size() * sizeof(uint64_t) + 2 * dynamicDims.size() * sizeof(uint32_t);
+    size_t kernArgSize = tensors.size() * sizeof(uint64_t) + 2 * dynamicDims.size() * sizeof(uint32_t) + scalarArgs.size() * scalarSize;
+
     uint8_t kernelArguments[kernArgSize];
     uint64_t *ptr = (uint64_t *)kernelArguments;
-    for (int i = 0; i < tensors.size(); i++, ptr++)
-        *ptr = tensors[i];
+    for (auto val : tensors) *ptr++ = val;
+
     uint32_t *ptr2 = (uint32_t *)ptr;
-    for (int i = 0; i < dynamicDims.size(); i++, ptr2++)
-    {
-        *ptr2 = (uint32_t)dynamicDims[i];
-        ptr2++;
-        *ptr2 = (uint32_t)(dynamicDims[i] >> 32);
+    for (auto dim : dynamicDims) {
+        *ptr2++ = static_cast<uint32_t>(dim);
+        *ptr2++ = static_cast<uint32_t>(dim >> 32);
+    }
+
+    uint32_t* ptr3 = ptr2;
+    // ToDo: we would like to use bit_cast in the follow-up PR.
+    for (auto arg : scalarArgs){
+        if (nb::isinstance<nb::int_>(arg)){
+            *ptr3++ = static_cast<uint32_t>(nb::cast<uint32_t>(arg));
+        }
+        else if (nb::isinstance<nb::float_>(scalarArgs[0])){
+            float val = nb::cast<float>(arg);
+            std::memcpy(ptr3++, &val, sizeof(float));
+        }
     }
 
     void *hipLaunchParams[] = {
