@@ -482,8 +482,8 @@ def testAttentionBHSD(
         is_custom_mask=is_custom_mask,
     )
     q_shape = (1, shape.num_query_heads, shape.query_seq_len, shape.head_size)
-    k_shape = (1, shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
-    v_shape = (1, shape.num_kv_heads, shape.kv_seq_len, shape.head_size_kv)
+    k_shape = (1, shape.num_kv_heads, shape.query_seq_len, shape.kv_seq_len)
+    v_shape = (1, shape.num_kv_heads, shape.query_seq_len, shape.head_size_kv)
     hyperparams.update(get_default_scheduling_params())
     perf_filename = request.node.name + ".json"
     options = WaveCompileOptions(
@@ -509,8 +509,8 @@ def testAttentionBHSD(
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
 
-    # This variant of wave kernel is BSHD
-    o_shape = (1, shape.query_seq_len, shape.num_query_heads, shape.head_size_kv)
+    # This variant of wave kernel is BHSD
+    o_shape = (1, shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)
     output = device_zeros(o_shape, dtype=torch.float32)
 
     if is_custom_mask:
@@ -519,17 +519,17 @@ def testAttentionBHSD(
         custom_mask = (custom_mask > 0).int()
 
         asm = base_attention(
-            q.transpose(1, 2).contiguous(),
-            k.transpose(1, 2).contiguous(),
-            v.transpose(1, 2).contiguous(),
+            q.contiguous(),
+            k.contiguous(),
+            v.contiguous(),
             custom_mask.to(torch.int8),
             output,
         )
     else:
         asm = base_attention(
-            q.transpose(1, 2).contiguous(),
-            k.transpose(1, 2).contiguous(),
-            v.transpose(1, 2).contiguous(),
+            q.contiguous(),
+            k.contiguous(),
+            v.contiguous(),
             output,
         )
 
