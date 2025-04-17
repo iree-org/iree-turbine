@@ -642,10 +642,10 @@ def get_bhsd_attention_kernel(
 
     @tkw.wave(constraints)
     def base_attention(
-        q: tkl.Memory[B, M, H, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, K2, H, K1, ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[B, K2, H, N, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[B, M, H, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        q: tkl.Memory[B, H, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, M, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, K2, M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[B, H, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         base_attention_core(q, k, v, c)
 
