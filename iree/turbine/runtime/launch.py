@@ -4,6 +4,14 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+# HERE BE HACKS
+import ctypes
+import sys
+inc_ref = ctypes.pythonapi.Py_IncRef
+inc_ref.argtypes = [ctypes.py_object]
+inc_ref.restype = None
+
+
 import hashlib
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, Union
@@ -19,9 +27,14 @@ from iree.compiler.api import (
 
 from iree.runtime import (
     create_io_parameters_module,
+    ExternalTimepointFlags,
+    ExternalTimepointType,
     HalBufferView,
     HalElementType,
+    HalExternalTimepoint,
+    HalFence,
     ParameterProvider,
+    SemaphoreCompatibility,
     VmContext,
     VmFunction,
     VmModule,
@@ -43,7 +56,6 @@ __all__ = [
 _NamedVmModule = Tuple[str, VmModule]
 _TargetBinary = Tuple[VmContext, VmFunction]
 _Loader = Callable[[Device], _NamedVmModule]
-
 
 class Launchable:
     """Facilities for launching a compiled program (VMFB) on an attached device.
@@ -75,7 +87,7 @@ class Launchable:
         source: Any,
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
-        entry_point: str = "main",
+        entry_point: str = "main$async",
         file_cache_dir: Union[str, Path, None] = None,
     ) -> "Launchable":
         """
@@ -145,7 +157,7 @@ class Launchable:
         vm_module_callback: Callable[[Device], VmModule],
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
-        entry_point: str = "main",
+        entry_point: str = "main$async",
     ):
         def loader(device: Device) -> _NamedVmModule:
             return entry_point, vm_module_callback(device)
@@ -226,9 +238,21 @@ class Launchable:
                 f"Cannot invoke Launchable {self} without any Tensor args or an explicit device="
             )
 
+        external_timepoint = turbine_device.setup_iree_action()
+
+        wait_fence = HalFence.create_at(turbine_device._main_timeline, turbine_device._main_timepoint - 1)
+        signal_fence = HalFence.create_at(turbine_device._main_timeline, turbine_device._main_timepoint)
+        
+        arg_list.push_ref(wait_fence)
+        arg_list.push_ref(signal_fence)
+
         vm_context, vm_function = self._resolve_target_binary(turbine_device)
+        
         ret_list = VmVariantList(1)
         vm_context.invoke(vm_function, arg_list, ret_list)
+
+        turbine_device.finalize_iree_action(external_timepoint)
+        
         torch_results = []
         for i in range(len(ret_list)):
             result = ret_list.get_variant(i)
@@ -246,7 +270,6 @@ class Launchable:
             return None
         else:
             return torch_results
-
 
 def _jit_callback(program_source: Any) -> _Loader:
     session = Session()
