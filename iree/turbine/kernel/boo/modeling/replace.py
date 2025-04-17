@@ -29,7 +29,9 @@ class BooConv2d(torch.nn.Module):
         super(BooConv2d, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = kernel_size
+        self.kernel_size = (
+            [kernel_size] * 2 if isinstance(kernel_size, int) else kernel_size
+        )
         self.stride = stride
         self.padding = padding
         self.dilation = dilation
@@ -37,7 +39,7 @@ class BooConv2d(torch.nn.Module):
         self._bias = bias
 
         self.weight = torch.nn.Parameter(
-            torch.randn(out_channels, in_channels // groups, *kernel_size)
+            torch.randn(out_channels, in_channels // groups, *self.kernel_size)
         )
         if bias:
             self.bias = torch.nn.Parameter(torch.randn(out_channels))
@@ -45,18 +47,37 @@ class BooConv2d(torch.nn.Module):
             self.register_parameter("bias", None)
 
     def forward(self, x):
+        input_layout = "NCHW"
+        kernel_layout = "NCHW"
+        output_layout = "NCHW"
+        no_batch = len(x.shape) == 3
+        if no_batch:
+            x = x.unsqueeze(0)
+        if x.is_contiguous(memory_format=torch.channels_last):
+            x = x.permute([0, 2, 3, 1])
+            input_layout = "NHWC"
+        w = self.weight
+        if w.is_contiguous(memory_format=torch.channels_last):
+            w = w.permute([0, 2, 3, 1])
+            kernel_layout = "NHWC"
+            output_layout = "NHWC"
         if self._bias:
-            args = (x, self.weight, self.bias)
+            args = (x, w, self.bias)
         else:
-            args = (x, self.weight)
-        return boo_conv(
+            args = (x, w)
+        result = boo_conv(
             *args,
             stride=self.stride,
             padding=self.padding,
             dilation=self.dilation,
             groups=self.groups,
-            shared_layout="NCHW"
+            input_layout=input_layout,
+            kernel_layout=kernel_layout,
+            output_layout=output_layout,
         )
+        if output_layout == "NHWC":
+            result = result.permute([0, 3, 1, 2])
+        return result.squeeze(0) if no_batch else result
 
 
 def replace_conv2d_with_boo_conv(model):
