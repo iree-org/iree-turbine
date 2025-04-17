@@ -14,6 +14,30 @@ from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from ..lang.global_symbols import *
 
+
+def _delinearize_index(
+    index: IndexExpr, shape: list[int | IndexExpr]
+) -> list[IndexExpr]:
+    """
+    Delinearizes a 1D index into a multi-dimensional index
+    based on the shapes provided. The returned array contains
+    the multi-dimensional index.
+
+    Assume the index is x and the shape is [5, 4, 3]. In this case,
+    this function returns [x % 3, (x // 3) % 4, (x // 12) % 5].
+
+    """
+    nd_index = []
+    product = 1
+    for i, size in enumerate(reversed(shape)):
+        if i == 0:
+            nd_index.append(index % size)
+        else:
+            nd_index.append(floor(index / product) % size)
+        product *= size
+    return nd_index[::-1]
+
+
 """
 Formatting for different target intrinsics:
     <kind>_<elem-type-C>_<M>x<N>x<K>_<elem-type-A>[_<elem-type-B>]
@@ -347,6 +371,14 @@ class HardwareConstraint(Constraint):
             self.threads_per_block[0] * self.threads_per_block[1],
         ]
         return sum([x * y for x, y in zip(thread_ids, threads_per_block)])
+
+    @property
+    def lane_id(self) -> IndexExpr:
+        return self.linearized_thread_id % self.threads_per_wave
+
+    @property
+    def wave_id(self) -> IndexExpr:
+        return _delinearize_index(self.linearized_thread_id // 64, self.waves_per_block)
 
     # Inline substitution for vector_size given index map. In the future we can add support for other members.
     def subs_vector_shapes(self, index_map: dict[IndexSymbol, int]):
