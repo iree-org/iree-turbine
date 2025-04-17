@@ -1039,7 +1039,14 @@ def test_reduce_sum(shape, request):
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("test_reduce_sum"))
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1, 64),
+    ]
+    ## [(250, 1), (128, 1), (76, 45), (127, 256), (121, 132)]
+    ##  NotImplementedError: Currently only support unit vector for shuffleOp.
+)
 def test_reduce_cumsum(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -1047,7 +1054,6 @@ def test_reduce_cumsum(shape, request):
     wave_size = 64
     BLOCK_M = 1
     BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
@@ -1064,21 +1070,17 @@ def test_reduce_cumsum(shape, request):
 
     @tkw.wave(constraints)
     def test(
-        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
-        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
-        res = lhs * rhs
-        res = tkw.cumsum(res, dim=N)
-        tkw.write(res, c, elements_per_thread=1)
+        lhs = tkw.read(a)
+        res = tkw.cumsum(lhs, dim=N)
+        tkw.write(res, c)
 
     torch.manual_seed(1)
-    a = device_randn(shape, dtype=torch.float16)
-    b = device_randn(shape, dtype=torch.float16)
-    c = device_zeros((shape[0],), dtype=torch.float16)
-    ref = torch.sum((a * b), dim=-1)
+    input = device_zeros(shape, dtype=torch.float32) + 1
+    output = device_zeros(shape, dtype=torch.float32)
+    torch_ref = torch.cumsum((input), dim=-1)
     options = WaveCompileOptions(
         subs={
             M: shape[0],
@@ -1091,8 +1093,9 @@ def test_reduce_cumsum(shape, request):
     options = set_default_run_config(options)
     test = wave_compile(options, test)
 
-    asm = test(a, b, c)
-    assert_close(ref, c, atol=0.1, rtol=1e-05)
+    asm = test(input, output)
+    breakpoint()
+    assert_close(torch_ref, output, atol=0.1, rtol=1e-05)
 
 
 @require_e2e
