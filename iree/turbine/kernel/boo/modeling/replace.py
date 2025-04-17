@@ -50,6 +50,9 @@ class BooConv2d(torch.nn.Module):
         input_layout = "NCHW"
         kernel_layout = "NCHW"
         output_layout = "NCHW"
+        no_batch = len(x.shape) == 3
+        if no_batch:
+            x = x.unsqueeze(0)
         if x.is_contiguous(memory_format=torch.channels_last):
             x = x.permute([0, 2, 3, 1])
             input_layout = "NHWC"
@@ -74,7 +77,7 @@ class BooConv2d(torch.nn.Module):
         )
         if output_layout == "NHWC":
             result = result.permute([0, 3, 1, 2])
-        return result
+        return result.squeeze(0) if no_batch else result
 
 
 def replace_conv2d_with_boo_conv(model):

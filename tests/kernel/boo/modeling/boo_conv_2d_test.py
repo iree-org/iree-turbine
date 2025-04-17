@@ -47,6 +47,17 @@ class BooConv2dTest(unittest.TestCase):
                 [i.name for i in cache_dir.glob("*")],
             )
 
+    def testNoBatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td)
+            set_boo_cache(cache_dir)
+            x = torch.ones([2, 16, 16], device=self.device, dtype=torch.float32)
+            _ = self.model0(x)
+            self.assertIn(
+                "conv_2d_float32_forward_1x2x16x16_nchw_3x2x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g",
+                [i.name for i in cache_dir.glob("*")],
+            )
+
     def testReplacement(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
