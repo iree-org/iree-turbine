@@ -202,8 +202,7 @@ def create_test_config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
             # z, y, x
             BLOCK_B:   16, # z
             BLOCK_TOPK: 1, # y
-            # Note: if BLOCK_D2 < 128, we get error : HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION: The agent attempted to access memory beyond the largest legal address. code: 0x29
-            BLOCK_D2: 128, # x
+            BLOCK_D2:  16, # x
             ### L/S sizes (ideally omitted).
             LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mma_variant),
             STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mma_variant),
@@ -216,34 +215,48 @@ def create_test_config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
             # z, y, x
             B:    16, # z
             TOPK:  1, # y
-            D2:  16, # x
+            D2:   16, # x
         },
         "canonicalize": {True},
     }
     # fmt: on
 
 
-i, j, k = [tkw.IndexMapping.iterator(i) for i in range(3)]
-d0 = tkw.IndexMapping.dynamic_val(0)
-offset_mapping_w2 = tkw.IndexMapping(
-    num_iterators=3,
-    inputs={TOPK: d0, D2: j, N: k},
-    outputs={TOPK: i, D2: j, N: k},
-    dynamic_val_mappings=({B: i, TOPK: j}),
-)
-
+# fmt: off
 # Note: W2 really has torch.Tensor.shape [E, D2, N] but we want to index it with
 # indices [B, TOPK, D2, N].
 # We don't want to introduce index E because we'd get the cartesian product
 # [E, B, TOPK], which is not what we want.
 # So we just use TOPK to index into W2 (alternatively we could use B).
-w2_layout = tkl.MemoryLayout(
-    shape=(
-        vE,
-        D2,
-        N,
-    )
+w2_layout = tkl.MemoryLayout(shape=(vE, D2, N,))
+
+### Current
+x, y, z, k = [tkw.IndexMapping.iterator(i) for i in range(4)]
+d0 = tkw.IndexMapping.dynamic_val(0)
+offset_mapping_w2 = tkw.IndexMapping(
+    num_iterators=4,
+    inputs= {D2: x, TOPK: d0, B: z, N: k},
+    outputs={D2: x, TOPK:  y, B: z, N: k},
+    # offset_mapping_w2 is fed by:
+    #    `expert_id = tkw.read(TOPK_IDS) # : [B, TOPK]`
+    # where expert_id is d0.
+    # We need to match d0 to its indirect read `tkw.read(TOPK_IDS) # : [B, TOPK]`
+    dynamic_val_mappings={B: z, TOPK: y},
 )
+
+# ### The following sytax would be preferred.
+# x, y, z, k = [tkw.IndexMapping.iterator(i) for i in range(4)]
+# d0 = tkw.IndexMapping.dynamic_val(0)
+# offset_mapping_w2 = tkw.IndexMapping(
+#     shape     = [D2, TOPK, B, N],
+#     iterators = [ x,    y, z, k],
+#     inputs    = [ x,   d0, z, k],
+#     output    = [ x,    y, z, k],
+#     # Match d0 to its indirect read `tkw.read(TOPK_IDS) # : [B, TOPK]` which is
+#     # indexed by [z, y]
+#     dynamic_val_mappings = {d0 : [z, y]},
+# )
+# fmt: on
 
 
 def fused_moe_kernel(
