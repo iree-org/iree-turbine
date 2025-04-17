@@ -102,7 +102,6 @@ def decompose_scan_ops(
     Raises:
         NotImplementedError: If the scan operation type is not yet supported.
     """
-
     scan_nodes = trace.walk(lambda node: isinstance(get_custom(node), ScanOp))
     if not scan_nodes:
         return
