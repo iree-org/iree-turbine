@@ -296,18 +296,19 @@ def fused_moe_kernel(
     ### Instead roundtrip through memory.
     ### elements_per_thread=STORE_ELEMS_PER_THREAD, automatically derived by the
     ### system from the mma op above.
+    res = tkw.permute(res, target_shape=[B, TOPK, D2])                      # : [B, TOPK, D2]
     tkw.write(res, RESULT,)                                                 # : [B, TOPK, D2]
 
-    ###
-    # RESULT[B, TOPK, D2] = TMP_3[TOPK, B, D2] * topk_score[B, TOPK]
-    ###
-    ### Elementwise part, use elements_per_thread=4
-    res = tkw.read(RESULT, elements_per_thread=4,)                          # : [B, TOPK, D2]
-    topk_weights = tkw.read(TOPK_WEIGHTS, elements_per_thread=4,)           # : [B, TOPK]
-    topk_weights = tkw.broadcast(topk_weights, target_shape=[B, TOPK, D2])  # : [B, TOPK, D2]
-    res = res * tkw.cast(topk_weights, tkl.f32)                             # : [B, TOPK, D2]
-    tkw.write(res, RESULT, elements_per_thread=4,)                          # : [B, TOPK, D2]
-    # fmt: on
+    # ###
+    # # RESULT[B, TOPK, D2] = TMP_3[TOPK, B, D2] * topk_score[B, TOPK]
+    # ###
+    # ### Elementwise part, use elements_per_thread=4
+    # res = tkw.read(RESULT, elements_per_thread=4,)                          # : [B, TOPK, D2]
+    # topk_weights = tkw.read(TOPK_WEIGHTS, elements_per_thread=4,)           # : [B, TOPK]
+    # topk_weights = tkw.broadcast(topk_weights, target_shape=[B, TOPK, D2])  # : [B, TOPK, D2]
+    # res = res * tkw.cast(topk_weights, tkl.f32)                             # : [B, TOPK, D2]
+    # tkw.write(res, RESULT, elements_per_thread=4,)                          # : [B, TOPK, D2]
+    # # fmt: on
 
 
 # Note: W2 really has torch.Tensor.shape [E, D2, N] but we want to index it
@@ -446,6 +447,6 @@ if __name__ == "__main__":
                 topk_weights.view(vB, vTOPK),
                 result,
             )
-            assert_close(result, ref_full_1, **cmp_params)
+            assert_close(result, out_tmp_2, **cmp_params)
 
         print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
