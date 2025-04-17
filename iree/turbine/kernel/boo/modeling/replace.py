@@ -29,7 +29,9 @@ class BooConv2d(torch.nn.Module):
         super(BooConv2d, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = kernel_size
+        self.kernel_size = (
+            [kernel_size] * 2 if isinstance(kernel_size, int) else kernel_size
+        )
         self.stride = stride
         self.padding = padding
         self.dilation = dilation
@@ -37,7 +39,7 @@ class BooConv2d(torch.nn.Module):
         self._bias = bias
 
         self.weight = torch.nn.Parameter(
-            torch.randn(out_channels, in_channels // groups, *kernel_size)
+            torch.randn(out_channels, in_channels // groups, *self.kernel_size)
         )
         if bias:
             self.bias = torch.nn.Parameter(torch.randn(out_channels))
