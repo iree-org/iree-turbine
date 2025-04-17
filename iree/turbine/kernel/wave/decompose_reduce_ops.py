@@ -7,6 +7,7 @@
 from ..wave.constraints import (
     Constraint,
     HardwareConstraint,
+    WaveConstraint,
     WorkgroupConstraint,
     TilingConstraint,
 )
@@ -15,13 +16,17 @@ from .._support.indexing import IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import (
     get_custom,
     Add,
-    Maximum,
-    Minimum,
-    ReduceOp,
-    ShuffleOp,
+    Allocate,
     CustomOp,
     Extract,
     Iterate,
+    Maximum,
+    Minimum,
+    Read,
+    ReduceOp,
+    SelectOp,
+    ShuffleOp,
+    Write,
 )
 from ..lang.global_symbols import *
 
@@ -31,8 +36,12 @@ from .utils.general_utils import all_equal
 import torch.fx as fx
 import math
 from typing import Callable
+import iree.turbine.kernel.lang as tkl
 
 TKW_COMBINER = {"sum": Add, "max": Maximum, "min": Minimum}
+IDENTITY = {"sum": 0.0, "max": -1e6, "min": 1e6}
+
+_MAX_READ_BITWIDTH = 128
 
 
 def determine_shuffle_config(
@@ -207,11 +216,18 @@ def decompose_reduce_ops(
     induction_vars = [
         c.induction_var for c in constraints if isinstance(c, TilingConstraint)
     ]
+
+    wave_constraint_map = {
+        c.dim: c for c in constraints if isinstance(c, WaveConstraint)
+    }
+    workgroup_constraint_map = {
+        c.dim: c for c in constraints if isinstance(c, WorkgroupConstraint)
+    }
     subgroup_size = hardware_constraint.threads_per_wave
     for node in reduce_nodes:
         custom = get_custom(node)
         with custom.graph.inserting_before(custom.fx_node):
-            reduction_src, reduction_acc, reduction_dim = node.args
+            reduction_src, reduction_acc, reduction_dim, reduce_block = node.args
             binary_fn = TKW_COMBINER[custom.tkw_op_name]
             if reduction_dim is None:
                 raise ValueError(
@@ -298,6 +314,67 @@ def decompose_reduce_ops(
             if reduction_acc is not None:
                 final_reduction = get_graph_node(
                     binary_fn(reduction_acc, global_reduction), custom.graph
+                )
+
+            if reduce_block:
+                # compute num_warps to reduce across
+                num_reduction_waves = int(
+                    workgroup_constraint_map[reduction_dim].tile_size
+                    // wave_constraint_map[reduction_dim].tile_size
+                )
+                if num_reduction_waves > subgroup_size:
+                    raise NotImplementedError(
+                        "The 2nd stage butterfly shuffle reduces the"
+                        "the reduction outputs from all the wave. Hence, can only handle at most "
+                        "threads_per_wave number of warps."
+                    )
+                # Reduction inter-warp by writing then reading to/from shared memory.
+                allocate_node = Allocate(
+                    (reduction_dim,),
+                    (num_reduction_waves,),
+                    node.type.dtype,
+                    SHARED_ADDRESS_SPACE,
+                ).add_to_graph(custom.graph)
+                write = Write(final_reduction, allocate_node, 1).add_to_graph(
+                    custom.graph
+                )
+
+                # Getting wave_id of the wave-dim that is being used for reduction.
+                # This is useful because depending on wg_dim we choose to reduce on
+                # the wave_id and size of partial output will be different.
+                # e.g wave_per_block = (4, 2, 1)
+                # if reduc_dim on wg_dim=0, then we will only have 4 partial output.
+                # if reduc_dim on wg_dim=1, then we will only have 2 partial output.
+                reduction_wg_dim = workgroup_constraint_map[reduction_dim].workgroup_dim
+                reduction_wave_id = hardware_constraint.wave_id[reduction_wg_dim]
+
+                # TODO create actual index not just starting offset
+                write.index = reduction_wave_id
+
+                # Do a 2nd stage warp reduction on the results from different warp.
+                read = Read(
+                    allocate_node,
+                    elements_per_thread=1,
+                    _write_dependency=[write],
+                ).add_to_graph(custom.graph)
+                # TODO create actual index not just starting offset
+                read.index = hardware_constraint.lane_id
+                warp_partial_res = get_graph_node(Extract(read, [0]), custom.graph)
+
+                # TODO: Need a constantOp to set cond and identity
+                lane_id_reg = ScalarOp(hardware_constraint.lane_id, tkl.i1)
+                id_reg = ScalarOp(IDENTITY[custom.tkw_op_name], node.type.dtype)
+                cond = lane_id_reg < num_reduction_waves
+                masked_value = SelectOp(cond, warp_partial_res, id_reg)
+
+                # TODO: adjust cluster config.
+                final_reduction = emit_global_reduction(
+                    binary_fn,
+                    masked_value,
+                    custom.graph,
+                    subgroup_size,
+                    cluster_size=64,
+                    cluster_stride=1,
                 )
 
             # Replace all uses with global reduction

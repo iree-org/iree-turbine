@@ -1884,11 +1884,13 @@ class ReduceOp(CustomOp, ABC):
     arg: Source tensor/value to reduce
     init: init/accumulator for reducte
     dim: which symbolic dim to reduce.
+    block: When set to true, reduce across block, else reduce across warp.
     """
 
     arg: fx.Node | list[fx.Node]
     init: fx.Node = None
     dim: Optional[Any] = None
+    block: Optional[bool] = False
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
