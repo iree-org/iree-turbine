@@ -1927,7 +1927,7 @@ class ScanOp(CustomOp, ABC):
             src_indexings = [get_custom(arg).indexing_dims for arg in self.arg]
             if not all_equal(src_indexings):
                 raise NotImplementedError(
-                    "All inputs to ScanOp must have same indexing dims."
+                    "NYI: All inputs to ScanOp must have same indexing dims."
                 )
             indexing = src_indexings[0]
         else:
