@@ -388,9 +388,8 @@ def torch_naive_moe_step_2(w1, w2, topk_weights, topk_ids, out_tmp):
     return out
 
 
-def torch_naive_moe_step_3(a, w2, topk_weights, out, result_dtype):
-    B, D = a.shape
-    return out.view(B, -1, w2.shape[1]) * topk_weights.view(B, -1, 1).to(result_dtype)
+def torch_naive_moe_step_3(topk_weights, out, result_dtype):
+    return out * topk_weights.view(out.shape[0], -1, 1).to(result_dtype)
     # .sum(dim=1)
 
 
@@ -412,8 +411,10 @@ if __name__ == "__main__":
         ref_full_1 = torch_naive_moe(a, w1, w2, score, topk, result_dtype=torch.float32)
         topk_weights, topk_ids, out_tmp = torch_naive_moe_step_1(a, w1, w2, score, topk)
         out_tmp_2 = torch_naive_moe_step_2(w1, w2, topk_weights, topk_ids, out_tmp)
+        # Reshape out_tmp_2 from 2-D to 3-D.
+        out_tmp_2 = out_tmp_2.view(vB, -1, w2.shape[1])
         ref_full_2 = torch_naive_moe_step_3(
-            a, w2, topk_weights, out_tmp_2, result_dtype=torch.float32
+            topk_weights, out_tmp_2, result_dtype=torch.float32
         )
         assert_close(ref_full_1, ref_full_2, **cmp_params)
 
