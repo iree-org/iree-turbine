@@ -212,7 +212,7 @@ def test_causal_extend_attention():
     # CHECK-COUNT-8:            amdgpu.mfma
 
     # Expressions to compute loop bound based on causal mask
-    # CHECK:                %[[NQ_TILE_UPPER_BOUND:.*]] = affine.apply #map32()[%[[workgroup_id_0]]]
+    # CHECK:                %[[NQ_TILE_UPPER_BOUND:.*]] = affine.apply #[[map32]]()[%[[workgroup_id_0]]]
     # CHECK:                %[[NQ_LOOP_BOUND_SPLAT:.*]] = vector.splat %[[NQ_TILE_UPPER_BOUND]]
     # CHECK:                arith.minsi {{.*}}, %[[NQ_LOOP_BOUND_SPLAT]]
 

@@ -75,8 +75,7 @@ def test_read():
     print(read.asm)
 
     # CHECK-LABEL:    test_read
-    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0, s1, s2, s3, s4, s5, s6] -> (((s0 * s1) floordiv s2) * s3 + s4 * s5 + s6)>
-    # CHECK-DAG:        #[[MAP1:.*]] = affine_map<()[s0, s1, s2, s3] -> (s0 * s1 + s2 * s3)>
+    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0, s1, s2, s3, s4] -> (((s0 * s1) floordiv s2) * s3 + s4)>
     # CHECK:          func.func @read
     # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
     # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
@@ -89,8 +88,7 @@ def test_read():
     # CHECK:            %[[D0:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16,
     # CHECK-SAME:         strided<[16, 1], offset: ?>>
     # CHECK:            %[[I0:.*]] = affine.apply #[[MAP0]]()
-    # CHECK:            %[[I1:.*]] = affine.apply #[[MAP1]]()
-    # CHECK:            %{{.*}} = vector.load %[[D0]][%[[I0]], %[[I1]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>,
+    # CHECK:            %{{.*}} = vector.load %[[D0]][%[[I0]], %{{.*}}] : memref<16x16xf16, strided<[16, 1], offset: ?>>,
     # CHECK-SAME:         vector<16xf16>
 
 
@@ -120,9 +118,6 @@ def test_read_mapped():
     print(read_mapped.asm)
 
     # CHECK-LABEL:    test_read_mapped
-    # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1, s2, s3, s4, s5, s6, s7] -> (((s0 * s1) floordiv s2) * s3 + s4 * s5 + s6 * s7)>
-    # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1, s2, s3] -> (s0 * s1 + s2 * s3)>
-    # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1] -> (s0 * s1)>
     # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1, s2, s3, s4, s5] -> (((s0 * s1) floordiv s2) * s3 + s4 * s5)>
     # CHECK:          func.func @read_mapped
     # CHECK-COUNT-16:   vector.maskedload
@@ -198,21 +193,16 @@ def test_read_write():
     print(read_write.asm)
 
     # CHECK-LABEL:    test_read_write
-    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 + (s0 floordiv 64) * 16)>
-    # CHECK-DAG:        #[[MAP1:.*]] = affine_map<()[s0, s1] -> (s0 * 32 + s1 * 16)>
+    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 16)>
     # CHECK:          func.func @read_write
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding)
     # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
-    # CHECK:            %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
-    # CHECK:            %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
     # CHECK:            %[[thread_id_x:.*]] = gpu.thread_id  x
-    # CHECK:            %[[thread_id_y:.*]] = gpu.thread_id  y
     # CHECK:            %[[S0:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-    # CHECK:            %[[I0:.*]] = affine.apply #[[MAP0]]()[%[[thread_id_x]], %[[workgroup_id_0]]]
-    # CHECK:            %[[I1:.*]] = affine.apply #[[MAP1]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
-    # CHECK:            %[[V:.*]] = vector.load %[[S0]][%[[I0]], %[[I1]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+    # CHECK:            %[[I0:.*]] = affine.apply #[[MAP0]]()[%[[thread_id_x]]]
+    # CHECK:            %[[V:.*]] = vector.load %[[S0]][%[[I0]], %[[C0]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
     # CHECK:            %[[S1:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-    # CHECK:            vector.store %[[V]], %[[S1]][%[[I0]], %[[I1]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+    # CHECK:            vector.store %[[V]], %[[S1]][%[[I0]], %[[C0]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
     # CHECK:            return
 
 
@@ -248,31 +238,23 @@ def test_read_write_diagonal():
     print(read_write_diagonal.asm)
 
     # CHECK-LABEL:    test_read_write_diagonal
-    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 + (s0 floordiv 64) * 16)>
-    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 * 32 + s1 * 16)>
+    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 16)>
     # CHECK:          func.func @read_write_diagonal
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding)
-    # CHECK-DAG:        %[[c0:.*]] = arith.constant 0 : index
-    # CHECK-DAG:        %[[cst:.*]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> : vector<16xindex>
-    # CHECK-DAG:        %[[cst_0:.*]] = arith.constant dense<1.000000e+00> : vector<16xf16>
-    # CHECK-DAG:        %[[cst_1:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
-    # CHECK:            %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
-    # CHECK:            %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
-    # CHECK:            %[[thread_id_x:.*]] = gpu.thread_id  x
-    # CHECK:            %[[thread_id_y:.*]] = gpu.thread_id  y
-    # CHECK:            %[[D0:.*]] = affine.apply #[[map]]()[%[[thread_id_x]], %[[workgroup_id_0]]]
+    # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
+    # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> : vector<16xi64>
+    # CHECK-DAG:        %[[CST_0:.*]] = arith.constant dense<1.000000e+00> : vector<16xf16>
+    # CHECK-DAG:        %[[CST_1:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
+    # CHECK:            %[[THREAD_ID_X:.*]] = gpu.thread_id  x
+    # CHECK:            %[[D0:.*]] = affine.apply #[[map]]()[%[[THREAD_ID_X]]]
     # CHECK:            %[[D1:.*]] = vector.splat %[[D0]] : vector<1xindex>
     # CHECK:            %[[D2:.*]] = arith.index_cast %[[D1]] : vector<1xindex> to vector<1xi64>
     # CHECK:            %[[D3:.*]] = vector.extract %[[D2]][0] : i64 from vector<1xi64>
     # CHECK:            %[[D4:.*]] = vector.splat %[[D3]] : vector<16xi64>
-    # CHECK:            %[[D5:.*]] = affine.apply #[[map1]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
-    # CHECK:            %[[D6:.*]] = vector.splat %[[D5]] : vector<16xindex>
-    # CHECK:            %[[D7:.*]] = arith.addi %[[D6]], %[[cst]] overflow<nsw, nuw> : vector<16xindex>
-    # CHECK:            %[[D8:.*]] = arith.index_cast %[[D7]] : vector<16xindex> to vector<16xi64>
-    # CHECK:            %[[D9:.*]] = arith.cmpi sge, %[[D4]], %[[D8]] : vector<16xi64>
-    # CHECK:            %[[D10:.*]] = arith.select %[[D9]], %[[cst_1]], %[[cst_0]] : vector<16xi1>, vector<16xf16>
-    # CHECK:            %[[D11:.*]] = stream.binding.subspan %[[ARG0]][%[[c0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-    # CHECK:            vector.store %[[D10]], %[[D11]][%[[D0]], %[[D5]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+    # CHECK:            %[[D5:.*]] = arith.cmpi sge, %[[D4]], %[[CST]] : vector<16xi64>
+    # CHECK:            %[[D6:.*]] = arith.select %[[D5]], %[[CST_1]], %[[CST_0]] : vector<16xi1>, vector<16xf16>
+    # CHECK:            %[[D7:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
+    # CHECK:            vector.store %[[D6]], %[[D7]][%[[D0]], %[[C0]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
 @run_test
@@ -310,31 +292,22 @@ def test_read_write_masked():
     print(read_write_masked.asm)
 
     # CHECK-LABEL:    test_read_write_masked
-    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 4 + (s0 floordiv 64) * 4)>
-    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 * 8 + s1 * 4)>
+    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 4)>
     # CHECK:          func.func @read_write_masked
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding)
-    # CHECK-DAG:        %[[cst:.*]] = arith.constant dense<0.000000e+00> : vector<4xf16>
-    # CHECK-DAG:        %[[cst_0:.*]] = arith.constant dense<3> : vector<4xindex>
-    # CHECK-DAG:        %[[cst_1:.*]] = arith.constant dense<[0, 1, 2, 3]> : vector<4xindex>
-    # CHECK-DAG:        %[[c1:.*]] = arith.constant 1 : index
-    # CHECK-DAG:        %[[c0:.*]] = arith.constant 0 : index
-    # CHECK:            %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
-    # CHECK:            %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
-    # CHECK:            %[[thread_id_x:.*]] = gpu.thread_id  x
-    # CHECK:            %[[thread_id_y:.*]] = gpu.thread_id  y
-    # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG0]][%[[c0]]] : !stream.binding -> memref<1x3xf16, strided<[3, 1], offset: ?>>
-    # CHECK:            %[[D1:.*]] = affine.apply #[[map]]()[%[[thread_id_x]], %[[workgroup_id_0]]]
-    # CHECK:            %[[D2:.*]] = affine.apply #[[map1]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
-    # CHECK:            %[[D3:.*]] = vector.splat %[[D2]] : vector<4xindex>
-    # CHECK:            %[[D4:.*]] = arith.addi %[[D3]], %[[cst_1]] overflow<nsw, nuw> : vector<4xindex>
-    # CHECK:            %[[D5:.*]] = arith.cmpi slt, %[[D4]], %[[cst_0]] : vector<4xindex>
-    # CHECK:            %[[D6:.*]] = arith.cmpi slt, %[[D1]], %[[c1]] : index
-    # CHECK:            %[[D7:.*]] = vector.splat %[[D6]] : vector<4xi1>
-    # CHECK:            %[[D8:.*]] = arith.andi %[[D5]], %[[D7]] : vector<4xi1>
-    # CHECK:            %[[D9:.*]] = vector.maskedload %0[%[[D1]], %[[D2]]], %[[D8]], %[[cst]] : memref<1x3xf16, strided<[3, 1], offset: ?>>, vector<4xi1>, vector<4xf16> into vector<4xf16>
-    # CHECK:            %[[D10:.*]] = stream.binding.subspan %[[ARG1]][%[[c0]]] : !stream.binding -> memref<1x3xf16, strided<[3, 1], offset: ?>>
-    # CHECK:            vector.maskedstore %10[%[[D1]], %[[D2]]], %[[D8]], %[[D9]] : memref<1x3xf16, strided<[3, 1], offset: ?>>, vector<4xi1>, vector<4xf16>
+    # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<4xf16>
+    # CHECK-DAG:        %[[CST_0:.*]] = arith.constant dense<[true, true, true, false]> : vector<4xi1>
+    # CHECK-DAG:        %[[C1:.*]] = arith.constant 1 : index
+    # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
+    # CHECK:            %[[THREAD_ID_X:.*]] = gpu.thread_id  x
+    # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<1x3xf16, strided<[3, 1], offset: ?>>
+    # CHECK:            %[[D1:.*]] = affine.apply #[[map]]()[%[[THREAD_ID_X]]]
+    # CHECK:            %[[D2:.*]] = arith.cmpi slt, %[[D1]], %[[C1]] : index
+    # CHECK:            %[[D3:.*]] = vector.splat %[[D2]] : vector<4xi1>
+    # CHECK:            %[[D4:.*]] = arith.andi %[[D3]], %[[CST_0]] : vector<4xi1>
+    # CHECK:            %[[D5:.*]] = vector.maskedload %[[D0]][%[[D1]], %[[C0]]], %[[D4]], %[[CST]] : memref<1x3xf16, strided<[3, 1], offset: ?>>, vector<4xi1>, vector<4xf16> into vector<4xf16>
+    # CHECK:            %[[D6:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<1x3xf16, strided<[3, 1], offset: ?>>
+    # CHECK:            vector.maskedstore %[[D6]][%[[D1]], %[[C0]]], %[[D4]], %[[D5]] : memref<1x3xf16, strided<[3, 1], offset: ?>>, vector<4xi1>, vector<4xf16>
 
 
 @run_test
@@ -461,30 +434,25 @@ def test_read_write_dynamic_mapping():
     print(read_write_dynamic_mapping.asm)
 
     # CHECK-LABEL:    test_read_write_dynamic_mapping
-    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 + (s0 floordiv 64) * 16)>
-    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 * 32 + s1 * 16)>
-    # CHECK-DAG:        #[[map2:.*]] = affine_map<()[s0, s1] -> (s0 * 16 + s1 * 256 + (s0 floordiv 64) * 256)>
+    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 16)>
+    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16 + (s0 floordiv 64) * 256)>
     # CHECK:          func.func @read_write_dynamic_mapping
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
-    # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
-    # CHECK:            %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
-    # CHECK:            %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
-    # CHECK:            %[[thread_id_x:.*]] = gpu.thread_id  x
-    # CHECK:            %[[thread_id_y:.*]] = gpu.thread_id  y
-    # CHECK:            %[[D0:.*]] = stream.binding.subspan %arg1[%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
-    # CHECK:            %[[D1:.*]] = affine.apply #[[map0]]()[%[[thread_id_x]], %[[workgroup_id_0]]]
-    # CHECK:            %[[D2:.*]] = affine.apply #[[map1]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
-    # CHECK:            %[[D3:.*]] = vector.load %[[D0]][%[[D1]], %[[D2]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>, vector<16xi32>
-    # CHECK:            %[[D4:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-    # CHECK:            %[[D5:.*]] = arith.index_cast %[[D3]] : vector<16xi32> to vector<16xindex>
-    # CHECK:            %[[D6:.*]] = affine.apply #[[map2]]()[%[[thread_id_x]], %[[workgroup_id_0]]]
-    # CHECK:            %[[D7:.*]] = vector.splat %[[D6]] : vector<16xindex>
-    # CHECK:            %[[D8:.*]] = arith.addi %[[D7]], %[[D5]] overflow<nsw, nuw> : vector<16xindex>
+    # CHECK_DAG:        %[[C0:.*]] = arith.constant 0 : index
+    # CHECK:            %[[THREAD_ID_X:.*]] = gpu.thread_id  x
+    # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
+    # CHECK:            %[[D1:.*]] = affine.apply #[[map0]]()[%[[THREAD_ID_X]]]
+    # CHECK:            %[[D2:.*]] = vector.load %[[D0]][%[[D1]], %[[C0]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>, vector<16xi32>
+    # CHECK:            %[[D3:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
+    # CHECK:            %[[D4:.*]] = arith.index_cast %[[D2]] : vector<16xi32> to vector<16xindex>
+    # CHECK:            %[[D5:.*]] = affine.apply #[[map1]]()[%[[THREAD_ID_X]]]
+    # CHECK:            %[[D6:.*]] = vector.splat %[[D5]] : vector<16xindex>
+    # CHECK:            %[[D7:.*]] = arith.addi %[[D6]], %[[D4]] overflow<nsw, nuw> : vector<16xindex>
     # CHECK-COUNT-16:   vector.load
     # CHECK-COUNT-16:   vector.extract
     # CHECK:            %[[RES:.*]] = vector.from_elements
     # CHECK:            %[[D58:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-    # CHECK:            vector.store %[[RES]], %[[D58]][%[[D1]], %[[D2]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+    # CHECK:            vector.store %[[RES]], %[[D58]][%[[D1]], %[[C0]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
 @run_test
@@ -601,31 +569,29 @@ def test_read_write_dynamic_mapping_chain():
     print(read_write_dynamic_mapping_chain.asm)
 
     # CHECK-LABEL:    test_read_write_dynamic_mapping_chain
-    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 + (s0 floordiv 64) * 16)>
-    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0, s1] -> (s1 + s0 floordiv 2)>
-    # CHECK-DAG:        #[[map2:.*]] = affine_map<()[s0, s1] -> (s0 * 8 + s1 * 4)>
+    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 16)>
+    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0] -> (s0 floordiv 2)>
+    # CHECK-DAG:        #[[map2:.*]] = affine_map<()[s0] -> (s0 * 4)>
     # CHECK:          func.func @read_write_dynamic_mapping_chain
     # CHECK-SAME:     (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding, %[[ARG3:.*]]: !stream.binding)
-    # CHECK-DAG:        %[[c0:.*]] = arith.constant 0 : index
-    # CHECK-DAG:        %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
-    # CHECK-DAG:        %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
-    # CHECK-DAG:        %[[thread_id_x:.*]] = gpu.thread_id  x
-    # CHECK-DAG:        %[[thread_id_y:.*]] = gpu.thread_id  y
-    # CHECK-DAG:        %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[c0]]] : !stream.binding -> memref<16x2xi32, strided<[2, 1], offset: ?>>
-    # CHECK-DAG:        %[[D1:.*]] = affine.apply #[[map0]]()[%[[thread_id_x]], %[[workgroup_id_0]]]
-    # CHECK-DAG:        %[[D2:.*]] = affine.apply #[[map1]]()[%[[workgroup_id_1]], %[[thread_id_y]]]
-    # CHECK-DAG:        %[[D3:.*]] = vector.load %[[D0]][%[[D1]], %[[D2]]] : memref<16x2xi32, strided<[2, 1], offset: ?>>, vector<1xi32>
-    # CHECK-DAG:        %[[D4:.*]] = stream.binding.subspan %[[ARG2]][%[[c0]]] : !stream.binding -> memref<16x4xi32, strided<[4, 1], offset: ?>>
-    # CHECK-DAG:        %[[D5:.*]] = arith.index_cast %[[D3]] : vector<1xi32> to vector<1xindex>
-    # CHECK-DAG:        %[[D6:.*]] = vector.extract %[[D5]][0] : index from vector<1xindex>
-    # CHECK-DAG:        %[[D7:.*]] = vector.load %4[%[[D1]], %[[D6]]] : memref<16x4xi32, strided<[4, 1], offset: ?>>, vector<1xi32>
-    # CHECK-DAG:        %[[D8:.*]] = stream.binding.subspan %[[ARG0]][%[[c0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-    # CHECK-DAG:        %[[D9:.*]] = arith.index_cast %[[D7]] : vector<1xi32> to vector<1xindex>
-    # CHECK-DAG:        %[[D10:.*]] = vector.extract %[[D9]][0] : index from vector<1xindex>
-    # CHECK-DAG:        %[[D11:.*]] = vector.load %[[D8]][%[[D1]], %[[D10]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
-    # CHECK-DAG:        %[[D12:.*]] = stream.binding.subspan %[[ARG3]][%[[c0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-    # CHECK-DAG:        %[[D13:.*]] = affine.apply #[[map2]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
-    # CHECK-DAG:        vector.store %[[D11]], %[[D12]][%[[D1]], %[[D13]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
+    # CHECK-DAG:      %[[C0:.*]] = arith.constant 0 : index
+    # CHECK:          %[[WORKGROUP_ID_1:.*]] = stream.dispatch.workgroup.id[1] : index
+    # CHECK:          %[[THREAD_ID_X:.*]] = gpu.thread_id  x
+    # CHECK:          %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x2xi32, strided<[2, 1], offset: ?>>
+    # CHECK:          %[[D1:.*]] = affine.apply #[[map0]]()[%[[THREAD_ID_X]]]
+    # CHECK:          %[[D2:.*]] = affine.apply #[[map1]]()[%[[WORKGROUP_ID_1]]]
+    # CHECK:          %[[D3:.*]] = vector.load %[[D0]][%[[D1]], %[[D2]]] : memref<16x2xi32, strided<[2, 1], offset: ?>>, vector<1xi32>
+    # CHECK:          %[[D4:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x4xi32, strided<[4, 1], offset: ?>>
+    # CHECK:          %[[D5:.*]] = arith.index_cast %[[D3]] : vector<1xi32> to vector<1xindex>
+    # CHECK:          %[[D6:.*]] = vector.extract %[[D5]][0] : index from vector<1xindex>
+    # CHECK:          %[[D7:.*]] = vector.load %[[D4]][%[[D1]], %[[D6]]] : memref<16x4xi32, strided<[4, 1], offset: ?>>, vector<1xi32>
+    # CHECK:          %[[D8:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
+    # CHECK:          %[[D9:.*]] = arith.index_cast %[[D7]] : vector<1xi32> to vector<1xindex>
+    # CHECK:          %[[D10:.*]] = vector.extract %[[D9]][0] : index from vector<1xindex>
+    # CHECK:          %[[D11:.*]] = vector.load %[[D8]][%[[D1]], %[[D10]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
+    # CHECK:          %[[D12:.*]] = stream.binding.subspan %[[ARG3]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
+    # CHECK:          %[[D13:.*]] = affine.apply #[[map2]]()[%[[WORKGROUP_ID_1]]]
+    # CHECK:          vector.store %[[D11]], %[[D12]][%[[D1]], %[[D13]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
 
 
 @run_test
@@ -829,27 +795,26 @@ def test_dynamic_copy():
 
     # CHECK-LABEL:    test_dynamic_copy
     # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 + (s0 floordiv 64) * 16)>
-    # CHECK-DAG:        #[[map2:.*]] = affine_map<()[s0, s1] -> (s0 * 32 + s1 * 16)>
+    # CHECK-DAG:        #[[map2:.*]] = affine_map<()[s0] -> (s0 * 16)>
     # CHECK:          func.func @dynamic_copy
     # CHECH-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index)
-    # CHECK-DAG:        %[[cst:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
-    # CHECK-DAG:        %[[cst_0:.*]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> : vector<16xindex>
-    # CHECK-DAG:        %[[c0:.*]] = arith.constant 0 : index
-    # CHECK:            %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
-    # CHECK:            %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
-    # CHECK:            %[[thread_id_x:.*]] = gpu.thread_id  x
-    # CHECK:            %[[thread_id_y:.*]] = gpu.thread_id  y
-    # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG0]][%[[c0]]] : !stream.binding -> memref<?x?xf16, strided<[?, 1], offset: ?>>{%arg1, %arg2}
-    # CHECK:            %[[D1:.*]] = affine.apply #[[map1]]()[%[[thread_id_x]], %[[workgroup_id_0]]]
-    # CHECK:            %[[D2:.*]] = affine.apply #[[map2]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
+    # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
+    # CHECK-DAG:        %[[CST_0:.*]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> : vector<16xindex>
+    # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
+    # CHECK:            %[[WORKGROUP_ID_0:.*]] = stream.dispatch.workgroup.id[0] : index
+    # CHECK:            %[[WORKGROUP_ID_1:.*]] = stream.dispatch.workgroup.id[1] : index
+    # CHECK:            %[[THREAD_ID_X:.*]] = gpu.thread_id  x
+    # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<?x?xf16, strided<[?, 1], offset: ?>>{%[[ARG1]], %[[ARG2]]}
+    # CHECK:            %[[D1:.*]] = affine.apply #[[map1]]()[%[[THREAD_ID_X]], %[[WORKGROUP_ID_0]]]
+    # CHECK:            %[[D2:.*]] = affine.apply #[[map2]]()[%[[WORKGROUP_ID_1]]]
     # CHECK:            %[[D3:.*]] = vector.splat %[[D2]] : vector<16xindex>
-    # CHECK:            %[[D4:.*]] = arith.addi %[[D3]], %[[cst_0]] overflow<nsw, nuw> : vector<16xindex>
+    # CHECK:            %[[D4:.*]] = arith.addi %[[D3]], %[[CST_0]] overflow<nsw, nuw> : vector<16xindex>
     # CHECK:            %[[D5:.*]] = vector.splat %[[ARG2]] : vector<16xindex>
     # CHECK:            %[[D6:.*]] = arith.cmpi slt, %[[D4]], %[[D5]] : vector<16xindex>
     # CHECK:            %[[D7:.*]] = arith.cmpi slt, %[[D1]], %[[ARG1]] : index
     # CHECK:            %[[D8:.*]] = vector.splat %[[D7]] : vector<16xi1>
     # CHECK:            %[[D9:.*]] = arith.andi %[[D6]], %[[D8]] : vector<16xi1>
-    # CHECK:            %[[D10:.*]] = vector.maskedload %[[D0]][%1, %2], %[[D9]], %[[cst]] : memref<?x?xf16, strided<[?, 1], offset: ?>>, vector<16xi1>, vector<16xf16> into vector<16xf16>
+    # CHECK:            %[[D10:.*]] = vector.maskedload %[[D0]][%[[D1]], %[[D2]]], %[[D9]], %[[CST]] : memref<?x?xf16, strided<[?, 1], offset: ?>>, vector<16xi1>, vector<16xf16> into vector<16xf16>
     # CHECK:            vector.maskedstore %[[D0]][%[[D1]], %[[D2]]], %[[D9]], %[[D10]] : memref<?x?xf16, strided<[?, 1], offset: ?>>, vector<16xi1>, vector<16xf16>
 
 
@@ -1454,7 +1419,7 @@ def test_tiled_reduce_min_unaligned():
     # CHECK:           %[[D7:.*]] = vector.splat %[[D6]] : vector<2xindex>
     # CHECK:           %[[D8:.*]] = arith.addi %[[D7]], %[[cst_1]] overflow<nsw, nuw> : vector<2xindex>
     # CHECK:           %[[D9:.*]] = arith.cmpi slt, %[[D8]], %[[cst_0]] : vector<2xindex>
-    # CHECK-COUNT-2:   vector.maskedload %{{.*}}[%2{{.*}}, %[[D6]]], %[[D9]]
+    # CHECK-COUNT-2:   vector.maskedload %{{.*}}[%{{.*}}, %[[D6]]], %[[D9]]
 
 
 # This test is to ensure that the we can handle multiple IV in reduction properly.
@@ -1684,21 +1649,19 @@ def test_explicit_broadcast():
     print(explicit_broadcast.asm)
 
     # CHECK-LABEL: test_explicit_broadcast
-    # CHECK-DAG:     #[[map0]] = affine_map<()[s0, s1] -> (s0 * 3 + s1 * 2)>
-    # CHECK-DAG:     #[[map2]] = affine_map<()[s0, s1] -> (s0 * 3 + s1 * 2 + 1)>
+    # CHECK-DAG:     #[[map0]] = affine_map<()[s0] -> (s0 * 2)>
+    # CHECK-DAG:     #[[map2]] = affine_map<()[s0] -> (s0 * 2 + 1)>
     # CHECK:       func.func @explicit_broadcast
     # CHECK-SAME: (%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
     # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
-    # CHECK: %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
     # CHECK: %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
     # CHECK: %[[thread_id_x:.*]] = gpu.thread_id  x
-    # CHECK: %[[thread_id_y:.*]] = gpu.thread_id  y
 
     # Slicing LHS
     # CHECK: %[[LHS:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<256x128xf16
-    # CHECK: %[[X_SLICE_0:.+]] = affine.apply #[[map0]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
+    # CHECK: %[[X_SLICE_0:.+]] = affine.apply #[[map0]]()[%[[workgroup_id_1]]]
     # CHECK: %[[LHS_0:.+]] = vector.load %[[LHS]][%[[X_SLICE_0]], %[[Y_SLICE:.+]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
-    # CHECK: %[[X_SLICE_1:.+]] = affine.apply #[[map2]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
+    # CHECK: %[[X_SLICE_1:.+]] = affine.apply #[[map2]]()[%[[workgroup_id_1]]]
     # CHECK: %[[LHS_1:.+]] = vector.load %[[LHS]][%[[X_SLICE_1]], %[[Y_SLICE]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
 
     # Slicing RHS
@@ -1763,21 +1726,19 @@ def test_broadcast_add():
     print(broadcast_add.asm)
 
     # CHECK-LABEL: test_broadcast_add
-    # CHECK-DAG:     #[[map0:.*]] = affine_map<()[s0, s1] -> (s0 * 3 + s1 * 2)>
-    # CHECK-DAG:     #[[map2:.*]] = affine_map<()[s0, s1] -> (s0 * 3 + s1 * 2 + 1)>
+    # CHECK-DAG:     #[[map0:.*]] = affine_map<()[s0] -> (s0 * 2)>
+    # CHECK-DAG:     #[[map2:.*]] = affine_map<()[s0] -> (s0 * 2 + 1)>
     # CHECK: func.func @broadcast_add
     # CHECK-SAME: (%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
     # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
-    # CHECK: %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
     # CHECK: %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
     # CHECK: %[[thread_id_x:.*]] = gpu.thread_id  x
-    # CHECK: %[[thread_id_y:.*]] = gpu.thread_id  y
 
     # Slicing LHS
     # CHECK: %[[LHS:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<256x128xf16
-    # CHECK: %[[X_SLICE_0:.+]] = affine.apply #[[map0]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
+    # CHECK: %[[X_SLICE_0:.+]] = affine.apply #[[map0]]()[%[[workgroup_id_1]]]
     # CHECK: %[[LHS_0:.+]] = vector.load %[[LHS]][%[[X_SLICE_0]], %[[Y_SLICE:.+]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
-    # CHECK: %[[X_SLICE_1:.+]] = affine.apply #[[map2]]()[%[[thread_id_y]], %[[workgroup_id_1]]]
+    # CHECK: %[[X_SLICE_1:.+]] = affine.apply #[[map2]]()[%[[workgroup_id_1]]]
     # CHECK: %[[LHS_1:.+]] = vector.load %[[LHS]][%[[X_SLICE_1]], %[[Y_SLICE]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
 
     # Slicing RHS
