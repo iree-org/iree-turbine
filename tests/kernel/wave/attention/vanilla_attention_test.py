@@ -482,8 +482,8 @@ def testAttentionBHSD(
         is_custom_mask=is_custom_mask,
     )
     q_shape = (1, shape.num_query_heads, shape.query_seq_len, shape.head_size)
-    k_shape = (1, shape.num_kv_heads, shape.query_seq_len, shape.kv_seq_len)
-    v_shape = (1, shape.num_kv_heads, shape.query_seq_len, shape.head_size_kv)
+    k_shape = (1, shape.num_query_heads, shape.kv_seq_len, shape.head_size)
+    v_shape = (1, shape.num_query_heads, shape.head_size_kv, shape.kv_seq_len)
     hyperparams.update(get_default_scheduling_params())
     perf_filename = request.node.name + ".json"
     options = WaveCompileOptions(
@@ -539,7 +539,7 @@ def testAttentionBHSD(
     )
 
     assert_close(
-        output,
+        output.transpose(1, 2),
         torch_ref,
         check_dtype=False,
         atol=1e-3,

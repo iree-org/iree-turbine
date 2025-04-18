@@ -505,7 +505,7 @@ def get_bhsd_attention_kernel(
     mapping = tkw.IndexMapping(
         num_iterators=4,
         inputs={B: i, H: j, N: k, M: l},
-        outputs={B: i, M: l, H: j, N: k},
+        outputs={B: i, H: j, N: k, M: l},
     )
     q_mapping = tkw.IndexMapping(
         num_iterators=4,
@@ -643,8 +643,8 @@ def get_bhsd_attention_kernel(
     @tkw.wave(constraints)
     def base_attention(
         q: tkl.Memory[B, H, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, K2, M, K1, ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[B, K2, M, N, ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, H, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, H, N, K2, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[B, H, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         base_attention_core(q, k, v, c)
