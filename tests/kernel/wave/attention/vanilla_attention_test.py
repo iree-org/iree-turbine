@@ -539,7 +539,7 @@ def testAttentionBHSD(
     )
 
     assert_close(
-        output.transpose(1, 2),
+        output,
         torch_ref,
         check_dtype=False,
         atol=1e-3,
