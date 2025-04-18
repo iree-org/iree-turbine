@@ -15,7 +15,7 @@ from ...ops.wave_ops import (
     get_custom,
     Output,
     Write,
-    Reduction,
+    Iterate,
     ReduceOp,
     IterArg,
     Reshape,
@@ -70,7 +70,7 @@ class ReductionInfo:
     Contains fixup information for a reduction node.
     """
 
-    def __init__(self, reduction: Reduction):
+    def __init__(self, reduction: Iterate):
         self.reduction = reduction
         self.outputs: dict[int, ExpansionInfo] = {}
         self.init_args: dict[int, ExpansionInfo] = {}
@@ -94,7 +94,7 @@ class ExpansionContext:
     def __init__(self):
         self.expansion_context: dict[ExpansionInfo, CustomOp] = {}
         # Additional operator specific information.
-        self.reduction_context: dict[Reduction, ReductionInfo] = {}
+        self.reduction_context: dict[Iterate, ReductionInfo] = {}
         self.mma_connections: list[tuple[MMA, MMA]] = []
         self.mma_nodes: list[tuple[MMA]] = []
 
@@ -224,7 +224,7 @@ def to_dict(t: tuple[int, ...]) -> dict[IndexSymbol, int]:
 
 
 def handle_reduction_entry(
-    reduction: Reduction,
+    reduction: Iterate,
     inputs: list[CustomOp],
     new_node: CustomOp,
     node: CustomOp,
@@ -253,7 +253,7 @@ def handle_reduction_entry(
 
 
 def handle_reduction_exit(
-    reduction: Reduction,
+    reduction: Iterate,
     inputs: list[CustomOp],
     new_node: CustomOp,
     node: CustomOp,
@@ -392,7 +392,7 @@ def get_mma_reduction_count(arg: MMA, dim_scaling: dict[IndexSymbol, int]) -> in
 
 
 def add_get_results(trace: CapturedTrace):
-    reductions = trace.walk(lambda x: isinstance(get_custom(x), Reduction))
+    reductions = trace.walk(lambda x: isinstance(get_custom(x), Iterate))
     for reduction in reductions:
         reduction = get_custom(reduction)
         if len(reduction.init_args) == 1:
@@ -670,7 +670,7 @@ def fixup_reduction_nodes(
     which expansion proceeds.
     """
     reduction_context = expansion_context.reduction_context
-    reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Reduction))
+    reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Iterate))
     for reduction in reversed(reduction_nodes):
         reduction = get_custom(reduction)
         reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)

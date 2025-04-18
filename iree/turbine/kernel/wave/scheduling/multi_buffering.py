@@ -17,7 +17,7 @@ from ...ops.wave_ops import (
     Read,
     Write,
     CustomOp,
-    Reduction,
+    Iterate,
 )
 import iree.turbine.kernel.lang as tkl
 
@@ -26,7 +26,7 @@ def multi_buffer(trace: CapturedTrace):
     """Perform multi buffering for all supported shared memory locations"""
 
     # Find all reductions
-    reductions = trace.walk(lambda node: isinstance(get_custom(node), Reduction))
+    reductions = trace.walk(lambda node: isinstance(get_custom(node), Iterate))
 
     # Get reduction dimension from first reduction
     if not reductions or len(reductions) != 1:

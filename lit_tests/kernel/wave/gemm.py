@@ -79,7 +79,7 @@ def test_gemm():
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -156,7 +156,7 @@ def test_cdna2_int_gemm():
     ):
         c_reg = tkl.Register[M, N, tkl.i32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.f32]:
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -231,7 +231,7 @@ def test_cdna3_int_gemm():
     ):
         c_reg = tkl.Register[M, N, tkl.i32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.f32]:
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -307,7 +307,7 @@ def test_batched_gemm():
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
@@ -396,7 +396,7 @@ def test_chained_gemm():
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K2, init_args=[c_reg])
+        @tkw.iterate(K2, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
@@ -479,7 +479,7 @@ def test_chained_gemm_32x32x8():
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K2, init_args=[c_reg])
+        @tkw.iterate(K2, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
@@ -565,7 +565,7 @@ def test_chained_gemm_32x32x16():
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K2, init_args=[c_reg])
+        @tkw.iterate(K2, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
@@ -659,7 +659,7 @@ def test_chained_gemm_16x16x32():
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K2, init_args=[c_reg])
+        @tkw.iterate(K2, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
@@ -744,7 +744,7 @@ def test_gemm_pipelined():
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -837,7 +837,7 @@ def test_gemm_prefetch():
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -936,7 +936,7 @@ def test_dynamic_gemm_pipelined():
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -1039,7 +1039,7 @@ def test_gemm_with_gpr_offsets():
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
             a_reg = tkw.cast(a_reg, tkl.f8e4m3fnuz)
@@ -1121,7 +1121,7 @@ def test_gemm_and_reduce():
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
         init_max = tkl.Register[M, tkl.f16](-1e6)
 
-        @tkw.reduction(K, init_args=[init_max, c_reg])
+        @tkw.iterate(K, init_args=[init_max, c_reg])
         def repeat(
             partial_max: tkl.Register[M, tkl.f16], acc: tkl.Register[M, N, tkl.f32]
         ) -> tkl.Register[M, N, tkl.f32]:
@@ -1209,7 +1209,7 @@ def test_gemm_with_maximized_shared_read_32x32x16():
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -1295,7 +1295,7 @@ def test_gemm_with_maximized_shared_read_16x16x32():
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
             a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
@@ -1384,7 +1384,7 @@ def test_broadcast_batched_gemm_with_vmma():
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:

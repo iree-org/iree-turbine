@@ -21,7 +21,7 @@ from ..ops.wave_ops import (
     ShuffleOp,
     CustomOp,
     Extract,
-    Reduction,
+    Iterate,
 )
 from ..lang.global_symbols import *
 

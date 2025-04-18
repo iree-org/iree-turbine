@@ -2,7 +2,7 @@ from ..constraints import Constraint, TilingConstraint
 from ..._support.indexing import IndexSymbol
 from ..._support.tracing import CapturedTrace
 from ...ops.wave_ops import (
-    Reduction,
+    Iterate,
     IterArg,
     Output,
     Write,
@@ -230,7 +230,7 @@ def create_drain_stage_schedule(n: int) -> list[list[int]]:
     return schedule
 
 
-def liveness_analysis(graph: fx.Graph, reduction: Reduction) -> dict[fx.Node, int]:
+def liveness_analysis(graph: fx.Graph, reduction: Iterate) -> dict[fx.Node, int]:
     """
     Perform liveness analysis on the graph to determine the live ranges of
     variables and use that to deduce how many rotating registers we need.

@@ -72,7 +72,7 @@ def get_quant_linear_kernel(
     ]
 
     # With dynamic dimensions, we need to add an assumption on how big
-    # the reduction dimension is to determine whether we can schedule or not.
+    # the iterate dimension is to determine whether we can schedule or not.
     if dynamic_dims:
         constraints += [tkw.Assumption(K > BLOCK_K * 4)]
 
@@ -104,7 +104,7 @@ def get_quant_linear_kernel(
         a_scale_deq = tkl.Register[B, M, N, input_wtype](input_scale.item())
         b_scale_deq = tkl.Register[B, M, N, input_wtype](weight_scale.item())
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:

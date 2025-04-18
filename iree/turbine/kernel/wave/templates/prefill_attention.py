@@ -148,7 +148,7 @@ def get_prefill_attention_kernel(
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(N_KV, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[H, N_Q, tkl.f32],
             partial_sum: tkl.Register[H, N_Q, tkl.f32],

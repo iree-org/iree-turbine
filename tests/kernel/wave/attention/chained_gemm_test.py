@@ -107,7 +107,7 @@ def testChainedGemm(
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K2, init_args=[c_reg])
+        @tkw.iterate(K2, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
@@ -255,7 +255,7 @@ def testChainedGemmF8(
     ):
         c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K2, init_args=[c_reg])
+        @tkw.iterate(K2, init_args=[c_reg])
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:

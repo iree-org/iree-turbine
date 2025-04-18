@@ -249,7 +249,7 @@ class SchedulingTest(unittest.TestCase):
         ):
             c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-            @tkw.reduction(K, init_args=[c_reg])
+            @tkw.iterate(K, init_args=[c_reg])
             def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
                 a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
                 b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)

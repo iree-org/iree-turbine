@@ -151,7 +151,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -203,16 +203,16 @@ def test_gemm():
         # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
-        # CHECK-NEXT: reduction
+        # CHECK-NEXT: iterate
         # CHECK-SAME: (K, [%register_M:0_N:0_K:0, %register_M:0_N:1_K:0, %register_M:1_N:0_K:0, %register_M:1_N:1_K:0]
         # CHECK-NEXT: %get_result_M:0_N:0_K:0
-        # CHECK-SAME: (%reduction, 0)
+        # CHECK-SAME: (%iterate, 0)
         # CHECK-NEXT: %get_result_M:0_N:1_K:0
-        # CHECK-SAME: (%reduction, 1)
+        # CHECK-SAME: (%iterate, 1)
         # CHECK-NEXT: %get_result_M:1_N:0_K:0
-        # CHECK-SAME: (%reduction, 2)
+        # CHECK-SAME: (%iterate, 2)
         # CHECK-NEXT: %get_result_M:1_N:1_K:0
-        # CHECK-SAME: (%reduction, 3)
+        # CHECK-SAME: (%iterate, 3)
         # CHECK-NEXT: %write_M:0_N:0_K:0
         # CHECK-SAME: (%get_result_M:0_N:0_K:0, %c, 4, None, ())
         # CHECK-NEXT: %write_M:0_N:1_K:0
@@ -223,7 +223,7 @@ def test_gemm():
         # CHECK-SAME: (%get_result_M:1_N:1_K:0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
-        # Reduction subgraph:
+        # iterate subgraph:
         # CHECK: %b
         # CHECK: %a
         # CHECK-NEXT: %acc_M:0_N:0_K:0

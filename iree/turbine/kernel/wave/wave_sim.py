@@ -219,7 +219,7 @@ class _TklProxy:
     Register = _RegisterProxy()
 
 
-def _reduction_proxy(axis: int, init_args: list[Any]):
+def _iterate_proxy(axis: int, init_args: list[Any]):
     def decorator(func: Callable[..., Any]) -> Any:
         return func(*init_args)
 
@@ -295,7 +295,7 @@ def _mma_proxy(a: "Register", b: "Register", acc: "Register") -> "Register":
 
 
 class _TkwProxy:
-    reduction = _reduction_proxy
+    iterate = _iterate_proxy
     read = _read_proxy
     write = _write_proxy
     mma = _mma_proxy

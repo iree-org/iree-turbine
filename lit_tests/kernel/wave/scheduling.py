@@ -53,7 +53,7 @@ def gemm_pipelined(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -110,7 +110,7 @@ def test_gemm_pipelined():
         apply_shared_memory_indexing_corrections(trace, constraints)
         schedule_graph(trace, constraints, True, SchedulingType.MODULO)
 
-        print_subgraph(trace, "pipelined_reduction", False)
+        print_subgraph(trace, "pipelined_iterate", False)
         # CHECK: %acc_m_0_n_0_k_0
         # CHECK-NEXT: %acc_m_0_n_1_k_0
         # CHECK-NEXT: %acc_m_1_n_0_k_0
@@ -177,7 +177,7 @@ def test_gemm_pipelined():
         # CHECK-NEXT: %read_2_shared_M:1_N:0_K:1
         # CHECK-NEXT: %read_4_shared_M:0_N:0_K:1
         # CHECK-NEXT: %read_2_shared_M:0_N:0_K:1
-        # CHECK-NEXT: %reduction_1
+        # CHECK-NEXT: %iterate_1
         # CHECK-NEXT: %get_result_M:0_N:0_K:0
         # CHECK-NEXT: %get_result_M:0_N:1_K:0
         # CHECK-NEXT: %get_result_M:1_N:0_K:0

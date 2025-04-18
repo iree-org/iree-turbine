@@ -176,7 +176,7 @@ def get_gqa_decode_attention_kernels(
         zero = tkl.Register[H_Q, N_KV, tkl.f32](0.0)
         neg_infinity = tkl.Register[H_Q, N_KV, tkl.f32](-1e6)
 
-        @tkw.reduction(N_KV, init_args=[init_max, init_sum, new_acc])
+        @tkw.iterate(N_KV, init_args=[init_max, init_sum, new_acc])
         def loop(
             partial_max: tkl.Register[B, H_Q, tkl.f32],
             partial_sum: tkl.Register[B, H_Q, tkl.f32],
@@ -227,7 +227,7 @@ def get_gqa_decode_attention_kernels(
         init_sum = tkl.Register[B, H_Q, tkl.f32](0.0)
         init_max = tkl.Register[B, H_Q, tkl.f32](-1e6)
 
-        @tkw.reduction(U, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(U, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, H_Q, tkl.f32],
             partial_sum: tkl.Register[B, H_Q, tkl.f32],

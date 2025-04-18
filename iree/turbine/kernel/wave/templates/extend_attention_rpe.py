@@ -218,7 +218,7 @@ def get_extend_attention_rpe_kernel(
         )
         tkw.set_symbol(N_KV, seq_len_prefix)
 
-        @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(N_KV, init_args=[init_max, init_sum, c_reg])
         def first_loop(
             partial_max: tkl.Register[H, N_Q, tkl.f32],
             partial_sum: tkl.Register[H, N_Q, tkl.f32],
@@ -277,7 +277,7 @@ def get_extend_attention_rpe_kernel(
 
         tkw.set_symbol(N_KV, seq_len_extend)
 
-        @tkw.reduction(N_KV, init_args=[res_max, res_sum, res_mm])
+        @tkw.iterate(N_KV, init_args=[res_max, res_sum, res_mm])
         def second_loop(
             partial_max: tkl.Register[H, N_Q, tkl.f32],
             partial_sum: tkl.Register[H, N_Q, tkl.f32],

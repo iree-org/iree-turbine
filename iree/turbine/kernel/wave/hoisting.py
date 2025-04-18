@@ -83,7 +83,7 @@ def hoist_loop_invariant_ops(trace: CapturedTrace, constraints: list[Constraint]
     for node in root_graph.nodes:
         custom_node = get_custom(node)
         match custom_node:
-            case Reduction():
+            case Iterate():
                 with root_graph.inserting_before(custom_node.fx_node):
                     induction_variable = get_induction_variable(
                         custom_node, constraints

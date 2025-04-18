@@ -16,7 +16,7 @@ from ...ops.wave_ops import (
     Placeholder,
     Read,
     ReduceOp,
-    Reduction,
+    Iterate,
     Write,
     get_custom,
 )
@@ -228,7 +228,7 @@ def set_thread_independent_index(
     Set the index of the node based on all constraints except the hardware constraint.
     """
     custom = get_custom(node)
-    if isinstance(custom, (Reduction, Placeholder)) and not isinstance(custom, IterArg):
+    if isinstance(custom, (Iterate, Placeholder)) and not isinstance(custom, IterArg):
         return
 
     hw_cons = get_hardware_constraint(constraints)
@@ -378,14 +378,14 @@ def combine_indices(
 
 def add_nodes_to_sources(
     source: CustomOp,
-    reduction: Reduction,
+    reduction: Iterate,
     fn: Callable,
     source_index: dict[IndexSymbol, IndexSequence],
     source_vector_shapes: dict[IndexSymbol, int],
     sources: list[
         tuple[CustomOp, dict[IndexSymbol, IndexSequence], dict[IndexSymbol, int]]
     ],
-) -> tuple[list[CustomOp], Reduction]:
+) -> tuple[list[CustomOp], Iterate]:
     """
     Populate the sources with the inputs and users of the source node.
     """

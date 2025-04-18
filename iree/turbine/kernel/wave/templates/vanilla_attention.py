@@ -91,7 +91,7 @@ def get_vanilla_attention_kernel(
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, M, tkl.f32],
             partial_sum: tkl.Register[B, M, tkl.f32],
@@ -282,7 +282,7 @@ def get_bshd_attention_kernel(
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, H, M, tkl.f32],
             partial_sum: tkl.Register[B, H, M, tkl.f32],
@@ -331,7 +331,7 @@ def get_bshd_attention_kernel(
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, H, M, tkl.f32],
             partial_sum: tkl.Register[B, H, M, tkl.f32],

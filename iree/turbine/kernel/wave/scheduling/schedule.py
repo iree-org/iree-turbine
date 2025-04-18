@@ -6,7 +6,7 @@
 
 from ..constraints import Constraint
 from ..._support.tracing import CapturedTrace
-from ...ops.wave_ops import Reduction, IterArg, get_custom, CustomOp
+from ...ops.wave_ops import Iterate, IterArg, get_custom, CustomOp
 from .multi_buffering import multi_buffer
 from .modulo_scheduling import ModuloScheduler
 from .prefetch_scheduling import PrefetchScheduler
@@ -43,7 +43,7 @@ def visualize_scheduling_graph(edges: list[Edge]):
 
 
 def schedule_reduction(
-    reduction: Reduction,
+    reduction: Iterate,
     trace: CapturedTrace,
     constraints: list[Constraint],
     use_scheduling_barriers: bool = False,
@@ -183,7 +183,7 @@ def schedule_graph(
         return
 
     def is_reduction(node: fx.Node) -> bool:
-        return isinstance(get_custom(node), Reduction)
+        return isinstance(get_custom(node), Iterate)
 
     reduction_nodes = trace.walk(is_reduction)
     if not reduction_nodes:

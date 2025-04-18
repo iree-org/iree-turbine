@@ -17,7 +17,7 @@ from ...ops.wave_ops import (
     ExtractSlice,
     GetResult,
     CustomOp,
-    Reduction,
+    Iterate,
     Placeholder,
     Conditional,
     MMA,
@@ -148,7 +148,7 @@ def get_users(
         custom = user
         if not isinstance(custom, CustomOp):
             custom = get_custom(user)
-        if isinstance(custom, Reduction):
+        if isinstance(custom, Iterate):
             # Map init arg to iter arg
             reduction = custom
             graph = custom.get_root_graph().subgraphs[custom.subgraph_name]
@@ -228,7 +228,7 @@ def get_inputs(
         assert custom.value is not None, f"GetResult node {custom} has no value"
         reduction = get_custom(custom.value)
         assert isinstance(
-            reduction, Reduction
+            reduction, Iterate
         ), f"GetResult must be using a Reduction, but\n{custom}\nis using\n{reduction}"
         # Map get result to output
         reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
@@ -240,7 +240,7 @@ def get_inputs(
                 inputs.append(outputs)
         else:
             inputs.append(reduction.outputs(reduction_subgraph)[custom.res_idx])
-    elif isinstance(custom, Reduction):
+    elif isinstance(custom, Iterate):
         reduction_subgraph = custom.get_root_graph().subgraphs[custom.subgraph_name]
         inputs.append(custom.outputs(reduction_subgraph))
     else:
@@ -344,7 +344,7 @@ def is_reduction_subgraph(graph: fx.Graph):
     """
     if not hasattr(graph, "parent_op"):
         return False
-    return isinstance(get_custom(graph.parent_op), Reduction)
+    return isinstance(get_custom(graph.parent_op), Iterate)
 
 
 def initialize_iter_args(trace: CapturedTrace) -> None:
@@ -353,7 +353,7 @@ def initialize_iter_args(trace: CapturedTrace) -> None:
     based on their location in the graph.
 
     """
-    reductions = trace.walk(lambda node: isinstance(get_custom(node), Reduction))
+    reductions = trace.walk(lambda node: isinstance(get_custom(node), Iterate))
     for reduction in reductions:
         reduction_graph = trace.get_subgraph(get_custom(reduction).subgraph_name)
         count = 0

@@ -11,7 +11,7 @@ from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
-from ..ops.wave_ops import Reduction, CustomOp, get_custom, IterArg
+from ..ops.wave_ops import Iterate, CustomOp, get_custom, IterArg
 from .._support.indexing import IndexingContext, IndexExpr
 from .symbolic_constraints import SymbolicAlias
 from .._support.tracing import (
@@ -241,7 +241,7 @@ class LaunchableWave(Launchable):
 
         def is_reduction(node: fx.Node):
             custom = get_custom(node)
-            return isinstance(custom, Reduction)
+            return isinstance(custom, Iterate)
 
         reduction_nodes = trace.walk(is_reduction)
         for node in reduction_nodes:
@@ -275,7 +275,7 @@ class LaunchableWave(Launchable):
         tiling constraints associated with the reduction.
 
         """
-        is_reduction = lambda node: isinstance(get_custom(node), Reduction)
+        is_reduction = lambda node: isinstance(get_custom(node), Iterate)
         for reduction in trace.walk(is_reduction):
             for tiling_constraint in self.tiling_constraints:
                 if tiling_constraint.dim == get_custom(reduction).axis:

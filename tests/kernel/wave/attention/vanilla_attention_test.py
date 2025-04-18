@@ -511,9 +511,9 @@ def testAttentionBias(
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
 
-        # This microkernel encodes the fact that if the reduction
+        # This microkernel encodes the fact that if the iterate
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, M, tkl.f32],
             partial_sum: tkl.Register[B, M, tkl.f32],
@@ -714,9 +714,9 @@ def testAttentionSoftCap(
         log2e = 1.44269504089
         soft_cap = tkl.Register[B, M, K2, tkl.f32](softcap_val * log2e)
 
-        # This microkernel encodes the fact that if the reduction
+        # This microkernel encodes the fact that if the iterate
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, M, tkl.f32],
             partial_sum: tkl.Register[B, M, tkl.f32],
@@ -906,9 +906,9 @@ def testAttentionF8(
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
 
-        # This microkernel encodes the fact that if the reduction
+        # This microkernel encodes the fact that if the iterate
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, M, tkl.f32],
             partial_sum: tkl.Register[B, M, tkl.f32],

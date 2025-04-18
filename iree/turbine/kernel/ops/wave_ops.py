@@ -89,7 +89,7 @@ def conditional(
     ...
 
 
-def reduction(
+def iterate(
     axis: IndexExpr, init_args: Sequence["Register"]
 ) -> Callable[[Callable[[AccT], AccT]], AccT]:
     ...
@@ -1424,9 +1424,9 @@ class Conditional(NestedRegionOp):
         return []
 
 
-@define_op("reduction")
+@define_op("iterate")
 @dataclass
-class Reduction(NestedRegionOp):
+class Iterate(NestedRegionOp):
     axis: IndexSymbol
     init_args: Sequence[Any]
     subgraph_name: str
@@ -1442,7 +1442,7 @@ class Reduction(NestedRegionOp):
         def wrapper(f):
             with graph.subtracer() as subtracer:
                 subgraph_name, implicit_captures = subtracer.trace(f)
-            node = Reduction(
+            node = Iterate(
                 *args,
                 **kwargs,
                 subgraph_name=subgraph_name,
@@ -1751,7 +1751,7 @@ class GetResult(CustomOp):
         custom_index = custom.index
         if custom_index is None:
             return None
-        if not isinstance(custom, Reduction):
+        if not isinstance(custom, Iterate):
             return custom_index
         assert isinstance(custom_index, Sequence) and self.res_idx < len(
             custom.indexing_dims
