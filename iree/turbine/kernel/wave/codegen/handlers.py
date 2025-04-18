@@ -56,6 +56,7 @@ from ...ops.wave_ops import (
     abs,
     allocate,
     apply_expr,
+    atomic_min,
     broadcast,
     cast,
     conditional,
@@ -599,6 +600,23 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
         raise ValidationError(
             f"Found unhandled operand type for minimum: {element_type}"
         )
+    return result
+
+@handle_binary_op(atomic_min)
+def handle_atomic_min(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    bin_op_attr = None
+    if _is_float_type(element_type):
+        bin_op_attr = llvm_d.AtomicBinOp.min
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
+    ):
+        bin_op_attr = llvm_d.AtomicBinOp.fmin
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for atomic_min: {element_type}"
+        )
+    result = llvm_d.atomicrmw(bin_op_attr, lhs, rhs, llvm_d.AtomicOrdering.monotonic)
     return result
 
 
