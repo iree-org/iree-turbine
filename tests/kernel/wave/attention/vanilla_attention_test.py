@@ -483,7 +483,7 @@ def testAttentionBHSD(
     )
     q_shape = (1, shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (1, shape.num_query_heads, shape.kv_seq_len, shape.head_size)
-    v_shape = (1, shape.num_query_heads, shape.head_size_kv, shape.kv_seq_len)
+    v_shape = (1, shape.num_query_heads, shape.kv_seq_len, shape.head_size_kv)
     hyperparams.update(get_default_scheduling_params())
     perf_filename = request.node.name + ".json"
     options = WaveCompileOptions(
