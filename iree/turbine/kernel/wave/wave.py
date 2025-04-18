@@ -6,6 +6,7 @@
 
 # Lang, compiler, ops, constraints
 from sympy.utilities.lambdify import lambdastr
+from itertools import chain
 import iree.turbine.kernel.lang as tkl
 from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
 from ..lang import Grid, IndexMapping
@@ -583,6 +584,7 @@ class LaunchableWave(Launchable):
 
         # Add grid and block dims to kernel launch info.
         # Convert the grid into a lambda that we can use to compute the grid dimension.
+        hw_constraint = get_hardware_constraint(self.constraints)
         options.kernel_launch_info.grid = sympy.lambdify(
             [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
         )
@@ -590,9 +592,17 @@ class LaunchableWave(Launchable):
             [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
         )
         options.kernel_launch_info.blocks = [
-            int(x) for x in get_hardware_constraint(self.constraints).threads_per_block
+            int(x) for x in hw_constraint.threads_per_block
         ]
         options.kernel_launch_info.func_name = self._name
+
+        idxc = IndexingContext.current()
+        for sym, val in zip(
+            [THREAD_0, THREAD_1, THREAD_2, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2],
+            chain(hw_constraint.threads_per_block, self.grid_type.dims),
+        ):
+            if safe_subs(val, idxc.subs) == 1:
+                idxc.bind_constant(sym, 0)
 
         return (
             *self.compile_to_mlir(trace, context, module_op, options=options),
