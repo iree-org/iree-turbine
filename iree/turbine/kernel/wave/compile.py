@@ -1,6 +1,7 @@
 from typing import Any
 
 import torch
+from copy import copy
 from .._support.indexing import IndexingContext, IndexExpr
 from ..compiler import kernel_codegen, host_codegen
 from .compile_options import WaveCompileOptions
@@ -82,7 +83,10 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # Create an indexing context and populate substitutions.
     push(IndexingContext, IndexingContext())
     idxc = IndexingContext.current()
-    idxc.subs = options.subs
+
+    # Make a copy of the substitutions to avoid mutating the original
+    # options.subs.
+    idxc.subs = copy(options.subs)
 
     # For the wave runtime, we need the hsaco binary. So we turn on
     # dumping of binaries and store in wave runtime directory. If we
