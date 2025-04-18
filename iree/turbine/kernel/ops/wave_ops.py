@@ -1378,9 +1378,15 @@ class NestedRegionOp(CustomOp):
                 captured_vars.append(nested_node)
         return captured_vars
 
+    def get_outer_node(self, outer_node: fx.Node) -> fx.Node:
+        while "lifted" in outer_node.meta:
+            outer_node = outer_node.meta["lifted"]
+        return outer_node
+
     def get_captured_fx_node(
         self, graph: fx.Graph, outer_node: fx.Node
     ) -> Optional[fx.Node]:
+        outer_node = self.get_outer_node(outer_node)
         for var in self.captured_vars(graph):
             custom = get_custom(var)
             if custom.get_captured_fx_node() == outer_node:

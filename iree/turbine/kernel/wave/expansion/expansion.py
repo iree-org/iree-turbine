@@ -675,6 +675,8 @@ def fixup_reduction_nodes(
         reduction = get_custom(reduction)
         reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
         output = get_custom(get_last(reduction_subgraph.nodes))
+        if all(x is None for x in output.return_vals):
+            continue
         return_vals = output.return_vals[0]
         if isinstance(return_vals, Sequence):
             return_vals = [get_custom(x) for x in output.return_vals[0]]

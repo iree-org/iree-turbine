@@ -899,6 +899,9 @@ def handle_iterate(emitter: WaveEmitter, node: fx.Node):
             emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)
         # Emit the subgraph.
         return_values = emitter._emit_graph(subgraph)
+        if all(x is None for x in return_values):
+            scf_d.YieldOp([])
+            return
         # Flattern return values.
         flat_ret_values, _ = pytree.tree_flatten((return_values))
         flat_ret_values = [

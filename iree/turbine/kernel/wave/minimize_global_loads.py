@@ -351,7 +351,6 @@ def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
     This function applies this transformation as long as the condition above holds.
 
     """
-
     global_read_nodes = trace.walk(is_valid_global_read)
     if not global_read_nodes:
         return
