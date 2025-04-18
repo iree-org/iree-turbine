@@ -9,6 +9,7 @@ name: PERF
 on:
   workflow_dispatch:
   pull_request:
+      types: [opened, edited, synchronize, ready, ready_for_review, converted_to_draft]
   push:
     branches:
       - main
@@ -32,6 +33,7 @@ jobs:
         version: [3.11]
         os: [linux-mi300-1gpu-ossci-iree-org]
     runs-on: ${{matrix.os}}
+    if: github.event.pull_request.draft == false
     env:
       VENV_DIR: ${{ github.workspace }}/.turbine-venv
     steps:
