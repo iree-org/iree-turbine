@@ -82,6 +82,13 @@ def emit_global_scan(
 
         init = get_graph_node(binary_fn(init, masked), graph)
 
+        # cmp_i1 = get_graph_node(cmp_i1, graph)
+        # cmp = get_graph_node(ge(lane_id, offset_val), graph)
+
+        masked = get_graph_node(SelectOp(cmp_i1, shuffle_val, zero_vec), graph)
+        init = get_graph_node(binary_fn(init, masked), graph)
+
+        # init = get_graph_node(binary_fn(init, shuffle_val), graph)
     return init
 
 
