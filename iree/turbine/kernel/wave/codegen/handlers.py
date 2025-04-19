@@ -250,10 +250,11 @@ def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
 def _to_scalar(val: Value) -> Value:
     src_type = val.type
     if VectorType.isinstance(src_type):
-        assert (
+        assert (src_type.rank == 0 and src_type.shape == []) or (
             src_type.rank == 1 and src_type.shape[0] == 1
-        ), f"Only size 1 vectors are supported: got {src_type}"
-        val = vector_d.extract(val, static_position=[0], dynamic_position=[])
+        ), f"Only size 0 or 1 vectors are supported: got {src_type}"
+        if src_type.rank == 1:
+            val = vector_d.extract(val, static_position=[0], dynamic_position=[])
 
     return val
 
@@ -848,6 +849,18 @@ def handle_iterate(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
+    # Determine whether this is a for / while lowering.
+    tiling_constraints = [
+        x
+        for x in emitter.constraints
+        if isinstance(x, TilingConstraint) and x.dim == axis
+    ]
+    assert len(tiling_constraints) == 1, "Only one tiling constraint is supported"
+    tiling_constraint = tiling_constraints[0]
+
+    if tiling_constraint.init_symbol and tiling_constraint.next_symbol:
+        return handle_iterate_while(emitter, node, tiling_constraint)
+
     # Flatten init_args and get IR values for each of them.
     flat_init_args, _ = pytree.tree_flatten((init_args))
     flat_init_args = [cast_py_value(emitter, arg) for arg in flat_init_args]
@@ -916,6 +929,50 @@ def handle_iterate(emitter: WaveEmitter, node: fx.Node):
         scf_d.YieldOp(flat_ret_values)
 
     emitter.bind_node_proxies(node, [IRProxyValue(v) for v in forOp.results_])
+
+
+def handle_iterate_while(
+    emitter: WaveEmitter, node: fx.Node, tiling_constraint: TilingConstraint
+):
+    # TODO: Add support for init args.
+    try:
+        axis, init_args, subgraph, implicit_capture = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    # Initialize while loop
+    init_value = vector_d.extractelement(
+        emitter.dynamic_dims[tiling_constraint.init_symbol]
+    )
+    whileOp = scf_d.WhileOp([init_value.type], [init_value])
+    whileOp.before.blocks.append(*[init_value.type])
+    whileOp.after.blocks.append(*[init_value.type])
+
+    # Before block: condition.
+    current_value = whileOp.before.blocks[0].arguments[0]
+    with InsertionPoint(whileOp.before.blocks[0]):
+        condition = gen_sympy_index(
+            {
+                **add_emitter_subs(emitter),
+                index_symbol("$CURRENT_VALUE"): current_value,
+            },
+            tiling_constraint.condition(index_symbol("$CURRENT_VALUE")),
+        )
+        scf_d.ConditionOp(condition, [current_value])
+
+    # After block: body.
+    current_value = whileOp.after.blocks[0].arguments[0]
+    with InsertionPoint(whileOp.after.blocks[0]):
+        subgraph = emitter.trace.get_subgraph(subgraph)
+        for root_v, subgraph_v in zip(
+            implicit_capture, get_custom(node).captured_vars(subgraph)
+        ):
+            emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)
+        emitter.induction_vars[tiling_constraint.dim] = current_value
+        emitter._emit_graph(subgraph)
+        scf_d.YieldOp([emitter.dynamic_dims[tiling_constraint.next_symbol]])
+
+    emitter.bind_node_proxies(node, [IRProxyValue(v) for v in whileOp.results_])
 
 
 ###############################################################################

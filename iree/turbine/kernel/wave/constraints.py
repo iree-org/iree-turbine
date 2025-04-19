@@ -445,13 +445,28 @@ class TilingConstraint(DistributionConstraint):
     adds an index constraint to the K-th dimension of a tensor of the form
     BLOCK_K * i, where i is the induction variable associated with the
     loop around dimension K.
+
+    The constraint can also specify that we want to start with init_symbol
+    and then update the value to next_symbol at the end of the iteration.
+    When only init_symbol and next_symbol are specified, the count is
+    meaningless.
     """
 
     dim: IndexExpr
-    tile_size: IndexExpr
+    tile_size: Optional[IndexExpr] = None
     induction_var: Optional[IndexExpr] = None
     iters: Optional[IndexExpr] = None
     start: IndexExpr = Integer(0)
+    init_symbol: Optional[IndexSymbol] = None
+    next_symbol: Optional[IndexSymbol] = None
+    condition: Optional[Callable] = None
+
+    def __post_init__(self):
+        # If no tile size is specified, set it to 1.
+        # This corresponds to the case when we are specifying a while loop
+        # as opposed to a for loop.
+        if self.tile_size is None:
+            self.tile_size = 1
 
     def __eq__(self, value):
         if not isinstance(value, TilingConstraint):
