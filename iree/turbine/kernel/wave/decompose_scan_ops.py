@@ -1,3 +1,4 @@
+from operator import ge
 from iree.turbine.kernel.compiler.vector_codegen import cast_py_value
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import (
@@ -12,7 +13,11 @@ from ..ops.wave_ops import (
     Extract,
     select,
     log2,
+    CastOp,
+    register,
+    NewRegister,
 )
+from .._support.dtype import DataType, i1
 from ..lang.global_symbols import *
 from ..wave.constraints import HardwareConstraint
 from .utils.graph_utils import DCE
@@ -21,6 +26,7 @@ import torch.fx as fx
 import math
 from ..compiler.ir import gpu_d, arith_d, F32Type, IndexType, vector_d
 from ..compiler.ir import VectorType
+from ..lang.wave_types import Memory, Register
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
@@ -33,6 +39,7 @@ def emit_global_scan(
     src: fx.Node,
     graph: fx.Graph,
     subgroup_size: int,
+    hardware_constraint: HardwareConstraint,
 ) -> fx.Node:
     """
     Emit an intra-warp inclusive scan using a butterfly pattern
@@ -42,30 +49,33 @@ def emit_global_scan(
     for idx in range(num_steps):
         offset_val = 1 << idx
         shuffle_val = get_graph_node(ShuffleOp(init, offset_val, subgroup_size), graph)
-
-        lane_id = graph.call_function(
-            lambda: gpu_d.thread_id(gpu_d.Dimension.x), args=()
-        )
-        offset_const = graph.call_function(
-            lambda: cast_py_value(offset_val, IndexType.get()), args=()
+        lane_id = hardware_constraint.linearized_thread_id % subgroup_size
+        zero_vec = get_graph_node(
+            NewRegister(
+                get_custom(init).type.symbolic_shape, get_custom(init).type.dtype, 0.0
+            ),
+            graph,
         )
 
         cmp = graph.call_function(
-            lambda: arith_d.cmpi(arith_d.CmpIPredicate.sge, lane_id, offset_const),
+            lambda: arith_d.cmpi(arith_d.CmpIPredicate.sge, lane_id, offset_val),
             args=(),
         )
-        zero_vec = graph.call_function(
-            lambda: cast_py_value(0.0, VectorType.get([subgroup_size], F32Type.get())),
-            args=(),
+        cmp_i1 = CastOp(cmp, i1)
+        cmp_i1 = get_graph_node(
+            NewRegister(get_custom(init).type.symbolic_shape, i1, CastOp(cmp, i1)),
+            graph,
         )
 
-        masked = graph.call_function(
-            lambda: arith_d.select(cmp, shuffle_val, zero_vec), args=()
-        )
-        init = get_graph_node(
-            binary_fn(init, masked), graph
-        )  ## Error: AttributeError: 'NoneType' object has no attribute 'symbolic_shape'
+        # cmp_i1.type = Register[(*get_custom(init).type.symbolic_shape, i1)]
 
+        # cmp_i1 = get_graph_node(cmp_i1, graph)
+        # cmp = get_graph_node(ge(lane_id, offset_val), graph)
+
+        masked = get_graph_node(SelectOp(cmp_i1, shuffle_val, zero_vec), graph)
+        init = get_graph_node(binary_fn(init, masked), graph)
+
+        # init = get_graph_node(binary_fn(init, shuffle_val), graph)
     return init
 
 
@@ -92,7 +102,10 @@ def decompose_scan_ops(
             assert isinstance(src, fx.Node), f"Scan src is not fx.Node: {type(src)}"
             binary_fn = Add
 
-            result = emit_global_scan(binary_fn, src, custom.graph, subgroup_size)
+            result = emit_global_scan(
+                binary_fn, src, custom.graph, subgroup_size, hardware_constraint
+            )
+            breakpoint()
             custom.replace_all_uses_with(result)
 
     DCE(trace)
