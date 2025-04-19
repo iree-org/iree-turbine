@@ -25,12 +25,15 @@ from iree.turbine.kernel.wave.utils.torch_utils import (
     device_randint,
     device_randperm,
     device_zeros,
+    get_default_device,
 )
 from .common.utils import (
     require_e2e,
     require_cdna3,
     perf_test,
     param_bool,
+    maybe_dump_mlir,
+    format_shape,
 )
 import torch
 from torch.testing import assert_close
@@ -180,6 +183,225 @@ def test_copy(shape, use_buffer_ops, request):
 
     test(a, b)
     assert_close(a, b)
+
+
+@require_e2e
+@pytest.mark.parametrize(
+    "dim_n,block_n",
+    [
+        (64, 64),
+        (128, 64),
+        (128, 128),
+        (256, 64),
+        (256, 128),
+        (256, 256),
+    ],
+)
+def test_copy_1d(dim_n: int, block_n: int):
+    threads_per_wave = 64
+    elements_per_block = block_n
+    elements_per_thread = elements_per_block // threads_per_wave
+
+    N = tkl.sym.N
+    BLOCK_N = tkl.sym.BLOCK_N
+
+    constraints: list[tkw.Constraint] = [
+        tkw.WorkgroupConstraint(N, BLOCK_N, 0),
+        tkw.HardwareConstraint(
+            threads_per_wave=threads_per_wave,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={N: block_n},
+        ),
+    ]
+
+    @tkw.wave(constraints)
+    def copy1d(
+        a: tkl.Memory[N, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        b: tkl.Memory[N, GLOBAL_ADDRESS_SPACE, tkl.i32],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=elements_per_thread)
+        tkw.write(a_reg, b, elements_per_thread=elements_per_thread)
+
+    options = WaveCompileOptions(
+        subs={BLOCK_N: block_n, N: dim_n},
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+        canonicalize=True,
+    )
+    options = set_default_run_config(options)
+    copy1d = wave_compile(options, copy1d)
+
+    maybe_dump_mlir(copy1d.asm)
+
+    a = torch.arange(dim_n, device=get_default_device(), dtype=torch.int32)
+    b = torch.zeros_like(a)
+    copy1d(a, b)
+    assert_close(b, a)
+
+
+@require_e2e
+@pytest.mark.parametrize(
+    "shape,block_size",
+    [
+        ((8, 8), (8, 8)),
+        ((16, 16), (8, 8)),
+        ((16, 16), (16, 16)),
+        ((32, 32), (8, 8)),
+        ((32, 32), (16, 16)),
+        ((32, 32), (32, 32)),
+        ((16, 32), (16, 16)),
+        ((16, 64), (32, 32)),
+        ((1, 27), (8, 8)),
+        ((111, 813), (8, 8)),
+        ((1, 128), (8, 8)),
+        ((256, 64), (8, 8)),
+        ((256, 128), (8, 8)),
+        ((256, 256), (8, 8)),
+        ((256, 1024), (8, 8)),
+    ],
+    ids=format_shape,
+)
+def test_copy_2d(shape: tuple[int, int], block_size: tuple[int, int], request):
+    dim_m, dim_n = shape
+    block_m, block_n = block_size
+
+    threads_per_wave = 64
+    elements_per_block = block_m * block_n
+    assert elements_per_block >= threads_per_wave
+    elements_per_thread = elements_per_block // threads_per_wave
+
+    threads_per_block_n = block_n // elements_per_thread
+    threads_per_block_m = threads_per_wave // threads_per_block_n
+
+    M = tkl.sym.M
+    N = tkl.sym.N
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_M = tkl.sym.BLOCK_M
+
+    constraints: list[tkw.Constraint] = [
+        tkw.WorkgroupConstraint(M, BLOCK_M, 0),
+        tkw.WorkgroupConstraint(N, BLOCK_N, 1),
+        tkw.HardwareConstraint(
+            threads_per_wave=threads_per_wave,
+            waves_per_block=(1, 1, 1),
+            threads_per_block=(threads_per_block_m, threads_per_block_n, 1),
+            vector_shapes={M: block_m, N: block_n},
+        ),
+    ]
+
+    @tkw.wave(constraints)
+    def copy2d(
+        a: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        b: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.i32],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=elements_per_thread)
+        tkw.write(a_reg, b, elements_per_thread=elements_per_thread)
+
+    options = set_default_run_config(
+        WaveCompileOptions(
+            subs={
+                BLOCK_M: block_m,
+                BLOCK_N: block_n,
+                M: dim_m,
+                N: dim_n,
+            },
+            waves_per_eu=2,
+            denorm_fp_math_f32="preserve-sign",
+            canonicalize=True,
+        )
+    )
+    copy2d = wave_compile(options, copy2d)
+
+    maybe_dump_mlir(copy2d.asm, request.node.name)
+
+    a = torch.arange(
+        dim_m * dim_n, device=get_default_device(), dtype=torch.int32
+    ).reshape(dim_m, dim_n)
+    b = torch.zeros_like(a)
+    copy2d(a, b)
+    assert_close(b, a)
+
+
+@require_e2e
+@pytest.mark.parametrize(
+    "shape,block_size",
+    [
+        ((4, 4, 4), (4, 4, 4)),
+        ((8, 8, 8), (8, 8, 8)),
+        ((4, 8, 16), (4, 8, 16)),
+        ((52, 27, 39), (8, 8, 8)),
+    ],
+    ids=format_shape,
+)
+def test_copy_3d(shape: tuple[int, int], block_size: tuple[int, int], request):
+    dim_m, dim_n, dim_k = shape
+    block_m, block_n, block_k = block_size
+
+    threads_per_wave = 64
+    elements_per_block = block_m * block_n * block_k
+    assert elements_per_block >= threads_per_wave
+    elements_per_thread = elements_per_block // threads_per_wave
+
+    threads_per_block_k = block_k // elements_per_thread
+    threads_per_block_n = block_n
+    threads_per_block_m = threads_per_wave // threads_per_block_n // threads_per_block_k
+
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_K = tkl.sym.BLOCK_K
+
+    constraints: list[tkw.Constraint] = [
+        tkw.WorkgroupConstraint(M, BLOCK_M, 0),
+        tkw.WorkgroupConstraint(N, BLOCK_N, 1),
+        tkw.WorkgroupConstraint(K, BLOCK_K, 2),
+        tkw.HardwareConstraint(
+            threads_per_wave=threads_per_wave,
+            waves_per_block=(1, 1, 1),
+            threads_per_block=(
+                threads_per_block_m,
+                threads_per_block_n,
+                threads_per_block_k,
+            ),
+            vector_shapes={M: block_m, N: block_n, K: block_k},
+        ),
+    ]
+
+    @tkw.wave(constraints)
+    def copy3d(
+        a: tkl.Memory[M, N, K, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        b: tkl.Memory[M, N, K, GLOBAL_ADDRESS_SPACE, tkl.i32],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=elements_per_thread)
+        tkw.write(a_reg, b, elements_per_thread=elements_per_thread)
+
+    options = set_default_run_config(
+        WaveCompileOptions(
+            subs={
+                BLOCK_M: block_m,
+                BLOCK_N: block_n,
+                BLOCK_K: block_k,
+                M: dim_m,
+                N: dim_n,
+                K: dim_k,
+            },
+            waves_per_eu=2,
+            denorm_fp_math_f32="preserve-sign",
+            canonicalize=True,
+        )
+    )
+    copy3d = wave_compile(options, copy3d)
+
+    maybe_dump_mlir(copy3d.asm, request.node.name)
+
+    a = torch.arange(
+        dim_m * dim_n * dim_k, device=get_default_device(), dtype=torch.int32
+    ).reshape(dim_m, dim_n, dim_k)
+    b = torch.zeros_like(a)
+    copy3d(a, b)
+    assert_close(b, a)
 
 
 @require_e2e
