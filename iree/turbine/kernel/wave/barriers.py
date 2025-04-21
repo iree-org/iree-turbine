@@ -9,10 +9,13 @@ from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import get_custom, Read, SharedMemoryBarrier, Write, Iterate
 from ..lang.global_symbols import SHARED_ADDRESS_SPACE
 import torch.fx as fx
+from typing import Optional
 
 
 def add_shared_memory_barriers(
-    trace: CapturedTrace | fx.Graph, last_node: fx.Node = None
+    trace: CapturedTrace,
+    graph: Optional[fx.Graph] = None,
+    last_node: Optional[fx.Node] = None,
 ) -> fx.Node:
     """
     Adds shared memory barriers to the graph. The barriers are inserted
@@ -23,8 +26,7 @@ def add_shared_memory_barriers(
     While sub-optimal, we use this as a baseline to compare more
     sophisticated barrier insertion strategies.
     """
-    graph = trace
-    if isinstance(trace, CapturedTrace):
+    if not graph:
         graph = trace.get_root_graph()
 
     for node in graph.nodes:
@@ -43,7 +45,7 @@ def add_shared_memory_barriers(
             last_node = custom
         if isinstance(custom, Iterate):
             last_node = add_shared_memory_barriers(
-                trace.get_subgraph(custom.subgraph_name), last_node
+                trace, trace.get_subgraph(custom.subgraph_name), last_node
             )
 
     # Synchronize before the write to shared memory to avoid stepping over
