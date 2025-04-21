@@ -176,9 +176,24 @@ export PATH="$PWD/build/:$PATH"
 
 - set `IREE_PY_RUNTIME=tracy` in your environment.
 - You may need to configure cmake with `-DTRACY_DELAYED_INIT=ON -DTRACY_MANUAL_LIFETIME=ON` to work around issues with the tracy client being closed before traces are captured.
-- build `iree-tracy-capture`. See https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-capture-cli-tool
+- Make sure `PYTHONPATH` is export and point to your local built of iree compiler and runtime python bindings.
+- build `iree-tracy-capture`. Use `-DIREE_BUILD_TRACY=ON`, build IREE compiler and export it from `<build-dir>/tracy` to the PATH environment variable.
 - build `tracy-csvexport`. See https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-csvexport-tool
 
+#### Misc requirements Q&A:
+
+1. How to fix the error `ImportError: <path-to-sharedlib>/libIREECompiler.so: cannot allocate memory in static TLS block`
+
+  **A:** Please add the following into your rc file and reload it:
+  ```bash
+  export GLIBC_TUNABLES=glibc.rtld.optional_static_tls=4096
+  ```
+
+  Please note that this is an OS bug, for context of this bug please refer to [here](https://github.com/pytorch/pytorch/issues/2575#issuecomment-1640566350).
+
+2. I run into `buffer overflow detected: terminated`, what's wrong?
+
+  **A:** Ensure that you consistently use the `iree-tracy-capture` built alongside the IREE compiler. You should either use both from `iree-base-runtime` or from local built setup, but do not combine different sources. This is a known issue when use the locally built iree compiler together with `tracy-capture` from upstream. To determine whether a failure is triggered by `tracy-capture`, try running Boo driver with `-t 0` and see if the problem still exists.
 
 ## generate.py script (deprecated)
 
