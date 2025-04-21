@@ -450,8 +450,6 @@ def testAttentionBHSD(
     mfma_variant: tuple[MMAType],
     request,
 ):
-    run_bench = request.config.getoption("--runperf")
-    dump_perf = request.config.getoption("--dump-perf-files-path")
     shape = AttentionShape(
         num_query_heads=shape[0],
         num_kv_heads=shape[0],
@@ -485,7 +483,6 @@ def testAttentionBHSD(
     k_shape = (1, shape.num_query_heads, shape.kv_seq_len, shape.head_size)
     v_shape = (1, shape.num_query_heads, shape.kv_seq_len, shape.head_size_kv)
     hyperparams.update(get_default_scheduling_params())
-    perf_filename = request.node.name + ".json"
     options = WaveCompileOptions(
         subs=hyperparams,
         schedule=enable_scheduling,
@@ -495,11 +492,6 @@ def testAttentionBHSD(
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
-        benchmark_batch_size=10,
-        benchmark_repetitions=3,
-        benchmark_results_file=(
-            os.path.join(dump_perf, "tk_" + perf_filename) if dump_perf else None
-        ),
     )
     options = set_default_run_config(options)
     base_attention = wave_compile(options, base_attention_func)
