@@ -174,11 +174,10 @@ export PATH="$PWD/build/:$PATH"
 
 #### local iree build with python bindings:
 
-- set `IREE_PY_RUNTIME=tracy` in your environment.
 - You may need to configure cmake with `-DTRACY_DELAYED_INIT=ON -DTRACY_MANUAL_LIFETIME=ON` to work around issues with the tracy client being closed before traces are captured.
-- Make sure `PYTHONPATH` is export and point to your local built of iree compiler and runtime python bindings.
-- build `iree-tracy-capture`. Use `-DIREE_BUILD_TRACY=ON`, build IREE compiler and export it from `<build-dir>/tracy` to the PATH environment variable.
-- build `tracy-csvexport`. See https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-csvexport-tool
+- Make sure `PYTHONPATH` is set to your locally built compiler and runtime python bindings. E.g. `source <build-dir>/.env && export PYTHONPATH`.
+- Build `iree-tracy-capture`. Use `-DIREE_BUILD_TRACY=ON` when building IREE, and include `<build-dir>/tracy` in your `PATH` environment variable.
+- Build `tracy-csvexport`. See https://iree.dev/developers/performance/profiling-with-tracy/#building-the-tracy-csvexport-tool
 
 #### Misc requirements Q&A:
 
