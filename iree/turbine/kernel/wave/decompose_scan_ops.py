@@ -28,6 +28,32 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
     return custom.fx_node
 
 
+def insert_conditional_node(cmp: Conditional, graph: fx.Graph) -> fx.Node:
+    cmp.graph = graph
+    cmp.fx_node = graph.create_node(
+        "call_function",
+        target=cmp._tracing_function,
+        args=(
+            cmp.condition,
+            cmp.subgraph_name,
+            cmp.implicit_captures,
+            cmp.if_true,
+            cmp.if_false,
+        ),
+        kwargs={},
+    )
+    cmp.fx_node.tkw_op = cmp.__class__
+    cmp.fx_node.tkw_op_name = cmp.tkw_op_name
+    cmp.fx_node.type = get_custom(cmp.if_true).type
+    return cmp.fx_node
+
+
+def zero_like(node: fx.Node, graph: fx.Graph) -> fx.Node:
+    shape = get_custom(node).type.symbolic_shape
+    dtype = get_custom(node).type.dtype
+    return get_graph_node(NewRegister(shape, dtype, 0.0), graph)
+
+
 def emit_global_scan(
     binary_fn: Callable,  # Supports only Add for now.
     src: fx.Node,
@@ -61,6 +87,8 @@ def emit_global_scan(
             ),
             graph,
         )
+        cmp_i1 = insert_conditional_node(cmp_i1, graph)
+        init = get_graph_node(binary_fn(init, cmp_i1), graph)
 
         # We are explicitly setting the indices to avoid:
         # AttributeError: 'NoneType' object has no attribute 'values'
@@ -130,7 +158,6 @@ def decompose_scan_ops(
             result = emit_global_scan(
                 binary_fn, src, custom.graph, subgroup_size, hardware_constraint
             )
-
             custom.replace_all_uses_with(result)
 
     DCE(trace)
