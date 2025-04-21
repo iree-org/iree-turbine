@@ -519,17 +519,17 @@ def testAttentionBHSD(
         custom_mask = (custom_mask > 0).int()
 
         asm = base_attention(
-            q.contiguous(),
-            k.contiguous(),
-            v.contiguous(),
+            q,
+            k,
+            v,
             custom_mask.to(torch.int8),
             output,
         )
     else:
         asm = base_attention(
-            q.contiguous(),
-            k.contiguous(),
-            v.contiguous(),
+            q,
+            k,
+            v,
             output,
         )
 

@@ -507,20 +507,10 @@ def get_bhsd_attention_kernel(
         inputs={B: i, H: j, M: k, N: l},
         outputs={B: i, H: j, M: k, N: l},
     )
-    q_mapping = tkw.IndexMapping(
-        num_iterators=4,
-        inputs={B: i, H: j, M: k, K1: l},
-        outputs={B: i, H: j, M: k, K1: l},
-    )
-    k_mapping = tkw.IndexMapping(
-        num_iterators=4,
-        inputs={B: i, H: j, K2: k, K1: l},
-        outputs={B: i, H: j, K2: k, K1: l},
-    )
     v_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={B: i, H: j, K2: k, N: l},
-        outputs={B: i, H: j, K2: k, N: l},
+        inputs={B: i, H: j, N: k, K2: l},
+        outputs={B: i, H: j, N: k, K2: l},
     )
 
     log2e = 1.44269504089
@@ -543,9 +533,9 @@ def get_bhsd_attention_kernel(
             acc: tkl.Register[B, H, N, M, tkl.f32],
         ):
             imm_reg = tkl.Register[B, H, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, mapping=q_mapping)
+            q_reg = tkw.read(q)
             q_reg *= qkv_scaling
-            k_reg = tkw.read(k, mapping=k_mapping)
+            k_reg = tkw.read(k)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[B, H, M, K2])
             k2_index = tkw.self_index(K2, tkl.i32)
