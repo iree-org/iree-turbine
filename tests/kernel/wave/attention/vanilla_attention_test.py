@@ -400,7 +400,6 @@ def testAttentionBSHD(
 
     if is_custom_mask:
         custom_mask = device_randn([1, shape.query_seq_len], dtype=torch.float32)
-        # custom_mask = device_zeros([1, shape.query_seq_len], dtype=torch.float32)
         custom_mask = (custom_mask > 0).int()
 
         asm = base_attention(
@@ -443,7 +442,7 @@ def testAttentionBSHD(
         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
     ],
 )
-def testAttentionBHSD(
+def testAttentionBHSDCausal(
     shape: tuple[int],
     enable_scheduling: SchedulingType,
     dynamic_dims: bool,
@@ -489,7 +488,6 @@ def testAttentionBHSD(
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
-        run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
     )
@@ -507,7 +505,6 @@ def testAttentionBHSD(
 
     if is_custom_mask:
         custom_mask = device_randn([1, shape.query_seq_len], dtype=torch.float32)
-        # custom_mask = device_zeros([1, shape.query_seq_len], dtype=torch.float32)
         custom_mask = (custom_mask > 0).int()
 
         asm = base_attention(

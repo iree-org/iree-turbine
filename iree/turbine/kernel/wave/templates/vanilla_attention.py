@@ -454,7 +454,7 @@ def get_bhsd_attention_kernel(
     is_custom_mask: bool = False,
 ):
     # Input sizes
-    # BxS_QxHxD x BxS_KVxH_KVxD
+    # BxHxS_QxD x BxH_KVxS_KVxD
     B = tkl.sym.B
     M = tkl.sym.M
     N = tkl.sym.N
@@ -623,11 +623,12 @@ def get_bhsd_attention_kernel(
         reciprocal_sum = tkw.reciprocal(res_sum)
 
         # we are handling nan case here when all the tokens are masked and res_sum is 0.0
-        is_nan = res_sum == init_sum
-        is_nan = tkw.cast(is_nan, tkw.i1)
-        upd_reciprocal_sum = tkw.select(is_nan, init_sum, reciprocal_sum)
+        if is_custom_mask:
+            is_nan = res_sum == init_sum
+            is_nan = tkw.cast(is_nan, tkw.i1)
+            upd_reciprocal_sum = tkw.select(is_nan, init_sum, reciprocal_sum)
 
-        res = res_mm * upd_reciprocal_sum
+            res = res_mm * upd_reciprocal_sum
         tkw.write(res, c, mapping=mapping)
 
     @tkw.wave(constraints)
@@ -641,11 +642,11 @@ def get_bhsd_attention_kernel(
 
     @tkw.wave(constraints)
     def base_attention_custom_mask(
-        q: tkl.Memory[B, M, H, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, K2, H, K1, ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[B, K2, H, N, ADDRESS_SPACE, tkl.f16],
+        q: tkl.Memory[B, H, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, H, K2, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, H, K2, N, ADDRESS_SPACE, tkl.f16],
         custom_mask: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.i8],
-        c: tkl.Memory[B, M, H, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[B, H, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         base_attention_core_custom_mask(q, k, v, custom_mask, c)
 
