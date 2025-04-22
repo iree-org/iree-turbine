@@ -642,11 +642,11 @@ def get_bhsd_attention_kernel(
 
     @tkw.wave(constraints)
     def base_attention_custom_mask(
-        q: tkl.Memory[B, H, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[B, H, K2, K1, ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[B, H, K2, N, ADDRESS_SPACE, tkl.f16],
+        q: tkl.Memory[B, M, H, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        k: tkl.Memory[B, K2, H, K1, ADDRESS_SPACE, tkl.f16],
+        v: tkl.Memory[B, K2, H, N, ADDRESS_SPACE, tkl.f16],
         custom_mask: tkl.Memory[B, M, GLOBAL_ADDRESS_SPACE, tkl.i8],
-        c: tkl.Memory[B, H, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[B, M, H, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         base_attention_core_custom_mask(q, k, v, custom_mask, c)
 
