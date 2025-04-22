@@ -1723,6 +1723,7 @@ def test_scalar_cond_copy(shape, request):
     thresh_value = 12
     tidx_expr = THREAD_0 * (BLOCK_N // wave_size) + (WORKGROUP_0 * BLOCK_N)
 
+
     @tkw.wave(constraints)
     def test(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
@@ -1743,6 +1744,7 @@ def test_scalar_cond_copy(shape, request):
 
     a = device_randn(shape, dtype=torch.float16)
     b = device_zeros(shape, dtype=torch.float16)
+
     options = WaveCompileOptions(
         subs={
             M: shape[0],
