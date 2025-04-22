@@ -20,6 +20,7 @@ from ..ops.wave_ops import (
     CustomOp,
     Extract,
     Iterate,
+    ExtractElement,
     Lt,
     Maximum,
     Minimum,
@@ -361,7 +362,9 @@ def decompose_reduce_ops(
                 read.index = {
                     reduction_dim: IndexSequence(hardware_constraint.lane_id, 1, 1)
                 }
-                warp_partial_res = get_graph_node(Extract(read, [0]), custom.graph)
+                warp_partial_res = get_graph_node(
+                    ExtractElement(read, [0]), custom.graph
+                )
                 warp_partial_res.type = node.type.dtype
 
                 # TODO: Add handler for newScalar to handle IndexExpr and constant.
