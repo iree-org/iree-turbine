@@ -116,6 +116,7 @@ def emit_global_scan(
             ),
             graph,
         )
+        cond_node.index = get_custom(src).index
 
         masked = get_graph_node(
             SelectOp(cond=cond_node, if_true=shuffle_val, if_false=zero_vec), graph
