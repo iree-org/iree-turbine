@@ -629,6 +629,8 @@ def get_bhsd_attention_kernel(
             upd_reciprocal_sum = tkw.select(is_nan, init_sum, reciprocal_sum)
 
             res = res_mm * upd_reciprocal_sum
+        else:
+            res = res_mm * reciprocal_sum
         tkw.write(res, c, mapping=mapping)
 
     @tkw.wave(constraints)
