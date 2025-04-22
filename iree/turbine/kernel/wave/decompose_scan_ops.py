@@ -25,6 +25,7 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
     custom.add_to_graph(graph)
     return custom.fx_node
 
+
 def get_register_as_graph_node(
     node: fx.Node,
     value: float | sympy.Basic,
@@ -50,7 +51,7 @@ def emit_global_scan(
     num_steps = int(math.log2(float(subgroup_size)))
     for idx in range(num_steps):
         offset_val = 1 << idx
-        
+
         # shuffle operation to get value from another thread
         shuffle = ShuffleOp(init, offset_val, subgroup_size)
         shuffle_val = get_graph_node(shuffle, graph)
