@@ -6,6 +6,7 @@ import sympy
 import torch.fx as fx
 
 from .._support.dtype import i1
+
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import (
     Add,
