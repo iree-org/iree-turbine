@@ -427,7 +427,7 @@ def handle_binary_op(op):
                         rhs.ir_value = vector_d.splat(
                             lhs.ir_value.type, _to_scalar(rhs.ir_value)
                         )
-            breakpoint()
+
             if lhs.ir_value.type != rhs.ir_value.type:
                 op = get_custom(node)
                 raise ValidationError(
