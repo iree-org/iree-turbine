@@ -142,10 +142,21 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
     vector_shape = cast_py_literal(emitter, shape)
     element_type = IrType.parse(dtype.ir_type_asm())
     vector_type = VectorType.get(vector_shape, element_type)
+
+    try:
+        if isinstance(value, sympy.Basic):
+            evaluated_value = float(value.evalf())
+        else:
+            evaluated_value = float(value)
+    except Exception as e:
+        raise ValidationError(
+            f"Failed to evaluate symbolic value in register: {value}"
+        ) from e
+
     register = arith_d.ConstantOp(
         vector_type,
         DenseElementsAttr.get_splat(
-            vector_type, get_constant_attr(value, element_type)
+            vector_type, get_constant_attr(evaluated_value, element_type)
         ),
     ).result
     emitter.bind_node_proxy(node, IRProxyValue(register))
@@ -370,6 +381,26 @@ def handle_binary_op(op):
             lhs = cast_py_value(emitter, lhs)
             rhs = cast_py_value(emitter, rhs)
 
+            if lhs.ir_value.type != rhs.ir_value.type:
+                # Broadcast 1xf32 to 1x64xf32 //fix
+                if VectorType.isinstance(lhs.ir_value.type) and VectorType.isinstance(
+                    rhs.ir_value.type
+                ):
+                    if lhs.ir_value.type.shape == [1] and rhs.ir_value.type.shape == [
+                        1,
+                        64,
+                    ]:
+                        lhs.ir_value = vector_d.splat(
+                            rhs.ir_value.type, _to_scalar(lhs.ir_value)
+                        )
+                    elif rhs.ir_value.type.shape == [1] and lhs.ir_value.type.shape == [
+                        1,
+                        64,
+                    ]:
+                        rhs.ir_value = vector_d.splat(
+                            lhs.ir_value.type, _to_scalar(rhs.ir_value)
+                        )
+            breakpoint()
             if lhs.ir_value.type != rhs.ir_value.type:
                 op = get_custom(node)
                 raise ValidationError(
