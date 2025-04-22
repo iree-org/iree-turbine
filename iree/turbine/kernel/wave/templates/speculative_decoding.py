@@ -99,6 +99,20 @@ def get_speculative_decoding_kernel(
         outputs={NDT: i, D: j},
     )
 
+    # FIXME: fix
+    predicts_write_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={NDT: CUR_INDEX, D: CUR_DRAFT_TOKEN_ID},
+        outputs={NDT: i, D: j},
+    )
+
+    # FIXME: fix
+    accept_index_write_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={NDT: CUR_INDEX, D: CUR_DRAFT_TOKEN_ID},
+        outputs={NDT: i, D: j},
+    )
+
     @tkw.wave(constraints)
     def speculative_decoding(
         predicts: tkl.Memory[B * NDT, GLOBAL_ADDRESS_SPACE, tkl.f32], # [seq_len], mutable
@@ -159,6 +173,13 @@ def get_speculative_decoding_kernel(
                         lambda x, y, z: sympy.Or(sympy.LessThan(x, y / threshold_acc), sympy.GreaterThan(z, threshold_single)),
                     )
 
+                    new_prob_acc_reg = prob_acc_reg
+                    new_cur_prob_offset_reg = cur_prob_offset_reg
+                    new_coin_reg = coin_reg
+                    new_num_accepted_tokens_reg = num_accepted_tokens_reg
+                    new_last_accepted_retrive_idx_reg = last_accepted_retrive_idx_reg
+                    new_cur_index_reg = tkw.read(retrive_next_sibling, mapping=cur_index_mapping, elements_per_thread=1)
+
                     @tkw.conditional(cond)
                     def then():
                         new_prob_acc_reg = 0.0
@@ -171,18 +192,18 @@ def get_speculative_decoding_kernel(
                         new_cur_index_reg = cur_index_reg
                         tkw.set_symbol(CUR_PROB_OFFSET, new_cur_prob_offset_reg)
                         # FIXME: revisit this once feature implemented
-                        break
+                  #     break
 
-                    @tkw.conditional(cond)
-                    def else():
-                        tmp = tkw.read(target_probs, mapping=target_probs_cur_index_mapping, elements_per_thread=1)
-                        tkw.write(tmp, draft_probs, mapping=draft_probs_write_mapping, elements_per_thread=1)
-                        new_prob_acc_reg = prob_acc_reg
-                        new_cur_prob_offset_reg = cur_prob_offset_reg
-                        new_coin_reg = coin_reg
-                        new_num_accepted_tokens_reg = num_accepted_tokens_reg
-                        new_last_accepted_retrive_idx_reg = last_accepted_retrive_idx_reg
-                        new_cur_index_reg = tkw.read(retrive_next_sibling, mapping=cur_index_mapping, elements_per_thread=1)
+                  # @tkw.conditional(cond)
+                  # def else():
+                  #     tmp = tkw.read(target_probs, mapping=target_probs_cur_index_mapping, elements_per_thread=1)
+                  #     tkw.write(tmp, draft_probs, mapping=draft_probs_write_mapping, elements_per_thread=1)
+                  #     new_prob_acc_reg = prob_acc_reg
+                  #     new_cur_prob_offset_reg = cur_prob_offset_reg
+                  #     new_coin_reg = coin_reg
+                  #     new_num_accepted_tokens_reg = num_accepted_tokens_reg
+                  #     new_last_accepted_retrive_idx_reg = last_accepted_retrive_idx_reg
+                  #     new_cur_index_reg = tkw.read(retrive_next_sibling, mapping=cur_index_mapping, elements_per_thread=1)
 
                     tkw.set_symbol(NEXT_CUR_INDEX, new_cur_index_reg)
                     return new_prob_acc_reg, new_cur_prob_offset_reg, new_coin_reg, new_last_accepted_retrive_idx_reg, new_num_accepted_tokens_reg, new_cur_index_reg
@@ -193,7 +214,7 @@ def get_speculative_decoding_kernel(
                 def then():
                     # FIXME: revisit this once feature implemented
                     return num_accepted_tokens
-                    break
+                #   break
 
                 return num_accepted_tokens
 
@@ -209,7 +230,7 @@ def get_speculative_decoding_kernel(
         MFMA_INPUT_ELS_PER_THREAD: 4,
         MFMA_OUTPUT_ELS_PER_THREAD: 4,
         BLOCK_B: 1,
-        B: batch,
+        B: batch_size,
         ONE: 1,
         NST: num_speculative_tokens,
         NDT: num_draft_tokens,
