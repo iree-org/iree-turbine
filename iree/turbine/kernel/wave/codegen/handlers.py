@@ -408,18 +408,27 @@ def handle_binary_op(op):
             lhs = cast_py_value(emitter, lhs).ir_value
             rhs = cast_py_value(emitter, rhs).ir_value
 
-            # Handle special scalar/rank-0 cases where lhs/rhs may be
-            # Dtype, vector<Dtype>, or vector<1xDtype>.
-            arg_ranks = [get_rank(arg.type) for arg in (lhs, rhs)]
-            if (arg_ranks[0] != arg_ranks[1]) and max(arg_ranks) <= 1:
-                if arg_ranks[0] > arg_ranks[1]:
-                    # Case where rank(lhs) > rank(rhs)
-                    rhs = vector_d.broadcast(lhs.type, rhs)
-                else:
-                    # Case where rank(rhs) > rank(lhs)
-                    lhs = vector_d.broadcast(rhs.type, lhs)
-
-            if lhs.type != rhs.type:
+            if lhs.ir_value.type != rhs.ir_value.type:
+                # Broadcast 1xf32 to 1x64xf32 //fix
+                if VectorType.isinstance(lhs.ir_value.type) and VectorType.isinstance(
+                    rhs.ir_value.type
+                ):
+                    if lhs.ir_value.type.shape == [1] and rhs.ir_value.type.shape == [
+                        1,
+                        64,
+                    ]:
+                        lhs.ir_value = vector_d.splat(
+                            rhs.ir_value.type, _to_scalar(lhs.ir_value)
+                        )
+                    elif rhs.ir_value.type.shape == [1] and lhs.ir_value.type.shape == [
+                        1,
+                        64,
+                    ]:
+                        rhs.ir_value = vector_d.splat(
+                            lhs.ir_value.type, _to_scalar(rhs.ir_value)
+                        )
+            breakpoint()
+            if lhs.ir_value.type != rhs.ir_value.type:
                 op = get_custom(node)
                 raise ValidationError(
                     f"Expected lhs and rhs to have same type for\n"
