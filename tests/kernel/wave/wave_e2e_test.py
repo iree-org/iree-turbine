@@ -4,14 +4,20 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import iree.turbine.kernel as tk
+import json
+import os
+
+import pytest
+import sympy
+import torch
+from torch.testing import assert_close
+
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
-from iree.turbine.kernel.wave.wave_sim import wave_sim
-from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
+from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
 from iree.turbine.kernel.wave.utils.general_utils import (
     ceildiv,
     get_default_scheduling_params,
@@ -20,25 +26,20 @@ from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
 from iree.turbine.kernel.wave.utils.torch_utils import (
-    to_default_device,
-    device_randn,
     device_randint,
+    device_randn,
     device_randperm,
     device_zeros,
+    to_default_device,
 )
+from iree.turbine.kernel.wave.wave_sim import wave_sim
+
 from .common.utils import (
-    require_e2e,
-    require_cdna3,
-    perf_test,
     param_bool,
+    perf_test,
+    require_cdna3,
+    require_e2e,
 )
-import torch
-from torch.testing import assert_close
-import pytest
-import sympy
-import os
-import torch
-import json
 
 default_test_shapes = [
     (1, 27),
@@ -1038,66 +1039,6 @@ def test_reduce_sum(shape, request):
 
 
 @require_e2e
-@pytest.mark.parametrize(
-    "shape",
-    [
-        (2, 64),
-    ]
-    ## [(250, 1), (128, 1), (76, 45), (127, 256), (121, 132)]
-    ##  NotImplementedError: Currently only support unit vector for shuffleOp.
-)
-def test_reduce_cumsum(shape, request):
-    run_bench = request.config.getoption("--runperf")
-    M = tkl.sym.M
-    N = tkl.sym.N
-    wave_size = 64
-    BLOCK_M = 1
-    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
-    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-
-    constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N},
-        )
-    ]
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
-
-    @tkw.wave(constraints)
-    def test(
-        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
-        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    ):
-        lhs = tkw.read(a)
-        res = tkw.cumsum(lhs, dim=N)
-        tkw.write(res, c)
-
-    torch.manual_seed(1)
-    input = device_zeros(shape, dtype=torch.float32) + 1
-    output = device_zeros(shape, dtype=torch.float32)
-    torch_ref = torch.cumsum((input), dim=-1)
-    options = WaveCompileOptions(
-        subs={
-            M: shape[0],
-            N: shape[1],
-            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
-        },
-        canonicalize=True,
-        run_bench=run_bench,
-    )
-    options = set_default_run_config(options)
-    test = wave_compile(options, test)
-
-    asm = test(input, output)
-    breakpoint()
-    assert_close(torch_ref, output, atol=0.1, rtol=1e-05)
-
-
-@require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
 def test_toy_online_softmax(shape):
     M = tkl.sym.M
@@ -1683,3 +1624,61 @@ def test_scalar_codegen(shape, tkl_dtype, torch_dtype, arg_vals, request):
     test(a, scalar_c, scalar_d, b)
 
     assert torch.all(b == arg_vals[3]).item()
+
+
+@require_e2e
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1, 64),
+        (51, 64),
+    ],
+)
+def test_reduce_cumsum(shape, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    wave_size = 64
+    BLOCK_M = 1
+    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a)
+        res = tkw.cumsum(lhs, dim=N)
+        tkw.write(res, c)
+
+    torch.manual_seed(1)
+    input = device_zeros(shape, dtype=torch.float16) + 1
+    output = device_zeros(shape, dtype=torch.float16)
+    torch_ref = torch.cumsum((input), dim=-1)
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(input, output)
+    assert_close(torch_ref, output, atol=0.1, rtol=1e-05)

@@ -2018,3 +2018,69 @@ def test_scalar_codegen_i32():
     # Final dispatch args dtype
     # CHECK: flow.dispatch @scalar_codegen_i32::@scalar_codegen_i32(
     # CHECK-SAME: %arg0, %arg1, %arg2, %arg3)
+
+
+@run_test
+def test_scanop_cumsum():
+    M = tkl.sym.M
+    N = tkl.sym.N
+    BLOCK_M = 1
+    BLOCK_N = 64
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: 64},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def scanop_cumsum(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a)
+        res = tkw.cumsum(lhs, dim=N)
+        tkw.write(res, c)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 1,
+            N: 64,
+            BLOCK_M: 1,
+            BLOCK_N: 64,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    scanop_cumsum = wave_compile(options, scanop_cumsum)
+    print(scanop_cumsum.asm)
+
+    # CHECK-LABEL: func.func @scanop_cumsum
+
+    # Shuffle-based scan: using XOR lane masks
+    # CHECK: gpu.shuffle xor {{.*}}, {{.*}}, {{.*}} : f32
+
+    # Broadcast shuffled values into vector<1xf32>
+    # CHECK: vector.broadcast {{.*}} : f16 to vector<1xf16>
+
+    # Conditional mask: comparison with offset
+    # CHECK: arith.cmpi sge
+    # CHECK: vector.splat {{.*}} : vector<1xi1>
+    # CHECK: arith.select {{.*}} : vector<1xi1>, vector<1xf16>
+
+    # Accumulation
+    # CHECK: arith.addf {{.*}} : vector<1xf16>
+
+    # Final store
+    # CHECK: vector.store {{.*}} : memref<1x64xf16
+
+    # Dispatch
+    # CHECK: flow.dispatch @scanop_cumsum

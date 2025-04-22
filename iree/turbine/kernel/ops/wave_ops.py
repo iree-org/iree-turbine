@@ -1407,27 +1407,8 @@ class NestedRegionOp(CustomOp):
 @dataclass
 class Conditional(NestedRegionOp):
     condition: fx.Proxy | IndexExpr
-    subgraph_name: Optional[str] = None
-    implicit_captures: Sequence[fx.Proxy] = field(default_factory=list)
-
-    # for elementwise
-    if_true: Optional[fx.Proxy] = None
-    if_false: Optional[fx.Proxy] = None
-
-    def is_elementwise(self) -> bool:
-        return self.if_true is not None and self.if_false is not None
-
-    def infer_type(self):
-        if self.if_true is None or self.if_false is None:
-            return
-        true_type = get_custom(self.if_true).type
-        false_type = get_custom(self.if_false).type
-
-        assert (
-            true_type == false_type
-        ), f"Type mismatch in Conditional: {true_type} vs {false_type}"
-
-        self.type = true_type
+    subgraph_name: str
+    implicit_captures: Sequence[fx.Proxy]
 
     @classmethod
     def handle(cls, graph, *args, **kwargs):
@@ -1923,7 +1904,7 @@ class ScanOp(CustomOp, ABC):
             src_indexings = [get_custom(arg).indexing_dims for arg in self.arg]
             if not all_equal(src_indexings):
                 raise NotImplementedError(
-                    "NYI: All inputs to ScanOp must have same indexing dims."
+                    "All inputs to ScanOp must have same indexing dims."
                 )
             indexing = src_indexings[0]
         else:
