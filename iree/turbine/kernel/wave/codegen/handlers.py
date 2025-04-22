@@ -55,6 +55,7 @@ from ...ops.wave_ops import (
     eq,
     exp2,
     extract,
+    extract_element,
     extract_slice,
     ge,
     get_custom,
@@ -1086,6 +1087,20 @@ def handle_extract_slice(emitter: WaveEmitter, node: fx.Node):
         strides,
     )
 
+    emitter.bind_node_proxy(node, IRProxyValue(element))
+
+
+@handle_op(extract_element)
+def handle_extract_element(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, offset = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    assert isinstance(offset, list) and len(offset) == 1
+    extract_vector = cast_vector(emitter, register)
+    element = vector_d.extract(
+        extract_vector, static_position=offset, dynamic_position=[]
+    )
     emitter.bind_node_proxy(node, IRProxyValue(element))
 
 
