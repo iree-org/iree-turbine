@@ -289,70 +289,10 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-def decompose_value(src: Value, bitsize: int) -> list[Value]:
-    """
-    Decomposes a value into smaller values of the given bitsize.
-    For example, if the input is a vector of 128 bits and the bitsize is 32,
-    it will return 4 values of 32 bits each.
-    """
-    src_width = src.type.element_type.width * sum(src.type.shape)
-    if src_width == bitsize:
-        if VectorType.isinstance(src.type):
-            return [vector_d.extract(src, static_position=[0], dynamic_position=[])]
-
-        return [src]
-
-    if src_width < bitsize:
-        src = llvm_d.bitcast(IntegerType.get_signless(src_width), src)
-        src = arith_d.extui(IntegerType.get_signless(bitsize), src)
-        return [src]
-
-    if src_width % bitsize != 0:
-        raise ValueError(f"Cannot decompose {src_width} bits into {bitsize} bits.")
-
-    num_elements = src_width // bitsize
-    temp_vec_type = VectorType.get([num_elements], IntegerType.get_signless(bitsize))
-    src = llvm_d.bitcast(temp_vec_type, src)
-    elements = []
-    for i in range(num_elements):
-        element = vector_d.extract(src, static_position=[i], dynamic_position=[])
-        elements.append(element)
-
-    return elements
-
-
-def compose_values(res_type: IrType, elements: list[Value]) -> Value:
-    """
-    Composes a list of values into a single value of the given type.
-    """
-    bitsize = elements[0].type.width
-    num_elements = len(elements)
-    if num_elements == 1:
-        if res_type.element_type == elements[0].type:
-            return vector_d.splat(res_type, elements[0])
-
-    temp_vec_type = VectorType.get([num_elements], IntegerType.get_signless(bitsize))
-    result = vector_d.from_elements(temp_vec_type, elements)
-    dst_width = res_type.element_type.width * sum(res_type.shape)
-    if dst_width < bitsize:
-        result = llvm_d.bitcast(IntegerType.get_signless(bitsize), result)
-        result = arith_d.trunci(IntegerType.get_signless(dst_width), result)
-
-    result = llvm_d.bitcast(res_type, result)
-    return result
-
-
 def create_shuffle(
     src: Value, offset: Value, width: Value, mode: gpu_d.ShuffleMode
 ) -> Value:
-    bitsize = 32
-    values = decompose_value(src, bitsize)
-    result = []
-    for value in values:
-        value = gpu_d.shuffle(value, offset, width, mode)[0]
-        result.append(value)
-
-    return compose_values(src.type, result)
+    return gpu_d.shuffle(src, offset, width, mode)[0]
 
 
 def emit_dot(
@@ -488,6 +428,8 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
         raise NotImplementedError(
             "Non-const width or offset is not yet implemented for shuffleOp."
         )
+
+    i32 = IntegerType.get_signless(32)
     src = cast_py_value(emitter, src).ir_value
     offset = cast_py_value(emitter, offset, IntegerType.get_signless(32)).ir_value
     width = cast_py_value(emitter, width, IntegerType.get_signless(32)).ir_value
