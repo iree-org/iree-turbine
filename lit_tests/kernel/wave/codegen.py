@@ -899,7 +899,7 @@ def test_unary_lowerings():
 
     test = wave_compile(get_wave_compile_options(), test)
     print(test.asm)
-    # CHECK-LABEL: func @test
+    # CHECK-LABEL: test_unary_lowerings
     # Testing Negate
     # CHECK: %[[NEG:.+]] = arith.negf
 
@@ -985,7 +985,7 @@ def test_reduce_sum():
     test = wave_compile(options, test)
     print(test.asm)
 
-    # CHECK-LABEL: func @test
+    # CHECK-LABEL: test_reduce_sum
     # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i32
     # CHECK-DAG: %[[C2:.+]] = arith.constant 2 : i32
     # CHECK-DAG: %[[C4:.+]] = arith.constant 4 : i32
@@ -997,17 +997,17 @@ def test_reduce_sum():
     # Local Reduction
     # CHECK: arith.addf {{.*}} : vector<1xf16>
     # Global Reduction
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : vector<1xf16>
     # CHECK: arith.addf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C2]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C2]], %{{.+}} : vector<1xf16>
     # CHECK: arith.addf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C4]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C4]], %{{.+}} : vector<1xf16>
     # CHECK: arith.addf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C8]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C8]], %{{.+}} : vector<1xf16>
     # CHECK: arith.addf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C16]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C16]], %{{.+}} : vector<1xf16>
     # CHECK: arith.addf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C32]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C32]], %{{.+}} : vector<1xf16>
     # CHECK: arith.addf {{.*}} : vector<1xf16>
 
 
@@ -1061,7 +1061,7 @@ def test_mutliple_local_reduce_sum():
     test = wave_compile(options, test)
     print(test.asm)
 
-    # CHECK-LABEL: func @test
+    # CHECK-LABEL: test_mutliple_local_reduce_sum
     # CHECK: %[[LHS:.+]] = vector.load {{.*}} : memref<256x128xf16
     # CHECK: %[[RHS:.+]] = vector.load {{.*}} : memref<256x128xf16
     # Reduce all sources locally.
@@ -1133,7 +1133,7 @@ def test_reduction_and_elemwise():
     test = wave_compile(options, test)
     print(test.asm)
 
-    # CHECK-LABEL: func @test
+    # CHECK-LABEL: test_reduction_and_elemwise
     # CHECK-DAG: %[[C0_IDX:.+]] = arith.constant 0 : index
     # CHECK-DAG: %[[C4_IDX:.+]] = arith.constant 4 : index
     # CHECK-DAG: %[[C1_IDX:.+]] = arith.constant 1 : index
@@ -1222,7 +1222,7 @@ def test_tiled_reduce_max():
     test = wave_compile(options, test)
     print(test.asm)
 
-    # CHECK-LABEL: func @test
+    # CHECK-LABEL: test_tiled_reduce_max
     # CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i32
     # CHECK-DAG: %[[C2:.+]] = arith.constant 2 : i32
     # CHECK-DAG: %[[C4:.+]] = arith.constant 4 : i32
@@ -1241,17 +1241,17 @@ def test_tiled_reduce_max():
     # Local Reduction
     # CHECK: arith.maximumf {{.*}} : vector<1xf16>
     # Global Reduction
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : vector<1xf16>
     # CHECK: arith.maximumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C2]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C2]], %{{.+}} : vector<1xf16>
     # CHECK: arith.maximumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C4]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C4]], %{{.+}} : vector<1xf16>
     # CHECK: arith.maximumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C8]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C8]], %{{.+}} : vector<1xf16>
     # CHECK: arith.maximumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C16]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C16]], %{{.+}} : vector<1xf16>
     # CHECK: arith.maximumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C32]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C32]], %{{.+}} : vector<1xf16>
     # CHECK: %[[GLOBAL_REDUCE:.+]] = arith.maximumf {{.*}} : vector<1xf16>
     # Accumulator Reduction
     # CHECK: %[[ACC_REDUCE:.+]] = arith.maximumf %[[ACC]], %[[GLOBAL_REDUCE]]
@@ -1332,17 +1332,17 @@ def test_tiled_reduce_min():
     # Local Reduction
     # CHECK: arith.minimumf {{.*}} : vector<1xf16>
     # Global Reduction
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : vector<1xf16>
     # CHECK: arith.minimumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C2]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C2]], %{{.+}} : vector<1xf16>
     # CHECK: arith.minimumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C4]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C4]], %{{.+}} : vector<1xf16>
     # CHECK: arith.minimumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C8]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C8]], %{{.+}} : vector<1xf16>
     # CHECK: arith.minimumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C16]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C16]], %{{.+}} : vector<1xf16>
     # CHECK: arith.minimumf {{.*}} : vector<1xf16>
-    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C32]], %{{.+}} : f32
+    # CHECK: gpu.shuffle  xor %{{.+}}, %[[C32]], %{{.+}} : vector<1xf16>
     # CHECK: %[[GLOBAL_REDUCE:.+]] = arith.minimumf {{.*}} : vector<1xf16>
     # Accumulator Reduction
     # CHECK: %[[ACC_REDUCE:.+]] = arith.minimumf %[[ACC]], %[[GLOBAL_REDUCE]]

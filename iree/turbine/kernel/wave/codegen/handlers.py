@@ -343,37 +343,10 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
     offset = cast_py_value(emitter, offset, IntegerType.get_signless(32)).ir_value
     width = cast_py_value(emitter, width, IntegerType.get_signless(32)).ir_value
 
-    if not VectorType.isinstance(src.type):
-        raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
-
-    if math.prod(src.type.shape) != 1:
-        raise NotImplementedError("Currently only support unit vector for shuffleOp.")
-
-    # Scalarize (vector<FLOAT_TYPE> -> FLOAT_TYPE).
-    static_pos = [0 for i in range(src.type.rank)]
-    element = vector_d.extract(src, static_position=static_pos, dynamic_position=[])
-    element_original_type = element.type
-
-    # Pad to 32 bit if needed.
-    # TODO Handle and pack non-unit vector type. i.e enable shuffling of vector<4xF8>
-    #      in one shuffle instruction.
-    if not _is_float_type(element.type):
-        raise NotImplementedError("Currently only support shuffle for floats.")
-    if element.type.width > 32:
-        raise ValueError("Cannot shuffle more than 32 bit.")
-    elif element.type.width < 32:
-        element = arith_d.extf(F32Type.get(), element)
-
     # Shuffle data between other threads in a warp.
-    result = gpu_d.shuffle(element, offset, width, gpu_d.ShuffleMode.XOR)
+    result = gpu_d.shuffle(src, offset, width, gpu_d.ShuffleMode.XOR)[0]
 
-    # Reconstruct shuffled value to original shape and dtype.
-    shuffled_val = result[0]
-    if element_original_type != shuffled_val.type:
-        shuffled_val = arith_d.truncf(element_original_type, shuffled_val)
-    vec_result = vector_d.broadcast(src.type, shuffled_val)
-
-    emitter.bind_node_proxy(node, IRProxyValue(vec_result))
+    emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
 ###############################################################################
