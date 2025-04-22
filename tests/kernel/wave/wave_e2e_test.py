@@ -1634,7 +1634,7 @@ def test_scalar_codegen(shape, tkl_dtype, torch_dtype, arg_vals, request):
         (51, 64),
     ],
 )
-def test_reduce_cumsum(shape, request):
+def test_scanop_cumsum(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
