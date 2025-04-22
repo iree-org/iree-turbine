@@ -61,6 +61,13 @@ def extract(
     ...
 
 
+def extract_element(
+    register: "Register",
+    offsets: tuple[IndexExpr],
+) -> "Register":
+    ...
+
+
 def extract_slice(
     register: "Register",
     offsets: tuple[IndexExpr],
@@ -1828,6 +1835,31 @@ class Extract(CustomOp):
         dim_to_remove = dst_shape[-1] if not non_unit_dim else non_unit_dim[0]
         dst_shape.remove(dim_to_remove)
         dst_type = Register[(*dst_shape, src_type.dtype)]
+        self.type = dst_type
+
+
+@define_op("extract_element")
+@dataclass
+class ExtractElement(CustomOp):
+    """
+    Op Rationale:
+
+    Extract is an op used to represent extracting of
+    a scalar from TKW's 1-D vector on the specified index.
+
+    This can also be viewed as indexing/slicing on the fastest
+    dimension. Hence, the semantic of this op is designed to
+    see itself as a reduction on the indexed/fastest dimension.
+    """
+
+    register_: fx.Proxy
+    offset: IndexExpr | int
+
+    def infer_type(self):
+        # Intuition here is we are trying to extract an element
+        # from fastest dim => we reduce the fastest dim.
+        src_type = get_custom(self.register_).type
+        dst_type = src_type.dtype
         self.type = dst_type
 
 
