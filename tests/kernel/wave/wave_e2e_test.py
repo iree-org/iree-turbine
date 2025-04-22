@@ -1041,7 +1041,7 @@ def test_reduce_sum(shape, request):
 @pytest.mark.parametrize(
     "shape",
     [
-        (1, 64),
+        (2, 64),
     ]
     ## [(250, 1), (128, 1), (76, 45), (127, 256), (121, 132)]
     ##  NotImplementedError: Currently only support unit vector for shuffleOp.

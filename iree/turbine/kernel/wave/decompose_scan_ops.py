@@ -110,9 +110,11 @@ def emit_global_scan(
     num_steps = int(math.log2(float(subgroup_size)))
     for idx in range(num_steps):
         offset_val = 1 << idx
-        shuffle_val = get_graph_node(ShuffleOp(init, offset_val, subgroup_size), graph)
+        shuffle = ShuffleOp(init, offset_val, subgroup_size)
+        shuffle_val = get_graph_node(shuffle, graph)
         lane_id = hardware_constraint.linearized_thread_id % subgroup_size
         zero_vec = zero_like(shuffle_val, graph)
+        zero_vec.index = get_custom(src).index
 
         # zero_vec = get_graph_node(NewRegister(get_custom(init).type.symbolic_shape, get_custom(init).type.dtype, 0.0), graph)
 
@@ -127,8 +129,9 @@ def emit_global_scan(
 
         cond_expr = ge(lane_id, Integer(offset_val))
         cond_node = get_graph_node(
-            NewRegister(get_custom(init).type.symbolic_shape, i1, 1.0), graph
+            NewRegister(get_custom(init).type.symbolic_shape, i1, cond_expr), graph
         )
+        cond_node.index = get_custom(src).index
 
         masked = get_graph_node(
             SelectOp(cond=cond_node, if_true=shuffle_val, if_false=zero_vec), graph

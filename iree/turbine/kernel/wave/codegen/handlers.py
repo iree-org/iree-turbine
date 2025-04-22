@@ -143,20 +143,25 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
     element_type = IrType.parse(dtype.ir_type_asm())
     vector_type = VectorType.get(vector_shape, element_type)
 
-    try:
-        if isinstance(value, sympy.Basic):
-            evaluated_value = float(value.evalf())
-        else:
-            evaluated_value = float(value)
-    except Exception as e:
-        raise ValidationError(
-            f"Failed to evaluate symbolic value in register: {value}"
-        ) from e
+    # try:
+    #     if isinstance(value, sympy.Basic):
+    #         evaluated_value = float(value.evalf())
+    #     else:
+    #         evaluated_value = float(value)
+    # except Exception as e:
+    #     raise ValidationError(
+    #         f"Failed to evaluate symbolic value in register: {value}"
+    #     ) from e
+    if isinstance(value, sympy.Basic):
+        value = gen_sympy_index(add_emitter_subs(emitter), value)
+        register = vector_d.splat(vector_type, value)
+        emitter.bind_node_proxy(node, IRProxyValue(register))
+        return
 
     register = arith_d.ConstantOp(
         vector_type,
         DenseElementsAttr.get_splat(
-            vector_type, get_constant_attr(evaluated_value, element_type)
+            vector_type, get_constant_attr(value, element_type)
         ),
     ).result
     emitter.bind_node_proxy(node, IRProxyValue(register))
@@ -400,7 +405,7 @@ def handle_binary_op(op):
                         rhs.ir_value = vector_d.splat(
                             lhs.ir_value.type, _to_scalar(rhs.ir_value)
                         )
-            breakpoint()
+
             if lhs.ir_value.type != rhs.ir_value.type:
                 op = get_custom(node)
                 raise ValidationError(
