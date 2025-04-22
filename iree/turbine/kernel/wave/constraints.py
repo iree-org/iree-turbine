@@ -83,7 +83,7 @@ class GenericDot:
     def __post_init__(self):
         if self.along_dim != MMAOperand.M and self.along_dim != MMAOperand.N:
             raise ValueError(
-                f"Invalid along_dim: {self.along_dim}. Must be MMAOperand.M or MMAOperand.N."
+                f"Invalid 'along_dim': {self.along_dim}. Must be 'MMAOperand.M' or 'MMAOperand.N'."
             )
 
     def get_shape(self, threads_per_wave: int) -> tuple[int, int, int]:
