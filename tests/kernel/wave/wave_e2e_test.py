@@ -1681,4 +1681,4 @@ def test_reduce_cumsum(shape, request):
     test = wave_compile(options, test)
 
     test(input, output)
-    assert_close(torch_ref, output, atol=0.1, rtol=1e-05)
+    assert_close(torch_ref, output, atol=1e-03, rtol=1e-05)
