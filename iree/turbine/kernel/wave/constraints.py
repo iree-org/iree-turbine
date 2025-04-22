@@ -324,6 +324,8 @@ class HardwareConstraint(Constraint):
         stride: int,
     ) -> IndexSequence:
         thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
+        if workgroup_dim == 0:
+            thread_id = thread_id % self.threads_per_wave
         return IndexSequence(
             thread_id * elements_per_thread, elements_per_thread, stride
         )
