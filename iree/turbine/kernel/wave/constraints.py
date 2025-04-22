@@ -59,6 +59,12 @@ class MMAType(Enum):
     I32_32x32x16_I8 = 0x12C1
 
 
+class MMAOperand(Enum):
+    M = 0
+    N = 1
+    K = 2
+
+
 @dataclass
 class GenericDot:
     """
@@ -72,49 +78,59 @@ class GenericDot:
     out_vec_size: int = 1
     k_vec_size: int = 4
     k_mult: int = 1
+    along_dim: MMAOperand = MMAOperand.N
+
+    def __post_init__(self):
+        if self.along_dim != MMAOperand.M and self.along_dim != MMAOperand.N:
+            raise ValueError(
+                f"Invalid along_dim: {self.along_dim}. Must be MMAOperand.M or MMAOperand.N."
+            )
 
     def get_shape(self, threads_per_wave: int) -> tuple[int, int, int]:
-        return (
-            self.out_vec_size,
-            threads_per_wave // self.k_mult,
-            self.k_vec_size * self.k_mult,
-        )  # M x N x K
+
+        m = self.out_vec_size
+        n = threads_per_wave // self.k_mult
+        k = self.k_vec_size * self.k_mult
+        if self.along_dim == MMAOperand.N:
+            return (m, n, k)
+        else:
+            return (n, m, k)
 
     def get_index_offset(
         self, lane: IndexExpr, threads_per_wave: int
     ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
-        return [
-            Piecewise((lane % self.out_vec_size, ~MMA_ACC), (0, MMA_ACC)),  # M
-            lane // self.k_mult,  # N
-            (lane % self.k_mult) * self.k_vec_size,  # K
-        ]
+        m = Piecewise((lane % self.out_vec_size, ~MMA_ACC), (0, MMA_ACC))
+        n = lane // self.k_mult
+        k = (lane % self.k_mult) * self.k_vec_size
+        if self.along_dim == MMAOperand.N:
+            return (m, n, k)
+        else:
+            return (n, m, k)
 
     def get_index_size(
         self, threads_per_wave: int
     ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
-        return [
-            Piecewise((1, ~MMA_ACC), (self.out_vec_size, MMA_ACC)),  # M
-            1,  # N
-            self.k_vec_size,  # K
-        ]
+        m = Piecewise((1, ~MMA_ACC), (self.out_vec_size, MMA_ACC))
+        n = 1
+        k = self.k_vec_size
+        if self.along_dim == MMAOperand.N:
+            return (m, n, k)
+        else:
+            return (n, m, k)
 
     def get_index_stride(
         self, threads_per_wave: int
     ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
-        return [
-            Piecewise((1, ~MMA_ACC), (threads_per_wave // self.k_mult, MMA_ACC)),  # M
-            1,  # N
-            self.k_vec_size,  # K
-        ]
+        m = Piecewise((1, ~MMA_ACC), (threads_per_wave // self.k_mult, MMA_ACC))
+        n = 1
+        k = self.k_vec_size
+        if self.along_dim == MMAOperand.N:
+            return (m, n, k)
+        else:
+            return (n, m, k)
 
     def __hash__(self):
-        return hash((self.out_vec_size, self.k_vec_size, self.k_mult))
-
-
-class MMAOperand(Enum):
-    M = 0
-    N = 1
-    K = 2
+        return hash((self.out_vec_size, self.k_vec_size, self.k_mult, self.along_dim))
 
 
 @dataclass

@@ -148,7 +148,7 @@ def test_gemm_dot():
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.interation(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             a_reg = tkw.read(a)
             b_reg = tkw.read(b)
