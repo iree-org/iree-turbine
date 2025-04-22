@@ -25,7 +25,6 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
     custom.add_to_graph(graph)
     return custom.fx_node
 
-
 def get_register_as_graph_node(
     node: fx.Node,
     value: float | sympy.Basic,
