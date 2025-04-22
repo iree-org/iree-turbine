@@ -44,16 +44,16 @@ import torch.nn.functional as F
 
 
 def tree_speculative_sampling_target_only(
-    predicts,                   # [seq_len], mutable
-    output_token_ids,           # [batch_size, num_speculative_tokens], mutable
-    output_accepted_token_num,  # [batch_size], mutable
-    candidates,                 # [batch_size, num_draft_tokens]
-    retrive_index,              # [batch_size, num_draft_tokens]
-    retrive_next_token,         # [batch_size, num_draft_tokens]
-    retrive_next_sibling,       # [batch_size, num_draft_tokens]
-    uniform_samples,            # [batch_size, num_draft_tokens]
-    target_probs,               # [batch_size, num_draft_tokens, vocab_size]
-    draft_probs,                # [batch_size, num_draft_tokens, vocab_size]
+    predicts,               # [seq_len], mutable
+    accept_index,           # [batch_size, num_speculative_tokens], mutable
+    accept_token_num,       # [batch_size], mutable
+    candidates,             # [batch_size, num_draft_tokens]
+    retrive_index,          # [batch_size, num_draft_tokens]
+    retrive_next_token,     # [batch_size, num_draft_tokens]
+    retrive_next_sibling,   # [batch_size, num_draft_tokens]
+    uniform_samples,        # [batch_size, num_draft_tokens]
+    target_probs,           # [batch_size, num_draft_tokens, vocab_size]
+    draft_probs,            # [batch_size, num_draft_tokens, vocab_size]
     batch_size,
     num_speculative_tokens,
     num_draft_tokens,
@@ -61,26 +61,29 @@ def tree_speculative_sampling_target_only(
     threshold_single=1.0,
     threshold_acc=1.0,
     deterministic=True):
-    
+
     threshold_acc = max(threshold_acc, 1e-9)
     for bx in range(batch_size):
         prob_acc = 0.0
         cur_prob_offset = 0  # bx * num_draft_tokens * d handled via indexing
         coin = uniform_samples[bx, 0]
         last_accepted_retrive_idx = retrive_index[bx, 0]
-        output_token_ids[bx, 0] = last_accepted_retrive_idx
+        accept_index[bx, 0] = last_accepted_retrive_idx
         num_accepted_tokens = 0
         cur_index = 0
-        
+
+        # Iterate over speculative token positions
         for j in range(1, num_speculative_tokens):
             cur_index = retrive_next_token[bx, cur_index]
+
+            # Traverse draft token candidates (siblings) at this position
             while cur_index != -1:
                 draft_index = retrive_index[bx, cur_index]
                 draft_token_id = candidates[bx, cur_index]
                 target_prob_single = target_probs[bx, cur_prob_offset, draft_token_id]
                 prob_acc += target_prob_single
-                
-                if (coin <= prob_acc / threshold_acc or 
+
+                if (coin <= prob_acc / threshold_acc or
                     target_prob_single >= threshold_single):
                     # accept token
                     prob_acc = 0.0
@@ -88,18 +91,18 @@ def tree_speculative_sampling_target_only(
                     coin = uniform_samples[bx, cur_index]
                     predicts[last_accepted_retrive_idx] = draft_token_id
                     num_accepted_tokens += 1
-                    output_token_ids[bx, num_accepted_tokens] = draft_index
+                    accept_index[bx, num_accepted_tokens] = draft_index
                     last_accepted_retrive_idx = draft_index
                     break
                 else:
                     draft_probs[bx, cur_index, draft_token_id] = target_probs[bx, cur_index, draft_token_id]
                     cur_index = retrive_next_sibling[bx, cur_index]
-            
+
             if cur_index == -1:
                 break
-        
-        output_accepted_token_num[bx] = num_accepted_tokens
-        
+
+        accept_token_num[bx] = num_accepted_tokens
+
         # Sample from relu(target_probs - draft_probs)
         last_offset = cur_prob_offset
         q = target_probs[bx, last_offset]
@@ -241,8 +244,8 @@ def testReferenceSpeculativeDecoding(
 
     tree_speculative_sampling_target_only(
         predicts=predicts,
-        output_token_ids=accept_index,
-        output_accepted_token_num=accept_token_num,
+        accept_index=accept_index,
+        accept_token_num=accept_token_num,
         candidates=candidates,
         retrive_index=retrive_index,
         retrive_next_token=retrive_next_token,
