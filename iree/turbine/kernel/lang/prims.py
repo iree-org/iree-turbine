@@ -11,9 +11,9 @@ __all__ = [
     "is_debug",
     "program_id",
     "constant",
+    "cumsum",
     "exp2",
     "max",
-    "cumsum",
     "sum",
     "dot",
     "for_loop",
@@ -44,9 +44,6 @@ max = ops.vector_max
 sum = ops.vector_sum
 dot = ops.vector_dot
 
-# Scan Operations
-cumsum = ops.vector_cumsum
-
 # Control Flow Operations
 for_loop = ops.for_loop
 
@@ -58,3 +55,6 @@ store = ops.kernel_buffer_store
 broadcast = ops.vector_broadcast
 broadcast_in_dim = ops.vector_broadcast_in_dim
 transpose = ops.vector_transpose
+
+# Scan Operations
+cumsum = ops.vector_cumsum

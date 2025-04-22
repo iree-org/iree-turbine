@@ -121,12 +121,7 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
-
-    custom_node = get_custom(node)
-    if custom_node.index:
-        shape = [get_thread_shape(custom_node.index)]
-    else:
-        shape = list(custom_node.shape)
+    shape = [get_thread_shape(get_custom(node).index)]
     vector_shape = cast_py_literal(emitter, shape)
     element_type = IrType.parse(dtype.ir_type_asm())
     vector_type = VectorType.get(vector_shape, element_type)
@@ -144,7 +139,6 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
                 vector_type, get_constant_attr(value, element_type)
             ),
         ).result
-
     emitter.bind_node_proxy(node, IRProxyValue(register))
 
 
@@ -407,26 +401,6 @@ def handle_binary_op(op):
                 raise ValidationError("Malformed arguments") from e
             lhs = cast_py_value(emitter, lhs).ir_value
             rhs = cast_py_value(emitter, rhs).ir_value
-
-            if lhs.ir_value.type != rhs.ir_value.type:
-                # Broadcast 1xf32 to 1x64xf32 //fix
-                if VectorType.isinstance(lhs.ir_value.type) and VectorType.isinstance(
-                    rhs.ir_value.type
-                ):
-                    if lhs.ir_value.type.shape == [1] and rhs.ir_value.type.shape == [
-                        1,
-                        64,
-                    ]:
-                        lhs.ir_value = vector_d.splat(
-                            rhs.ir_value.type, _to_scalar(lhs.ir_value)
-                        )
-                    elif rhs.ir_value.type.shape == [1] and lhs.ir_value.type.shape == [
-                        1,
-                        64,
-                    ]:
-                        rhs.ir_value = vector_d.splat(
-                            lhs.ir_value.type, _to_scalar(rhs.ir_value)
-                        )
 
             if lhs.ir_value.type != rhs.ir_value.type:
                 op = get_custom(node)
@@ -859,40 +833,6 @@ def handle_roundeven(source: Value, options: WaveCompileOptions) -> OpResult:
 
 @handle_op(conditional)
 def handle_conditional(emitter: WaveEmitter, node: fx.Node):
-    custom = get_custom(node)
-
-    if custom.is_elementwise():
-        cond = custom.condition
-        if not isinstance(cond, fx.Node):
-            lhs_val = gen_sympy_index(add_emitter_subs(emitter), cond.lhs)
-            rhs_val = gen_sympy_index(add_emitter_subs(emitter), cond.rhs)
-
-            if isinstance(cond, sympy.GreaterThan):
-                cmp = arith_d.cmpi(arith_d.CmpIPredicate.sge, lhs_val, rhs_val)
-            else:
-                raise NotImplementedError(f"Unsupported symbolic comparison: {cond}")
-        else:
-            cmp = _to_scalar(cast_vector(emitter, cond))
-
-        true_val = cast_py_value(emitter, custom.if_true).ir_value
-        false_val = cast_py_value(emitter, custom.if_false).ir_value
-
-        def _get_shape_size(val):
-            return val.type.shape[0] if VectorType.isinstance(val.type) else 1
-
-        if true_val.type != false_val.type:
-            t_size = _get_shape_size(true_val)
-            f_size = _get_shape_size(false_val)
-
-            if t_size == 1 and f_size > 1:
-                true_val = vector_d.splat(false_val.type, _to_scalar(true_val))
-            elif f_size == 1 and t_size > 1:
-                false_val = vector_d.splat(true_val.type, _to_scalar(false_val))
-
-        selected = arith_d.select(cmp, true_val, false_val)
-        emitter.bind_node_proxy(node, IRProxyValue(selected))
-        return
-
     try:
         condition, subgraph, implicit_capture = node.args
     except ValueError as e:
