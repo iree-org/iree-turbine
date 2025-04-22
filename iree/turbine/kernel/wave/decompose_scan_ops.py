@@ -74,7 +74,6 @@ def emit_global_scan(
         # condition node: thread ID >= offset
         cond_expr = ge(lane_id, offset_val)
         cond_node = get_register_as_graph_node(init, cond_expr, graph, i1)
-
         cond_node.index = get_custom(src).index
 
         # apply shuffle_val only if condition is true; else use 0
