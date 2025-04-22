@@ -513,7 +513,6 @@ def get_conversion_op(src_elem_type, dst_elem_type, fastmath=None):
         and (_is_index_type(src_elem_type) or _is_index_type(dst_elem_type))
     ):
         conversion_op = arith_d.index_cast
-        return conversion_op
 
     conversion_ops = {
         (True, False): arith_d.fptosi,
