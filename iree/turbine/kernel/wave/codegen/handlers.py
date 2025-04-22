@@ -429,7 +429,6 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
             "Non-const width or offset is not yet implemented for shuffleOp."
         )
 
-    i32 = IntegerType.get_signless(32)
     src = cast_py_value(emitter, src).ir_value
     offset = cast_py_value(emitter, offset, IntegerType.get_signless(32)).ir_value
     width = cast_py_value(emitter, width, IntegerType.get_signless(32)).ir_value
