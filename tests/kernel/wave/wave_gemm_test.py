@@ -214,6 +214,9 @@ def testGemm(
     assert_close(c, iree_ref, check_device=False)
 
 
+_xfail = lambda *a: pytest.param(*a, marks=pytest.mark.xfail)
+
+
 @require_e2e
 @pytest.mark.parametrize("shape", [(64, 64, 64)])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
@@ -223,7 +226,7 @@ def testGemm(
     [
         GenericDot(k_vec_size=4, along_dim=MMAOperand.M),
         GenericDot(k_mult=4, along_dim=MMAOperand.M),
-        pytest.mark.xfail(GenericDot(out_vec_size=4, along_dim=MMAOperand.M)),
+        _xfail(GenericDot(out_vec_size=4, along_dim=MMAOperand.M)),
         GenericDot(),
         GenericDot(k_mult=2),
         GenericDot(k_mult=4),
