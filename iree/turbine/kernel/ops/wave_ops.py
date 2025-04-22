@@ -99,6 +99,10 @@ def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Re
     ...
 
 
+def scalar(value: float, dtype: DataType) -> "Register":
+    ...
+
+
 def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
     ...
 
@@ -830,7 +834,10 @@ class BinaryPyOp(BinaryOpBase, ABC):
 @dataclass
 class ComparisonPyOp(BinaryOpBase, ABC):
     def infer_type(self):
-        self.type = Register[(*self.infer_shape(), i1)]
+        # If lhs & rhs is scalar then shape is empty, then type is i1.
+        # Else, output i1 with shape of lhs/rhs.
+        shape = self.infer_shape()
+        self.type = Register[(*shape, i1)] if shape else i1
 
 
 @define_interface_op("abs")
@@ -881,8 +888,9 @@ class SelectOp(CustomOp):
         cond_type = get_custom(self.cond).type
         if_true_type = get_custom(self.if_true).type
         if_false_type = get_custom(self.if_false).type
+        cond_dtype = cond_type.dtype
 
-        if cond_type.dtype != i1:
+        if cond_dtype != i1:
             raise ValueError("SelectOp expects condition type to be i1.")
 
         if if_true_type.dtype != if_false_type.dtype:
@@ -1159,6 +1167,20 @@ class NewRegister(CustomOp):
 
     def infer_type(self):
         self.type = Register[(*self.shape, self.dtype)]
+
+
+@define_op("scalar")
+@dataclass
+class NewScalar(CustomOp):
+    value: float | IndexExpr
+    dtype: DataType
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return list()
+
+    def infer_type(self):
+        self.type = self.dtype
 
 
 @define_op("mma")

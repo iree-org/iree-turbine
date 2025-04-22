@@ -48,6 +48,7 @@ from iree.turbine.aot.support.ir_utils import (
     _is_index_type,
     _is_integer_like_type,
     _is_signed_or_signless_type,
+    get_conversion_op,
 )
 
 # TK infrastructure imports.
@@ -77,6 +78,7 @@ from ...ops.wave_ops import (
     permute,
     reciprocal,
     register,
+    scalar,
     reshape,
     roundeven,
     scheduling_barrier,
@@ -145,6 +147,24 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
     ).result
     breakpoint()
     emitter.bind_node_proxy(node, IRProxyValue(register))
+
+
+@handle_op(scalar)
+def handle_scalar(emitter: WaveEmitter, node: fx.Node):
+    try:
+        value, dtype = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    target_type = IrType.parse(dtype.ir_type_asm())
+    i32_type = IntegerType.get_signless(32)
+    if isinstance(value, IndexExpr):
+        scalar_src = gen_sympy_index(add_emitter_subs(emitter), value)
+        scalar_i32 = arith_d.index_cast(i32_type, scalar_src)
+        conversion_op = get_conversion_op(i32_type, target_type)
+        scalar = conversion_op(target_type, scalar_i32)
+    elif isinstance(value, (int, float)):
+        scalar = arith_d.constant(target_type, value)
+    emitter.bind_node_proxy(node, IRProxyValue(scalar))
 
 
 @handle_op(allocate)

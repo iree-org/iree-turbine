@@ -20,6 +20,7 @@ from ..ops.wave_ops import (
     CustomOp,
     Extract,
     Iterate,
+    Lt,
     Maximum,
     Minimum,
     Read,
@@ -27,6 +28,7 @@ from ..ops.wave_ops import (
     SelectOp,
     ShuffleOp,
     Write,
+    NewScalar,
 )
 from ..lang.global_symbols import *
 
@@ -347,9 +349,7 @@ def decompose_reduce_ops(
                 # if reduc_dim on wg_dim=1, then we will only have 2 partial output.
                 reduction_wg_dim = workgroup_constraint_map[reduction_dim].workgroup_dim
                 reduction_wave_id = hardware_constraint.wave_id[reduction_wg_dim]
-
-                # TODO create actual index not just starting offset
-                write.index = reduction_wave_id
+                write.index = {reduction_dim: IndexSequence(reduction_wave_id, 1, 1)}
 
                 # Do a 2nd stage warp reduction on the results from different warp.
                 read = Read(
@@ -357,17 +357,30 @@ def decompose_reduce_ops(
                     elements_per_thread=1,
                     _write_dependency=[write],
                 ).add_to_graph(custom.graph)
-                # TODO create actual index not just starting offset
-                read.index = hardware_constraint.lane_id
+                read.index = {
+                    reduction_dim: IndexSequence(hardware_constraint.lane_id, 1, 1)
+                }
                 warp_partial_res = get_graph_node(Extract(read, [0]), custom.graph)
+                warp_partial_res.type = node.type.dtype
 
-                # TODO: Need a constantOp to set cond and identity
-                lane_id_reg = ScalarOp(hardware_constraint.lane_id, tkl.i1)
-                id_reg = ScalarOp(IDENTITY[custom.tkw_op_name], node.type.dtype)
-                cond = lane_id_reg < num_reduction_waves
-                masked_value = SelectOp(cond, warp_partial_res, id_reg)
+                # TODO: Add handler for newScalar to handle IndexExpr and constant.
+                lane_id_reg = get_graph_node(
+                    NewScalar(hardware_constraint.lane_id, tkl.i32), custom.graph
+                )
+                num_reduction_waves_regs = get_graph_node(
+                    NewScalar(num_reduction_waves, tkl.i32), custom.graph
+                )
+                id_reg = get_graph_node(
+                    NewScalar(IDENTITY[custom.tkw_op_name], node.type.dtype),
+                    custom.graph,
+                )
+                cond = get_graph_node(
+                    Lt(lane_id_reg, num_reduction_waves_regs), custom.graph
+                )
+                masked_value = get_graph_node(
+                    SelectOp(cond, warp_partial_res, id_reg), custom.graph
+                )
 
-                # TODO: adjust cluster config.
                 final_reduction = emit_global_reduction(
                     binary_fn,
                     masked_value,
