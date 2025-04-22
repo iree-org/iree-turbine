@@ -146,7 +146,6 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
             vector_type, get_constant_attr(value, element_type)
         ),
     ).result
-    breakpoint()
     emitter.bind_node_proxy(node, IRProxyValue(register))
 
 
