@@ -6,7 +6,6 @@ import sympy
 import torch.fx as fx
 
 from .._support.dtype import i1
-
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import (
     Add,
@@ -28,59 +27,15 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
     return custom.fx_node
 
 
-def insert_conditional_node(cmp: Conditional, graph: fx.Graph) -> fx.Node:
-    cmp.graph = graph
-    cmp.fx_node = graph.create_node(
-        "call_function",
-        target=cmp._tracing_function,
-        args=(
-            cmp.condition,
-            cmp.subgraph_name,
-            cmp.implicit_captures,
-            cmp.if_true,
-            cmp.if_false,
-        ),
-        kwargs={},
-    )
-    cmp.fx_node.tkw_op = cmp.__class__
-    cmp.fx_node.tkw_op_name = cmp.tkw_op_name
-    cmp.fx_node.type = get_custom(cmp.if_true).type
-    return cmp.fx_node
-
-
-def insert_select_node(
-    cond: fx.Node, if_true: fx.Node, if_false: fx.Node, graph: fx.Graph
+def get_register_as_graph_node(
+    node: fx.Node,
+    value: float | sympy.Basic,
+    graph: fx.Graph,
+    dtype: Optional[Any] = None,
 ) -> fx.Node:
-    sel = SelectOp(cond, if_true, if_false)
-    sel.graph = graph
-    sel.fx_node = graph.create_node(
-        "call_function",
-        target=sel._tracing_function,
-        args=(cond, if_true, if_false),
-        kwargs={},
-    )
-    sel.fx_node.tkw_op = sel.__class__
-    sel.fx_node.tkw_op_name = sel.tkw_op_name
-    sel.fx_node.type = get_custom(if_true).type
-    return sel.fx_node
-
-
-def create_symbolic_condition_select(cond_expr, if_true, if_false, shape, graph):
-    def cond_lambda():
-        return cond_expr
-
-    cond_node = graph.call_function(cond_lambda, args=())
-    cond_reg = register(shape, i1, cond_node)
-    cond_node_fx = cond_reg.add_to_graph(graph)
-
-    select_op = SelectOp(cond=cond_node_fx, if_true=if_true, if_false=if_false)
-    return select_op.add_to_graph(graph)
-
-
-def zero_like(node: fx.Node, graph: fx.Graph) -> fx.Node:
     shape = get_custom(node).type.symbolic_shape
-    dtype = get_custom(node).type.dtype
-    return get_graph_node(NewRegister(shape, dtype, 0.0), graph)
+    dtype = dtype if dtype else get_custom(node).type.dtype
+    return get_graph_node(NewRegister(shape, dtype, value), graph)
 
 
 def emit_global_scan(
@@ -118,6 +73,7 @@ def emit_global_scan(
         )
         cond_node.index = get_custom(src).index
 
+        # apply shuffle_val only if condition is true; else use 0
         masked = get_graph_node(
             SelectOp(cond=cond_node, if_true=shuffle_val, if_false=zero_vec), graph
         )
