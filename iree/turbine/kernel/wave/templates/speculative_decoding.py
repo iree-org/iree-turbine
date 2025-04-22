@@ -7,21 +7,21 @@
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.constraints import MMAType
-from .attention_common import AttentionShape
 from dataclasses import dataclass
 import math
 
 
 def get_speculative_decoding_kernel(
-    batch_size: int,
+    d: int,
 ):
 
-    D = tkl.sym.B
+    D = tkl.sym.D
     BLOCK_D = tkl.sym.BLOCK_D
 
     constraints = [tkw.WorkgroupConstraint(D, BLOCK_D, 0)]
     constraints += [tkw.WaveConstraint(D, BLOCK_D)]
+    constraints += [tkw.TilingConstraint(D, BLOCK_D)]
+
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
@@ -45,7 +45,7 @@ def get_speculative_decoding_kernel(
 
     hyperparams = {
         BLOCK_D: 64,
-        D: batch_size,
+        D: d,
     }
 
     dynamic_symbols = []

@@ -6,6 +6,7 @@
 
 import pytest
 import torch
+import torch.nn.functional as F
 import iree.turbine.kernel as tk
 from iree.turbine.kernel.lang.global_symbols import *
 from .common.utils import (
@@ -23,7 +24,6 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 from iree.turbine.kernel.wave.templates.speculative_decoding import (
     get_speculative_decoding_kernel,
 )
-import torch.nn.functional as F
 
 
 def get_wave_speculative_decoding_kernel(shape: int):
@@ -59,6 +59,7 @@ def tree_speculative_sampling_target_only(
     num_speculative_tokens,
     num_draft_tokens,
     d,
+    request,
     threshold_single=1.0,
     threshold_acc=1.0,
     deterministic=True,
@@ -166,6 +167,7 @@ def testReferenceSpeculativeDecoding(
     expected_predicts,
     expected_accept_index,
     expected_accept_token_num,
+    request,
 ):
     device = "cuda"
 
@@ -245,6 +247,7 @@ def testReferenceSpeculativeDecoding(
         num_speculative_tokens=num_spec_step,
         num_draft_tokens=num_draft_tokens,
         d=vocab_size,
+        request=request,
         threshold_single=threshold_single,
         threshold_acc=threshold_acc,
         deterministic=True,
