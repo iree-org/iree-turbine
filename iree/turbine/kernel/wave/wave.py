@@ -63,7 +63,7 @@ from .shared_memory_indexing import (
 )
 
 # Utils
-from .utils.symbol_utils import subs_idxc, safe_subs
+from .utils.symbol_utils import delinearize_index, subs_idxc, safe_subs
 from .utils.classes import KernelLaunchInfo
 from .utils.print_utils import print_trace, try_apply_pass
 from .utils.graph_utils import (
@@ -73,7 +73,6 @@ from .utils.graph_utils import (
 )
 from .utils.compile_utils import canonicalize_module
 from .utils.general_utils import (
-    delinearize_index,
     partial,
     get_hardware_constraint,
     remove_files_with_extension,
