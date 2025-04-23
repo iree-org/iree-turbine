@@ -1001,6 +1001,9 @@ class Placeholder(CustomOp):
         if not isinstance(custom, NestedRegionOp):
             return
 
+        if all(x is None for x in custom.implicit_captures):
+            return
+
         # Cleanup dead captures
         subgraph = custom.graph.subgraphs[custom.subgraph_name]
         live_captures = []
@@ -1062,6 +1065,11 @@ class IterArg(Placeholder):
     @iter_idx.setter
     def iter_idx(self, value):
         self.fx_node.iter_idx = value
+
+    def infer_type(self):
+        parent_op = self.parent_op()
+        init_args = parent_op.init_args
+        self.type = init_args[self.iter_idx].type
 
 
 # Ops modeling TKW operations in the kernel language
@@ -1782,7 +1790,9 @@ class GetResult(CustomOp):
             return None
         if not isinstance(custom, Iterate):
             return custom_index
-        assert isinstance(custom_index, Sequence) and self.res_idx < len(
+        if not isinstance(custom_index, Sequence):
+            return custom_index
+        assert self.res_idx < len(
             custom.indexing_dims
         ), f"Invalid {custom_index=} with {self.res_idx=} and {custom.indexing_dims=}\n{custom}"
         return custom_index[self.res_idx]

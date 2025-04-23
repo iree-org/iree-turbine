@@ -114,3 +114,310 @@ def get_speculative_decoding_kernel(
     dynamic_symbols_map = {}
 
     return tree_speculative_sampling, hyperparams, dynamic_symbols, dynamic_symbols_map
+
+
+def get_speculative_sampling_kernel(
+    batch_size: int,
+    num_speculative_tokens: int,
+):
+    # CUR_INDEX = tkl.sym.CUR_INDEX
+    CUR_INDEX = sympy.Symbol("CUR_INDEX")
+    J = tkl.sym.J
+    B = tkl.sym.B
+    S = tkl.sym.S
+    D = tkl.sym.D
+    BLOCK_B = tkl.sym.BLOCK_B
+    BLOCK_S = tkl.sym.BLOCK_S
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+    ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={B: batch_size, J: 0, CUR_INDEX: 0, S: 0, D: 20},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
+    constraints += [tkw.TilingConstraint(CUR_INDEX)]
+    constraints += [tkw.TilingConstraint(J)]
+
+    CUR_PROB_OFFSET = tkl.sym.CUR_PROB_OFFSET
+    DRAFT_TOKEN_ID = tkl.sym.DRAFT_TOKEN_ID
+    LAST_ACCEPTED_RETRIEVE_IDX = tkl.sym.LAST_ACCEPTED_RETRIEVE_IDX
+    INNER_DONE = sympy.Symbol("INNER_DONE")
+    OUTER_DONE = sympy.Symbol("OUTER_DONE")
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    k = tkw.IndexMapping.iterator(2)
+
+    read_zero_offset_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={S: i, B: sympy.Integer(0)},
+        outputs={S: i, B: j},
+    )
+
+    read_2d_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={S: i, B: CUR_INDEX},
+        outputs={S: i, B: j},
+    )
+
+    read_3d_mapping = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={S: i, B: CUR_PROB_OFFSET, D: DRAFT_TOKEN_ID},
+        outputs={S: i, B: j, D: k},
+    )
+
+    read_3d_mapping_2 = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={S: i, B: CUR_INDEX, D: DRAFT_TOKEN_ID},
+        outputs={S: i, B: j, D: k},
+    )
+
+    write_1d_mapping = tkw.IndexMapping(
+        num_iterators=1,
+        inputs={S: i, B: DRAFT_TOKEN_ID},
+        outputs={S: i, B: j},
+    )
+
+    write_3d_mapping = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={S: i, B: j, D: k},
+        outputs={S: i, B: CUR_INDEX, D: DRAFT_TOKEN_ID},
+    )
+
+    # =================================================================================
+    # Helper functions.
+    # =================================================================================
+    def read_with_zero_offset(memory):
+        return tkw.read(memory, elements_per_thread=1, mapping=read_zero_offset_mapping)
+
+    def read_with_2d_offset(memory):
+        return tkw.read(memory, elements_per_thread=1, mapping=read_2d_mapping)
+
+    def read_with_3d_offset(memory):
+        return tkw.read(memory, elements_per_thread=1, mapping=read_3d_mapping)
+
+    def read_with_3d_offset_2(memory):
+        return tkw.read(memory, elements_per_thread=1, mapping=read_3d_mapping_2)
+
+    def write_with_3d_offset(memory, value):
+        return tkw.write(value, memory, elements_per_thread=1, mapping=write_3d_mapping)
+
+    # =================================================================================
+    # Kernel.
+    # =================================================================================
+    @tkw.wave(constraints)
+    def speculative_sampling(
+        uniform_samples: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.f32],
+        target_probs: tkl.Memory[S, B, D, ADDRESS_SPACE_0, tkl.f32],
+        draft_probs: tkl.Memory[S, B, D, ADDRESS_SPACE_0, tkl.f32],
+        candidates: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.i32],
+        retrieve_index: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.i32],
+        retrieve_next_token: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.i32],
+        retrieve_next_sibling: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.i32],
+        # Outputs
+        predicts: tkl.Memory[S, B, D, ADDRESS_SPACE_0, tkl.i32],
+        accept_token_num: tkl.Memory[S, ADDRESS_SPACE_0, tkl.i32],
+        accept_index: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.i32],
+        cur_prob_offset_vec: tkl.Memory[S, ADDRESS_SPACE_0, tkl.i32],
+        last_accepted_retrieve_idx_vec: tkl.Memory[S, ADDRESS_SPACE_0, tkl.i32],
+    ):
+        zero = tkw.scalar(0, tkl.i32)
+        zero_f32 = tkw.scalar(0, tkl.f32)
+        tkw.set_symbol(CUR_INDEX, zero)
+        tkw.set_symbol(CUR_PROB_OFFSET, zero)
+        tkw.set_symbol(INNER_DONE, zero)
+        tkw.set_symbol(OUTER_DONE, zero)
+
+        last_accepted_retrieve_idx = read_with_zero_offset(retrieve_index)
+        coin = read_with_zero_offset(uniform_samples)
+
+        outer_loop_cond = (J < num_speculative_tokens) | (OUTER_DONE == 1)
+        inner_loop_cond = (CUR_INDEX >= 0) | (INNER_DONE == 1)
+
+        one = tkw.scalar(1, tkl.i32)
+        threshold_acc = tkw.scalar(1e-2, tkl.f32)
+        threshold_acc = tkw.broadcast(threshold_acc, target_shape=[S, B, D])
+        threshold_single = tkw.scalar(1e-2, tkl.f32)
+        threshold_single = tkw.broadcast(threshold_single, target_shape=[S, B, D])
+
+        @tkw.iterate(
+            J,
+            start=one,
+            condition=outer_loop_cond,
+            init_args=[zero, zero_f32, zero, last_accepted_retrieve_idx, zero, coin],
+        )
+        def outer_loop(
+            cur_index,
+            prob_acc,
+            num_accepted_tokens,
+            last_accepted_retrieve_idx,
+            cur_prob_offset,
+            coin,
+        ):
+            cur_index = read_with_2d_offset(retrieve_next_token)
+
+            @tkw.iterate(
+                CUR_INDEX,
+                start=cur_index,
+                condition=inner_loop_cond,
+                init_args=[
+                    cur_index,
+                    prob_acc,
+                    num_accepted_tokens,
+                    last_accepted_retrieve_idx,
+                    cur_prob_offset,
+                    coin,
+                ],
+            )
+            def inner_loop(
+                cur_index,
+                prob_acc,
+                num_accepted_tokens,
+                last_accepted_retrieve_idx,
+                cur_prob_offset,
+                coin,
+            ):
+                draft_index = read_with_2d_offset(retrieve_index)
+                draft_token_id = read_with_2d_offset(candidates)
+                tkw.set_symbol(DRAFT_TOKEN_ID, draft_token_id)
+                target_prob_single = read_with_3d_offset(target_probs)
+                prob_acc = tkw.broadcast(prob_acc, target_shape=[S, B, D])
+                prob_acc += target_prob_single
+
+                coin_threshold = prob_acc / threshold_acc
+                condition1 = coin <= coin_threshold
+                condition2 = target_prob_single >= threshold_single
+                condition12 = condition1 | condition2
+
+                @tkw.conditional(condition12)
+                def then():
+                    write_with_3d_offset(predicts, draft_token_id)
+                    tkw.write(draft_index, accept_index, elements_per_thread=1)
+                    true = tkw.scalar(1, tkl.i32)
+                    tkw.set_symbol(INNER_DONE, true)
+
+                # TODO: make this work properly with not
+                # condition3 = tkw.apply_expr(condition1, lambda x: sympy.Not(x))
+                # condition4 = tkw.apply_expr(condition2, lambda x: sympy.Not(x))
+                condition3 = coin > coin_threshold
+                condition4 = target_prob_single < threshold_single
+                condition34 = condition3 & condition4
+
+                @tkw.conditional(condition34)
+                def else_():
+                    target_prob_reg = read_with_3d_offset_2(target_probs)
+                    write_with_3d_offset(draft_probs, target_prob_reg)
+
+                new_cur_index = tkw.select(
+                    condition34,
+                    tkw.broadcast(
+                        read_with_2d_offset(retrieve_next_sibling),
+                        target_shape=[S, B, D],
+                    ),
+                    tkw.broadcast(cur_index, target_shape=[S, B, D]),
+                )
+                tkw.set_symbol(CUR_INDEX, new_cur_index)
+
+                new_prob_acc = tkw.select(
+                    condition12,
+                    tkw.broadcast(zero_f32, target_shape=[S, B, D]),
+                    prob_acc,
+                )
+
+                new_accepted_tokens = tkw.select(
+                    condition12,
+                    tkw.broadcast(num_accepted_tokens + one, target_shape=[S, B, D]),
+                    tkw.broadcast(num_accepted_tokens, target_shape=[S, B, D]),
+                )
+
+                new_last_accepted_retrieve_idx = tkw.select(
+                    condition12,
+                    tkw.broadcast(draft_index, target_shape=[S, B, D]),
+                    tkw.broadcast(last_accepted_retrieve_idx, target_shape=[S, B, D]),
+                )
+
+                new_cur_prob_offset = tkw.select(
+                    condition12,
+                    tkw.broadcast(cur_index, target_shape=[S, B, D]),
+                    tkw.broadcast(cur_prob_offset, target_shape=[S, B, D]),
+                )
+                tkw.set_symbol(CUR_PROB_OFFSET, new_cur_prob_offset)
+
+                new_coin = tkw.select(
+                    condition12,
+                    tkw.broadcast(
+                        read_with_2d_offset(uniform_samples), target_shape=[S, B, D]
+                    ),
+                    tkw.broadcast(coin, target_shape=[S, B, D]),
+                )
+
+                return (
+                    new_cur_index,
+                    new_prob_acc,
+                    new_accepted_tokens,
+                    new_last_accepted_retrieve_idx,
+                    new_cur_prob_offset,
+                    new_coin,
+                )
+
+            (
+                cur_index,
+                prob_acc,
+                num_accepted_tokens,
+                last_accepted_retrieve_idx,
+                cur_prob_offset,
+                coin,
+            ) = inner_loop
+            tkw.set_symbol(CUR_INDEX, cur_index)
+
+            @tkw.conditional(CUR_INDEX < 0)
+            def then():
+                true = tkw.scalar(1, tkl.i32)
+                tkw.set_symbol(INNER_DONE, true)
+
+            index_j = tkw.self_index(J, tkl.i32)
+            next_value = tkw.apply_expr(index_j, lambda x: x + 1)
+            tkw.set_symbol(J, next_value)
+
+            return (
+                cur_index,
+                prob_acc,
+                num_accepted_tokens,
+                last_accepted_retrieve_idx,
+                cur_prob_offset,
+                coin,
+            )
+
+        (
+            cur_index,
+            prob_acc,
+            num_accepted_tokens,
+            last_accepted_retrieve_idx,
+            cur_prob_offset,
+            coin,
+        ) = outer_loop
+
+        tkw.write(num_accepted_tokens, accept_token_num, elements_per_thread=1)
+        tkw.write(
+            last_accepted_retrieve_idx,
+            last_accepted_retrieve_idx_vec,
+            elements_per_thread=1,
+        )
+        tkw.write(cur_prob_offset, cur_prob_offset_vec, elements_per_thread=1)
+
+    hyperparams = {
+        BLOCK_B: 1,
+        B: batch_size,
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        S: 10,
+        BLOCK_S: 1,
+        D: 20,
+    }
+    dynamic_symbols = []
+    dynamic_symbols_map = {}
+    return speculative_sampling, hyperparams, dynamic_symbols, dynamic_symbols_map

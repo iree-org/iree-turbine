@@ -277,6 +277,8 @@ def _to_scalar(val: Value) -> Value:
         ), f"Only size 0 or 1 vectors are supported: got {src_type}"
         if src_type.rank == 1:
             val = vector_d.extract(val, static_position=[0], dynamic_position=[])
+        else:
+            val = vector_d.extractelement(val)
 
     return val
 
@@ -517,7 +519,7 @@ def handle_or(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGT, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGT, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -531,7 +533,7 @@ def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGE, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGE, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -545,7 +547,7 @@ def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_lt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OLT, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OLT, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -559,7 +561,7 @@ def handle_lt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_le(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OLE, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OLE, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -935,49 +937,76 @@ def handle_iterate(emitter: WaveEmitter, node: fx.Node):
 
 
 def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
-    # TODO: Add support for init args.
     try:
         axis, init_args, subgraph, implicit_capture, start, condition = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
+    # Flatten init_args and get IR values for each of them.
+    flat_init_args, _ = pytree.tree_flatten((init_args))
+    flat_init_args = [cast_py_value(emitter, arg) for arg in flat_init_args]
+    flat_init_arg_types = [arg.ir_value.type for arg in flat_init_args]
+
     # Initialize while loop
     init_value = cast_py_value(emitter, start).ir_value
     if isinstance(init_value.type, VectorType):
-        init_value = vector_d.extractelement(init_value, [0])
-    elif isinstance(init_value.type, IntegerType):
+        zero = arith_d.constant(IndexType.get(), 0)
+        init_value = vector_d.extractelement(init_value, position=zero)
+    if isinstance(init_value.type, IntegerType):
         init_value = arith_d.index_cast(IndexType.get(), init_value)
 
     assert isinstance(
         init_value.type, IndexType
     ), f"Unhandled start type: {init_value.type}"
 
-    whileOp = scf_d.WhileOp([init_value.type], [init_value])
-    whileOp.before.blocks.append(*[init_value.type])
-    whileOp.after.blocks.append(*[init_value.type])
+    init_args = [arg.ir_value for arg in flat_init_args] + [init_value]
+    init_arg_types = flat_init_arg_types + [init_value.type]
+    whileOp = scf_d.WhileOp(init_arg_types, init_args)
+    whileOp.before.blocks.append(*init_arg_types)
+    whileOp.after.blocks.append(*init_arg_types)
 
     # Before block: condition.
-    current_value = whileOp.before.blocks[0].arguments[0]
+    current_values = whileOp.before.blocks[0].arguments
     with InsertionPoint(whileOp.before.blocks[0]):
         # Replace the axis with a temporary variable when generating the condition
         # to avoid conflicts with the actual value of the axis.
-        condition = condition.subs({axis: index_symbol("$TMP")})
+        condition = condition.subs({axis: sympy.Symbol("$TMP")})
         subs = add_emitter_subs(emitter)
-        subs[index_symbol("$TMP")] = current_value
+        subs[sympy.Symbol("$TMP")] = current_values[-1]
         condition = gen_sympy_index(subs, condition)
-        scf_d.ConditionOp(condition, [current_value])
+        scf_d.ConditionOp(condition, current_values)
 
     # After block: body.
-    current_value = whileOp.after.blocks[0].arguments[0]
+    current_values = whileOp.after.blocks[0].arguments
     with InsertionPoint(whileOp.after.blocks[0]):
         subgraph = emitter.trace.get_subgraph(subgraph)
+        # Map the captured variables from the root graph to the subgraph
         for root_v, subgraph_v in zip(
             implicit_capture, get_custom(node).captured_vars(subgraph)
         ):
             emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)
-        emitter.induction_vars[axis] = current_value
-        emitter._emit_graph(subgraph)
-        scf_d.YieldOp([emitter.dynamic_dims[axis]])
+
+        # Map the iteration variable
+        emitter.induction_vars[axis] = current_values[-1]
+
+        # Map the iteration arguments
+        iter_args = get_custom(node).iter_args(subgraph)
+        for i, arg in enumerate(iter_args):
+            if i < len(current_values) - 1:
+                emitter.bind_node_proxy(arg, IRProxyValue(current_values[i]))
+
+        # Emit the subgraph
+        return_values = emitter._emit_graph(subgraph)
+        if all(x is None for x in return_values):
+            scf_d.YieldOp([emitter.dynamic_dims[axis]])
+            return
+
+        # Flatten return values and yield them
+        flat_ret_values, _ = pytree.tree_flatten((return_values))
+        flat_ret_values = [
+            cast_py_value(emitter, value).ir_value for value in flat_ret_values
+        ]
+        scf_d.YieldOp(flat_ret_values + [emitter.dynamic_dims[axis]])
 
     emitter.bind_node_proxies(node, [IRProxyValue(v) for v in whileOp.results_])
 

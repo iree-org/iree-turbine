@@ -401,7 +401,6 @@ def add_get_results(trace: CapturedTrace):
             get_result = get_custom(
                 GetResult(reduction.fx_node, 0).add_to_graph(reduction.graph)
             )
-            get_result.vector_shapes = reduction.init_args[0].vector_shapes
             reduction.replace_all_uses_with_except(get_result, [get_result])
 
 
@@ -680,6 +679,8 @@ def fixup_reduction_nodes(
     reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Iterate))
     for reduction in reversed(reduction_nodes):
         reduction = get_custom(reduction)
+        if reduction not in reduction_context:
+            continue
         reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
         output = get_custom(get_last(reduction_subgraph.nodes))
         if all(x is None for x in output.return_vals):
@@ -704,8 +705,14 @@ def fixup_reduction_nodes(
 
         sorted_keys = dict(sorted(reduction_info.init_args.items(), key=lambda x: x[0]))
         new_init_args = []
-        for key in sorted_keys.values():
-            new_init_args.append(expansion_context[key].fx_node)
+        # We could end up in scenarios where we have entered the reduction
+        # but did not expand the init arg. In this case, we need to add the
+        # init arg to the list of new init args.
+        for i in range(len(reduction.init_args)):
+            if i not in sorted_keys:
+                new_init_args.append(reduction.init_args[i])
+            else:
+                new_init_args.append(expansion_context[sorted_keys[i]].fx_node)
         reduction.update_arg("init_args", new_init_args)
 
         for result_index, get_item in reduction_info.get_results.items():
@@ -737,8 +744,6 @@ def expand_graph(
     The expansion does a DFS starting at the leaf nodes and expanding them
     to the root of the graph.
     """
-
-    add_get_results(trace)
 
     leaf_ops = [get_custom(node) for node in reversed(trace.walk(is_leaf_node))]
     if not leaf_ops:

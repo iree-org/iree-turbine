@@ -155,6 +155,8 @@ def get_users(
             if node in custom.init_args:
                 init_arg_idx = custom.init_args.index(node)
                 users.append(custom.iter_args(graph)[init_arg_idx])
+            elif custom.start and custom.start == node:
+                users.append(custom.fx_node)
             else:
                 assert node in custom.implicit_captures
                 for outside_node in graph.nodes:
@@ -219,11 +221,10 @@ def get_inputs(
     custom = get_custom(node)
     if isinstance(custom, IterArg):
         # Map iter args to init args
-        local_reduction = reduction
         if reduction is None:
-            local_reduction = custom.parent_op()
+            reduction = custom.parent_op()
         iter_arg_idx = custom.iter_idx
-        inputs.append(local_reduction.init_args[iter_arg_idx])
+        inputs.append(reduction.init_args[iter_arg_idx])
     elif isinstance(custom, GetResult):
         assert custom.value is not None, f"GetResult node {custom} has no value"
         reduction = get_custom(custom.value)
@@ -243,12 +244,14 @@ def get_inputs(
     elif isinstance(custom, Iterate):
         reduction_subgraph = custom.get_root_graph().subgraphs[custom.subgraph_name]
         inputs.append(custom.outputs(reduction_subgraph))
+        if custom.start:
+            inputs.append(custom.start)
     else:
         # Default handling for other ops.
         for input in node.all_input_nodes:
             inputs.append(input)
 
-    inputs = [propagate_placeholders(i) for i in inputs]
+    inputs = [propagate_placeholders(i) for i in inputs if i is not None]
     return inputs, reduction
 
 
