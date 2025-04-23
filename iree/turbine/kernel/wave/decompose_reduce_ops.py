@@ -78,7 +78,7 @@ def determine_shuffle_config(
         thread_ids.append(offset_table.index(thread_offset))
     cluster_stride = [x - y for x, y in zip(thread_ids[1:], thread_ids[:-1])]
     assert all_equal(cluster_stride), f"Cluster stride must be equal across threads."
-    return cluster_size, cluster_stride[0]
+    return cluster_size, cluster_stride[0] if cluster_size > 1 else 1
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
