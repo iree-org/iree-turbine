@@ -1924,9 +1924,9 @@ class ReduceOp(CustomOp, ABC):
             src_type = src_types[0]
         else:
             src_type = get_custom(self.arg).type
+        dtype = src_type.dtype
         reduced_dims = [dims for dims in src_type.symbolic_shape if dims != self.dim]
-        dst_type = Register[(*reduced_dims, src_type.dtype)]
-        self.type = dst_type
+        self.type = Register[(*reduced_dims, dtype)] if reduced_dims else dtype
         if (
             self.init is not None
             and get_custom(self.init).type.symbolic_shape != self.type.symbolic_shape

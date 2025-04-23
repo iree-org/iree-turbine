@@ -37,6 +37,7 @@ def get_wave_speculative_decoding_kernel(shape: int):
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
         schedule=False,
+        wave_runtime=True,
         use_scheduling_barriers=enable_scheduling_barriers,
     )
     options = set_default_run_config(options)
@@ -114,8 +115,9 @@ def tree_speculative_sampling_target_only(
         cur_prob_offset_vec[bx] = cur_prob_offset
         last_accepted_retrive_idx_vec[bx] = last_accepted_retrive_idx
 
+    torch.manual_seed(0)
     for bx in range(batch_size):
-        coin = uniform_samples[bx, 0]
+        coin = uniform_samples[bx, 0].cpu().item()
         num_accepted_tokens = accept_token_num[bx]
         last_offset = cur_prob_offset_vec[bx]
         q = target_probs[bx, last_offset]
@@ -125,16 +127,15 @@ def tree_speculative_sampling_target_only(
             else torch.zeros_like(q)
         )
         relu_diff = torch.zeros_like(q)
-        wave_kernel(q, p, relu_diff)
-        sum_relu = relu_diff.sum()
+        u = torch.zeros_like(q)
+        wave_kernel(q, p, coin, relu_diff, u)
+        u = u[0].cpu().item()
 
-        u = coin * sum_relu
         sampled_id = d - 1
         aggregate = 0.0
         for i in range(d):
             val = relu_diff[i]
-            if val <= 0:
-                continue
+            val = max(val, 0.0)
             aggregate += val
             if aggregate > u:
                 sampled_id = i

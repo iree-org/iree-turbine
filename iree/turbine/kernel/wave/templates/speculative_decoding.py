@@ -19,6 +19,8 @@ def get_speculative_decoding_kernel(
 
     D = tkl.sym.B
     BLOCK_D = tkl.sym.BLOCK_D
+    CDF_ITER = tkl.sym.CDF_ITER
+    CDF_THRESH = tkl.sym.CDF_THRESH
 
     constraints = [tkw.WorkgroupConstraint(D, BLOCK_D, 0)]
     constraints += [tkw.WaveConstraint(D, BLOCK_D)]
@@ -26,7 +28,7 @@ def get_speculative_decoding_kernel(
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={D: 1},
+            vector_shapes={D: 64},
         )
     ]
 
@@ -34,14 +36,19 @@ def get_speculative_decoding_kernel(
     def tree_speculative_sampling(
         q: tkl.Memory[D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         p: tkl.Memory[D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        output: tkl.Memory[D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        coin: tkl.f32,
+        relu_diff_out: tkl.Memory[D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        u_out: tkl.Memory[D, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         zero = tkl.Register[D, tkl.f32](0.0)
         q_reg = tkw.read(q, elements_per_thread=1)
         p_reg = tkw.read(p, elements_per_thread=1)
         diff = q_reg - p_reg
         relu_diff = tkw.maximum(diff, zero)
-        tkw.write(relu_diff, output, elements_per_thread=1)
+        sum_relu = tkw.sum(relu_diff, dim=D)
+        out = tkw.broadcast(coin * sum_relu, target_shape=[D])
+        tkw.write(relu_diff, relu_diff_out, elements_per_thread=1)
+        tkw.write(out, u_out, elements_per_thread=1)
 
     hyperparams = {
         BLOCK_D: 64,

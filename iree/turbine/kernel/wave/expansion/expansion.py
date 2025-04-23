@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from ..._support.tracing import CapturedTrace
+from ..._support.dtype import DataType
 from typing import Sequence, Type, Any
 from ..constraints import (
     Constraint,
@@ -423,7 +424,13 @@ def populate_inputs(
                 )
             case ReduceOp():
                 try:
-                    reduction_count = dim_scaling[node.reduction_dim]
+                    # Expand reduction to dim scaling amount. When output is scalar, op can only
+                    # be expanded once/count=1, and dim_scaling is null.
+                    reduction_count = (
+                        1
+                        if isinstance(node.type, DataType)
+                        else dim_scaling[node.reduction_dim]
+                    )
                 except KeyError as e:
                     raise RuntimeError(
                         f"Reduction dimension {node.reduction_dim} is not in {dim_scaling} for ReduceOp {node}"
