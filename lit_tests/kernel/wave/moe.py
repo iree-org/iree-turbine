@@ -214,7 +214,9 @@ def create_test_config(mma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16):
             # D1: 16,  # TODO: connected to MFMA op type
             # z, y, x
             B:    16, # z
-            TOPK:  1, # y
+            # Warning: it is necessary to set TOPK == 0 for proper batch
+            # dimension processing, otherwise there is a risk of miscompile.
+            TOPK:  0, # y
             D2:   16, # x
         },
         "canonicalize": {True},
