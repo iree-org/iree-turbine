@@ -66,6 +66,8 @@ def tree_speculative_sampling_target_only(
 
     wave_kernel = get_wave_speculative_decoding_kernel(d)
     threshold_acc = max(threshold_acc, 1e-9)
+    cur_prob_offset_vec = [None] * batch_size
+    last_accepted_retrive_idx_vec = [None] * batch_size
     for bx in range(batch_size):
         prob_acc = 0.0
         cur_prob_offset = 0  # bx * num_draft_tokens * d handled via indexing
@@ -109,9 +111,13 @@ def tree_speculative_sampling_target_only(
                 break
 
         accept_token_num[bx] = num_accepted_tokens
+        cur_prob_offset_vec[bx] = cur_prob_offset
+        last_accepted_retrive_idx_vec[bx] = last_accepted_retrive_idx
 
-        # Sample from relu(target_probs - draft_probs)
-        last_offset = cur_prob_offset
+    for bx in range(batch_size):
+        coin = uniform_samples[bx, 0]
+        num_accepted_tokens = accept_token_num[bx]
+        last_offset = cur_prob_offset_vec[bx]
         q = target_probs[bx, last_offset]
         p = (
             draft_probs[bx, last_offset]
@@ -134,7 +140,7 @@ def tree_speculative_sampling_target_only(
                 sampled_id = i
                 break
 
-        predicts[last_accepted_retrive_idx] = sampled_id
+        predicts[last_accepted_retrive_idx_vec[bx]] = sampled_id
 
 
 test_cases = [
