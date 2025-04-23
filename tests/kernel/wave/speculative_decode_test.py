@@ -26,8 +26,8 @@ from iree.turbine.kernel.wave.templates.speculative_decoding import (
 )
 
 
-def get_wave_speculative_decoding_kernel(shape: int):
-    speculative_decoding, symbols, _, _ = get_speculative_decoding_kernel(shape)
+def get_wave_speculative_decoding_kernel(last_offset, num_draft_tokens, d, num_accepted_tokens, num_speculative_tokens):
+    speculative_decoding, symbols, _, _ = get_speculative_decoding_kernel(last_offset, num_draft_tokens, d, num_accepted_tokens, num_speculative_tokens)
     symbols.update(get_default_scheduling_params())
 
     options = WaveCompileOptions(
@@ -59,13 +59,12 @@ def tree_speculative_sampling_target_only(
     num_speculative_tokens,
     num_draft_tokens,
     d,
-    request,
     threshold_single=1.0,
     threshold_acc=1.0,
     deterministic=True,
 ):
 
-    wave_kernel = get_wave_speculative_decoding_kernel(d)
+  # wave_kernel = get_wave_speculative_decoding_kernel(last_offset, num_draft_tokens, d, num_accepted_tokens, num_speculative_tokens)
     threshold_acc = max(threshold_acc, 1e-9)
     for bx in range(batch_size):
         prob_acc = 0.0
@@ -120,6 +119,7 @@ def tree_speculative_sampling_target_only(
             else torch.zeros_like(q)
         )
         relu_diff = torch.zeros_like(q)
+        wave_kernel = get_wave_speculative_decoding_kernel(last_offset, num_draft_tokens, d, num_accepted_tokens, num_speculative_tokens)
         wave_kernel(q, p, relu_diff)
         sum_relu = relu_diff.sum()
 
@@ -167,7 +167,6 @@ def testReferenceSpeculativeDecoding(
     expected_predicts,
     expected_accept_index,
     expected_accept_token_num,
-    request,
 ):
     device = "cuda"
 
@@ -247,7 +246,6 @@ def testReferenceSpeculativeDecoding(
         num_speculative_tokens=num_spec_step,
         num_draft_tokens=num_draft_tokens,
         d=vocab_size,
-        request=request,
         threshold_single=threshold_single,
         threshold_acc=threshold_acc,
         deterministic=True,
