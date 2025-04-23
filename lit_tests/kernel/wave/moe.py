@@ -271,7 +271,7 @@ def fused_moe_kernel(
     res_reg = tkl.Register[TOPK, B, D2, tkl.f32](0.0)
 
     # fmt: off
-    @tkw.reduction(N, init_args=[res_reg])
+    @tkw.iterate(N, init_args=[res_reg])
     def repeat(acc: tkl.Register[TOPK, B, D2, tkl.f32]) -> tkl.Register[TOPK, B, D2, tkl.f32]:
         ###
         # TMP_3[TOPK, B, D2] = TMP_2[TOPK, B, N:]
