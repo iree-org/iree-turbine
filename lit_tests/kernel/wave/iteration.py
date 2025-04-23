@@ -123,29 +123,20 @@ def test_iteration_with_condition():
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
-    # B is tiled with user-defined init and next symbols and terminates
-    # when the user defined condition is met.
-    INIT_B = tkl.sym.INIT_B
-    NEXT_B = tkl.sym.NEXT_B
-    constraints += [
-        tkw.TilingConstraint(
-            B, init_symbol=INIT_B, next_symbol=NEXT_B, condition=lambda x: x < 10
-        )
-    ]
+    # B is iterated over and so we define a tiling constraint on it.
+    # However, there is no notion of tile size for the iteration as
+    # it is an unstructured loop.
+    constraints += [tkw.TilingConstraint(B)]
 
     @tkw.wave(constraints)
     def iterated_gemm(
         a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[B, N, K, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[B, M, N, ADDRESS_SPACE_0, tkl.f32],
-        init_value: tkl.i32,
+        init_value: tkl.i32,  # type: ignore
     ):
-        # Set the initial value for the iteration.
-        tkw.set_symbol(INIT_B, init_value)
-
-        @tkw.iterate(B, init_args=[])
+        @tkw.iterate(B, start=init_value, condition=B < 10, init_args=[])
         def body():
-
             c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
             @tkw.iterate(K, init_args=[c_reg])
@@ -162,7 +153,7 @@ def test_iteration_with_condition():
             # but this can be replaced with any other operation.
             index_b = tkw.self_index(B, tkl.i32)
             next_value = tkw.apply_expr(index_b, lambda x: x + 1)
-            tkw.set_symbol(NEXT_B, next_value)
+            tkw.set_symbol(B, next_value)
 
     options = WaveCompileOptions(
         subs={
@@ -189,7 +180,7 @@ def test_iteration_with_condition():
     # CHECK-DAG:            %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:            %[[C4:.*]] = arith.constant 4 : index
     # CHECK-DAG:            %[[C1:.*]] = arith.constant 1 : index
-    # CHECK-DAG:            %[[INIT_B:.*]] = vector.extractelement %1[] : vector<index>
+    # CHECK-DAG:            %[[INIT_B:.*]] = arith.index_cast
     # CHECK:                scf.while (%[[ARG:.*]] = %[[INIT_B]]) : (index) -> index {
     # CHECK:                   %[[COND:.*]] = arith.cmpi slt, %[[ARG]], %[[C10]] : index
     # CHECK:                   scf.condition(%[[COND]]) %[[ARG]] : index

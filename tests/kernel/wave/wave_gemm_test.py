@@ -978,15 +978,7 @@ def testSequentialBatchedGemmWhile(
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
-    # B is tiled with user-defined init and next symbols and terminates
-    # when the user defined condition is met.
-    INIT_B = tkl.sym.INIT_B
-    NEXT_B = tkl.sym.NEXT_B
-    constraints += [
-        tkw.TilingConstraint(
-            B, init_symbol=INIT_B, next_symbol=NEXT_B, condition=lambda x: x < shape[0]
-        )
-    ]
+    constraints += [tkw.TilingConstraint(B)]
 
     constraints += [
         tkw.HardwareConstraint(
@@ -1001,10 +993,7 @@ def testSequentialBatchedGemmWhile(
         c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         init_value: tkl.i32,  # type: ignore
     ):
-        # Set the initial value for the iteration.
-        tkw.set_symbol(INIT_B, init_value)
-
-        @tkw.iterate(B, init_args=[])
+        @tkw.iterate(B, start=init_value, condition=B < shape[0], init_args=[])
         def body():
             c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
@@ -1024,7 +1013,7 @@ def testSequentialBatchedGemmWhile(
             # but this can be replaced with any other operation.
             index_b = tkw.self_index(B, tkl.i32)
             next_value = tkw.apply_expr(index_b, lambda x: x + 1)
-            tkw.set_symbol(NEXT_B, next_value)
+            tkw.set_symbol(B, next_value)
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,

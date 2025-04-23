@@ -1437,6 +1437,8 @@ class Iterate(NestedRegionOp):
     init_args: Sequence[Any]
     subgraph_name: str
     implicit_captures: Sequence[fx.Proxy]
+    start: Optional[IndexExpr] = None
+    condition: Optional[IndexExpr] = None
 
     @classmethod
     def handle(cls, graph: RegionGraph, *args, **kwargs):
