@@ -87,7 +87,7 @@ def canonicalize_module(module: Operation):
                     transform_d.apply_patterns_canonicalization()
                 transform_d.apply_cse(target)
                 loops = structured_transform_ops.structured_match(
-                    any_op_t(), target, ops=["scf.for"]
+                    any_op_t(), target, ops=["scf.for", "scf.while"]
                 )
                 transform_d.apply_licm(loops)
                 transform_d.YieldOp([target])
