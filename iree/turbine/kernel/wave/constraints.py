@@ -448,10 +448,17 @@ class TilingConstraint(DistributionConstraint):
     """
 
     dim: IndexExpr
-    tile_size: IndexExpr
+    tile_size: Optional[IndexExpr] = None
     induction_var: Optional[IndexExpr] = None
     iters: Optional[IndexExpr] = None
     start: IndexExpr = Integer(0)
+
+    def __post_init__(self):
+        # If no tile size is specified, set it to 1.
+        # This corresponds to the case when we are specifying a while loop
+        # as opposed to a for loop.
+        if self.tile_size is None:
+            self.tile_size = 1
 
     def __eq__(self, value):
         if not isinstance(value, TilingConstraint):
