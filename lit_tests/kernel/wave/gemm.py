@@ -185,13 +185,8 @@ def test_gemm_dot():
     # CHECK:              vector.store
     # CHECK:              amdgpu.lds_barrier
     # CHECK-COUNT-4:      vector.load
-    # CHECK-COUNT-8:      gpu.shuffle
-    # CHECK:              arith.mulf
-    # CHECK:              vector.reduction <add>
-    # CHECK-COUNT-8:      gpu.shuffle
-    # CHECK:              arith.mulf
-    # CHECK:              vector.reduction <add>
-    # CHECK-COUNT-4:    vector.store
+    # CHECK-COUNT-16:     gpu.shuffle
+    # CHECK-COUNT-16    vector.store
 
 
 @run_test
