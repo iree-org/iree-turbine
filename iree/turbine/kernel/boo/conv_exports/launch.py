@@ -141,7 +141,8 @@ class ConvLaunchableRuntimeCache:
         if "_launchable_cache" in globals():
             _launchable_cache.set_cache_limit(cache_limit)
             return _launchable_cache
-        return ConvLaunchableRuntimeCache(cache_limit)
+        _launchable_cache = ConvLaunchableRuntimeCache(cache_limit)
+        return _launchable_cache
 
 
 def get_launchable(
@@ -158,14 +159,14 @@ def get_launchable(
         launch = Launchable.from_file_cache_only(
             cache_dir,
             parameter_providers=(),
-            entry_point=func_name,
+            entry_point=f"{func_name}$async",
         )
     else:
         module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
         launch = Launchable.jit_compile(
             module_asm,
             parameter_providers=(),
-            entry_point=func_name,
+            entry_point=f"{func_name}$async",
             file_cache_dir=cache_dir,
         )
     launch_cache.add_to_session_cache(session_cache_key, launch)
