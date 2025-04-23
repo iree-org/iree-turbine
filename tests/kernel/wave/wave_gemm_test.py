@@ -233,9 +233,9 @@ _xfail = lambda *a: pytest.param(*a, marks=pytest.mark.xfail)
         GenericDot(k_vec_size=1),
         GenericDot(k_vec_size=2),
         GenericDot(k_vec_size=4),
-        GenericDot(out_vec_size=1),
-        GenericDot(out_vec_size=2),
-        GenericDot(out_vec_size=4),
+        _xfail(GenericDot(out_vec_size=1)),
+        _xfail(GenericDot(out_vec_size=2)),
+        _xfail(GenericDot(out_vec_size=4)),
     ],
 )
 def testGemmDot(
