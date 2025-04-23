@@ -994,6 +994,9 @@ class Placeholder(CustomOp):
         if not isinstance(custom, NestedRegionOp):
             return
 
+        if all(x is None for x in custom.implicit_captures):
+            return
+
         # Cleanup dead captures
         subgraph = custom.graph.subgraphs[custom.subgraph_name]
         live_captures = []

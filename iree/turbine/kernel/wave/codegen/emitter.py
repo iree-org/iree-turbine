@@ -572,6 +572,17 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
                     _enforce_non_rational(operand, term)
                     res = arith_d.andi(*_broadcast(res, operand))
                 stack.append(res)
+            case sympy.Or():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                _enforce_non_rational(rhs, term)
+                _enforce_non_rational(lhs, term)
+                res = arith_d.ori(*_broadcast(lhs, rhs))
+                for _ in range(len(term.args) - 2):
+                    operand = stack.pop()
+                    _enforce_non_rational(operand, term)
+                    res = arith_d.ori(*_broadcast(res, operand))
+                stack.append(res)
             case sympy.Max():
                 rhs = stack.pop()
                 lhs = stack.pop()

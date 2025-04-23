@@ -255,6 +255,8 @@ def _to_scalar(val: Value) -> Value:
         ), f"Only size 0 or 1 vectors are supported: got {src_type}"
         if src_type.rank == 1:
             val = vector_d.extract(val, static_position=[0], dynamic_position=[])
+        else:
+            val = vector_d.extractelement(val)
 
     return val
 
@@ -478,7 +480,7 @@ def handle_or(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGT, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGT, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -492,7 +494,7 @@ def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGE, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGE, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -506,7 +508,7 @@ def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_lt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OLT, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OLT, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -520,7 +522,7 @@ def handle_lt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_le(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OLE, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OLE, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -905,8 +907,9 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
     # Initialize while loop
     init_value = cast_py_value(emitter, start).ir_value
     if isinstance(init_value.type, VectorType):
-        init_value = vector_d.extractelement(init_value, [0])
-    elif isinstance(init_value.type, IntegerType):
+        zero = arith_d.constant(IndexType.get(), 0)
+        init_value = vector_d.extractelement(init_value, position=zero)
+    if isinstance(init_value.type, IntegerType):
         init_value = arith_d.index_cast(IndexType.get(), init_value)
 
     assert isinstance(
@@ -922,9 +925,9 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
     with InsertionPoint(whileOp.before.blocks[0]):
         # Replace the axis with a temporary variable when generating the condition
         # to avoid conflicts with the actual value of the axis.
-        condition = condition.subs({axis: index_symbol("$TMP")})
+        condition = condition.subs({axis: sympy.Symbol("$TMP")})
         subs = add_emitter_subs(emitter)
-        subs[index_symbol("$TMP")] = current_value
+        subs[sympy.Symbol("$TMP")] = current_value
         condition = gen_sympy_index(subs, condition)
         scf_d.ConditionOp(condition, [current_value])
 
