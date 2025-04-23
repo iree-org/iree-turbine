@@ -289,67 +289,6 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-def create_shuffle(
-    src: Value, offset: Value, width: Value, mode: gpu_d.ShuffleMode
-) -> Value:
-    return gpu_d.shuffle(src, offset, width, mode)[0]
-
-
-def emit_dot(
-    emitter: WaveEmitter,
-    config: GenericDot,
-    src_a: Value,
-    src_b: Value,
-    acc: Value,
-    threads_per_wave: int,
-) -> Value:
-    res_type = acc.type
-    res_element_type = res_type.element_type
-
-    def cast(v):
-        v_type = v.type
-        if v_type.element_type != res_element_type:
-            cast_type = VectorType.get(v_type.shape, res_element_type)
-            v = arith_d.extf(cast_type, v)
-
-        return v
-
-    vec_size = config.out_vec_size
-    k_mult = config.k_mult
-    if vec_size > 1 or k_mult > 1:
-        i32 = IntegerType.get_signless(32)
-        width = arith_d.constant(i32, threads_per_wave)
-
-    elements = []
-    for i in range(vec_size):
-        a = src_a
-        b = src_b
-        if vec_size > 1:
-            offset_expr = ((THREAD_0 % threads_per_wave) // vec_size) * vec_size + i
-            offset = gen_sympy_index(add_emitter_subs(emitter), offset_expr)
-            offset = arith_d.index_cast(i32, offset)
-            a = create_shuffle(a, offset, width, gpu_d.ShuffleMode.IDX)
-
-        a = cast(a)
-        b = cast(b)
-        val = arith_d.mulf(a, b)
-        val = cast(val)
-
-        val = vector_d.reduction(val.type.element_type, vector_d.CombiningKind.ADD, val)
-        elements.append(val)
-
-    result = vector_d.from_elements(res_type, elements)
-    for i in range(int(math.log2(float(k_mult)))):
-        shuffle_offset = 1 << i
-        shuffle_offset = arith_d.constant(i32, shuffle_offset)
-        shuffled = create_shuffle(result, shuffle_offset, width, gpu_d.ShuffleMode.XOR)
-        result = arith_d.addf(result, shuffled)
-
-    result = arith_d.addf(result, acc)
-
-    return result
-
-
 def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]) -> Value:
     m = get_constant_attr(m, IntegerType.get_signless(32))
     n = get_constant_attr(n, IntegerType.get_signless(32))
@@ -389,16 +328,7 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
         mma_type = hardware_constraints[0].mma_type
 
     if isinstance(mma_type, GenericDot):
-        result = emit_dot(
-            emitter,
-            mma_type,
-            values[0],
-            values[1],
-            acc,
-            hardware_constraints[0].threads_per_wave,
-        )
-        emitter.bind_node_proxy(node, IRProxyValue(result))
-        return
+        raise ValidationError("Dot product MMA was not decomposed.")
 
     m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
     result = emit_mfma(m, n, k, acc, values)
