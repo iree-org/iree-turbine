@@ -160,7 +160,9 @@ def handle_scalar(emitter: WaveEmitter, node: fx.Node):
     if isinstance(value, IndexExpr):
         scalar_src = gen_sympy_index(add_emitter_subs(emitter), value)
         scalar_i32 = arith_d.index_cast(i32_type, scalar_src)
-        conversion_op = get_conversion_op(i32_type, target_type)
+        conversion_op = get_conversion_op(
+            i32_type, target_type, fastmath=get_fast_math_flags(emitter.options)
+        )
         scalar = conversion_op(target_type, scalar_i32)
     elif isinstance(value, (int, float)):
         scalar = arith_d.constant(target_type, value)
@@ -1139,49 +1141,10 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
     if src_vector_type == dst_vector_type:
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
         return
-
-    is_src_float = _is_float_type(src_elem_type)
-    is_dst_float = _is_float_type(dst_elem_type)
-    is_src_int = _is_integer_like_type(src_elem_type)
-    is_dst_int = _is_integer_like_type(dst_elem_type)
-    if (
-        is_src_int
-        and is_dst_int
-        and (_is_index_type(src_elem_type) or _is_index_type(dst_elem_type))
-    ):
-        casted_vector = arith_d.index_cast(dst_vector_type, vector_src)
-        emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
-        return
-
-    conversion_ops = {
-        (True, False): arith_d.fptosi,
-        (False, True): arith_d.sitofp,
-    }
-
-    float_cast_ops = {
-        True: arith_d.extf,
-        False: arith_d.truncf,
-    }
-
-    int_cast_ops = {
-        True: arith_d.extsi,
-        False: arith_d.trunci,
-    }
-
-    if is_src_float and is_dst_float:
-        casted_vector = float_cast_ops[
-            src_vector_type.element_type.width < dst_elem_type.width
-        ](dst_vector_type, vector_src, fastmath=get_fast_math_flags(emitter.options))
-    elif is_src_int and is_dst_int:
-        # Currently extsi/trunci do not support fast_math option.
-        casted_vector = int_cast_ops[
-            src_vector_type.element_type.width < dst_elem_type.width
-        ](dst_vector_type, vector_src)
-    else:
-        casted_vector = conversion_ops[(is_src_float, is_dst_float)](
-            dst_vector_type, vector_src
-        )
-
+    conversion_op = get_conversion_op(
+        src_elem_type, dst_elem_type, fastmath=get_fast_math_flags(emitter.options)
+    )
+    casted_vector = conversion_op(dst_vector_type, vector_src)
     emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
 
 
