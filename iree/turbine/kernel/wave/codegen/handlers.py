@@ -377,7 +377,7 @@ def handle_binary_op(op):
             # Handle special scalar/rank-0 cases where lhs/rhs may be
             # Dtype, vector<Dtype>, or vector<1xDtype>.
             arg_ranks = [get_rank(arg.type) for arg in (lhs, rhs)]
-            if min(arg_ranks) != max(arg_ranks) and max(arg_ranks) <= 1:
+            if (arg_ranks[0] != arg_ranks[1]) and max(arg_ranks) <= 1:
                 if arg_ranks[0] > arg_ranks[1]:
                     # Case where rank(lhs) > rank(rhs)
                     rhs = vector_d.broadcast(lhs.type, rhs)
@@ -386,7 +386,6 @@ def handle_binary_op(op):
                     lhs = vector_d.broadcast(rhs.type, lhs)
 
             if lhs.type != rhs.type:
-                breakpoint()
                 op = get_custom(node)
                 raise ValidationError(
                     f"Expected lhs and rhs to have same type for\n"

@@ -11,10 +11,13 @@ from iree.turbine.kernel.wave.constraints import MMAType
 from .attention_common import AttentionShape
 from dataclasses import dataclass
 import math
+import sympy
 
 
 def get_speculative_decoding_kernel(
     batch_size: int,
+    num_draft_tokens: int,
+    d: int,
 ):
 
     B = tkl.sym.B
@@ -37,23 +40,6 @@ def get_speculative_decoding_kernel(
         )
     ]
 
-    # @tkw.wave(constraints)
-    # def tree_speculative_sampling(
-    #     q: tkl.Memory[D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    #     p: tkl.Memory[D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    #     coin: tkl.f32,
-    #     relu_diff_out: tkl.Memory[D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    #     u_out: tkl.Memory[D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    # ):
-    #     zero = tkl.Register[D, tkl.f32](0.0)
-    #     q_reg = tkw.read(q, elements_per_thread=1)
-    #     p_reg = tkw.read(p, elements_per_thread=1)
-    #     diff = q_reg - p_reg
-    #     relu_diff = tkw.maximum(diff, zero)
-    #     sum_relu = tkw.sum(relu_diff, dim=D)
-    #     out = tkw.broadcast(coin * sum_relu, target_shape=[D])
-    #     tkw.write(relu_diff, relu_diff_out, elements_per_thread=1)
-    #     tkw.write(out, u_out, elements_per_thread=1)
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     k = tkw.IndexMapping.iterator(2)
@@ -80,12 +66,18 @@ def get_speculative_decoding_kernel(
         outputs={B: i, N: LAST_OFFSET},
     )
 
+    uniform_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={B: i, D: sympy.Integer(0)},
+        outputs={B: i, D: j},
+    )
+
     @tkw.wave(constraints)
     def tree_speculative_sampling(
         q: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         p: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         cur_prob_offset: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        uniform_sample: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        uniform_sample: tkl.Memory[B, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         relu_diff_out: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         u_out: tkl.Memory[B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
@@ -94,13 +86,18 @@ def get_speculative_decoding_kernel(
 
         q_reg = tkw.read(q, mapping=q_mapping)
         p_reg = tkw.read(p, mapping=p_mapping)
-        coin = tkw.read(uniform_sample)
+
+        # TODO: Add conditioned mask once scalar codegen is landed.
+        # mask_cond = num_accepted_tokens != num_speculative_tokens_sub1
+        # mask_cond = tkw.broadcast(mask_cond, target_shape=[B, N, D])
+        # p_reg = tkw.select(mask_cond, p_reg, zero)
+
+        coin = tkw.read(uniform_sample, mapping=uniform_mapping)
         diff = q_reg - p_reg
 
         zero = tkl.Register[D, tkl.f32](0.0)
         relu_diff = tkw.maximum(diff, zero)
         sum_relu = tkw.sum(relu_diff, dim=D)
-        # out = tkw.broadcast(coin * sum_relu, target_shape=[B, N])
         tkw.write(relu_diff, relu_diff_out, mapping=o_mapping)
         tkw.write(coin * sum_relu, u_out, mapping=u_mapping)
 
@@ -108,9 +105,9 @@ def get_speculative_decoding_kernel(
         BLOCK_B: 1,
         BLOCK_N: 1,
         BLOCK_D: 64,
-        B: 2,
-        N: 6,
-        D: batch_size,
+        B: batch_size,
+        N: num_draft_tokens,
+        D: d,
     }
 
     dynamic_symbols = []
