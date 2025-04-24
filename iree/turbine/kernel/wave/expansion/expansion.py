@@ -234,6 +234,7 @@ def handle_reduction_entry(
 ):
     reduction_context = expansion_context.reduction_context
     if isinstance(new_node, GetResult):
+        breakpoint()
         assert len(inputs) == 1, f"Expected one input, got {inputs}"
         outputs = reduction.outputs(inputs[0].graph)
         if not isinstance(outputs, Sequence):
@@ -609,6 +610,7 @@ def dfs(
         node, metadata = nodes_to_expand.pop(0)
         if (node, metadata) in visited:
             continue
+        print("TYB ", node)
         visited.add((node, metadata))
         dim_scaling = get_dim_scaling(constraints, node)
         nodes_to_expand = expand_node(
@@ -681,7 +683,11 @@ def fixup_reduction_nodes(
             return_vals = [get_custom(x) for x in output.return_vals[0]]
         else:
             return_vals = [get_custom(return_vals)]
+
+        if reduction not in reduction_context:
+            continue
         reduction_info = reduction_context[reduction]
+        breakpoint()
         sorted_keys = dict(sorted(reduction_info.outputs.items(), key=lambda x: x[0]))
         new_outputs = []
         for key in sorted_keys.values():

@@ -933,7 +933,7 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
         # to avoid conflicts with the actual value of the axis.
         condition = condition.subs({axis: sympy.Symbol("$TMP")})
         subs = add_emitter_subs(emitter)
-        subs[sympy.Symbol("$TMP")] = current_value
+        subs[sympy.Symbol("$TMP")] = current_values[-1]
         condition = gen_sympy_index(subs, condition)
         scf_d.ConditionOp(condition, current_values)
 

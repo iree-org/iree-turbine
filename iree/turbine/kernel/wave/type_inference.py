@@ -9,6 +9,8 @@ from .._support.tracing import CapturedTrace
 import torch.fx as fx
 from ...support.logging import get_logger
 
+import iree.turbine.kernel.lang as tkl
+
 logger = get_logger("turbine.wave.type_inference")
 
 
@@ -23,7 +25,10 @@ def infer_types(trace: CapturedTrace, subgraph: Optional[fx.Graph] = None):
         if isinstance(custom, NestedRegionOp):
             infer_types(trace, trace.region_graph.subgraphs[custom.subgraph_name])
         custom.infer_type()
+        if node.name == 'cur_index':
+            custom.type = Register[index_symbol("S"), index_symbol("B"), tkl.i32]
+            print(f"Setting type for {custom.fx_node} = {custom.type}")
         # For implicit captures, get type from variables in root graph.
         if "lifted" in custom.fx_node.meta:
             custom.type = custom.fx_node.meta["lifted"].type
-        logger.debug(f"Setting type for {custom.fx_node} = {custom.type}")
+        print(f"Setting type for {custom.fx_node} = {custom.type}")

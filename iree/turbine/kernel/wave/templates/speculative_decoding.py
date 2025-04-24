@@ -64,7 +64,6 @@ def get_speculative_sampling_kernel(
     J = tkl.sym.J
     B = tkl.sym.B
     S = tkl.sym.S
-    V = tkl.sym.V
     D = tkl.sym.D
     BLOCK_B = tkl.sym.BLOCK_B
     BLOCK_S = tkl.sym.BLOCK_S
@@ -75,11 +74,12 @@ def get_speculative_sampling_kernel(
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={B: 1, J: 1, CUR_INDEX: 1, S: 0, V: 1, D: 1},
+            vector_shapes={B: 1, J: 0, CUR_INDEX: 0, S: 0, D: 1},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
     constraints += [tkw.TilingConstraint(B, BLOCK_B)]
+    constraints += [tkw.TilingConstraint(CUR_INDEX)]
 
     CUR_PROB_OFFSET = tkl.sym.CUR_PROB_OFFSET
     DRAFT_TOKEN_ID = tkl.sym.DRAFT_TOKEN_ID
@@ -105,14 +105,14 @@ def get_speculative_sampling_kernel(
 
     read_3d_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={S: i, V: CUR_PROB_OFFSET, D: DRAFT_TOKEN_ID},
-        outputs={S: i, V: j, D: k},
+        inputs={S: i, B: CUR_PROB_OFFSET, D: DRAFT_TOKEN_ID},
+        outputs={S: i, B: j, D: k},
     )
 
     read_3d_mapping_2 = tkw.IndexMapping(
         num_iterators=3,
-        inputs={S: i, V: CUR_INDEX, D: DRAFT_TOKEN_ID},
-        outputs={S: i, V: j, D: k},
+        inputs={S: i, B: CUR_INDEX, D: DRAFT_TOKEN_ID},
+        outputs={S: i, B: j, D: k},
     )
 
     write_1d_mapping = tkw.IndexMapping(
@@ -123,8 +123,8 @@ def get_speculative_sampling_kernel(
 
     write_3d_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={S: i, V: j, D: k},
-        outputs={S: i, V: CUR_INDEX, D: DRAFT_TOKEN_ID},
+        inputs={S: i, B: j, D: k},
+        outputs={S: i, B: CUR_INDEX, D: DRAFT_TOKEN_ID},
     )
 
     @tkw.wave(constraints)
@@ -132,10 +132,10 @@ def get_speculative_sampling_kernel(
         a: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.f16],
         b: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.f16],
         c: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.f32],
-        predicts: tkl.Memory[S * V * D, ADDRESS_SPACE_0, tkl.f32],
+        predicts: tkl.Memory[S * B * D, ADDRESS_SPACE_0, tkl.f32],
         uniform_samples: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.f32],
-        target_probs: tkl.Memory[S, V, D, ADDRESS_SPACE_0, tkl.f32],
-        draft_probs: tkl.Memory[S, V, D, ADDRESS_SPACE_0, tkl.f32],
+        target_probs: tkl.Memory[S, B, D, ADDRESS_SPACE_0, tkl.f32],
+        draft_probs: tkl.Memory[S, B, D, ADDRESS_SPACE_0, tkl.f32],
         candidates: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.i32],
         retrieve_index: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.i32],
         retrieve_next_token: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.i32],
@@ -159,14 +159,14 @@ def get_speculative_sampling_kernel(
             main_loop_cond = (J < num_speculative_tokens) | (OUTER_DONE == 1)
             @tkw.iterate(J, start=sympy.Integer(1), condition=main_loop_cond, init_args=[])
             def main_loop():
-                cur_index = tkw.read(
+                cur_index = tkw.broadcast(tkw.read(
                     retrieve_next_token, elements_per_thread=1, mapping=read_2d_mapping
-                )
+                ), (S, B))
 
                 @tkw.iterate(
-                    CUR_INDEX, start=cur_index, condition=(CUR_INDEX >= 0) | (INNER_DONE == 1), init_args=[]
+                    CUR_INDEX, start=cur_index, condition=(CUR_INDEX >= 0) | (INNER_DONE == 1), init_args=[cur_index]
                 )
-                def repeat():
+                def repeat(cur_index):
                     draft_index = tkw.read(
                         retrieve_index, elements_per_thread=1, mapping=read_2d_mapping
                     )
@@ -178,12 +178,12 @@ def get_speculative_sampling_kernel(
                         target_probs, elements_per_thread=1, mapping=read_3d_mapping
                     )
                     # TODO: make prob_acc capturable from outside of the loop
-                    prob_acc = tkw.Register[S, V, D, ADDRESS_SPACE_0, tkl.f32](0.0)
+                    prob_acc = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.f32](0.0)
                     prob_acc += target_prob_single
 
                     # TODO: these should be defined only once outside of the loop
-                    threshold_acc = tkw.Register[S, V, D, ADDRESS_SPACE_0, tkl.f32](1e-2)
-                    threshold_single = tkw.Register[S, V, D, ADDRESS_SPACE_0, tkl.f32](1e-2)
+                    threshold_acc = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.f32](1e-2)
+                    threshold_single = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.f32](1e-2)
 
                     coin_threshold = prob_acc / threshold_acc
                     coin = tkw.read(
@@ -194,7 +194,7 @@ def get_speculative_sampling_kernel(
 
                     @tkw.conditional(condition1 | condition2)
                     def then():
-                        prob_acc = tkw.Register[S, V, D, ADDRESS_SPACE_0, tkl.f32](0.0)
+                        prob_acc = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.f32](0.0)
                         tkw.set_symbol(CUR_PROB_OFFSET, cur_index)
 
                         tkw.write(
@@ -203,7 +203,7 @@ def get_speculative_sampling_kernel(
                             elements_per_thread=1,
                         #   mapping=read_2d_mapping,
                         )
-                        true = tkw.Register[S, V, D, ADDRESS_SPACE_0, tkl.i32](1)
+                        true = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.i32](1)
                         tkw.set_symbol(INNER_DONE, true)
 
                     # TODO: make this work properly with not
@@ -216,18 +216,20 @@ def get_speculative_sampling_kernel(
                     def else_():
                         target_prob_reg = tkw.read(target_probs, elements_per_thread=1, mapping=read_3d_mapping_2)
                         tkw.write(target_prob_reg, draft_probs, elements_per_thread=1, mapping=write_3d_mapping)
-                        cur_index = tkw.read(
-                            retrieve_next_sibling,
-                            elements_per_thread=1,
-                            mapping=read_2d_mapping,
-                        )
-                        tkw.set_symbol(CUR_INDEX, cur_index)
 
-                    tkw.set_symbol(CUR_INDEX, cur_index)
+                    new_cur_index = tkw.select(condition3 & condition4, tkw.read(
+                        retrieve_next_sibling,
+                        elements_per_thread=1,
+                        mapping=read_2d_mapping,
+                    ), cur_index)
+
+                    return new_cur_index
+
+                tkw.set_symbol(CUR_INDEX, repeat)
 
                 @tkw.conditional(CUR_INDEX >= 0)
                 def then():
-                    true = tkw.Register[S, V, D, ADDRESS_SPACE_0, tkl.i32](1)
+                    true = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.i32](1)
                     tkw.set_symbol(INNER_DONE, true)
 
                 index_j = tkw.self_index(J, tkl.i32)
@@ -241,7 +243,6 @@ def get_speculative_sampling_kernel(
         ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         S: 10,
         BLOCK_S: 1,
-        V: 16,
         D: 20,
     }
     dynamic_symbols = []

@@ -889,11 +889,12 @@ class SelectOp(CustomOp):
             raise ValueError("SelectOp expects lhs and rhs dtype to match.")
 
         # TODO: support broadcasting behavior.
-        if (
-            cond_type.symbolic_shape != if_true_type.symbolic_shape
-            or cond_type.symbolic_shape != if_false_type.symbolic_shape
-        ):
-            raise ValueError("SelectOp doesn't support broadcasting. (yet?)")
+      # if (
+      #     cond_type.symbolic_shape != if_true_type.symbolic_shape
+      #     or cond_type.symbolic_shape != if_false_type.symbolic_shape
+      # ):
+      #     breakpoint()
+      #     raise ValueError("SelectOp doesn't support broadcasting. (yet?)")
 
         self.type = if_true_type
 
