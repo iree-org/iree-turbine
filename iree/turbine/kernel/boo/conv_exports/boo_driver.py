@@ -112,7 +112,7 @@ def run(cli_args: Sequence[str]):
     for _ in range(args.iter):
         result = conv(*conv_args)
 
-    torch.set_printoptions(edgeitems=0)
+    torch.set_printoptions(edgeitems=0, threshold=0)
     print(f">>> {result}")
 
     return sig.get_func_name()
