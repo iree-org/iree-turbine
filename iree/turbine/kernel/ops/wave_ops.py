@@ -1782,7 +1782,9 @@ class GetResult(CustomOp):
             return None
         if not isinstance(custom, Iterate):
             return custom_index
-        assert isinstance(custom_index, Sequence) and self.res_idx < len(
+        if not isinstance(custom_index, Sequence):
+            return custom_index
+        assert self.res_idx < len(
             custom.indexing_dims
         ), f"Invalid {custom_index=} with {self.res_idx=} and {custom.indexing_dims=}\n{custom}"
         return custom_index[self.res_idx]

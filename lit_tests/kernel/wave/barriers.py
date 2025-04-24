@@ -11,7 +11,7 @@ from iree.turbine.kernel.wave.analysis.index_sequence_analysis import (
 from iree.turbine.kernel.wave.promotion import promote_node, promote_placeholders
 from iree.turbine.kernel.wave.barriers import add_shared_memory_barriers
 from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
-from iree.turbine.kernel.wave.expansion.expansion import expand_graph
+from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
@@ -93,6 +93,7 @@ def test_read_write_equal_sizes():
         graph: fx.Graph = trace.get_root_graph()
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
+        add_get_results(trace)
         infer_types(trace)
         promote_node(read_node, None, SHARED_ADDRESS_SPACE, constraints)
         set_node_indices(trace, constraints)
@@ -180,6 +181,7 @@ def test_gemm():
         graph: fx.Graph = trace.get_subgraph("region_0")
         IndexingContext.current().finalize()
         initialize_iter_args(trace)
+        add_get_results(trace)
         infer_types(trace)
         read_nodes = get_read_nodes(graph)
         for read_node in read_nodes:
