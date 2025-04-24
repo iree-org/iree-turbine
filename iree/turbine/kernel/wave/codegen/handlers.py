@@ -34,6 +34,7 @@ from ...compiler.ir import (
     scf_d,
     vector_d,
     llvm_d,
+    ShapedType,
 )
 from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
@@ -122,7 +123,11 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
-    shape = [get_thread_shape(get_custom(node).index)]
+    try:
+        shape = [get_thread_shape(get_custom(node).index)]
+    except:
+        # breakpoint()
+        pass
     vector_shape = cast_py_literal(emitter, shape)
     element_type = IrType.parse(dtype.ir_type_asm())
     vector_type = VectorType.get(vector_shape, element_type)
@@ -140,7 +145,7 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
                 vector_type, get_constant_attr(value, element_type)
             ),
         ).result
-        
+
     emitter.bind_node_proxy(node, IRProxyValue(register))
 
 
@@ -362,6 +367,9 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
         raise NotImplementedError(
             "Non-const width or offset is not yet implemented for shuffleOp."
         )
+    if mode not in ("xor", "up"):
+        raise ValidationError(f"Unsupported shuffle mode: {mode!r}")
+
     src = cast_py_value(emitter, src).ir_value
     offset = cast_py_value(emitter, offset, IntegerType.get_signless(32)).ir_value
     width = cast_py_value(emitter, width, IntegerType.get_signless(32)).ir_value
@@ -381,6 +389,12 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 # Binary math Ops
 ###############################################################################
+def get_rank(mlir_type):
+    if not isinstance(mlir_type, ShapedType):
+        # Not 0 because vector<f32> is rank 0, and in theory,
+        # is broadcastable from pure scalar.
+        return -1
+    return mlir_type.rank
 
 
 def get_rank(mlir_type):
@@ -402,7 +416,19 @@ def handle_binary_op(op):
             lhs = cast_py_value(emitter, lhs).ir_value
             rhs = cast_py_value(emitter, rhs).ir_value
 
-            if lhs.ir_value.type != rhs.ir_value.type:
+            # Handle special scalar/rank-0 cases where lhs/rhs may be
+            # Dtype, vector<Dtype>, or vector<1xDtype>.
+            arg_ranks = [get_rank(arg.type) for arg in (lhs, rhs)]
+            if min(arg_ranks) != max(arg_ranks) and max(arg_ranks) <= 1:
+                if arg_ranks[0] > arg_ranks[1]:
+                    # Case where rank(lhs) > rank(rhs)
+                    rhs = vector_d.broadcast(lhs.type, rhs)
+                else:
+                    # Case where rank(rhs) > rank(lhs)
+                    lhs = vector_d.broadcast(rhs.type, lhs)
+
+            if lhs.type != rhs.type:
+                breakpoint()
                 op = get_custom(node)
                 raise ValidationError(
                     f"Expected lhs and rhs to have same type for\n"
