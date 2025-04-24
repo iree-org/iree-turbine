@@ -507,10 +507,6 @@ def get_conversion_op(src_elem_type, dst_elem_type, fastmath=None):
     is_dst_float = _is_float_type(dst_elem_type)
     is_src_int = _is_integer_like_type(src_elem_type)
     is_dst_int = _is_integer_like_type(dst_elem_type)
-    assert (
-        (is_src_float | is_src_int) & (is_dst_float | is_dst_int),
-        "Found Unsupported lhs/rhs type.",
-    )
     if (
         is_src_int
         and is_dst_int
