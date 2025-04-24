@@ -5,21 +5,41 @@ from typing import Any, Callable, Optional
 import sympy
 import torch.fx as fx
 
+from iree.turbine.kernel._support.indexing import IndexSymbol
+from iree.turbine.kernel.compiler.builder import IRProxyValue
+from iree.turbine.kernel.compiler.vector_codegen import cast_vector
+from iree.turbine.kernel.ops.reduction import vector_dot
+from iree.turbine.kernel.wave.utils.general_utils import all_equal
+from iree.turbine.kernel.wave.utils.symbol_utils import subs_idxc
+
 from .._support.dtype import i1
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import (
     Add,
+    Broadcast,
     Cumsum,
     CustomOp,
+    Extract,
+    ExtractElement,
     NewRegister,
+    Reshape,
     ScanOp,
     SelectOp,
     ShuffleOp,
     get_custom,
+    NewScalar,
+)
+from ..wave.constraints import (
+    HardwareConstraint,
+    TilingConstraint,
+    WaveConstraint,
+    WorkgroupConstraint,
 )
 from .constraints import HardwareConstraint
 from .utils.classes import ShuffleMode
+
 from .utils.graph_utils import DCE
+from ..compiler.ir import VectorType, vector_d, arith_d
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
@@ -31,24 +51,68 @@ def get_register_as_graph_node(
     node: fx.Node,
     value: float | sympy.Basic,
     graph: fx.Graph,
+    shape,
     dtype: Optional[Any] = None,
 ) -> fx.Node:
-    shape = get_custom(node).type.symbolic_shape
+    # try:
+    #     shape = get_custom(node).type.symbolic_shape
+    #     if not shape:
+    #         raise AttributeError
+    # except AttributeError:
+    #     if fallback_shape_node is not None:
+    #         shape = get_custom(fallback_shape_node).type.symbolic_shape
+    #     else:
+    #         shape = []
     dtype = dtype if dtype else get_custom(node).type.dtype
     return get_graph_node(NewRegister(shape, dtype, value), graph)
+
+
+def emit_local_inclusive_scan(
+    binary_fn: Callable,
+    scan_src: fx.Node,
+    graph: fx.Graph,
+    elements_per_thread: int,
+    hardware_constraint: HardwareConstraint,
+) -> list[fx.Node]:
+    """
+    todo
+    """
+    lane_id = hardware_constraint.linearized_thread_id
+    start_idx = lane_id * elements_per_thread
+
+    elems = []
+    for i in range(elements_per_thread):
+        global_index = [i]
+        scalar = get_graph_node(Extract(scan_src, global_index), graph)
+        elems.append(scalar)
+
+    for i in range(1, elements_per_thread):
+        elems[i] = get_graph_node(binary_fn(elems[i], elems[i - 1]), graph)
+
+    # [a, a+b, a+b+c, a+b+c+d]
+
+    return elems
 
 
 def emit_global_scan(
     binary_fn: Callable,  # Supports only Add for now.
     src: fx.Node,
+    local_scan: list[fx.Node],
     graph: fx.Graph,
     subgroup_size: int,
     hardware_constraint: HardwareConstraint,
+    local_scan_size: int,
+    scan_dim: IndexSymbol,
 ) -> fx.Node:
     """
     Emit an intra-warp inclusive scan using butterfly pattern scan and masking.
     """
-    init = src
+    offset = local_scan[-1]
+    # offset = Broadcast(offset, target_shape=get_custom(src).type.symbolic_shape)
+    # offset = get_graph_node(offset, graph)
+    offset.index = get_custom(src).index
+    target_shape = list(src.type.symbolic_shape)
+    target_shape.pop(target_shape.index(scan_dim))
     num_steps = int(math.log2(float(subgroup_size)))
     for idx in range(num_steps):
         offset_val = 1 << idx
@@ -75,10 +139,10 @@ def emit_global_scan(
 
         # apply shuffle_val only if condition is true; else use 0
         masked = get_graph_node(
-            SelectOp(cond=cond_node, if_true=shuffle_val, if_false=zero_vec), graph
+            SelectOp(cond=cond_node, if_true=shuffle_val_node, if_false=zero_vec), graph
         )
 
-        init = get_graph_node(binary_fn(init, masked), graph)
+        offset = get_graph_node(binary_fn(offset, masked), graph)
 
         # We are explicitly setting the indices to avoid:
         # AttributeError: 'NoneType' object has no attribute 'values'
@@ -133,6 +197,7 @@ def decompose_scan_ops(
     hardware_constraint = next(
         c for c in constraints if isinstance(c, HardwareConstraint)
     )
+
     subgroup_size = hardware_constraint.threads_per_wave
 
     for node in scan_nodes:
@@ -141,13 +206,46 @@ def decompose_scan_ops(
             raise NotImplementedError(f"ScanOp '{custom}' not supported")
 
         with custom.graph.inserting_before(custom.fx_node):
-            src, _, _ = node.args
-            assert isinstance(src, fx.Node), f"Scan src is not fx.Node: {type(src)}"
+            scan_src, scan_acc, scan_dim = node.args
+            assert isinstance(
+                scan_src, fx.Node
+            ), f"Scan src is not fx.Node: {type(scan_src)}"
+
             binary_fn = Add
 
-            result = emit_global_scan(
-                binary_fn, src, custom.graph, subgroup_size, hardware_constraint
+            if scan_dim is None:
+                raise ValueError("No scan dim specified, please specify a scan dim.")
+
+            get_thread_shape = lambda index: max(
+                subs_idxc(x.size) for x in index.values()
             )
+
+            try:
+                op = get_custom(scan_src)
+                thread_shape = get_thread_shape(op.index)
+                local_scan_sizes = thread_shape
+            except Exception as e:
+                index_str = "\n".join(f"{k}: {v}" for k, v in op.index.items())
+                raise RuntimeError(
+                    f"Error in decompose_scan_ops: {scan_src} with index\n"
+                    f"{index_str}\n{scan_src=}\n{scan_acc=}\n{scan_dim=}"
+                ) from e
+
+            local_scan = emit_local_inclusive_scan(
+                binary_fn, scan_src, custom.graph, local_scan_sizes, hardware_constraint
+            )
+
+            result = emit_global_scan(
+                binary_fn,
+                scan_src,
+                local_scan,
+                custom.graph,
+                subgroup_size,
+                hardware_constraint,
+                local_scan_sizes,
+                scan_dim,
+            )
+
             custom.replace_all_uses_with(result)
 
     DCE(trace)
