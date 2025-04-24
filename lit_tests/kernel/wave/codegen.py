@@ -75,7 +75,7 @@ def test_read():
     print(read.asm)
 
     # CHECK-LABEL:    test_read
-    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0, s1, s2, s3, s4] -> (((s0 * s1) floordiv s2) * s3 + s4)>
+    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0, s1, s2, s3, s4, s5] -> (s0 mod s1 + ((s2 * s3) floordiv s4) * s5)>
     # CHECK:          func.func @read
     # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
     # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
@@ -118,7 +118,7 @@ def test_read_mapped():
     print(read_mapped.asm)
 
     # CHECK-LABEL:    test_read_mapped
-    # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1, s2, s3, s4, s5] -> (((s0 * s1) floordiv s2) * s3 + s4 * s5)>
+    # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1, s2, s3, s4, s5, s6] -> (((s0 * s1) floordiv s2) * s3 + (s4 mod s5) * s6)>
     # CHECK:          func.func @read_mapped
     # CHECK-COUNT-16:   vector.maskedload
     # CHECK-COUNT-16:   vector.extract
@@ -193,7 +193,7 @@ def test_read_write():
     print(read_write.asm)
 
     # CHECK-LABEL:    test_read_write
-    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 16)>
+    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 48)>
     # CHECK:          func.func @read_write
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding)
     # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
@@ -238,7 +238,7 @@ def test_read_write_diagonal():
     print(read_write_diagonal.asm)
 
     # CHECK-LABEL:    test_read_write_diagonal
-    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 16)>
+    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 48)>
     # CHECK:          func.func @read_write_diagonal
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding)
     # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
@@ -292,7 +292,7 @@ def test_read_write_masked():
     print(read_write_masked.asm)
 
     # CHECK-LABEL:    test_read_write_masked
-    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 4)>
+    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 60)>
     # CHECK:          func.func @read_write_masked
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding)
     # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<4xf16>
@@ -434,8 +434,8 @@ def test_read_write_dynamic_mapping():
     print(read_write_dynamic_mapping.asm)
 
     # CHECK-LABEL:    test_read_write_dynamic_mapping
-    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 16)>
-    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16 + (s0 floordiv 64) * 256)>
+    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 48)>
+    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16 - (s0 floordiv 64) * 768)>
     # CHECK:          func.func @read_write_dynamic_mapping
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
     # CHECK_DAG:        %[[C0:.*]] = arith.constant 0 : index
@@ -569,7 +569,7 @@ def test_read_write_dynamic_mapping_chain():
     print(read_write_dynamic_mapping_chain.asm)
 
     # CHECK-LABEL:    test_read_write_dynamic_mapping_chain
-    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 + (s0 floordiv 64) * 16)>
+    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 48)>
     # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0] -> (s0 floordiv 2)>
     # CHECK-DAG:        #[[map2:.*]] = affine_map<()[s0] -> (s0 * 4)>
     # CHECK:          func.func @read_write_dynamic_mapping_chain
@@ -794,7 +794,7 @@ def test_dynamic_copy():
     print(dynamic_copy.asm)
 
     # CHECK-LABEL:    test_dynamic_copy
-    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 + (s0 floordiv 64) * 16)>
+    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 - (s0 floordiv 64) * 48)>
     # CHECK-DAG:        #[[map2:.*]] = affine_map<()[s0] -> (s0 * 16)>
     # CHECK:          func.func @dynamic_copy
     # CHECH-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index)
@@ -1405,7 +1405,7 @@ def test_tiled_reduce_min_unaligned():
     print(test.asm)
 
     # CHECK-LABEL: test_tiled_reduce_min_unaligned
-    # CHECK-DAG:     #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 * 128 + s1 * 2)>
+    # CHECK-DAG:     #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 * 128 + s1 * 2 - (s1 floordiv 64) * 128)>
     # CHECK:       func @tiled_reduce_min_unaligned
     # CHECK-DAG:     %[[cst_0:.*]] = arith.constant dense<527> : vector<2xindex>
     # CHECK-DAG:     %[[cst_1:.*]] = arith.constant dense<[0, 1]> : vector<2xindex>
@@ -1649,8 +1649,8 @@ def test_explicit_broadcast():
     print(explicit_broadcast.asm)
 
     # CHECK-LABEL: test_explicit_broadcast
-    # CHECK-DAG:     #[[map0]] = affine_map<()[s0] -> (s0 * 2)>
-    # CHECK-DAG:     #[[map2]] = affine_map<()[s0] -> (s0 * 2 + 1)>
+    # CHECK-DAG:     #[[map0:.+]] = affine_map<()[s0] -> (s0 * 2)>
+    # CHECK-DAG:     #[[map1:.+]] = affine_map<()[s0] -> (s0 * 2 + 1)>
     # CHECK:       func.func @explicit_broadcast
     # CHECK-SAME: (%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
     # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
@@ -1661,7 +1661,7 @@ def test_explicit_broadcast():
     # CHECK: %[[LHS:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<256x128xf16
     # CHECK: %[[X_SLICE_0:.+]] = affine.apply #[[map0]]()[%[[workgroup_id_1]]]
     # CHECK: %[[LHS_0:.+]] = vector.load %[[LHS]][%[[X_SLICE_0]], %[[Y_SLICE:.+]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
-    # CHECK: %[[X_SLICE_1:.+]] = affine.apply #[[map2]]()[%[[workgroup_id_1]]]
+    # CHECK: %[[X_SLICE_1:.+]] = affine.apply #[[map1]]()[%[[workgroup_id_1]]]
     # CHECK: %[[LHS_1:.+]] = vector.load %[[LHS]][%[[X_SLICE_1]], %[[Y_SLICE]]] : memref<256x128xf16, strided<[128, 1], offset: ?>>, vector<2xf16>
 
     # Slicing RHS
