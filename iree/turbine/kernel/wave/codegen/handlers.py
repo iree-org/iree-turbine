@@ -345,6 +345,14 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
+def get_rank(mlir_type):
+    if not isinstance(mlir_type, ShapedType):
+        # Not 0 because vector<f32> is rank 0, and in theory,
+        # is broadcastable from pure scalar.
+        return -1
+    return mlir_type.rank
+
+
 def handle_binary_op(op):
     def decorator(binary_fn: Callable[[Value, Value], OpResult]):
         @handle_op(op)
@@ -353,23 +361,32 @@ def handle_binary_op(op):
                 lhs, rhs = node.args
             except ValueError as e:
                 raise ValidationError("Malformed arguments") from e
-            lhs = cast_py_value(emitter, lhs)
-            rhs = cast_py_value(emitter, rhs)
+            lhs = cast_py_value(emitter, lhs).ir_value
+            rhs = cast_py_value(emitter, rhs).ir_value
 
-            if lhs.ir_value.type != rhs.ir_value.type:
+            # Handle special scalar/rank-0 cases where lhs/rhs may be
+            # Dtype, vector<Dtype>, or vector<1xDtype>.
+            arg_ranks = [get_rank(arg.type) for arg in (lhs, rhs)]
+            if (arg_ranks[0] != arg_ranks[1]) and max(arg_ranks) <= 1:
+                if arg_ranks[0] > arg_ranks[1]:
+                    # Case where rank(lhs) > rank(rhs)
+                    rhs = vector_d.broadcast(lhs.type, rhs)
+                else:
+                    # Case where rank(rhs) > rank(lhs)
+                    lhs = vector_d.broadcast(rhs.type, lhs)
+
+            if lhs.type != rhs.type:
                 op = get_custom(node)
                 raise ValidationError(
                     f"Expected lhs and rhs to have same type for\n"
                     f"{op}\nGot\n"
-                    f"lhs: {lhs.ir_value.type} vs rhs: {rhs.ir_value.type}\n"
+                    f"lhs: {lhs.type} vs rhs: {rhs.type}\n"
                     f"{lhs=}\n"
                     f"{rhs=}\n"
                     f"lhs={get_custom(op.lhs)}\n"
                     f"rhs={get_custom(op.rhs)}"
                 )
 
-            lhs = lhs.ir_value
-            rhs = rhs.ir_value
             result = binary_fn(lhs, rhs, emitter.options)
 
             emitter.bind_node_proxy(node, IRProxyValue(result))
