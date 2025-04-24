@@ -17,7 +17,6 @@ from .._support.dtype import DataType
 from ..lang.global_symbols import *
 
 
->>>>>>> 38aa91f ([Wave] Implement block wide reduction from wave-reduce)
 """
 Formatting for different target intrinsics:
     <kind>_<elem-type-C>_<M>x<N>x<K>_<elem-type-A>[_<elem-type-B>]

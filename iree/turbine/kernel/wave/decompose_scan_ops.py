@@ -1,5 +1,5 @@
 import math
-from operator import ge
+from operator import ge, eq, gt
 from typing import Any, Callable, Optional
 
 import sympy
@@ -28,6 +28,7 @@ from ..ops.wave_ops import (
     ShuffleOp,
     get_custom,
     NewScalar,
+    Sub,
 )
 from ..wave.constraints import (
     HardwareConstraint,
@@ -40,6 +41,13 @@ from .utils.classes import ShuffleMode
 
 from .utils.graph_utils import DCE
 from ..compiler.ir import VectorType, vector_d, arith_d
+
+import iree.turbine.kernel.lang as tkl
+import iree.turbine.kernel.wave as tkw
+
+
+TKW_COMBINER = {"cumsum": Add}
+IDENTITY = {"add": 0.0}
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
@@ -54,15 +62,6 @@ def get_register_as_graph_node(
     shape,
     dtype: Optional[Any] = None,
 ) -> fx.Node:
-    # try:
-    #     shape = get_custom(node).type.symbolic_shape
-    #     if not shape:
-    #         raise AttributeError
-    # except AttributeError:
-    #     if fallback_shape_node is not None:
-    #         shape = get_custom(fallback_shape_node).type.symbolic_shape
-    #     else:
-    #         shape = []
     dtype = dtype if dtype else get_custom(node).type.dtype
     return get_graph_node(NewRegister(shape, dtype, value), graph)
 
@@ -77,9 +76,6 @@ def emit_local_inclusive_scan(
     """
     todo
     """
-    lane_id = hardware_constraint.linearized_thread_id
-    start_idx = lane_id * elements_per_thread
-
     elems = []
     for i in range(elements_per_thread):
         global_index = [i]
@@ -90,7 +86,6 @@ def emit_local_inclusive_scan(
         elems[i] = get_graph_node(binary_fn(elems[i], elems[i - 1]), graph)
 
     # [a, a+b, a+b+c, a+b+c+d]
-
     return elems
 
 
@@ -108,11 +103,12 @@ def emit_global_scan(
     Emit an intra-warp inclusive scan using butterfly pattern scan and masking.
     """
     offset = local_scan[-1]
-    # offset = Broadcast(offset, target_shape=get_custom(src).type.symbolic_shape)
-    # offset = get_graph_node(offset, graph)
-    offset.index = get_custom(src).index
+    lane_id = hardware_constraint.lane_id
+    offsetted_local_scan = [None] * local_scan_size
+
     target_shape = list(src.type.symbolic_shape)
     target_shape.pop(target_shape.index(scan_dim))
+
     num_steps = int(math.log2(float(subgroup_size)))
     for idx in range(num_steps):
         offset_val = 1 << idx
@@ -211,7 +207,7 @@ def decompose_scan_ops(
                 scan_src, fx.Node
             ), f"Scan src is not fx.Node: {type(scan_src)}"
 
-            binary_fn = Add
+            binary_fn = TKW_COMBINER[custom.tkw_op_name]
 
             if scan_dim is None:
                 raise ValueError("No scan dim specified, please specify a scan dim.")
