@@ -37,9 +37,7 @@ from ..utils.general_utils import (
     get_workgroup_constraints,
     partial,
 )
-from ..utils.mma_utils import (
-    get_mma_dimensional_mapping,
-)
+from ..utils.mma_utils import get_mma_dimensional_mapping
 from ..utils.graph_utils import (
     get_inputs,
     get_users,
@@ -462,6 +460,11 @@ def propagate_indices(
     visited: set[CustomOp],
     symbolic_constraints: list[SymbolicAlias],
 ):
+    def get_index(custom: CustomOp):
+        if isinstance(custom, MMA):
+            return custom.acc.index
+        return custom.index
+
     """
     Propagate the index and vector shapes through the graph
     starting with priveleged nodes (like MMA, Read, Write).

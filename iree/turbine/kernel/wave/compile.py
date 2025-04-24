@@ -120,6 +120,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     if options.compile_to_mlir:
         return WaveKernel(options, None, asm)
 
+    print(asm)
     compiled_wave_vmfb = compile_to_vmfb(asm, options)
     if options.create_vmfb_file:
         _write_file(options.create_vmfb_file, "wb", compiled_wave_vmfb)
