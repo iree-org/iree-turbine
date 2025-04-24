@@ -25,6 +25,8 @@ from iree.turbine.kernel.wave.templates.speculative_decoding import (
 )
 import torch.nn.functional as F
 
+torch.manual_seed(0)
+
 
 def get_wave_speculative_decoding_kernel(shape: int):
     speculative_decoding, symbols, _, _ = get_speculative_decoding_kernel(shape)
@@ -67,7 +69,9 @@ def tree_speculative_sampling_target_only(
 
     wave_kernel = get_wave_speculative_decoding_kernel(d)
     threshold_acc = max(threshold_acc, 1e-9)
-    cur_prob_offset_vec = [None] * batch_size
+    cur_prob_offset_vec = torch.empty(
+        [batch_size], dtype=torch.int32, device=draft_probs.device
+    )
     last_accepted_retrive_idx_vec = [None] * batch_size
     for bx in range(batch_size):
         prob_acc = 0.0
@@ -115,29 +119,27 @@ def tree_speculative_sampling_target_only(
         cur_prob_offset_vec[bx] = cur_prob_offset
         last_accepted_retrive_idx_vec[bx] = last_accepted_retrive_idx
 
-    torch.manual_seed(0)
-    for bx in range(batch_size):
-        coin = uniform_samples[bx, 0].cpu().item()
-        num_accepted_tokens = accept_token_num[bx]
-        last_offset = cur_prob_offset_vec[bx]
-        q = target_probs[bx, last_offset]
-        p = (
-            draft_probs[bx, last_offset]
-            if num_accepted_tokens != num_speculative_tokens - 1
-            else torch.zeros_like(q)
-        )
-        relu_diff = torch.zeros_like(q)
-        u = torch.zeros_like(q)
-        wave_kernel(q, p, coin, relu_diff, u)
-        u = u[0].cpu().item()
+    relu_diff = torch.zeros_like(target_probs)
+    u = torch.zeros(
+        [target_probs.shape[0], target_probs.shape[1]], device=target_probs.device
+    )
+    wave_kernel(
+        target_probs,
+        draft_probs,
+        cur_prob_offset_vec,
+        uniform_samples[:, 0],
+        relu_diff,
+        u,
+    )
 
+    for bx in range(batch_size):
         sampled_id = d - 1
         aggregate = 0.0
         for i in range(d):
-            val = relu_diff[i]
+            val = relu_diff[bx, cur_prob_offset_vec[bx], i]
             val = max(val, 0.0)
             aggregate += val
-            if aggregate > u:
+            if aggregate > u[bx, cur_prob_offset_vec[bx]]:
                 sampled_id = i
                 break
 
