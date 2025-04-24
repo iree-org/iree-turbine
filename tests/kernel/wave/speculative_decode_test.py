@@ -25,9 +25,13 @@ from iree.turbine.kernel.wave.templates.speculative_decoding import (
 )
 import torch.nn.functional as F
 
+torch.manual_seed(0)
 
-def get_wave_speculative_decoding_kernel(shape: int):
-    speculative_decoding, symbols, _, _ = get_speculative_decoding_kernel(shape)
+
+def get_wave_speculative_decoding_kernel(batch_size, num_draft_tokens, d):
+    speculative_decoding, symbols, _, _ = get_speculative_decoding_kernel(
+        batch_size, num_draft_tokens, d
+    )
     symbols.update(get_default_scheduling_params())
 
     options = WaveCompileOptions(
@@ -37,6 +41,7 @@ def get_wave_speculative_decoding_kernel(shape: int):
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
         schedule=False,
+        wave_runtime=True,
         use_scheduling_barriers=enable_scheduling_barriers,
     )
     options = set_default_run_config(options)
@@ -64,8 +69,14 @@ def tree_speculative_sampling_target_only(
     deterministic=True,
 ):
 
-    wave_kernel = get_wave_speculative_decoding_kernel(d)
+    wave_kernel = get_wave_speculative_decoding_kernel(batch_size, num_draft_tokens, d)
     threshold_acc = max(threshold_acc, 1e-9)
+    cur_prob_offset_vec = torch.empty(
+        [batch_size], dtype=torch.int32, device=draft_probs.device
+    )
+    last_accepted_retrive_idx_vec = torch.empty(
+        [batch_size], dtype=torch.int32, device=draft_probs.device
+    )
     for bx in range(batch_size):
         prob_acc = 0.0
         cur_prob_offset = 0  # bx * num_draft_tokens * d handled via indexing
@@ -109,32 +120,35 @@ def tree_speculative_sampling_target_only(
                 break
 
         accept_token_num[bx] = num_accepted_tokens
+        cur_prob_offset_vec[bx] = cur_prob_offset
+        last_accepted_retrive_idx_vec[bx] = last_accepted_retrive_idx
 
-        # Sample from relu(target_probs - draft_probs)
-        last_offset = cur_prob_offset
-        q = target_probs[bx, last_offset]
-        p = (
-            draft_probs[bx, last_offset]
-            if num_accepted_tokens != num_speculative_tokens - 1
-            else torch.zeros_like(q)
-        )
-        relu_diff = torch.zeros_like(q)
-        wave_kernel(q, p, relu_diff)
-        sum_relu = relu_diff.sum()
+    # Sample from relu(target_probs - draft_probs)
+    relu_diff = torch.zeros_like(target_probs)
+    u = torch.zeros(
+        [target_probs.shape[0], target_probs.shape[1]], device=target_probs.device
+    )
+    wave_kernel(
+        target_probs,
+        draft_probs,
+        cur_prob_offset_vec,
+        uniform_samples,
+        relu_diff,
+        u,
+    )
 
-        u = coin * sum_relu
+    for bx in range(batch_size):
         sampled_id = d - 1
         aggregate = 0.0
         for i in range(d):
-            val = relu_diff[i]
-            if val <= 0:
-                continue
+            val = relu_diff[bx, cur_prob_offset_vec[bx], i]
+            val = max(val, 0.0)
             aggregate += val
-            if aggregate > u:
+            if aggregate > u[bx, cur_prob_offset_vec[bx]]:
                 sampled_id = i
                 break
 
-        predicts[last_accepted_retrive_idx] = sampled_id
+        predicts[last_accepted_retrive_idx_vec[bx]] = sampled_id
 
 
 test_cases = [
