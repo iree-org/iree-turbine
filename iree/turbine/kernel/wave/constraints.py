@@ -10,9 +10,12 @@ from enum import Enum
 from typing import Optional, Callable
 from sympy import ceiling, Piecewise, floor, Integer
 
+from .utils.symbol_utils import delinearize_index
+
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from ..lang.global_symbols import *
+
 
 """
 Formatting for different target intrinsics:
@@ -272,6 +275,14 @@ class HardwareConstraint(Constraint):
             self.threads_per_block[0] * self.threads_per_block[1],
         ]
         return sum([x * y for x, y in zip(thread_ids, threads_per_block)])
+
+    @property
+    def lane_id(self) -> IndexExpr:
+        return self.linearized_thread_id % self.threads_per_wave
+
+    @property
+    def wave_id(self) -> IndexExpr:
+        return delinearize_index(self.linearized_thread_id // 64, self.waves_per_block)
 
     # Inline substitution for vector_size given index map. In the future we can add support for other members.
     def subs_vector_shapes(self, index_map: dict[IndexSymbol, int]):

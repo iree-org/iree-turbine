@@ -72,11 +72,10 @@ class DataType:
 
     @property
     def dtype(self):
-        if self.is_float_asm():
-            return DataType("f32")
-        if self.is_int_asm():
-            return DataType("i32")
-        raise ValueError("Only f32 and i32 scalars are supported.")
+        # This cls is already dtype, hence can return self.
+        # dtype() function is useful here for code reuse between
+        # scalar and vector/register variables.
+        return self
 
     @property
     def symbolic_shape(self):

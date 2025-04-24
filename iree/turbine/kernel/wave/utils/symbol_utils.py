@@ -26,3 +26,31 @@ def subs_idxc(input: Any) -> Any:
     """
     idxc = IndexingContext.current()
     return safe_subs(input, idxc.subs)
+
+
+#######################################################################
+# IndexExpr, IndexSymbol related helper
+#######################################################################
+
+
+def delinearize_index(
+    index: IndexExpr, shape: list[int | IndexExpr]
+) -> list[IndexExpr]:
+    """
+    Delinearizes a 1D index into a multi-dimensional index
+    based on the shapes provided. The returned array contains
+    the multi-dimensional index.
+
+    Assume the index is x and the shape is [5, 4, 3]. In this case,
+    this function returns [x % 3, (x // 3) % 4, (x // 12) % 5].
+
+    """
+    nd_index = []
+    product = 1
+    for i, size in enumerate(reversed(shape)):
+        if i == 0:
+            nd_index.append(index % size)
+        else:
+            nd_index.append(sympy.floor(index / product) % size)
+        product *= size
+    return nd_index[::-1]

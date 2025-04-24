@@ -61,6 +61,13 @@ def extract(
     ...
 
 
+def extract_element(
+    register: "Register",
+    offsets: tuple[IndexExpr],
+) -> "Register":
+    ...
+
+
 def extract_slice(
     register: "Register",
     offsets: tuple[IndexExpr],
@@ -96,6 +103,10 @@ def iterate(
 
 
 def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
+    ...
+
+
+def scalar(value: float, dtype: DataType) -> "Register":
     ...
 
 
@@ -830,7 +841,10 @@ class BinaryPyOp(BinaryOpBase, ABC):
 @dataclass
 class ComparisonPyOp(BinaryOpBase, ABC):
     def infer_type(self):
-        self.type = Register[(*self.infer_shape(), i1)]
+        # If lhs & rhs is scalar then shape is empty, then type is i1.
+        # Else, output i1 with shape of lhs/rhs.
+        shape = self.infer_shape()
+        self.type = Register[(*shape, i1)] if shape else i1
 
 
 @define_interface_op("abs")
@@ -881,8 +895,9 @@ class SelectOp(CustomOp):
         cond_type = get_custom(self.cond).type
         if_true_type = get_custom(self.if_true).type
         if_false_type = get_custom(self.if_false).type
+        cond_dtype = cond_type.dtype
 
-        if cond_type.dtype != i1:
+        if cond_dtype != i1:
             raise ValueError("SelectOp expects condition type to be i1.")
 
         if if_true_type.dtype != if_false_type.dtype:
@@ -1159,6 +1174,20 @@ class NewRegister(CustomOp):
 
     def infer_type(self):
         self.type = Register[(*self.shape, self.dtype)]
+
+
+@define_op("scalar")
+@dataclass
+class NewScalar(CustomOp):
+    value: float | IndexExpr
+    dtype: DataType
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return list()
+
+    def infer_type(self):
+        self.type = self.dtype
 
 
 @define_op("mma")
@@ -1811,6 +1840,31 @@ class Extract(CustomOp):
         self.type = dst_type
 
 
+@define_op("extract_element")
+@dataclass
+class ExtractElement(CustomOp):
+    """
+    Op Rationale:
+
+    Extract is an op used to represent extracting of
+    a scalar from TKW's 1-D vector on the specified index.
+
+    This can also be viewed as indexing/slicing on the fastest
+    dimension. Hence, the semantic of this op is designed to
+    see itself as a reduction on the indexed/fastest dimension.
+    """
+
+    register_: fx.Proxy
+    offset: IndexExpr | int
+
+    def infer_type(self):
+        # Intuition here is we are trying to extract an element
+        # from fastest dim => we reduce the fastest dim.
+        src_type = get_custom(self.register_).type
+        dst_type = src_type.dtype
+        self.type = dst_type
+
+
 @define_op("extract_slice")
 @dataclass
 class ExtractSlice(CustomOp):
@@ -1886,11 +1940,13 @@ class ReduceOp(CustomOp, ABC):
     arg: Source tensor/value to reduce
     init: init/accumulator for reducte
     dim: which symbolic dim to reduce.
+    block: When set to true, reduce across block, else reduce across warp.
     """
 
     arg: fx.Node | list[fx.Node]
     init: fx.Node = None
     dim: Optional[Any] = None
+    block: Optional[bool] = False
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
