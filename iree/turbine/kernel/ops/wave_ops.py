@@ -888,9 +888,8 @@ class SelectOp(CustomOp):
         cond_type = get_custom(self.cond).type
         if_true_type = get_custom(self.if_true).type
         if_false_type = get_custom(self.if_false).type
-        cond_dtype = cond_type.dtype
 
-        if cond_dtype != i1:
+        if cond_type.dtype != i1:
             raise ValueError("SelectOp expects condition type to be i1.")
 
         if if_true_type.dtype != if_false_type.dtype:

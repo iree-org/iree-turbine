@@ -2025,6 +2025,7 @@ def test_scalar_codegen_i32():
 #  1. tkw.Scalar can handle index expressions correctly.
 #  2. Scalars in Wave can be used for comparison/binaryOps
 #     as well as on select ops.
+@run_test
 def test_scalar_cond_copy():
     M = tkl.sym.M
     N = tkl.sym.N
@@ -2078,7 +2079,7 @@ def test_scalar_cond_copy():
     scalar_cond_copy = wave_compile(options, scalar_cond_copy)
     print(scalar_cond_copy.asm)
 
-    # CHECK: func.func @scalar_cond_copy(
+    # CHECK-LABEL: @scalar_cond_copy
 
     # mask values
     # CHECK: %[[one:.+]] = arith.constant 1.000000e+00 : f16
@@ -2089,6 +2090,7 @@ def test_scalar_cond_copy():
     # CHECK: %[[tidx_i32:.+]] = arith.index_cast %[[tidx]] : index to i32
     # CHECK: %[[cond:.+]] = arith.cmpi slt, %[[tidx_i32]], %c12
     # CHECK: %[[mask:.+]] = arith.select %[[cond]], %cst, %cst_0 : f16
+    # CHECK: %[[splat_mask:.+]] = vector.splat %[[mask]] : vector<1xf16>
 
     # Apply mask
-    # CHECK: arith.mulf {{.*}}, %[[mask]]
+    # CHECK: arith.mulf {{.*}}, %[[splat_mask]]
