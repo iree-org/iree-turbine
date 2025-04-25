@@ -381,18 +381,17 @@ def combine_indices(
 
 def add_nodes_to_sources(
     source: CustomOp,
-    reduction: Iterate,
     fn: Callable,
     source_index: dict[IndexSymbol, IndexSequence],
     source_vector_shapes: dict[IndexSymbol, int],
     sources: list[
         tuple[CustomOp, dict[IndexSymbol, IndexSequence], dict[IndexSymbol, int]]
     ],
-) -> tuple[list[CustomOp], Iterate]:
+) -> list[CustomOp]:
     """
     Populate the sources with the inputs and users of the source node.
     """
-    for args, reduction in [fn(source.fx_node, reduction)]:
+    for args, reduction in [fn(source.fx_node, None)]:
         logger.debug(f"{source.fx_node} -> {args}")
         if not args:
             break
@@ -406,7 +405,7 @@ def add_nodes_to_sources(
                 custom.vector_shapes if custom.vector_shapes else source_vector_shapes
             )
             sources.append((custom, source_index, vector_shapes))
-    return sources, reduction
+    return sources
 
 
 def should_update_index(
@@ -488,9 +487,8 @@ def propagate_indices(
             append_aliased_shapes(source, symbolic_constraints)
         visited.add(source)
         for func in [get_inputs, get_users]:
-            sources, _ = add_nodes_to_sources(
+            sources = add_nodes_to_sources(
                 source,
-                None,
                 func,
                 source_index,
                 source_vector_shapes,

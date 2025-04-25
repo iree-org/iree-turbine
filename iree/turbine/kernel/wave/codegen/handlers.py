@@ -940,10 +940,8 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    # Flatten init_args and get IR values for each of them.
-    flat_init_args, _ = pytree.tree_flatten((init_args))
-    flat_init_args = [cast_py_value(emitter, arg) for arg in flat_init_args]
-    flat_init_arg_types = [arg.ir_value.type for arg in flat_init_args]
+    init_args = [cast_py_value(emitter, arg) for arg in init_args]
+    init_arg_types = [arg.ir_value.type for arg in init_args]
 
     # Initialize while loop
     init_value = cast_py_value(emitter, start).ir_value
@@ -956,8 +954,8 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
         init_value.type, IndexType
     ), f"Unhandled start type: {init_value.type}"
 
-    init_args = [arg.ir_value for arg in flat_init_args] + [init_value]
-    init_arg_types = flat_init_arg_types + [init_value.type]
+    init_args = [arg.ir_value for arg in init_args] + [init_value]
+    init_arg_types = init_arg_types + [init_value.type]
     whileOp = scf_d.WhileOp(init_arg_types, init_args)
     whileOp.before.blocks.append(*init_arg_types)
     whileOp.after.blocks.append(*init_arg_types)
@@ -994,6 +992,8 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
 
         # Emit the subgraph
         return_values = emitter._emit_graph(subgraph)
+        # In case there are no init values, we just return the
+        # updated value of the iteration variable.
         if all(x is None for x in return_values):
             scf_d.YieldOp([emitter.dynamic_dims[axis]])
             return
