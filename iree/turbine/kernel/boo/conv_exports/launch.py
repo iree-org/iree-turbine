@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Union, OrderedDict
 
 from iree.compiler.tools.core import compile_file, CompilerToolError
+from iree.runtime import VmModule
 
 from .conv import ConvSignature
 from ....aot import export
@@ -36,6 +37,7 @@ def set_boo_cache(cache_dir: Union[Path, str, None] = None) -> Path:
 
 set_boo_cache()
 BOO_CACHE_ON = int(os.environ.get("BOO_CACHE_ON", 1))
+BOO_TUNING_SPEC_PATH = os.environ.get("BOO_TUNING_SPEC_PATH", None)
 
 
 def is_cache_enabled() -> bool:
@@ -60,10 +62,12 @@ def _out_of_process_compile(func_name, key_hashes_and_flags):
             logger.debug("found vmfb in cache: %s", str(vmfb_path))
             continue
         logger.debug("Compiling vmfb to cache: %s", str(vmfb_path))
-        cl_list = ["iree-compile", f"'{mlir_path}'", "-o", f"'{vmfb_path}'"] + list(
-            flags
+        cl_list = (
+            ["iree-compile"] + list(flags) + [f"'{mlir_path}'", "-o", f"'{vmfb_path}'"]
         )
         command = subprocess.list2cmdline(cl_list)
+        if len(flags) > 2:
+            (CACHE_BASE_DIR / func_name / f"compile_command.txt").write_text(command)
         logger.debug("compile command:\n%s", command)
         ret = subprocess.run(command, capture_output=True, shell=True)
         if ret.returncode != 0:
@@ -75,6 +79,28 @@ def _out_of_process_compile(func_name, key_hashes_and_flags):
             ret.stdout.decode(),
             ret.stderr.decode(),
         )
+
+
+def _user_flags_jit_callback(entry_point, extra_flags):
+    def callback(device):
+        key_hash = device.get_type_key_hash()
+        vmfb_path: Path = CACHE_BASE_DIR / entry_point / f"{key_hash}.vmfb"
+        vm_instance = device.vm_instance
+        if vmfb_path.is_file():
+            logger.debug("Loading vmfb from cache: %s", str(vmfb_path))
+            vmfb = vmfb_path.read_bytes()
+            return VmModule.copy_buffer(vm_instance, vmfb)
+        flags = tuple(device.compile_target_flags) + tuple(extra_flags)
+        _out_of_process_compile(entry_point, [(key_hash, flags)])
+        if not vmfb_path.is_file():
+            raise RuntimeError(
+                "Jit compilation failed to produce a vmfb. Run with debug logger enabled to see error details."
+            )
+
+        vmfb = vmfb_path.read_bytes()
+        return VmModule.copy_buffer(vm_instance, vmfb)
+
+    return callback
 
 
 def _get_module_asm(
@@ -166,6 +192,15 @@ def get_launchable(
         launch = Launchable.from_file_cache_only(
             cache_dir,
             parameter_providers=(),
+            entry_point=func_name,
+        )
+    elif BOO_TUNING_SPEC_PATH is not None:
+        module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
+        launch = Launchable.from_vm_module(
+            _user_flags_jit_callback(
+                func_name,
+                (f"--iree-codegen-tuning-spec-path='{BOO_TUNING_SPEC_PATH}'",),
+            ),
             entry_point=func_name,
         )
     else:
