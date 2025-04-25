@@ -339,17 +339,6 @@ class CompiledContext(BaseContext):
         )
 
     ### ========================================================================
-    ### Scan Operations
-    ### ========================================================================
-    def handle_vector_cumsum(self, op, vector, axis=None, acc=None):
-        return self.region_graph.create_proxy(
-            "call_function",
-            target=op,
-            args=(vector, axis, acc),
-            kwargs={},
-        )
-
-    ### ========================================================================
     ### Reduction Operations
     ### ========================================================================
     def handle_vector_max(self, op, vector, axis=None, acc=None):

@@ -27,17 +27,6 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
     return custom.fx_node
 
 
-def get_register_as_graph_node(
-    node: fx.Node,
-    value: float | sympy.Basic,
-    graph: fx.Graph,
-    dtype: Optional[Any] = None,
-) -> fx.Node:
-    shape = get_custom(node).type.symbolic_shape
-    dtype = dtype if dtype else get_custom(node).type.dtype
-    return get_graph_node(NewRegister(shape, dtype, value), graph)
-
-
 def emit_global_scan(
     binary_fn: Callable,  # Supports only Add for now.
     src: fx.Node,
@@ -63,7 +52,14 @@ def emit_global_scan(
         # applied after the indexing phase
         # ToDo (xintin): check if we can replace register with scalar.
         # No point using register for a scalar. Applies to other objects too.
-        zero_vec = get_register_as_graph_node(shuffle_val, 0.0, graph)
+        zero_vec = get_graph_node(
+            NewRegister(
+                get_custom(shuffle_val).type.symbolic_shape,
+                get_custom(shuffle_val).type.dtype,
+                0.0,
+            ),
+            graph,
+        )
 
         # We are explicitly setting the indices to avoid:
         # AttributeError: 'NoneType' object has no attribute 'values'
@@ -73,7 +69,9 @@ def emit_global_scan(
 
         # condition node: thread ID >= offset
         cond_expr = ge(lane_id, offset_val)
-        cond_node = get_register_as_graph_node(init, cond_expr, graph, i1)
+        cond_node = get_graph_node(
+            NewRegister(get_custom(init).type.symbolic_shape, i1, cond_expr), graph
+        )
         cond_node.index = get_custom(src).index
 
         # apply shuffle_val only if condition is true; else use 0
