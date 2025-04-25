@@ -61,13 +61,6 @@ def extract(
     ...
 
 
-def extract_element(
-    register: "Register",
-    offsets: tuple[IndexExpr],
-) -> "Register":
-    ...
-
-
 def extract_slice(
     register: "Register",
     offsets: tuple[IndexExpr],
@@ -904,9 +897,8 @@ class SelectOp(CustomOp):
         cond_type = get_custom(self.cond).type
         if_true_type = get_custom(self.if_true).type
         if_false_type = get_custom(self.if_false).type
-        cond_dtype = cond_type.dtype
 
-        if cond_dtype != i1:
+        if cond_type.dtype != i1:
             raise ValueError("SelectOp expects condition type to be i1.")
 
         if if_true_type.dtype != if_false_type.dtype:
@@ -1856,31 +1848,6 @@ class Extract(CustomOp):
         self.type = dst_type
 
 
-@define_op("extract_element")
-@dataclass
-class ExtractElement(CustomOp):
-    """
-    Op Rationale:
-
-    Extract is an op used to represent extracting of
-    a scalar from TKW's 1-D vector on the specified index.
-
-    This can also be viewed as indexing/slicing on the fastest
-    dimension. Hence, the semantic of this op is designed to
-    see itself as a reduction on the indexed/fastest dimension.
-    """
-
-    register_: fx.Proxy
-    offset: IndexExpr | int
-
-    def infer_type(self):
-        # Intuition here is we are trying to extract an element
-        # from fastest dim => we reduce the fastest dim.
-        src_type = get_custom(self.register_).type
-        dst_type = src_type.dtype
-        self.type = dst_type
-
-
 @define_op("extract_slice")
 @dataclass
 class ExtractSlice(CustomOp):
@@ -2004,7 +1971,7 @@ class ScanOp(CustomOp, ABC):
                 )
 
     @property
-    def reduction_dim(self) -> IndexSymbol:
+    def scan_dim(self) -> IndexSymbol:
         return self.dim
 
 
@@ -2019,13 +1986,11 @@ class ReduceOp(CustomOp, ABC):
     arg: Source tensor/value to reduce
     init: init/accumulator for reduce
     dim: which symbolic dim to reduce.
-    block: When set to true, reduce across block, else reduce across warp.
     """
 
     arg: fx.Node | list[fx.Node]
     init: fx.Node = None
     dim: Optional[Any] = None
-    block: Optional[bool] = False
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
