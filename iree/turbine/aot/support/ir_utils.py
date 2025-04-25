@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import tempfile
 from itertools import zip_longest
+from functools import partial
 
 import numpy as np
 import torch
@@ -499,6 +500,45 @@ def _is_integer_like_type(type):
 
 def _is_signed_or_signless_type(type):
     return getattr(type, "is_signed", False) or getattr(type, "is_signless", False)
+
+
+def get_conversion_op(src_elem_type, dst_elem_type, fastmath=None):
+    is_src_float = _is_float_type(src_elem_type)
+    is_dst_float = _is_float_type(dst_elem_type)
+    is_src_int = _is_integer_like_type(src_elem_type)
+    is_dst_int = _is_integer_like_type(dst_elem_type)
+    if (
+        is_src_int
+        and is_dst_int
+        and (_is_index_type(src_elem_type) or _is_index_type(dst_elem_type))
+    ):
+        conversion_op = arith_d.index_cast
+        return conversion_op
+
+    conversion_ops = {
+        (True, False): arith_d.fptosi,
+        (False, True): arith_d.sitofp,
+    }
+
+    float_cast_ops = {
+        True: arith_d.extf,
+        False: arith_d.truncf,
+    }
+
+    int_cast_ops = {
+        True: arith_d.extsi,
+        False: arith_d.trunci,
+    }
+
+    if is_src_float and is_dst_float:
+        conversion_op = float_cast_ops[src_elem_type.width < dst_elem_type.width]
+        conversion_op = partial(conversion_op, fastmath=fastmath)
+    elif is_src_int and is_dst_int:
+        # Currently extsi/trunci do not support fast_math option.
+        conversion_op = int_cast_ops[src_elem_type.width < dst_elem_type.width]
+    else:
+        conversion_op = conversion_ops[(is_src_float, is_dst_float)]
+    return conversion_op
 
 
 def _attribute_from_device_affinity(
