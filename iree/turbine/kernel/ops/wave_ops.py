@@ -1171,8 +1171,8 @@ class NewRegister(CustomOp):
 @define_op("scalar")
 @dataclass
 class NewScalar(CustomOp):
-    dtype: DataType
     value: float | IndexExpr
+    dtype: DataType
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

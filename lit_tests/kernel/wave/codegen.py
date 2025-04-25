@@ -2055,11 +2055,11 @@ def test_scalar_cond_copy():
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        zero = tkw.scalar(tkl.f16, 0.0)
-        one = tkw.scalar(tkl.f16, 1.0)
+        zero = tkw.scalar(0.0, tkl.f16)
+        one = tkw.scalar(1.0, tkl.f16)
 
-        tid = tkw.scalar(tkl.i32, THREAD_0)
-        thresh = tkw.scalar(tkl.i32, thresh_value)
+        tid = tkw.scalar(THREAD_0, tkl.i32)
+        thresh = tkw.scalar(thresh_value, tkl.i32)
 
         mask = tkw.select(tid < thresh, one, zero)
         mask_broadcast = tkw.broadcast(mask, target_shape=[M, N])

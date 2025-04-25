@@ -151,7 +151,7 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
 @handle_op(scalar)
 def handle_scalar(emitter: WaveEmitter, node: fx.Node):
     try:
-        dtype, value = node.args
+        value, dtype = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     target_type = IrType.parse(dtype.ir_type_asm())
