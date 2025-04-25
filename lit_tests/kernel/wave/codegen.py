@@ -2020,19 +2020,27 @@ def test_scalar_codegen_i32():
     # CHECK-SAME: %arg0, %arg1, %arg2, %arg3)
 
 
+#  This kernel copies of data from a into b if tid.x < threshold.
+#  This test is important to ensure:
+#  1. tkw.Scalar can handle index expressions correctly.
+#  2. Scalars in Wave can be used for comparison/binaryOps
+#     as well as on select ops.
 @run_test
-def test_scanop_cumsum():
+def test_scalar_cond_copy():
     M = tkl.sym.M
     N = tkl.sym.N
-    BLOCK_M = 1
-    BLOCK_N = 64
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = 64
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
+            threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: 64},
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -2040,45 +2048,49 @@ def test_scanop_cumsum():
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
+    thresh_value = 12
+
     @tkw.wave(constraints)
-    def scanop_cumsum(
+    def scalar_cond_copy(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        lhs = tkw.read(a)
-        res = tkw.cumsum(lhs, dim=N)
-        tkw.write(res, c)
+        zero = tkw.scalar(0.0, tkl.f16)
+        one = tkw.scalar(1.0, tkl.f16)
+
+        tid = tkw.scalar(THREAD_0, tkl.i32)
+        thresh = tkw.scalar(thresh_value, tkl.i32)
+
+        mask = tkw.select(tid < thresh, one, zero)
+        mask_broadcast = tkw.broadcast(mask, target_shape=[M, N])
+
+        a_reg = tkw.read(a)
+        res = a_reg * mask_broadcast
+        tkw.write(res, b)
 
     options = WaveCompileOptions(
         subs={
             M: 1,
             N: 64,
-            BLOCK_M: 1,
-            BLOCK_N: 64,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
-        compile_to_mlir=True,
     )
-    scanop_cumsum = wave_compile(options, scanop_cumsum)
-    print(scanop_cumsum.asm)
+    scalar_cond_copy = wave_compile(options, scalar_cond_copy)
+    print(scalar_cond_copy.asm)
 
-    # CHECK-LABEL: func.func @scanop_cumsum
+    # CHECK-LABEL: @scalar_cond_copy
 
-    # Shuffle-based scan: using XOR lane masks
-    # CHECK: gpu.shuffle xor {{.*}}, {{.*}}, {{.*}} : vector<1xf16>
-    # CHECK: affine.apply
+    # mask values
+    # CHECK: %[[one:.+]] = arith.constant 1.000000e+00 : f16
+    # CHECK: %[[zero:.+]] = arith.constant 0.000000e+00 : f16
 
-    # Conditional mask: comparison with offset
-    # CHECK: arith.cmpi sge
-    # CHECK: vector.splat {{.*}} : vector<1xi1>
-    # CHECK: arith.select {{.*}} : vector<1xi1>, vector<1xf16>
+    # Condition and mask selection
+    # CHECK: %[[tidx:.+]] = gpu.thread_id  x
+    # CHECK: %[[tidx_i32:.+]] = arith.index_cast %[[tidx]] : index to i32
+    # CHECK: %[[cond:.+]] = arith.cmpi slt, %[[tidx_i32]], %c12
+    # CHECK: %[[mask:.+]] = arith.select %[[cond]], %cst, %cst_0 : f16
+    # CHECK: %[[splat_mask:.+]] = vector.splat %[[mask]] : vector<1xf16>
 
-    # Accumulation
-    # CHECK: arith.addf {{.*}} : vector<1xf16>
-
-    # Final store
-    # CHECK: vector.store {{.*}} : memref<1x64xf16
-
-    # Dispatch
-    # CHECK: flow.dispatch @scanop_cumsum
+    # Apply mask
+    # CHECK: arith.mulf {{.*}}, %[[splat_mask]]

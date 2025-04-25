@@ -1685,45 +1685,64 @@ def test_scalar_codegen(shape, tkl_dtype, torch_dtype, arg_vals, request):
     assert torch.all(b == arg_vals[3]).item()
 
 
+#  This kernel copies of data from a into b if tid.x < threshold.
+#  This test is important to ensure:
+#  1. tkw.Scalar can handle index expressions correctly.
+#  2. Scalars in Wave can be used for comparison/binaryOps
+#     as well as on select ops.
 @require_e2e
-@pytest.mark.parametrize(
-    "shape",
-    [(1, 64), (51, 64), (128, 64)],
-)
-def test_scanop_cumsum(shape, request):
+@pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
+def test_scalar_cond_copy(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
-    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
+            threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N},
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+    # multiple of 4 to prevent to not require iota mask.
+    # e.g if each thread has 4 values, and thresh is 10.
+    # then t0 = [0, 1, 2, 3], t1 = [4, 5, 6, 7], t2 = [8, 9, 10, 11],
+    # since t2_tidx_expr = 2 * 4 = 8, which is less than thresh, then
+    # [10, 11] will also not be masked. To fix we'd need the iota mask
+    # but not the main point of this test.
+    thresh_value = 12
+    tidx_expr = THREAD_0 * (BLOCK_N // wave_size) + (WORKGROUP_0 * BLOCK_N)
 
     @tkw.wave(constraints)
     def test(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
-        lhs = tkw.read(a)
-        res = tkw.cumsum(lhs, dim=N)
-        tkw.write(res, c)
+        zero = tkw.scalar(0.0, tkl.f16)
+        one = tkw.scalar(1.0, tkl.f16)
 
-    torch.manual_seed(1)
-    input = device_zeros(shape, dtype=torch.float16) + 1
-    output = device_zeros(shape, dtype=torch.float16)
-    torch_ref = torch.cumsum((input), dim=-1)
+        tid = tkw.scalar(tidx_expr, tkl.i32)
+        thresh = tkw.scalar(thresh_value, tkl.i32)
+
+        mask = tkw.select(tid < thresh, one, zero)
+        mask_broadcast = tkw.broadcast(mask, target_shape=[M, N])
+
+        a_reg = tkw.read(a)
+        res = a_reg * mask_broadcast
+        tkw.write(res, b)
+
+    a = device_randn(shape, dtype=torch.float16)
+    b = device_zeros(shape, dtype=torch.float16)
     options = WaveCompileOptions(
         subs={
             M: shape[0],
@@ -1736,5 +1755,10 @@ def test_scanop_cumsum(shape, request):
     options = set_default_run_config(options)
     test = wave_compile(options, test)
 
-    test(input, output)
-    assert_close(torch_ref, output, atol=1e-03, rtol=1e-05)
+    test(a, b)
+    # Check for data from tid.x < threshold
+    assert_close(a[:, :thresh_value], b[:, :thresh_value])
+
+    # Check for data from tid.x >= threshold
+    ref_zeros = device_zeros([shape[0], shape[1] - thresh_value])
+    assert_close(ref_zeros, b[:, thresh_value:], check_dtype=False)
