@@ -58,7 +58,7 @@ def emit_local_inclusive_scan(
     hardware_constraint: HardwareConstraint,
 ) -> list[fx.Node]:
     """
-    todo
+    Perform local inclusive scan for `n` elements per thread.
     """
     elems = []
     for i in range(elements_per_thread):
@@ -69,7 +69,6 @@ def emit_local_inclusive_scan(
     for i in range(1, elements_per_thread):
         elems[i] = get_graph_node(binary_fn(elems[i], elems[i - 1]), graph)
 
-    # [a, a+b, a+b+c, a+b+c+d]
     return elems
 
 
