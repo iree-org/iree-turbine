@@ -1039,65 +1039,6 @@ def test_reduce_sum(shape, request):
 
 
 @require_e2e
-@pytest.mark.parametrize(
-    "shape",
-    [
-        (2, 64),
-    ]
-    ## [(250, 1), (128, 1), (76, 45), (127, 256), (121, 132)]
-    ##  NotImplementedError: Currently only support unit vector for shuffleOp.
-)
-def test_reduce_cumsum(shape, request):
-    run_bench = request.config.getoption("--runperf")
-    M = tkl.sym.M
-    N = tkl.sym.N
-    wave_size = 64
-    BLOCK_M = 1
-    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
-    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-
-    constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N},
-        )
-    ]
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
-
-    @tkw.wave(constraints)
-    def test(
-        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
-        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    ):
-        lhs = tkw.read(a)
-        res = tkw.cumsum(lhs, dim=N)
-        tkw.write(res, c)
-
-    torch.manual_seed(1)
-    input = device_zeros(shape, dtype=torch.float32) + 1
-    output = device_zeros(shape, dtype=torch.float32)
-    torch_ref = torch.cumsum((input), dim=-1)
-    options = WaveCompileOptions(
-        subs={
-            M: shape[0],
-            N: shape[1],
-            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
-        },
-        canonicalize=True,
-        run_bench=run_bench,
-    )
-    options = set_default_run_config(options)
-    test = wave_compile(options, test)
-
-    test(input, output)
-    assert_close(torch_ref, output, atol=0.1, rtol=1e-05)
-
-
-@require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
 def test_toy_online_softmax(shape):
     M = tkl.sym.M
@@ -1723,7 +1664,6 @@ def test_scalar_cond_copy(shape, request):
     thresh_value = 12
     tidx_expr = THREAD_0 * (BLOCK_N // wave_size) + (WORKGROUP_0 * BLOCK_N)
 
-
     @tkw.wave(constraints)
     def test(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
@@ -1764,3 +1704,58 @@ def test_scalar_cond_copy(shape, request):
     # Check for data from tid.x >= threshold
     ref_zeros = device_zeros([shape[0], shape[1] - thresh_value])
     assert_close(ref_zeros, b[:, thresh_value:], check_dtype=False)
+
+
+@require_e2e
+@pytest.mark.parametrize(
+    "shape",
+    [(1, 64), (51, 64), (128, 64)],
+)
+def test_scanop_cumsum(shape, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    wave_size = 64
+    BLOCK_M = 1
+    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a)
+        res = tkw.cumsum(lhs, dim=N)
+        tkw.write(res, c)
+
+    torch.manual_seed(1)
+    input = device_zeros(shape, dtype=torch.float16) + 1
+    output = device_zeros(shape, dtype=torch.float16)
+    torch_ref = torch.cumsum((input), dim=-1)
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(input, output)
+    assert_close(torch_ref, output, atol=1e-03, rtol=1e-05)
