@@ -9,6 +9,7 @@ import torch
 import iree.turbine.kernel as tk
 from iree.turbine.kernel.lang.global_symbols import *
 from .common.utils import (
+    require_cdna3,
     require_e2e,
     enable_scheduling_barriers,
     dump_generated_mlir,
@@ -169,6 +170,7 @@ test_cases = [
 ]
 
 
+@require_cdna3
 @require_e2e
 @pytest.mark.parametrize(
     "threshold_single, threshold_acc, expected_predicts, expected_accept_index, expected_accept_token_num",
