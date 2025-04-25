@@ -2075,6 +2075,7 @@ def test_scalar_cond_copy():
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
+        compile_to_mlir=True,
     )
     scalar_cond_copy = wave_compile(options, scalar_cond_copy)
     print(scalar_cond_copy.asm)
