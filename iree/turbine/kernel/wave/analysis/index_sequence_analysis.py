@@ -9,6 +9,7 @@ from ...ops.wave_ops import (
     BinaryPyOp,
     Broadcast,
     CustomOp,
+    GetResult,
     IterArg,
     MMA,
     NestedRegionOp,

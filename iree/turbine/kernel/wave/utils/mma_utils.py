@@ -82,6 +82,15 @@ def get_mma_dimensional_mapping(
         mapping[custom][m] = MMAOperand.M
         mapping[custom][n] = MMAOperand.N
         mapping[custom][k] = MMAOperand.K
+        for b in set(acc_shape) - set(
+            (
+                m,
+                n,
+                k,
+            )
+        ):
+            mapping[custom][b] = MMAOperand.B
+
         custom.vector_shapes = {
             m: hardware_constraint.mma_matrix_shapes(custom.mma_type)[0],
             n: hardware_constraint.mma_matrix_shapes(custom.mma_type)[1],
