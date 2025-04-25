@@ -6,7 +6,7 @@
 
 import pytest
 from iree.turbine.kernel.lang import sym
-from iree.turbine.kernel.wave.utils.general_utils import (
+from iree.turbine.kernel.wave.utils.symbol_utils import (
     delinearize_index,
 )
 from iree.turbine.kernel.wave.utils.mapping_utils import (

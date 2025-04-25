@@ -99,6 +99,7 @@ def test_gemm_pipelined():
     ):
         trace: CapturedTrace = gemm_pipelined()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(trace)
         infer_types(trace)
         promote_placeholders(trace, constraints)

@@ -94,6 +94,7 @@ def test_gemm():
         trace: CapturedTrace = gemm()
         visualize = False
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(trace)
         infer_types(trace)
         promote_placeholders(trace, constraints)

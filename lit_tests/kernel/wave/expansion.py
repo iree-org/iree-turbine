@@ -77,6 +77,7 @@ def test_read_write_equal_sizes():
     ):
         graph = read_write_same_size()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -159,6 +160,7 @@ def test_read_write():
     ):
         graph = read_write_different_dims()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -240,6 +242,7 @@ def test_write_in_iterate():
     ):
         graph = write_in_iterate()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -322,6 +325,7 @@ def test_no_writes():
     ):
         graph = no_writes()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -362,6 +366,7 @@ def test_gemm():
     ):
         graph = gemm()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -553,6 +558,7 @@ def test_batched_gemm():
     ):
         graph = batched_gemm()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -735,6 +741,7 @@ def test_gemm_non_direct_acc():
     ):
         graph = gemm_non_direct_acc()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -803,6 +810,7 @@ def test_tiled_max():
     ):
         graph = tiled_max()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -836,6 +844,7 @@ def test_gemm_iterate_expansion_only():
     ):
         graph = gemm()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -982,6 +991,7 @@ def test_attention():
     ):
         graph = attention()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
@@ -1060,8 +1070,8 @@ def py_arithmetic_different_dims():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 2)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 4, THREAD_1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M, THREAD_0 / 64)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N, THREAD_1)]
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
@@ -1078,11 +1088,13 @@ def py_arithmetic_different_dims():
     ):
         graph = py_arithmetic_different_dims()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
         set_post_expansion_indices(graph, constraints)
         print_trace(graph)
+
         # CHECK: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read_M:0_N:0_K:0
@@ -1114,18 +1126,18 @@ def py_arithmetic_different_dims():
         # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
-        # CHECK-NEXT: read(memory=a, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: read(memory=a, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: add(lhs=read_M:0_N:0_K:0, rhs=read_M:0_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: add(lhs=read_M:1_N:0_K:0, rhs=read_M:1_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: sub(lhs=add_M:0_N:0_K:0, rhs=read_M:0_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: sub(lhs=add_M:1_N:0_K:0, rhs=read_M:1_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: neg(arg=sub_M:0_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: neg(arg=sub_M:1_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: write(register_=neg_M:0_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
-        # CHECK-NEXT: write(register_=neg_M:0_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
-        # CHECK-NEXT: write(register_=neg_M:1_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
-        # CHECK-NEXT: write(register_=neg_M:1_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: add(lhs=read_M:0_N:0_K:0, rhs=read_M:0_N:0_K:0, index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: add(lhs=read_M:1_N:0_K:0, rhs=read_M:1_N:0_K:0, index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: sub(lhs=add_M:0_N:0_K:0, rhs=read_M:0_N:0_K:0, index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: sub(lhs=add_M:1_N:0_K:0, rhs=read_M:1_N:0_K:0, index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: neg(arg=sub_M:0_N:0_K:0, index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: neg(arg=sub_M:1_N:0_K:0, index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_M:0_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_M:0_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_M:1_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_M:1_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
 
         # CHECK: -----
 
@@ -1184,6 +1196,7 @@ def test_chained_gemm_32x32x8():
     ):
         graph = chained_gemm_32x32x8()
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)

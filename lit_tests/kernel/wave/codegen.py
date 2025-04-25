@@ -75,7 +75,7 @@ def test_read():
     print(read.asm)
 
     # CHECK-LABEL:    test_read
-    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0, s1, s2, s3, s4, s5] -> (s0 mod s1 + ((s2 * s3) floordiv s4) * s5)>
+    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0, s1] -> (s0 mod s1)>
     # CHECK:          func.func @read
     # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
     # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
@@ -118,7 +118,7 @@ def test_read_mapped():
     print(read_mapped.asm)
 
     # CHECK-LABEL:    test_read_mapped
-    # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1, s2, s3, s4, s5, s6] -> (((s0 * s1) floordiv s2) * s3 + (s4 mod s5) * s6)>
+    # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1, s2] -> ((s0 mod s1) * s2)>
     # CHECK:          func.func @read_mapped
     # CHECK-COUNT-16:   vector.maskedload
     # CHECK-COUNT-16:   vector.extract
@@ -193,7 +193,7 @@ def test_read_write():
     print(read_write.asm)
 
     # CHECK-LABEL:    test_read_write
-    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 48)>
+    # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0] -> (s0 mod 64)>
     # CHECK:          func.func @read_write
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding)
     # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
@@ -238,7 +238,7 @@ def test_read_write_diagonal():
     print(read_write_diagonal.asm)
 
     # CHECK-LABEL:    test_read_write_diagonal
-    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 48)>
+    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 mod 64)>
     # CHECK:          func.func @read_write_diagonal
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding)
     # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
@@ -292,7 +292,7 @@ def test_read_write_masked():
     print(read_write_masked.asm)
 
     # CHECK-LABEL:    test_read_write_masked
-    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 60)>
+    # CHECK-DAG:        #[[map:.*]] = affine_map<()[s0] -> (s0 mod 64)>
     # CHECK:          func.func @read_write_masked
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding)
     # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<4xf16>
@@ -434,8 +434,8 @@ def test_read_write_dynamic_mapping():
     print(read_write_dynamic_mapping.asm)
 
     # CHECK-LABEL:    test_read_write_dynamic_mapping
-    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 48)>
-    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16 - (s0 floordiv 64) * 768)>
+    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 mod 64)>
+    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16 - (s0 floordiv 64) * 1024)>
     # CHECK:          func.func @read_write_dynamic_mapping
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
     # CHECK_DAG:        %[[C0:.*]] = arith.constant 0 : index
@@ -569,7 +569,7 @@ def test_read_write_dynamic_mapping_chain():
     print(read_write_dynamic_mapping_chain.asm)
 
     # CHECK-LABEL:    test_read_write_dynamic_mapping_chain
-    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 - (s0 floordiv 64) * 48)>
+    # CHECK-DAG:        #[[map0:.*]] = affine_map<()[s0] -> (s0 mod 64)>
     # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0] -> (s0 floordiv 2)>
     # CHECK-DAG:        #[[map2:.*]] = affine_map<()[s0] -> (s0 * 4)>
     # CHECK:          func.func @read_write_dynamic_mapping_chain
@@ -794,7 +794,7 @@ def test_dynamic_copy():
     print(dynamic_copy.asm)
 
     # CHECK-LABEL:    test_dynamic_copy
-    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 - (s0 floordiv 64) * 48)>
+    # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0, s1] -> (s0 + s1 * 16 - (s0 floordiv 64) * 64)>
     # CHECK-DAG:        #[[map2:.*]] = affine_map<()[s0] -> (s0 * 16)>
     # CHECK:          func.func @dynamic_copy
     # CHECH-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index)
@@ -876,8 +876,8 @@ def test_unary_lowerings():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def test(
@@ -947,7 +947,6 @@ def test_reduce_sum():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1024,7 +1023,6 @@ def test_mutliple_local_reduce_sum():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1088,7 +1086,6 @@ def test_reduction_and_elemwise():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1175,7 +1172,6 @@ def test_tiled_reduce_max():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1269,7 +1265,6 @@ def test_tiled_reduce_min():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1360,7 +1355,6 @@ def test_tiled_reduce_min_unaligned():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1435,7 +1429,6 @@ def test_multiple_reduction_iv():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1536,7 +1529,6 @@ def test_reduce_propagate_broadcast():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1609,7 +1601,6 @@ def test_explicit_broadcast():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1687,7 +1678,6 @@ def test_broadcast_add():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: 1, N: BLOCK_N},
         )
     ]
@@ -1768,8 +1758,8 @@ def test_binary_lowerings():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def binary_lowerings(
@@ -1803,8 +1793,8 @@ def test_int_comparisons():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def cmp_lowerings(
@@ -1845,8 +1835,8 @@ def test_verbose_int_comparisons():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     @tkw.wave(constraints)
     def verbose_cmp_lowerings(
