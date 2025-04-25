@@ -133,6 +133,8 @@ def tree_speculative_sampling_target_only(
         draft_probs,
         cur_prob_offset_vec,
         uniform_samples,
+        num_accepted_tokens,
+        num_speculative_tokens,
         relu_diff,
         u,
     )

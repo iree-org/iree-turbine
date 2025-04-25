@@ -78,6 +78,8 @@ def get_speculative_decoding_kernel(
         p: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         cur_prob_offset: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.i32],
         uniform_sample: tkl.Memory[B, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        num_accepted_tokens: tkl.i32,
+        num_speculative_tokens: tkl.i32,
         relu_diff_out: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         u_out: tkl.Memory[B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
@@ -87,10 +89,11 @@ def get_speculative_decoding_kernel(
         q_reg = tkw.read(q, mapping=q_mapping)
         p_reg = tkw.read(p, mapping=p_mapping)
 
-        # TODO: Add conditioned mask once scalar codegen is landed.
-        # mask_cond = num_accepted_tokens != num_speculative_tokens_sub1
-        # mask_cond = tkw.broadcast(mask_cond, target_shape=[B, N, D])
-        # p_reg = tkw.select(mask_cond, p_reg, zero)
+        zero = tkl.Register[B, N, D, tkl.f32](0.0)
+        one_i32 = tkw.scalar(1, tkl.i32)
+        mask_cond = num_accepted_tokens != (num_speculative_tokens - one_i32)
+        mask_cond = tkw.broadcast(mask_cond, target_shape=[B, N, D])
+        p_reg = tkw.select(mask_cond, p_reg, zero)
 
         coin = tkw.read(uniform_sample, mapping=uniform_mapping)
         diff = q_reg - p_reg
