@@ -60,7 +60,14 @@ def emit_global_scan(
 
         # we are explicitly adding index because this pass is being
         # applied after the indexing phase
+        # ToDo (xintin): check if we can replace register with scalar.
+        # No point using register for a scalar. Applies to other objects too.
         zero_vec = get_register_as_graph_node(shuffle_val, 0.0, graph)
+
+        # We are explicitly setting the indices to avoid:
+        # AttributeError: 'NoneType' object has no attribute 'values'
+        # ToDo (xintin): After testing with cherry-picks locally, I can say that we will
+        # not need these explicit setter after block reduce PRs. I will revisit.
         zero_vec.index = get_custom(src).index
 
         # condition node: thread ID >= offset

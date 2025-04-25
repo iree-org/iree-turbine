@@ -1688,10 +1688,7 @@ def test_scalar_codegen(shape, tkl_dtype, torch_dtype, arg_vals, request):
 @require_e2e
 @pytest.mark.parametrize(
     "shape",
-    [
-        (1, 64),
-        (51, 64),
-    ],
+    [(1, 64), (51, 64), (128, 64)],
 )
 def test_scanop_cumsum(shape, request):
     run_bench = request.config.getoption("--runperf")

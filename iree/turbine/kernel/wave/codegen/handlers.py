@@ -11,6 +11,8 @@ from typing import Any, Callable, Sequence
 import torch.fx as fx
 import torch.utils._pytree as pytree
 
+from iree.turbine.kernel._support.shaped_type import ShapedType
+
 from ...compiler.ir import (
     Attribute,
     DenseElementsAttr,
