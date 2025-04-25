@@ -1953,8 +1953,7 @@ class ScanOp(CustomOp, ABC):
         if self.dim == -1 or self.dim is None:
             self.dim = src_type.symbolic_shape[-1]
 
-        reduced_shape = [dim for dim in src_type.symbolic_shape if dim != self.dim]
-        self.type = Register[(*reduced_shape, src_type.dtype)]
+        self.type = Register[(*src_type.symbolic_shape, src_type.dtype)]
 
         if self.init is not None:
             init_shape = get_custom(self.init).type.symbolic_shape
