@@ -15,6 +15,7 @@ from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, Ind
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
 from .utils.general_utils import (
+    delinearize_index,
     ceildiv,
     is_shared_read,
     get_fastest_index,
@@ -23,7 +24,6 @@ from .utils.graph_utils import (
     DCE,
 )
 from .utils.symbol_utils import (
-    delinearize_index,
     subs_idxc,
 )
 from math import prod

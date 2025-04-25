@@ -87,7 +87,9 @@ def emit_global_scan(
     Emit an intra-warp inclusive scan using butterfly pattern scan and masking.
     """
     offset = local_scan[-1]
-    lane_id = hardware_constraint.lane_id
+    lane_id = (
+        hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
+    )
 
     target_shape = list(src.type.symbolic_shape)
     target_shape.pop(target_shape.index(scan_dim))
