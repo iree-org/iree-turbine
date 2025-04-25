@@ -93,6 +93,7 @@ def test_read_write_equal_sizes():
         graph: fx.Graph = trace.get_root_graph()
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         infer_types(trace)
         promote_node(read_node, None, SHARED_ADDRESS_SPACE, constraints)
         set_node_indices(trace, constraints)
@@ -179,6 +180,7 @@ def test_gemm():
         trace: CapturedTrace = gemm()
         graph: fx.Graph = trace.get_subgraph("region_0")
         IndexingContext.current().finalize()
+        tkw.initialize_and_check_constraints(constraints, IndexingContext.current())
         initialize_iter_args(trace)
         infer_types(trace)
         read_nodes = get_read_nodes(graph)

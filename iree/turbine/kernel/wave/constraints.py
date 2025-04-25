@@ -5,14 +5,17 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, InitVar
 from enum import Enum
 from typing import Optional, Callable
 from sympy import ceiling, Piecewise, floor, Integer
+from math import prod
 
-from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
+from .._support.indexing import IndexingContext, IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from ..lang.global_symbols import *
+from ..lang.block import dim3_from_num_waves, ThreadBlock
+from .utils.symbol_utils import infer_static_shape, safe_subs, delinearize_index
 
 """
 Formatting for different target intrinsics:
@@ -121,10 +124,29 @@ class HardwareConstraint(Constraint):
     """
 
     threads_per_wave: int
-    waves_per_block: Optional[tuple[int, int, int]] = None
+    thread_block: Optional[ThreadBlock] = None
     mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
     vector_shapes: Optional[dict[IndexSymbol, int]] = None
     max_bits_per_load: int = 128
+    waves_per_block: InitVar[Optional[tuple[int, int, int]]] = None
+
+    def __post_init__(self, waves_per_block: Optional[tuple[int, int, int]]):
+        if self.thread_block is not None:
+            assert (
+                self.thread_block.shape[0] % self.threads_per_wave == 0
+            ), "The number of threads per wave must divide the x dimension of the thread block"
+        if waves_per_block is None:
+            return
+        if self.thread_block is None:
+            self.thread_block = dim3_from_num_waves(
+                self.threads_per_wave, *waves_per_block
+            )
+            return
+        _waves_per_block = list(self.thread_block.shape)
+        _waves_per_block[0] /= self.threads_per_wave
+        assert (
+            tuple(_waves_per_block) == waves_per_block
+        ), "Expected the thread block to be compatible with the waves per block"
 
     def max_elems_per_load(self, element_type: DataType) -> int:
         return self.max_bits_per_load // element_type.bitwidth()
@@ -258,20 +280,12 @@ class HardwareConstraint(Constraint):
         return offset
 
     @property
-    def threads_per_block(self) -> tuple[int]:
-        return (
-            self.waves_per_block[0] * self.threads_per_wave,
-        ) + self.waves_per_block[1:]
+    def threads_per_block(self) -> tuple[int, int, int]:
+        return self.thread_block.shape
 
     @property
     def linearized_thread_id(self) -> IndexExpr:
-        thread_ids = [THREAD_0, THREAD_1, THREAD_2]
-        threads_per_block = [
-            1,
-            self.threads_per_block[0],
-            self.threads_per_block[0] * self.threads_per_block[1],
-        ]
-        return sum([x * y for x, y in zip(thread_ids, threads_per_block)])
+        return self.thread_block.linearized_thread_id
 
     # Inline substitution for vector_size given index map. In the future we can add support for other members.
     def subs_vector_shapes(self, index_map: dict[IndexSymbol, int]):
@@ -304,7 +318,6 @@ class HardwareConstraint(Constraint):
         constraint_index: int | MMAOperand,
         mma_type: MMAType,
     ) -> IndexSequence:
-        lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
         offset = self.mma_index_offset(mma_type)
@@ -507,18 +520,10 @@ class WaveConstraint(Constraint):
     This constraint adds an index constraint to the K-th dimension of a
     a tensor of the form WAVE_K * wave_id. The index of the wave
     is determined by the following mapping:
-    workgroup id 0 -> wave/thread id x
-    workgroup id 1 -> wave/thread id y
-    workgroup id 2 -> wave/thread id z
-    (If the tensor dimension has been distributed along workgroup dimension
-    {0, 1, 2}, then the corresponding thread id is {x, y, z}).
-
-    Because we represent the number of threads per block as
-    [wave_id_0 * threads_per_wave, wave_id_1, wave_id_2], special care is
-    required when computing wave_id_0. Specifically,
-    wave_id_0 = floor(thread_id_0 / threads_per_wave)
-    wave_id_1 = thread_id_1
-    wave_id_2 = thread_id_2
+    linear_wave_id = floor(thread id x / threads_per_wave) +
+                     block dim x * thread id y +
+                     block dim x * block dim y * thread id z
+    wave id[i] = delinearized_index(linear_wave_id, num_waves)[i]
     """
 
     dim: IndexExpr
@@ -530,25 +535,9 @@ class WaveConstraint(Constraint):
             raise ValueError("Index is being computed without setting wave id")
         return IndexSequence(self.tile_size * self.wave_id, 1)
 
-    def set_wave_id_from_hardware_and_workgroup_constraint(
-        self,
-        hardware_constraint: HardwareConstraint,
-        workgroup_constraint: WorkgroupConstraint,
-    ):
-        """
-        The wave_id is the same as the thread_id, with the exception of
-          wave_id[0] = thread_id[0] / threads_per_wave
-        This is a convention that we adopt.
-        """
+    def set_wave_id(self, wave_id: IndexExpr):
         old_wave_id = self.wave_id
-        assert self.dim == workgroup_constraint.dim, "Dimension mismatch"
-        self.wave_id = hardware_constraint.get_thread_id_from_workgroup_dim(
-            workgroup_constraint.workgroup_dim
-        )
-        # Only handling the wg_dim_0 case because Wave assumes
-        # all threads in a wave are handled in wg_dim_0.
-        if workgroup_constraint.workgroup_dim == 0:
-            self.wave_id = floor(self.wave_id / hardware_constraint.threads_per_wave)
+        self.wave_id = wave_id
         assert (
             old_wave_id is None or self.wave_id == old_wave_id
         ), f"Conflicting preset wave_id old: {old_wave_id} new: {self.wave_id}"
@@ -602,3 +591,169 @@ def get_constrained_shape(
             x.tile_size for x in dim_constraints if isinstance(x, TilingConstraint)
         ][0]
     return tuple(constrained_shape)
+
+
+def _check_hardware_constraints(hardware_constraints: list[HardwareConstraint]):
+    """Checks the hardware constraints for errors."""
+    if len(hardware_constraints) != 1:
+        raise ValueError("Expected a single hardware constraint")
+
+
+def _check_workgroup_constraints(workgroup_constraints: list[WorkgroupConstraint]):
+    """Checks the workgroup constraints for errors."""
+    dims = [c.dim for c in workgroup_constraints]
+    if len(dims) != len(set(dims)):
+        raise ValueError("Expected a unique workgroup constraint for each dim")
+
+
+def _check_wave_constraints_and_get_num_waves(
+    hardware_constraint: HardwareConstraint,
+    workgroup_constraints: list[WorkgroupConstraint],
+    wave_constraints: list[WaveConstraint],
+) -> tuple[list[int | IndexExpr], list[WaveConstraint], list[WaveConstraint]]:
+    """Checks the wave constraints for errors, and if there are no error returns
+    the number of waves, the new wave constraints, and a list containing the old
+    and new wave constraints."""
+    waves_by_dim = {c.dim: c for c in wave_constraints}
+    if len(waves_by_dim) != len(set(waves_by_dim.keys())):
+        raise ValueError("Expected at most one wave constraint per dim")
+    workgroup_dims = set([c.dim for c in workgroup_constraints])
+    if any(map(lambda x: x not in workgroup_dims, waves_by_dim.keys())):
+        raise ValueError(
+            "Found a WaveConstraint without a matching Workgroup constraint"
+        )
+    # Create the new constraints and calculate the number of waves.
+    new_waves_constraints: list[WaveConstraint] = []
+    num_waves = [1] * (len(workgroup_dims))
+    waves = [None] * (len(workgroup_dims))
+    for i, workgroup in enumerate(workgroup_constraints):
+        # Add a constraint if there's a workgroup constraint without a matching
+        # workgroup constraint.
+        if workgroup.dim not in waves_by_dim:
+            new_waves_constraints.append(
+                WaveConstraint(workgroup.dim, workgroup.tile_size)
+            )
+            waves[i] = new_waves_constraints[-1]
+            continue
+        # Get the number of waves in the `workgroup.dim` dimension.
+        num_waves[i] = ceiling(
+            (workgroup.tile_size / waves_by_dim[workgroup.dim].tile_size)
+        )
+        waves[i] = waves_by_dim[workgroup.dim]
+    return num_waves, new_waves_constraints, waves
+
+
+def _check_and_maybe_infer_thread_block(
+    hardware_constraint: HardwareConstraint,
+    num_waves: list[int | IndexExpr],
+    idxc: IndexingContext,
+):
+    """Checks thread block information, and if it's not set, then sets it."""
+    num_waves = infer_static_shape(tuple(num_waves), idxc)
+    total_num_threads = prod(num_waves) * hardware_constraint.threads_per_wave
+    if total_num_threads > 1024:
+        raise ValueError("Number of waves exceeds hardware resources")
+    if hardware_constraint.thread_block is not None:
+        if (
+            hardware_constraint.thread_block.shape[0]
+            % hardware_constraint.threads_per_wave
+            != 0
+        ):
+            raise ValueError(
+                "The number of threads per wave must divide the x dimension of the thread block"
+            )
+        if total_num_threads > prod(hardware_constraint.threads_per_block):
+            raise ValueError(
+                "Cannot distribute the wave constraints in the thread block."
+            )
+        return
+    if len(num_waves) == 3:
+        hardware_constraint.thread_block = dim3_from_num_waves(
+            hardware_constraint.threads_per_wave, *num_waves
+        )
+        return
+    hardware_constraint.thread_block = dim3_from_num_waves(
+        hardware_constraint.threads_per_wave, prod(num_waves)
+    )
+
+
+def _simplify_wave_ids(
+    wave_ids: list[IndexExpr], b_dim: tuple[int, int, int], idxc: IndexingContext
+) -> list[IndexExpr]:
+    """Simplify the wave ids."""
+    tids = [THREAD_0, THREAD_1, THREAD_2]
+    from sympy import Symbol, Mod
+
+    wave_ids = tuple(safe_subs(expr, idxc.subs.items()) for expr in wave_ids)
+
+    def simplify(expr: IndexExpr) -> IndexExpr:
+        if isinstance(expr, Symbol) or len(expr.args) == 0:
+            return expr
+        # Find the maximum possible value of the expression. This works because
+        # thread ids always appear in the numerator and there are no
+        # subtractions of the thread id.
+        value = expr.subs([(t, b - 1) for t, b in zip(tids, b_dim)])
+        if int(value) == 0:
+            # If the value is 0, the expression can be removed.
+            return value
+        args = [simplify(a) for a in expr.args]
+        expr = expr.func(*args)
+        if isinstance(expr, Mod) and value < expr.args[1]:
+            # A modulo expression can be simplified if LHS < RHS
+            return expr.args[0]
+        return expr
+
+    return [simplify(e).simplify() for e in wave_ids]
+
+
+def initialize_and_check_constraints(
+    constraints: list[Constraint], idxc: IndexingContext
+) -> None:
+    """Initialize and check all the constraints."""
+    # Perform constraint checks.
+    hardware_constraints = [c for c in constraints if isinstance(c, HardwareConstraint)]
+    _check_hardware_constraints(hardware_constraints)
+    workgroup_constraints = [
+        c for c in constraints if isinstance(c, WorkgroupConstraint)
+    ]
+    _check_workgroup_constraints(workgroup_constraints)
+    wave_constraints = [c for c in constraints if isinstance(c, WaveConstraint)]
+    hw_c = hardware_constraints[0]
+    (
+        num_waves,
+        new_waves,
+        new_wave_constraints,
+    ) = _check_wave_constraints_and_get_num_waves(
+        hw_c, workgroup_constraints, wave_constraints
+    )
+    if len(new_waves) > 0:
+        constraints.extend(new_waves)
+    # Maybe infer the thread block.
+    _check_and_maybe_infer_thread_block(hw_c, num_waves, idxc)
+    num_waves = list(reversed(num_waves))
+    wave_ids = delinearize_index(
+        hw_c.thread_block.linearized_wave_id(hw_c.threads_per_wave), num_waves
+    )
+    wave_ids = _simplify_wave_ids(
+        list(reversed(wave_ids)), hw_c.threads_per_block, idxc
+    )
+    # Initialize the wave ids.
+    for i, wave in enumerate(new_wave_constraints):
+        # Don't set the ID if it was previously set.
+        if wave.wave_id is not None:
+            continue
+        wave.set_wave_id(wave_ids[i])
+
+
+def get_constraints_by_dim(
+    constraints: list[Constraint],
+) -> dict[IndexExpr, tuple[WorkgroupConstraint, WaveConstraint]]:
+    """Returns a dictionary that maps `dim`s to the corresponding workgroup and wave constraint."""
+    workgroup_constraints = {
+        c.dim: c for c in constraints if isinstance(c, WorkgroupConstraint)
+    }
+    wave_constraints = {c.dim: c for c in constraints if isinstance(c, WaveConstraint)}
+    return {
+        k: (workgroup_constraints[k], wave_constraints[k])
+        for k in workgroup_constraints.keys()
+    }
