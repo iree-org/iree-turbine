@@ -1,50 +1,34 @@
 import math
-from operator import ge, eq, gt
+from operator import ge
 from typing import Any, Callable, Optional
 
 import sympy
 import torch.fx as fx
 
 from iree.turbine.kernel._support.indexing import IndexSymbol
-from iree.turbine.kernel.compiler.builder import IRProxyValue
-from iree.turbine.kernel.compiler.vector_codegen import cast_vector
-from iree.turbine.kernel.ops.reduction import vector_dot
-from iree.turbine.kernel.wave.utils.general_utils import all_equal
 from iree.turbine.kernel.wave.utils.symbol_utils import subs_idxc
 
 from .._support.dtype import i1
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import (
     Add,
-    Broadcast,
     Cumsum,
     CustomOp,
     Extract,
-    ExtractElement,
     NewRegister,
     Reshape,
     ScanOp,
     SelectOp,
     ShuffleOp,
     get_custom,
-    NewScalar,
-    Sub,
 )
 from ..wave.constraints import (
     HardwareConstraint,
-    TilingConstraint,
-    WaveConstraint,
-    WorkgroupConstraint,
 )
 from .constraints import HardwareConstraint
 from .utils.classes import ShuffleMode
 
 from .utils.graph_utils import DCE
-from ..compiler.ir import VectorType, vector_d, arith_d
-
-import iree.turbine.kernel.lang as tkl
-import iree.turbine.kernel.wave as tkw
-
 
 TKW_COMBINER = {"cumsum": Add}
 IDENTITY = {"add": 0.0}
@@ -104,7 +88,6 @@ def emit_global_scan(
     """
     offset = local_scan[-1]
     lane_id = hardware_constraint.lane_id
-    offsetted_local_scan = [None] * local_scan_size
 
     target_shape = list(src.type.symbolic_shape)
     target_shape.pop(target_shape.index(scan_dim))
