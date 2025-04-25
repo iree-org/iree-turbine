@@ -234,7 +234,7 @@ def handle_reduction_entry(
 ):
     reduction_context = expansion_context.reduction_context
     if isinstance(new_node, GetResult):
-        breakpoint()
+      # breakpoint()
         assert len(inputs) == 1, f"Expected one input, got {inputs}"
         outputs = reduction.outputs(inputs[0].graph)
         if not isinstance(outputs, Sequence):
@@ -687,7 +687,6 @@ def fixup_reduction_nodes(
         if reduction not in reduction_context:
             continue
         reduction_info = reduction_context[reduction]
-        breakpoint()
         sorted_keys = dict(sorted(reduction_info.outputs.items(), key=lambda x: x[0]))
         new_outputs = []
         for key in sorted_keys.values():
@@ -711,6 +710,7 @@ def fixup_reduction_nodes(
             get_result = GetResult(get_item.value, result_index).add_to_graph(
                 get_item.graph, get_item.type
             )
+            breakpoint()
             get_result.name = get_item.fx_node.name
             get_item.replace_all_uses_with(get_custom(get_result))
             get_item.erase()
@@ -736,6 +736,8 @@ def expand_graph(
     to the root of the graph.
     """
 
+    for node in trace.walk(lambda x: isinstance(get_custom(x), Iterate)):
+        print("TYB INIT", get_custom(node))
     leaf_ops = [get_custom(node) for node in reversed(trace.walk(is_leaf_node))]
     if not leaf_ops:
         final_op = get_custom(trace.get_root_graph()._root.prev)
@@ -754,9 +756,16 @@ def expand_graph(
             )
 
     # Fixup all reduction nodes.
+    for node in trace.walk(lambda x: isinstance(get_custom(x), Iterate)):
+        print("TYB BEF ", get_custom(node))
+    for node in trace.walk(lambda x: isinstance(get_custom(x), GetResult)):
+        print("TYB BEF ", get_custom(node))
     fixup_reduction_nodes(trace, expansion_context)
     # Fixup all mma nodes.
     fixup_mma_nodes(trace, expansion_context)
     # Remove original nodes in root graph.
     remove_original_nodes(leaf_ops)
     remove_unused_registers(trace)
+    for node in trace.walk(lambda x: isinstance(get_custom(x), Iterate)):
+        print("TYB", get_custom(node))
+    breakpoint()

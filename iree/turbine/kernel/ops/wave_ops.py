@@ -780,7 +780,10 @@ class BinaryOpBase(CustomOp, ABC):
         if isinstance(lhs_type, DataType) and isinstance(rhs_type, DataType):
             has_same_type = True
         else:
-            has_same_type = has_same_custom_type(lhs_type, rhs_type)
+            try:
+                has_same_type = has_same_custom_type(lhs_type, rhs_type)
+            except:
+                breakpoint()
         if has_same_type:
             return lhs_type.symbolic_shape
 

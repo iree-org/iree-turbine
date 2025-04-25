@@ -74,12 +74,12 @@ def get_speculative_sampling_kernel(
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={B: 1, J: 0, CUR_INDEX: 0, S: 0, D: 1},
+            vector_shapes={B: batch_size, J: 0, CUR_INDEX: 0, S: 0, D: 20},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
-    constraints += [tkw.TilingConstraint(B, BLOCK_B)]
     constraints += [tkw.TilingConstraint(CUR_INDEX)]
+    constraints += [tkw.TilingConstraint(J)]
 
     CUR_PROB_OFFSET = tkl.sym.CUR_PROB_OFFSET
     DRAFT_TOKEN_ID = tkl.sym.DRAFT_TOKEN_ID
@@ -132,7 +132,7 @@ def get_speculative_sampling_kernel(
         a: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.f16],
         b: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.f16],
         c: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.f32],
-        predicts: tkl.Memory[S * B * D, ADDRESS_SPACE_0, tkl.f32],
+        predicts: tkl.Memory[S * B, ADDRESS_SPACE_0, tkl.f32],
         uniform_samples: tkl.Memory[S, B, ADDRESS_SPACE_0, tkl.f32],
         target_probs: tkl.Memory[S, B, D, ADDRESS_SPACE_0, tkl.f32],
         draft_probs: tkl.Memory[S, B, D, ADDRESS_SPACE_0, tkl.f32],
@@ -153,88 +153,89 @@ def get_speculative_sampling_kernel(
         last_accepted_retrieve_idx = tkw.read(retrieve_index, elements_per_thread=1, mapping=read_zero_offset_mapping)
         coin = tkw.read(uniform_samples, elements_per_thread=1, mapping=read_zero_offset_mapping)
 
-        @tkw.iterate(B, init_args=[])
-        def body():
+        main_loop_prob_acc = tkw.Register[S, B, D, tkl.f32](0.0)
 
-            main_loop_cond = (J < num_speculative_tokens) | (OUTER_DONE == 1)
-            @tkw.iterate(J, start=sympy.Integer(1), condition=main_loop_cond, init_args=[])
-            def main_loop():
-                cur_index = tkw.broadcast(tkw.read(
-                    retrieve_next_token, elements_per_thread=1, mapping=read_2d_mapping
-                ), (S, B))
+        main_loop_cond = (J < num_speculative_tokens) | (OUTER_DONE == 1)
 
-                @tkw.iterate(
-                    CUR_INDEX, start=cur_index, condition=(CUR_INDEX >= 0) | (INNER_DONE == 1), init_args=[cur_index]
+        @tkw.iterate(J, start=sympy.Integer(1), condition=main_loop_cond, init_args=[main_loop_prob_acc])
+        def main_loop(repeat_prob_acc):
+            cur_index = tkw.broadcast(tkw.read(
+                retrieve_next_token, elements_per_thread=1, mapping=read_2d_mapping
+            ), (S, B))
+
+            @tkw.iterate(
+                CUR_INDEX, start=cur_index, condition=(CUR_INDEX >= 0) | (INNER_DONE == 1), init_args=[cur_index, repeat_prob_acc]
+            )
+            def repeat(cur_index, prob_acc):
+                draft_index = tkw.read(
+                    retrieve_index, elements_per_thread=1, mapping=read_2d_mapping
                 )
-                def repeat(cur_index):
-                    draft_index = tkw.read(
-                        retrieve_index, elements_per_thread=1, mapping=read_2d_mapping
-                    )
-                    draft_token_id = tkw.read(
-                        candidates, elements_per_thread=1, mapping=read_2d_mapping
-                    )
-                    tkw.set_symbol(DRAFT_TOKEN_ID, draft_token_id)
-                    target_prob_single = tkw.read(
-                        target_probs, elements_per_thread=1, mapping=read_3d_mapping
-                    )
-                    # TODO: make prob_acc capturable from outside of the loop
-                    prob_acc = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.f32](0.0)
-                    prob_acc += target_prob_single
+                draft_token_id = tkw.read(
+                    candidates, elements_per_thread=1, mapping=read_2d_mapping
+                )
+                tkw.set_symbol(DRAFT_TOKEN_ID, draft_token_id)
+                target_prob_single = tkw.read(
+                    target_probs, elements_per_thread=1, mapping=read_3d_mapping
+                )
+                prob_acc += target_prob_single
 
-                    # TODO: these should be defined only once outside of the loop
-                    threshold_acc = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.f32](1e-2)
-                    threshold_single = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.f32](1e-2)
+                # TODO: these should be defined only once outside of the loop
+                threshold_acc = tkw.Register[S, B, D, tkl.f32](1e-2)
+                threshold_single = tkw.Register[S, B, D, tkl.f32](1e-2)
 
-                    coin_threshold = prob_acc / threshold_acc
-                    coin = tkw.read(
-                        uniform_samples, elements_per_thread=1, mapping=read_2d_mapping
-                    )
-                    condition1 = coin <= coin_threshold
-                    condition2 = target_prob_single >= threshold_single
+                coin_threshold = prob_acc / threshold_acc
+                coin = tkw.read(
+                    uniform_samples, elements_per_thread=1, mapping=read_2d_mapping
+                )
+                condition1 = coin <= coin_threshold
+                condition2 = target_prob_single >= threshold_single
 
-                    @tkw.conditional(condition1 | condition2)
-                    def then():
-                        prob_acc = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.f32](0.0)
-                        tkw.set_symbol(CUR_PROB_OFFSET, cur_index)
-
-                        tkw.write(
-                            draft_token_id,
-                            retrieve_index,
-                            elements_per_thread=1,
-                        #   mapping=read_2d_mapping,
-                        )
-                        true = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.i32](1)
-                        tkw.set_symbol(INNER_DONE, true)
-
-                    # TODO: make this work properly with not
-                   #condition3 = tkw.apply_expr(condition1, lambda x: sympy.Not(x))
-                   #condition4 = tkw.apply_expr(condition2, lambda x: sympy.Not(x))
-                    condition3 = coin > coin_threshold
-                    condition4 = target_prob_single < threshold_single
-
-                    @tkw.conditional(condition3 & condition4)
-                    def else_():
-                        target_prob_reg = tkw.read(target_probs, elements_per_thread=1, mapping=read_3d_mapping_2)
-                        tkw.write(target_prob_reg, draft_probs, elements_per_thread=1, mapping=write_3d_mapping)
-
-                    new_cur_index = tkw.select(condition3 & condition4, tkw.read(
-                        retrieve_next_sibling,
-                        elements_per_thread=1,
-                        mapping=read_2d_mapping,
-                    ), cur_index)
-
-                    return new_cur_index
-
-                tkw.set_symbol(CUR_INDEX, repeat)
-
-                @tkw.conditional(CUR_INDEX >= 0)
+                @tkw.conditional(condition1 | condition2)
                 def then():
-                    true = tkw.Register[S, B, D, ADDRESS_SPACE_0, tkl.i32](1)
+                    tkw.set_symbol(CUR_PROB_OFFSET, cur_index)
+
+                    tkw.write(
+                        draft_token_id,
+                        retrieve_index,
+                        elements_per_thread=1,
+                    #   mapping=read_2d_mapping,
+                    )
+                    true = tkw.Register[S, B, D, tkl.i32](1)
                     tkw.set_symbol(INNER_DONE, true)
 
-                index_j = tkw.self_index(J, tkl.i32)
-                next_value = tkw.apply_expr(index_j, lambda x: x + 1)
-                tkw.set_symbol(J, next_value)
+                # TODO: make this work properly with not
+               #condition3 = tkw.apply_expr(condition1, lambda x: sympy.Not(x))
+               #condition4 = tkw.apply_expr(condition2, lambda x: sympy.Not(x))
+                condition3 = coin > coin_threshold
+                condition4 = target_prob_single < threshold_single
+
+                @tkw.conditional(condition3 & condition4)
+                def else_():
+                    target_prob_reg = tkw.read(target_probs, elements_per_thread=1, mapping=read_3d_mapping_2)
+                    tkw.write(target_prob_reg, draft_probs, elements_per_thread=1, mapping=write_3d_mapping)
+
+                new_cur_index = tkw.select(condition3 & condition4, tkw.read(
+                    retrieve_next_sibling,
+                    elements_per_thread=1,
+                    mapping=read_2d_mapping,
+                ), cur_index)
+
+                new_prob_acc = tkw.select(condition1 | condition2, tkw.Register[S, B, D, tkl.f32](0.0), prob_acc)
+                return new_cur_index, new_prob_acc
+
+            cur_index, prob_acc = repeat
+            tkw.set_symbol(CUR_INDEX, cur_index)
+
+            @tkw.conditional(CUR_INDEX >= 0)
+            def then():
+                true = tkw.Register[S, B, D, tkl.i32](1)
+                tkw.set_symbol(INNER_DONE, true)
+
+            index_j = tkw.self_index(J, tkl.i32)
+            next_value = tkw.apply_expr(index_j, lambda x: x + 1)
+            tkw.set_symbol(J, next_value)
+
+            return prob_acc
 
     hyperparams = {
         BLOCK_B: 1,

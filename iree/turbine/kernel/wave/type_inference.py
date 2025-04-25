@@ -27,7 +27,8 @@ def infer_types(trace: CapturedTrace, subgraph: Optional[fx.Graph] = None):
         custom.infer_type()
         if node.name == 'cur_index':
             custom.type = Register[index_symbol("S"), index_symbol("B"), tkl.i32]
-            print(f"Setting type for {custom.fx_node} = {custom.type}")
+        if 'prob_acc' in node.name:
+            custom.type = Register[index_symbol("S"), index_symbol("B"), index_symbol("D"), tkl.f32]
         # For implicit captures, get type from variables in root graph.
         if "lifted" in custom.fx_node.meta:
             custom.type = custom.fx_node.meta["lifted"].type
