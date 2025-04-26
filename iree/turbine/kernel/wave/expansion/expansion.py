@@ -13,6 +13,7 @@ from ..constraints import (
 from ...ops.wave_ops import (
     Allocate,
     CustomOp,
+    Conditional,
     get_custom,
     Output,
     Write,
@@ -41,6 +42,7 @@ from .expansion_utils import (
     get_reshape_dim_queries,
     remove_original_nodes,
     remove_unused_registers,
+    remove_unused_iter_args,
 )
 from ..utils.graph_utils import (
     get_users,
@@ -83,7 +85,7 @@ class ReductionInfo:
             f"ReductionInfo({self.reduction.fx_node},"
             f"outputs={self.outputs},"
             f" init_args={self.init_args},"
-            f" get_results={get_results}"
+            f" get_results={get_results},"
         )
 
 
@@ -163,6 +165,7 @@ def compute_result_index(
     dim_scaling: dict[IndexSymbol, int],
     node: fx.Node,
     outputs: list[fx.Node],
+    input_index: int,
 ):
     """
     Compute the result index for a reduction node based on the dim
@@ -198,7 +201,6 @@ def compute_result_index(
     local_index += dim_query * dim_strides
 
     """
-    input_index = outputs.index(node)
     get_shape = lambda x: get_custom(x).type.symbolic_shape
     result_index = sum(
         math.prod(dim_scaling[d] for d in get_shape(outputs[i]) if d in dim_scaling)
@@ -241,7 +243,9 @@ def handle_reduction_entry(
             outputs = [outputs]
         if reduction not in reduction_context:
             reduction_context[reduction] = ReductionInfo(reduction)
-        result_index = compute_result_index(dim_query, dim_scaling, inputs[0], outputs)
+        result_index = compute_result_index(
+            dim_query, dim_scaling, inputs[0], outputs, new_node.res_idx
+        )
         custom = get_custom(inputs[0])
         key = ExpansionInfo(custom, get_indexed_dims(dim_query, custom))
         reduction_info = reduction_context[reduction]
@@ -268,7 +272,7 @@ def handle_reduction_exit(
         assert len(inputs) == 1, f"Expected one input, got {inputs}"
         reduction = new_node.parent_op()
         result_index = compute_result_index(
-            dim_query, dim_scaling, inputs[0], reduction.init_args
+            dim_query, dim_scaling, inputs[0], reduction.init_args, new_node.iter_idx
         )
         assert reduction in reduction_context, f"Reduction not found: {reduction}"
         new_node.iter_idx = result_index
@@ -660,6 +664,18 @@ def get_mma_indexed_dims(
     return indexed_dims
 
 
+def get_expanded_implicit_capture(
+    implicit_capture: CustomOp, expansion_context: ExpansionContext
+) -> CustomOp | None:
+    """
+    See if the implicit capture has been expanded.
+    """
+    for key in expansion_context.expansion_context.keys():
+        if key.node.fx_node == implicit_capture:
+            return expansion_context[key]
+    return None
+
+
 def fixup_reduction_nodes(
     trace: CapturedTrace,
     expansion_context: ExpansionContext,
@@ -674,6 +690,7 @@ def fixup_reduction_nodes(
     the fixup is done in the correct order, specifically from the last
     reduction to the first reduction since that is the order in
     which expansion proceeds.
+
     """
     reduction_context = expansion_context.reduction_context
     reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Iterate))
@@ -703,8 +720,14 @@ def fixup_reduction_nodes(
 
         sorted_keys = dict(sorted(reduction_info.init_args.items(), key=lambda x: x[0]))
         new_init_args = []
-        for key in sorted_keys.values():
-            new_init_args.append(expansion_context[key].fx_node)
+        for init_arg in reduction.init_args:
+            for key in sorted_keys.values():
+                if key.node.fx_node == init_arg:
+                    new_init_args.append(expansion_context[key].fx_node)
+                    break
+        assert len(new_init_args) == len(
+            reduction.init_args
+        ), f"Number of init args mismatch: {len(new_init_args)} != {len(reduction.init_args)}"
         reduction.update_arg("init_args", new_init_args)
 
         for result_index, get_item in reduction_info.get_results.items():
@@ -716,13 +739,35 @@ def fixup_reduction_nodes(
             get_item.replace_all_uses_with(get_custom(get_result))
             get_item.erase()
 
+        # Update the implicit captures.
+        # for capture in reduction.implicit_captures:
+        #    custom = get_custom(capture)
+        #    expanded_capture = get_expanded_implicit_capture(custom, expansion_context)
+        #    if expanded_capture is not None:
+        #        custom.replace_all_uses_with(expanded_capture)
+        #        custom.erase()
+
         remove_original_nodes(return_vals)
+
+    # For conditional nodes, update the condition to use the expanded nodes.
+    for conditional in trace.walk(lambda x: isinstance(get_custom(x), Conditional)):
+        condition = get_custom(conditional).condition
+        new_condition = None
+        for key, value in expansion_context.expansion_context.items():
+            if key.node.fx_node == condition:
+                new_condition = value
+                break
+        assert new_condition is not None, f"Condition was not expanded: {condition}"
+        get_custom(conditional).update_arg("condition", new_condition.fx_node)
+        remove_original_nodes([get_custom(condition)])
 
 
 def is_leaf_node(node):
     custom = get_custom(node)
-    return isinstance(custom, Write) or (
-        isinstance(custom, GetResult) and not custom.users
+    return (
+        isinstance(custom, Write)
+        or (isinstance(custom, GetResult) and not custom.users)
+        or isinstance(custom, SetSymbol)
     )
 
 
@@ -759,5 +804,11 @@ def expand_graph(
     # Fixup all mma nodes.
     fixup_mma_nodes(trace, expansion_context)
     # Remove original nodes in root graph.
-    remove_original_nodes(leaf_ops)
+    remove_original_nodes(leaf_ops)  # + set_symbols)
     remove_unused_registers(trace)
+    remove_unused_iter_args(trace)
+
+    # from ..utils.print_utils import print_trace
+
+    # print_trace(trace)
+    # breakpoint()

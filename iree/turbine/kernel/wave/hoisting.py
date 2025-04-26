@@ -16,6 +16,26 @@ import sympy
 logger = get_logger("turbine.wave.hoisting")
 
 
+def has_set_symbol_dependent_mapping(custom_node: CustomOp) -> bool:
+    """Check if the custom node has a mapping with symbols and a set symbol of any symbols in the
+    mapping occurs prior."""
+    if not custom_node.mapping:
+        return False
+    used_symbols = [
+        x
+        for x in custom_node.mapping.input_mapping.values()
+        if isinstance(x, IndexExpr) and x not in custom_node.mapping.iters.keys()
+    ]
+    if not used_symbols:
+        return False
+    for node in custom_node.graph.nodes:
+        graph_node = get_custom(node)
+        if isinstance(graph_node, SetSymbol) and graph_node.symbol in used_symbols:
+            if node < custom_node.fx_node:
+                return True
+    return False
+
+
 def get_hoistable_ops(
     graph: fx.Graph,
     captured_vars: list[CustomOp],
@@ -54,6 +74,10 @@ def get_hoistable_ops(
                 sympy.sympify(ind.start).has(induction_variable)
                 for ind in custom_node.index.values()
             ):
+                continue
+            # If it has a mapping with symbols and a set symbol of any symbols in the
+            # mapping occurs prior, then it is not hoistable.
+            if has_set_symbol_dependent_mapping(custom_node):
                 continue
             hoistable_ops.append(custom_node)
         else:

@@ -1,4 +1,5 @@
 from .._support.indexing import index_symbol
+import sympy
 
 # Global symbols used throughout the code.
 
@@ -44,3 +45,8 @@ GLOBAL_MEMORY_UNITS = index_symbol("$GLOBAL_MEMORY_UNITS")
 MMA_UNITS = index_symbol("$MMA_UNITS")
 VALU_UNITS = index_symbol("$VALU_UNITS")
 SHUFFLE_UNITS = index_symbol("$SHUFFLE_UNITS")
+
+
+# Iteration symbols.
+def GET_ITER_ARG(i: int):
+    return sympy.Symbol(f"$GET_ITER_ARG_{i}")

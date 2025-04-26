@@ -290,7 +290,7 @@ class KernelSignature:
         # Extract all placeholder nodes.
         placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
-        def get_users_recursive(node):
+        def get_users_recursive(node, parent=None):
             ret = []
             for user in node.users.keys():
                 custom = get_custom(user)
@@ -302,8 +302,9 @@ class KernelSignature:
                 nested_placeholders = filter_fx_graph(subgraph, is_placeholder)
                 for nested in nested_placeholders:
                     captured = get_custom(nested).get_captured_fx_node()
-                    if captured == node:
-                        ret += get_users_recursive(nested)
+                    parent = node if not parent else parent
+                    if captured == parent:
+                        ret += get_users_recursive(nested, parent)
 
             return ret
 

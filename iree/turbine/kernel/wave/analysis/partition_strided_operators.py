@@ -78,6 +78,9 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
         """
         custom = get_custom(node)
         if isinstance(custom, Write):
+            # TODO: Why do we need this check?
+            if not custom.register_index:
+                return False
             strides = [
                 simplify_index(custom.register_index[dim]).stride
                 for dim in custom.register_index

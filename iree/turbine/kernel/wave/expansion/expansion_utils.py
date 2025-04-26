@@ -273,3 +273,14 @@ def remove_unused_registers(trace: CapturedTrace):
     for node in trace.walk(lambda x: isinstance(get_custom(x), NewRegister)):
         if not node.users:
             node.graph.erase_node(node)
+
+
+def remove_unused_iter_args(trace: CapturedTrace):
+    """
+    Remove duplicate iter args that are not used in the graph.
+    """
+    iter_args = trace.walk(lambda x: isinstance(get_custom(x), IterArg))
+    for node in iter_args:
+        custom = get_custom(node)
+        if not custom.users:
+            custom.erase()

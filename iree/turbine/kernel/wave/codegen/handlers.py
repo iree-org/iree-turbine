@@ -272,6 +272,8 @@ def _to_scalar(val: Value) -> Value:
         ), f"Only size 0 or 1 vectors are supported: got {src_type}"
         if src_type.rank == 1:
             val = vector_d.extract(val, static_position=[0], dynamic_position=[])
+        else:
+            val = vector_d.extractelement(val)
 
     return val
 
@@ -654,6 +656,21 @@ def handle_neg(source: Value, options: WaveCompileOptions) -> OpResult:
     return result
 
 
+@handle_unary_op(operator.invert)
+def handle_invert(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_integer_like_type(element_type):
+        if isinstance(source.type, VectorType):
+            assert len(source.type.shape) == 1
+            zero = arith_d.ConstantOp(IndexType.get(), 0)
+            source = vector_d.extractelement(source, position=zero)
+        true = arith_d.ConstantOp(source.type, True)
+        result = arith_d.xori(source, true)
+    else:
+        raise ValidationError(f"Inversion is not supported for type: {element_type}")
+    return result
+
+
 @handle_unary_op(exp2)
 def handle_exp2(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
@@ -842,7 +859,7 @@ def handle_conditional(emitter: WaveEmitter, node: fx.Node):
     cond_type = condition.type
     assert IntegerType.isinstance(
         cond_type
-    ), f"Condition must me integer, got {cond_type}"
+    ), f"Condition must be integer, got {cond_type}"
 
     zero = arith_d.constant(cond_type, 0)
     condition = arith_d.cmpi(arith_d.CmpIPredicate.ne, condition, zero)
@@ -951,7 +968,8 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
     # Initialize while loop
     init_value = cast_py_value(emitter, start).ir_value
     if isinstance(init_value.type, VectorType):
-        init_value = vector_d.extractelement(init_value, [0])
+        zero = arith_d.ConstantOp(IndexType.get(), 0)
+        init_value = vector_d.extractelement(init_value, position=zero)
     if isinstance(init_value.type, IntegerType):
         init_value = arith_d.index_cast(IndexType.get(), init_value)
 
@@ -970,9 +988,20 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
     with InsertionPoint(whileOp.before.blocks[0]):
         # Replace the axis with a temporary variable when generating the condition
         # to avoid conflicts with the actual value of the axis.
-        condition = condition.subs({axis: index_symbol("$TMP")})
+        condition = condition.subs({axis: sympy.Symbol("$TMP")})
         subs = add_emitter_subs(emitter)
-        subs[index_symbol("$TMP")] = current_values[-1]
+        subs[sympy.Symbol("$TMP")] = current_values[-1]
+        # Replace iter args with appropriate values.
+        for i in range(len(current_values) - 1):
+            value = current_values[i]
+            if isinstance(value.type, VectorType):
+                assert (
+                    value.type.rank == 1
+                ), f"Expected vector of rank 1, got {value.type}"
+                value = vector_d.extractelement(current_values[i], position=zero)
+            if isinstance(value.type, IntegerType):
+                value = arith_d.index_cast(IndexType.get(), value)
+            subs[GET_ITER_ARG(i)] = value
         condition = gen_sympy_index(subs, condition)
         scf_d.ConditionOp(condition, current_values)
 
