@@ -175,6 +175,14 @@ def sum(
     ...
 
 
+def cumsum(
+    src: "Register",
+    acc: Optional["Register"] = None,
+    dim: Optional[IndexExpr | int] = None,
+) -> "Register":
+    ...
+
+
 def max(
     src: "Register",
     acc: Optional["Register"] = None,
@@ -1898,6 +1906,69 @@ class Broadcast(CustomOp, ABC):
         self.type = Register[(*self.target_shape, src_dtype)]
 
 
+@define_interface_op("cumsum")
+@dataclass
+class ScanOp(CustomOp, ABC):
+    """
+    Base class for all scan-style operations (e.g., cumsum).
+
+    arg: Source tensor/value to scan.
+    init: Optional initial value.
+    dim: Symbolic dimension along which to scan.
+    """
+
+    arg: fx.Node | list[fx.Node]
+    init: Optional[fx.Node] = None
+    dim: Optional[IndexSymbol] = None
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        from ..wave.utils.general_utils import all_equal
+
+        if isinstance(self.arg, Sequence):
+            src_indexings = [get_custom(arg).indexing_dims for arg in self.arg]
+            if not all_equal(src_indexings):
+                raise NotImplementedError(
+                    "All inputs to ScanOp must have same indexing dims."
+                )
+            indexing = src_indexings[0]
+        else:
+            indexing = get_custom(self.arg).indexing_dims
+
+        return [dim for dim in indexing if dim != self.dim]
+
+    def infer_type(self):
+        if isinstance(self.arg, Sequence):
+            src_types = [get_custom(arg).type for arg in self.arg]
+            ref_shape = src_types[0].symbolic_shape
+            ref_dtype = src_types[0].dtype
+            for src_type in src_types:
+                if src_type.symbolic_shape != ref_shape or src_type.dtype != ref_dtype:
+                    raise NotImplementedError(
+                        "ScanOp requires all args to have same shape and dtype."
+                    )
+            src_type = src_types[0]
+        else:
+            src_type = get_custom(self.arg).type
+
+        # normalize dim=-1 or None
+        if self.dim == -1 or self.dim is None:
+            self.dim = src_type.symbolic_shape[-1]
+
+        self.type = Register[(*src_type.symbolic_shape, src_type.dtype)]
+
+        if self.init is not None:
+            init_shape = get_custom(self.init).type.symbolic_shape
+            if init_shape != self.type.symbolic_shape:
+                raise RuntimeError(
+                    f"Init shape {init_shape} must match result shape {self.type.symbolic_shape}"
+                )
+
+    @property
+    def reduction_dim(self) -> IndexSymbol:
+        return self.dim
+
+
 @define_interface_op("max")
 @define_interface_op("min")
 @define_interface_op("sum")
@@ -1907,7 +1978,7 @@ class ReduceOp(CustomOp, ABC):
     Represents a Reduce computation.
 
     arg: Source tensor/value to reduce
-    init: init/accumulator for reducte
+    init: init/accumulator for reduce
     dim: which symbolic dim to reduce.
     """
 

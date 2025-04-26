@@ -7,38 +7,30 @@
 import operator
 import sympy
 import math
-from typing import Any, Callable, ClassVar, Optional, List, Type, Dict, Sequence
-import sympy.functions
-import sympy.functions.elementary
-import sympy.functions.elementary.piecewise
+from typing import Any, Callable, Sequence
 import torch.fx as fx
 import torch.utils._pytree as pytree
 
-from ..symbolic_constraints import SymbolicAlias
+from iree.turbine.kernel._support.shaped_type import ShapedType
+
 from ...compiler.ir import (
     Attribute,
     DenseElementsAttr,
-    FloatAttr,
     F16Type,
     F32Type,
     IndexType,
     InsertionPoint,
-    IntegerAttr,
     IntegerType,
     IrType,
-    Location,
     MemRefType,
     OpResult,
-    ShapedType,
     Value,
     VectorType,
     amdgpu_d,
     arith_d,
-    func_d,
     gpu_d,
     math_d,
     memref_d,
-    stream_d,
     scf_d,
     vector_d,
     llvm_d,
@@ -94,17 +86,12 @@ from ...ops.wave_ops import (
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
 from ...compiler.vector_codegen import (
-    cast_kernel_buffer,
     cast_py_literal,
     cast_py_value,
     cast_vector,
 )
 from ..constraints import (
-    Constraint,
     HardwareConstraint,
-    MMAType,
-    WorkgroupConstraint,
-    TilingConstraint,
 )
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
@@ -139,12 +126,18 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
     vector_shape = cast_py_literal(emitter, shape)
     element_type = IrType.parse(dtype.ir_type_asm())
     vector_type = VectorType.get(vector_shape, element_type)
-    register = arith_d.ConstantOp(
-        vector_type,
-        DenseElementsAttr.get_splat(
-            vector_type, get_constant_attr(value, element_type)
-        ),
-    ).result
+
+    if isinstance(value, sympy.Basic):
+        value = gen_sympy_index(add_emitter_subs(emitter), value)
+        register = vector_d.splat(vector_type, value)
+    else:
+        register = arith_d.ConstantOp(
+            vector_type,
+            DenseElementsAttr.get_splat(
+                vector_type, get_constant_attr(value, element_type)
+            ),
+        ).result
+
     emitter.bind_node_proxy(node, IRProxyValue(register))
 
 
