@@ -79,13 +79,13 @@ def tree_speculative_sampling_target_only(
         [batch_size], dtype=torch.int32, device=draft_probs.device
     )
     for bx in range(batch_size):
-        prob_acc = 0.0
-        cur_prob_offset = 0  # bx * num_draft_tokens * d handled via indexing
-        coin = uniform_samples[bx, 0]
-        last_accepted_retrive_idx = retrive_index[bx, 0]
-        accept_index[bx, 0] = last_accepted_retrive_idx
-        num_accepted_tokens = 0
         cur_index = 0
+        num_accepted_tokens = 0
+        cur_prob_offset = 0  # bx * num_draft_tokens * d handled via indexing
+        last_accepted_retrive_idx = retrive_index[bx, 0]
+        prob_acc = 0.0
+        coin = uniform_samples[bx, 0]
+        accept_index[bx, 0] = last_accepted_retrive_idx
 
         # Iterate over speculative token positions
         for j in range(1, num_speculative_tokens):
