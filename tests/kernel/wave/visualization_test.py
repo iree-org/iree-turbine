@@ -12,7 +12,7 @@ import pytest
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
-from iree.turbine.kernel.wave.expansion.expansion import expand_graph
+from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel._support.tracing import CapturedTrace
 from iree.turbine.kernel._support.indexing import IndexingContext
@@ -96,6 +96,7 @@ def test_gemm():
         graph = gemm()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)

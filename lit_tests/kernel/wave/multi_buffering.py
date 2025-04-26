@@ -6,7 +6,7 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.promotion import promote_placeholders
 from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
-from iree.turbine.kernel.wave.expansion.expansion import expand_graph
+from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.lang.global_symbols import (
     GLOBAL_ADDRESS_SPACE,
@@ -120,6 +120,7 @@ def test_gemm_multibuffering():
         trace: CapturedTrace = gemm()
         IndexingContext.current().finalize()
         initialize_iter_args(trace)
+        add_get_results(trace)
         infer_types(trace)
         promote_placeholders(trace, constraints)
         set_node_indices(trace, constraints)
