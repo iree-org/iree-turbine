@@ -219,11 +219,10 @@ def get_inputs(
     custom = get_custom(node)
     if isinstance(custom, IterArg):
         # Map iter args to init args
-        local_reduction = reduction
         if reduction is None:
-            local_reduction = custom.parent_op()
+            reduction = custom.parent_op()
         iter_arg_idx = custom.iter_idx
-        inputs.append(local_reduction.init_args[iter_arg_idx])
+        inputs.append(reduction.init_args[iter_arg_idx])
     elif isinstance(custom, GetResult):
         assert custom.value is not None, f"GetResult node {custom} has no value"
         reduction = get_custom(custom.value)

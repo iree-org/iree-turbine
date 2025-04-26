@@ -48,7 +48,7 @@ from .compile_options import WaveCompileOptions
 from .decompose_reduce_ops import decompose_reduce_ops
 from .decompose_vmma_ops import decompose_vmma_ops
 from .decompose_scan_ops import decompose_scan_ops
-from .expansion.expansion import expand_graph
+from .expansion.expansion import expand_graph, add_get_results
 from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
@@ -460,6 +460,7 @@ class LaunchableWave(Launchable):
             partial(self.initialize_workgroup_constraints, trace),
             finalize_indices,
             substitute_vector_shapes,
+            partial(add_get_results, trace),
             partial(infer_types, trace),
             partial(promote_placeholders, trace, self.constraints),
             partial(
