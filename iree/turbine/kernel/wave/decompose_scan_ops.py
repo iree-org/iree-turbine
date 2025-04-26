@@ -18,7 +18,8 @@ from ..ops.wave_ops import (
     ShuffleOp,
     get_custom,
 )
-from ..wave.constraints import HardwareConstraint
+from .constraints import HardwareConstraint
+from .utils.classes import ShuffleMode
 from .utils.graph_utils import DCE
 
 
@@ -43,7 +44,7 @@ def emit_global_scan(
         offset_val = 1 << idx
 
         # shuffle operation to get value from another thread
-        shuffle = ShuffleOp(init, offset_val, subgroup_size)
+        shuffle = ShuffleOp(init, offset_val, subgroup_size, ShuffleMode.XOR)
         shuffle_val = get_graph_node(shuffle, graph)
 
         lane_id = hardware_constraint.linearized_thread_id % subgroup_size
