@@ -257,13 +257,23 @@ def remove_original_nodes(leaf_nodes: list[CustomOp]):
     queue = leaf_nodes
     while queue:
         custom = queue.pop(0)
+        print("Visiting", custom.fx_node.name, "in graph", custom.graph)
         if custom.fx_node._erased:
             continue
         inputs, _ = get_inputs(custom.fx_node, None)
+        print(f"Inputs = {[x.name for x in inputs]}")
         for input in inputs:
             queue.append(get_custom(input))
         if not custom.users:
+            print("Erasing", custom.fx_node.name)
             custom.erase()
+        else:
+            print(
+                "Not erasing",
+                custom.fx_node.name,
+                "because it has users",
+                [x.name for x in custom.users],
+            )
 
 
 def remove_unused_registers(trace: CapturedTrace):
@@ -273,3 +283,14 @@ def remove_unused_registers(trace: CapturedTrace):
     for node in trace.walk(lambda x: isinstance(get_custom(x), NewRegister)):
         if not node.users:
             node.graph.erase_node(node)
+
+
+def remove_unused_iter_args(trace: CapturedTrace):
+    """
+    Remove duplicate iter args that are not used in the graph.
+    """
+    iter_args = trace.walk(lambda x: isinstance(get_custom(x), IterArg))
+    for node in iter_args:
+        custom = get_custom(node)
+        if not custom.users:
+            custom.erase()

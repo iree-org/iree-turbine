@@ -946,7 +946,8 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
     # Initialize while loop
     init_value = cast_py_value(emitter, start).ir_value
     if isinstance(init_value.type, VectorType):
-        init_value = vector_d.extractelement(init_value, [0])
+        zero = arith_d.ConstantOp(IndexType.get(), 0)
+        init_value = vector_d.extractelement(init_value, position=zero)
     if isinstance(init_value.type, IntegerType):
         init_value = arith_d.index_cast(IndexType.get(), init_value)
 

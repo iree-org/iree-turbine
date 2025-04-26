@@ -41,6 +41,7 @@ from .expansion_utils import (
     get_reshape_dim_queries,
     remove_original_nodes,
     remove_unused_registers,
+    remove_unused_iter_args,
 )
 from ..utils.graph_utils import (
     get_users,
@@ -83,7 +84,7 @@ class ReductionInfo:
             f"ReductionInfo({self.reduction.fx_node},"
             f"outputs={self.outputs},"
             f" init_args={self.init_args},"
-            f" get_results={get_results}"
+            f" get_results={get_results},"
         )
 
 
@@ -554,6 +555,8 @@ def expand_node(
     new_node = node.copy(anchor=(node.fx_node.prev))
     new_node.fx_node.name = get_expanded_name(node, metadata.dim_query)
     new_node.expanded_dims = expanded_dims
+    if "lifted" in node.fx_node.meta:
+        breakpoint()
 
     # Add new node to expansion context.
     expansion_context[key] = new_node
@@ -660,6 +663,18 @@ def get_mma_indexed_dims(
     return indexed_dims
 
 
+def get_expanded_implicit_capture(
+    implicit_capture: CustomOp, expansion_context: ExpansionContext
+) -> CustomOp | None:
+    """
+    See if the implicit capture has been expanded.
+    """
+    for key in expansion_context.expansion_context.keys():
+        if key.node.fx_node == implicit_capture:
+            return expansion_context[key]
+    return None
+
+
 def fixup_reduction_nodes(
     trace: CapturedTrace,
     expansion_context: ExpansionContext,
@@ -673,6 +688,11 @@ def fixup_reduction_nodes(
     reduction are used as inputs to another reduction, we need to ensure
     the fixup is done in the correct order, specifically from the last
     reduction to the first reduction since that is the order in
+    which expansion proceeds.
+
+    In situations where we have nested reductions, we need to ensure that
+    the fixup is done in the correct order, specifically from the outer
+    reduction to the inner reduction since that is the order in
     which expansion proceeds.
     """
     reduction_context = expansion_context.reduction_context
@@ -703,8 +723,14 @@ def fixup_reduction_nodes(
 
         sorted_keys = dict(sorted(reduction_info.init_args.items(), key=lambda x: x[0]))
         new_init_args = []
-        for key in sorted_keys.values():
-            new_init_args.append(expansion_context[key].fx_node)
+        for init_arg in reduction.init_args:
+            for key in sorted_keys.values():
+                if key.node.fx_node == init_arg:
+                    new_init_args.append(expansion_context[key].fx_node)
+                    break
+        assert len(new_init_args) == len(
+            reduction.init_args
+        ), f"Number of init args mismatch: {len(new_init_args)} != {len(reduction.init_args)}"
         reduction.update_arg("init_args", new_init_args)
 
         for result_index, get_item in reduction_info.get_results.items():
@@ -716,13 +742,23 @@ def fixup_reduction_nodes(
             get_item.replace_all_uses_with(get_custom(get_result))
             get_item.erase()
 
+        # Update the implicit captures.
+        # for capture in reduction.implicit_captures:
+        #    custom = get_custom(capture)
+        #    expanded_capture = get_expanded_implicit_capture(custom, expansion_context)
+        #    if expanded_capture is not None:
+        #        custom.replace_all_uses_with(expanded_capture)
+        #        custom.erase()
+
         remove_original_nodes(return_vals)
 
 
 def is_leaf_node(node):
     custom = get_custom(node)
-    return isinstance(custom, Write) or (
-        isinstance(custom, GetResult) and not custom.users
+    return (
+        isinstance(custom, Write)
+        or (isinstance(custom, GetResult) and not custom.users)
+        or isinstance(custom, SetSymbol)
     )
 
 
@@ -738,6 +774,10 @@ def expand_graph(
     """
 
     leaf_ops = [get_custom(node) for node in reversed(trace.walk(is_leaf_node))]
+    set_symbols = [
+        get_custom(node)
+        for node in trace.walk(lambda x: isinstance(get_custom(x), SetSymbol))
+    ]
     if not leaf_ops:
         final_op = get_custom(trace.get_root_graph()._root.prev)
         leaf_ops.append(final_op)
@@ -759,5 +799,6 @@ def expand_graph(
     # Fixup all mma nodes.
     fixup_mma_nodes(trace, expansion_context)
     # Remove original nodes in root graph.
-    remove_original_nodes(leaf_ops)
+    remove_original_nodes(leaf_ops + set_symbols)
     remove_unused_registers(trace)
+    remove_unused_iter_args(trace)
