@@ -1821,7 +1821,11 @@ def test_int_comparisons():
         s3 = tkw.select(sge, s1, s2)
         sle = s1 <= s2
         s4 = tkw.select(sle, s1, s2)
-        res = s1 + s2 + s3 + s4
+        sle = s1 == s2
+        s5 = tkw.select(sle, s1, s2)
+        sle = s1 != s2
+        s6 = tkw.select(sle, s1, s2)
+        res = s1 + s2 + s3 + s4 + s5 + s6
         tkw.write(res, a, elements_per_thread=4)
 
     cmp_lowerings = wave_compile(get_wave_compile_options(), cmp_lowerings)
@@ -1833,6 +1837,8 @@ def test_int_comparisons():
     # CHECK: arith.cmpi slt
     # CHECK: arith.select
     # CHECK: arith.cmpi sge
+    # CHECK: arith.cmpi eq
+    # CHECK: arith.cmpi ne
     # CHECK: arith.select
 
 

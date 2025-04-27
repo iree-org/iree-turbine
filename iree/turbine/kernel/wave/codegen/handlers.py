@@ -583,6 +583,20 @@ def handle_eq(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     return result
 
 
+@handle_binary_op([operator.ne])
+def handle_ne(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = arith_d.cmpf(arith_d.CmpFPredicate.ONE, lhs, rhs)
+    elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
+        element_type
+    ):
+        result = arith_d.cmpi(arith_d.CmpIPredicate.ne, lhs, rhs)
+    else:
+        raise ValidationError(f"Found unhandled operand type for ne: {element_type}")
+    return result
+
+
 @handle_binary_op(maximum)
 def handle_maximum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
