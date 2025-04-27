@@ -1884,6 +1884,50 @@ def test_verbose_int_comparisons():
     # CHECK: arith.cmpi eq
 
 
+@run_test
+def test_float_comparisons():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    @tkw.wave(constraints)
+    def cmpf_lowerings(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=4)
+        b_reg = tkw.read(b, elements_per_thread=4)
+        sgt = a_reg > b_reg
+        s1 = tkw.select(sgt, a_reg, b_reg)
+        slt = a_reg < b_reg
+        s2 = tkw.select(slt, a_reg, b_reg)
+        sge = s1 >= s2
+        s3 = tkw.select(sge, s1, s2)
+        sle = s1 <= s2
+        s4 = tkw.select(sle, s1, s2)
+        res = s1 + s2 + s3 + s4
+        tkw.write(res, a, elements_per_thread=4)
+
+    cmpf_lowerings = wave_compile(get_wave_compile_options(), cmpf_lowerings)
+    print(cmpf_lowerings.asm)
+
+    # CHECK-LABEL: @cmpf_lowerings
+    # CHECK: arith.cmpf ogt
+    # CHECK: arith.select
+    # CHECK: arith.cmpf olt
+    # CHECK: arith.select
+    # CHECK: arith.cmpf oge
+    # CHECK: arith.select
+    # CHECK: arith.cmpf ole
+    # CHECK: arith.select
+
+
 # TODO: Something is broken in codegen and we are getting int in place of fx.Node
 # @launch
 @pytest.mark.skip(reason="getitem: Currently only stub implementation")
@@ -1910,6 +1954,55 @@ def test_get_item():
 
 
 # TODO: Add more tests once we have more than a stub implementation.
+
+
+@run_test
+def test_register_codegen_i32():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: 27},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, 1, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, 27, 0)]
+    constraints += [tkw.WaveConstraint(M, 1)]
+    constraints += [tkw.WaveConstraint(N, 27)]
+
+    @tkw.wave(constraints)
+    def register_codegen_i32(
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+    ):
+        tid = tkl.Register[M, N, tkl.i32](THREAD_0)
+        reg = tkl.Register[M, N, tkl.i32](3)
+        res = tid + reg
+        tkw.write(res, b)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 1,
+            N: 27,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    register_codegen_i32 = wave_compile(options, register_codegen_i32)
+    print(register_codegen_i32.asm)
+
+    # CHECK-LABEL: @register_codegen_i32
+
+    # Setting up constant register
+    # CHECK:  %[[CST:.+]] = arith.constant dense<3> : vector<1xi32>
+
+    # Setting up THREAD_0 as a register
+    # CHECK:  %[[tid:.+]] = gpu.thread_id  x
+    # CHECK:  %[[cast:.+]] = arith.index_cast %[[tid]] : index to i32
+    # CHECK:  %[[vector_tid:.+]] = vector.splat %[[cast]] : vector<1xi32>
+
+    # Check for addition operation of two registers
+    # CHECK: arith.addi %[[vector_tid]], %[[CST]] : vector<1xi32>
 
 
 @run_test
