@@ -58,12 +58,6 @@ def get_speculative_decoding_kernel(
         outputs={B: i, N: j, D: k},
     )
 
-    u_mapping = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={B: i, N: j},
-        outputs={B: i, N: LAST_OFFSET},
-    )
-
     uniform_mapping = tkw.IndexMapping(
         num_iterators=2,
         inputs={B: i, D: sympy.Integer(0)},
