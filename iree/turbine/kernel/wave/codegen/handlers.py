@@ -362,10 +362,10 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
 
     # Shuffle data between other threads in a warp.
     SHUFFLE_MODE_MAP = {
-        ShuffleMode.IDX: gpu_d.ShuffleMode.IDX,
         ShuffleMode.XOR: gpu_d.ShuffleMode.XOR,
-        ShuffleMode.UP: gpu_d.ShuffleMode.UP,
         ShuffleMode.DOWN: gpu_d.ShuffleMode.DOWN,
+        ShuffleMode.UP: gpu_d.ShuffleMode.UP,
+        ShuffleMode.IDX: gpu_d.ShuffleMode.IDX,
     }
     result = gpu_d.shuffle(src, offset, width, SHUFFLE_MODE_MAP[mode])[0]
 
