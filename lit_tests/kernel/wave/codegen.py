@@ -2143,7 +2143,7 @@ def test_scanop_cumsum():
     # CHECK-LABEL: func.func @scanop_cumsum
 
     # Shuffle-based scan: using XOR lane masks
-    # CHECK: gpu.shuffle xor {{.*}}, {{.*}}, {{.*}} : vector<1xf16>
+    # CHECK: gpu.shuffle up {{.*}}, {{.*}}, {{.*}} : vector<1xf16>
     # CHECK: affine.apply
 
     # Conditional mask: comparison with offset

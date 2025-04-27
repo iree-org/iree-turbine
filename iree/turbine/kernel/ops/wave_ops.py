@@ -2062,6 +2062,7 @@ class ShuffleOp(CustomOp):
     arg: fx.Node
     offset: int
     width: int
+    mode: "ShuffleMode"
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

@@ -93,6 +93,7 @@ from ...compiler.vector_codegen import (
 from ..constraints import (
     HardwareConstraint,
 )
+from ..utils.classes import ShuffleMode
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
 
@@ -348,7 +349,7 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
     TODO: Handle non-unit vector types such as vector<4xF8> (useful for resolving layouts).
     """
     try:
-        src, offset, width = node.args
+        src, offset, width, mode = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     if not isinstance(offset, int) or not isinstance(width, int):
@@ -360,7 +361,13 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
     width = cast_py_value(emitter, width, IntegerType.get_signless(32)).ir_value
 
     # Shuffle data between other threads in a warp.
-    result = gpu_d.shuffle(src, offset, width, gpu_d.ShuffleMode.XOR)[0]
+    SHUFFLE_MODE_MAP = {
+        ShuffleMode.XOR: gpu_d.ShuffleMode.XOR,
+        ShuffleMode.DOWN: gpu_d.ShuffleMode.DOWN,
+        ShuffleMode.UP: gpu_d.ShuffleMode.UP,
+        ShuffleMode.IDX: gpu_d.ShuffleMode.IDX,
+    }
+    result = gpu_d.shuffle(src, offset, width, SHUFFLE_MODE_MAP[mode])[0]
 
     emitter.bind_node_proxy(node, IRProxyValue(result))
 

@@ -28,6 +28,7 @@ from ..lang.global_symbols import *
 from .utils.symbol_utils import subs_idxc
 from .utils.graph_utils import DCE
 from .utils.general_utils import all_equal
+from .utils.classes import ShuffleMode
 import torch.fx as fx
 import math
 from typing import Callable
@@ -174,7 +175,7 @@ def emit_global_reduction(
     init = src
     num_steps = int(math.log2(float(cluster_size)))
     for _ in range(num_steps):
-        shuffle_val = ShuffleOp(init, cluster_stride, subgroup_size)
+        shuffle_val = ShuffleOp(init, cluster_stride, subgroup_size, ShuffleMode.XOR)
         shuffle_node = get_graph_node(shuffle_val, graph)
         init = get_graph_node(binary_fn(init, shuffle_node), graph)
         cluster_stride <<= 1
