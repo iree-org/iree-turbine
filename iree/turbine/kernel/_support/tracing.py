@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 from typing import (
-    Optional,
-    TypeVar,
     Callable,
-    Type,
     cast,
     Dict,
+    Optional,
+    TypeVar,
+    Type,
     Tuple,
 )
 from types import FunctionType
@@ -20,7 +20,6 @@ import torch.fx as fx
 from .indexing import (
     backed_sym_index_type,
     BoundedRelation,
-    IndexExpr,
     IndexSymbol,
     IndexingContext,
 )

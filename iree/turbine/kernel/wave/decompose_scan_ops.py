@@ -74,6 +74,7 @@ def emit_global_scan_multiple_elements(
     target_shape.pop(target_shape.index(scan_dim))
 
     thread_incl = offset
+    thread_incl.index = {target_shape[0]: get_custom(src).index[target_shape[0]]}
 
     num_steps = int(math.log2(float(subgroup_size)))
     for idx in range(num_steps):
@@ -93,12 +94,14 @@ def emit_global_scan_multiple_elements(
             ),
             graph,
         )
+        zero_vec.index = get_custom(local_scan[-1]).index
 
         # condition node: thread ID >= offset
         cond_expr = ge(lane_id, offset_val)
         cond_node = get_graph_node(
             NewRegister(get_custom(offset).type.symbolic_shape, i1, cond_expr), graph
         )
+        cond_node.index = get_custom(local_scan[-1]).index
 
         # apply shuffle_val only if condition is true; else use 0
         masked = get_graph_node(
@@ -117,6 +120,7 @@ def emit_global_scan_multiple_elements(
     cond1_n = get_graph_node(
         NewRegister(get_custom(thread_incl).type.symbolic_shape, i1, cond1), graph
     )
+    cond1_n.index = get_custom(local_scan[-1]).index
 
     zero1 = get_graph_node(
         NewRegister(
@@ -124,6 +128,7 @@ def emit_global_scan_multiple_elements(
         ),
         graph,
     )
+    zero1.index = get_custom(local_scan[-1]).index
 
     excl_offset = get_graph_node(
         SelectOp(cond=cond1_n, if_true=sh1_n, if_false=zero1), graph
