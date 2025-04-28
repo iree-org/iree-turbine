@@ -1,5 +1,5 @@
 import math
-from operator import ge
+from operator import ge, gt
 from typing import Any, Callable, Optional
 
 import sympy
@@ -12,6 +12,7 @@ from .._support.dtype import i1
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import (
     Add,
+    Broadcast,
     Cumsum,
     CustomOp,
     Extract,
