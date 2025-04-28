@@ -43,7 +43,7 @@ from typing import Callable
 import iree.turbine.kernel.lang as tkl
 
 TKW_COMBINER = {"sum": Add, "max": Maximum, "min": Minimum}
-IDENTITY = {"sum": 0.0, "max": -1e6, "min": 1e6}
+IDENTITY = {"add": 0.0, "maximum": -1e6, "minimum": 1e6}
 
 _MAX_READ_BITWIDTH = 128
 
@@ -194,6 +194,84 @@ def emit_global_reduction(
     return init
 
 
+def emit_interwave_reduction(
+    binary_fn,
+    src,
+    graph,
+    reduction_dim,
+    num_reduction_waves,
+    wg_constraint_map,
+    hardware_constraint,
+):
+    """
+    Reduces partial reduced data from individual wave across the block.
+    1. Allocate shared_memory[num_waves]
+    2. Write individual wave result into shared_memory[wave_id]
+    3. Get data from shared memory to each lane,
+        lane_data = lane_id < num_waves ? shared_memory[lane_id] : IDENTITY
+    4. Do Butterfly/Wave reduction on lane data.
+    """
+
+    # Compute basic HW information.
+    lane_id = (
+        hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
+    )
+    subgroup_size = hardware_constraint.threads_per_wave
+
+    # Determining wave id along reduction dim.
+    wave_id = delinearize_index(
+        hardware_constraint.linearized_thread_id
+        // hardware_constraint.threads_per_wave,
+        hardware_constraint.waves_per_block,
+    )
+    reduction_wg_dim = wg_constraint_map[reduction_dim].workgroup_dim
+    reduction_wave_id = wave_id[reduction_wg_dim]
+
+    # Allocate shared_memory[num_waves]
+    allocate_node = Allocate(
+        (reduction_dim,),
+        (num_reduction_waves,),
+        src.type.dtype,
+        SHARED_ADDRESS_SPACE,
+    ).add_to_graph(graph)
+
+    # Write individual wave result into shared_memory[wave_id]
+    write = Write(src, allocate_node, 1).add_to_graph(graph)
+    write.index = {reduction_dim: IndexSequence(reduction_wave_id, 1, 1)}
+
+    # lane_data = lane_id < num_waves ? shared_memory[lane_id] : IDENTITY
+    read = Read(
+        allocate_node,
+        elements_per_thread=1,
+        _write_dependency=[write],
+    ).add_to_graph(graph)
+    read.index = {reduction_dim: IndexSequence(lane_id, 1, 1)}
+    warp_partial_res = get_graph_node(ExtractElement(read, [0]), graph)
+    warp_partial_res.type = src.type.dtype
+
+    lane_id_reg = get_graph_node(NewScalar(lane_id, tkl.i32), graph)
+    num_reduction_waves_regs = get_graph_node(
+        NewScalar(num_reduction_waves, tkl.i32), graph
+    )
+    id_reg = get_graph_node(
+        NewScalar(IDENTITY[binary_fn.tkw_op_name], src.type.dtype),
+        graph,
+    )
+    cond = get_graph_node(Lt(lane_id_reg, num_reduction_waves_regs), graph)
+    masked_value = get_graph_node(SelectOp(cond, warp_partial_res, id_reg), graph)
+
+    # Butterfly/Wave reduction on lane data
+    interwave_reduction = emit_global_reduction(
+        binary_fn,
+        masked_value,
+        graph,
+        subgroup_size,
+        cluster_size=subgroup_size,
+        cluster_stride=1,
+    )
+    return interwave_reduction
+
+
 def decompose_reduce_ops(
     trace: CapturedTrace,
     constraints: list[Constraint],
@@ -332,73 +410,16 @@ def decompose_reduce_ops(
                         "the reduction outputs from all the wave. Hence, can only handle at most "
                         "threads_per_wave number of warps."
                     )
-                # Reduction inter-warp by writing then reading to/from shared memory.
-                allocate_node = Allocate(
-                    (reduction_dim,),
-                    (num_reduction_waves,),
-                    node.type.dtype,
-                    SHARED_ADDRESS_SPACE,
-                ).add_to_graph(custom.graph)
-                write = Write(final_reduction, allocate_node, 1).add_to_graph(
-                    custom.graph
-                )
-
-                # Getting wave_id of the wave-dim that is being used for reduction.
-                # This is useful because depending on wg_dim we choose to reduce on
-                # the wave_id and size of partial output will be different.
-                # e.g wave_per_block = (4, 2, 1)
-                # if reduc_dim on wg_dim=0, then we will only have 4 partial output.
-                # if reduc_dim on wg_dim=1, then we will only have 2 partial output.
-
-                lane_id = (
-                    hardware_constraint.linearized_thread_id
-                    % hardware_constraint.threads_per_wave
-                )
-                wave_id = delinearize_index(
-                    hardware_constraint.linearized_thread_id
-                    // hardware_constraint.threads_per_wave,
-                    hardware_constraint.waves_per_block,
-                )
-
-                reduction_wg_dim = workgroup_constraint_map[reduction_dim].workgroup_dim
-                reduction_wave_id = wave_id[reduction_wg_dim]
-                write.index = {reduction_dim: IndexSequence(reduction_wave_id, 1, 1)}
-
-                # Do a 2nd stage warp reduction on the results from different warp.
-                read = Read(
-                    allocate_node,
-                    elements_per_thread=1,
-                    _write_dependency=[write],
-                ).add_to_graph(custom.graph)
-                read.index = {reduction_dim: IndexSequence(lane_id, 1, 1)}
-                warp_partial_res = get_graph_node(
-                    ExtractElement(read, [0]), custom.graph
-                )
-                warp_partial_res.type = node.type.dtype
-
-                # TODO: Add handler for newScalar to handle IndexExpr and constant.
-                lane_id_reg = get_graph_node(NewScalar(lane_id, tkl.i32), custom.graph)
-                num_reduction_waves_regs = get_graph_node(
-                    NewScalar(num_reduction_waves, tkl.i32), custom.graph
-                )
-                id_reg = get_graph_node(
-                    NewScalar(IDENTITY[custom.tkw_op_name], node.type.dtype),
-                    custom.graph,
-                )
-                cond = get_graph_node(
-                    Lt(lane_id_reg, num_reduction_waves_regs), custom.graph
-                )
-                masked_value = get_graph_node(
-                    SelectOp(cond, warp_partial_res, id_reg), custom.graph
-                )
-
-                final_reduction = emit_global_reduction(
+                # Reduce output between waves, by storing individual wave result into shared memory,
+                # and then doing a butterfly-wave shuffle to reduce them.
+                final_reduction = emit_interwave_reduction(
                     binary_fn,
-                    masked_value,
+                    final_reduction,
                     custom.graph,
-                    subgroup_size,
-                    cluster_size=64,
-                    cluster_stride=1,
+                    reduction_dim,
+                    num_reduction_waves,
+                    workgroup_constraint_map,
+                    hardware_constraint,
                 )
 
             # Replace all uses with global reduction
