@@ -130,6 +130,9 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
 
     if isinstance(value, sympy.Basic):
         value = gen_sympy_index(add_emitter_subs(emitter), value)
+        if value.type != vector_type.element_type:
+            conversion_op = get_conversion_op(value.type, vector_type.element_type)
+            value = conversion_op(vector_type.element_type, value)
         register = vector_d.splat(vector_type, value)
     else:
         register = arith_d.ConstantOp(
@@ -517,7 +520,7 @@ def handle_or(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGT, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGT, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -531,7 +534,7 @@ def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGE, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGE, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -545,7 +548,7 @@ def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_lt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OLT, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OLT, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -559,7 +562,7 @@ def handle_lt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_le(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OLE, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OLE, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
