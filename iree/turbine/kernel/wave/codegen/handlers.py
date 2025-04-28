@@ -122,8 +122,7 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     get_thread_shape = lambda index: max(subs_idxc(x.size) for x in index.values())
-    if get_custom(node).index:
-        shape = [get_thread_shape(get_custom(node).index)]
+    shape = [get_thread_shape(get_custom(node).index)]
     vector_shape = cast_py_literal(emitter, shape)
     element_type = IrType.parse(dtype.ir_type_asm())
     vector_type = VectorType.get(vector_shape, element_type)
