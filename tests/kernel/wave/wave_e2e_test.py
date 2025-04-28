@@ -1043,26 +1043,32 @@ def test_reduce_sum(shape, request):
 @pytest.mark.parametrize("shape", get_common_test_shape("test_block_reduce"))
 def test_block_reduce_sum(shape, request):
     run_bench = request.config.getoption("--runperf")
+    round_to_divisible = lambda src, denom: sympy.ceiling(src / denom) * denom
     M = tkl.sym.M
     N = tkl.sym.N
     wave_size = 64
+    num_waves = 4
     BLOCK_M = 1
-    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
-    num_warps = 4
-    ELEMS_PER_THREAD = (BLOCK_N // num_warps) // wave_size
+
+    # Distribute N dim across num_waves, and pad to disivible by wave_size.
+    ELEMS_PER_WAVE = round_to_divisible(sympy.ceiling(N / num_waves), wave_size)
+    # Minimum number of elems per wave should be size of wave.
+    ELEMS_PER_WAVE = sympy.Max(ELEMS_PER_WAVE, wave_size)
+    BLOCK_N = ELEMS_PER_WAVE * num_waves
+    ELEMS_PER_THREAD = ELEMS_PER_WAVE // wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
-            waves_per_block=(num_warps, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N // num_warps},
+            threads_per_wave=wave_size,
+            waves_per_block=(num_waves, 1, 1),
+            vector_shapes={M: 1, N: ELEMS_PER_WAVE},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
-    constraints += [tkw.WaveConstraint(N, BLOCK_N // num_warps)]
+    constraints += [tkw.WaveConstraint(N, ELEMS_PER_WAVE)]
 
     @tkw.wave(constraints)
     def test(
