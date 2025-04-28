@@ -46,7 +46,6 @@ class BooConv2dTest(unittest.TestCase):
             set_boo_cache(cache_dir)
             x = torch.ones([10, 2, 16, 16], device=self.device, dtype=torch.float32)
             _ = self.model0(x)
-            torch.cuda.synchronize()
             self.assertIn(
                 "conv_2d_float32_forward_10x2x16x16_nchw_3x2x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g",
                 [i.name for i in cache_dir.glob("*")],
@@ -58,7 +57,6 @@ class BooConv2dTest(unittest.TestCase):
             set_boo_cache(cache_dir)
             x = torch.ones([2, 16, 16], device=self.device, dtype=torch.float32)
             _ = self.model0(x)
-            torch.cuda.synchronize()
             self.assertIn(
                 "conv_2d_float32_forward_1x2x16x16_nchw_3x2x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g",
                 [i.name for i in cache_dir.glob("*")],
@@ -71,7 +69,6 @@ class BooConv2dTest(unittest.TestCase):
             x = torch.ones([10, 3, 16, 16], device=self.device, dtype=torch.float32)
             model2 = replace_conv2d_with_boo_conv(self.model1)
             _ = model2(x)
-            torch.cuda.synchronize()
             func_names = [i.name for i in cache_dir.glob("*")]
             self.assertIn(
                 "conv_2d_float32_forward_10x3x16x16_nchw_2x3x3x3_fchw_nfhw_1x1s_0x0p_1x1d_1g",
@@ -91,7 +88,6 @@ class BooConv2dTest(unittest.TestCase):
             )
             model = self.model0.to(memory_format=torch.channels_last)
             _ = model(x)
-            torch.cuda.synchronize()
             func_names = [i.name for i in cache_dir.glob("*")]
             self.assertIn(
                 "conv_2d_float32_forward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
@@ -109,7 +105,6 @@ class BooConv2dTest(unittest.TestCase):
                 memory_format=torch.channels_last
             )
             _ = model2(x)
-            torch.cuda.synchronize()
             func_names = [i.name for i in cache_dir.glob("*")]
             self.assertIn(
                 "conv_2d_float32_forward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
@@ -134,7 +129,6 @@ class BooConv2dTest(unittest.TestCase):
             y = model(x)
             loss = y.sum()
             loss.backward()
-            torch.cuda.synchronize()
             func_names = [i.name for i in cache_dir.glob("*")]
             self.assertIn(
                 "conv_2d_float32_forward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
