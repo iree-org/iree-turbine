@@ -9,10 +9,6 @@ from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
 )
-from iree.turbine.kernel.wave.utils.mma_utils import (
-    get_mfma_load_elems_per_thread,
-    get_mfma_store_elems_per_thread,
-)
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 
@@ -25,8 +21,6 @@ BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_K = tkl.sym.BLOCK_K
 BLOCK_B = tkl.sym.BLOCK_B
-LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
@@ -81,12 +75,12 @@ def test_gemm():
 
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -96,8 +90,6 @@ def test_gemm():
             BLOCK_M: 32,
             BLOCK_N: 32,
             BLOCK_K: 16,
-            LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -133,6 +125,71 @@ def test_gemm():
 
 
 @run_test
+def test_gemm_dot():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            mma_type=tkw.GenericDot(k_mult=4, k_vec_size=4),
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm_dot(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 64,
+            N: 64,
+            K: 64,
+            BLOCK_M: 4,
+            BLOCK_N: 64,
+            BLOCK_K: 16,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    gemm_dot = wave_compile(options, gemm_dot)
+    print(gemm_dot.asm)
+
+    # CHECK-LABEL:    test_gemm_dot
+    # CHECK:          func.func @gemm_dot
+    # CHECK-COUNT-2     memref.alloc()
+    # CHECK:            scf.for
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK:              vector.load
+    # CHECK:              vector.store
+    # CHECK:              vector.load
+    # CHECK:              vector.store
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK-COUNT-4:      vector.load
+    # CHECK-COUNT-16:     gpu.shuffle
+    # CHECK-COUNT-16    vector.store
+
+
+@run_test
 def test_cdna2_int_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -158,12 +215,12 @@ def test_cdna2_int_gemm():
 
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -173,8 +230,6 @@ def test_cdna2_int_gemm():
             BLOCK_M: 32,
             BLOCK_N: 32,
             BLOCK_K: 16,
-            LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -233,12 +288,12 @@ def test_cdna3_int_gemm():
 
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -248,8 +303,6 @@ def test_cdna3_int_gemm():
             BLOCK_M: 32,
             BLOCK_N: 32,
             BLOCK_K: 32,
-            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mma_variant),
-            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mma_variant),
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -311,12 +364,12 @@ def test_batched_gemm():
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -328,8 +381,6 @@ def test_batched_gemm():
             BLOCK_N: 32,
             BLOCK_K: 16,
             BLOCK_B: 1,
-            LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -401,16 +452,16 @@ def test_chained_gemm():
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
             inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.read(q)
+            k_reg = tkw.read(k)
             kq_reg = tkw.mma(k_reg, q_reg, inner_acc)
             qk_reg = tkw.permute(kq_reg, target_shape=[B, M, K2])
             qk_cast_reg = tkw.cast(qk_reg, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.read(v)
             acc = tkw.mma(qk_cast_reg, v_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -423,8 +474,6 @@ def test_chained_gemm():
             BLOCK_N: 64,
             BLOCK_K2: 32,
             BLOCK_B: 1,
-            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -484,16 +533,16 @@ def test_chained_gemm_32x32x8():
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
             inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.read(q)
+            k_reg = tkw.read(k)
             kq_reg = tkw.mma(k_reg, q_reg, inner_acc)
             qk_reg = tkw.permute(kq_reg, target_shape=[B, M, K2])
             qk_cast_reg = tkw.cast(qk_reg, tkl.f16)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.read(v)
             acc = tkw.mma(qk_cast_reg, v_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -506,8 +555,6 @@ def test_chained_gemm_32x32x8():
             BLOCK_N: 64,
             BLOCK_K2: 32,
             BLOCK_B: 1,
-            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -570,19 +617,19 @@ def test_chained_gemm_32x32x16():
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
             inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.read(q)
+            k_reg = tkw.read(k)
             q_reg = tkw.cast(q_reg, tkl.f8e4m3fnuz)
             k_reg = tkw.cast(k_reg, tkl.f8e4m3fnuz)
             kq_reg = tkw.mma(k_reg, q_reg, inner_acc)
             qk_reg = tkw.permute(kq_reg, target_shape=[B, M, K2])
             qk_cast_reg = tkw.cast(qk_reg, tkl.f8e4m3fnuz)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.read(v)
             v_reg = tkw.cast(v_reg, tkl.f8e4m3fnuz)
             acc = tkw.mma(qk_cast_reg, v_reg, acc, mfma_variant[1])
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -595,8 +642,6 @@ def test_chained_gemm_32x32x16():
             BLOCK_N: 64,
             BLOCK_K2: 32,
             BLOCK_B: 1,
-            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant[0]),
-            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -664,19 +709,19 @@ def test_chained_gemm_16x16x32():
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
             inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            q_reg = tkw.read(q)
+            k_reg = tkw.read(k)
             q_reg = tkw.cast(q_reg, tkl.f8e4m3fnuz)
             k_reg = tkw.cast(k_reg, tkl.f8e4m3fnuz)
             kq_reg = tkw.mma(k_reg, q_reg, inner_acc)
             qk_reg = tkw.permute(kq_reg, target_shape=[B, M, K2])
             qk_cast_reg = tkw.cast(qk_reg, tkl.f8e4m3fnuz)
-            v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            v_reg = tkw.read(v)
             v_reg = tkw.cast(v_reg, tkl.f8e4m3fnuz)
             acc = tkw.mma(qk_cast_reg, v_reg, acc, mfma_variant[1])
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -689,8 +734,6 @@ def test_chained_gemm_16x16x32():
             BLOCK_N: 64,
             BLOCK_K2: 32,
             BLOCK_B: 1,
-            LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant[0]),
-            STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -746,12 +789,12 @@ def test_gemm_pipelined():
 
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -761,8 +804,6 @@ def test_gemm_pipelined():
             BLOCK_M: 64,
             BLOCK_N: 64,
             BLOCK_K: 32,
-            LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
             READ_SHARED_DELAY: 1,
@@ -839,12 +880,12 @@ def test_gemm_prefetch():
 
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -854,8 +895,6 @@ def test_gemm_prefetch():
             BLOCK_M: 64,
             BLOCK_N: 64,
             BLOCK_K: 32,
-            LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
             READ_SHARED_DELAY: 1,
@@ -938,20 +977,18 @@ def test_dynamic_gemm_pipelined():
 
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
             BLOCK_M: 64,
             BLOCK_N: 64,
             BLOCK_K: 32,
-            LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
             READ_SHARED_DELAY: 1,
@@ -1041,14 +1078,14 @@ def test_gemm_with_gpr_offsets():
 
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
             a_reg = tkw.cast(a_reg, tkl.f8e4m3fnuz)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b)
             b_reg = tkw.cast(b_reg, tkl.f8e4m3fnuz)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -1058,8 +1095,6 @@ def test_gemm_with_gpr_offsets():
             BLOCK_M: 32,
             BLOCK_N: 32,
             BLOCK_K: 32,
-            LOAD_ELEMS_PER_THREAD: 8,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -1125,15 +1160,15 @@ def test_gemm_and_reduce():
         def repeat(
             partial_max: tkl.Register[M, tkl.f16], acc: tkl.Register[M, N, tkl.f32]
         ) -> tkl.Register[M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             partial_max = tkw.max(a_reg, partial_max, dim=K)
             acc = tkw.mma(a_reg, b_reg, acc)
             return partial_max, acc
 
         res_max, res_mm = repeat
         res = res_mm / tkw.cast(res_max, tkl.f32)
-        tkw.write(res, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c)
 
     options = WaveCompileOptions(
         subs={
@@ -1143,8 +1178,6 @@ def test_gemm_and_reduce():
             BLOCK_M: 32,
             BLOCK_N: 32,
             BLOCK_K: 16,
-            LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -1212,15 +1245,15 @@ def test_gemm_with_maximized_shared_read_32x32x16():
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
             # b_reg: tkw.Register[N, K, tkl.f16]
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b)
             # acc: tkw.Register[M, N, tkl.f32]
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
         # repeat represents the results of the loop
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -1230,8 +1263,6 @@ def test_gemm_with_maximized_shared_read_32x32x16():
             BLOCK_M: 64,
             BLOCK_N: 64,
             BLOCK_K: 16,
-            LOAD_ELEMS_PER_THREAD: 8,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -1298,15 +1329,15 @@ def test_gemm_with_maximized_shared_read_16x16x32():
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
             # b_reg: tkw.Register[N, K, tkl.f16]
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b)
             # acc: tkw.Register[M, N, tkl.f32]
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
         # repeat represents the results of the loop
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -1316,8 +1347,6 @@ def test_gemm_with_maximized_shared_read_16x16x32():
             BLOCK_M: 32,
             BLOCK_N: 32,
             BLOCK_K: 32,
-            LOAD_ELEMS_PER_THREAD: 8,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },
@@ -1388,14 +1417,12 @@ def test_broadcast_batched_gemm_with_vmma():
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
-            a_reg = tkw.read(
-                a, elements_per_thread=LOAD_ELEMS_PER_THREAD, mapping=a_mapping
-            )
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a, mapping=a_mapping)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
-        tkw.write(repeat, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(repeat, c)
 
     options = WaveCompileOptions(
         subs={
@@ -1408,8 +1435,6 @@ def test_broadcast_batched_gemm_with_vmma():
             BLOCK_N: 32,
             BLOCK_K: 32,
             BLOCK_B: 1,
-            LOAD_ELEMS_PER_THREAD: 8,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         },

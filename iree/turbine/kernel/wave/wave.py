@@ -48,6 +48,7 @@ from .compile_options import WaveCompileOptions
 from .decompose_reduce_ops import decompose_reduce_ops
 from .decompose_vmma_ops import decompose_vmma_ops
 from .decompose_scan_ops import decompose_scan_ops
+from .decompose_dot_mma import decompose_dot_mma
 from .expansion.expansion import expand_graph, add_get_results
 from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
@@ -525,6 +526,7 @@ class LaunchableWave(Launchable):
         # Optimizations.
         graph_passes += [
             partial(decompose_vmma_ops, trace, self.constraints),
+            partial(decompose_dot_mma, trace, self.constraints),
             partial(hoist_loop_invariant_ops, trace, self.constraints),
             partial(global_to_shared_gathers, trace, self.constraints),
             partial(minimize_global_loads, trace, self.constraints),

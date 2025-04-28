@@ -90,9 +90,7 @@ from ...compiler.vector_codegen import (
     cast_py_value,
     cast_vector,
 )
-from ..constraints import (
-    HardwareConstraint,
-)
+from ..constraints import HardwareConstraint, GenericDot
 from ..utils.classes import ShuffleMode
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
@@ -294,7 +292,7 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]):
+def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]) -> Value:
     m = get_constant_attr(m, IntegerType.get_signless(32))
     n = get_constant_attr(n, IntegerType.get_signless(32))
     k = get_constant_attr(k, IntegerType.get_signless(32))
@@ -321,8 +319,6 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    vector_type = VectorType(acc.type)
-
     hardware_constraints = [
         constraint
         for constraint in emitter.constraints
@@ -330,6 +326,12 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     ]
     if not hardware_constraints:
         raise CodegenError("No hardware constraints found.")
+
+    if mma_type is None:
+        mma_type = hardware_constraints[0].mma_type
+
+    if isinstance(mma_type, GenericDot):
+        raise ValidationError("Dot product MMA was not decomposed.")
 
     m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
     result = emit_mfma(m, n, k, acc, values)
