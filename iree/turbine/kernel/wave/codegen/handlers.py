@@ -365,8 +365,6 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
         raise NotImplementedError(
             "Non-const width or offset is not yet implemented for shuffleOp."
         )
-    if mode not in ("xor", "up"):
-        raise ValidationError(f"Unsupported shuffle mode: {mode!r}")
 
     src = cast_py_value(emitter, src).ir_value
     offset = cast_py_value(emitter, offset, IntegerType.get_signless(32)).ir_value
