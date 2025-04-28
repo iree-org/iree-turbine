@@ -70,11 +70,14 @@ def emit_global_scan_multiple_elements(
         hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
     )
 
-    target_shape = list(src.type.symbolic_shape)
-    target_shape.pop(target_shape.index(scan_dim))
-
     thread_incl = offset
-    thread_incl.index = {target_shape[0]: get_custom(src).index[target_shape[0]]}
+
+    if local_scan_size > 1:
+        target_shape = list(src.type.symbolic_shape)
+        target_shape.pop(target_shape.index(scan_dim))
+
+        thread_incl = offset
+        thread_incl.index = {target_shape[0]: get_custom(src).index[target_shape[0]]}
 
     num_steps = int(math.log2(float(subgroup_size)))
     for idx in range(num_steps):
@@ -86,6 +89,8 @@ def emit_global_scan_multiple_elements(
 
         # we are explicitly adding index because this pass is being
         # applied after the indexing phase
+        # ToDo (xintin): check if we can replace register with scalar.
+        # No point using register for a scalar. Applies to other objects too.
         zero_vec = get_graph_node(
             NewRegister(
                 get_custom(shuffle_val_node).type.symbolic_shape,
@@ -110,102 +115,52 @@ def emit_global_scan_multiple_elements(
 
         thread_incl = get_graph_node(binary_fn(thread_incl, masked), graph)
 
-    reshape = thread_incl
+    scanop_result = thread_incl
 
-    # Phase 2 to perform global scan
-    sh1 = ShuffleOp(reshape, 1, subgroup_size, ShuffleMode.UP)
-    sh1_n = get_graph_node(sh1, graph)
+    if local_scan_size > 1:
+        # Phase 2 to perform global scan
+        shuffle2 = ShuffleOp(scanop_result, 1, subgroup_size, ShuffleMode.UP)
+        shuffle2_node = get_graph_node(shuffle2, graph)
 
-    cond1 = ge(lane_id, 1)
-    cond1_n = get_graph_node(
-        NewRegister(get_custom(thread_incl).type.symbolic_shape, i1, cond1), graph
-    )
-    cond1_n.index = get_custom(local_scan[-1]).index
+        cond_expr2 = ge(lane_id, 1)
+        cond_expr2_node = get_graph_node(
+            NewRegister(get_custom(thread_incl).type.symbolic_shape, i1, cond_expr2),
+            graph,
+        )
+        cond_expr2_node.index = get_custom(local_scan[-1]).index
 
-    zero1 = get_graph_node(
-        NewRegister(
-            get_custom(sh1_n).type.symbolic_shape, get_custom(sh1_n).type.dtype, 0.0
-        ),
-        graph,
-    )
-    zero1.index = get_custom(local_scan[-1]).index
-
-    excl_offset = get_graph_node(
-        SelectOp(cond=cond1_n, if_true=sh1_n, if_false=zero1), graph
-    )
-
-    final_scalars = []
-    for lane_elem in local_scan:
-        summed = get_graph_node(binary_fn(lane_elem, excl_offset), graph)
-        summed.index = get_custom(src).index
-        final_scalars.append(summed)
-
-    # pack the output in the expected order
-    reshape = Reshape(
-        args=final_scalars,
-        target_vector_shape={scan_dim: local_scan_size},
-    ).add_to_graph(graph)
-
-    reshape.index = get_custom(src).index
-    reshape.expanded_dims = get_custom(src).expanded_dims
-    reshape.vector_shapes = get_custom(src).vector_shapes
-
-    return reshape
-
-
-def emit_global_scan_per_element(
-    binary_fn: Callable,  # Supports only Add for now.
-    src: fx.Node,
-    graph: fx.Graph,
-    subgroup_size: int,
-    hardware_constraint: HardwareConstraint,
-) -> fx.Node:
-    """
-    Emit an intra-warp inclusive scan using butterfly pattern scan and masking.
-    """
-    init = src
-    num_steps = int(math.log2(float(subgroup_size)))
-    for idx in range(num_steps):
-        offset_val = 1 << idx
-
-        # shuffle operation to get value from another thread
-        shuffle = ShuffleOp(init, offset_val, subgroup_size, ShuffleMode.UP)
-        shuffle_val = get_graph_node(shuffle, graph)
-
-        lane_id = hardware_constraint.linearized_thread_id % subgroup_size
-
-        # we are explicitly adding index because this pass is being
-        # applied after the indexing phase
-        # ToDo (xintin): check if we can replace register with scalar.
-        # No point using register for a scalar. Applies to other objects too.
-        zero_vec = get_graph_node(
+        zero_vec2 = get_graph_node(
             NewRegister(
-                get_custom(shuffle_val).type.symbolic_shape,
-                get_custom(shuffle_val).type.dtype,
+                get_custom(shuffle2_node).type.symbolic_shape,
+                get_custom(shuffle2_node).type.dtype,
                 0.0,
             ),
             graph,
         )
+        zero_vec2.index = get_custom(local_scan[-1]).index
 
-        # We are explicitly setting the indices to avoid:
-        # AttributeError: 'NoneType' object has no attribute 'values'
-        zero_vec.index = get_custom(src).index
-
-        # condition node: thread ID >= offset
-        cond_expr = ge(lane_id, offset_val)
-        cond_node = get_graph_node(
-            NewRegister(get_custom(init).type.symbolic_shape, i1, cond_expr), graph
-        )
-        cond_node.index = get_custom(src).index
-
-        # apply shuffle_val only if condition is true; else use 0
-        masked = get_graph_node(
-            SelectOp(cond=cond_node, if_true=shuffle_val, if_false=zero_vec), graph
+        excl_offset = get_graph_node(
+            SelectOp(cond=cond_expr2_node, if_true=shuffle2_node, if_false=zero_vec2),
+            graph,
         )
 
-        init = get_graph_node(binary_fn(init, masked), graph)
+        final_scalars = []
+        for lane_elem in local_scan:
+            summed = get_graph_node(binary_fn(lane_elem, excl_offset), graph)
+            summed.index = get_custom(src).index
+            final_scalars.append(summed)
 
-    return init
+        # pack the output in the expected order
+        scanop_result = Reshape(
+            args=final_scalars,
+            target_vector_shape={scan_dim: local_scan_size},
+        ).add_to_graph(graph)
+
+        scanop_result.index = get_custom(src).index
+        scanop_result.expanded_dims = get_custom(src).expanded_dims
+        scanop_result.vector_shapes = get_custom(src).vector_shapes
+
+    return scanop_result
 
 
 def decompose_scan_ops(
@@ -278,12 +233,15 @@ def decompose_scan_ops(
                     scan_dim,
                 )
             else:
-                result = emit_global_scan_per_element(
+                result = emit_global_scan_multiple_elements(
                     binary_fn,
                     scan_src,
+                    [scan_src],
                     custom.graph,
                     subgroup_size,
                     hardware_constraint,
+                    local_scan_sizes,
+                    scan_dim,
                 )
 
             custom.replace_all_uses_with(result)
