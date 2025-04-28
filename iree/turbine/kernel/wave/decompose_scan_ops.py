@@ -65,18 +65,15 @@ def emit_global_scan(
     """
     Emit an intra-warp inclusive scan using butterfly pattern scan and masking.
     """
-    offset = local_scan[-1]
     lane_id = (
         hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
     )
 
-    thread_incl = offset
+    thread_incl = local_scan[-1]
 
     if local_scan_size > 1:
         target_shape = list(src.type.symbolic_shape)
         target_shape.pop(target_shape.index(scan_dim))
-
-        thread_incl = offset
         thread_incl.index = {target_shape[0]: get_custom(src).index[target_shape[0]]}
 
     num_steps = int(math.log2(float(subgroup_size)))
@@ -104,7 +101,8 @@ def emit_global_scan(
         # condition node: thread ID >= offset
         cond_expr = ge(lane_id, offset_val)
         cond_node = get_graph_node(
-            NewRegister(get_custom(offset).type.symbolic_shape, i1, cond_expr), graph
+            NewRegister(get_custom(thread_incl).type.symbolic_shape, i1, cond_expr),
+            graph,
         )
         cond_node.index = get_custom(local_scan[-1]).index
 
@@ -113,6 +111,7 @@ def emit_global_scan(
             SelectOp(cond=cond_node, if_true=shuffle_val_node, if_false=zero_vec), graph
         )
 
+        # perform binary scan op
         thread_incl = get_graph_node(binary_fn(thread_incl, masked), graph)
 
     scanop_result = thread_incl
