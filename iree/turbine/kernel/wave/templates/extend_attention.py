@@ -31,14 +31,14 @@ def get_extend_attention_kernel(
     k_cache_shape: tuple[int],
     v_cache_shape: tuple[int],
     o_shape: tuple[int],
-    input_dtype: Optional[torch.dtype] = torch.float16,
-    output_dtype: Optional[torch.dtype] = torch.float32,
-    size_dtype: Optional[torch.dtype] = torch.int32,
-    is_causal: Optional[bool] = False,
-    logit_cap: Optional[float] = 0.0,
+    input_dtype: torch.dtype = torch.float16,
+    output_dtype: torch.dtype = torch.float32,
+    size_dtype: torch.dtype = torch.int32,
+    is_causal: bool = False,
+    logit_cap: float = 0.0,
     layer_scaling: Optional[float] = None,
-    num_waves: Optional[int] = 4,
-    use_custom_mask: Optional[bool] = False,
+    num_waves: int = 4,
+    use_custom_mask: bool = False,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
@@ -454,16 +454,17 @@ def get_extend_attention_kernel(
         D_Q: shape.head_size,
     }
 
-    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN, MASK_LEN]
+    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN]
     dynamic_symbols_map = {
         N_Q: q_shape[0],
         N_KV: k_shape[0],
         S: shape.num_seqs,
         MAX_EXTEND_SEQ_LEN: shape.max_seq_len,
-        MASK_LEN: shape.flattened_mask_len,
     }
 
     if use_custom_mask:
+        dynamic_symbols.append(MASK_LEN)
+        dynamic_symbols_map[MASK_LEN] = shape.flattened_mask_len
         return (
             extend_attention_custom_mask,
             hyperparams,
