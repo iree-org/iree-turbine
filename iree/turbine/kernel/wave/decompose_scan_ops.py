@@ -52,7 +52,7 @@ def emit_local_inclusive_scan(
     return values
 
 
-def emit_global_scan_multiple_elements(
+def emit_global_scan(
     binary_fn: Callable,  # Supports only Add for now.
     src: fx.Node,
     local_scan: list[fx.Node],
@@ -222,7 +222,7 @@ def decompose_scan_ops(
                 local_scan = emit_local_inclusive_scan(
                     binary_fn, scan_src, custom.graph, local_scan_sizes
                 )
-                result = emit_global_scan_multiple_elements(
+                result = emit_global_scan(
                     binary_fn,
                     scan_src,
                     local_scan,
@@ -233,7 +233,7 @@ def decompose_scan_ops(
                     scan_dim,
                 )
             else:
-                result = emit_global_scan_multiple_elements(
+                result = emit_global_scan(
                     binary_fn,
                     scan_src,
                     [scan_src],
