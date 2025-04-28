@@ -73,6 +73,7 @@ from .utils.graph_utils import (
 )
 from .utils.compile_utils import canonicalize_module
 from .utils.general_utils import (
+    delinearize_index,
     partial,
     get_hardware_constraint,
     remove_files_with_extension,
