@@ -248,9 +248,8 @@ class Launchable:
                 f"Cannot invoke Launchable {self} without any Tensor args or an explicit device="
             )
 
-        external_timepoint = turbine_device.setup_iree_action()
-
         if self._is_async:
+            external_timepoint = turbine_device.setup_iree_action()
             wait_fence = HalFence.create_at(
                 turbine_device._main_timeline, turbine_device._main_timepoint - 1
             )
@@ -266,7 +265,8 @@ class Launchable:
         ret_list = VmVariantList(1)
         vm_context.invoke(vm_function, arg_list, ret_list)
 
-        turbine_device.finalize_iree_action(external_timepoint)
+        if self._is_async:
+            turbine_device.finalize_iree_action(external_timepoint)
 
         torch_results = []
         for i in range(len(ret_list)):
