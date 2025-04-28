@@ -1872,7 +1872,6 @@ def test_atomic_min(shape, use_buffer_ops, request):
             shape=(M, N),
             distributed_shape=(BLOCK_M, BLOCK_N),
             dtype=tkl.i32,
-            address_space=tkl.AddressSpace.SHARED_MEMORY,
         )
         inf_reg = tkl.Register[M, N, tkl.i32](-1e6)
         tkw.write(inf_reg, shmem, elements_per_thread=1)
