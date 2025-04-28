@@ -40,12 +40,13 @@ from ...compiler.vector_codegen import (
 
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils.general_utils import find_index_bounds, get_fastest_index
+from ..utils.general_utils import find_index_bounds, get_fastest_index, remove_global_indexing
 from ..utils.symbol_utils import safe_subs, subs_idxc
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
-from ...lang.wave_types import IndexMapping
+from ...lang.kernel_buffer import AddressSpace
 from ...lang.global_symbols import *
+from ...lang.wave_types import IndexMapping
 
 from .emitter import (
     WaveEmitter,
@@ -632,7 +633,11 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
-
+    memory_address_space = None
+    if hasattr(get_custom(memory), "address_space"):
+        memory_address_space = get_custom(memory).address_space
+    if memory_address_space == AddressSpace.SHARED_MEMORY:
+        index = remove_global_indexing(node.index, emitter.constraints)
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
@@ -722,6 +727,11 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected write to have index attr.")
 
     index = node.index
+    memory_address_space = None
+    if hasattr(get_custom(memory), "address_space"):
+        memory_address_space = get_custom(memory).address_space
+    if memory_address_space == AddressSpace.SHARED_MEMORY:
+        index = remove_global_indexing(node.index, emitter.constraints)
 
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)

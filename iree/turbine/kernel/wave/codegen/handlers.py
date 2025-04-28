@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import copy
 import operator
 import sympy
 import math
@@ -102,6 +103,7 @@ from ...compiler.vector_codegen import (
 from ...compiler.utils import strides_from_symbolic_shape
 from ..constraints import HardwareConstraint, GenericDot
 from ..utils.classes import ShuffleMode
+from ..utils.general_utils import remove_global_indexing, get_fastest_index
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
 
@@ -415,7 +417,7 @@ def handle_atomic_op(op):
         @handle_op(op)
         def handle_generic_atomic(emitter: WaveEmitter, node: fx.Node):
             try:
-                lhs, rhs = node.args
+                lhs, rhs, elements_per_thread = node.args
             except ValueError as e:
                 raise ValidationError("Malformed arguments") from e
             lhs = cast_py_value(emitter, lhs)
@@ -439,12 +441,24 @@ def handle_atomic_op(op):
 
             lhs = lhs.ir_value
             rhs = rhs.ir_value
+            assert (
+                lhs.type.rank == 0 or lhs.type.rank == 1
+            ), f"expected lhs_type.rank == 1 but got {lhs.type.rank}, {node}"
 
-            # Get current index to pass to the atomic op
-            idx_start_sym = [x.start for x in node.index.values()]
-            idx_start = [gen_sympy_index(add_emitter_subs(emitter),x) for x in idx_start_sym]
-            
-            result = binary_fn(lhs, rhs, idx_start, emitter.options)
+            # Get local index for shared memory buffer. In the case of multiple elements
+            # per thread, get local indices for each element.
+            local_index = remove_global_indexing(node.index, emitter.constraints)
+            start_indices = [_build_start_indices(emitter, local_index)]
+            keys = list(local_index.keys())
+            fastest_dim = get_fastest_index(node.index)
+            for i in range(elements_per_thread - 1):
+                new_index = copy.deepcopy(local_index)
+                key = keys[fastest_dim]
+                new_index[key].start += i + 1
+                start_idx = _build_start_indices(emitter, new_index)
+                start_indices.append(start_idx)
+
+            result = binary_fn(lhs, rhs, start_indices, emitter.options)
             emitter.bind_node_proxy(node, IRProxyValue(result))
 
     return decorator
@@ -692,8 +706,7 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
     return result
 
 @handle_atomic_op(atomic_min)
-def handle_atomic_min(val: Value, buffer: Value, idx: Value, options: WaveCompileOptions) -> OpResult:
-
+def handle_atomic_min(val: Value, buffer: Value, idx: List[Value], options: WaveCompileOptions) -> OpResult:
     value_type = val.type
     value_element_type = get_type_or_element_type(value_type)
     atomic_kind = None
@@ -702,11 +715,14 @@ def handle_atomic_min(val: Value, buffer: Value, idx: Value, options: WaveCompil
     elif _is_integer_like_type(value_element_type) and _is_signed_or_signless_type(
         value_element_type):
         atomic_kind = arith_d.AtomicRMWKind.mins
+    num_elements = val.type.shape[0]
+    unroll_result = []
+    for i in range(num_elements):
+        a = vector_d.extract(val, static_position=[i], dynamic_position=[])
+        atomic_result = memref_d.atomic_rmw(atomic_kind, a, buffer, idx[i])
+        unroll_result.append(atomic_result)
 
-    a = vector_d.extract(val, static_position=[0], dynamic_position=[])
-    result = memref_d.atomic_rmw(atomic_kind, a, buffer, idx)
-    result = vector_d.broadcast(value_type, result)
-
+    result = vector_d.from_elements(value_type, unroll_result)
     return result
 
 

@@ -1247,6 +1247,7 @@ class AtomicMin(CustomOp):
 
     lhs : Any
     rhs : Any
+    elements_per_thread: Optional[Any] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
