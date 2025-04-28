@@ -4,6 +4,7 @@ import subprocess
 import warnings
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Union, OrderedDict
 
 from iree.compiler.tools.core import compile_file, CompilerToolError
@@ -81,24 +82,45 @@ def _out_of_process_compile(func_name, key_hashes_and_flags):
         )
 
 
-def _user_flags_jit_callback(entry_point, extra_flags):
+def _user_flags_jit_callback(entry_point: str, extra_flags, source: str):
+    """VmModule callback for out-of-process compilation with extra flags provided.
+    If boo cache is disabled, this will create temporary files for compilation."""
+
+    def _compile(flags, mlir_path, vmfb_path):
+        cl_list = ["iree-compile"] + flags + [f"'{mlir_path}'", "-o", f"'{vmfb_path}'"]
+        command = subprocess.list2cmdline(cl_list)
+        (vmfb_path.parent / f"compile_command.txt").write_text(command)
+        ret = subprocess.run(command, capture_output=True, shell=True)
+        if ret.returncode != 0:
+            raise RuntimeError(
+                f"Failed compilation with diagnostics: {ret.stderr.decode()}."
+            )
+        return vmfb_path.read_bytes()
+
     def callback(device):
         key_hash = device.get_type_key_hash()
         vmfb_path: Path = CACHE_BASE_DIR / entry_point / f"{key_hash}.vmfb"
         vm_instance = device.vm_instance
-        if vmfb_path.is_file():
+
+        if is_cache_enabled() and vmfb_path.is_file():
             logger.debug("Loading vmfb from cache: %s", str(vmfb_path))
             vmfb = vmfb_path.read_bytes()
             return VmModule.copy_buffer(vm_instance, vmfb)
-        flags = tuple(device.compile_target_flags) + tuple(extra_flags)
-        _out_of_process_compile(entry_point, [(key_hash, flags)])
-        if not vmfb_path.is_file():
-            raise RuntimeError(
-                "Jit compilation failed to produce a vmfb. Run with debug logger enabled to see error details."
-            )
 
-        vmfb = vmfb_path.read_bytes()
-        return VmModule.copy_buffer(vm_instance, vmfb)
+        flags = list(device.compile_target_flags) + list(extra_flags)
+
+        if is_cache_enabled():
+            mlir_path = CACHE_BASE_DIR / entry_point / f"{entry_point}.mlir"
+            logger.debug("Compiling vmfb to cache: %s", str(vmfb_path))
+            vmfb = _compile(flags, mlir_path, vmfb_path)
+            return VmModule.copy_buffer(vm_instance, vmfb)
+
+        with TemporaryDirectory() as td:
+            mlir_path = Path(td) / "source.mlir"
+            mlir_path.write_text(source)
+            vmfb_path = Path(td) / "target.vmfb"
+            vmfb = _compile(flags, mlir_path, vmfb_path)
+            return VmModule.copy_buffer(vm_instance, vmfb)
 
     return callback
 
@@ -200,6 +222,7 @@ def get_launchable(
             _user_flags_jit_callback(
                 func_name,
                 (f"--iree-codegen-tuning-spec-path='{BOO_TUNING_SPEC_PATH}'",),
+                module_asm,
             ),
             entry_point=func_name,
         )
