@@ -207,9 +207,7 @@ def emit_interwave_reduction(
     Reduces partial reduced data from individual wave across the block.
     1. Allocate shared_memory[num_waves]
     2. Write individual wave result into shared_memory[wave_id]
-    3. Get data from shared memory to each lane,
-        lane_data = lane_id < num_waves ? shared_memory[lane_id] : IDENTITY
-    4. Do Butterfly/Wave reduction on lane data.
+    3. Read shared_memory[:num_waves] and locally reduce
     """
 
     # Compute basic HW information.
@@ -239,35 +237,18 @@ def emit_interwave_reduction(
     write = Write(src, allocate_node, 1).add_to_graph(graph)
     write.index = {reduction_dim: IndexSequence(reduction_wave_id, 1, 1)}
 
-    # lane_data = lane_id < num_waves ? shared_memory[lane_id] : IDENTITY
+    # Read shared_memory[:num_waves] and locally reduce
+    # TODO: Do this only on lane0 and then let other lanes
+    # shuffle_val = laneId == lane0 ? local_reduced : identity
+    # do gpu.shuffle(mode=idx, val=shuffle_val, offset=0).
     read = Read(
         allocate_node,
-        elements_per_thread=1,
+        elements_per_thread=num_reduction_waves,
         _write_dependency=[write],
     ).add_to_graph(graph)
-    read.index = {reduction_dim: IndexSequence(lane_id, 1, 1)}
-    warp_partial_res = get_graph_node(ExtractElement(read, [0]), graph)
-    warp_partial_res.type = src.type.dtype
-
-    lane_id_reg = get_graph_node(NewScalar(lane_id, tkl.i32), graph)
-    num_reduction_waves_regs = get_graph_node(
-        NewScalar(num_reduction_waves, tkl.i32), graph
-    )
-    id_reg = get_graph_node(
-        NewScalar(IDENTITY[binary_fn.tkw_op_name], src.type.dtype),
-        graph,
-    )
-    cond = get_graph_node(Lt(lane_id_reg, num_reduction_waves_regs), graph)
-    masked_value = get_graph_node(SelectOp(cond, warp_partial_res, id_reg), graph)
-
-    # Butterfly/Wave reduction on lane data
-    interwave_reduction = emit_global_reduction(
-        binary_fn,
-        masked_value,
-        graph,
-        subgroup_size,
-        cluster_size=subgroup_size,
-        cluster_stride=1,
+    read.index = {reduction_dim: IndexSequence(0, 1, 1)}
+    interwave_reduction = emit_variable_reduction(
+        binary_fn, read, graph, num_reduction_waves
     )
     return interwave_reduction
 
