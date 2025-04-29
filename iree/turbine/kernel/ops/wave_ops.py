@@ -997,6 +997,7 @@ class Placeholder(CustomOp):
         self.fx_node = region_graph.create_node("placeholder", target=self._name)
         self.fx_node.tkw_op = self.__class__
         self.fx_node.tkw_op_name = self.tkw_op_name
+        self.fx_node.type = self._type
         return self.fx_node
 
     def custom_string(self, value_map: dict[str, str]) -> str:

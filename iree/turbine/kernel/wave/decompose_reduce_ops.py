@@ -17,13 +17,16 @@ from ..ops.wave_ops import (
     get_custom,
     Add,
     Allocate,
+    Conditional,
     CustomOp,
+    Eq,
     Extract,
     Iterate,
     ExtractElement,
     Lt,
     Maximum,
     Minimum,
+    Placeholder,
     Read,
     ReduceOp,
     SelectOp,
@@ -198,6 +201,7 @@ def emit_interwave_reduction(
     binary_fn,
     src,
     graph,
+    trace,
     reduction_dim,
     num_reduction_waves,
     wg_constraint_map,
@@ -234,8 +238,35 @@ def emit_interwave_reduction(
     ).add_to_graph(graph)
 
     # Write individual wave result into shared_memory[wave_id]
-    write = Write(src, allocate_node, 1).add_to_graph(graph)
+    # 1. Create subgraph to store condition
+    execute_on_lane0_graph = fx.Graph()
+    subgraph_name = f"execute_on_lane0_{src.name}"
+    placeholder_src = get_graph_node(
+        Placeholder.from_fx_node(src), execute_on_lane0_graph
+    )
+    placeholder_allocate = get_graph_node(
+        Placeholder.from_fx_node(get_custom(allocate_node)), execute_on_lane0_graph
+    )
+
+    # 2. Create write into shared memory
+    write = Write(placeholder_src, placeholder_allocate, 1).add_to_graph(
+        execute_on_lane0_graph
+    )
     write.index = {reduction_dim: IndexSequence(reduction_wave_id, 1, 1)}
+
+    # 3. Create if lane_id == 0 and insert subgraph into root graph.
+    lane_id_reg = get_graph_node(NewScalar(lane_id, tkl.i32), graph)
+    zero_reg = get_graph_node(NewScalar(0, tkl.i32), graph)
+    is_lane_0 = get_graph_node(Eq(lane_id_reg, zero_reg), graph)
+    execute_on_lane0 = get_graph_node(
+        Conditional(
+            is_lane_0,
+            subgraph_name=subgraph_name,
+            implicit_captures=[src, allocate_node],
+        ),
+        graph,
+    )
+    trace.add_subgraph(subgraph_name, execute_on_lane0_graph)
 
     # Read shared_memory[:num_waves] and locally reduce
     # TODO: Do this only on lane0 and then let other lanes
@@ -244,7 +275,7 @@ def emit_interwave_reduction(
     read = Read(
         allocate_node,
         elements_per_thread=num_reduction_waves,
-        _write_dependency=[write],
+        _write_dependency=[execute_on_lane0],
     ).add_to_graph(graph)
     read.index = {reduction_dim: IndexSequence(0, 1, 1)}
     interwave_reduction = emit_variable_reduction(
@@ -397,6 +428,7 @@ def decompose_reduce_ops(
                     binary_fn,
                     final_reduction,
                     custom.graph,
+                    trace,
                     reduction_dim,
                     num_reduction_waves,
                     workgroup_constraint_map,

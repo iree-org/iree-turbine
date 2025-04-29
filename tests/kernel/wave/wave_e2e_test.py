@@ -1100,7 +1100,6 @@ def test_block_reduce_sum(shape, request):
     test = wave_compile(options, test)
 
     test(a, b, c)
-    breakpoint()
     assert_close(ref, c, atol=0.1, rtol=1e-05)
 
 
