@@ -6,7 +6,13 @@
 
 from .utils.graph_utils import is_reduction_subgraph
 from .._support.tracing import CapturedTrace
-from ..ops.wave_ops import get_custom, Read, SharedMemoryBarrier, Write, NestedRegionOp
+from ..ops.wave_ops import (
+    get_custom,
+    NestedRegionOp,
+    Read,
+    SharedMemoryBarrier,
+    Write,
+)
 from ..lang.global_symbols import SHARED_ADDRESS_SPACE
 import torch.fx as fx
 from typing import Optional

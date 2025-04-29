@@ -241,6 +241,10 @@ def select(cond: "Register", if_true: "Register", if_false: "Register") -> "Regi
     ...
 
 
+def wave_barrier(src: "Register"):
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -1165,6 +1169,20 @@ class SchedulingGroupBarrier(CustomOp):
 
     instructions: dict[Operation, int]
     sync_id: int
+
+
+@define_op("wave_barrier")
+@dataclass
+class WaveBarrier(CustomOp):
+    """
+    TODO:
+    """
+
+    barrier_on_op: Register
+
+    @property
+    def py_operator(self) -> str:
+        return self.tkw_op_name
 
 
 @define_op("register")

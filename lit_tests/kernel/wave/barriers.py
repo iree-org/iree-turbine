@@ -4,28 +4,30 @@ import logging
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
+from iree.turbine.kernel.lang.global_symbols import *
+from iree.turbine.kernel.ops.wave_ops import *
 from iree.turbine.kernel.wave.analysis.index_sequence_analysis import (
     set_node_indices,
     set_post_expansion_indices,
 )
-from iree.turbine.kernel.wave.promotion import promote_node, promote_placeholders
 from iree.turbine.kernel.wave.barriers import add_shared_memory_barriers
-from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
+from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
+from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
+from iree.turbine.kernel.wave.promotion import promote_node, promote_placeholders
 from iree.turbine.kernel.wave.type_inference import infer_types
-from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel._support.tracing import CapturedTrace
-from iree.turbine.kernel._support.indexing import IndexingContext
-from iree.turbine.kernel.ops.wave_ops import *
 from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
-)
-from iree.turbine.kernel.wave.utils.print_utils import (
-    print_trace,
 )
 from iree.turbine.kernel.wave.utils.graph_utils import (
     initialize_iter_args,
 )
+from iree.turbine.kernel.wave.utils.print_utils import (
+    print_trace,
+)
+from iree.turbine.kernel._support.indexing import IndexingContext
+from iree.turbine.kernel._support.tracing import CapturedTrace
 
 
 def get_read_nodes(graph: fx.Graph) -> list[CustomOp]:
@@ -267,6 +269,69 @@ def test_gemm():
         # CHECK-NEXT: %mma_M:1_N:0_K:1
         # CHECK-NEXT: %mma_M:1_N:1_K:0
         # CHECK-NEXT: %mma_M:1_N:1_K:1
+
+
+@run_test
+def test_wave_barrier():
+
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+    shape = (64, 64, 64)
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=MMAType.F32_16x16x16_F16,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            tkw.wave_barrier(acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        BLOCK_M: 64,
+        BLOCK_N: 64,
+        BLOCK_K: 32,
+        M: shape[0],
+        N: shape[1],
+        K: shape[2],
+    }
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    gemm = wave_compile(options, gemm)
+    print(gemm.asm)
 
 
 if __name__ == "__main__":

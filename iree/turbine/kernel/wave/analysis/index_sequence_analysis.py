@@ -11,13 +11,14 @@ from ...ops.wave_ops import (
     CustomOp,
     GetResult,
     IterArg,
+    Iterate,
     MMA,
     NestedRegionOp,
     Output,
     Placeholder,
     Read,
     ReduceOp,
-    Iterate,
+    WaveBarrier,
     Write,
     get_custom,
 )
@@ -106,13 +107,15 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
     nodes = trace.walk(lambda x: x)
     for node in nodes:
         custom = get_custom(node)
-        if isinstance(custom, (Placeholder, Allocate)) and not isinstance(
+        if isinstance(custom, (Allocate, Placeholder)) and not isinstance(
             custom, IterArg
         ):
             continue
         if isinstance(custom, (Output, NestedRegionOp)):
             continue
         if isinstance(custom.type, DataType):
+            continue
+        if isinstance(custom, WaveBarrier):
             continue
         assert custom.index, f"Index not set for node {custom.fx_node}: {custom}"
 

@@ -29,15 +29,15 @@ from ...compiler.ir import (
     amdgpu_d,
     arith_d,
     gpu_d,
+    llvm_d,
     math_d,
     memref_d,
+    rocdl_d,
     scf_d,
     vector_d,
-    llvm_d,
 )
 from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
-    _is_index_type,
     _is_integer_like_type,
     _is_signed_or_signless_type,
     get_conversion_op,
@@ -82,6 +82,7 @@ from ...ops.wave_ops import (
     shuffle,
     tanh,
     tanh_approx,
+    wave_barrier,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
@@ -90,7 +91,7 @@ from ...compiler.vector_codegen import (
     cast_py_value,
     cast_vector,
 )
-from ..constraints import HardwareConstraint, GenericDot
+from ..constraints import GenericDot, HardwareConstraint
 from ..utils.classes import ShuffleMode
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
@@ -1090,6 +1091,14 @@ def handle_scheduling_group_barrier(emitter: WaveEmitter, node: fx.Node):
         llvm_d.call_intrinsic(
             None, "llvm.amdgcn.sched.group.barrier", [mask, counts, sync_id], [], []
         )
+
+
+@handle_op(wave_barrier)
+def handle_wave_barrier(emitter: WaveEmitter, node: fx.Node):
+    # graph = node.graph
+    # with graph.inserting_after(node):
+    #     WaveBarrier().add_to_graph(graph)
+    rocdl_d.s_barrier()
 
 
 ###############################################################################
