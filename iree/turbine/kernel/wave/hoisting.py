@@ -18,7 +18,11 @@ logger = get_logger("turbine.wave.hoisting")
 
 def has_set_symbol_dependent_mapping(custom_node: CustomOp) -> bool:
     """Check if the custom node has a mapping with symbols and a set symbol of any symbols in the
-    mapping occurs prior."""
+    mapping occurs prior.
+
+    TODO: Currently this pass is being conservative as the symbols might not have any dependency
+    on the induction variable. Use this knowledge to allow hoisting of such ops.
+    """
     if not custom_node.mapping:
         return False
     used_symbols = [
