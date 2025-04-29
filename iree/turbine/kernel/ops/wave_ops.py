@@ -42,7 +42,10 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 
 def allocate(
-    shape: tuple[IndexExpr], distributed_shape: tuple[IndexExpr], dtype: DataType, address_space: IndexSymbol
+    shape: tuple[IndexExpr],
+    distributed_shape: tuple[IndexExpr],
+    dtype: DataType,
+    address_space: IndexSymbol,
 ) -> "Memory":
     ...
 
@@ -1241,7 +1244,6 @@ class SchedulingBarrier(CustomOp):
 @define_op("atomic_min")
 @dataclass
 class AtomicMin(BinaryOpBase, ABC):
-# class AtomicMin(CustomOp):
     """
     Represents an atomic operation in the graph.
     Takes in value and buffer to perform the operation on.
@@ -1251,6 +1253,7 @@ class AtomicMin(BinaryOpBase, ABC):
 
     def infer_type(self):
         self.type = get_custom(self.lhs).type
+
 
 @define_op("scheduling_group_barrier")
 @dataclass

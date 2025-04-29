@@ -412,6 +412,7 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
 
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
+
 def handle_atomic_op(op):
     def decorator(binary_fn: Callable[[Value, Value], OpResult]):
         @handle_op(op)
@@ -426,9 +427,11 @@ def handle_atomic_op(op):
             rhs_data_type = get_type_or_element_type(rhs.ir_value.type)
             if not MemRefType.isinstance(rhs.ir_value.type):
                 op = get_custom(node)
-                raise ValidationError(f"Expected rhs to be Memref type for\n"
+                raise ValidationError(
+                    f"Expected rhs to be Memref type for\n"
                     f"{op}\nGot\n"
-                    f"rhs: {rhs.ir_value.type}\n")
+                    f"rhs: {rhs.ir_value.type}\n"
+                )
             if lhs_data_type != rhs_data_type:
                 op = get_custom(node)
                 raise ValidationError(
@@ -465,6 +468,7 @@ def handle_atomic_op(op):
             emitter.bind_node_proxy(node, IRProxyValue(result))
 
     return decorator
+
 
 ###############################################################################
 # Binary math Ops
@@ -708,15 +712,19 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
         )
     return result
 
+
 @handle_atomic_op(atomic_min)
-def handle_atomic_min(val: Value, buffer: Value, idx: List[Value], options: WaveCompileOptions) -> OpResult:
+def handle_atomic_min(
+    val: Value, buffer: Value, idx: List[Value], options: WaveCompileOptions
+) -> OpResult:
     value_type = val.type
     value_element_type = get_type_or_element_type(value_type)
     atomic_kind = None
     if _is_float_type(value_element_type):
         atomic_kind = arith_d.AtomicRMWKind.minimumf
     elif _is_integer_like_type(value_element_type) and _is_signed_or_signless_type(
-        value_element_type):
+        value_element_type
+    ):
         atomic_kind = arith_d.AtomicRMWKind.mins
     num_elements = val.type.shape[0]
     unroll_result = []
