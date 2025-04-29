@@ -241,6 +241,10 @@ def select(cond: "Register", if_true: "Register", if_false: "Register") -> "Regi
     ...
 
 
+def sync_threads() -> None:
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -1159,6 +1163,18 @@ class SchedulingGroupBarrier(CustomOp):
 
     instructions: dict[Operation, int]
     sync_id: int
+
+
+@define_op("sync_threads")
+@dataclass
+class SyncThreads(CustomOp):
+    """
+    TODO:
+    """
+
+    @property
+    def py_operator(self) -> str:
+        return self.tkw_op_name
 
 
 @define_op("register")

@@ -80,6 +80,7 @@ from ...ops.wave_ops import (
     set_symbol,
     shared_memory_barrier,
     shuffle,
+    sync_threads,
     tanh,
     tanh_approx,
 )
@@ -1053,6 +1054,11 @@ def handle_scheduling_group_barrier(emitter: WaveEmitter, node: fx.Node):
         llvm_d.call_intrinsic(
             None, "llvm.amdgcn.sched.group.barrier", [mask, counts, sync_id], [], []
         )
+
+
+@handle_op(sync_threads)
+def handle_sync_threads(emitter: WaveEmitter, node: fx.Node):
+    amdgpu_d.sched_barrier(amdgpu_d.sched_barrier_opt_enum.none)
 
 
 ###############################################################################
