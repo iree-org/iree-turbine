@@ -106,7 +106,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     options.kernel_sig = kernel_sig
 
     host_codegen.isolated_test_call(
-        mb, exe, kernel_sig, entrypoint_name, options.dynamic_symbols
+        mb, exe, kernel_sig, entrypoint_name, options.func_name, options.dynamic_symbols
     )
     asm = mb.module_op.get_asm(
         enable_debug_info=options.debug_info, use_local_scope=options.use_local_scope
