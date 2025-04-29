@@ -425,6 +425,7 @@ def handle_atomic_op(op):
             rhs = cast_py_value(emitter, rhs)
             lhs_data_type = get_type_or_element_type(lhs.ir_value.type)
             rhs_data_type = get_type_or_element_type(rhs.ir_value.type)
+
             if not MemRefType.isinstance(rhs.ir_value.type):
                 op = get_custom(node)
                 raise ValidationError(
@@ -444,6 +445,10 @@ def handle_atomic_op(op):
                 # float types. LLVM already supports fmin and fmax (https://llvm.org/docs/LangRef.html#atomicrmw-instruction)
                 # and thus atomicrmw operation in MLIR dialect needs to target those instructions with "workgroup" scope.
                 raise NotImplementedError(f"Atomic ops don't support float types yet\n")
+            if elements_per_thread > 1:
+                raise ValidationError(
+                    f"More than 1 elements per thread is currently not well tested\n"
+                )
 
             lhs = lhs.ir_value
             rhs = rhs.ir_value
@@ -715,7 +720,7 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
 
 @handle_atomic_op(atomic_min)
 def handle_atomic_min(
-    val: Value, buffer: Value, idx: List[Value], options: WaveCompileOptions
+    val: Value, buffer: Value, idx: list[Value], options: WaveCompileOptions
 ) -> OpResult:
     value_type = val.type
     value_element_type = get_type_or_element_type(value_type)
