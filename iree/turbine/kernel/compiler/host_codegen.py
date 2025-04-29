@@ -26,7 +26,6 @@ from .ir import (
 from .._support.indexing import IndexSymbol
 from .._support.location import FileLineColInfo
 from .kernel_codegen import BindingDesc
-from typing import Optional
 
 
 def memref_to_tensor(memrefs: list[IrType]):
@@ -60,7 +59,7 @@ def isolated_test_call(
     exe: StreamExecutable,
     sig: KernelSignature,
     entrypoint: str,
-    func_name: Optional[str],
+    func_name: str = "isolated_benchmark",
     dynamic_symbols: list[IndexSymbol] = [],
 ):
     with InsertionPoint(mb.body_block), Location.unknown():
