@@ -165,11 +165,14 @@ def find_index_bounds(
         if dim not in index:
             continue
 
-        work_size = constraint.work_bound
-        if subs_idxc(work_size) == subs_idxc(dim):
+        if subs_idxc(dim % index[dim].size) != 0:
+            bounds.append(dim)
             continue
 
-        bounds.append(dim)
+        work_size = constraint.work_bound
+        if subs_idxc(work_size) != subs_idxc(dim):
+            bounds.append(dim)
+            continue
 
     if len(bounds) == 0:
         return None
