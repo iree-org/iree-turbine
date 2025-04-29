@@ -13,6 +13,7 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 from iree.turbine.kernel.wave.utils.compile_utils import (
     set_default_compile_config,
 )
+import sympy
 
 M = tkl.sym.M
 N = tkl.sym.N
@@ -2385,3 +2386,58 @@ def test_scanop_cumsum():
 
     # Dispatch
     # CHECK: flow.dispatch @scanop_cumsum
+
+
+@run_test
+def test_atomic_min():
+    BLOCK_M = 1
+    BLOCK_N = sympy.Max(sympy.Min(N, 256), 64)
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    shape = (3, 64)
+
+    @tkw.wave(constraints)
+    def atomic_min_codegen(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+    ):
+        res = tkw.read(a, elements_per_thread=1)
+        shmem = tkw.allocate(
+            shape=(M, N), distributed_shape=(BLOCK_M, BLOCK_N), dtype=tkl.i32
+        )
+        zero_reg = tkl.Register[M, N, tkl.i32](-1e6)
+        tkw.write(zero_reg, shmem, elements_per_thread=1)
+        res = tkw.atomic_min(res, shmem, elements_per_thread=1)
+        fin = tkw.read(shmem, elements_per_thread=1)
+        tkw.write(fin, a, elements_per_thread=1)
+
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        use_buffer_load_ops=False,
+        use_buffer_store_ops=False,
+        compile_to_mlir=True,
+    )
+
+    atomic_min_codegen = wave_compile(options, atomic_min_codegen)
+    print(atomic_min_codegen.asm)
+
+    # CHECK-LABEL: @atomic_min_codegen
+    # CHECK: memref.alloc
+    # CHECK: memref.atomic_rmw
+    # CHECK: vector.load
+    # CHECK: vector.store
