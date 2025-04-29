@@ -85,7 +85,7 @@ class ReductionInfo:
             f"ReductionInfo({self.reduction.fx_node},"
             f"outputs={self.outputs},"
             f" init_args={self.init_args},"
-            f" get_results={get_results},"
+            f" get_results={get_results}"
         )
 
 
@@ -664,18 +664,6 @@ def get_mma_indexed_dims(
     return indexed_dims
 
 
-def get_expanded_implicit_capture(
-    implicit_capture: CustomOp, expansion_context: ExpansionContext
-) -> CustomOp | None:
-    """
-    See if the implicit capture has been expanded.
-    """
-    for key in expansion_context.expansion_context.keys():
-        if key.node.fx_node == implicit_capture:
-            return expansion_context[key]
-    return None
-
-
 def fixup_reduction_nodes(
     trace: CapturedTrace,
     expansion_context: ExpansionContext,
@@ -720,14 +708,8 @@ def fixup_reduction_nodes(
 
         sorted_keys = dict(sorted(reduction_info.init_args.items(), key=lambda x: x[0]))
         new_init_args = []
-        for init_arg in reduction.init_args:
-            for key in sorted_keys.values():
-                if key.node.fx_node == init_arg:
-                    new_init_args.append(expansion_context[key].fx_node)
-                    break
-        assert len(new_init_args) == len(
-            reduction.init_args
-        ), f"Number of init args mismatch: {len(new_init_args)} != {len(reduction.init_args)}"
+        for key in sorted_keys.values():
+            new_init_args.append(expansion_context[key].fx_node)
         reduction.update_arg("init_args", new_init_args)
 
         for result_index, get_item in reduction_info.get_results.items():
@@ -736,16 +718,9 @@ def fixup_reduction_nodes(
                 get_item.graph, get_item.type
             )
             get_result.name = get_item.fx_node.name
+            get_result.index = get_item.index
             get_item.replace_all_uses_with(get_custom(get_result))
             get_item.erase()
-
-        # Update the implicit captures.
-        # for capture in reduction.implicit_captures:
-        #    custom = get_custom(capture)
-        #    expanded_capture = get_expanded_implicit_capture(custom, expansion_context)
-        #    if expanded_capture is not None:
-        #        custom.replace_all_uses_with(expanded_capture)
-        #        custom.erase()
 
         remove_original_nodes(return_vals)
 
@@ -757,12 +732,18 @@ def fixup_reduction_nodes(
             if key.node.fx_node == condition:
                 new_condition = value
                 break
-        assert new_condition is not None, f"Condition was not expanded: {condition}"
+        if new_condition is None:
+            logger.warning(
+                f"Condition was not expanded: {condition}. Using the original condition."
+            )
+            continue
         get_custom(conditional).update_arg("condition", new_condition.fx_node)
         remove_original_nodes([get_custom(condition)])
 
 
 def is_leaf_node(node):
+    # In while loops, we require a set symbol to indicate the next value of the loop
+    # variable and so we include SetSymbol in the leaf nodes.
     custom = get_custom(node)
     return (
         isinstance(custom, Write)
@@ -804,11 +785,6 @@ def expand_graph(
     # Fixup all mma nodes.
     fixup_mma_nodes(trace, expansion_context)
     # Remove original nodes in root graph.
-    remove_original_nodes(leaf_ops)  # + set_symbols)
+    remove_original_nodes(leaf_ops)
     remove_unused_registers(trace)
     remove_unused_iter_args(trace)
-
-    # from ..utils.print_utils import print_trace
-
-    # print_trace(trace)
-    # breakpoint()

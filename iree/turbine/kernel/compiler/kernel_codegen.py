@@ -291,6 +291,10 @@ class KernelSignature:
         placeholder_nodes = filter_fx_graph(graph, is_placeholder)
 
         def get_users_recursive(node, parent=None):
+            # When trying to determine the recursive users of a node, we need to
+            # pass the top-level parent down to the recursive call, since
+            # the cloned variables in each subgraph will refer to the parent
+            # node (and not the node one level up).
             ret = []
             for user in node.users.keys():
                 custom = get_custom(user)

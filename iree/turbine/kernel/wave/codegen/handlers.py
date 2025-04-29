@@ -956,6 +956,21 @@ def handle_iterate(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxies(node, [IRProxyValue(v) for v in forOp.results_])
 
 
+def add_iter_arg_subs(
+    current_values: list[Value], subs: dict[IndexExpr, Value]
+) -> dict[IndexExpr, Value]:
+    zero = arith_d.ConstantOp(IndexType.get(), 0)
+    for i in range(len(current_values) - 1):
+        value = current_values[i]
+        if isinstance(value.type, VectorType):
+            assert value.type.rank == 1, f"Expected vector of rank 1, got {value.type}"
+            value = vector_d.extractelement(current_values[i], position=zero)
+        if isinstance(value.type, IntegerType):
+            value = arith_d.index_cast(IndexType.get(), value)
+        subs[GET_ITER_ARG(i)] = value
+    return subs
+
+
 def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
     try:
         axis, init_args, subgraph, implicit_capture, start, condition = node.args
@@ -988,20 +1003,13 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
     with InsertionPoint(whileOp.before.blocks[0]):
         # Replace the axis with a temporary variable when generating the condition
         # to avoid conflicts with the actual value of the axis.
+        # Here we use sympy.Symbol because we don't want to add any assumptions
+        # on the value of the symbol.
         condition = condition.subs({axis: sympy.Symbol("$TMP")})
         subs = add_emitter_subs(emitter)
         subs[sympy.Symbol("$TMP")] = current_values[-1]
         # Replace iter args with appropriate values.
-        for i in range(len(current_values) - 1):
-            value = current_values[i]
-            if isinstance(value.type, VectorType):
-                assert (
-                    value.type.rank == 1
-                ), f"Expected vector of rank 1, got {value.type}"
-                value = vector_d.extractelement(current_values[i], position=zero)
-            if isinstance(value.type, IntegerType):
-                value = arith_d.index_cast(IndexType.get(), value)
-            subs[GET_ITER_ARG(i)] = value
+        subs = add_iter_arg_subs(current_values, subs)
         condition = gen_sympy_index(subs, condition)
         scf_d.ConditionOp(condition, current_values)
 
