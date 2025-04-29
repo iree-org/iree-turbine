@@ -398,12 +398,12 @@ def decompose_reduce_ops(
                     binary_fn(reduction_acc, global_reduction), custom.graph
                 )
 
-            # compute num_warps to reduce across
-            num_reduction_waves = int(
-                workgroup_constraint_map[reduction_dim].tile_size
-                // wave_constraint_map[reduction_dim].tile_size
-            )
-            if reduce_block and num_reduction_waves > 1:
+            if reduce_block:
+                # compute num_warps to reduce across
+                num_reduction_waves = int(
+                    workgroup_constraint_map[reduction_dim].tile_size
+                    // wave_constraint_map[reduction_dim].tile_size
+                )
                 if num_reduction_waves > subgroup_size:
                     raise NotImplementedError(
                         "The 2nd stage butterfly shuffle reduces the"
