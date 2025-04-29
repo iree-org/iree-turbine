@@ -59,6 +59,7 @@ def isolated_test_call(
     exe: StreamExecutable,
     sig: KernelSignature,
     entrypoint: str,
+    func_name: str = "isolated_benchmark",
     dynamic_symbols: list[IndexSymbol] = [],
 ):
     with InsertionPoint(mb.body_block), Location.unknown():
@@ -81,7 +82,7 @@ def isolated_test_call(
         )
 
         ftype = FunctionType.get(input_tensors, output_tensors)
-        func_op = func_d.FuncOp("isolated_benchmark", ftype)
+        func_op = func_d.FuncOp(func_name, ftype)
         actual_loc = FileLineColInfo.capture_current_location().to_mlir()
         arg_locs = [
             (Location.name(b.name, actual_loc) if b.name is not None else actual_loc)
