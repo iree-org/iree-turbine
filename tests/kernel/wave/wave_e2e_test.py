@@ -1849,7 +1849,7 @@ def test_atomic_min(shape, use_buffer_ops, request):
 
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.Max(sympy.Min(N, 256), wave_size)
+    BLOCK_N = 64
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
