@@ -119,10 +119,7 @@ def testTransposedVAttentionPure(
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
     output = device_zeros(o_shape, dtype=torch.float32)
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape.head_size)
-    # TODO: Add scaling of QK as part of kernel.
-    asm = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    asm = base_attention(q, k, v.permute([0, 2, 1]), output)
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q, k, v, attn_mask=None
     )
@@ -202,10 +199,8 @@ def testAttentionPure(
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
     output = device_zeros(o_shape, dtype=torch.float32)
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape.head_size)
     # TODO: Add scaling of QK as part of kernel.
-    asm = base_attention(q * dk_sqrt * log2e, k, v, output)
+    asm = base_attention(q, k, v, output)
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q, k, v, attn_mask=None
     )
@@ -291,10 +286,7 @@ def testAttentionCausal(
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
     output = device_zeros(o_shape, dtype=torch.float32)
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape.head_size)
-    # TODO: Add scaling of QK as part of kernel.
-    asm = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    asm = base_attention(q, k, v.permute([0, 2, 1]), output)
     if sliding_window >= 0:
 
         def sliding_window_mask(q_seq_length, kv_seq_length, window_size):
