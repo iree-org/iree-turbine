@@ -64,6 +64,13 @@ def emit_global_scan(
 ) -> fx.Node:
     """
     Emit an intra-warp inclusive scan using butterfly pattern scan and masking.
+    In this algorithm, we are using two-pass approach.
+    If the number of elements per thread is one, then we just need one shuffle pass.
+    If there are more than one elements per thread, we need to calculate the exclusive
+        offset for the next lane elements using the information from the previous lane.
+        That is why we have another shuffle phase.
+
+    ToDo: Can we make it more efficient?
     """
     lane_id = (
         hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
@@ -117,7 +124,7 @@ def emit_global_scan(
     scanop_result = thread_incl
 
     if local_scan_size > 1:
-        # Phase 2 to perform global scan
+        # Phase 2 to calculate exclusive offset from previous lane id.
         shuffle2 = ShuffleOp(scanop_result, 1, subgroup_size, ShuffleMode.UP)
         shuffle2_node = get_graph_node(shuffle2, graph)
 
