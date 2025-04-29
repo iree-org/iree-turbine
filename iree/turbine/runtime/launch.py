@@ -4,16 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-# HERE BE HACKS
-import ctypes
-import sys
-
-inc_ref = ctypes.pythonapi.Py_IncRef
-inc_ref.argtypes = [ctypes.py_object]
-inc_ref.restype = None
-
-
-import hashlib
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
@@ -28,14 +18,10 @@ from iree.compiler.api import (
 
 from iree.runtime import (
     create_io_parameters_module,
-    ExternalTimepointFlags,
-    ExternalTimepointType,
     HalBufferView,
     HalElementType,
-    HalExternalTimepoint,
     HalFence,
     ParameterProvider,
-    SemaphoreCompatibility,
     VmContext,
     VmFunction,
     VmModule,
