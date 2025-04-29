@@ -40,7 +40,11 @@ from ...compiler.vector_codegen import (
 
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils.general_utils import find_index_bounds, get_fastest_index, remove_global_indexing
+from ..utils.general_utils import (
+    find_index_bounds,
+    get_fastest_index,
+    remove_global_indexing,
+)
 from ..utils.symbol_utils import safe_subs, subs_idxc
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
