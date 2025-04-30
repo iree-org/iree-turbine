@@ -47,8 +47,6 @@ import iree.turbine.kernel.lang as tkl
 TKW_COMBINER = {"sum": Add, "max": Maximum, "min": Minimum}
 IDENTITY = {"add": 0.0, "maximum": -1e6, "minimum": 1e6}
 
-_MAX_READ_BITWIDTH = 128
-
 
 def determine_shuffle_config(
     index: dict[IndexSymbol, IndexSequence],
