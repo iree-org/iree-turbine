@@ -1171,7 +1171,7 @@ class Allocate(CustomOp):
     shape: tuple[IndexExpr]
     distributed_shape: tuple[IndexExpr]
     dtype: DataType
-    address_space: AddressSpace = AddressSpace.SHARED_MEMORY
+    address_space: AddressSpace = SHARED_ADDRESS_SPACE
     padding: int = 0
     parent: Optional[fx.Node] = None
     offset: Optional[IndexExpr] = None
@@ -1253,6 +1253,10 @@ class AtomicMin(BinaryOpBase, ABC):
 
     def infer_type(self):
         self.type = get_custom(self.lhs).type
+
+    @property
+    def memory_type(self) -> "Memory":
+        return get_custom(self.lhs).type
 
 
 @define_op("scheduling_group_barrier")

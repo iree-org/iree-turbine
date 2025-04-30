@@ -637,11 +637,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
-    memory_address_space = None
-    if hasattr(get_custom(memory), "address_space"):
-        memory_address_space = get_custom(memory).address_space
-    if memory_address_space == AddressSpace.SHARED_MEMORY:
-        index = remove_global_indexing(node.index, emitter.constraints)
+
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)

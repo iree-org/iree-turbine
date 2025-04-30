@@ -456,8 +456,9 @@ def handle_atomic_op(op):
                 lhs.type.rank == 0 or lhs.type.rank == 1
             ), f"expected lhs_type.rank == 1 but got {lhs.type.rank}, {node}"
 
-            # Get local index for shared memory buffer. In the case of multiple elements
-            # per thread, get local indices for each element.
+            # Get start indices for every element in thread
+            # TODO: Use shared_memory_indexing to remove global indexing, needs
+            # debugging to get the correct index.
             local_index = remove_global_indexing(node.index, emitter.constraints)
             start_indices = [_build_start_indices(emitter, local_index)]
             keys = list(local_index.keys())
