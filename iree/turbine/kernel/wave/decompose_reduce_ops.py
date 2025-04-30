@@ -34,8 +34,8 @@ from ..lang.global_symbols import *
 
 from .utils.symbol_utils import subs_idxc
 from .utils.graph_utils import DCE, get_outer_node
-from .utils.classes import ShuffleMode
 from .utils.general_utils import all_equal, delinearize_index
+from .utils.classes import ShuffleMode
 import torch.fx as fx
 import math
 from typing import Callable
