@@ -335,7 +335,8 @@ def decompose_reduce_ops(
                 )
             if reduction_dim is not src_fastest_dims[0]:
                 raise NotImplementedError(
-                    "Only implemented reduction on fastest dimension."
+                    f"Only implemented reduction on fastest dimension. Got {reduction_dim} and {src_fastest_dims}."
+                    f"\n{custom}"
                 )
 
             get_thread_shape = lambda index: max(
