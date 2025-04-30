@@ -23,6 +23,7 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 )
 from iree.turbine.kernel.wave.templates.speculative_decoding import (
     get_speculative_decoding_kernel,
+    get_speculative_sampling_kernel,
 )
 import torch.nn.functional as F
 
@@ -53,36 +54,57 @@ def get_wave_speculative_decoding_kernel(batch_size, num_draft_tokens, d, seq_le
     return speculative_decoding
 
 
-def tree_speculative_sampling_target_only(
-    predicts,  # [seq_len], mutable
-    accept_index,  # [batch_size, num_speculative_tokens], mutable
-    accept_token_num,  # [batch_size], mutable
-    candidates,  # [batch_size, num_draft_tokens]
-    retrive_index,  # [batch_size, num_draft_tokens]
-    retrive_next_token,  # [batch_size, num_draft_tokens]
-    retrive_next_sibling,  # [batch_size, num_draft_tokens]
-    uniform_samples,  # [batch_size, num_draft_tokens]
-    target_probs,  # [batch_size, num_draft_tokens, vocab_size]
-    draft_probs,  # [batch_size, num_draft_tokens, vocab_size]
+def get_wave_speculative_sampling_kernel(
+    batch_size,
+    num_speculative_tokens,
+    threshold_acc,
+    threshold_single,
+    num_draft_tokens,
+    d,
+):
+    speculative_sampling, symbols, _, _ = get_speculative_sampling_kernel(
+        batch_size,
+        num_speculative_tokens,
+        threshold_acc,
+        threshold_single,
+        num_draft_tokens,
+        d,
+    )
+    symbols.update(get_default_scheduling_params())
+
+    options = WaveCompileOptions(
+        subs=symbols,
+        canonicalize=True,
+        run_bench=False,
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+        wave_runtime=True,
+    )
+    options = set_default_run_config(options)
+    speculative_sampling = wave_compile(options, speculative_sampling)
+    return speculative_sampling
+
+
+def reference_sampling_kernel(
+    uniform_samples,
+    target_probs,
+    draft_probs,
+    candidates,
+    retrive_index,
+    retrive_next_token,
+    retrive_next_sibling,
+    predicts,
+    accept_index,
+    accept_token_num,
+    cur_prob_offset_vec,
+    last_accepted_retrive_idx_vec,
     batch_size,
     num_speculative_tokens,
     num_draft_tokens,
     d,
-    threshold_single=1.0,
-    threshold_acc=1.0,
-    deterministic=True,
+    threshold_single,
+    threshold_acc,
 ):
-    seq_len = predicts.shape[0]
-    wave_kernel = get_wave_speculative_decoding_kernel(
-        batch_size, num_draft_tokens, d, seq_len
-    )
-    threshold_acc = max(threshold_acc, 1e-9)
-    cur_prob_offset_vec = torch.empty(
-        [batch_size], dtype=torch.int32, device=draft_probs.device
-    )
-    last_accepted_retrive_idx_vec = torch.empty(
-        [batch_size], dtype=torch.int32, device=draft_probs.device
-    )
     for bx in range(batch_size):
         prob_acc = 0.0
         cur_prob_offset = 0  # bx * num_draft_tokens * d handled via indexing
@@ -129,7 +151,62 @@ def tree_speculative_sampling_target_only(
         cur_prob_offset_vec[bx] = cur_prob_offset
         last_accepted_retrive_idx_vec[bx] = last_accepted_retrive_idx
 
-    # Sample from relu(target_probs - draft_probs)
+
+def tree_speculative_sampling_target_only(
+    predicts,  # [seq_len], mutable
+    accept_index,  # [batch_size, num_speculative_tokens], mutable
+    accept_token_num,  # [batch_size], mutable
+    candidates,  # [batch_size, num_draft_tokens]
+    retrive_index,  # [batch_size, num_draft_tokens]
+    retrive_next_token,  # [batch_size, num_draft_tokens]
+    retrive_next_sibling,  # [batch_size, num_draft_tokens]
+    uniform_samples,  # [batch_size, num_draft_tokens]
+    target_probs,  # [batch_size, num_draft_tokens, vocab_size]
+    draft_probs,  # [batch_size, num_draft_tokens, vocab_size]
+    batch_size,
+    num_speculative_tokens,
+    num_draft_tokens,
+    d,
+    threshold_single=1.0,
+    threshold_acc=1.0,
+    deterministic=True,
+):
+    threshold_acc = max(threshold_acc, 1e-9)
+    seq_len = predicts.shape[0]
+    cur_prob_offset_vec = torch.empty(
+        [batch_size], dtype=torch.int32, device=draft_probs.device
+    )
+    last_accepted_retrive_idx_vec = torch.empty(
+        [batch_size], dtype=torch.int32, device=draft_probs.device
+    )
+
+    # TODO: Combine into one kernel.
+    sampling_kernel = get_wave_speculative_sampling_kernel(
+        batch_size,
+        num_speculative_tokens,
+        threshold_acc,
+        threshold_single,
+        num_draft_tokens,
+        d,
+    )
+    sampling_kernel(
+        uniform_samples,
+        target_probs,
+        draft_probs,
+        candidates,
+        retrive_index,
+        retrive_next_token,
+        retrive_next_sibling,
+        predicts,
+        accept_token_num,
+        accept_index,
+        cur_prob_offset_vec,
+        last_accepted_retrive_idx_vec,
+    )
+
+    wave_kernel = get_wave_speculative_decoding_kernel(
+        batch_size, num_draft_tokens, d, seq_len
+    )
     wave_kernel(
         target_probs,
         draft_probs,

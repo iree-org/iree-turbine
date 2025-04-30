@@ -13,6 +13,7 @@ from ..constraints import (
 from ...ops.wave_ops import (
     Allocate,
     CustomOp,
+    Conditional,
     get_custom,
     Output,
     Write,
@@ -41,6 +42,7 @@ from .expansion_utils import (
     get_reshape_dim_queries,
     remove_original_nodes,
     remove_unused_registers,
+    remove_unused_iter_args,
 )
 from ..utils.graph_utils import (
     get_users,
@@ -163,6 +165,7 @@ def compute_result_index(
     dim_scaling: dict[IndexSymbol, int],
     node: fx.Node,
     outputs: list[fx.Node],
+    input_index: int,
 ):
     """
     Compute the result index for a reduction node based on the dim
@@ -198,7 +201,6 @@ def compute_result_index(
     local_index += dim_query * dim_strides
 
     """
-    input_index = outputs.index(node)
     get_shape = lambda x: get_custom(x).type.symbolic_shape
     result_index = sum(
         math.prod(dim_scaling[d] for d in get_shape(outputs[i]) if d in dim_scaling)
@@ -241,7 +243,9 @@ def handle_reduction_entry(
             outputs = [outputs]
         if reduction not in reduction_context:
             reduction_context[reduction] = ReductionInfo(reduction)
-        result_index = compute_result_index(dim_query, dim_scaling, inputs[0], outputs)
+        result_index = compute_result_index(
+            dim_query, dim_scaling, inputs[0], outputs, new_node.res_idx
+        )
         custom = get_custom(inputs[0])
         key = ExpansionInfo(custom, get_indexed_dims(dim_query, custom))
         reduction_info = reduction_context[reduction]
@@ -268,7 +272,7 @@ def handle_reduction_exit(
         assert len(inputs) == 1, f"Expected one input, got {inputs}"
         reduction = new_node.parent_op()
         result_index = compute_result_index(
-            dim_query, dim_scaling, inputs[0], reduction.init_args
+            dim_query, dim_scaling, inputs[0], reduction.init_args, new_node.iter_idx
         )
         assert reduction in reduction_context, f"Reduction not found: {reduction}"
         new_node.iter_idx = result_index
@@ -674,6 +678,7 @@ def fixup_reduction_nodes(
     the fixup is done in the correct order, specifically from the last
     reduction to the first reduction since that is the order in
     which expansion proceeds.
+
     """
     reduction_context = expansion_context.reduction_context
     reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Iterate))
@@ -713,16 +718,37 @@ def fixup_reduction_nodes(
                 get_item.graph, get_item.type
             )
             get_result.name = get_item.fx_node.name
+            get_result.index = get_item.index
             get_item.replace_all_uses_with(get_custom(get_result))
             get_item.erase()
 
         remove_original_nodes(return_vals)
 
+    # For conditional nodes, update the condition to use the expanded nodes.
+    for conditional in trace.walk(lambda x: isinstance(get_custom(x), Conditional)):
+        condition = get_custom(conditional).condition
+        new_condition = None
+        for key, value in expansion_context.expansion_context.items():
+            if key.node.fx_node == condition:
+                new_condition = value
+                break
+        if new_condition is None:
+            logger.warning(
+                f"Condition was not expanded: {condition}. Using the original condition."
+            )
+            continue
+        get_custom(conditional).update_arg("condition", new_condition.fx_node)
+        remove_original_nodes([get_custom(condition)])
+
 
 def is_leaf_node(node):
+    # In while loops, we require a set symbol to indicate the next value of the loop
+    # variable and so we include SetSymbol in the leaf nodes.
     custom = get_custom(node)
-    return isinstance(custom, Write) or (
-        isinstance(custom, GetResult) and not custom.users
+    return (
+        isinstance(custom, Write)
+        or (isinstance(custom, GetResult) and not custom.users)
+        or isinstance(custom, SetSymbol)
     )
 
 
@@ -761,3 +787,4 @@ def expand_graph(
     # Remove original nodes in root graph.
     remove_original_nodes(leaf_ops)
     remove_unused_registers(trace)
+    remove_unused_iter_args(trace)

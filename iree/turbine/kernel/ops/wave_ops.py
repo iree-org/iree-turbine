@@ -856,6 +856,7 @@ class ComparisonPyOp(BinaryOpBase, ABC):
 @define_interface_op("tanh")
 @define_interface_op("tanh_approx")
 @define_py_op(operator.neg)
+@define_py_op(operator.invert)
 @dataclass
 class UnaryPyOp(CustomOp, ABC):
     """
@@ -1070,6 +1071,11 @@ class IterArg(Placeholder):
     @iter_idx.setter
     def iter_idx(self, value):
         self.fx_node.iter_idx = value
+
+    def infer_type(self):
+        parent_op = self.parent_op()
+        init_args = parent_op.init_args
+        self.type = init_args[self.iter_idx].type
 
 
 # Ops modeling TKW operations in the kernel language

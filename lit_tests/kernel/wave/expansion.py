@@ -260,7 +260,7 @@ def test_write_in_iterate():
 
         # CHECK: Custom format:
         # CHECK: iterate(axis=K,
-        # CHECK: get_result(value=iterate, res_idx=0)
+        # CHECK: get_result(value=iterate, res_idx=0
         # CHECK: write(register_=get_result_M:0_K:0, memory=c, elements_per_thread=4,
 
         # iterate subgraph:
@@ -408,10 +408,10 @@ def test_gemm():
         # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
         # CHECK-NEXT: iterate(axis=K, init_args=[register_M:0_N:0_K:0, register_M:0_N:1_K:0, register_M:1_N:0_K:0, register_M:1_N:1_K:0], subgraph_name=region_0, implicit_captures=[a, b])
-        # CHECK-NEXT: get_result(value=iterate, res_idx=0)
-        # CHECK-NEXT: get_result(value=iterate, res_idx=1)
-        # CHECK-NEXT: get_result(value=iterate, res_idx=2)
-        # CHECK-NEXT: get_result(value=iterate, res_idx=3)
+        # CHECK-NEXT: get_result(value=iterate, res_idx=0
+        # CHECK-NEXT: get_result(value=iterate, res_idx=1
+        # CHECK-NEXT: get_result(value=iterate, res_idx=2
+        # CHECK-NEXT: get_result(value=iterate, res_idx=3
         # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0
         # CHECK-SAME: index={M:  $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1}
         # CHECK-NEXT: write(register_=get_result_M:0_N:1_K:0
@@ -598,10 +598,10 @@ def test_batched_gemm():
         # CHECK-NEXT: register(shape=(B, M, N), dtype=f32, value=0.0, index={B: $WG2*BLOCK_B : 1 : 1, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: register(shape=(B, M, N), dtype=f32, value=0.0, index={B: $WG2*BLOCK_B : 1 : 1, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
         # CHECK-NEXT: iterate(axis=K, init_args=[register_M:0_N:0_K:0, register_M:0_N:1_K:0, register_M:1_N:0_K:0, register_M:1_N:1_K:0], subgraph_name=region_0, implicit_captures=[a, b])
-        # CHECK-NEXT: get_result(value=iterate, res_idx=0)
-        # CHECK-NEXT: get_result(value=iterate, res_idx=1)
-        # CHECK-NEXT: get_result(value=iterate, res_idx=2)
-        # CHECK-NEXT: get_result(value=iterate, res_idx=3)
+        # CHECK-NEXT: get_result(value=iterate, res_idx=0
+        # CHECK-NEXT: get_result(value=iterate, res_idx=1
+        # CHECK-NEXT: get_result(value=iterate, res_idx=2
+        # CHECK-NEXT: get_result(value=iterate, res_idx=3
         # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0
         # CHECK-SAME: index={B: $WG2*BLOCK_B : 1 : 1, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1}
         # CHECK-NEXT: write(register_=get_result_M:0_N:1_K:0
@@ -868,7 +868,7 @@ def test_gemm_iterate_expansion_only():
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: iterate(axis=K, init_args=[register_M:0_N:0_K:0]
-        # CHECK-NEXT: get_result(value=iterate, res_idx=0)
+        # CHECK-NEXT: get_result(value=iterate, res_idx=0
         # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0
         # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: output(return_vals=(None,))
