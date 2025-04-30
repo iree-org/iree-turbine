@@ -36,7 +36,7 @@ from ..ops.wave_ops import (
 from ..lang.global_symbols import *
 
 from .utils.symbol_utils import subs_idxc
-from .utils.graph_utils import DCE
+from .utils.graph_utils import DCE, get_outer_node
 from .utils.classes import ShuffleMode
 from .utils.general_utils import all_equal, delinearize_index
 import torch.fx as fx
@@ -254,6 +254,8 @@ def emit_interwave_reduction(
     write.index = {reduction_dim: IndexSequence(reduction_wave_id, 1, 1)}
 
     # 3. Create if lane_id == 0 and insert subgraph into root graph.
+    implicit_capture_src = get_outer_node(src)
+
     lane_id_reg = get_graph_node(NewScalar(lane_id, tkl.i32), graph)
     zero_reg = get_graph_node(NewScalar(0, tkl.i32), graph)
     is_lane_0 = get_graph_node(Eq(lane_id_reg, zero_reg), graph)
@@ -261,7 +263,7 @@ def emit_interwave_reduction(
         Conditional(
             is_lane_0,
             subgraph_name=subgraph_name,
-            implicit_captures=[src, allocate_node],
+            implicit_captures=[implicit_capture_src, allocate_node],
         ),
         graph,
     )
