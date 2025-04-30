@@ -665,7 +665,7 @@ def get_bhsd_attention_kernel(
         BLOCK_M: 128,
         BLOCK_N: 64,
         BLOCK_K2: 64,
-        B: 1,
+        B: shape.batch_size,
         H: shape.num_query_heads,
         M: shape.query_seq_len,
         N: shape.head_size_kv,

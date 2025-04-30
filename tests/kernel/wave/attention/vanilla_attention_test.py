@@ -424,7 +424,7 @@ def testAttentionBSHD(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
+@pytest.mark.parametrize("shape", get_test_shapes("bhsd_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn", [False])
 @pytest.mark.parametrize(
@@ -442,12 +442,13 @@ def testAttentionBHSDCausal(
     request,
 ):
     shape = AttentionShape(
-        num_query_heads=shape[0],
-        num_kv_heads=shape[0],
-        query_seq_len=shape[1],
-        head_size_kv=shape[2],
-        head_size=shape[3],
-        kv_seq_len=shape[4],
+        batch_size=shape[0],
+        num_query_heads=shape[1],
+        num_kv_heads=shape[1],
+        query_seq_len=shape[2],
+        head_size_kv=shape[3],
+        head_size=shape[4],
+        kv_seq_len=shape[5],
     )
 
     is_causal = True
@@ -470,9 +471,24 @@ def testAttentionBHSDCausal(
         is_causal=is_causal,
         is_custom_mask=is_custom_mask,
     )
-    q_shape = (1, shape.num_query_heads, shape.query_seq_len, shape.head_size)
-    k_shape = (1, shape.num_query_heads, shape.kv_seq_len, shape.head_size)
-    v_shape = (1, shape.num_query_heads, shape.kv_seq_len, shape.head_size_kv)
+    q_shape = (
+        shape.batch_size,
+        shape.num_query_heads,
+        shape.query_seq_len,
+        shape.head_size,
+    )
+    k_shape = (
+        shape.batch_size,
+        shape.num_query_heads,
+        shape.kv_seq_len,
+        shape.head_size,
+    )
+    v_shape = (
+        shape.batch_size,
+        shape.num_query_heads,
+        shape.kv_seq_len,
+        shape.head_size_kv,
+    )
     hyperparams.update(get_default_scheduling_params())
     options = WaveCompileOptions(
         subs=hyperparams,
@@ -492,7 +508,12 @@ def testAttentionBHSDCausal(
     v = device_randn(v_shape, dtype=torch.float16)
 
     # This variant of wave kernel is BHSD
-    o_shape = (1, shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)
+    o_shape = (
+        shape.batch_size,
+        shape.num_query_heads,
+        shape.query_seq_len,
+        shape.head_size_kv,
+    )
     output = device_zeros(o_shape, dtype=torch.float32)
 
     if is_custom_mask:
