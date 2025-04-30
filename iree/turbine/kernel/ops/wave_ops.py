@@ -61,13 +61,6 @@ def extract(
     ...
 
 
-def extract_element(
-    register: "Register",
-    offsets: tuple[IndexExpr],
-) -> "Register":
-    ...
-
-
 def extract_slice(
     register: "Register",
     offsets: tuple[IndexExpr],
