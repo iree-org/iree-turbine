@@ -212,7 +212,6 @@ def emit_interwave_reduction(
     lane_id = (
         hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
     )
-    subgroup_size = hardware_constraint.threads_per_wave
 
     # Determining wave id along reduction dim.
     wave_id = delinearize_index(
@@ -268,10 +267,6 @@ def emit_interwave_reduction(
 
     # Read shared_memory[:num_waves] and locally reduce.
     # write_dependency on both execute_on_lane0 and write to prevent DCE.
-
-    # TODO: Try on lane0 and then let other lanes
-    # shuffle_val = laneId == lane0 ? local_reduced : identity
-    # do gpu.shuffle(mode=idx, val=shuffle_val, offset=0).
     read = Read(
         allocate_node,
         elements_per_thread=num_reduction_waves,
