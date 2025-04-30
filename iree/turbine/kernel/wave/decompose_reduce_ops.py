@@ -21,17 +21,14 @@ from ..ops.wave_ops import (
     CustomOp,
     Eq,
     Extract,
-    Iterate,
-    Lt,
     Maximum,
     Minimum,
+    NewScalar,
     Placeholder,
     Read,
     ReduceOp,
-    SelectOp,
     ShuffleOp,
     Write,
-    NewScalar,
 )
 from ..lang.global_symbols import *
 
