@@ -20,7 +20,6 @@ def decompose_dot_mma(trace: CapturedTrace, constraints: list[Constraint]):
     """
     Decomposes dot MMA operations into the dot products and cross-thread reductions.
     """
-    # return
     hardware_constraint = get_hardware_constraint(constraints)
 
     def get_mma_type(mma_op: MMA) -> GenericDot:
