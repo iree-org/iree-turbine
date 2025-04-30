@@ -76,19 +76,19 @@ def emit_global_scan(
         hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
     )
 
-    thread_incl = local_scan[-1]
+    scanop_result = last_local_scan_node = local_scan[-1]
 
     if local_scan_size > 1:
         target_shape = list(src.type.symbolic_shape)
         target_shape.pop(target_shape.index(scan_dim))
-        thread_incl.index = {target_shape[0]: get_custom(src).index[target_shape[0]]}
+        scanop_result.index = {target_shape[0]: get_custom(src).index[target_shape[0]]}
 
     num_steps = int(math.log2(float(subgroup_size)))
     for idx in range(num_steps):
         offset_val = 1 << idx
 
         # shuffle operation to get value from another thread
-        shuffle = ShuffleOp(thread_incl, offset_val, subgroup_size, ShuffleMode.UP)
+        shuffle = ShuffleOp(scanop_result, offset_val, subgroup_size, ShuffleMode.UP)
         shuffle_val_node = get_graph_node(shuffle, graph)
 
         # we are explicitly adding index because this pass is being
@@ -103,15 +103,15 @@ def emit_global_scan(
             ),
             graph,
         )
-        zero_vec.index = get_custom(local_scan[-1]).index
+        zero_vec.index = get_custom(last_local_scan_node).index
 
         # condition node: thread ID >= offset
         cond_expr = ge(lane_id, offset_val)
         cond_node = get_graph_node(
-            NewRegister(get_custom(thread_incl).type.symbolic_shape, i1, cond_expr),
+            NewRegister(get_custom(scanop_result).type.symbolic_shape, i1, cond_expr),
             graph,
         )
-        cond_node.index = get_custom(local_scan[-1]).index
+        cond_node.index = get_custom(last_local_scan_node).index
 
         # apply shuffle_val only if condition is true; else use 0
         masked = get_graph_node(
@@ -119,38 +119,43 @@ def emit_global_scan(
         )
 
         # perform binary scan op
-        thread_incl = get_graph_node(binary_fn(thread_incl, masked), graph)
-
-    scanop_result = thread_incl
+        scanop_result = get_graph_node(binary_fn(scanop_result, masked), graph)
 
     if local_scan_size > 1:
         # Phase 2 to calculate exclusive offset from previous lane id.
-        shuffle2 = ShuffleOp(scanop_result, 1, subgroup_size, ShuffleMode.UP)
-        shuffle2_node = get_graph_node(shuffle2, graph)
+        scan_offset = ShuffleOp(scanop_result, 1, subgroup_size, ShuffleMode.UP)
+        scan_offset_node = get_graph_node(scan_offset, graph)
 
-        cond_expr2 = ge(lane_id, 1)
-        cond_expr2_node = get_graph_node(
-            NewRegister(get_custom(thread_incl).type.symbolic_shape, i1, cond_expr2),
+        lane_id_ge_one = ge(lane_id, 1)
+        lane_id_ge_one_node = get_graph_node(
+            NewRegister(
+                get_custom(scanop_result).type.symbolic_shape, i1, lane_id_ge_one
+            ),
             graph,
         )
-        cond_expr2_node.index = get_custom(local_scan[-1]).index
+        lane_id_ge_one_node.index = get_custom(last_local_scan_node).index
 
-        zero_vec2 = get_graph_node(
+        identity_vec_node = get_graph_node(
             NewRegister(
-                get_custom(shuffle2_node).type.symbolic_shape,
-                get_custom(shuffle2_node).type.dtype,
+                get_custom(scan_offset_node).type.symbolic_shape,
+                get_custom(scan_offset_node).type.dtype,
                 0.0,
             ),
             graph,
         )
-        zero_vec2.index = get_custom(local_scan[-1]).index
+        identity_vec_node.index = get_custom(last_local_scan_node).index
 
         excl_offset = get_graph_node(
-            SelectOp(cond=cond_expr2_node, if_true=shuffle2_node, if_false=zero_vec2),
+            SelectOp(
+                cond=lane_id_ge_one_node,
+                if_true=scan_offset_node,
+                if_false=identity_vec_node,
+            ),
             graph,
         )
 
         final_scalars = []
+        # Update the prefix sum for each locally scanned element based on the updated offset
         for lane_elem in local_scan:
             summed = get_graph_node(binary_fn(lane_elem, excl_offset), graph)
             summed.index = get_custom(src).index
@@ -224,31 +229,23 @@ def decompose_scan_ops(
                     f"{index_str}\n{scan_src=}\n{scan_acc=}\n{scan_dim=}"
                 ) from e
 
+            local_scan = [scan_src]
+
             if local_scan_sizes > 1:
                 local_scan = emit_local_inclusive_scan(
                     binary_fn, scan_src, custom.graph, local_scan_sizes
                 )
-                result = emit_global_scan(
-                    binary_fn,
-                    scan_src,
-                    local_scan,
-                    custom.graph,
-                    subgroup_size,
-                    hardware_constraint,
-                    local_scan_sizes,
-                    scan_dim,
-                )
-            else:
-                result = emit_global_scan(
-                    binary_fn,
-                    scan_src,
-                    [scan_src],
-                    custom.graph,
-                    subgroup_size,
-                    hardware_constraint,
-                    local_scan_sizes,
-                    scan_dim,
-                )
+
+            result = emit_global_scan(
+                binary_fn,
+                scan_src,
+                local_scan,
+                custom.graph,
+                subgroup_size,
+                hardware_constraint,
+                local_scan_sizes,
+                scan_dim,
+            )
 
             custom.replace_all_uses_with(result)
 
