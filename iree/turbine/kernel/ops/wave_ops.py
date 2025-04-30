@@ -2060,8 +2060,8 @@ class ShuffleOp(CustomOp):
     """
 
     arg: fx.Node
-    offset: int
-    width: int
+    offset: IndexExpr | int
+    width: IndexExpr | int
     mode: "ShuffleMode"
 
     @property

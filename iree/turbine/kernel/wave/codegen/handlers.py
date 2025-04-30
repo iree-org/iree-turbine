@@ -357,13 +357,16 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
         src, offset, width, mode = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
-    if not isinstance(offset, int) or not isinstance(width, int):
-        raise NotImplementedError(
-            "Non-const width or offset is not yet implemented for shuffleOp."
-        )
+
     src = cast_py_value(emitter, src).ir_value
-    offset = cast_py_value(emitter, offset, IntegerType.get_signless(32)).ir_value
-    width = cast_py_value(emitter, width, IntegerType.get_signless(32)).ir_value
+
+    subs = add_emitter_subs(emitter)
+    offset = gen_sympy_index(subs, offset)
+    width = gen_sympy_index(subs, width)
+
+    i32 = IntegerType.get_signless(32)
+    offset = arith_d.index_cast(i32, offset)
+    width = arith_d.index_cast(i32, width)
 
     # Shuffle data between other threads in a warp.
     SHUFFLE_MODE_MAP = {
