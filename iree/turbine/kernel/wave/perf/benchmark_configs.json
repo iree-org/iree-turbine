@@ -1,0 +1,20 @@
+{
+    "shapes": [
+        {
+            "name": "Sample1",
+            "batch_size": 1,
+            "num_heads": 40,
+            "seq_len_q": 25600,
+            "seq_len_k": 25600,
+            "head_dim": 128
+        },
+        {
+            "name": "Sample2",
+            "batch_size": 1,
+            "num_heads": 40,
+            "seq_len_q": 25600,
+            "seq_len_k": 512,
+            "head_dim": 128
+        }
+    ]
+}
