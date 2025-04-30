@@ -1777,3 +1777,72 @@ def test_scanop_cumsum(shape, request):
 
     test(input, output)
     assert_close(torch_ref, output, atol=1e-03, rtol=1e-05)
+
+
+# Todo: merge with cumsum test case after the development
+@require_e2e
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1, 128),
+    ],
+)
+def test_scanop_cumsum_blockwise(shape, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    wave_size = 64
+    num_waves = 2
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+    BLOCK_M = 1
+
+    ELEMS_PER_WAVE = (
+        sympy.ceiling(sympy.ceiling(N // num_waves) // wave_size) * wave_size
+    )
+    # ToDo: referred from reduce e2e; check once
+    # The number of threads in the block is a multiple of the architecture’s warp size?
+    ELEMS_PER_WAVE = sympy.Max(ELEMS_PER_WAVE, wave_size)
+    ELEMS_PER_THREAD = ELEMS_PER_WAVE // wave_size
+
+    BLOCK_N = ELEMS_PER_WAVE * num_waves
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(num_waves, 1, 1),
+            vector_shapes={M: 1, N: ELEMS_PER_WAVE},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, ELEMS_PER_WAVE)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        res = tkw.cumsum(lhs, dim=N, block=True)
+        tkw.write(res, c)
+
+    torch.manual_seed(1)
+    input = device_zeros(shape, dtype=torch.float16) + 1
+    output = device_zeros(shape, dtype=torch.float16)
+    torch_ref = torch.cumsum((input), dim=-1)
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(input, output)
+    breakpoint()
+    assert_close(torch_ref, output, atol=1e-03, rtol=1e-05)

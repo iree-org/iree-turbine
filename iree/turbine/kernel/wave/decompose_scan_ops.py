@@ -4,25 +4,30 @@ from typing import Any, Callable
 
 import torch.fx as fx
 
-from iree.turbine.kernel._support.indexing import IndexSymbol
+from iree.turbine.kernel._support.indexing import IndexSequence, IndexSymbol
+from iree.turbine.kernel.lang.global_symbols import SHARED_ADDRESS_SPACE
+from iree.turbine.kernel.wave.utils.general_utils import delinearize_index
 from iree.turbine.kernel.wave.utils.symbol_utils import subs_idxc
 
 from .._support.dtype import i1
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import (
     Add,
+    Allocate,
     Cumsum,
     CustomOp,
     Extract,
     NewRegister,
+    Read,
     Reshape,
     ScanOp,
     SelectOp,
     ShuffleOp,
+    Write,
     get_custom,
 )
 
-from .constraints import HardwareConstraint
+from .constraints import HardwareConstraint, WaveConstraint, WorkgroupConstraint
 from .utils.classes import ShuffleMode
 from .utils.graph_utils import DCE
 
@@ -162,6 +167,67 @@ def emit_global_scan(
     return scanop_result
 
 
+def emit_interwave_scan(
+    binary_fn: Callable,
+    src: fx.Node,
+    graph: fx.Graph,
+    num_scan_waves: int,
+    workgroup_constraint_map: dict,
+    hardware_constraint: HardwareConstraint,
+    local_scan_size: int,
+    scan_dim: IndexSymbol,
+) -> fx.Node:
+    """_summary_
+
+    Args:
+        binary_fn (Callable): _description_
+        src (fx.Node): _description_
+        graph (fx.Graph): _description_
+        num_scan_waves (int): _description_
+        workgroup_constraint_map (dict): _description_
+        hardware_constraint (HardwareConstraint): _description_
+        local_scan_sizes (int): _description_
+        scan_dim (IndexSymbol): _description_
+
+    Returns:
+        fx.Node: _description_
+    """
+    subgroup_size = hardware_constraint.threads_per_wave
+
+    wave_id = delinearize_index(
+        hardware_constraint.linearized_thread_id
+        // hardware_constraint.threads_per_wave,
+        hardware_constraint.waves_per_block,
+    )
+    scan_wg_dim = workgroup_constraint_map[scan_dim].workgroup_dim
+    scan_wave_id = wave_id[scan_wg_dim]
+
+    allocate_node = Allocate(
+        (scan_dim,),
+        (num_scan_waves,),
+        src.type.dtype,
+        SHARED_ADDRESS_SPACE,
+    ).add_to_graph(graph)
+
+    write = Write(src, allocate_node, 1).add_to_graph(graph)
+    write.index = {scan_dim: IndexSequence(scan_wave_id, 1, 1)}
+
+    read = Read(
+        allocate_node,
+        elements_per_thread=local_scan_size,
+        _write_dependency=[write],
+    ).add_to_graph(graph)
+
+    read.index = {scan_dim: IndexSequence(scan_wave_id - 1, 1, 1)}
+
+    # interwave_scan = emit_global_scan(
+    #     binary_fn, src, [read], graph, subgroup_size, hardware_constraint, local_scan_size, scan_dim
+    # )
+    interwave_scan = emit_local_inclusive_scan(binary_fn, read, graph, local_scan_size)
+
+    return src  # interwave_scan[0]
+
+
 def decompose_scan_ops(
     trace: CapturedTrace,
     constraints: list,
@@ -193,7 +259,7 @@ def decompose_scan_ops(
             raise NotImplementedError(f"ScanOp '{custom}' not supported")
 
         with custom.graph.inserting_before(custom.fx_node):
-            scan_src, scan_acc, scan_dim = node.args
+            scan_src, scan_acc, scan_dim, block_wise_scan = node.args
             assert isinstance(
                 scan_src, fx.Node
             ), f"Scan src is not fx.Node: {type(scan_src)}"
@@ -238,6 +304,28 @@ def decompose_scan_ops(
                     [scan_src],
                     custom.graph,
                     subgroup_size,
+                    hardware_constraint,
+                    local_scan_sizes,
+                    scan_dim,
+                )
+
+            if block_wise_scan:
+                wave_constraint_map = {
+                    c.dim: c for c in constraints if isinstance(c, WaveConstraint)
+                }
+                workgroup_constraint_map = {
+                    c.dim: c for c in constraints if isinstance(c, WorkgroupConstraint)
+                }
+                num_scan_waves = int(
+                    workgroup_constraint_map[scan_dim].tile_size
+                    // wave_constraint_map[scan_dim].tile_size
+                )
+                result = emit_interwave_scan(
+                    binary_fn,
+                    result,
+                    custom.graph,
+                    num_scan_waves,
+                    workgroup_constraint_map,
                     hardware_constraint,
                     local_scan_sizes,
                     scan_dim,

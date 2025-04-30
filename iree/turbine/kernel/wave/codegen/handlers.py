@@ -34,7 +34,6 @@ from ...compiler.ir import (
     scf_d,
     vector_d,
     llvm_d,
-    ShapedType,
 )
 from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
