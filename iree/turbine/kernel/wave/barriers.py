@@ -6,7 +6,7 @@
 
 from .utils.graph_utils import is_reduction_subgraph
 from .._support.tracing import CapturedTrace
-from ..ops.wave_ops import get_custom, Read, SharedMemoryBarrier, Write, Iterate
+from ..ops.wave_ops import get_custom, Read, SharedMemoryBarrier, Write, NestedRegionOp
 from ..lang.global_symbols import SHARED_ADDRESS_SPACE
 import torch.fx as fx
 from typing import Optional
@@ -43,7 +43,7 @@ def add_shared_memory_barriers(
                 with graph.inserting_before(node):
                     SharedMemoryBarrier().add_to_graph(graph)
             last_node = custom
-        if isinstance(custom, Iterate):
+        if isinstance(custom, NestedRegionOp):
             last_node = add_shared_memory_barriers(
                 trace, trace.get_subgraph(custom.subgraph_name), last_node
             )

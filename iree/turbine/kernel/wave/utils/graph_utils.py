@@ -39,12 +39,7 @@ def DCE(trace: CapturedTrace):
         custom = get_custom(node)
         return isinstance(custom, Write) and (
             subs_idxc(custom.type.address_space)
-            in [
-                GLOBAL_ADDRESS_SPACE,
-                SHARED_ADDRESS_SPACE,
-                tkl.AddressSpace.GLOBAL_MEMORY.value,
-                tkl.AddressSpace.SHARED_MEMORY.value,
-            ]
+            in [GLOBAL_ADDRESS_SPACE, tkl.AddressSpace.GLOBAL_MEMORY.value]
         )
 
     def has_nested_writes(node: fx.Node) -> bool:

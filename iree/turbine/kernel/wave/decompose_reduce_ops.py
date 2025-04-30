@@ -269,14 +269,16 @@ def emit_interwave_reduction(
     )
     trace.add_subgraph(subgraph_name, execute_on_lane0_graph)
 
-    # Read shared_memory[:num_waves] and locally reduce
-    # TODO: Do this only on lane0 and then let other lanes
+    # Read shared_memory[:num_waves] and locally reduce.
+    # write_dependency on both execute_on_lane0 and write to prevent DCE.
+
+    # TODO: Try on lane0 and then let other lanes
     # shuffle_val = laneId == lane0 ? local_reduced : identity
     # do gpu.shuffle(mode=idx, val=shuffle_val, offset=0).
     read = Read(
         allocate_node,
         elements_per_thread=num_reduction_waves,
-        _write_dependency=[execute_on_lane0],
+        _write_dependency=[execute_on_lane0, write],
     ).add_to_graph(graph)
     read.index = {reduction_dim: IndexSequence(0, 1, 1)}
     interwave_reduction = emit_variable_reduction(
