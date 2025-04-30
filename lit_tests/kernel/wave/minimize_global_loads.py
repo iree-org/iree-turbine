@@ -157,10 +157,10 @@ def test_gemm():
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: iterate(
-        # CHECK-NEXT: get_result(value=iterate, res_idx=0)
-        # CHECK-NEXT: get_result(value=iterate, res_idx=1)
-        # CHECK-NEXT: get_result(value=iterate, res_idx=2)
-        # CHECK-NEXT: get_result(value=iterate, res_idx=3)
+        # CHECK-NEXT: get_result(value=iterate, res_idx=0
+        # CHECK-NEXT: get_result(value=iterate, res_idx=1
+        # CHECK-NEXT: get_result(value=iterate, res_idx=2
+        # CHECK-NEXT: get_result(value=iterate, res_idx=3
         # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0, memory=c
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: write(register_=get_result_M:0_N:1_K:0, memory=c

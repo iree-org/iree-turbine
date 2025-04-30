@@ -561,6 +561,13 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
                 _enforce_non_rational(lhs, term)
                 res = arith_d.cmpi(arith_d.CmpIPredicate.sge, *_broadcast(lhs, rhs))
                 stack.append(res)
+            case sympy.Eq():
+                rhs = stack.pop()
+                lhs = stack.pop()
+                _enforce_non_rational(rhs, term)
+                _enforce_non_rational(lhs, term)
+                res = arith_d.cmpi(arith_d.CmpIPredicate.eq, *_broadcast(lhs, rhs))
+                stack.append(res)
             case sympy.And():
                 rhs = stack.pop()
                 lhs = stack.pop()

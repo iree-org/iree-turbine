@@ -20,12 +20,16 @@ def get_vanilla_attention_kernel(
     is_causal: bool = False,
     is_v_transposed: bool = False,
     sliding_window_size: int = -1,
+    scale: float = None,
 ):
 
     if sliding_window_size > 0 and not is_causal:
         raise NotImplementedError(
             "Sliding window is only supported for causal attention."
         )
+
+    scale = scale or (1.0 / math.sqrt(shape.head_size))
+    scale *= math.log2(math.e)
 
     # Input sizes
     B = tkl.sym.B
@@ -86,6 +90,7 @@ def get_vanilla_attention_kernel(
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
         sliding_window = tkl.Register[M, K2, tkl.i64](sliding_window_size)
+        qk_scaling = tkl.Register[B, M, K2, tkl.f32](scale)
         ZEROF = tkl.Register[M, K2, tkl.f32](0.0)
         MIN_INF = tkl.Register[M, K2, tkl.f32](-1e6)
 
@@ -119,6 +124,7 @@ def get_vanilla_attention_kernel(
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, ZEROF, MIN_INF)
             x_j = x_j + bias
+            x_j *= qk_scaling
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
