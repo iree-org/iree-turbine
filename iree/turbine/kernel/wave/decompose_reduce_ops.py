@@ -243,9 +243,11 @@ def emit_interwave_reduction(
     placeholder_src = get_graph_node(
         Placeholder.from_fx_node(src), execute_on_lane0_graph
     )
+    placeholder_src.type = src.type
     placeholder_allocate = get_graph_node(
         Placeholder.from_fx_node(get_custom(allocate_node)), execute_on_lane0_graph
     )
+    placeholder_allocate.type = get_custom(allocate_node).type
 
     # 2. Create write into shared memory
     write = Write(placeholder_src, placeholder_allocate, 1).add_to_graph(
