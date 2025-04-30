@@ -709,10 +709,6 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     # memory has no IR node yet.
     kb_dest, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
     insert_vector = cast_vector(emitter, register, element_type=kb_ir_type.element_type)
-    if insert_vector.type.rank == 0:
-        insert_vector = vector_d.broadcast(
-            VectorType.get([1], kb_ir_type.element_type), insert_vector
-        )
     insert_type = VectorType(insert_vector.type)
     vector_shape = cast_py_literal(emitter, (elements_per_thread,))
 

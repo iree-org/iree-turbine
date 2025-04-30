@@ -1856,29 +1856,6 @@ class Extract(CustomOp):
         self.type = dst_type
 
 
-@define_op("extract_element")
-@dataclass
-class ExtractElement(CustomOp):
-    """
-    Op Rationale:
-    Extract is an op used to represent extracting of
-    a scalar from TKW's 1-D vector on the specified index.
-    This can also be viewed as indexing/slicing on the fastest
-    dimension. Hence, the semantic of this op is designed to
-    see itself as a reduction on the indexed/fastest dimension.
-    """
-
-    register_: fx.Proxy
-    offset: IndexExpr | int
-
-    def infer_type(self):
-        # Intuition here is we are trying to extract an element
-        # from fastest dim => we reduce the fastest dim.
-        src_type = get_custom(self.register_).type
-        dst_type = src_type.dtype
-        self.type = dst_type
-
-
 @define_op("extract_slice")
 @dataclass
 class ExtractSlice(CustomOp):

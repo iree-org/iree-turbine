@@ -22,7 +22,6 @@ from ..ops.wave_ops import (
     Eq,
     Extract,
     Iterate,
-    ExtractElement,
     Lt,
     Maximum,
     Minimum,
