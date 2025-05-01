@@ -41,14 +41,6 @@ from .common.utils import (
     require_e2e,
 )
 
-import torch
-from torch.testing import assert_close
-import pytest
-import sympy
-import os
-import torch
-import json
-from .common.shapes import get_test_shapes as get_common_test_shape
 
 default_test_shapes = [
     (1, 27),
