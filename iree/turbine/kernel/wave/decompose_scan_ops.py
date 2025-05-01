@@ -76,7 +76,8 @@ def emit_global_scan(
         hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
     )
 
-    scanop_result = last_local_scan_node = local_scan[-1]
+    scanop_result = local_scan[-1]
+    last_local_scan_node = get_custom(local_scan[-1])
 
     # When we have more than one element per thread, the index will be used of the
     # non-scan dim in MxN. Otherwise, there  will be a shape mismatch while lowering.
@@ -105,7 +106,7 @@ def emit_global_scan(
             ),
             graph,
         )
-        zero_vec.index = get_custom(last_local_scan_node).index
+        zero_vec.index = last_local_scan_node.index
 
         # condition node: thread ID >= offset
         cond_expr = ge(lane_id, offset_val)
@@ -113,7 +114,7 @@ def emit_global_scan(
             NewRegister(get_custom(scanop_result).type.symbolic_shape, i1, cond_expr),
             graph,
         )
-        cond_node.index = get_custom(last_local_scan_node).index
+        cond_node.index = last_local_scan_node.index
 
         # apply shuffle_val only if condition is true; else use 0
         masked = get_graph_node(
@@ -135,7 +136,8 @@ def emit_global_scan(
             ),
             graph,
         )
-        lane_id_ge_one_node.index = get_custom(last_local_scan_node).index
+        # ToDo: debug why last_local_scan_node.index is setting to None if assigned outside.
+        lane_id_ge_one_node.index = last_local_scan_node.index
 
         identity_vec_node = get_graph_node(
             NewRegister(
@@ -145,7 +147,7 @@ def emit_global_scan(
             ),
             graph,
         )
-        identity_vec_node.index = get_custom(last_local_scan_node).index
+        identity_vec_node.index = last_local_scan_node.index
 
         excl_offset = get_graph_node(
             SelectOp(
