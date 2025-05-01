@@ -1072,9 +1072,9 @@ def test_block_reduce_sum(shape, request):
 
     @tkw.wave(constraints)
     def test(
-        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f32],
     ):
         lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
@@ -1083,9 +1083,9 @@ def test_block_reduce_sum(shape, request):
         tkw.write(res, c, elements_per_thread=1)
 
     torch.manual_seed(1)
-    a = device_randn(shape, dtype=torch.float16)
-    b = device_randn(shape, dtype=torch.float16)
-    c = device_zeros((shape[0],), dtype=torch.float16)
+    a = device_randn(shape, dtype=torch.float32)
+    b = device_randn(shape, dtype=torch.float32)
+    c = device_zeros((shape[0],), dtype=torch.float32)
     ref = torch.sum((a * b), dim=-1)
     options = WaveCompileOptions(
         subs={
@@ -1100,7 +1100,7 @@ def test_block_reduce_sum(shape, request):
     test = wave_compile(options, test)
 
     test(a, b, c)
-    assert_close(ref, c, atol=0.1, rtol=1e-05)
+    assert_close(ref, c, atol=2e-5, rtol=1e-05)
 
 
 @require_e2e
