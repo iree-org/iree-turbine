@@ -11,11 +11,15 @@ from pathlib import Path
 import torch
 
 from iree.turbine.kernel.boo.modeling import BooConv2d, replace_conv2d_with_boo_conv
-from iree.turbine.kernel.boo.conv_exports import set_boo_cache
+from iree.turbine.kernel.boo.conv_exports import (
+    set_boo_cache,
+    ConvLaunchableRuntimeCache,
+)
 
 
 class BooConv2dTest(unittest.TestCase):
     def setUp(self):
+        ConvLaunchableRuntimeCache.set_cache_limit(0)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model0 = BooConv2d(
             in_channels=2, out_channels=3, kernel_size=2, bias=False
@@ -84,9 +88,10 @@ class BooConv2dTest(unittest.TestCase):
             )
             model = self.model0.to(memory_format=torch.channels_last)
             _ = model(x)
+            func_names = [i.name for i in cache_dir.glob("*")]
             self.assertIn(
                 "conv_2d_float32_forward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
-                [i.name for i in cache_dir.glob("*")],
+                func_names,
             )
 
     def testReplacementChannelsLast(self):

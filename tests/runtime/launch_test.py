@@ -57,7 +57,7 @@ if torch.cuda.is_available():
 @parameterized_class(["device"], devices)
 class LaunchableTest(unittest.TestCase):
     def testLaunchJit(self):
-        launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
+        launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM, entry_point="main")
         t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(self.device)
         t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32).to(self.device)
         result = launch(t1, t2)
@@ -65,7 +65,7 @@ class LaunchableTest(unittest.TestCase):
         torch.testing.assert_close(expected, result)
 
     def testLaunchPreload(self):
-        launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
+        launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM, entry_point="main")
         launch.preload(self.device)
         launch._loader = None  # Don't let it load anything more.
         t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(self.device)
@@ -75,7 +75,7 @@ class LaunchableTest(unittest.TestCase):
         torch.testing.assert_close(expected, result)
 
     def testLaunchParamsWithoutParams(self):
-        launch = Launchable.jit_compile(MLIR_PARAMS_ASM)
+        launch = Launchable.jit_compile(MLIR_PARAMS_ASM, entry_point="main")
         with self.assertRaisesRegex(
             ValueError, "required module 'io_parameters' not registered"
         ):
@@ -86,7 +86,9 @@ class LaunchableTest(unittest.TestCase):
         param_archive.add_tensor("param", torch.tensor([2, 4, 6, 8], dtype=torch.int32))
         provider = param_archive.index.create_provider()
 
-        launch = Launchable.jit_compile(MLIR_PARAMS_ASM, parameter_providers=[provider])
+        launch = Launchable.jit_compile(
+            MLIR_PARAMS_ASM, parameter_providers=[provider], entry_point="main"
+        )
         launch.preload(self.device)
         t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(self.device)
         t2 = torch.tensor([10, 20, 30, 40], dtype=torch.int32).to(self.device)
@@ -99,14 +101,14 @@ class LaunchableTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             temp_cache = Path(td)
             launch_0 = Launchable.jit_compile(
-                MLIR_NO_PARAMS_ASM, file_cache_dir=temp_cache
+                MLIR_NO_PARAMS_ASM, file_cache_dir=temp_cache, entry_point="main"
             )
             launch_0.preload(self.device)
             files = [f for f in temp_cache.glob("*.vmfb")]
             self.assertTrue(len(files) == 1, "Expected a single cached vmfb.")
             # Make a new launchable from the same source and verify it loads from the cache.
             launch_1 = Launchable.jit_compile(
-                MLIR_NO_PARAMS_ASM, file_cache_dir=temp_cache
+                MLIR_NO_PARAMS_ASM, file_cache_dir=temp_cache, entry_point="main"
             )
             # This is a bit hacky: Intercept the logs to check for whether the vmfb gets loaded.
             old_level = logger.level
@@ -129,7 +131,7 @@ class LaunchableTest(unittest.TestCase):
                 launch_no_jit.preload(self.device)
             # get a launchable with file cache and preload
             launch_jit = Launchable.jit_compile(
-                MLIR_NO_PARAMS_ASM, file_cache_dir=temp_cache
+                MLIR_NO_PARAMS_ASM, file_cache_dir=temp_cache, entry_point="main"
             )
             launch_jit.preload(self.device)
             # preload using the no_jit launchable
@@ -146,7 +148,7 @@ class SameLaunchableDifferentDevicesTest(unittest.TestCase):
     """
 
     def testLaunchJit(self):
-        launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
+        launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM, entry_point="main")
         for d in devices:
             device = d[0]
             t1 = torch.tensor([1, 2, 3, 4], dtype=torch.int32).to(device)
@@ -157,7 +159,7 @@ class SameLaunchableDifferentDevicesTest(unittest.TestCase):
         self.assertEqual(len(devices), len(launch._target_binaries.keys()))
 
     def testLaunchPreload(self):
-        launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM)
+        launch = Launchable.jit_compile(MLIR_NO_PARAMS_ASM, entry_point="main")
         for d in devices:
             device = d[0]
             launch.preload(device)
@@ -176,7 +178,9 @@ class SameLaunchableDifferentDevicesTest(unittest.TestCase):
         param_archive.add_tensor("param", torch.tensor([2, 4, 6, 8], dtype=torch.int32))
         provider = param_archive.index.create_provider()
 
-        launch = Launchable.jit_compile(MLIR_PARAMS_ASM, parameter_providers=[provider])
+        launch = Launchable.jit_compile(
+            MLIR_PARAMS_ASM, parameter_providers=[provider], entry_point="main"
+        )
         for d in devices:
             device = d[0]
             launch.preload(device)
