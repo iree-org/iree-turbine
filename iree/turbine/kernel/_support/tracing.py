@@ -1,24 +1,33 @@
-import functools
-import warnings
 from abc import ABC, abstractmethod
-from types import FunctionType
 from typing import (
     Callable,
+    cast,
     Dict,
     Optional,
-    Tuple,
-    Type,
     TypeVar,
-    cast,
+    Type,
+    Tuple,
 )
+from types import FunctionType
 
-import sympy
+from ..compiler.ir import Operation
+
+import functools
+import warnings
+
 import torch.fx as fx
 
-from .. import ops
-from ..compiler.ir import Operation
-from ..lang.grid import Grid
+from .indexing import (
+    backed_sym_index_type,
+    BoundedRelation,
+    IndexSymbol,
+    IndexingContext,
+)
+import sympy
+
 from ..lang.kernel_buffer import KernelBuffer, KernelBufferMeta
+from ..lang.grid import Grid
+
 from ..lang.types import (
     Index,
 )
@@ -28,20 +37,12 @@ from ..ops.wave_ops import CustomOp, Placeholder, Iterate, Unknown
 from .regions import RegionGraph, SubgraphTracer
 
 from .. import ops
-
 from ..ops.base import (
     OpDispatcher,
 )
-from ..ops.wave_ops import CustomOp
+
 from . import context
 from .dtype import DataType
-from .indexing import (
-    BoundedRelation,
-    IndexingContext,
-    IndexSymbol,
-    backed_sym_index_type,
-)
-from .regions import RegionGraph, SubgraphTracer
 
 try:
     from typing import assert_type

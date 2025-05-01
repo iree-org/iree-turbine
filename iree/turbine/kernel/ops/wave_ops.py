@@ -1971,7 +1971,7 @@ class ScanOp(CustomOp, ABC):
                 )
 
     @property
-    def reduction_dim(self) -> IndexSymbol:
+    def scan_dim(self) -> IndexSymbol:
         return self.dim
 
 

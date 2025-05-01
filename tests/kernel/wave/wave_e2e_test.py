@@ -42,6 +42,7 @@ from .common.utils import (
 )
 from .common.shapes import get_test_shapes as get_common_test_shape
 
+
 default_test_shapes = [
     (1, 27),
     (111, 813),
@@ -1774,22 +1775,31 @@ def test_scalar_cond_copy(shape, request):
 @require_e2e
 @pytest.mark.parametrize(
     "shape",
-    [(1, 27), (1, 64), (51, 64), (128, 64)],
+    [
+        (1, 27),
+        (1, 64),
+        (51, 64),
+        (128, 64),
+        (1, 256),
+        (1, 512),
+    ],
 )
 def test_scanop_cumsum(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
     wave_size = 64
+    num_warps = 1
     BLOCK_M = 1
     BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+    ELEMS_PER_THREAD = (BLOCK_N // num_warps) // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N},
+            vector_shapes={M: 1, N: BLOCK_N // num_warps},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -1802,7 +1812,7 @@ def test_scanop_cumsum(shape, request):
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
-        lhs = tkw.read(a)
+        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         res = tkw.cumsum(lhs, dim=N)
         tkw.write(res, c)
 
