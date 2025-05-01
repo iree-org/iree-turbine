@@ -78,6 +78,8 @@ def emit_global_scan(
 
     scanop_result = last_local_scan_node = local_scan[-1]
 
+    # When we have more than one element per thread, the index will be used of the
+    # non-scan dim in MxN. Otherwise, there  will be a shape mismatch while lowering.
     if local_scan_size > 1:
         target_shape = list(src.type.symbolic_shape)
         target_shape.pop(target_shape.index(scan_dim))
