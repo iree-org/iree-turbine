@@ -14,6 +14,7 @@ This directory contains some code for generating and launching convolution kerne
 
 - `BOO_CACHE_ON=<0 or 1>` : Whether to store launchable artifacts to a file cache. If unset, this will default to 1 (cache on).
 - `BOO_CACHE_DIR=<absolute dir path>` : Indicates where to store launchable artifacts. If unset, will default to `~/.cache/turbine_kernels/boo/`.
+- `BOO_TUNING_SPEC_PATH=<absolute file path>` : Indicates where to load a tuning spec for conv launchables. Some tuning specs are already included in `tuning_specs.mlir`, and the default behavior of `get_launchable` will use this included spec. You can disable using tuning specs via `export BOO_TUNING_SPEC_PATH=""`.
 - `TURBINE_DEBUG` : See `iree.turbine.runtime.logging` for more details. It is useful to set `TURBINE_DEBUG="log_level=DEBUG"` to see debug prints when something goes wrong.
 
 ## Usage from python
@@ -124,6 +125,9 @@ sample_signature = populator.signatures[0]
 # One can also check the cache for this signature
 cache_status = populator.get_cache_status(sample_signature.get_func_name())
 print(cache_status)
+
+# You can also get the list of failed signatures via:
+failed_funcs = populator.get_failures()
 
 conv = get_launchable(sample_signature)
 ```

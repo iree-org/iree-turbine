@@ -1,4 +1,4 @@
-import hashlib
+import os
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Dict, List, Tuple, Sequence, Union
@@ -11,6 +11,7 @@ from iree.turbine.kernel.boo.conv_exports.conv import (
 )
 from iree.turbine.kernel.boo.conv_exports.generate import _load_commands
 from iree.turbine.kernel.boo.conv_exports.launch import (
+    BOO_TUNING_SPEC_PATH,
     _get_module_asm,
     set_boo_cache,
     _out_of_process_compile,
@@ -65,6 +66,8 @@ class CachePopulator:
                 "Downloading optimized kernels is not yet supported."
             )
         self.extra_compile_flags = extra_compile_flags
+        self.mlir_cache_status = {}
+        self.vmfb_cache_status = {}
 
     def _assemble_signatures(self):
         if self.commands_file:
@@ -121,61 +124,46 @@ class CachePopulator:
                 )
                 logger.warning(warning_msg)
             sig_storages = [sig._signature for sig in self.signatures]
-            names = pool.map(_mlir_import, sig_storages)
-            items = [(n, key_hashes_and_flags) for n in names]
+            name_and_status = pool.map(_mlir_import, sig_storages)
         else:
-            items = [(mlir_import(s), key_hashes_and_flags) for s in self.signatures]
+            name_and_status = [mlir_import(s) for s in self.signatures]
 
-        pool.starmap(_out_of_process_compile, items)
+        items = [
+            (name, key_hashes_and_flags)
+            for name, succeeded in name_and_status
+            if succeeded
+        ]
+
+        name_and_compile_status = pool.starmap(_out_of_process_compile, items)
+
         pool.close()
 
+        self.mlir_cache_status = dict(name_and_status)
+        self.vmfb_cache_status = dict(name_and_compile_status)
+
     def get_cache_status(
-        self, func_name: str, cache_dir: Union[str, Path, None] = None
+        self,
+        func_name: str,
     ):
 
-        if not cache_dir:
-            from iree.turbine.kernel.boo.conv_exports.launch import CACHE_BASE_DIR
-
-            cache_dir = CACHE_BASE_DIR
-
-        cache_dir = Path(cache_dir) / func_name
-
-        mlir_import_status = (
-            cache_dir.is_dir() and (cache_dir / f"{func_name}.mlir").is_file()
-        )
-        status = {"mlir_import": mlir_import_status}
-        for d in self.torch_devices:
-            vmfb_path = (
-                cache_dir / f"{get_device_from_torch(d).get_type_key_hash()}.vmfb"
-            )
-            status[d] = mlir_import_status and vmfb_path.is_file()
+        mlir_status = self.mlir_cache_status.get(func_name, False)
+        status = {"mlir_import", mlir_status}
+        for i, d in enumerate(self.torch_devices):
+            status[d] = mlir_status and self.vmfb_cache_status[func_name][i]
 
         return status
 
-    def verify_all(self, cache_dir):
-
-        if not cache_dir:
-            from iree.turbine.kernel.boo.conv_exports.launch import CACHE_BASE_DIR
-
-            cache_dir = CACHE_BASE_DIR
-
+    def get_failures(self):
         # assume we already have assembled signatures
-        func_names = [s.get_func_name() for s in self.signatures]
         failed_funcs = {}
-        for fn in func_names:
-            curr_dir = Path(cache_dir) / fn
-            is_okay = curr_dir.is_dir() and (curr_dir / f"{fn}.mlir").is_file()
-            if not is_okay:
+        for fn in self.mlir_cache_status.keys():
+            if not self.mlir_cache_status[fn]:
                 failed_funcs[fn] = "mlir import failure"
                 continue
             failed_devices = set()
-            for d in self.torch_devices:
-                vmfb_path = (
-                    curr_dir / f"{get_device_from_torch(d).get_type_key_hash()}.vmfb"
-                )
-                if vmfb_path.is_file() and vmfb_path.stat().st_size > 0:
+            for i, d in enumerate(self.torch_devices):
+                if self.vmfb_cache_status[fn][i]:
                     continue
-                vmfb_path.unlink(missing_ok=True)
                 failed_devices.add(str(d))
             if len(failed_devices) == 0:
                 continue
@@ -183,10 +171,12 @@ class CachePopulator:
         return failed_funcs
 
 
-def mlir_import(sig: ConvSignature) -> str:
+def mlir_import(sig: ConvSignature) -> Tuple[str, bool]:
     func_name = sig.get_func_name()
+    success = False
     try:
-        _get_module_asm(sig, func_name),
+        _get_module_asm(sig, func_name)
+        success = True
     except MLIRError as e:
         logger.debug(
             "Signature failed lowering to iree-input: %s. raised exception: %s",
@@ -205,10 +195,10 @@ def mlir_import(sig: ConvSignature) -> str:
             func_name,
             str(e),
         )
-    return func_name
+    return func_name, success
 
 
-def _mlir_import(sig_storage: ConvSignatureStorage) -> str:
+def _mlir_import(sig_storage: ConvSignatureStorage) -> Tuple[str, bool]:
     """
     Runs mlir_import from an underlying ConvSignatureStorage.
     ConvSignature is not pickle-able, so this function can be used instead.
@@ -232,7 +222,7 @@ def cl_main(args, extra_flags: List[str]):
         max_processes=args.max_processes,
         use_multiprocess_import=args.import_multiprocessing,
     )
-    failed_funcs = populator.verify_all(args.cache_dir)
+    failed_funcs = populator.get_failures()
     print("Failures:")
     for fn, failure_str in failed_funcs.items():
         print(f"{fn}  :  {failure_str}")
@@ -298,4 +288,8 @@ def _get_preload_args():
 
 if __name__ == "__main__":
     args, extra_compile_flags = _get_preload_args()
+    if Path(BOO_TUNING_SPEC_PATH).is_file():
+        extra_compile_flags.extend(
+            [f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}"]
+        )
     cl_main(args, extra_compile_flags)
