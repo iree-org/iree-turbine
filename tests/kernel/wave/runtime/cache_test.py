@@ -58,7 +58,7 @@ require_cache = pytest.mark.skipif(
 )
 
 
-def generate_attention_kernel(constraints: list[Constraint]):
+def generate_attention_kernel(constraints: list[Constraint], head_dim: int):
     # Input sizes
     B = tkl.sym.B
     M = tkl.sym.M
@@ -78,6 +78,7 @@ def generate_attention_kernel(constraints: list[Constraint]):
     mapping = tkw.IndexMapping(
         num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
     )
+    scale = math.log2(math.e) * math.sqrt(1.0 / head_dim)
 
     @tkw.wave(constraints)
     def base_attention(
@@ -89,6 +90,7 @@ def generate_attention_kernel(constraints: list[Constraint]):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
+        qk_scaling = tkl.Register[B, M, K2, tkl.f32](scale)
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
@@ -109,6 +111,7 @@ def generate_attention_kernel(constraints: list[Constraint]):
             # acc: tkw.Register[B, N, M, tkl.f32]
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
+            x_j *= qk_scaling
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
@@ -170,7 +173,7 @@ def testSameConfig(tmp_path):
         )
     ]
 
-    base_attention = generate_attention_kernel(constraints)
+    base_attention = generate_attention_kernel(constraints, head_dim=shape[3])
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -278,9 +281,8 @@ def testDifferentDynamicSameBlock(tmp_path):
         )
     ]
 
-    base_attention = generate_attention_kernel(constraints)
-
     shape_0 = (4, 128, 128, 64, 256)
+    base_attention = generate_attention_kernel(constraints, head_dim=shape_0[3])
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
@@ -421,7 +423,7 @@ def testSameSizeDifferentBlock(tmp_path):
         )
     ]
 
-    base_attention = generate_attention_kernel(constraints)
+    base_attention = generate_attention_kernel(constraints, head_dim=shape[3])
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
