@@ -76,6 +76,13 @@ _e2e_test_shapes["gqa_bshd_decode_attention"] = [
     ),
 ]
 
+_e2e_test_shapes["test_block_reduce"] = [
+    (1, 37),
+    (1, 312),
+    (256, 256),
+    (256, 1024),
+]
+
 test_names = [
     "attention",
     "bhsd_attention",
@@ -87,6 +94,7 @@ test_names = [
     "evoformer",
     "gqa_bshd_attention",
     "gqa_bshd_decode_attention",
+    "test_block_reduce",
 ]
 for test in test_names:
     _perf_test_shapes[test] = _e2e_test_shapes[test]

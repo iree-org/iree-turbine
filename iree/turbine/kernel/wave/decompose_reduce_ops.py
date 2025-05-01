@@ -7,6 +7,7 @@
 from ..wave.constraints import (
     Constraint,
     HardwareConstraint,
+    WaveConstraint,
     WorkgroupConstraint,
     TilingConstraint,
 )
@@ -15,25 +16,33 @@ from .._support.indexing import IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import (
     get_custom,
     Add,
+    Allocate,
+    Conditional,
+    CustomOp,
+    Eq,
+    Extract,
     Maximum,
     Minimum,
+    NewScalar,
+    Placeholder,
+    Read,
     ReduceOp,
     ShuffleOp,
-    CustomOp,
-    Extract,
-    Iterate,
+    Write,
 )
 from ..lang.global_symbols import *
 
 from .utils.symbol_utils import subs_idxc
-from .utils.graph_utils import DCE
-from .utils.general_utils import all_equal
+from .utils.graph_utils import DCE, get_outer_node
+from .utils.general_utils import all_equal, delinearize_index
 from .utils.classes import ShuffleMode
 import torch.fx as fx
 import math
 from typing import Callable
+import iree.turbine.kernel.lang as tkl
 
 TKW_COMBINER = {"sum": Add, "max": Maximum, "min": Minimum}
+IDENTITY = {"add": 0.0, "maximum": -1e6, "minimum": 1e6}
 
 
 def determine_shuffle_config(
@@ -182,6 +191,94 @@ def emit_global_reduction(
     return init
 
 
+def emit_interwave_reduction(
+    binary_fn,
+    src,
+    graph,
+    trace,
+    reduction_dim,
+    num_reduction_waves,
+    wg_constraint_map,
+    hardware_constraint,
+):
+    """
+    Reduces partial reduced data from individual wave across the block.
+    1. Allocate shared_memory[num_waves]
+    2. Write individual wave result into shared_memory[wave_id]
+    3. Read shared_memory[:num_waves] and locally reduce
+    """
+
+    # Compute basic HW information.
+    lane_id = (
+        hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
+    )
+
+    # Determining wave id along reduction dim.
+    wave_id = delinearize_index(
+        hardware_constraint.linearized_thread_id
+        // hardware_constraint.threads_per_wave,
+        hardware_constraint.waves_per_block,
+    )
+    reduction_wg_dim = wg_constraint_map[reduction_dim].workgroup_dim
+    reduction_wave_id = wave_id[reduction_wg_dim]
+
+    # Allocate shared_memory[num_waves]
+    allocate_node = Allocate(
+        (reduction_dim,),
+        (num_reduction_waves,),
+        src.type.dtype,
+        SHARED_ADDRESS_SPACE,
+    ).add_to_graph(graph)
+
+    # Write individual wave result into shared_memory[wave_id]
+    # 1. Create subgraph to store condition
+    execute_on_lane0_graph = fx.Graph()
+    subgraph_name = f"execute_on_lane0_{src.name}"
+    placeholder_src = get_graph_node(
+        Placeholder.from_fx_node(src), execute_on_lane0_graph
+    )
+    placeholder_src.type = src.type
+    placeholder_allocate = get_graph_node(
+        Placeholder.from_fx_node(get_custom(allocate_node)), execute_on_lane0_graph
+    )
+    placeholder_allocate.type = get_custom(allocate_node).type
+
+    # 2. Create write into shared memory
+    write = Write(placeholder_src, placeholder_allocate, 1).add_to_graph(
+        execute_on_lane0_graph
+    )
+    write.index = {reduction_dim: IndexSequence(reduction_wave_id, 1, 1)}
+
+    # 3. Create if lane_id == 0 and insert subgraph into root graph.
+    implicit_capture_src = get_outer_node(src)
+
+    lane_id_reg = get_graph_node(NewScalar(lane_id, tkl.i32), graph)
+    zero_reg = get_graph_node(NewScalar(0, tkl.i32), graph)
+    is_lane_0 = get_graph_node(Eq(lane_id_reg, zero_reg), graph)
+    execute_on_lane0 = get_graph_node(
+        Conditional(
+            is_lane_0,
+            subgraph_name=subgraph_name,
+            implicit_captures=[implicit_capture_src, allocate_node],
+        ),
+        graph,
+    )
+    trace.add_subgraph(subgraph_name, execute_on_lane0_graph)
+
+    # Read shared_memory[:num_waves] and locally reduce.
+    # write_dependency on both execute_on_lane0 and write to prevent DCE.
+    read = Read(
+        allocate_node,
+        elements_per_thread=num_reduction_waves,
+        _write_dependency=[execute_on_lane0, write],
+    ).add_to_graph(graph)
+    read.index = {reduction_dim: IndexSequence(0, 1, 1)}
+    interwave_reduction = emit_variable_reduction(
+        binary_fn, read, graph, num_reduction_waves
+    )
+    return interwave_reduction
+
+
 def decompose_reduce_ops(
     trace: CapturedTrace,
     constraints: list[Constraint],
@@ -208,11 +305,18 @@ def decompose_reduce_ops(
     induction_vars = [
         c.induction_var for c in constraints if isinstance(c, TilingConstraint)
     ]
+
+    wave_constraint_map = {
+        c.dim: c for c in constraints if isinstance(c, WaveConstraint)
+    }
+    workgroup_constraint_map = {
+        c.dim: c for c in constraints if isinstance(c, WorkgroupConstraint)
+    }
     subgroup_size = hardware_constraint.threads_per_wave
     for node in reduce_nodes:
         custom = get_custom(node)
         with custom.graph.inserting_before(custom.fx_node):
-            reduction_src, reduction_acc, reduction_dim = node.args
+            reduction_src, reduction_acc, reduction_dim, reduce_block = node.args
             binary_fn = TKW_COMBINER[custom.tkw_op_name]
             if reduction_dim is None:
                 raise ValueError(
@@ -299,6 +403,31 @@ def decompose_reduce_ops(
             if reduction_acc is not None:
                 final_reduction = get_graph_node(
                     binary_fn(reduction_acc, global_reduction), custom.graph
+                )
+
+            if reduce_block:
+                # compute num_warps to reduce across
+                num_reduction_waves = int(
+                    workgroup_constraint_map[reduction_dim].tile_size
+                    // wave_constraint_map[reduction_dim].tile_size
+                )
+                if num_reduction_waves > subgroup_size:
+                    raise NotImplementedError(
+                        "The 2nd stage butterfly shuffle reduces the"
+                        "the reduction outputs from all the wave. Hence, can only handle at most "
+                        "threads_per_wave number of warps."
+                    )
+                # Reduce output between waves, by storing individual wave result into shared memory,
+                # and then doing a butterfly-wave shuffle to reduce them.
+                final_reduction = emit_interwave_reduction(
+                    binary_fn,
+                    final_reduction,
+                    custom.graph,
+                    trace,
+                    reduction_dim,
+                    num_reduction_waves,
+                    workgroup_constraint_map,
+                    hardware_constraint,
                 )
 
             # Replace all uses with global reduction
