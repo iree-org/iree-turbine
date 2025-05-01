@@ -4,7 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import hashlib
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
@@ -21,6 +20,7 @@ from iree.runtime import (
     create_io_parameters_module,
     HalBufferView,
     HalElementType,
+    HalFence,
     ParameterProvider,
     VmContext,
     VmFunction,
@@ -62,9 +62,11 @@ class Launchable:
         self,
         loader: Optional[_Loader],
         parameter_providers: Sequence[ParameterProvider] = (),
+        is_async: bool = True,
     ):
         self._loader = loader
         self._providers = parameter_providers
+        self._is_async = is_async
         # Map of Device.instance_cache_key -> _TargetBinary for a resolved binary.
         self._target_binaries: dict[str, _TargetBinary] = {}
         # Map of Device.type_cache_key -> VmModule for a device-type specific main VmModule
@@ -75,7 +77,7 @@ class Launchable:
         source: Any,
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
-        entry_point: str = "main",
+        entry_point: str = "main$async",
         file_cache_dir: Union[str, Path, None] = None,
     ) -> "Launchable":
         """
@@ -98,7 +100,7 @@ class Launchable:
         file_cache_dir: Union[str, Path],
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
-        entry_point: str = "main",
+        entry_point: str = "main$async",
     ) -> "Launchable":
         """Only loads vmfbs from the provided file_cache_dir. Will raise an error if not found."""
         cache_dir = Path(file_cache_dir)
@@ -118,7 +120,11 @@ class Launchable:
             vmfb = vmfb_path.read_bytes()
             return entry_point, VmModule.copy_buffer(vm_instance, vmfb)
 
-        return Launchable(callback, parameter_providers=parameter_providers)
+        return Launchable(
+            callback,
+            parameter_providers=parameter_providers,
+            is_async=(entry_point.endswith("$async")),
+        )
 
     def preload(self, device: torch.device):
         """Pre-loads (or JIT compiles) for the given torch.device."""
@@ -145,12 +151,14 @@ class Launchable:
         vm_module_callback: Callable[[Device], VmModule],
         *,
         parameter_providers: Sequence[ParameterProvider] = (),
-        entry_point: str = "main",
+        entry_point: str = "main$async",
     ):
         def loader(device: Device) -> _NamedVmModule:
             return entry_point, vm_module_callback(device)
 
-        return Launchable(loader, parameter_providers)
+        return Launchable(
+            loader, parameter_providers, is_async=(entry_point.endswith("$async"))
+        )
 
     def _resolve_target_binary(self, turbine_device: Device) -> _TargetBinary:
         # Try binary cache for specific device:
@@ -226,9 +234,26 @@ class Launchable:
                 f"Cannot invoke Launchable {self} without any Tensor args or an explicit device="
             )
 
+        if self._is_async:
+            external_timepoint = turbine_device.setup_iree_action()
+            wait_fence = HalFence.create_at(
+                turbine_device._main_timeline, turbine_device._main_timepoint - 1
+            )
+            signal_fence = HalFence.create_at(
+                turbine_device._main_timeline, turbine_device._main_timepoint
+            )
+
+            arg_list.push_ref(wait_fence)
+            arg_list.push_ref(signal_fence)
+
         vm_context, vm_function = self._resolve_target_binary(turbine_device)
+
         ret_list = VmVariantList(1)
         vm_context.invoke(vm_function, arg_list, ret_list)
+
+        if self._is_async:
+            turbine_device.finalize_iree_action(external_timepoint)
+
         torch_results = []
         for i in range(len(ret_list)):
             result = ret_list.get_variant(i)

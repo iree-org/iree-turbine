@@ -361,3 +361,9 @@ def initialize_iter_args(trace: CapturedTrace) -> None:
             if isinstance(custom, IterArg):
                 custom.iter_idx = count
                 count += 1
+
+
+def get_outer_node(outer_node: fx.Node) -> fx.Node:
+    while "lifted" in outer_node.meta:
+        outer_node = outer_node.meta["lifted"]
+    return outer_node

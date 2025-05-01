@@ -1605,6 +1605,92 @@ def test_reduce_propagate_broadcast():
 
 
 @run_test
+def test_block_reduce_sum():
+    round_to_divisible = lambda src, denom: sympy.ceiling(src / denom) * denom
+    M = tkl.sym.M
+    N = tkl.sym.N
+    wave_size = 64
+    num_waves = 4
+    BLOCK_M = 1
+
+    # Distribute N dim across num_waves, and pad to disivible by wave_size.
+    ELEMS_PER_WAVE = round_to_divisible(sympy.ceiling(N / num_waves), wave_size)
+    # Minimum number of elems per wave should be size of wave.
+    ELEMS_PER_WAVE = sympy.Max(ELEMS_PER_WAVE, wave_size)
+    BLOCK_N = ELEMS_PER_WAVE * num_waves
+    ELEMS_PER_THREAD = ELEMS_PER_WAVE // wave_size
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(num_waves, 1, 1),
+            vector_shapes={M: 1, N: ELEMS_PER_WAVE},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, ELEMS_PER_WAVE)]
+
+    @tkw.wave(constraints)
+    def test_block_reduce_sum(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+        res = lhs * rhs
+        res = tkw.sum(res, dim=N, block=True)
+        tkw.write(res, c, elements_per_thread=1)
+
+    shape = (4, 512)
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    options = set_default_compile_config(options)
+    test_block_reduce_sum = wave_compile(options, test_block_reduce_sum)
+    print(test_block_reduce_sum.asm)
+
+    # CHECK-LABEL: test_block_reduce_sum
+    # CHECK-DAG: #[[map2:.+]] = affine_map<()[s0] -> ((s0 floordiv 64) mod 4)>
+    # CHECK: %[[tid:.+]] = gpu.thread_id  x
+
+    # Local Reduce
+    # CHECK-COUNT-2: vector.extract_strided_slice
+    # CHECK-NEXT: arith.addf
+
+    # Global Reduce
+    # CHECK-COUNT-6: gpu.shuffle  xor
+    # CHECK-NEXT: %[[global_reduce:.+]] = arith.addf
+
+    # Write partial wave result into shared memory to be accessible by other waves.
+    # CHECK: %[[alloc:.+]] = memref.alloc() : memref<4xf16, #gpu.address_space<workgroup>>
+    # CHECK: scf.if {{.*}} {
+    # CHECK:    %[[wave_id:.+]] = affine.apply #[[map2]]()[%[[tid]]]
+    # CHECK:    vector.store %[[global_reduce]], %[[alloc]][%[[wave_id]]] : memref<4xf16, #gpu.address_space<workgroup>>, vector<1xf16>
+    # CHECK: }
+    # CHECK-NEXT: amdgpu.lds_barrier
+
+    # Get all partial wave results and locally reduce
+    # CHECK: %[[wave_res:.+]] = vector.load %[[alloc]]
+    # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [0]
+    # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [1]
+    # CHECK-NEXT: arith.addf
+    # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [2]
+    # CHECK-NEXT: arith.addf
+    # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [3]
+    # CHECK-NEXT: arith.addf
+
+
+@run_test
 def test_explicit_broadcast():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
