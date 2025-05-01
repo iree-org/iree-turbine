@@ -70,7 +70,7 @@ def emit_global_scan(
         offset for the next lane elements using the information from the previous lane.
         That is why we have another shuffle phase.
 
-    ToDo: Can we make it more efficient?
+    TODO: Can we make it more efficient?
     """
     lane_id = (
         hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
@@ -96,7 +96,7 @@ def emit_global_scan(
 
         # we are explicitly adding index because this pass is being
         # applied after the indexing phase
-        # ToDo (xintin): check if we can replace register with scalar.
+        # TODO (xintin): check if we can replace register with scalar.
         # No point using register for a scalar. Applies to other objects too.
         zero_vec = get_graph_node(
             NewRegister(
@@ -136,7 +136,7 @@ def emit_global_scan(
             ),
             graph,
         )
-        # ToDo: debug why last_local_scan_node.index is setting to None if assigned outside.
+        # TODO: debug why last_local_scan_node.index is setting to None if assigned outside.
         lane_id_ge_one_node.index = last_local_scan_node.index
 
         identity_vec_node = get_graph_node(
