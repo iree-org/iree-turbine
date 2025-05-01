@@ -6,12 +6,13 @@
 
 # Lang, compiler, ops, constraints
 from sympy.utilities.lambdify import lambdastr
+from itertools import chain
 import iree.turbine.kernel.lang as tkl
 from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
-from ..ops.wave_ops import Reduction, CustomOp, get_custom, IterArg
+from ..ops.wave_ops import Iterate, CustomOp, get_custom, IterArg
 from .._support.indexing import IndexingContext, IndexExpr
 from .symbolic_constraints import SymbolicAlias
 from .._support.tracing import (
@@ -46,7 +47,9 @@ from .codegen import WaveEmitter
 from .compile_options import WaveCompileOptions
 from .decompose_reduce_ops import decompose_reduce_ops
 from .decompose_vmma_ops import decompose_vmma_ops
-from .expansion.expansion import expand_graph
+from .decompose_scan_ops import decompose_scan_ops
+from .decompose_dot_mma import decompose_dot_mma
+from .expansion.expansion import expand_graph, add_get_results
 from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
@@ -132,7 +135,7 @@ def _warn_iree_is_too_old():
 
     # Increment only when IREE has breaking changes.
     # We don't want to enforce it on package level or make it a hard error just yet.
-    min_iree_version = Version("3.3.0rc20250228")
+    min_iree_version = Version("3.4.0rc20250422")
     if iree_compiler_ver < min_iree_version:
         warnings.warn(
             f"IREE version is too old: {iree_compiler_ver}, min version: {min_iree_version}"
@@ -241,7 +244,7 @@ class LaunchableWave(Launchable):
 
         def is_reduction(node: fx.Node):
             custom = get_custom(node)
-            return isinstance(custom, Reduction)
+            return isinstance(custom, Iterate)
 
         reduction_nodes = trace.walk(is_reduction)
         for node in reduction_nodes:
@@ -275,7 +278,7 @@ class LaunchableWave(Launchable):
         tiling constraints associated with the reduction.
 
         """
-        is_reduction = lambda node: isinstance(get_custom(node), Reduction)
+        is_reduction = lambda node: isinstance(get_custom(node), Iterate)
         for reduction in trace.walk(is_reduction):
             for tiling_constraint in self.tiling_constraints:
                 if tiling_constraint.dim == get_custom(reduction).axis:
@@ -458,6 +461,7 @@ class LaunchableWave(Launchable):
             partial(self.initialize_workgroup_constraints, trace),
             finalize_indices,
             substitute_vector_shapes,
+            partial(add_get_results, trace),
             partial(infer_types, trace),
             partial(promote_placeholders, trace, self.constraints),
             partial(
@@ -522,6 +526,7 @@ class LaunchableWave(Launchable):
         # Optimizations.
         graph_passes += [
             partial(decompose_vmma_ops, trace, self.constraints),
+            partial(decompose_dot_mma, trace, self.constraints),
             partial(hoist_loop_invariant_ops, trace, self.constraints),
             partial(global_to_shared_gathers, trace, self.constraints),
             partial(minimize_global_loads, trace, self.constraints),
@@ -536,7 +541,10 @@ class LaunchableWave(Launchable):
             partial(remove_chained_extractslice, trace),
         ]
 
-        graph_passes += [partial(decompose_reduce_ops, trace, self.constraints)]
+        graph_passes += [
+            partial(decompose_reduce_ops, trace, self.constraints),
+            partial(decompose_scan_ops, trace, self.constraints),
+        ]
 
         # Schedule the reduction ops.
         # Scheduling should always be used with use_scheduling_barriers=True,
@@ -583,6 +591,7 @@ class LaunchableWave(Launchable):
 
         # Add grid and block dims to kernel launch info.
         # Convert the grid into a lambda that we can use to compute the grid dimension.
+        hw_constraint = get_hardware_constraint(self.constraints)
         options.kernel_launch_info.grid = sympy.lambdify(
             [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
         )
@@ -590,9 +599,17 @@ class LaunchableWave(Launchable):
             [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
         )
         options.kernel_launch_info.blocks = [
-            int(x) for x in get_hardware_constraint(self.constraints).threads_per_block
+            int(x) for x in hw_constraint.threads_per_block
         ]
         options.kernel_launch_info.func_name = self._name
+
+        idxc = IndexingContext.current()
+        for sym, val in zip(
+            [THREAD_0, THREAD_1, THREAD_2, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2],
+            chain(hw_constraint.threads_per_block, self.grid_type.dims),
+        ):
+            if safe_subs(val, idxc.subs) == 1:
+                idxc.bind_constant(sym, 0)
 
         return (
             *self.compile_to_mlir(trace, context, module_op, options=options),

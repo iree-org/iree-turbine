@@ -120,7 +120,7 @@ def get_evoformer_kernel(
         init_sum = tkl.Register[B, BN, H, M, tkl.f32](0.0)
         init_max = tkl.Register[B, BN, H, M, tkl.f32](-1e6)
 
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, BN, H, M, tkl.f32],
             partial_sum: tkl.Register[B, BN, H, M, tkl.f32],

@@ -149,7 +149,7 @@ def test_igemm():
     ):
         c_reg = tkl.Register[M, NF, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, NF, tkl.f32]) -> tkl.Register[M, NF, tkl.f32]:
             a_reg = tkw.read(
                 x,

@@ -67,7 +67,20 @@ def get_mma_dimensional_mapping(
         acc_shape = custom.acc_type.symbolic_shape
 
         try:
-            k = ((set(lhs_shape) & set(rhs_shape)) - set(acc_shape)).pop()
+            reduction_dim_candidates = (set(lhs_shape) & set(rhs_shape)) - set(
+                acc_shape
+            )
+            if len(reduction_dim_candidates) > 1:
+                # Indicates we have batch dimensions as well.
+                # Eliminate these using the vector shapes.
+                for dim, value in hardware_constraint.vector_shapes.items():
+                    if dim in reduction_dim_candidates and value == 0:
+                        reduction_dim_candidates.remove(dim)
+                assert (
+                    len(reduction_dim_candidates) == 1
+                ), f"Expected 1 reduction dimension, got {reduction_dim_candidates}"
+
+            k = reduction_dim_candidates.pop()
         except KeyError as e:
             raise RuntimeError(
                 f"{node}: Invalid MMA shapes\n{lhs_shape=}\n{rhs_shape=}\n{acc_shape=}\n{m=}, {n=}\n{custom}"

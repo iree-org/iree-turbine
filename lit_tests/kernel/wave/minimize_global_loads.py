@@ -7,7 +7,7 @@ import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.promotion import promote_placeholders
 from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
 from iree.turbine.kernel.wave.barriers import add_shared_memory_barriers
-from iree.turbine.kernel.wave.expansion.expansion import expand_graph
+from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
@@ -59,7 +59,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -95,6 +95,7 @@ def test_gemm():
         visualize = False
         IndexingContext.current().finalize()
         initialize_iter_args(trace)
+        add_get_results(trace)
         infer_types(trace)
         promote_placeholders(trace, constraints)
         set_node_indices(trace, constraints)
@@ -121,16 +122,16 @@ def test_gemm():
         # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
-        # CHECK-NEXT: reduction
+        # CHECK-NEXT: iterate
         # CHECK-SAME (K, [%register_M:0_N:0_K:0, %register_M:1_N:1_K:0, %register_M:1_N:0_K:0, %register_M:0_N:1_K:0]
         # CHECK-NEXT: %get_result_M:0_N:0_K:0
-        # CHECK-SAME: (%reduction, 0)
+        # CHECK-SAME: (%iterate, 0)
         # CHECK-NEXT: %get_result_M:0_N:1_K:0
-        # CHECK-SAME: (%reduction, 1)
+        # CHECK-SAME: (%iterate, 1)
         # CHECK-NEXT: %get_result_M:1_N:0_K:0
-        # CHECK-SAME: (%reduction, 2)
+        # CHECK-SAME: (%iterate, 2)
         # CHECK-NEXT: %get_result_M:1_N:1_K:0
-        # CHECK-SAME: (%reduction, 3)
+        # CHECK-SAME: (%iterate, 3)
         # CHECK-NEXT: %write_M:0_N:0_K:0
         # CHECK-SAME: (%get_result_M:0_N:0_K:0, %c, 4, None, ())
         # CHECK-NEXT: %write_M:0_N:1_K:0
@@ -155,11 +156,11 @@ def test_gemm():
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1})
         # CHECK-NEXT: allocate(
         # CHECK-NEXT: allocate(
-        # CHECK-NEXT: reduction(
-        # CHECK-NEXT: get_result(value=reduction, res_idx=0)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=1)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=2)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=3)
+        # CHECK-NEXT: iterate(
+        # CHECK-NEXT: get_result(value=iterate, res_idx=0
+        # CHECK-NEXT: get_result(value=iterate, res_idx=1
+        # CHECK-NEXT: get_result(value=iterate, res_idx=2
+        # CHECK-NEXT: get_result(value=iterate, res_idx=3
         # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0, memory=c
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: write(register_=get_result_M:0_N:1_K:0, memory=c
@@ -169,7 +170,7 @@ def test_gemm():
         # CHECK-NEXT: write(register_=get_result_M:1_N:1_K:0, memory=c
         # CHECK-SAME: index={M: $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $WG1*BLOCK_N + BLOCK_N/2 + Mod($T0, 16) + 16 : 1 : 1})
 
-        # Reduction subgraph:
+        # iterate subgraph:
         # CHECK: %shared_memory_barrier_1
         # CHECK-NEXT: %b
         # CHECK-NEXT: %a
@@ -227,7 +228,7 @@ def test_gemm():
         # CHECK-NEXT: %mma_M:1_N:1_K:2
         # CHECK-NEXT: %mma_M:1_N:1_K:3
 
-        # Reduction subgraph (custom format):
+        # iterate subgraph (custom format):
         # CHECK: Custom format:
         # CHECK-NEXT: shared_memory_barrier()
         # CHECK-NEXT: placeholder(_name=b, _type=Memory[N, K].of(f16))

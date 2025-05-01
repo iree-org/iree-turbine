@@ -158,7 +158,7 @@ def get_gqa_bshd_attention_kernel(
         ZEROF = tkl.Register[N_Q, N_KV, tkl.f32](0.0)
         MIN_INF = tkl.Register[N_Q, N_KV, tkl.f32](-1e6)
 
-        @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(N_KV, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, H, N_Q, tkl.f32],
             partial_sum: tkl.Register[B, H, N_Q, tkl.f32],

@@ -156,7 +156,7 @@ def get_decode_attention_kernels(
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
 
-        @tkw.reduction(U, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(U, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, M, tkl.f32],
             partial_sum: tkl.Register[B, M, tkl.f32],

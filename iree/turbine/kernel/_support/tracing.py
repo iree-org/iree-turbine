@@ -1,49 +1,47 @@
-from abc import ABC, abstractmethod
-from typing import (
-    Optional,
-    TypeVar,
-    Callable,
-    Type,
-    cast,
-    Dict,
-    Tuple,
-)
-from types import FunctionType
-
-from ..compiler.ir import Operation
-
 import functools
 import warnings
+from abc import ABC, abstractmethod
+from types import FunctionType
+from typing import (
+    Callable,
+    Dict,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    cast,
+)
 
+import sympy
 import torch.fx as fx
 
-from .indexing import (
-    backed_sym_index_type,
-    BoundedRelation,
-    IndexExpr,
-    IndexSymbol,
-    IndexingContext,
-)
-import sympy
-
-from ..lang.kernel_buffer import KernelBuffer, KernelBufferMeta
+from .. import ops
+from ..compiler.ir import Operation
 from ..lang.grid import Grid
-
+from ..lang.kernel_buffer import KernelBuffer, KernelBufferMeta
 from ..lang.types import (
     Index,
 )
 from ..lang.wave_types import IndexMapping
-from ..ops.wave_ops import CustomOp, Placeholder, Reduction, Unknown
+from ..ops.wave_ops import CustomOp, Placeholder, Iterate, Unknown
 
 from .regions import RegionGraph, SubgraphTracer
 
 from .. import ops
+
 from ..ops.base import (
     OpDispatcher,
 )
-
+from ..ops.wave_ops import CustomOp
 from . import context
 from .dtype import DataType
+from .indexing import (
+    BoundedRelation,
+    IndexingContext,
+    IndexSymbol,
+    backed_sym_index_type,
+)
+from .regions import RegionGraph, SubgraphTracer
 
 try:
     from typing import assert_type
@@ -106,13 +104,19 @@ class KernelTracer(SubgraphTracer):
     def proxy(self, node: fx.Node) -> fx.Proxy:
         t = node.type
         if t is not None:
-            if isinstance(t, KernelBufferMeta):
+            # adding metadata for scalar placeholder nodes
+            if isinstance(t, DataType) and node.op == "placeholder":
+                node.meta["arg_id"] = self.current_arg_id
+                node.meta["dtype"] = t
+                node.meta["symbolic_type"] = []
+                self.current_arg_id += 1
+            elif isinstance(t, KernelBufferMeta):
                 # Set arg_id meta to placeholder/argument nodes
                 # S.T we don't rely on topological order for correct
                 # argument ordering later on.
                 node.meta["arg_id"] = self.current_arg_id
                 self.current_arg_id += 1
-            if issubclass(t, KernelBuffer):
+            if not isinstance(t, DataType) and issubclass(t, KernelBuffer):
                 return KernelBufferProxy(node, self, t)
         return super().proxy(node)
 
@@ -135,9 +139,14 @@ class CapturedTrace:
         self.region_graph = region_graph
         self.root_graph = root_graph
         self.region_graph.subgraphs[root_graph].subgraphs = {}
-        for name, subgraph in self.region_graph.subgraphs.items():
-            if name != root_graph:
-                self.region_graph.subgraphs[root_graph].subgraphs[name] = subgraph
+        # Allow graphs to access each other.
+        for name, graph in self.region_graph.subgraphs.items():
+            if not hasattr(graph, "subgraphs"):
+                graph.subgraphs = {}
+            # For each graph, add all other graphs as potential subgraphs.
+            for subname, subgraph in self.region_graph.subgraphs.items():
+                if subname != name:
+                    graph.subgraphs[subname] = subgraph
 
     def get_subgraph(self, name: str) -> fx.Graph:
         return self.region_graph.subgraphs[name]

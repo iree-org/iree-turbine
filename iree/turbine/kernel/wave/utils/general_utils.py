@@ -14,7 +14,7 @@ from typing import Any, Callable, Optional
 
 from ..._support.indexing import IndexExpr, IndexSequence, IndexSymbol
 from ...lang.global_symbols import *
-from ...ops.wave_ops import CustomOp, Read, Reduction, Write
+from ...ops.wave_ops import CustomOp, Read, Iterate, Write
 from ..assumptions import Assumption
 from ..constraints import (
     Constraint,
@@ -178,7 +178,7 @@ def find_index_bounds(
 
 
 def get_induction_variable(
-    reduction: Reduction, constraints: list[Constraint]
+    reduction: Iterate, constraints: list[Constraint]
 ) -> IndexSymbol:
     induction_var = None
     for constraint in constraints:
@@ -194,7 +194,7 @@ def get_induction_variable(
 
 
 def get_tiling_constraint(
-    reduction: Reduction, constraints: list[Constraint]
+    reduction: Iterate, constraints: list[Constraint]
 ) -> TilingConstraint:
     for constraint in constraints:
         if (
@@ -284,12 +284,16 @@ def get_fastest_index(indices: dict[IndexExpr, IndexSequence]):
     return max(i for i, size in enumerate(index_sizes) if size == max_size)
 
 
-def get_largest_index_and_size(indices: dict[IndexExpr, IndexSequence]):
+def get_largest_index_and_size(
+    indices: dict[IndexExpr, IndexSequence], custom_op: CustomOp = None
+):
     """
     This function takes in indices of a Node, extract their sizes
     into a list, and then returns the dimension with the largest size.
     In case of ties, it picks the fastest changing dimension.
     """
+    if custom_op and not custom_op.indexing_dims:
+        return ((), 1)
 
     sorted_values = sorted(
         [

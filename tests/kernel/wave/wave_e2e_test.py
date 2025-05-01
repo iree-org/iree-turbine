@@ -4,14 +4,20 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import iree.turbine.kernel as tk
+import json
+import os
+
+import pytest
+import sympy
+import torch
+from torch.testing import assert_close
+
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
-from iree.turbine.kernel.wave.wave_sim import wave_sim
-from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
+from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
+from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
 from iree.turbine.kernel.wave.utils.general_utils import (
     ceildiv,
     get_default_scheduling_params,
@@ -20,25 +26,20 @@ from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
 from iree.turbine.kernel.wave.utils.torch_utils import (
-    to_default_device,
-    device_randn,
     device_randint,
+    device_randn,
     device_randperm,
     device_zeros,
+    to_default_device,
 )
+from iree.turbine.kernel.wave.wave_sim import wave_sim
+
 from .common.utils import (
-    require_e2e,
-    require_cdna3,
-    perf_test,
     param_bool,
+    perf_test,
+    require_cdna3,
+    require_e2e,
 )
-import torch
-from torch.testing import assert_close
-import pytest
-import sympy
-import os
-import torch
-import json
 
 default_test_shapes = [
     (1, 27),
@@ -1067,7 +1068,7 @@ def test_toy_online_softmax(shape):
         init_max = tkl.Register[M, tkl.f32](-1e6)
         init_sum = tkl.Register[M, tkl.f32](0)
 
-        @tkw.reduction(N, init_args=[init_max, init_sum])
+        @tkw.iterate(N, init_args=[init_max, init_sum])
         def repeat(
             partial_max: tkl.Register[M, tkl.f32],
             partial_sum: tkl.Register[M, tkl.f32],
@@ -1165,7 +1166,7 @@ def test_im2col(request):
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 1)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WaveConstraint(K, BLOCK_K)]
-    # TODO: TilingConstraint doesn't work without actual reduction loop, instead
+    # TODO: TilingConstraint doesn't work without actual iterate loop, instead
     # we treat K as WG '1' dimension, but corresponding WG size will be always
     # equal to 1.
     # constraints += [tkw.TilingConstraint(K, BLOCK_K)]
@@ -1289,7 +1290,7 @@ def test_im2col_mma(request):
     ):
         c_reg = tkl.Register[M, NF, tkl.f32](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, NF, tkl.f32]) -> tkl.Register[M, NF, tkl.f32]:
             a_reg = tkw.read(
                 x,
@@ -1551,3 +1552,210 @@ def test_cast(shape, request):
 
     test(a, b)
     assert_close(a.to(dtype=torch.float16), b)
+
+
+@require_e2e
+@require_cdna3
+@pytest.mark.parametrize(
+    "shape", get_test_shapes("test_copy")[:2]
+)  # testing on just two shapes.
+@pytest.mark.parametrize(
+    "tkl_dtype, torch_dtype, arg_vals",
+    [  # arg_vals are c, d, e, res
+        (tkl.i32, torch.int32, (1, 2, 1, 3)),
+        (tkl.f32, torch.float32, (1.0, 2.0, 1.0, 3.0)),
+    ],
+    ids=["i32", "f32"],
+)
+def test_scalar_codegen(shape, tkl_dtype, torch_dtype, arg_vals, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl_dtype],
+        c: tkl_dtype,  # type: ignore
+        d: tkl_dtype,  # type: ignore
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl_dtype],
+    ):
+        res = tkw.read(a)
+        c = tkw.broadcast(c, target_shape=[M, N])
+        d = tkw.broadcast(d, target_shape=[M, N])
+        e = tkl.Register[M, N, tkl_dtype](arg_vals[2]) * c
+        res = res + e + d
+        tkw.write(res, b)
+
+    a = device_zeros(shape, dtype=torch_dtype)
+    b = device_zeros(shape, dtype=torch_dtype)
+    scalar_c = arg_vals[0]
+    scalar_d = arg_vals[1]
+
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+        inplace=False,
+        wave_runtime=True,
+    )
+    test = wave_compile(options, test)
+    test(a, scalar_c, scalar_d, b)
+
+    assert torch.all(b == arg_vals[3]).item()
+
+
+#  This kernel copies of data from a into b if tid.x < threshold.
+#  This test is important to ensure:
+#  1. tkw.Scalar can handle index expressions correctly.
+#  2. Scalars in Wave can be used for comparison/binaryOps
+#     as well as on select ops.
+@require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
+def test_scalar_cond_copy(shape, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = sympy.Max(sympy.Min(shape[1], 256), wave_size)
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+    # multiple of 4 to prevent to not require iota mask.
+    # e.g if each thread has 4 values, and thresh is 10.
+    # then t0 = [0, 1, 2, 3], t1 = [4, 5, 6, 7], t2 = [8, 9, 10, 11],
+    # since t2_tidx_expr = 2 * 4 = 8, which is less than thresh, then
+    # [10, 11] will also not be masked. To fix we'd need the iota mask
+    # but not the main point of this test.
+    thresh_value = 12
+    tidx_expr = THREAD_0 * (BLOCK_N // wave_size) + (WORKGROUP_0 * BLOCK_N)
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        zero = tkw.scalar(0.0, tkl.f16)
+        one = tkw.scalar(1.0, tkl.f16)
+
+        tid = tkw.scalar(tidx_expr, tkl.i32)
+        thresh = tkw.scalar(thresh_value, tkl.i32)
+
+        mask = tkw.select(tid < thresh, one, zero)
+        mask_broadcast = tkw.broadcast(mask, target_shape=[M, N])
+
+        a_reg = tkw.read(a)
+        res = a_reg * mask_broadcast
+        tkw.write(res, b)
+
+    a = device_randn(shape, dtype=torch.float16)
+    b = device_zeros(shape, dtype=torch.float16)
+
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b)
+    # Check for data from tid.x < threshold
+    assert_close(a[:, :thresh_value], b[:, :thresh_value])
+
+    # Check for data from tid.x >= threshold
+    ref_zeros = device_zeros([shape[0], shape[1] - thresh_value])
+    assert_close(ref_zeros, b[:, thresh_value:], check_dtype=False)
+
+
+@require_e2e
+@pytest.mark.parametrize(
+    "shape",
+    [(1, 27), (1, 64), (51, 64), (128, 64)],
+)
+def test_scanop_cumsum(shape, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    wave_size = 64
+    BLOCK_M = 1
+    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+    ):
+        lhs = tkw.read(a)
+        res = tkw.cumsum(lhs, dim=N)
+        tkw.write(res, c)
+
+    torch.manual_seed(1)
+    input = device_zeros(shape, dtype=torch.float16) + 1
+    output = device_zeros(shape, dtype=torch.float16)
+    torch_ref = torch.cumsum((input), dim=-1)
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(input, output)
+    assert_close(torch_ref, output, atol=1e-03, rtol=1e-05)

@@ -8,8 +8,12 @@ from functools import lru_cache
 from hashlib import sha1
 from typing import Any, Callable, Dict, Optional, Union
 from threading import local, Lock
-import warnings
 
+import warnings
+import platform
+import atexit
+
+import ctypes
 import torch
 
 from iree.runtime import (
@@ -17,9 +21,12 @@ from iree.runtime import (
     HalBufferView,
     HalDevice,
     HalDriver,
+    HalExternalTimepoint,
     MemoryType,
     VmInstance,
     VmModule,
+    SemaphoreCompatibility,
+    ExternalTimepointFlags,
     create_hal_module,
     get_driver,
 )
@@ -42,6 +49,97 @@ __all__ = [
     "Device",
     "DeviceState",
 ]
+
+# TODO: move this down into iree as an extention to the
+#       driver api.
+class _HipSemaphoreInterop:
+    def __init__(self):
+        if platform.system() == "Windows":
+            self.library = ctypes.CDLL("amdhip64.dll")
+        else:
+            self.library = ctypes.CDLL("libamdhip64.so")
+        self.library.hipEventCreate.argtypes = [
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.c_int32,
+        ]
+        self.library.hipEventCreate.restype = ctypes.c_int32
+
+        self.library.hipEventRecord.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self.library.hipEventRecord.restype = ctypes.c_int32
+
+        self.library.hipEventDestroy.argtypes = [ctypes.c_void_p]
+        self.library.hipEventDestroy.restype = ctypes.c_int32
+
+        self.library.hipStreamWaitEvent.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+        ]
+        self.library.hipStreamWaitEvent.restype = ctypes.c_int32
+
+        self.library.hipEventQuery.argtypes = [ctypes.c_void_p]
+        self.library.hipEventQuery.restype = ctypes.c_int32
+
+    def get_timepoint_import(self):
+        evt = ctypes.c_void_p(0)
+        ret = self.library.hipEventCreate(evt, 2)
+        if ret != 0:
+            raise RuntimeError("Could not create hip event")
+        ret = self.library.hipEventRecord(
+            evt, ctypes.c_void_p(torch.cuda.current_stream().cuda_stream)
+        )
+        if ret != 0:
+            raise RuntimeError("Could not record hip event")
+
+        timepoint = HalExternalTimepoint()
+        timepoint.compatibility = SemaphoreCompatibility.DEVICE_WAIT
+        timepoint.flags = ExternalTimepointFlags.NONE
+        timepoint.hip_event = evt.value
+        return timepoint
+
+    def wait_exported_timepoint(self, timepoint: HalExternalTimepoint):
+        ret = self.library.hipStreamWaitEvent(
+            ctypes.c_void_p(torch.cuda.current_stream().cuda_stream),
+            ctypes.c_void_p(timepoint.hip_event),
+            0,
+        )
+        if ret != 0:
+            raise RuntimeError("Could not wait on event")
+
+    def destroy_timepoint_event(self, timepoint: HalExternalTimepoint):
+        ret = self.library.hipEventDestroy(ctypes.c_void_p(timepoint.hip_event))
+        if ret != 0:
+            raise RuntimeError(f"Could not destroy event got {ret}")
+        return True
+
+
+class _CudaSemaphoreInterop:
+    def __init__(self):
+        pass
+
+    def get_timepoint_import(self):
+        # For now we don't actually support timepoint import in Cuda.
+        # So we fall back to the synchronous approach.
+        torch.cuda.current_stream().synchronize()
+        return None
+
+    def wait_exported_timepoint(self, timepoint: HalExternalTimepoint):
+        pass
+
+    def destroy_timepoint_event(self, timepoint: HalExternalTimepoint):
+        return True
+
+
+class _NullSemaphoreInterop:
+    def get_timepoint_import(self):
+        return None
+
+    def wait_exported_timepoint(self, timepoint: HalExternalTimepoint):
+        pass
+
+    def destroy_timepoint_event(self, timepoint: HalExternalTimepoint):
+        return True
+
 
 _CONFIG_LOCK = Lock()
 _GLOBAL_VM_INSTANCE: Optional[VmInstance] = None
@@ -144,6 +242,8 @@ class Device:
         "_tx_timeline",
         "_tx_timepoint",
         "_fence_capacity",
+        "_external_timepoints",
+        "_device_interop",
         "compile_target_flags",
         "driver_id",
         "export_torch_tensor",
@@ -178,6 +278,43 @@ class Device:
     # TODO: We should replace this with a target attribute but need an API
     # to derive that.
     compile_target_flags: tuple[str, ...]
+
+    def _try_clean_external_timepoints(self):
+        while len(self._external_timepoints) > 0:
+            if self._main_timeline.query() >= self._external_timepoints[0][1]:
+                self._device_interop.destroy_timepoint_event(
+                    self._external_timepoints[0][0]
+                )
+                self._external_timepoints = self._external_timepoints[1:]
+            else:
+                break
+
+    def setup_iree_action(self):
+        self._try_clean_external_timepoints()
+        timepoint_import = self._device_interop.get_timepoint_import()
+        if timepoint_import is not None:
+            self._main_timepoint += 1
+            self._main_timeline.import_timepoint(self._main_timepoint, timepoint_import)
+            timepoint_export = HalExternalTimepoint()
+            self._main_timepoint += 1
+            self._main_timeline.export_timepoint(
+                self._main_timepoint,
+                3,  # ExternalTimepointType.HIP_EVENT
+                0,  # ExternalTimepointFlags.NONE,
+                timepoint_export,
+            )
+            return timepoint_export
+        else:
+            self._main_timepoint += 1
+            return None
+
+    def finalize_iree_action(self, external_timepoint: HalExternalTimepoint):
+        if external_timepoint is not None:
+            self._try_clean_external_timepoints()
+            self._device_interop.wait_exported_timepoint(external_timepoint)
+            self._external_timepoints.append((external_timepoint, self._main_timepoint))
+        else:
+            self._main_timeline.wait(self._main_timepoint)
 
     def __new__(
         cls,
@@ -221,6 +358,7 @@ class Device:
         self._main_timepoint = 0
         self._tx_timeline = d.create_semaphore(0)
         self._tx_timepoint = 0
+        self._external_timepoints = []
         # Maximum number of semaphores the device uses. Can be increased if doing out of the
         # ordinary scheduling.
         self._fence_capacity = 2
@@ -236,6 +374,7 @@ class Device:
         try:
             import_fn = TORCH_TENSOR_IMPORTERS[driver_id]
             export_fn = TORCH_TENSOR_EXPORTERS[driver_id]
+            self._device_interop = IREE_SEMAPHPORE_INTEROP[driver_id]()
             self.import_torch_tensor = lambda t: import_fn(self, t)
             self.export_torch_tensor = lambda bv, t: export_fn(self, bv, t)
             self.compile_target_flags = DEVICE_TARGET_COMPILE_FLAGS[driver_id]
@@ -249,6 +388,14 @@ class Device:
         # and device characteristics hash.
         self.instance_cache_key = repr(d)
         self._recompute_target_keys()
+
+        # This is a bit unfortunate, but our external timepoints
+        #  are ephemeral, so we need to hold onto them after
+        #  any calls into the device (therefore we have nowhere)
+        #  clean to destroy them. So make sure we destroy
+        #  any remaining external timepoints before the application
+        #  closes.
+        atexit.register(self._try_clean_external_timepoints)
 
     def _recompute_target_keys(self):
         self.type_cache_key = f"{self.driver_id}:{';'.join(self.compile_target_flags)}"
@@ -400,6 +547,13 @@ TORCH_TENSOR_EXPORTERS: dict[
     "hip": _device_export_torch_tensor_cuda_hip,
     "local-sync": _device_export_torch_tensor_cpu,
     "local-task": _device_export_torch_tensor_cpu,
+}
+
+IREE_SEMAPHPORE_INTEROP: dict[str, type] = {
+    "cuda": _CudaSemaphoreInterop,
+    "hip": _HipSemaphoreInterop,
+    "local-sync": _NullSemaphoreInterop,
+    "local-task": _NullSemaphoreInterop,
 }
 
 DEVICE_TARGET_COMPILE_FLAGS: dict[str, tuple[str, ...]] = {

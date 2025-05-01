@@ -135,9 +135,9 @@ def get_igemm_conv2d(
     ):
         c_reg = tkl.Register[M, NF, output_dtype](0.0)
 
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(
-            acc: tkl.Register[M, NF, output_dtype]
+            acc: tkl.Register[M, NF, output_dtype],
         ) -> tkl.Register[M, NF, output_dtype]:
             a_reg = tkw.read(
                 x,

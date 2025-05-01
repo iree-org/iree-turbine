@@ -20,6 +20,7 @@ from iree.turbine.kernel.wave.utils.mma_utils import (
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.ops.wave_ops import get_custom
+from iree.turbine.kernel.wave.utils.graph_utils import initialize_iter_args
 
 
 class TypeInferenceTest(unittest.TestCase):
@@ -87,7 +88,7 @@ class TypeInferenceTest(unittest.TestCase):
 
             # This microkernel encodes the fact that if the reduction
             # dimension were tiled, then we would need to materialize a loop.
-            @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+            @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
             def repeat(
                 partial_max: tkl.Register[B, M, tkl.f32],
                 partial_sum: tkl.Register[B, M, tkl.f32],
@@ -154,6 +155,7 @@ class TypeInferenceTest(unittest.TestCase):
         ):
             trace: CapturedTrace = base_attention()
             IndexingContext.current().finalize()
+            initialize_iter_args(trace)
             infer_types(trace)
             expected_type = {
                 "partial_sum": "Register[B, M].of(f32)",

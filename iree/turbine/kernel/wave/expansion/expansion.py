@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from ..._support.tracing import CapturedTrace
+from ..._support.dtype import DataType
 from typing import Sequence, Type, Any
 from ..constraints import (
     Constraint,
@@ -12,10 +13,11 @@ from ..constraints import (
 from ...ops.wave_ops import (
     Allocate,
     CustomOp,
+    Conditional,
     get_custom,
     Output,
     Write,
-    Reduction,
+    Iterate,
     ReduceOp,
     IterArg,
     Reshape,
@@ -40,6 +42,7 @@ from .expansion_utils import (
     get_reshape_dim_queries,
     remove_original_nodes,
     remove_unused_registers,
+    remove_unused_iter_args,
 )
 from ..utils.graph_utils import (
     get_users,
@@ -70,7 +73,7 @@ class ReductionInfo:
     Contains fixup information for a reduction node.
     """
 
-    def __init__(self, reduction: Reduction):
+    def __init__(self, reduction: Iterate):
         self.reduction = reduction
         self.outputs: dict[int, ExpansionInfo] = {}
         self.init_args: dict[int, ExpansionInfo] = {}
@@ -94,7 +97,7 @@ class ExpansionContext:
     def __init__(self):
         self.expansion_context: dict[ExpansionInfo, CustomOp] = {}
         # Additional operator specific information.
-        self.reduction_context: dict[Reduction, ReductionInfo] = {}
+        self.reduction_context: dict[Iterate, ReductionInfo] = {}
         self.mma_connections: list[tuple[MMA, MMA]] = []
         self.mma_nodes: list[tuple[MMA]] = []
 
@@ -162,6 +165,7 @@ def compute_result_index(
     dim_scaling: dict[IndexSymbol, int],
     node: fx.Node,
     outputs: list[fx.Node],
+    input_index: int,
 ):
     """
     Compute the result index for a reduction node based on the dim
@@ -197,7 +201,6 @@ def compute_result_index(
     local_index += dim_query * dim_strides
 
     """
-    input_index = outputs.index(node)
     get_shape = lambda x: get_custom(x).type.symbolic_shape
     result_index = sum(
         math.prod(dim_scaling[d] for d in get_shape(outputs[i]) if d in dim_scaling)
@@ -224,7 +227,7 @@ def to_dict(t: tuple[int, ...]) -> dict[IndexSymbol, int]:
 
 
 def handle_reduction_entry(
-    reduction: Reduction,
+    reduction: Iterate,
     inputs: list[CustomOp],
     new_node: CustomOp,
     node: CustomOp,
@@ -240,7 +243,9 @@ def handle_reduction_entry(
             outputs = [outputs]
         if reduction not in reduction_context:
             reduction_context[reduction] = ReductionInfo(reduction)
-        result_index = compute_result_index(dim_query, dim_scaling, inputs[0], outputs)
+        result_index = compute_result_index(
+            dim_query, dim_scaling, inputs[0], outputs, new_node.res_idx
+        )
         custom = get_custom(inputs[0])
         key = ExpansionInfo(custom, get_indexed_dims(dim_query, custom))
         reduction_info = reduction_context[reduction]
@@ -253,7 +258,7 @@ def handle_reduction_entry(
 
 
 def handle_reduction_exit(
-    reduction: Reduction,
+    reduction: Iterate,
     inputs: list[CustomOp],
     new_node: CustomOp,
     node: CustomOp,
@@ -267,7 +272,7 @@ def handle_reduction_exit(
         assert len(inputs) == 1, f"Expected one input, got {inputs}"
         reduction = new_node.parent_op()
         result_index = compute_result_index(
-            dim_query, dim_scaling, inputs[0], reduction.init_args
+            dim_query, dim_scaling, inputs[0], reduction.init_args, new_node.iter_idx
         )
         assert reduction in reduction_context, f"Reduction not found: {reduction}"
         new_node.iter_idx = result_index
@@ -392,7 +397,7 @@ def get_mma_reduction_count(arg: MMA, dim_scaling: dict[IndexSymbol, int]) -> in
 
 
 def add_get_results(trace: CapturedTrace):
-    reductions = trace.walk(lambda x: isinstance(get_custom(x), Reduction))
+    reductions = trace.walk(lambda x: isinstance(get_custom(x), Iterate))
     for reduction in reductions:
         reduction = get_custom(reduction)
         if len(reduction.init_args) == 1:
@@ -400,7 +405,6 @@ def add_get_results(trace: CapturedTrace):
             get_result = get_custom(
                 GetResult(reduction.fx_node, 0).add_to_graph(reduction.graph)
             )
-            get_result.vector_shapes = reduction.init_args[0].vector_shapes
             reduction.replace_all_uses_with_except(get_result, [get_result])
 
 
@@ -423,7 +427,13 @@ def populate_inputs(
                 )
             case ReduceOp():
                 try:
-                    reduction_count = dim_scaling[node.reduction_dim]
+                    # Expand reduction to dim scaling amount. When output is scalar, op can only
+                    # be expanded once/count=1, and dim_scaling is null.
+                    reduction_count = (
+                        1
+                        if isinstance(node.type, DataType)
+                        else dim_scaling[node.reduction_dim]
+                    )
                 except KeyError as e:
                     raise RuntimeError(
                         f"Reduction dimension {node.reduction_dim} is not in {dim_scaling} for ReduceOp {node}"
@@ -668,13 +678,16 @@ def fixup_reduction_nodes(
     the fixup is done in the correct order, specifically from the last
     reduction to the first reduction since that is the order in
     which expansion proceeds.
+
     """
     reduction_context = expansion_context.reduction_context
-    reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Reduction))
+    reduction_nodes = trace.walk(lambda x: isinstance(get_custom(x), Iterate))
     for reduction in reversed(reduction_nodes):
         reduction = get_custom(reduction)
         reduction_subgraph = trace.get_subgraph(reduction.subgraph_name)
         output = get_custom(get_last(reduction_subgraph.nodes))
+        if all(x is None for x in output.return_vals):
+            continue
         return_vals = output.return_vals[0]
         if isinstance(return_vals, Sequence):
             return_vals = [get_custom(x) for x in output.return_vals[0]]
@@ -705,16 +718,37 @@ def fixup_reduction_nodes(
                 get_item.graph, get_item.type
             )
             get_result.name = get_item.fx_node.name
+            get_result.index = get_item.index
             get_item.replace_all_uses_with(get_custom(get_result))
             get_item.erase()
 
         remove_original_nodes(return_vals)
 
+    # For conditional nodes, update the condition to use the expanded nodes.
+    for conditional in trace.walk(lambda x: isinstance(get_custom(x), Conditional)):
+        condition = get_custom(conditional).condition
+        new_condition = None
+        for key, value in expansion_context.expansion_context.items():
+            if key.node.fx_node == condition:
+                new_condition = value
+                break
+        if new_condition is None:
+            logger.warning(
+                f"Condition was not expanded: {condition}. Using the original condition."
+            )
+            continue
+        get_custom(conditional).update_arg("condition", new_condition.fx_node)
+        remove_original_nodes([get_custom(condition)])
+
 
 def is_leaf_node(node):
+    # In while loops, we require a set symbol to indicate the next value of the loop
+    # variable and so we include SetSymbol in the leaf nodes.
     custom = get_custom(node)
-    return isinstance(custom, Write) or (
-        isinstance(custom, GetResult) and not custom.users
+    return (
+        isinstance(custom, Write)
+        or (isinstance(custom, GetResult) and not custom.users)
+        or isinstance(custom, SetSymbol)
     )
 
 
@@ -728,8 +762,6 @@ def expand_graph(
     The expansion does a DFS starting at the leaf nodes and expanding them
     to the root of the graph.
     """
-
-    add_get_results(trace)
 
     leaf_ops = [get_custom(node) for node in reversed(trace.walk(is_leaf_node))]
     if not leaf_ops:
@@ -755,3 +787,4 @@ def expand_graph(
     # Remove original nodes in root graph.
     remove_original_nodes(leaf_ops)
     remove_unused_registers(trace)
+    remove_unused_iter_args(trace)

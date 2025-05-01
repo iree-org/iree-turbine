@@ -9,6 +9,7 @@ from ...ops.wave_ops import (
     BinaryPyOp,
     Broadcast,
     CustomOp,
+    GetResult,
     IterArg,
     MMA,
     NestedRegionOp,
@@ -16,7 +17,7 @@ from ...ops.wave_ops import (
     Placeholder,
     Read,
     ReduceOp,
-    Reduction,
+    Iterate,
     Write,
     get_custom,
 )
@@ -53,6 +54,7 @@ import sympy
 from typing import Sequence, Callable, Optional
 from ....support.logging import get_logger
 from copy import deepcopy, copy
+from iree.turbine.kernel._support.dtype import DataType
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -110,7 +112,10 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
             continue
         if isinstance(custom, (Output, NestedRegionOp)):
             continue
+        if isinstance(custom.type, DataType):
+            continue
         assert custom.index, f"Index not set for node {custom.fx_node}: {custom}"
+
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
@@ -224,7 +229,7 @@ def set_thread_independent_index(
     Set the index of the node based on all constraints except the hardware constraint.
     """
     custom = get_custom(node)
-    if isinstance(custom, (Reduction, Placeholder)) and not isinstance(custom, IterArg):
+    if isinstance(custom, (Iterate, Placeholder)) and not isinstance(custom, IterArg):
         return
 
     hw_cons = get_hardware_constraint(constraints)
@@ -286,28 +291,30 @@ def populate_mma_source_indices(
             dim, dim_index, node.mma_type
         )
     node.index = combine_indices(node.index, index)
-    return [
-        (
-            get_custom(node.lhs),
-            specialize_index(index, {MMA_LHS: 1, MMA_RHS: 0, MMA_ACC: 0}),
-            node.vector_shapes,
-        ),
-        (
-            get_custom(node.rhs),
-            specialize_index(index, {MMA_LHS: 0, MMA_RHS: 1, MMA_ACC: 0}),
-            node.vector_shapes,
-        ),
-        (
-            get_custom(node.acc),
-            specialize_index(index, {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}),
-            node.vector_shapes,
-        ),
-        (
-            node,
-            specialize_index(index, {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}),
-            node.vector_shapes,
-        ),
-    ]
+    lhs_tuple = (
+        get_custom(node.lhs),
+        specialize_index(index, {MMA_LHS: 1, MMA_RHS: 0, MMA_ACC: 0}),
+        node.vector_shapes,
+    )
+    rhs_tuple = (
+        get_custom(node.rhs),
+        specialize_index(index, {MMA_LHS: 0, MMA_RHS: 1, MMA_ACC: 0}),
+        node.vector_shapes,
+    )
+    acc_tuple = (
+        get_custom(node.acc),
+        specialize_index(index, {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}),
+        node.vector_shapes,
+    )
+    mma_tuple = (
+        node,
+        specialize_index(index, {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}),
+        node.vector_shapes,
+    )
+    # Remove reduction dim from index of accumulator and mma nodes.
+    del acc_tuple[1][node.reduction_dim]
+    del mma_tuple[1][node.reduction_dim]
+    return [lhs_tuple, rhs_tuple, acc_tuple, mma_tuple]
 
 
 def populate_read_write_source_indices(
@@ -374,18 +381,17 @@ def combine_indices(
 
 def add_nodes_to_sources(
     source: CustomOp,
-    reduction: Reduction,
     fn: Callable,
     source_index: dict[IndexSymbol, IndexSequence],
     source_vector_shapes: dict[IndexSymbol, int],
     sources: list[
         tuple[CustomOp, dict[IndexSymbol, IndexSequence], dict[IndexSymbol, int]]
     ],
-) -> tuple[list[CustomOp], Reduction]:
+) -> list[CustomOp]:
     """
     Populate the sources with the inputs and users of the source node.
     """
-    for args, reduction in [fn(source.fx_node, reduction)]:
+    for args, reduction in [fn(source.fx_node, None)]:
         logger.debug(f"{source.fx_node} -> {args}")
         if not args:
             break
@@ -399,7 +405,7 @@ def add_nodes_to_sources(
                 custom.vector_shapes if custom.vector_shapes else source_vector_shapes
             )
             sources.append((custom, source_index, vector_shapes))
-    return sources, reduction
+    return sources
 
 
 def should_update_index(
@@ -410,7 +416,11 @@ def should_update_index(
 ):
     # Get symbolic shape without any aliased variables.
     aliased_dims = [x.source for x in symbolic_constraints]
-    symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
+
+    if source.type:
+        symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
+    else:
+        symbolic_shape = []
 
     # If all the source indexing dimensions are not present in source vector shapes,
     # we should not update the index.
@@ -468,15 +478,17 @@ def propagate_indices(
                 source, source_index, source_vector_shapes, symbolic_constraints
             ):
                 continue
-            source_index = source.transform_index(source_index)
-            source.index = combine_indices(source.index, source_index)
+            # GetResults inherit their index from the Iterate node
+            # and hence we don't need to update their index.
+            if not isinstance(source, GetResult):
+                source_index = source.transform_index(source_index)
+                source.index = combine_indices(source.index, source_index)
             source.vector_shapes = source_vector_shapes
             append_aliased_shapes(source, symbolic_constraints)
         visited.add(source)
         for func in [get_inputs, get_users]:
-            sources, reduction = add_nodes_to_sources(
+            sources = add_nodes_to_sources(
                 source,
-                reduction,
                 func,
                 source_index,
                 source_vector_shapes,
@@ -732,6 +744,8 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
     """
 
     def get_index(custom: CustomOp):
+        if not custom.indexing_dims:
+            return None
         if isinstance(custom, MMA):
             return custom.acc.index
         return custom.index
@@ -752,8 +766,9 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
         lhs_index = get_index(lhs)
         rhs_index = get_index(rhs)
 
-        lhs_dim, lhs_size = get_largest_index_and_size(lhs_index)
-        rhs_dim, rhs_size = get_largest_index_and_size(rhs_index)
+        # Updatedto broadcast implicitly when we perform mul binary op with scalar.
+        lhs_dim, lhs_size = get_largest_index_and_size(lhs_index, lhs)
+        rhs_dim, rhs_size = get_largest_index_and_size(rhs_index, rhs)
 
         extra_error_info = (
             f"\n{binary_op=}"

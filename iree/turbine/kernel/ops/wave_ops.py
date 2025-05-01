@@ -22,6 +22,7 @@ from ..lang.global_symbols import *
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType, i1
 from .._support.regions import RegionGraph
+from .._support.location import FileLineColInfo
 from .base import OpDispatcher
 import numpy as np
 
@@ -88,13 +89,17 @@ def conditional(
     ...
 
 
-def reduction(
+def iterate(
     axis: IndexExpr, init_args: Sequence["Register"]
 ) -> Callable[[Callable[[AccT], AccT]], AccT]:
     ...
 
 
 def register(shape: tuple[IndexExpr, ...], dtype: DataType, value: float) -> "Register":
+    ...
+
+
+def scalar(dtype: DataType, value: float) -> "Register":
     ...
 
 
@@ -136,6 +141,10 @@ def abs(src: "Register") -> "Register":
     ...
 
 
+def tanh_approx(src: "Register") -> "Register":
+    ...
+
+
 def tanh(src: "Register") -> "Register":
     ...
 
@@ -159,6 +168,14 @@ def broadcast(
 
 
 def sum(
+    src: "Register",
+    acc: Optional["Register"] = None,
+    dim: Optional[IndexExpr | int] = None,
+) -> "Register":
+    ...
+
+
+def cumsum(
     src: "Register",
     acc: Optional["Register"] = None,
     dim: Optional[IndexExpr | int] = None,
@@ -385,6 +402,10 @@ class CustomOp(ABC):
     tkw_op_name: str = field(default="unknown", init=False)
     _tracing_function: Optional[Callable[..., Any]] = field(default=None, init=False)
 
+    @property
+    def location(self) -> Optional[FileLineColInfo]:
+        return getattr(self.fx_node, "location", None)
+
     @classmethod
     def from_fx_node(cls: Type[CustomOpT], node: fx.Node) -> CustomOpT:
         instance = cls(*node.args)
@@ -479,7 +500,13 @@ class CustomOp(ABC):
         """
         Copy core attributes from the current node to the new node.
         """
-        core_attributes = ["index", "vector_shapes", "reduction_dim", "iter_idx"]
+        core_attributes = [
+            "index",
+            "vector_shapes",
+            "reduction_dim",
+            "iter_idx",
+            "location",
+        ]
         for attr_name in core_attributes:
             if hasattr(self.fx_node, attr_name):
                 attr = getattr(self.fx_node, attr_name)
@@ -553,6 +580,7 @@ class CustomOp(ABC):
         node._add_proxy_to_graph(graph)
         node.fx_node.node.tkw_op = cls
         node.fx_node.node.tkw_op_name = cls.tkw_op_name
+        node.fx_node.node.location = FileLineColInfo.capture_current_location()
         return node.fx_node
 
     @property
@@ -761,7 +789,10 @@ class BinaryOpBase(CustomOp, ABC):
     def infer_shape(self) -> Any:
         lhs_type = get_custom(self.lhs).type
         rhs_type = get_custom(self.rhs).type
-        has_same_type = has_same_custom_type(lhs_type, rhs_type)
+        if isinstance(lhs_type, DataType) and isinstance(rhs_type, DataType):
+            has_same_type = True
+        else:
+            has_same_type = has_same_custom_type(lhs_type, rhs_type)
         if has_same_type:
             return lhs_type.symbolic_shape
 
@@ -790,7 +821,12 @@ class BinaryOpBase(CustomOp, ABC):
 @dataclass
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
-        self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
+        if not self.infer_shape():
+            # In scalar codegen, we do not have
+            # the concept of a shape (yet).
+            self.type = self.lhs.type
+        else:
+            self.type = Register[(*self.infer_shape(), get_custom(self.lhs).type.dtype)]
 
 
 @define_py_op(operator.eq)
@@ -806,7 +842,10 @@ class BinaryPyOp(BinaryOpBase, ABC):
 @dataclass
 class ComparisonPyOp(BinaryOpBase, ABC):
     def infer_type(self):
-        self.type = Register[(*self.infer_shape(), i1)]
+        # If lhs & rhs is scalar then shape is empty, then type is i1.
+        # Else, output i1 with shape of lhs/rhs.
+        shape = self.infer_shape()
+        self.type = Register[(*shape, i1)] if shape else i1
 
 
 @define_interface_op("abs")
@@ -815,7 +854,9 @@ class ComparisonPyOp(BinaryOpBase, ABC):
 @define_interface_op("reciprocal")
 @define_interface_op("roundeven")
 @define_interface_op("tanh")
+@define_interface_op("tanh_approx")
 @define_py_op(operator.neg)
+@define_py_op(operator.invert)
 @dataclass
 class UnaryPyOp(CustomOp, ABC):
     """
@@ -980,6 +1021,8 @@ class Placeholder(CustomOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        if not hasattr(self._type, "symbolic_shape"):
+            return []
         return list(self._type.symbolic_shape) if self._type else []
 
     def get_captured_fx_node(self) -> Optional[fx.Node]:
@@ -1028,6 +1071,11 @@ class IterArg(Placeholder):
     @iter_idx.setter
     def iter_idx(self, value):
         self.fx_node.iter_idx = value
+
+    def infer_type(self):
+        parent_op = self.parent_op()
+        init_args = parent_op.init_args
+        self.type = init_args[self.iter_idx].type
 
 
 # Ops modeling TKW operations in the kernel language
@@ -1132,6 +1180,20 @@ class NewRegister(CustomOp):
 
     def infer_type(self):
         self.type = Register[(*self.shape, self.dtype)]
+
+
+@define_op("scalar")
+@dataclass
+class NewScalar(CustomOp):
+    value: float | IndexExpr
+    dtype: DataType
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return list()
+
+    def infer_type(self):
+        self.type = self.dtype
 
 
 @define_op("mma")
@@ -1351,9 +1413,15 @@ class NestedRegionOp(CustomOp):
                 captured_vars.append(nested_node)
         return captured_vars
 
+    def get_outer_node(self, outer_node: fx.Node) -> fx.Node:
+        while "lifted" in outer_node.meta:
+            outer_node = outer_node.meta["lifted"]
+        return outer_node
+
     def get_captured_fx_node(
         self, graph: fx.Graph, outer_node: fx.Node
     ) -> Optional[fx.Node]:
+        outer_node = self.get_outer_node(outer_node)
         for var in self.captured_vars(graph):
             custom = get_custom(var)
             if custom.get_captured_fx_node() == outer_node:
@@ -1397,13 +1465,15 @@ class Conditional(NestedRegionOp):
         return []
 
 
-@define_op("reduction")
+@define_op("iterate")
 @dataclass
-class Reduction(NestedRegionOp):
+class Iterate(NestedRegionOp):
     axis: IndexSymbol
     init_args: Sequence[Any]
     subgraph_name: str
     implicit_captures: Sequence[fx.Proxy]
+    start: Optional[IndexExpr] = None
+    condition: Optional[IndexExpr] = None
 
     @classmethod
     def handle(cls, graph: RegionGraph, *args, **kwargs):
@@ -1415,7 +1485,7 @@ class Reduction(NestedRegionOp):
         def wrapper(f):
             with graph.subtracer() as subtracer:
                 subgraph_name, implicit_captures = subtracer.trace(f)
-            node = Reduction(
+            node = Iterate(
                 *args,
                 **kwargs,
                 subgraph_name=subgraph_name,
@@ -1724,9 +1794,11 @@ class GetResult(CustomOp):
         custom_index = custom.index
         if custom_index is None:
             return None
-        if not isinstance(custom, Reduction):
+        if not isinstance(custom, Iterate):
             return custom_index
-        assert isinstance(custom_index, Sequence) and self.res_idx < len(
+        if not isinstance(custom_index, Sequence):
+            return custom_index
+        assert self.res_idx < len(
             custom.indexing_dims
         ), f"Invalid {custom_index=} with {self.res_idx=} and {custom.indexing_dims=}\n{custom}"
         return custom_index[self.res_idx]
@@ -1840,6 +1912,69 @@ class Broadcast(CustomOp, ABC):
         self.type = Register[(*self.target_shape, src_dtype)]
 
 
+@define_interface_op("cumsum")
+@dataclass
+class ScanOp(CustomOp, ABC):
+    """
+    Base class for all scan-style operations (e.g., cumsum).
+
+    arg: Source tensor/value to scan.
+    init: Optional initial value.
+    dim: Symbolic dimension along which to scan.
+    """
+
+    arg: fx.Node | list[fx.Node]
+    init: Optional[fx.Node] = None
+    dim: Optional[IndexSymbol] = None
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        from ..wave.utils.general_utils import all_equal
+
+        if isinstance(self.arg, Sequence):
+            src_indexings = [get_custom(arg).indexing_dims for arg in self.arg]
+            if not all_equal(src_indexings):
+                raise NotImplementedError(
+                    "All inputs to ScanOp must have same indexing dims."
+                )
+            indexing = src_indexings[0]
+        else:
+            indexing = get_custom(self.arg).indexing_dims
+
+        return [dim for dim in indexing if dim != self.dim]
+
+    def infer_type(self):
+        if isinstance(self.arg, Sequence):
+            src_types = [get_custom(arg).type for arg in self.arg]
+            ref_shape = src_types[0].symbolic_shape
+            ref_dtype = src_types[0].dtype
+            for src_type in src_types:
+                if src_type.symbolic_shape != ref_shape or src_type.dtype != ref_dtype:
+                    raise NotImplementedError(
+                        "ScanOp requires all args to have same shape and dtype."
+                    )
+            src_type = src_types[0]
+        else:
+            src_type = get_custom(self.arg).type
+
+        # normalize dim=-1 or None
+        if self.dim == -1 or self.dim is None:
+            self.dim = src_type.symbolic_shape[-1]
+
+        self.type = Register[(*src_type.symbolic_shape, src_type.dtype)]
+
+        if self.init is not None:
+            init_shape = get_custom(self.init).type.symbolic_shape
+            if init_shape != self.type.symbolic_shape:
+                raise RuntimeError(
+                    f"Init shape {init_shape} must match result shape {self.type.symbolic_shape}"
+                )
+
+    @property
+    def reduction_dim(self) -> IndexSymbol:
+        return self.dim
+
+
 @define_interface_op("max")
 @define_interface_op("min")
 @define_interface_op("sum")
@@ -1849,7 +1984,7 @@ class ReduceOp(CustomOp, ABC):
     Represents a Reduce computation.
 
     arg: Source tensor/value to reduce
-    init: init/accumulator for reducte
+    init: init/accumulator for reduce
     dim: which symbolic dim to reduce.
     """
 
@@ -1889,9 +2024,9 @@ class ReduceOp(CustomOp, ABC):
             src_type = src_types[0]
         else:
             src_type = get_custom(self.arg).type
+        dtype = src_type.dtype
         reduced_dims = [dims for dims in src_type.symbolic_shape if dims != self.dim]
-        dst_type = Register[(*reduced_dims, src_type.dtype)]
-        self.type = dst_type
+        self.type = Register[(*reduced_dims, dtype)] if reduced_dims else dtype
         if (
             self.init is not None
             and get_custom(self.init).type.symbolic_shape != self.type.symbolic_shape
@@ -1933,6 +2068,7 @@ class ShuffleOp(CustomOp):
     arg: fx.Node
     offset: int
     width: int
+    mode: "ShuffleMode"
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

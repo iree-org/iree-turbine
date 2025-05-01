@@ -19,6 +19,7 @@ from ....support.logging import runtime_logger as logger
 __all__ = [
     "is_cache_enabled",
     "clear_cache_dir",
+    "ConvLaunchableRuntimeCache",
     "get_launchable",
     "set_boo_cache",
 ]
@@ -176,9 +177,6 @@ class ConvLaunchableRuntimeCache:
         self.cache_limit = cache_limit
         self.session_cache: OrderedDict[str, Launchable] = OrderedDict()
 
-    def set_cache_limit(self, new_cache_limit: int | None):
-        self.cache_limit = new_cache_limit
-
     def add_to_session_cache(self, key: str, launchable: Launchable):
         self.session_cache[key] = launchable
         self.session_cache.move_to_end(key)
@@ -192,12 +190,27 @@ class ConvLaunchableRuntimeCache:
         return self.session_cache.get(key, None)
 
     @staticmethod
-    def get_launchable_cache(cache_limit: int | None = None):
+    def get_launchable_cache():
         global _launchable_cache
         if "_launchable_cache" in globals():
-            _launchable_cache.set_cache_limit(cache_limit)
             return _launchable_cache
-        return ConvLaunchableRuntimeCache(cache_limit)
+        _launchable_cache = ConvLaunchableRuntimeCache()
+        return _launchable_cache
+
+    @staticmethod
+    def clear():
+        global _launchable_cache
+        if not "_launchable_cache" in globals():
+            return
+        _launchable_cache.session_cache.clear()
+
+    @staticmethod
+    def set_cache_limit(new_cache_limit: int | None):
+        global _launchable_cache
+        if "_launchable_cache" in globals():
+            _launchable_cache.cache_limit = new_cache_limit
+            return
+        _launchable_cache = ConvLaunchableRuntimeCache(new_cache_limit)
 
 
 def get_launchable(
@@ -214,7 +227,7 @@ def get_launchable(
         launch = Launchable.from_file_cache_only(
             cache_dir,
             parameter_providers=(),
-            entry_point=func_name,
+            entry_point=f"{func_name}$async",
         )
     elif BOO_TUNING_SPEC_PATH is not None:
         module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
@@ -231,7 +244,7 @@ def get_launchable(
         launch = Launchable.jit_compile(
             module_asm,
             parameter_providers=(),
-            entry_point=func_name,
+            entry_point=f"{func_name}$async",
             file_cache_dir=cache_dir,
         )
     launch_cache.add_to_session_cache(session_cache_key, launch)

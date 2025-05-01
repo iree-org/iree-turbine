@@ -58,7 +58,7 @@ require_cache = pytest.mark.skipif(
 )
 
 
-def generate_attention_kernel(constraints: list[Constraint]):
+def generate_attention_kernel(constraints: list[Constraint], head_dim: int):
     # Input sizes
     B = tkl.sym.B
     M = tkl.sym.M
@@ -78,6 +78,7 @@ def generate_attention_kernel(constraints: list[Constraint]):
     mapping = tkw.IndexMapping(
         num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
     )
+    scale = math.log2(math.e) * math.sqrt(1.0 / head_dim)
 
     @tkw.wave(constraints)
     def base_attention(
@@ -89,10 +90,11 @@ def generate_attention_kernel(constraints: list[Constraint]):
         c_reg = tkl.Register[B, N, M, tkl.f32](0.0)
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         init_max = tkl.Register[B, M, tkl.f32](-1e6)
+        qk_scaling = tkl.Register[B, M, K2, tkl.f32](scale)
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, M, tkl.f32],
             partial_sum: tkl.Register[B, M, tkl.f32],
@@ -109,6 +111,7 @@ def generate_attention_kernel(constraints: list[Constraint]):
             # acc: tkw.Register[B, N, M, tkl.f32]
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg)
             x_j = tkw.permute(inner_acc, target_shape=[B, M, K2])
+            x_j *= qk_scaling
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
@@ -170,7 +173,7 @@ def testSameConfig(tmp_path):
         )
     ]
 
-    base_attention = generate_attention_kernel(constraints)
+    base_attention = generate_attention_kernel(constraints, head_dim=shape[3])
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -192,8 +195,6 @@ def testSameConfig(tmp_path):
     q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
     v = device_randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape[3])
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q, k, v, attn_mask=None
     ).to(torch.float32)
@@ -217,7 +218,7 @@ def testSameConfig(tmp_path):
 
     # First run/call to kernel, this should compile from scratch.
     output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-    mb = base_attention_0(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    mb = base_attention_0(q, k, v.permute([0, 2, 1]), output)
     assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
     assert (
         cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
@@ -229,9 +230,7 @@ def testSameConfig(tmp_path):
     # Subsequent run/call to kernel, this should be using cached.
     output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
     base_attention_1 = wave_compile(options, base_attention)
-    cached_kernel = base_attention_1(
-        q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output
-    )
+    cached_kernel = base_attention_1(q, k, v.permute([0, 2, 1]), output)
     assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
     assert (
         len(cache_manager.session_cache) == 1
@@ -282,9 +281,8 @@ def testDifferentDynamicSameBlock(tmp_path):
         )
     ]
 
-    base_attention = generate_attention_kernel(constraints)
-
     shape_0 = (4, 128, 128, 64, 256)
+    base_attention = generate_attention_kernel(constraints, head_dim=shape_0[3])
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         LOAD_ELEMS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
@@ -324,8 +322,6 @@ def testDifferentDynamicSameBlock(tmp_path):
     q_shape_0 = device_randn(shape_0[0], shape_0[1], shape_0[3], dtype=torch.float16)
     k_shape_0 = device_randn(shape_0[0], shape_0[4], shape_0[3], dtype=torch.float16)
     v_shape_0 = device_randn(shape_0[0], shape_0[4], shape_0[2], dtype=torch.float16)
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape_0[3])
     torch_ref_shape_0 = torch.nn.functional.scaled_dot_product_attention(
         q_shape_0, k_shape_0, v_shape_0, attn_mask=None
     ).to(torch.float32)
@@ -333,10 +329,7 @@ def testDifferentDynamicSameBlock(tmp_path):
         shape_0[0], shape_0[1], shape_0[2], dtype=torch.float32
     )
     mb = base_attention_0(
-        q_shape_0 * dk_sqrt * log2e,
-        k_shape_0,
-        v_shape_0.permute([0, 2, 1]),
-        output_shape_0,
+        q_shape_0, k_shape_0, v_shape_0.permute([0, 2, 1]), output_shape_0
     )
     assert_close(output_shape_0, torch_ref_shape_0, atol=1e-3, rtol=1e-3)
     assert (
@@ -366,8 +359,6 @@ def testDifferentDynamicSameBlock(tmp_path):
     q_shape_1 = device_randn(shape_1[0], shape_1[1], shape_1[3], dtype=torch.float16)
     k_shape_1 = device_randn(shape_1[0], shape_1[4], shape_1[3], dtype=torch.float16)
     v_shape_1 = device_randn(shape_1[0], shape_1[4], shape_1[2], dtype=torch.float16)
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape_1[3])
     torch_ref_shape_1 = torch.nn.functional.scaled_dot_product_attention(
         q_shape_1, k_shape_1, v_shape_1, attn_mask=None
     ).to(torch.float32)
@@ -380,10 +371,7 @@ def testDifferentDynamicSameBlock(tmp_path):
         shape_1[0], shape_1[1], shape_1[2], dtype=torch.float32
     )
     cached_kernel = base_attention_1(
-        q_shape_1 * dk_sqrt * log2e,
-        k_shape_1,
-        v_shape_1.permute([0, 2, 1]),
-        output_shape_1,
+        q_shape_1, k_shape_1, v_shape_1.permute([0, 2, 1]), output_shape_1
     )
     assert_close(output_shape_1, torch_ref_shape_1, atol=1e-3, rtol=1e-3)
     assert (
@@ -435,7 +423,7 @@ def testSameSizeDifferentBlock(tmp_path):
         )
     ]
 
-    base_attention = generate_attention_kernel(constraints)
+    base_attention = generate_attention_kernel(constraints, head_dim=shape[3])
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -457,8 +445,6 @@ def testSameSizeDifferentBlock(tmp_path):
     q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
     v = device_randn(shape[0], shape[4], shape[2], dtype=torch.float16)
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape[3])
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q, k, v, attn_mask=None
     ).to(torch.float32)
@@ -480,7 +466,7 @@ def testSameSizeDifferentBlock(tmp_path):
 
     # First run/call to kernel, this should compile from scratch.
     output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-    mb_config_0 = base_attention_0(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    mb_config_0 = base_attention_0(q, k, v.permute([0, 2, 1]), output)
     assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
     assert (
         cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
@@ -504,7 +490,7 @@ def testSameSizeDifferentBlock(tmp_path):
     base_attention_1 = wave_compile(options, base_attention)
 
     output = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-    mb_config_1 = base_attention_1(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    mb_config_1 = base_attention_1(q, k, v.permute([0, 2, 1]), output)
     assert_close(output, torch_ref, atol=1e-3, rtol=1e-3)
     assert (
         len(cache_manager.session_cache) == 2
@@ -566,11 +552,8 @@ def testSameConfigDifferentFreeVar(tmp_path):
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
     output = device_zeros(o_shape, dtype=torch.float32)
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape.head_size)
-    # TODO: Add scaling of QK as part of kernel.
     # TODO: Add variant of non-transposed V attention kernel.
-    non_causal_mb = base_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    non_causal_mb = base_attention(q, k, v.permute([0, 2, 1]), output)
     assert (
         cache_manager.cache_misses == 1 and cache_manager.cache_hits == 0
     ), "Expected first call to not be cached."
@@ -603,11 +586,8 @@ def testSameConfigDifferentFreeVar(tmp_path):
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
     output = device_zeros(o_shape, dtype=torch.float32)
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape.head_size)
-    # TODO: Add scaling of QK as part of kernel.
     # TODO: Add variant of non-transposed V attention kernel.
-    causal_mb = causal_attention(q * dk_sqrt * log2e, k, v.permute([0, 2, 1]), output)
+    causal_mb = causal_attention(q, k, v.permute([0, 2, 1]), output)
     assert (
         cache_manager.cache_misses == 2 and cache_manager.cache_hits == 0
     ), "Expected to be cached despite same config, since it has different values for is_causal."

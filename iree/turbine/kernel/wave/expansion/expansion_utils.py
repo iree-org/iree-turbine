@@ -28,6 +28,7 @@ from ...ops.wave_ops import (
 )
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
 import itertools
+from iree.turbine.kernel._support.dtype import DataType
 from ..utils.graph_utils import (
     get_inputs,
 )
@@ -93,6 +94,9 @@ def get_dim_scaling(
                     f"tile_size={tile_size}, wave_count={wave_count}, vector_size={vector_size}"
                 )
             dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
+
+    if isinstance(node.type, DataType):
+        return {}
 
     # Also include dimensions that have no constraints on them and are known.
     idxc = IndexingContext.current()
@@ -269,3 +273,14 @@ def remove_unused_registers(trace: CapturedTrace):
     for node in trace.walk(lambda x: isinstance(get_custom(x), NewRegister)):
         if not node.users:
             node.graph.erase_node(node)
+
+
+def remove_unused_iter_args(trace: CapturedTrace):
+    """
+    Remove duplicate iter args that are not used in the graph.
+    """
+    iter_args = trace.walk(lambda x: isinstance(get_custom(x), IterArg))
+    for node in iter_args:
+        custom = get_custom(node)
+        if not custom.users:
+            custom.erase()

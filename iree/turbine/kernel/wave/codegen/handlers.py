@@ -7,38 +7,30 @@
 import operator
 import sympy
 import math
-from typing import Any, Callable, ClassVar, Optional, List, Type, Dict, Sequence
-import sympy.functions
-import sympy.functions.elementary
-import sympy.functions.elementary.piecewise
+from typing import Any, Callable, Sequence
 import torch.fx as fx
 import torch.utils._pytree as pytree
 
-from ..symbolic_constraints import SymbolicAlias
+from iree.turbine.kernel._support.shaped_type import ShapedType
+
 from ...compiler.ir import (
     Attribute,
     DenseElementsAttr,
-    FloatAttr,
     F16Type,
     F32Type,
     IndexType,
     InsertionPoint,
-    IntegerAttr,
     IntegerType,
     IrType,
-    Location,
     MemRefType,
     OpResult,
-    ShapedType,
     Value,
     VectorType,
     amdgpu_d,
     arith_d,
-    func_d,
     gpu_d,
     math_d,
     memref_d,
-    stream_d,
     scf_d,
     vector_d,
     llvm_d,
@@ -48,6 +40,7 @@ from iree.turbine.aot.support.ir_utils import (
     _is_index_type,
     _is_integer_like_type,
     _is_signed_or_signless_type,
+    get_conversion_op,
 )
 
 # TK infrastructure imports.
@@ -67,6 +60,7 @@ from ...ops.wave_ops import (
     get_custom,
     get_result,
     gt,
+    iterate,
     le,
     log2,
     lt,
@@ -75,8 +69,8 @@ from ...ops.wave_ops import (
     mma,
     permute,
     reciprocal,
-    reduction,
     register,
+    scalar,
     reshape,
     roundeven,
     scheduling_barrier,
@@ -87,22 +81,17 @@ from ...ops.wave_ops import (
     shared_memory_barrier,
     shuffle,
     tanh,
+    tanh_approx,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
 from ...compiler.vector_codegen import (
-    cast_kernel_buffer,
     cast_py_literal,
     cast_py_value,
     cast_vector,
 )
-from ..constraints import (
-    Constraint,
-    HardwareConstraint,
-    MMAType,
-    WorkgroupConstraint,
-    TilingConstraint,
-)
+from ..constraints import HardwareConstraint, GenericDot
+from ..utils.classes import ShuffleMode
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
 
@@ -136,13 +125,42 @@ def handle_register(emitter: WaveEmitter, node: fx.Node):
     vector_shape = cast_py_literal(emitter, shape)
     element_type = IrType.parse(dtype.ir_type_asm())
     vector_type = VectorType.get(vector_shape, element_type)
-    register = arith_d.ConstantOp(
-        vector_type,
-        DenseElementsAttr.get_splat(
-            vector_type, get_constant_attr(value, element_type)
-        ),
-    ).result
+
+    if isinstance(value, sympy.Basic):
+        value = gen_sympy_index(add_emitter_subs(emitter), value)
+        if value.type != vector_type.element_type:
+            conversion_op = get_conversion_op(value.type, vector_type.element_type)
+            value = conversion_op(vector_type.element_type, value)
+        register = vector_d.splat(vector_type, value)
+    else:
+        register = arith_d.ConstantOp(
+            vector_type,
+            DenseElementsAttr.get_splat(
+                vector_type, get_constant_attr(value, element_type)
+            ),
+        ).result
+
     emitter.bind_node_proxy(node, IRProxyValue(register))
+
+
+@handle_op(scalar)
+def handle_scalar(emitter: WaveEmitter, node: fx.Node):
+    try:
+        value, dtype = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    target_type = IrType.parse(dtype.ir_type_asm())
+    i32_type = IntegerType.get_signless(32)
+    if isinstance(value, IndexExpr):
+        scalar_src = gen_sympy_index(add_emitter_subs(emitter), value)
+        scalar_i32 = arith_d.index_cast(i32_type, scalar_src)
+        conversion_op = get_conversion_op(
+            i32_type, target_type, fastmath=get_fast_math_flags(emitter.options)
+        )
+        scalar = conversion_op(target_type, scalar_i32)
+    elif isinstance(value, (int, float)):
+        scalar = arith_d.constant(target_type, value)
+    emitter.bind_node_proxy(node, IRProxyValue(scalar))
 
 
 @handle_op(allocate)
@@ -249,10 +267,13 @@ def handle_apply_expr(emitter: WaveEmitter, node: fx.Node):
 def _to_scalar(val: Value) -> Value:
     src_type = val.type
     if VectorType.isinstance(src_type):
-        assert (
+        assert (src_type.rank == 0 and src_type.shape == []) or (
             src_type.rank == 1 and src_type.shape[0] == 1
-        ), f"Only size 1 vectors are supported: got {src_type}"
-        val = vector_d.extract(val, static_position=[0], dynamic_position=[])
+        ), f"Only size 0 or 1 vectors are supported: got {src_type}"
+        if src_type.rank == 1:
+            val = vector_d.extract(val, static_position=[0], dynamic_position=[])
+        else:
+            val = vector_d.extractelement(val)
 
     return val
 
@@ -273,7 +294,7 @@ def handle_set_symbol(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]):
+def emit_mfma(m: int, n: int, k: int, acc: Value, values: list[Value]) -> Value:
     m = get_constant_attr(m, IntegerType.get_signless(32))
     n = get_constant_attr(n, IntegerType.get_signless(32))
     k = get_constant_attr(k, IntegerType.get_signless(32))
@@ -300,8 +321,6 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    vector_type = VectorType(acc.type)
-
     hardware_constraints = [
         constraint
         for constraint in emitter.constraints
@@ -309,6 +328,12 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     ]
     if not hardware_constraints:
         raise CodegenError("No hardware constraints found.")
+
+    if mma_type is None:
+        mma_type = hardware_constraints[0].mma_type
+
+    if isinstance(mma_type, GenericDot):
+        raise ValidationError("Dot product MMA was not decomposed.")
 
     m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
     result = emit_mfma(m, n, k, acc, values)
@@ -331,7 +356,7 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
     TODO: Handle non-unit vector types such as vector<4xF8> (useful for resolving layouts).
     """
     try:
-        src, offset, width = node.args
+        src, offset, width, mode = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     if not isinstance(offset, int) or not isinstance(width, int):
@@ -342,42 +367,29 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
     offset = cast_py_value(emitter, offset, IntegerType.get_signless(32)).ir_value
     width = cast_py_value(emitter, width, IntegerType.get_signless(32)).ir_value
 
-    if not VectorType.isinstance(src.type):
-        raise NotImplementedError("Scalar src is not implemented yet for shuffleOp.")
-
-    if math.prod(src.type.shape) != 1:
-        raise NotImplementedError("Currently only support unit vector for shuffleOp.")
-
-    # Scalarize (vector<FLOAT_TYPE> -> FLOAT_TYPE).
-    static_pos = [0 for i in range(src.type.rank)]
-    element = vector_d.extract(src, static_position=static_pos, dynamic_position=[])
-    element_original_type = element.type
-
-    # Pad to 32 bit if needed.
-    # TODO Handle and pack non-unit vector type. i.e enable shuffling of vector<4xF8>
-    #      in one shuffle instruction.
-    if not _is_float_type(element.type):
-        raise NotImplementedError("Currently only support shuffle for floats.")
-    if element.type.width > 32:
-        raise ValueError("Cannot shuffle more than 32 bit.")
-    elif element.type.width < 32:
-        element = arith_d.extf(F32Type.get(), element)
-
     # Shuffle data between other threads in a warp.
-    result = gpu_d.shuffle(element, offset, width, gpu_d.ShuffleMode.XOR)
+    SHUFFLE_MODE_MAP = {
+        ShuffleMode.XOR: gpu_d.ShuffleMode.XOR,
+        ShuffleMode.DOWN: gpu_d.ShuffleMode.DOWN,
+        ShuffleMode.UP: gpu_d.ShuffleMode.UP,
+        ShuffleMode.IDX: gpu_d.ShuffleMode.IDX,
+    }
+    result = gpu_d.shuffle(src, offset, width, SHUFFLE_MODE_MAP[mode])[0]
 
-    # Reconstruct shuffled value to original shape and dtype.
-    shuffled_val = result[0]
-    if element_original_type != shuffled_val.type:
-        shuffled_val = arith_d.truncf(element_original_type, shuffled_val)
-    vec_result = vector_d.broadcast(src.type, shuffled_val)
-
-    emitter.bind_node_proxy(node, IRProxyValue(vec_result))
+    emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
 ###############################################################################
 # Binary math Ops
 ###############################################################################
+
+
+def get_rank(mlir_type):
+    if not isinstance(mlir_type, ShapedType):
+        # Not 0 because vector<f32> is rank 0, and in theory,
+        # is broadcastable from pure scalar.
+        return -1
+    return mlir_type.rank
 
 
 def handle_binary_op(op):
@@ -388,23 +400,32 @@ def handle_binary_op(op):
                 lhs, rhs = node.args
             except ValueError as e:
                 raise ValidationError("Malformed arguments") from e
-            lhs = cast_py_value(emitter, lhs)
-            rhs = cast_py_value(emitter, rhs)
+            lhs = cast_py_value(emitter, lhs).ir_value
+            rhs = cast_py_value(emitter, rhs).ir_value
 
-            if lhs.ir_value.type != rhs.ir_value.type:
+            # Handle special scalar/rank-0 cases where lhs/rhs may be
+            # Dtype, vector<Dtype>, or vector<1xDtype>.
+            arg_ranks = [get_rank(arg.type) for arg in (lhs, rhs)]
+            if (arg_ranks[0] != arg_ranks[1]) and max(arg_ranks) <= 1:
+                if arg_ranks[0] > arg_ranks[1]:
+                    # Case where rank(lhs) > rank(rhs)
+                    rhs = vector_d.broadcast(lhs.type, rhs)
+                else:
+                    # Case where rank(rhs) > rank(lhs)
+                    lhs = vector_d.broadcast(rhs.type, lhs)
+
+            if lhs.type != rhs.type:
                 op = get_custom(node)
                 raise ValidationError(
                     f"Expected lhs and rhs to have same type for\n"
                     f"{op}\nGot\n"
-                    f"lhs: {lhs.ir_value.type} vs rhs: {rhs.ir_value.type}\n"
+                    f"lhs: {lhs.type} vs rhs: {rhs.type}\n"
                     f"{lhs=}\n"
                     f"{rhs=}\n"
                     f"lhs={get_custom(op.lhs)}\n"
                     f"rhs={get_custom(op.rhs)}"
                 )
 
-            lhs = lhs.ir_value
-            rhs = rhs.ir_value
             result = binary_fn(lhs, rhs, emitter.options)
 
             emitter.bind_node_proxy(node, IRProxyValue(result))
@@ -503,7 +524,7 @@ def handle_or(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGT, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGT, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -517,7 +538,7 @@ def handle_gt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OGE, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OGE, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -531,7 +552,7 @@ def handle_ge(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_lt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OLT, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OLT, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -545,7 +566,7 @@ def handle_lt(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
 def handle_le(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
     if _is_float_type(element_type):
-        result = arith_d.cmpi(arith_d.CmpFPredicate.OLE, lhs, rhs)
+        result = arith_d.cmpf(arith_d.CmpFPredicate.OLE, lhs, rhs)
     elif _is_integer_like_type(element_type) and _is_signed_or_signless_type(
         element_type
     ):
@@ -635,6 +656,21 @@ def handle_neg(source: Value, options: WaveCompileOptions) -> OpResult:
     return result
 
 
+@handle_unary_op(operator.invert)
+def handle_invert(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_integer_like_type(element_type):
+        if isinstance(source.type, VectorType):
+            assert len(source.type.shape) == 1
+            zero = arith_d.ConstantOp(IndexType.get(), 0)
+            source = vector_d.extractelement(source, position=zero)
+        true = arith_d.ConstantOp(source.type, True)
+        result = arith_d.xori(source, true)
+    else:
+        raise ValidationError(f"Inversion is not supported for type: {element_type}")
+    return result
+
+
 @handle_unary_op(exp2)
 def handle_exp2(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
@@ -683,11 +719,108 @@ def handle_abs(source: Value, options: WaveCompileOptions) -> OpResult:
     return abs
 
 
+@handle_unary_op(tanh_approx)
+def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
+    """
+    Reference (cuda C++):
+      float a = logits;
+      s = fabsf(a);
+      t = -2.0f * log2(e) * s;
+      e = __builtin_amdgcn_exp2f(t);
+      d = e + 1.0f;
+      r = __builtin_amdgcn_rcpf(d);
+      r = e * (-r) + r;
+      if (s < 4.997253418e-3f) r = a;
+      r = copysign(r, a);
+      logits = params.logits_soft_cap * log2(e) * r;
+      return logits;
+
+    Standard definition: tanh(x) = (exp(2x) - 1) / (exp(2x) + 1)
+    For x ≥ 0, this is equivalent to: tanh(x) = (1 - exp(-2x)) / (1 + exp(-2x))
+
+    To leverage hardware exp2, note that: exp(-2x) = 2^(-2x * log2(e))
+    Let: t = -2 * log2(e) * |x|
+    Then: e = exp2(t) ≈ exp(-2|x|)
+    So, for x ≥ 0: tanh(x) ≈ (1 - e) / (1 + e)
+
+    To avoid division, compute: r0 = reciprocal(1 + e) [using hardware intrinsic] and then: r = (1 - e) * r0
+    For very small |x| (below a threshold), we use: tanh(x) ≈ x
+    Finally, copy the sign of x
+    """
+
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        # a = x (source)
+        a = source
+
+        # s = |a|
+        s = math_d.absf(a)
+
+        # Constants:
+        # Compute log2(e)
+        log2e_val = math.log2(math.e)
+
+        # Compute factor = -2 * log2(e)
+        factor_val = -2.0 * log2e_val
+
+        factor = arith_d.ConstantOp(
+            source.type,
+            DenseElementsAttr.get_splat(
+                source.type, get_constant_attr(factor_val, element_type)
+            ),
+        )
+        # t = factor * s
+        t = arith_d.mulf(s, factor, fastmath=get_fast_math_flags(options))
+
+        # e = exp2(t) using fast hardware intrinsic via math_d
+        e = math_d.exp2(t)
+
+        one = arith_d.ConstantOp(
+            source.type,
+            DenseElementsAttr.get_splat(
+                source.type, get_constant_attr(1.0, element_type)
+            ),
+        )
+
+        # d = e + 1.0
+        d = arith_d.addf(e, one, fastmath=get_fast_math_flags(options))
+
+        # r = reciprocal(d)
+        r = arith_d.divf(one, d, fastmath=get_fast_math_flags(options))
+
+        neg_one = arith_d.ConstantOp(
+            source.type,
+            DenseElementsAttr.get_splat(
+                source.type, get_constant_attr(-1.0, element_type)
+            ),
+        )
+
+        # r = e * (-r) + r  (computes (e-1)/(e+1) without direct division)
+        neg_r = arith_d.mulf(r, neg_one, fastmath=get_fast_math_flags(options))
+        temp = arith_d.mulf(e, neg_r, fastmath=get_fast_math_flags(options))
+        r = arith_d.addf(temp, r, fastmath=get_fast_math_flags(options))
+
+        # # If s < threshold, then r = a (for small x, tanh(x) ~ x)
+        # thresh_val = 4.997253418e-3
+        # thresh = arith_d.ConstantOp(
+        #     source.type,
+        #     DenseElementsAttr.get_splat(source.type, get_constant_attr(thresh_val, element_type))
+        # )
+        # cmp = arith_d.cmpf(arith_d.CmpFPredicate.OLT, s, thresh)
+        # r = arith_d.select(cmp, a, r)
+
+        # Copy the sign of a to r: r = copysign(r, a)
+        result = math_d.copysign(r, a)
+    else:
+        raise ValidationError(f"Unhandled operand type for tanh_approx: {element_type}")
+    return result
+
+
 @handle_unary_op(tanh)
 def handle_tanh(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
     if _is_float_type(element_type):
-        result = math_d.tanh(source)
+        result = math_d.tanh(source, fastmath=get_fast_math_flags(options))
     else:
         raise ValidationError(f"Found unhandled operand type for tanh: {element_type}")
     return result
@@ -726,7 +859,7 @@ def handle_conditional(emitter: WaveEmitter, node: fx.Node):
     cond_type = condition.type
     assert IntegerType.isinstance(
         cond_type
-    ), f"Condition must me integer, got {cond_type}"
+    ), f"Condition must be integer, got {cond_type}"
 
     zero = arith_d.constant(cond_type, 0)
     condition = arith_d.cmpi(arith_d.CmpIPredicate.ne, condition, zero)
@@ -743,12 +876,15 @@ def handle_conditional(emitter: WaveEmitter, node: fx.Node):
         scf_d.YieldOp([])
 
 
-@handle_op(reduction)
-def handle_reduction(emitter: WaveEmitter, node: fx.Node):
+@handle_op(iterate)
+def handle_iterate(emitter: WaveEmitter, node: fx.Node):
     try:
-        axis, init_args, subgraph, implicit_capture = node.args
+        axis, init_args, subgraph, implicit_capture, start, condition = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
+
+    if start:
+        return handle_iterate_while(emitter, node)
 
     # Flatten init_args and get IR values for each of them.
     flat_init_args, _ = pytree.tree_flatten((init_args))
@@ -801,6 +937,9 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
             emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)
         # Emit the subgraph.
         return_values = emitter._emit_graph(subgraph)
+        if all(x is None for x in return_values):
+            scf_d.YieldOp([])
+            return
         # Flattern return values.
         flat_ret_values, _ = pytree.tree_flatten((return_values))
         flat_ret_values = [
@@ -815,6 +954,100 @@ def handle_reduction(emitter: WaveEmitter, node: fx.Node):
         scf_d.YieldOp(flat_ret_values)
 
     emitter.bind_node_proxies(node, [IRProxyValue(v) for v in forOp.results_])
+
+
+def add_iter_arg_subs(
+    current_values: list[Value], subs: dict[IndexExpr, Value]
+) -> dict[IndexExpr, Value]:
+    zero = arith_d.ConstantOp(IndexType.get(), 0)
+    for i in range(len(current_values) - 1):
+        value = current_values[i]
+        if isinstance(value.type, VectorType):
+            assert value.type.rank == 1, f"Expected vector of rank 1, got {value.type}"
+            value = vector_d.extractelement(current_values[i], position=zero)
+        if isinstance(value.type, IntegerType):
+            value = arith_d.index_cast(IndexType.get(), value)
+        subs[GET_ITER_ARG(i)] = value
+    return subs
+
+
+def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
+    try:
+        axis, init_args, subgraph, implicit_capture, start, condition = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    init_args = [cast_py_value(emitter, arg) for arg in init_args]
+    init_arg_types = [arg.ir_value.type for arg in init_args]
+
+    # Initialize while loop
+    init_value = cast_py_value(emitter, start).ir_value
+    if isinstance(init_value.type, VectorType):
+        zero = arith_d.ConstantOp(IndexType.get(), 0)
+        init_value = vector_d.extractelement(init_value, position=zero)
+    if isinstance(init_value.type, IntegerType):
+        init_value = arith_d.index_cast(IndexType.get(), init_value)
+
+    assert isinstance(
+        init_value.type, IndexType
+    ), f"Unhandled start type: {init_value.type}"
+
+    init_args = [arg.ir_value for arg in init_args] + [init_value]
+    init_arg_types = init_arg_types + [init_value.type]
+    whileOp = scf_d.WhileOp(init_arg_types, init_args)
+    whileOp.before.blocks.append(*init_arg_types)
+    whileOp.after.blocks.append(*init_arg_types)
+
+    # Before block: condition.
+    current_values = whileOp.before.blocks[0].arguments
+    with InsertionPoint(whileOp.before.blocks[0]):
+        # Replace the axis with a temporary variable when generating the condition
+        # to avoid conflicts with the actual value of the axis.
+        # Here we use sympy.Symbol because we don't want to add any assumptions
+        # on the value of the symbol.
+        condition = condition.subs({axis: sympy.Symbol("$TMP")})
+        subs = add_emitter_subs(emitter)
+        subs[sympy.Symbol("$TMP")] = current_values[-1]
+        # Replace iter args with appropriate values.
+        subs = add_iter_arg_subs(current_values, subs)
+        condition = gen_sympy_index(subs, condition)
+        scf_d.ConditionOp(condition, current_values)
+
+    # After block: body.
+    current_values = whileOp.after.blocks[0].arguments
+    with InsertionPoint(whileOp.after.blocks[0]):
+        subgraph = emitter.trace.get_subgraph(subgraph)
+        # Map the captured variables from the root graph to the subgraph
+        for root_v, subgraph_v in zip(
+            implicit_capture, get_custom(node).captured_vars(subgraph)
+        ):
+            emitter._node_values[subgraph_v] = emitter.lookup_node_values(root_v)
+
+        # Map the iteration variable
+        emitter.induction_vars[axis] = current_values[-1]
+
+        # Map the iteration arguments
+        iter_args = get_custom(node).iter_args(subgraph)
+        for i, arg in enumerate(iter_args):
+            if i < len(current_values) - 1:
+                emitter.bind_node_proxy(arg, IRProxyValue(current_values[i]))
+
+        # Emit the subgraph
+        return_values = emitter._emit_graph(subgraph)
+        # In case there are no init values, we just return the
+        # updated value of the iteration variable.
+        if all(x is None for x in return_values):
+            scf_d.YieldOp([emitter.dynamic_dims[axis]])
+            return
+
+        # Flatten return values and yield them
+        flat_ret_values, _ = pytree.tree_flatten((return_values))
+        flat_ret_values = [
+            cast_py_value(emitter, value).ir_value for value in flat_ret_values
+        ]
+        scf_d.YieldOp(flat_ret_values + [emitter.dynamic_dims[axis]])
+
+    emitter.bind_node_proxies(node, [IRProxyValue(v) for v in whileOp.results_])
 
 
 ###############################################################################
@@ -1030,44 +1263,10 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
     if src_vector_type == dst_vector_type:
         emitter.bind_node_proxy(node, IRProxyValue(vector_src))
         return
-
-    is_src_float = _is_float_type(src_elem_type)
-    is_dst_float = _is_float_type(dst_elem_type)
-    is_src_int = _is_integer_like_type(src_elem_type)
-    is_dst_int = _is_integer_like_type(dst_elem_type)
-    if (
-        is_src_int
-        and is_dst_int
-        and (_is_index_type(src_elem_type) or _is_index_type(dst_elem_type))
-    ):
-        casted_vector = arith_d.index_cast(dst_vector_type, vector_src)
-        emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
-        return
-
-    conversion_ops = {
-        (True, False): arith_d.fptosi,
-        (False, True): arith_d.sitofp,
-    }
-
-    cast_ops = {
-        (True, True): arith_d.extf,
-        (True, False): arith_d.extsi,
-        (False, True): arith_d.truncf,
-        (False, False): arith_d.trunci,
-    }
-
-    if (is_src_float and is_dst_float) or (is_src_int and is_dst_int):
-        casted_vector = cast_ops[
-            (
-                src_vector_type.element_type.width < dst_elem_type.width,
-                is_dst_float and is_src_float,
-            )
-        ](dst_vector_type, vector_src)
-    else:
-        casted_vector = conversion_ops[(is_src_float, is_dst_float)](
-            dst_vector_type, vector_src
-        )
-
+    conversion_op = get_conversion_op(
+        src_elem_type, dst_elem_type, fastmath=get_fast_math_flags(emitter.options)
+    )
+    casted_vector = conversion_op(dst_vector_type, vector_src)
     emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
 
 

@@ -11,7 +11,7 @@ from iree.turbine.kernel.wave.analysis.index_sequence_analysis import (
 from iree.turbine.kernel.wave.promotion import promote_node, promote_placeholders
 from iree.turbine.kernel.wave.barriers import add_shared_memory_barriers
 from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
-from iree.turbine.kernel.wave.expansion.expansion import expand_graph
+from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel._support.tracing import CapturedTrace
@@ -93,6 +93,7 @@ def test_read_write_equal_sizes():
         graph: fx.Graph = trace.get_root_graph()
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
+        add_get_results(trace)
         infer_types(trace)
         promote_node(read_node, None, SHARED_ADDRESS_SPACE, constraints)
         set_node_indices(trace, constraints)
@@ -151,7 +152,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -180,6 +181,7 @@ def test_gemm():
         graph: fx.Graph = trace.get_subgraph("region_0")
         IndexingContext.current().finalize()
         initialize_iter_args(trace)
+        add_get_results(trace)
         infer_types(trace)
         read_nodes = get_read_nodes(graph)
         for read_node in read_nodes:
@@ -203,16 +205,16 @@ def test_gemm():
         # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
-        # CHECK-NEXT: reduction
+        # CHECK-NEXT: iterate
         # CHECK-SAME: (K, [%register_M:0_N:0_K:0, %register_M:0_N:1_K:0, %register_M:1_N:0_K:0, %register_M:1_N:1_K:0]
         # CHECK-NEXT: %get_result_M:0_N:0_K:0
-        # CHECK-SAME: (%reduction, 0)
+        # CHECK-SAME: (%iterate, 0)
         # CHECK-NEXT: %get_result_M:0_N:1_K:0
-        # CHECK-SAME: (%reduction, 1)
+        # CHECK-SAME: (%iterate, 1)
         # CHECK-NEXT: %get_result_M:1_N:0_K:0
-        # CHECK-SAME: (%reduction, 2)
+        # CHECK-SAME: (%iterate, 2)
         # CHECK-NEXT: %get_result_M:1_N:1_K:0
-        # CHECK-SAME: (%reduction, 3)
+        # CHECK-SAME: (%iterate, 3)
         # CHECK-NEXT: %write_M:0_N:0_K:0
         # CHECK-SAME: (%get_result_M:0_N:0_K:0, %c, 4, None, ())
         # CHECK-NEXT: %write_M:0_N:1_K:0
@@ -223,7 +225,7 @@ def test_gemm():
         # CHECK-SAME: (%get_result_M:1_N:1_K:0, %c, 4, None, ())
         # CHECK-NEXT: return None
 
-        # Reduction subgraph:
+        # iterate subgraph:
         # CHECK: %b
         # CHECK: %a
         # CHECK-NEXT: %acc_M:0_N:0_K:0

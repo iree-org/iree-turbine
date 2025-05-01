@@ -2,7 +2,7 @@ from ..constraints import Constraint
 from ..._support.indexing import IndexSymbol
 from ..._support.tracing import CapturedTrace
 from ...ops.wave_ops import (
-    Reduction,
+    Iterate,
     IterArg,
     Placeholder,
     Output,
@@ -214,7 +214,7 @@ def add_missing_registers(graph: fx.Graph):
 
 def construct_prologue(
     reduction_subgraph: fx.Graph,
-    reduction: Reduction,
+    reduction: Iterate,
     partitioned_graph: list[dict[int, fx.Node]],
     num_stages: int,
     initiation_interval: int,
@@ -374,7 +374,7 @@ def push_rotating_registers(
 
 def construct_kernel(
     reduction_subgraph: fx.Graph,
-    reduction: Reduction,
+    reduction: Iterate,
     partitioned_graph: list[dict[int, fx.Node]],
     num_stages: int,
     initiation_interval: int,
@@ -384,7 +384,7 @@ def construct_kernel(
     node_map: dict[fx.Node, fx.Node],
     visualize: bool = False,
     use_scheduling_barriers: bool = False,
-) -> tuple[Reduction, fx.Graph]:
+) -> tuple[Iterate, fx.Graph]:
     """
     Construct the kernel of the pipelined loop.
     First, we construct a new reduction op with an empty graph.
@@ -398,15 +398,15 @@ def construct_kernel(
     logger.debug("=====================================")
 
     with reduction.graph.inserting_before(reduction.fx_node):
-        pipelined_reduction = Reduction(
+        pipelined_reduction = Iterate(
             reduction.axis,
             init_args=reduction.init_args + flatten_dict_values(rotating_registers),
-            subgraph_name="pipelined_reduction",
+            subgraph_name="pipelined_iterate",
             implicit_captures=reduction.implicit_captures,
         ).add_to_graph(reduction.graph, type=reduction.type)
         pipelined_reduction.index = reduction.index
         pipelined_reduction_graph = fx.Graph()
-        reduction.graph.subgraphs["pipelined_reduction"] = pipelined_reduction_graph
+        reduction.graph.subgraphs["pipelined_iterate"] = pipelined_reduction_graph
 
         # Update the argument map for the new reduction.
         arg_context = ArgumentContext(
@@ -476,8 +476,8 @@ def construct_kernel(
 
 def construct_epilogue(
     reduction_subgraph: fx.Graph,
-    reduction: Reduction,
-    pipelined_reduction: Reduction,
+    reduction: Iterate,
+    pipelined_reduction: Iterate,
     partitioned_graph: list[dict[int, fx.Node]],
     num_stages: int,
     initiation_interval: int,
@@ -597,7 +597,7 @@ def construct_epilogue(
 
 def construct_pipelined_loop(
     trace: CapturedTrace,
-    reduction: Reduction,
+    reduction: Iterate,
     graph: fx.Graph,
     constraints: list[Constraint],
     num_stages: int,

@@ -243,7 +243,7 @@ def get_paged_decode_attention_kernels(
         )
         tkw.set_symbol(SPLIT_LEN, seq_length_per_split)
 
-        @tkw.reduction(K2, init_args=[init_max, init_sum, new_acc])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, new_acc])
         def loop(
             partial_max: tkl.Register[S, B, tkl.f32],
             partial_sum: tkl.Register[S, B, tkl.f32],
@@ -315,7 +315,7 @@ def get_paged_decode_attention_kernels(
         init_sum = tkl.Register[S, B, tkl.f32](0.0)
         init_max = tkl.Register[S, B, tkl.f32](-1e6)
 
-        @tkw.reduction(U, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(U, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[S, B, tkl.f32],
             partial_sum: tkl.Register[S, B, tkl.f32],

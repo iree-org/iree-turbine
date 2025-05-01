@@ -70,7 +70,7 @@ def test_extend_attention():
     # CHECK-LABEL: test_extend_attention
     # CHECK-DAG:            #[[map0:.*]] = affine_map<()[s0] -> (s0 ceildiv 64)>
     # CHECK-DAG:            #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16)>
-    # CHECK:              stream.executable.export public @extend_attention workgroups(%[[ARG0:.+]]: index, %[[ARG1:.+]]: index, %[[ARG2:.+]]: index, %[[ARG3:.+]]: index, %[[ARG4:.+]]: index)
+    # CHECK:              stream.executable.export public @extend_attention workgroups(%[[ARG0:.+]]: index, %[[ARG1:.+]]: index, %[[ARG2:.+]]: index, %[[ARG3:.+]]: index)
     # CHECK-DAG:            %[[C1:.*]] = arith.constant 1 : index
     # CHECK:                %[[NQ_GRID:.+]] = affine.apply #[[map0]]()[%[[ARG3]]]
     # CHECK:                %[[NUM_SEQ:.+]] = affine.apply #[[map1]]()[%[[ARG2]]]
@@ -188,7 +188,19 @@ def test_causal_extend_attention():
 
     # softcap/logitcap modifier:
     # CHECK-COUNT-4:            arith.mulf
-    # CHECK-COUNT-2:            math.tanh
+
+    # Tanh Approximation
+    # CHECK:                    math.absf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               math.exp2
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               arith.divf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               math.copysign
+
+    # Apply softcap/logitcap modifier
     # CHECK-COUNT-2:            arith.mulf
 
     # unaligned attention masking:
@@ -200,7 +212,7 @@ def test_causal_extend_attention():
     # CHECK-COUNT-8:            amdgpu.mfma
 
     # Expressions to compute loop bound based on causal mask
-    # CHECK:                %[[NQ_TILE_UPPER_BOUND:.*]] = affine.apply #map32()[%[[workgroup_id_0]]]
+    # CHECK:                %[[NQ_TILE_UPPER_BOUND:.*]] = affine.apply #[[map32]]()[%[[workgroup_id_0]]]
     # CHECK:                %[[NQ_LOOP_BOUND_SPLAT:.*]] = vector.splat %[[NQ_TILE_UPPER_BOUND]]
     # CHECK:                arith.minsi {{.*}}, %[[NQ_LOOP_BOUND_SPLAT]]
 
@@ -220,7 +232,19 @@ def test_causal_extend_attention():
 
     # softcap/logitcap modifier:
     # CHECK-COUNT-4:            arith.mulf
-    # CHECK-COUNT-2:            math.tanh
+
+    # Tanh Approximation
+    # CHECK:                    math.absf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               math.exp2
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               arith.divf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               math.copysign
+
+    # Apply softcap/logitcap modifier
     # CHECK-COUNT-2:            arith.mulf
 
     # unaligned and causal masking:
@@ -288,7 +312,8 @@ def test_causal_extend_attention_32x32x8():
     extend_attention = wave_compile(options, extend_attention)
     print(extend_attention.asm)
 
-    # CHECK-LABEL:       func.func @extend_attention
+    # CHECK-LABEL:       test_causal_extend_attention_32x32x8
+    # CHECK:             func.func @extend_attention
     # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
     # CHECK-DAG:            %[[ALLOC1:.*]] = memref.alloc() : memref<32x1x68xf16, #gpu.address_space<workgroup>>
     # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
@@ -305,7 +330,19 @@ def test_causal_extend_attention_32x32x8():
 
     # softcap/logitcap modifier:
     # CHECK-COUNT-2:            arith.mulf
-    # CHECK-COUNT-1:            math.tanh
+
+    # Tanh Approximation
+    # CHECK:                    math.absf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               math.exp2
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               arith.divf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               math.copysign
+
+    # Apply softcap/logitcap modifier
     # CHECK-COUNT-1:            arith.mulf
 
     # unaligned attention masking:
@@ -329,7 +366,19 @@ def test_causal_extend_attention_32x32x8():
 
     # softcap/logitcap modifier:
     # CHECK-COUNT-2:            arith.mulf
-    # CHECK-COUNT-1:            math.tanh
+
+    # Tanh Approximation
+    # CHECK:                    math.absf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               math.exp2
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               arith.divf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.mulf
+    # CHECK-NEXT:               arith.addf
+    # CHECK-NEXT:               math.copysign
+
+    # Apply softcap/logitcap modifier
     # CHECK-COUNT-1:            arith.mulf
 
     # unaligned and causal masking:

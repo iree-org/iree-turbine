@@ -1,4 +1,7 @@
-from typing import Any, List, Dict
+from typing import Any
+
+import torch
+from copy import copy
 from .._support.indexing import IndexingContext, IndexExpr
 from ..compiler import kernel_codegen, host_codegen
 from .compile_options import WaveCompileOptions
@@ -32,15 +35,26 @@ class WaveKernel:
         Returns the assembly code of the compiled kernel.
         """
 
+        # Segregate args into kernel tensor and scalars.
+        scalar_args = []
+        kernel_inputs, kernel_outputs = [], []
+
         # Partition arguments into kernel inputs and outputs.
-        kernel_inputs = []
-        kernel_outputs = []
-        for arg, usage in zip(args, self.options.kernel_usages):
+        # ToDo: we should expose the `usage` as a property in binding desc
+        #       so that we can reduce the code and use `zip``.
+        usage_idx = 0
+        for arg in args:
+            if not isinstance(arg, torch.Tensor):
+                scalar_args.append(arg)
+                continue
+            usage = self.options.kernel_usages[usage_idx]
+            usage_idx += 1
             if usage == kernel_codegen.KernelBufferUsage.INPUT:
                 kernel_inputs.append(arg)
-
             if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                 kernel_outputs.append(arg)
+
+        kernel_inputs.extend(scalar_args)
 
         invoke_vmfb(self.executable, self.options, kernel_inputs, kernel_outputs)
         return self.asm
@@ -69,7 +83,10 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # Create an indexing context and populate substitutions.
     push(IndexingContext, IndexingContext())
     idxc = IndexingContext.current()
-    idxc.subs = options.subs
+
+    # Make a copy of the substitutions to avoid mutating the original
+    # options.subs.
+    idxc.subs = copy(options.subs)
 
     # For the wave runtime, we need the hsaco binary. So we turn on
     # dumping of binaries and store in wave runtime directory. If we
@@ -89,9 +106,11 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     options.kernel_sig = kernel_sig
 
     host_codegen.isolated_test_call(
-        mb, exe, kernel_sig, entrypoint_name, options.dynamic_symbols
+        mb, exe, kernel_sig, entrypoint_name, options.func_name, options.dynamic_symbols
     )
-    asm = mb.module_op.get_asm()
+    asm = mb.module_op.get_asm(
+        enable_debug_info=options.debug_info, use_local_scope=options.use_local_scope
+    )
     if options.print_mlir:
         print(asm)
 

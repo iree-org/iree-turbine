@@ -13,6 +13,7 @@ from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.ops.wave_ops import *
 from iree.turbine.kernel.wave.utils.general_utils import run_test
 from iree.turbine.kernel.wave.utils.print_utils import print_trace
+from iree.turbine.kernel.wave.utils.graph_utils import initialize_iter_args
 
 
 def get_read_nodes(graph: fx.Graph) -> list[CustomOp]:
@@ -71,6 +72,7 @@ def test_read_write_equal_sizes():
         graph: fx.Graph = trace.get_root_graph()
         read_node = get_read_nodes(graph)[0]
         IndexingContext.current().finalize()
+        initialize_iter_args(trace)
         infer_types(trace)
         promote_node(read_node, None, SHARED_ADDRESS_SPACE, constraints)
         print_trace(trace, False)
@@ -121,6 +123,7 @@ def test_read_write_equal_sizes_different_address_spaces():
     ):
         trace: CapturedTrace = read_write_same_size_different_address_spaces()
         IndexingContext.current().finalize()
+        initialize_iter_args(trace)
         infer_types(trace)
         promote_placeholders(trace, constraints)
         print_trace(trace, False)
@@ -148,7 +151,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -178,6 +181,7 @@ def test_gemm():
         graph: fx.Graph = trace.get_subgraph("region_0")
         read_nodes = get_read_nodes(graph)
         IndexingContext.current().finalize()
+        initialize_iter_args(trace)
         infer_types(trace)
         for read_node in read_nodes:
             promote_node(read_node, None, SHARED_ADDRESS_SPACE, constraints)
@@ -192,11 +196,11 @@ def test_gemm():
         # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
         # CHECK-NEXT: %allocate
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
-        # CHECK-NEXT: reduction
+        # CHECK-NEXT: iterate
         # CHECK-NEXT: %write
-        # CHECK-SAME: (%reduction, %c, 4, None, ())
+        # CHECK-SAME: (%iterate, %c, 4, None, ())
 
-        # Reduction subgraph:
+        # iterate subgraph:
         # CHECK: %b
         # CHECK-NEXT: %a
         # CHECK-NEXT: %acc

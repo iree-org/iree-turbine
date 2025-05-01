@@ -31,14 +31,14 @@ def get_extend_attention_kernel(
     k_cache_shape: tuple[int],
     v_cache_shape: tuple[int],
     o_shape: tuple[int],
-    input_dtype: Optional[torch.dtype] = torch.float16,
-    output_dtype: Optional[torch.dtype] = torch.float32,
-    size_dtype: Optional[torch.dtype] = torch.int32,
-    is_causal: Optional[bool] = False,
-    logit_cap: Optional[float] = 0.0,
+    input_dtype: torch.dtype = torch.float16,
+    output_dtype: torch.dtype = torch.float32,
+    size_dtype: torch.dtype = torch.int32,
+    is_causal: bool = False,
+    logit_cap: float = 0.0,
     layer_scaling: Optional[float] = None,
-    num_waves: Optional[int] = 4,
-    use_custom_mask: Optional[bool] = False,
+    num_waves: int = 4,
+    use_custom_mask: bool = False,
 ):
     # Determine dtype of operands.
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
@@ -246,7 +246,7 @@ def get_extend_attention_kernel(
             seq_mask_start_idx = tkw.read(mask_offsets, elements_per_thread=1)
             tkw.set_symbol(MASK_START_IDX, seq_mask_start_idx)
 
-        @tkw.reduction(N_KV, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(N_KV, init_args=[init_max, init_sum, c_reg])
         def first_loop(
             partial_max: tkl.Register[H, N_Q, tkl.f32],
             partial_sum: tkl.Register[H, N_Q, tkl.f32],
@@ -279,7 +279,7 @@ def get_extend_attention_kernel(
             x_j = x_j * layer_scale_reg
             if logit_cap > 0:
                 logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
-                x_j = logit_cap_reg * tkw.tanh(x_j * logit_cap_reg_inv)
+                x_j = logit_cap_reg * tkw.tanh_approx(x_j * logit_cap_reg_inv)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
@@ -320,7 +320,7 @@ def get_extend_attention_kernel(
         if use_custom_mask:
             tkw.set_symbol(PREFIX_LEN, seq_len_prefix)
 
-        @tkw.reduction(N_KV, init_args=[res_max, res_sum, res_mm])
+        @tkw.iterate(N_KV, init_args=[res_max, res_sum, res_mm])
         def second_loop(
             partial_max: tkl.Register[H, N_Q, tkl.f32],
             partial_sum: tkl.Register[H, N_Q, tkl.f32],
@@ -342,7 +342,7 @@ def get_extend_attention_kernel(
             x_j = x_j * layer_scale_reg
             if logit_cap > 0:
                 logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
-                x_j = logit_cap_reg * tkw.tanh(x_j * logit_cap_reg_inv)
+                x_j = logit_cap_reg * tkw.tanh_approx(x_j * logit_cap_reg_inv)
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
@@ -454,16 +454,17 @@ def get_extend_attention_kernel(
         D_Q: shape.head_size,
     }
 
-    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN, MASK_LEN]
+    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN]
     dynamic_symbols_map = {
         N_Q: q_shape[0],
         N_KV: k_shape[0],
         S: shape.num_seqs,
         MAX_EXTEND_SEQ_LEN: shape.max_seq_len,
-        MASK_LEN: shape.flattened_mask_len,
     }
 
     if use_custom_mask:
+        dynamic_symbols.append(MASK_LEN)
+        dynamic_symbols_map[MASK_LEN] = shape.flattened_mask_len
         return (
             extend_attention_custom_mask,
             hyperparams,

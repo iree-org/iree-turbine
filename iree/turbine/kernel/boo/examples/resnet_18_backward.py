@@ -25,7 +25,9 @@ resnet_model = replace_conv2d_with_boo_conv(resnet_model)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 assert device == "cuda", f"device is {device}."
 
-resnet_model = resnet_model.to(device=device)
+resnet_model = resnet_model.to(
+    dtype=torch.bfloat16, device=device, memory_format=torch.channels_last
+)
 
 import torch.optim as optim
 import torch.nn.functional as F
@@ -56,7 +58,9 @@ for epoch in range(epochs):
     resnet_model.train()
     running_loss = 0.0
     for inputs, labels in train_loader:  # Assuming you have a train_loader
-        inputs, labels = inputs.to(device), labels.to(device)
+        inputs, labels = inputs.to(device=device, dtype=torch.bfloat16), labels.to(
+            device
+        )
 
         optimizer.zero_grad()  # Zero the gradients
 

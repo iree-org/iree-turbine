@@ -4,7 +4,7 @@ import logging
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
-from iree.turbine.kernel.wave.expansion.expansion import expand_graph
+from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.wave.analysis.index_sequence_analysis import (
     set_node_indices,
@@ -77,6 +77,7 @@ def test_read_write_equal_sizes():
     ):
         graph = read_write_same_size()
         IndexingContext.current().finalize()
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -106,21 +107,21 @@ def test_read_write_equal_sizes():
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0 + $WG0*BLOCK_M + BLOCK_M*floor($T0/64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0 + $WG0*BLOCK_M + BLOCK_M*floor($T0/64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0 + $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0 + $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
         # CHECK-NEXT: write(register_=read_M:0_N:0
-        # CHECK-SAME: index={M: $T0 + $WG0*BLOCK_M + BLOCK_M*floor($T0/64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: write(register_=read_M:0_N:1
-        # CHECK-SAME: index={M: $T0 + $WG0*BLOCK_M + BLOCK_M*floor($T0/64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
         # CHECK-NEXT: write(register_=read_M:1_N:0
-        # CHECK-SAME: index={M: $T0 + $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: write(register_=read_M:1_N:1
-        # CHECK-SAME: index={M: $T0 + $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
+        # CHECK-SAME: index={M: $WG0*BLOCK_M + BLOCK_M*floor($T0/64) + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N + 16 : 4 : 1}
         # CHECK-NEXT: output
 
         # CHECK: -----
@@ -159,6 +160,7 @@ def test_read_write():
     ):
         graph = read_write_different_dims()
         IndexingContext.current().finalize()
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -184,34 +186,34 @@ def test_read_write():
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $T0 + $WG0*BLOCK_M : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: read(memory=a
-        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $T0 + $WG0*BLOCK_M + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
         # CHECK-NEXT: write(register_=read_M:0_N:0_K:0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $T0 + $WG0*BLOCK_M : 1 : 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K : 4 : 1}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K : 4 : 1}
         # CHECK-NEXT: write(register_=read_M:0_N:0_K:0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $T0 + $WG0*BLOCK_M : 1 : 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
         # CHECK-NEXT: write(register_=read_M:1_N:0_K:0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $T0 + $WG0*BLOCK_M + 16 : 1 : 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K : 4 : 1}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K : 4 : 1}
         # CHECK-NEXT: write(register_=read_M:1_N:0_K:0
-        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $T0 + $WG0*BLOCK_M + 16 : 1 : 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
+        # CHECK-SAME: index={M: $T0*BLOCK_M/64 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, K: $T2*BLOCK_K + 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
         # CHECK-NEXT: output
 
         # CHECK: -----
 
 
 @tkw.wave_trace_only()
-def write_in_reduction(
+def write_in_iterate(
     a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
     b: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
     c: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
 ):
     # TODO(#364): simplify this by removing the max once it's possible to have a
-    # loop/reduction without reducing over something.
+    # loop/iterate without reducing over something.
     init_max = tkl.Register[M, tkl.f16](-1e6)
 
     # TODO: Cannot deduce elements_per_thread for a_reg without a workgroup constraint yet.
-    @tkw.reduction(K, init_args=[init_max])
+    @tkw.iterate(K, init_args=[init_max])
     def repeat(acc: tkl.Register[M, tkl.f16]) -> tkl.Register[M, tkl.f16]:
         a_reg = tkw.read(a, elements_per_thread=4)
         tkw.write(a_reg, b, elements_per_thread=4)
@@ -221,7 +223,7 @@ def write_in_reduction(
 
 
 @run_test
-def test_write_in_reduction():
+def test_write_in_iterate():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2, THREAD_0 / 64)]
@@ -238,9 +240,10 @@ def test_write_in_reduction():
             BLOCK_K: 32,
         }
     ):
-        graph = write_in_reduction()
+        graph = write_in_iterate()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -248,19 +251,19 @@ def test_write_in_reduction():
         print_trace(graph)
         # Root graph:
         # CHECK: graph()
-        # CHECK: %reduction :
+        # CHECK: %iterate :
         # CHECK-SAME: args = (K,
         # CHECK: %get_result_M:0_K:0 :
-        # CHECK-SAME: args = (%reduction, 0)
+        # CHECK-SAME: args = (%iterate, 0)
         # CHECK: %write_M:0_K:0 :
         # CHECK-SAME: (%get_result_M:0_K:0, %c, 4,
 
         # CHECK: Custom format:
-        # CHECK: reduction(axis=K,
-        # CHECK: get_result(value=reduction, res_idx=0)
+        # CHECK: iterate(axis=K,
+        # CHECK: get_result(value=iterate, res_idx=0
         # CHECK: write(register_=get_result_M:0_K:0, memory=c, elements_per_thread=4,
 
-        # Reduction subgraph:
+        # iterate subgraph:
         # CHECK: graph():
         # CHECK: %read_M:0_K:0 :
         # CHECK-SAME: (args = (%a, 4,
@@ -287,7 +290,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -323,6 +326,7 @@ def test_no_writes():
         graph = no_writes()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -363,6 +367,7 @@ def test_gemm():
         graph = gemm()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -378,7 +383,7 @@ def test_gemm():
         # CHECK-NEXT: %register_M:0_N:1_K:0
         # CHECK-NEXT: %register_M:1_N:0_K:0
         # CHECK-NEXT: %register_M:1_N:1_K:0
-        # CHECK-NEXT: %reduction
+        # CHECK-NEXT: %iterate
         # CHECK-SAME: %register_M:0_N:0_K:0, %register_M:0_N:1_K:0, %register_M:1_N:0_K:0, %register_M:1_N:1_K:0
         # CHECK-NEXT: %get_result_M:0_N:0_K:0
         # CHECK-NEXT: %get_result_M:0_N:1_K:0
@@ -402,11 +407,11 @@ def test_gemm():
         # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
         # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
-        # CHECK-NEXT: reduction(axis=K, init_args=[register_M:0_N:0_K:0, register_M:0_N:1_K:0, register_M:1_N:0_K:0, register_M:1_N:1_K:0], subgraph_name=region_0, implicit_captures=[a, b])
-        # CHECK-NEXT: get_result(value=reduction, res_idx=0)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=1)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=2)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=3)
+        # CHECK-NEXT: iterate(axis=K, init_args=[register_M:0_N:0_K:0, register_M:0_N:1_K:0, register_M:1_N:0_K:0, register_M:1_N:1_K:0], subgraph_name=region_0, implicit_captures=[a, b])
+        # CHECK-NEXT: get_result(value=iterate, res_idx=0
+        # CHECK-NEXT: get_result(value=iterate, res_idx=1
+        # CHECK-NEXT: get_result(value=iterate, res_idx=2
+        # CHECK-NEXT: get_result(value=iterate, res_idx=3
         # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0
         # CHECK-SAME: index={M:  $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1}
         # CHECK-NEXT: write(register_=get_result_M:0_N:1_K:0
@@ -417,7 +422,7 @@ def test_gemm():
         # CHECK-SAME: index={M:  $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1}
         # CHECK-NEXT: output
 
-        # Reduction subgraph:
+        # iterate subgraph:
         # CHECK: region_0:
         # CHECK: graph():
         # CHECK: %acc_M:0_N:0_K:0
@@ -515,7 +520,7 @@ def batched_gemm(
 ):
     c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[B, M, N, tkl.f32]) -> tkl.Register[B, M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -554,6 +559,7 @@ def test_batched_gemm():
         graph = batched_gemm()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -567,7 +573,7 @@ def test_batched_gemm():
         # CHECK-NEXT: %register_M:0_N:1_K:0
         # CHECK-NEXT: %register_M:1_N:0_K:0
         # CHECK-NEXT: %register_M:1_N:1_K:0
-        # CHECK-NEXT: %reduction
+        # CHECK-NEXT: %iterate
         # CHECK-SAME: %register_M:0_N:0_K:0, %register_M:0_N:1_K:0, %register_M:1_N:0_K:0, %register_M:1_N:1_K:0
         # CHECK-NEXT: %get_result_M:0_N:0_K:0
         # CHECK-NEXT: %get_result_M:0_N:1_K:0
@@ -591,11 +597,11 @@ def test_batched_gemm():
         # CHECK-NEXT: register(shape=(B, M, N), dtype=f32, value=0.0, index={B: $WG2*BLOCK_B : 1 : 1, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
         # CHECK-NEXT: register(shape=(B, M, N), dtype=f32, value=0.0, index={B: $WG2*BLOCK_B : 1 : 1, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: register(shape=(B, M, N), dtype=f32, value=0.0, index={B: $WG2*BLOCK_B : 1 : 1, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1})
-        # CHECK-NEXT: reduction(axis=K, init_args=[register_M:0_N:0_K:0, register_M:0_N:1_K:0, register_M:1_N:0_K:0, register_M:1_N:1_K:0], subgraph_name=region_0, implicit_captures=[a, b])
-        # CHECK-NEXT: get_result(value=reduction, res_idx=0)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=1)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=2)
-        # CHECK-NEXT: get_result(value=reduction, res_idx=3)
+        # CHECK-NEXT: iterate(axis=K, init_args=[register_M:0_N:0_K:0, register_M:0_N:1_K:0, register_M:1_N:0_K:0, register_M:1_N:1_K:0], subgraph_name=region_0, implicit_captures=[a, b])
+        # CHECK-NEXT: get_result(value=iterate, res_idx=0
+        # CHECK-NEXT: get_result(value=iterate, res_idx=1
+        # CHECK-NEXT: get_result(value=iterate, res_idx=2
+        # CHECK-NEXT: get_result(value=iterate, res_idx=3
         # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0
         # CHECK-SAME: index={B: $WG2*BLOCK_B : 1 : 1, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1}
         # CHECK-NEXT: write(register_=get_result_M:0_N:1_K:0
@@ -606,7 +612,7 @@ def test_batched_gemm():
         # CHECK-SAME: index={B: $WG2*BLOCK_B : 1 : 1, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) + 16 : 1 : 1}
         # CHECK-NEXT: output
 
-        # Reduction subgraph:
+        # iterate subgraph:
 
         # CHECK: %acc_M:0_N:0_K:0
         # CHECK-NEXT: %acc_M:0_N:1_K:0
@@ -704,7 +710,7 @@ def gemm_non_direct_acc(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -736,6 +742,7 @@ def test_gemm_non_direct_acc():
         graph = gemm_non_direct_acc()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -774,7 +781,7 @@ def tiled_max(
 ):
     init_max = tkl.Register[M, tkl.f16](-1e6)
 
-    @tkw.reduction(K, init_args=[init_max])
+    @tkw.iterate(K, init_args=[init_max])
     def repeat(acc: tkl.Register[M, tkl.f16]) -> tkl.Register[M, tkl.f16]:
         a_reg = tkw.read(a, elements_per_thread=4)
         partial_max = tkw.max(a_reg, acc, dim=K)
@@ -804,6 +811,7 @@ def test_tiled_max():
         graph = tiled_max()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -816,9 +824,9 @@ def test_tiled_max():
 
 
 @run_test
-def test_gemm_reduction_expansion_only():
+def test_gemm_iterate_expansion_only():
     # Note: This does not implement an actual gemm computation but reuses the
-    # gemm kernel to test the expansion of the reduction subgraph.
+    # gemm kernel to test the expansion of the iterate subgraph.
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K, ARGK)]
@@ -837,6 +845,7 @@ def test_gemm_reduction_expansion_only():
         graph = gemm()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -847,7 +856,7 @@ def test_gemm_reduction_expansion_only():
         # CHECK-NEXT: %b
         # CHECK-NEXT: %c
         # CHECK-NEXT: %register_M:0_N:0_K:0
-        # CHECK-NEXT: %reduction
+        # CHECK-NEXT: %iterate
         # CHECK-NEXT: %get_result_M:0_N:0_K:0
         # CHECK-NEXT: %write_M:0_N:0_K:0
         # CHECK-SAME: (%get_result_M:0_N:0_K:0, %c, 4, None, ())
@@ -858,13 +867,13 @@ def test_gemm_reduction_expansion_only():
         # CHECK-NEXT: placeholder(_name=b
         # CHECK-NEXT: placeholder(_name=c
         # CHECK-NEXT: register(shape=(M, N), dtype=f32, value=0.0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
-        # CHECK-NEXT: reduction(axis=K, init_args=[register_M:0_N:0_K:0]
-        # CHECK-NEXT: get_result(value=reduction, res_idx=0)
+        # CHECK-NEXT: iterate(axis=K, init_args=[register_M:0_N:0_K:0]
+        # CHECK-NEXT: get_result(value=iterate, res_idx=0
         # CHECK-NEXT: write(register_=get_result_M:0_N:0_K:0
         # CHECK-SAME: index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + 4*floor((Mod($T0, 64))/16) : 4 : 16, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + Mod($T0, 16) : 1 : 1})
         # CHECK-NEXT: output(return_vals=(None,))
 
-        # Reduction subgraph:
+        # iterate subgraph:
 
         # CHECK: %acc_M:0_N:0_K:0
 
@@ -918,9 +927,9 @@ def attention(
     init_sum = tkl.Register[B, M, tkl.f32](0.0)
     init_max = tkl.Register[B, M, tkl.f32](-1e6)
 
-    # This microkernel encodes the fact that if the reduction
+    # This microkernel encodes the fact that if the iterate
     # dimension were tiled, then we would need to materialize a loop.
-    @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+    @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
     def repeat(
         partial_max: tkl.Register[B, M, tkl.f32],
         partial_sum: tkl.Register[B, M, tkl.f32],
@@ -983,6 +992,7 @@ def test_attention():
         graph = attention()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -999,7 +1009,7 @@ def test_attention():
     # CHECK: write(register_=truediv_M:1_N:1_K2:0,
     # CHECK-SAME: index={B: $WG2*BLOCK_B : 1 : 1, N: $T1*BLOCK_N/2 + $WG1*BLOCK_N + 4*floor((Mod($T0, 64))/16) + 16 : 4 : 16, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16) + 16 : 1 : 1})
 
-    # Reduction graph:
+    # iterate graph:
     # CHECK: read(memory=q,
     # CHECK-SAME: index={B: $WG2*BLOCK_B : 1 : 1, M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 16) : 1 : 1, K1: 4*floor((Mod($T0, 64))/16) : 4 : 1})
     # CHECK: read(memory=q,
@@ -1078,6 +1088,7 @@ def py_arithmetic_different_dims():
     ):
         graph = py_arithmetic_different_dims()
         IndexingContext.current().finalize()
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)
@@ -1114,18 +1125,18 @@ def py_arithmetic_different_dims():
         # CHECK: Custom format:
         # CHECK-NEXT: placeholder(_name=a
         # CHECK-NEXT: placeholder(_name=c
-        # CHECK-NEXT: read(memory=a, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: read(memory=a, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: add(lhs=read_M:0_N:0_K:0, rhs=read_M:0_N:0_K:0, index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: add(lhs=read_M:1_N:0_K:0, rhs=read_M:1_N:0_K:0, index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: sub(lhs=add_M:0_N:0_K:0, rhs=read_M:0_N:0_K:0, index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: sub(lhs=add_M:1_N:0_K:0, rhs=read_M:1_N:0_K:0, index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: neg(arg=sub_M:0_N:0_K:0, index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: neg(arg=sub_M:1_N:0_K:0, index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
-        # CHECK-NEXT: write(register_=neg_M:0_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
-        # CHECK-NEXT: write(register_=neg_M:0_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
-        # CHECK-NEXT: write(register_=neg_M:1_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M + 16 : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
-        # CHECK-NEXT: write(register_=neg_M:1_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $T0 + $WG0*BLOCK_M + 16 : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: read(memory=a, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: add(lhs=read_M:0_N:0_K:0, rhs=read_M:0_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: add(lhs=read_M:1_N:0_K:0, rhs=read_M:1_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: sub(lhs=add_M:0_N:0_K:0, rhs=read_M:0_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: sub(lhs=add_M:1_N:0_K:0, rhs=read_M:1_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: neg(arg=sub_M:0_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: neg(arg=sub_M:1_N:0_K:0, index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, N: $T1*BLOCK_N/4 + 4*$T1 + $WG1*BLOCK_N : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_M:0_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_M:0_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_M:1_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K : 4 : 1}
+        # CHECK-NEXT: write(register_=neg_M:1_N:0_K:0, memory=c, elements_per_thread=4, mapping_dynamic_vals=(), index={M: $T0*BLOCK_M/128 + $WG0*BLOCK_M + Mod($T0, 64) + 16 : 1 : 16, K: 4*$T2 + $WG2*BLOCK_K + 16 : 4 : 1}
 
         # CHECK: -----
 
@@ -1139,7 +1150,7 @@ def chained_gemm_32x32x8(
 ):
     c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K2, init_args=[c_reg])
+    @tkw.iterate(K2, init_args=[c_reg])
     def repeat(acc: tkl.Register[B, M, N, tkl.f32]) -> tkl.Register[B, M, N, tkl.f32]:
         inner_acc = tkl.Register[B, K2, M, tkl.f32](0.0)
         q_reg = tkw.read(q, elements_per_thread=4)
@@ -1185,6 +1196,7 @@ def test_chained_gemm_32x32x8():
         graph = chained_gemm_32x32x8()
         IndexingContext.current().finalize()
         initialize_iter_args(graph)
+        add_get_results(graph)
         infer_types(graph)
         set_node_indices(graph, constraints)
         expand_graph(graph, constraints)

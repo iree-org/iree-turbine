@@ -21,10 +21,11 @@ from pathlib import Path
 import functools
 from typing import Any, Callable, Optional
 
+from iree.turbine.kernel.lang.kernel_buffer import KernelBufferMeta
+
 from .constraints import Constraint, TilingConstraint, WaveConstraint
 from ..compiler.kernel_codegen import KernelBufferUsage
 from ..lang.wave_types import IndexMapping
-from .._support.indexing import IndexExpr
 from .utils.classes import KernelLaunchInfo
 from .compile_options import WaveCompileOptions
 
@@ -70,6 +71,7 @@ def extract_arg_types(kernel_fn: Callable):
     return [
         (arg.annotation, arg.annotation.physical_layout)
         for arg in inspect.signature(kernel_fn).parameters.values()
+        if isinstance(arg.annotation, KernelBufferMeta)
     ]
 
 

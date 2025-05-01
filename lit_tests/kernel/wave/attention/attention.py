@@ -84,7 +84,7 @@ def test_attention_32x32x8():
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, M, tkl.f32],
             partial_sum: tkl.Register[B, M, tkl.f32],
@@ -218,7 +218,7 @@ def test_dynamic_attention_32x32x8():
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K2, init_args=[init_max, init_sum, c_reg])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, c_reg])
         def repeat(
             partial_max: tkl.Register[B, M, tkl.f32],
             partial_sum: tkl.Register[B, M, tkl.f32],
@@ -332,6 +332,7 @@ def test_attention():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         compile_to_mlir=True,
+        func_name="test_vanilla_attention",
     )
     base_attention = wave_compile(options, base_attention)
     print(base_attention.asm)
@@ -344,6 +345,8 @@ def test_attention():
     # CHECK-COUNT-8:            {{.*}} = arith.addf
     # CHECK-COUNT-8:            {{.*}} = gpu.shuffle xor {{.*}}
     # CHECK-COUNT-8:            {{.*}} = amdgpu.mfma
+
+    # CHECK-LABEL:      func.func @test_vanilla_attention
 
 
 @run_test

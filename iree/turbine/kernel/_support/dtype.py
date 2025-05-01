@@ -39,6 +39,7 @@ class DataType:
     def __init__(self, name, ir_type_asm=None):
         self._name = name
         self._ir_type_asm = ir_type_asm if ir_type_asm else name
+        self._symbolic_shape = ()
 
     def ir_type_asm(self):
         return self._ir_type_asm
@@ -68,6 +69,24 @@ class DataType:
         if "bf16" in self._name:
             return 16
         return int(self._name[1:])
+
+    @property
+    def dtype(self):
+        # This cls is already dtype, hence can return self.
+        # dtype() function is useful here for code reuse between
+        # scalar and vector/register variables.
+        return self
+
+    @property
+    def symbolic_shape(self):
+        return self._symbolic_shape
+
+    @symbolic_shape.setter
+    def symbolic_shape(self, value):
+        if not value:
+            self._symbolic_shape = ()
+        else:
+            self.symbolic_shape = value
 
 
 bf16 = DataType("bf16")

@@ -8,7 +8,7 @@ import torch
 from torch import nn
 from torch.testing import assert_close
 
-from iree.turbine.kernel.wave.layers.linear import WaveLinear
+import iree.turbine.kernel.wave.nn as wave_nn
 from ..common.utils import require_e2e
 
 
@@ -24,7 +24,9 @@ def testLinearNoBatch():
 
     # Setup reference linear layer and wave linear layer.
     ref_linear = nn.Linear(in_features, out_features, device=device, dtype=dtype)
-    wave_linear = WaveLinear(in_features, out_features, device=device, dtype=dtype)
+    wave_linear = wave_nn.WaveLinear(
+        in_features, out_features, device=device, dtype=dtype
+    )
 
     # Copy data from reference torch
     with torch.no_grad():
@@ -61,7 +63,7 @@ def testLinear1DBatchNoBias():
     ref_linear = nn.Linear(
         in_features, out_features, device=device, dtype=dtype, bias=False
     )
-    wave_linear = WaveLinear(
+    wave_linear = wave_nn.WaveLinear(
         in_features, out_features, device=device, dtype=dtype, bias=False
     )
 
@@ -97,7 +99,9 @@ def testLinear1DBatch():
 
     # Setup reference linear layer and wave linear layer.
     ref_linear = nn.Linear(in_features, out_features, device=device, dtype=dtype)
-    wave_linear = WaveLinear(in_features, out_features, device=device, dtype=dtype)
+    wave_linear = wave_nn.WaveLinear(
+        in_features, out_features, device=device, dtype=dtype
+    )
 
     # Copy data from reference torch
     with torch.no_grad():
@@ -132,7 +136,9 @@ def testLinear3DBatch():
 
     # Setup reference linear layer and wave linear layer.
     ref_linear = nn.Linear(in_features, out_features, device=device, dtype=dtype)
-    wave_linear = WaveLinear(in_features, out_features, device=device, dtype=dtype)
+    wave_linear = wave_nn.WaveLinear(
+        in_features, out_features, device=device, dtype=dtype
+    )
 
     # Copy data from reference torch
     with torch.no_grad():

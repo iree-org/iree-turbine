@@ -6,7 +6,7 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.promotion import promote_placeholders
 from iree.turbine.kernel.wave.hoisting import hoist_loop_invariant_ops
-from iree.turbine.kernel.wave.expansion.expansion import expand_graph
+from iree.turbine.kernel.wave.expansion.expansion import expand_graph, add_get_results
 from iree.turbine.kernel.wave.type_inference import infer_types
 from iree.turbine.kernel.lang.global_symbols import (
     GLOBAL_ADDRESS_SPACE,
@@ -29,7 +29,7 @@ from iree.turbine.kernel._support.indexing import IndexingContext
 from iree.turbine.kernel.ops.wave_ops import (
     Allocate,
     Read,
-    Reduction,
+    Iterate,
     Write,
     get_custom,
     GetResult,
@@ -73,7 +73,7 @@ def gemm(
 ):
     c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
-    @tkw.reduction(K, init_args=[c_reg])
+    @tkw.iterate(K, init_args=[c_reg])
     def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -120,6 +120,7 @@ def test_gemm_multibuffering():
         trace: CapturedTrace = gemm()
         IndexingContext.current().finalize()
         initialize_iter_args(trace)
+        add_get_results(trace)
         infer_types(trace)
         promote_placeholders(trace, constraints)
         set_node_indices(trace, constraints)
@@ -142,7 +143,7 @@ def test_gemm_multibuffering():
                 case Read() | Write():
                     if custom.memory_type.address_space == SHARED_ADDRESS_SPACE:
                         print(custom)
-                case Reduction():
+                case Iterate():
                     print("reduction begin")
                     for node in trace.get_subgraph(custom.subgraph_name).nodes:
                         print_affected_node(node)
