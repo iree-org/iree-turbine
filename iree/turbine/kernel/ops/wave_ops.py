@@ -179,6 +179,7 @@ def cumsum(
     src: "Register",
     acc: Optional["Register"] = None,
     dim: Optional[IndexExpr | int] = None,
+    block: Optional[bool] = False,
 ) -> "Register":
     ...
 
@@ -1921,11 +1922,13 @@ class ScanOp(CustomOp, ABC):
     arg: Source tensor/value to scan.
     init: Optional initial value.
     dim: Symbolic dimension along which to scan.
+    block: Flag to perform block-wise scanop or not
     """
 
     arg: fx.Node | list[fx.Node]
     init: Optional[fx.Node] = None
     dim: Optional[IndexSymbol] = None
+    block: Optional[bool] = False
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -1971,7 +1974,7 @@ class ScanOp(CustomOp, ABC):
                 )
 
     @property
-    def reduction_dim(self) -> IndexSymbol:
+    def scan_dim(self) -> IndexSymbol:
         return self.dim
 
 
