@@ -233,7 +233,7 @@ def get_launchable(
         module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
         launch = Launchable.from_vm_module(
             _user_flags_jit_callback(
-                func_name,
+                f"{func_name}$async",
                 (f"--iree-codegen-tuning-spec-path='{BOO_TUNING_SPEC_PATH}'",),
                 module_asm,
             ),
