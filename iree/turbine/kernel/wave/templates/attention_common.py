@@ -16,6 +16,7 @@ class AttentionShape:
     num_kv_heads: int
     head_size: int
     head_size_kv: int
+    batch_size: Optional[int] = None
     # -----------------------
     # Prefill specific
     num_seqs: Optional[int] = None
