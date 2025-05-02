@@ -1250,6 +1250,14 @@ class AtomicMin(BinaryOpBase, ABC):
     """
 
     elements_per_thread: Optional[Any] = None
+    mapping: Optional[IndexMapping] = None
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        if self.mapping is not None:
+            return list(self.mapping.output_shape)
+        # TODO: This could contain ints.
+        return list(self.memory_type.symbolic_shape)
 
     def infer_type(self):
         self.type = get_custom(self.lhs).type

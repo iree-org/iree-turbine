@@ -39,7 +39,6 @@ from ...compiler.ir import (
 )
 from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
-    _is_index_type,
     _is_integer_like_type,
     _is_signed_or_signless_type,
     get_conversion_op,
@@ -418,7 +417,7 @@ def handle_atomic_op(op):
         @handle_op(op)
         def handle_generic_atomic(emitter: WaveEmitter, node: fx.Node):
             try:
-                lhs, rhs, elements_per_thread = node.args
+                lhs, rhs, elements_per_thread, mapping = node.args
             except ValueError as e:
                 raise ValidationError("Malformed arguments") from e
             lhs = cast_py_value(emitter, lhs)

@@ -1843,6 +1843,7 @@ def test_vector_add(shape, use_buffer_ops, request):
 
     M = tkl.sym.M
     N = tkl.sym.N
+    M_IDX = tkl.sym.M_IDX
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     wave_size = 64
@@ -1853,14 +1854,20 @@ def test_vector_add(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
-            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+            waves_per_block=(1, 2, 1),
+            vector_shapes={M: int(BLOCK_M/2), N: BLOCK_N},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(M, int(BLOCK_M/2))]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    mapping = tkw.IndexMapping(
+        num_iterators=2, inputs={M: i, N: j}, outputs={M: i, N: j - (M_IDX * BLOCK_N)}
+    )
 
     @tkw.wave(constraints)
     def test(
@@ -1888,6 +1895,7 @@ def test_vector_add(shape, use_buffer_ops, request):
         run_bench=run_bench,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
+        wave_runtime=True,
     )
     options = set_default_run_config(options)
 
