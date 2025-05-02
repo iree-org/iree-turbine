@@ -303,8 +303,7 @@ def testPagedFlashDecoding(
         key_cache_4d,
         value_cache_4d,
         request_indices,
-        kv_lens_tensor,
-        block_table,
+        torch.flatten(block_table),
         phase_0_output,
         phase_0_output_max,
     )

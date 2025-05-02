@@ -297,7 +297,7 @@ class DispatchEntrypoint(BoundKernelSignature):
                 return []
             assert len(dynamic_dims) == physical_shape.count(
                 None
-            ), f"Expected {physical_shape.count(None)} dynamic dims, got {len(dynamic_dims)}"
+            ), f"Expected {physical_shape.count(None)} dynamic dims, got {len(dynamic_dims)} for {node_type}"
         return dynamic_dims
 
     def resolve(self, binding: BindingDesc) -> Value:

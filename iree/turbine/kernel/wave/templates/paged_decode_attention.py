@@ -229,7 +229,7 @@ def get_paged_decode_attention_kernels(
 
     k_layout = tkl.MemoryLayout(shape=k_shape)
     v_layout = tkl.MemoryLayout(shape=v_shape)
-    kv_indices_layout = tkl.MemoryLayout(shape=[None])
+    kv_indices_layout = tkl.MemoryLayout(shape=[K2])
 
     # The kv-cache layout here is (SEQ, HEADS, HEAD_DIM).
     @tkw.wave(get_constraints(Phase.PHASE_0))
@@ -263,7 +263,8 @@ def get_paged_decode_attention_kernels(
         # The request index is used to load the appropriate entries from the block table.
         req_index = tkw.read(request_indices)
         # The sequence length is used to control the bounds of the loop over K2.
-        seq_length = tkw.read(request_indices, mapping=seq_len_mapping) - req_index
+        seq_length = tkw.read(request_indices, mapping=seq_len_mapping)
+        seq_length = seq_length - req_index
         tkw.set_symbol(KV_START_IDX, req_index)
         tkw.set_symbol(SEQ_LEN, seq_length)
 
@@ -347,10 +348,10 @@ def get_paged_decode_attention_kernels(
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
         req_index = tkw.read(request_indices, elements_per_thread=1)
-        seq_length = (
-            tkw.read(request_indices, mapping=seq_len_mapping, elements_per_thread=1)
-            - req_index
+        seq_length = tkw.read(
+            request_indices, mapping=seq_len_mapping, elements_per_thread=1
         )
+        seq_length = seq_length - req_index
         splits_active = tkw.apply_expr(seq_length, lambda x: sympy.Min(x, U))
         tkw.set_symbol(SPLITS_ACTIVE, splits_active)
 
