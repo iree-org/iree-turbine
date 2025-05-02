@@ -199,7 +199,6 @@ def testAttentionPure(
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
     output = device_zeros(o_shape, dtype=torch.float32)
-    # TODO: Add scaling of QK as part of kernel.
     asm = base_attention(q, k, v, output)
     torch_ref = torch.nn.functional.scaled_dot_product_attention(
         q, k, v, attn_mask=None
