@@ -48,6 +48,7 @@ __all__ = [
     "AttrArg",
     "CustomOp",
     "FreeFuncKernelBuilder",
+    "WaveKernelBuilder",
     "IntArg",
     "KernelBuilder",
     "KernelSelection",
