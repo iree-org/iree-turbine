@@ -459,6 +459,20 @@ def handle_atomic_op(op):
             # TODO: Use shared_memory_indexing to remove global indexing, needs
             # debugging to get the correct index.
             local_index = remove_global_indexing(node.index, emitter.constraints)
+            if mapping:
+                assert (
+                    mapping.is_input_identity()
+                ), "non-identity input mapping is not supported yet"
+                symbolic_shape = get_custom(node).type.symbolic_shape
+                index_mapping = mapping.map_output_indices(symbolic_shape)
+                idxc = IndexingContext.current()
+                index_mapping = tuple(i.subs(idxc.subs) for i in index_mapping)
+                iters = mapping.iters
+                subs = [
+                    (sym, expr.start) for sym, expr in zip(iters.keys(), local_index.values())
+                ] + list(idxc.subs.items())
+                local_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
+
             start_indices = [_build_start_indices(emitter, local_index)]
             keys = list(local_index.keys())
             fastest_dim = get_fastest_index(node.index)
