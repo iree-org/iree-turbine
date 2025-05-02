@@ -11,14 +11,16 @@ from .constraints import (
     GenericDot,
 )
 import torch.fx as fx
+from .utils.general_utils import get_hardware_constraint
 from ..ops.wave_ops import get_custom, MMA, Add, Mul, Sum, CastOp
 from copy import copy
 
 
 def decompose_dot_mma(trace: CapturedTrace, constraints: list[Constraint]):
-    hardware_constraint = next(
-        c for c in constraints if isinstance(c, HardwareConstraint)
-    )
+    """
+    Decomposes dot MMA operations into the dot products and cross-thread reductions.
+    """
+    hardware_constraint = get_hardware_constraint(constraints)
 
     def get_mma_type(mma_op: MMA) -> GenericDot:
         mma_type = mma_op.mma_type
@@ -55,7 +57,7 @@ def decompose_dot_mma(trace: CapturedTrace, constraints: list[Constraint]):
             lhs.index = copy(lhs_index)
             rhs.index = copy(rhs_index)
 
-            k_sym = get_custom(lhs).indexing_dims[1]
+            k_sym = get_custom(lhs).type.symbolic_shape[-1]
 
             mul = Mul(lhs, rhs).add_to_graph(mma_op.graph)
             sum = Sum(mul, None, k_sym).add_to_graph(mma_op.graph)

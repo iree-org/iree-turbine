@@ -32,7 +32,7 @@ from ..lang.types import (
     Index,
 )
 from ..lang.wave_types import IndexMapping
-from ..ops.wave_ops import CustomOp, Placeholder, Iterate, Unknown
+from ..ops.wave_ops import CustomOp
 
 from .regions import RegionGraph, SubgraphTracer
 
@@ -122,6 +122,9 @@ class KernelTracer(SubgraphTracer):
         return super().proxy(node)
 
     def create_arg(self, a):
+        # Cannot import globally due to import cycles
+        from ..wave.constraints import GenericDot
+
         # Let IndexExpr persist as arguments.
         if isinstance(a, sympy.Basic):
             return a
@@ -129,6 +132,8 @@ class KernelTracer(SubgraphTracer):
         if isinstance(a, DataType):
             return a
         if isinstance(a, IndexMapping):
+            return a
+        if isinstance(a, GenericDot):
             return a
         if isinstance(a, FunctionType):
             return a

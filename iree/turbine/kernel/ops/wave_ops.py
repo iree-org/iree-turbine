@@ -1202,7 +1202,7 @@ class MMA(CustomOp):
     lhs: fx.Node
     rhs: fx.Node
     acc: fx.Node
-    mma_type: Optional["MMAType"] = None
+    mma_type: Optional["MMAType"] | "GenericDot" = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:

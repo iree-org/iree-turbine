@@ -22,7 +22,7 @@ from iree.turbine.kernel.wave.utils.torch_utils import (
     device_zeros,
 )
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
-from iree.turbine.kernel.wave.constraints import MMAType
+from iree.turbine.kernel.wave.constraints import MMAType, GenericDot, MMAOperand
 from iree.turbine.kernel.wave.templates.paged_decode_attention import (
     get_paged_decode_attention_kernels,
     paged_decode_attention_shape,
@@ -46,6 +46,13 @@ shapes = [(16, 1, 64, 64, 32, 2, 100)]
 shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
 shapes += [(128, 2, 80, 80, 32, 2, 500)]
+
+# Test shapes for MHA paged attention
+# (NUM_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
+mha_shapes = [(16, 64, 64, 32, 2, 100)]
+mha_shapes += [(16, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
+mha_shapes += [(64, 80, 80, 32, 2, 128)]
+mha_shapes += [(128, 80, 80, 32, 2, 500)]
 
 
 def ref_paged_attn(
@@ -135,6 +142,22 @@ def create_inputs(
     )
 
 
+def create_mha_inputs(
+    num_seqs: int,
+    kv_lens: int,
+    num_heads: int,
+    head_size: int,
+    dtype: torch.dtype,
+):
+    query = device_randn(num_seqs, num_heads, head_size, dtype=dtype)
+    key_cache = device_randn(num_seqs, kv_lens, num_heads, head_size, dtype=dtype)
+    value_cache = device_randn(num_seqs, kv_lens, num_heads, head_size, dtype=dtype)
+    block_table = device_arange(num_seqs, kv_lens, dtype=torch.int32)
+    request_indices = device_arange(num_seqs, dtype=torch.int32)
+    kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
+    return query, key_cache, value_cache, block_table, request_indices, kv_lens_tensor
+
+
 def load_inputs(directory):
     query = torch.load(os.path.join(directory, "query.pt"))
     key_cache = torch.load(os.path.join(directory, "key_cache.pt"))
@@ -166,7 +189,6 @@ def testPagedFlashDecoding(
     mfma_variant: MMAType,
     request,
 ):
-
     torch.manual_seed(0)
     shape = paged_decode_attention_shape(
         num_query_heads=shape[0],
@@ -309,6 +331,198 @@ def testPagedFlashDecoding(
         with open(filename, "w") as f:
             f.write(asm_qk)
         filename = f"wave_paged_phase_1_kernel_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm_sv)
+
+    if not artifact_directory:
+        # Run the reference implementation.
+        ref_vllm_output = ref_paged_attn(
+            query=query,
+            key_cache=key_cache,
+            value_cache=value_cache,
+            query_lens=torch.ones(shape.num_seqs, dtype=torch.int32),
+            kv_lens=kv_lens_tensor,
+            block_tables=block_table,
+            scale=scale,
+            causal=False,
+            sliding_window=None,
+            soft_cap=None,
+        )
+    else:
+        ref_vllm_output = torch.load(os.path.join(artifact_directory, "output.pt"))
+
+    assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3)
+
+
+@require_e2e
+@require_cdna3
+@pytest.mark.parametrize("shape", mha_shapes)
+@pytest.mark.parametrize("dtype", [torch.float16])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+@pytest.mark.parametrize("num_kv_splits", [8])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        (
+            # TODO: we need a very specific dot mma shapes for things to work.
+            # Need to better handle vector_shapes/elements_per_thread conflicts
+            # when we have multiple MMAs in the same kernel.
+            GenericDot(along_dim=MMAOperand.M, k_vec_size=4, k_mult=1),
+            GenericDot(along_dim=MMAOperand.M, k_vec_size=1, k_mult=64),
+        ),
+    ],
+)
+def testPagedFlashDecodingMHA(
+    shape: tuple[int],
+    dtype: torch.dtype,
+    enable_scheduling: SchedulingType,
+    num_kv_splits: int,
+    mfma_variant: MMAType,
+    request,
+):
+    torch.manual_seed(0)
+    shape = paged_decode_attention_shape(
+        num_query_heads=shape[0],
+        num_kv_heads=shape[0],
+        head_size=shape[1],
+        head_size_kv=shape[2],
+        block_size=shape[3],
+        num_seqs=shape[4],
+        kv_lens=shape[5],
+    )
+    assert shape.num_query_heads % shape.num_kv_heads == 0
+    scale = shape.head_size**-0.5
+
+    artifact_directory = None
+    if not artifact_directory:
+        (
+            query,
+            key_cache,
+            value_cache,
+            block_table,
+            request_indices,
+            kv_lens_tensor,
+        ) = create_inputs(
+            shape.num_seqs,
+            shape.kv_lens,
+            shape.num_query_heads,
+            shape.num_kv_heads,
+            shape.head_size,
+            shape.head_size_kv,
+            dtype,
+        )
+    else:
+        (
+            query,
+            key_cache,
+            value_cache,
+            block_table,
+            request_indices,
+            kv_lens_tensor,
+        ) = load_inputs(artifact_directory)
+        shape.num_seqs = query.shape[0]
+        shape.num_query_heads = query.shape[1]
+        shape.head_size = query.shape[2]
+        shape.num_kv_heads = key_cache.shape[2]
+        shape.head_size_kv = value_cache.shape[3]
+
+    key_cache_4d = key_cache.view(
+        shape.num_seqs, -1, shape.num_kv_heads, shape.head_size
+    )
+    value_cache_4d = value_cache.view(
+        shape.num_seqs, -1, shape.num_kv_heads, shape.head_size_kv
+    )
+
+    # Run the wave kernel.
+    (
+        phase_0,
+        phase_1,
+        hyperparams_0,
+        hyperparams_1,
+    ) = get_paged_decode_attention_kernels(
+        shape,
+        mfma_variant,
+        num_kv_splits,
+        key_cache_4d.shape,
+        value_cache_4d.shape,
+        block_table.shape,
+        mha=True,
+    )
+    hyperparams_0.update(get_default_scheduling_params())
+    hyperparams_1.update(get_default_scheduling_params())
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+
+    phase_0_output = device_zeros(
+        num_kv_splits,
+        shape.num_seqs,
+        shape.head_size_kv,
+        shape.num_query_heads,
+        dtype=torch.float32,
+    )
+    phase_0_output_max = device_zeros(
+        num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
+    )
+    output = device_zeros(
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
+    )
+    log2e = 1.44269504089
+    dk_sqrt = math.sqrt(1.0 / shape.head_size)
+
+    options = WaveCompileOptions(
+        subs=hyperparams_0,
+        canonicalize=True,
+        run_bench=run_bench,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    phase_0 = wave_compile(options, phase_0)
+
+    # TODO: Add scaling of QK as part of kernel.
+    # TODO: Add variant of non-transposed V attention kernel.
+    asm_qk = phase_0(
+        query * dk_sqrt * log2e,
+        key_cache_4d,
+        value_cache_4d,
+        request_indices,
+        kv_lens_tensor,
+        block_table,
+        phase_0_output,
+        phase_0_output_max,
+    )
+
+    options = WaveCompileOptions(
+        subs=hyperparams_1,
+        canonicalize=True,
+        run_bench=run_bench,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    phase_1 = wave_compile(options, phase_1)
+
+    asm_sv = phase_1(phase_0_output, phase_0_output_max, kv_lens_tensor, output)
+
+    if dump_generated_mlir:
+        filename = f"wave_paged_mha_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm_qk)
+        filename = f"wave_paged_mha_phase_1_kernel_{'x'.join(map(str, shape))}.mlir"
         with open(filename, "w") as f:
             f.write(asm_sv)
 

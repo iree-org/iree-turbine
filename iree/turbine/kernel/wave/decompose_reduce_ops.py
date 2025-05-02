@@ -32,7 +32,7 @@ from ..ops.wave_ops import (
 )
 from ..lang.global_symbols import *
 
-from .utils.symbol_utils import subs_idxc
+from .utils.symbol_utils import subs_idxc, safe_subs
 from .utils.graph_utils import DCE, get_outer_node
 from .utils.general_utils import all_equal, delinearize_index
 from .utils.classes import ShuffleMode
@@ -75,9 +75,9 @@ def determine_shuffle_config(
         WORKGROUP_1,
         WORKGROUP_2,
     ] + induction_vars
-    offset = access_pattern.start.subs({k: 0 for k in ignore})
+    offset = safe_subs(access_pattern.start, {k: 0 for k in ignore})
     offset = subs_idxc(offset)
-    offset_table = [offset.subs({THREAD_0: i}) for i in range(subgroup_size)]
+    offset_table = [safe_subs(offset, {THREAD_0: i}) for i in range(subgroup_size)]
     unique_offsets = list(dict.fromkeys(offset_table))
     # The cluster size represents the number of unique threads that are participating in a shuffle.
     # We can obtain this information by just computing the number of unique entries in the offset table.
@@ -335,7 +335,8 @@ def decompose_reduce_ops(
                 )
             if reduction_dim is not src_fastest_dims[0]:
                 raise NotImplementedError(
-                    "Only implemented reduction on fastest dimension."
+                    f"Only implemented reduction on fastest dimension. Got {reduction_dim} and {src_fastest_dims}."
+                    f"\n{custom}"
                 )
 
             get_thread_shape = lambda index: max(

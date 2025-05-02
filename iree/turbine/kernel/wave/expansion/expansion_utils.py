@@ -65,9 +65,7 @@ def get_dim_scaling(
 
     idxc = IndexingContext.current()
     for constraint in constraints:
-        if isinstance(constraint, WorkgroupConstraint) or isinstance(
-            constraint, TilingConstraint
-        ):
+        if isinstance(constraint, (WorkgroupConstraint, TilingConstraint)):
             hw_cons = hardware_constraints[0]
             tile_size = idxc.get_static_value(constraint.tile_size)
             if constraint.dim not in node.vector_shapes:
@@ -91,6 +89,7 @@ def get_dim_scaling(
             ):
                 raise ValueError(
                     f"Tile size must be divisible by wave count and vector size, got: "
+                    f"dim={constraint.dim}, "
                     f"tile_size={tile_size}, wave_count={wave_count}, vector_size={vector_size}"
                 )
             dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
