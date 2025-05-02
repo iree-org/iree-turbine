@@ -43,6 +43,7 @@ from ..tracing import tracer
 
 from .base import (
     FreeFuncKernelBuilder,
+    WaveKernelBuilder,
     KernelSelection,
 )
 
@@ -134,6 +135,8 @@ def compile_standalone_kernel(
         async_invocations=async_invocations,
     )
     kb = FreeFuncKernelBuilder.create_module(ksel, func_name=func_name)
+    config = KernelCompileConfig(cache_key, list(device.compile_target_flags))
+    kb = FreeFuncKernelBuilder.create_module(ksel, func_name=func_name)
     with kb.ip, Location.unknown():
         ksel.op.generate(ksel, kb)
 
@@ -150,7 +153,7 @@ def compile_standalone_kernel(
             kb.context,
         )
         func.attributes["preprocessing_pipeline"] = pipeline_attr
-
+    breakpoint()
     kb.module_op.verify()
     # DO NOT SUBMIT: https://github.com/iree-org/iree/issues/17132
     enable_debug_info = False
