@@ -130,8 +130,10 @@ def create_inputs(
     block_table = device_arange(num_seqs * kv_lens, dtype=torch.int32).reshape(
         num_seqs, kv_lens
     )
-    request_indices = device_arange(num_seqs, dtype=torch.int32)
+    # request_indices = device_arange(num_seqs, dtype=torch.int32)
     kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
+    request_indices = device_zeros(num_seqs + 1, dtype=torch.int32)
+    request_indices[1 : num_seqs + 1] = torch.cumsum(kv_lens_tensor, dim=0)
     return (
         query,
         key_cache,
@@ -324,7 +326,7 @@ def testPagedFlashDecoding(
     options = set_default_run_config(options)
     phase_1 = wave_compile(options, phase_1)
 
-    asm_sv = phase_1(phase_0_output, phase_0_output_max, kv_lens_tensor, output)
+    asm_sv = phase_1(phase_0_output, phase_0_output_max, request_indices, output)
 
     if dump_generated_mlir:
         filename = f"wave_paged_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
