@@ -229,7 +229,7 @@ def get_paged_decode_attention_kernels(
 
     k_layout = tkl.MemoryLayout(shape=k_shape)
     v_layout = tkl.MemoryLayout(shape=v_shape)
-    kv_indices_layout = tkl.MemoryLayout(shape=[K2])
+    kv_indices_layout = tkl.MemoryLayout(shape=[K2 + 1])
 
     # The kv-cache layout here is (SEQ, HEADS, HEAD_DIM).
     @tkw.wave(get_constraints(Phase.PHASE_0))
