@@ -733,7 +733,7 @@ def fixup_reduction_nodes(
                 new_condition = value
                 break
         if new_condition is None:
-            logger.warning(
+            logger.info(
                 f"Condition was not expanded: {condition}. Using the original condition."
             )
             continue
