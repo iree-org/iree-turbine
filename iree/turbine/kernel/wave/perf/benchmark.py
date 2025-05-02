@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Copyright 2025 The IREE Authors
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions.
@@ -7,7 +6,6 @@
 
 import argparse
 import json
-import time
 import torch
 import iree.turbine.kernel.wave.nn as wave_nn
 
@@ -23,14 +21,14 @@ DEFAULT_OUTPUT_FILENAME = "trace.rpd"
 
 
 def benchmark_wave_sdpa(
-    batch_size,
-    num_heads,
-    seq_len_q,
-    seq_len_k,
-    head_dim,
-    num_warmup=10,
-    num_iterations=100,
-    output_filename=DEFAULT_OUTPUT_FILENAME,
+    batch_size: int,
+    num_heads: int,
+    seq_len_q: int,
+    seq_len_k: int,
+    head_dim: int,
+    num_warmup: int,
+    num_iterations: int,
+    output_filename: str = DEFAULT_OUTPUT_FILENAME,
 ):
     """Benchmark wave_sdpa with given BHSD shapes.
 
