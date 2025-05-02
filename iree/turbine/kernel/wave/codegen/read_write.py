@@ -6,7 +6,7 @@
 
 import sympy
 import functools
-from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
+from typing import Any, Optional, Dict
 
 import torch.fx as fx
 
@@ -14,7 +14,6 @@ from ...compiler.ir import (
     Attribute,
     DenseElementsAttr,
     IndexType,
-    InsertionPoint,
     IntegerAttr,
     IntegerType,
     IrType,
@@ -26,7 +25,6 @@ from ...compiler.ir import (
     amdgpu_d,
     arith_d,
     memref_d,
-    scf_d,
     vector_d,
 )
 
@@ -47,15 +45,13 @@ from ..utils.general_utils import (
 )
 from ..utils.symbol_utils import safe_subs, subs_idxc
 
-from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
-from ...lang.kernel_buffer import AddressSpace
+from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence
 from ...lang.global_symbols import *
 from ...lang.wave_types import IndexMapping
 
 from .emitter import (
     WaveEmitter,
     handle_op,
-    get_type_or_element_type,
     add_emitter_subs,
     gen_sympy_index,
     get_constant_attr,
@@ -727,11 +723,6 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected write to have index attr.")
 
     index = node.index
-    memory_address_space = None
-    if hasattr(get_custom(memory), "address_space"):
-        memory_address_space = get_custom(memory).address_space
-    if memory_address_space == AddressSpace.SHARED_MEMORY:
-        index = remove_global_indexing(node.index, emitter.constraints)
 
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
