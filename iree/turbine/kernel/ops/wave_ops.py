@@ -165,7 +165,12 @@ def minimum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
-def atomic_min(lhs: "Register", rhs: "Memory") -> "Register":
+def atomic_min(
+    lhs: "Register",
+    rhs: "Memory",
+    elements_per_thread: Optional[IndexExpr | int] = None,
+    mapping: Optional[IndexMapping] = None,
+) -> "Register":
     ...
 
 
