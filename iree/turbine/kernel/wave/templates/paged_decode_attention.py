@@ -45,6 +45,7 @@ def get_paged_decode_attention_kernels(
     K1 = tkl.sym.K1
     K2 = tkl.sym.K2
     SEQ_LEN = tkl.sym.SEQ_LEN
+    KV_START_IDX = tkl.sym.KV_START_IDX
     SPLIT_OFF = tkl.sym.SPLIT_OFF
     SPLIT_LEN = tkl.sym.SPLIT_LEN
     SPLITS_ACTIVE = tkl.sym.SPLITS_ACTIVE
@@ -196,6 +197,12 @@ def get_paged_decode_attention_kernels(
         outputs={S: i, B: j, N: k},
     )
 
+    seq_len_mapping = tkw.IndexMapping(
+        num_iterators=1,
+        inputs={S: i + 1},
+        outputs={S: i},
+    )
+
     K2_dim = k_shape[1]
     # Returns the key for the given token index.
     k_mapping = tkw.IndexMapping(
@@ -214,16 +221,16 @@ def get_paged_decode_attention_kernels(
     )
 
     # Returns token indices into the k-v cache for the given sequence (d0).
-    block_table_mapping = tkw.IndexMapping(
+    kv_indices_mapping = tkw.IndexMapping(
         num_iterators=1,
-        inputs={S: d0, K2: i},
+        inputs={K2: i + KV_START_IDX},
         outputs={K2: i},
-        dynamic_val_mappings={S: 0},
     )
 
     k_layout = tkl.MemoryLayout(shape=k_shape)
     v_layout = tkl.MemoryLayout(shape=v_shape)
-    block_table_layout = tkl.MemoryLayout(shape=block_table_shape)
+    req_indices_layout = tkl.MemoryLayout(shape=[S + 1])
+    kv_indices_layout = tkl.MemoryLayout(shape=[K2 * S])
 
     # The kv-cache layout here is (SEQ, HEADS, HEAD_DIM).
     @tkw.wave(get_constraints(Phase.PHASE_0))
@@ -231,11 +238,10 @@ def get_paged_decode_attention_kernels(
         q: tkl.Memory[S, B, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[S, K2, BH, K1, ADDRESS_SPACE, tkl.f16, k_layout],
         v: tkl.Memory[S, K2, BH, N, ADDRESS_SPACE, tkl.f16, v_layout],
-        request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        block_table: tkl.Memory[
-            S, K2, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
+        request_indices: tkl.Memory[
+            S, GLOBAL_ADDRESS_SPACE, tkl.i32, req_indices_layout
         ],
+        kv_indices: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
         output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
@@ -260,7 +266,9 @@ def get_paged_decode_attention_kernels(
         # The request index is used to load the appropriate entries from the block table.
         req_index = tkw.read(request_indices)
         # The sequence length is used to control the bounds of the loop over K2.
-        seq_length = tkw.read(sequence_lengths)
+        seq_length = tkw.read(request_indices, mapping=seq_len_mapping)
+        seq_length = seq_length - req_index
+        tkw.set_symbol(KV_START_IDX, req_index)
         tkw.set_symbol(SEQ_LEN, seq_length)
 
         seq_length_per_split = tkw.apply_expr(
@@ -288,14 +296,12 @@ def get_paged_decode_attention_kernels(
         ):
             q_reg = tkw.read(q)  # [S, B, K1] NxK
             block_indices_v = tkw.read(
-                block_table,
-                mapping=block_table_mapping,
-                mapping_dynamic_vals=(req_index,),
+                kv_indices,
+                mapping=kv_indices_mapping,
             )
             block_indices_k = tkw.read(
-                block_table,
-                mapping=block_table_mapping,
-                mapping_dynamic_vals=(req_index,),
+                kv_indices,
+                mapping=kv_indices_mapping,
             )
             k_reg = tkw.read(
                 k,
@@ -341,10 +347,16 @@ def get_paged_decode_attention_kernels(
     def phase_1(
         logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        request_indices: tkl.Memory[
+            S, GLOBAL_ADDRESS_SPACE, tkl.i32, req_indices_layout
+        ],
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
-        seq_length = tkw.read(sequence_lengths, elements_per_thread=1)
+        req_index = tkw.read(request_indices, elements_per_thread=1)
+        seq_length = tkw.read(
+            request_indices, mapping=seq_len_mapping, elements_per_thread=1
+        )
+        seq_length = seq_length - req_index
         splits_active = tkw.apply_expr(seq_length, lambda x: sympy.Min(x, U))
         tkw.set_symbol(SPLITS_ACTIVE, splits_active)
 
