@@ -130,7 +130,6 @@ def create_inputs(
     block_table = device_arange(num_seqs * kv_lens, dtype=torch.int32).reshape(
         num_seqs, kv_lens
     )
-    # request_indices = device_arange(num_seqs, dtype=torch.int32)
     kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
     request_indices = device_zeros(num_seqs + 1, dtype=torch.int32)
     request_indices[1 : num_seqs + 1] = torch.cumsum(kv_lens_tensor, dim=0)
