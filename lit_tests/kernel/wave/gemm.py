@@ -111,7 +111,7 @@ def test_gemm():
     # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1] -> (s0 * 32 + (s1 floordiv 64) * 16 + ((s1 mod 64) floordiv 16) * 4 + 2)>
     # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1] -> (s0 * 32 + (s1 floordiv 64) * 16 + ((s1 mod 64) floordiv 16) * 4 + 3)>
     # CHECK:          func.func @gemm
-    # CHECK-COUNT-2     memref.alloc()
+    # CHECK-COUNT-2:    memref.alloc()
     # CHECK:            scf.for
     # CHECK:              amdgpu.lds_barrier
     # CHECK:              vector.load
@@ -176,7 +176,7 @@ def test_gemm_dot():
 
     # CHECK-LABEL:    test_gemm_dot
     # CHECK:          func.func @gemm_dot
-    # CHECK-COUNT-2     memref.alloc()
+    # CHECK-COUNT-2:    memref.alloc()
     # CHECK:            scf.for
     # CHECK:              amdgpu.lds_barrier
     # CHECK:              vector.load
@@ -186,7 +186,7 @@ def test_gemm_dot():
     # CHECK:              amdgpu.lds_barrier
     # CHECK-COUNT-4:      vector.load
     # CHECK-COUNT-16:     gpu.shuffle
-    # CHECK-COUNT-16    vector.store
+    # CHECK-COUNT-16:   vector.store
 
 
 @run_test
@@ -402,7 +402,7 @@ def test_batched_gemm():
     # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1] -> (s0 * 32 + (s1 floordiv 64) * 16 + ((s1 mod 64) floordiv 16) * 4 + 2)>
     # CHECK-DAG:        #{{.*}} = affine_map<()[s0, s1] -> (s0 * 32 + (s1 floordiv 64) * 16 + ((s1 mod 64) floordiv 16) * 4 + 3)>
     # CHECK:          func.func @batched_gemm
-    # CHECK-COUNT-2     memref.alloc()
+    # CHECK-COUNT-2:    memref.alloc()
     # CHECK:            scf.for
     # CHECK:              amdgpu.lds_barrier
     # CHECK:              vector.load
