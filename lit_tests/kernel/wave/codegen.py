@@ -438,7 +438,7 @@ def test_read_write_dynamic_mapping():
     # CHECK-DAG:        #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16 - (s0 floordiv 64) * 768)>
     # CHECK:          func.func @read_write_dynamic_mapping
     # CHECK-SAME:       (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
-    # CHECK_DAG:        %[[C0:.*]] = arith.constant 0 : index
+    # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
     # CHECK:            %[[THREAD_ID_X:.*]] = gpu.thread_id  x
     # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
     # CHECK:            %[[D1:.*]] = affine.apply #[[map0]]()[%[[THREAD_ID_X]]]
