@@ -1845,64 +1845,67 @@ def test_atomic_min(shape, use_buffer_ops, request):
 
     M = tkl.sym.M
     N = tkl.sym.N
-    M_IDX = tkl.sym.M_IDX
+    SHMEM_DIM = tkl.sym.SHMEM_DIM
+    SHMEM_IDX = tkl.sym.SHMEM_IDX
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     wave_size = 64
     BLOCK_M = 2
     BLOCK_N = 64
+    num_waves = 2
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
             waves_per_block=(1, 2, 1),
-            vector_shapes={M: int(BLOCK_M/2), N: BLOCK_N},
+            vector_shapes={M: int(BLOCK_M/num_waves), N: BLOCK_N, SHMEM_DIM: int(BLOCK_M/num_waves)},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, int(BLOCK_M/2))]
+    constraints += [tkw.WaveConstraint(M, int(BLOCK_M/num_waves))]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     mapping = tkw.IndexMapping(
-        num_iterators=2, inputs={M: i, N: j}, outputs={M: i, N: j - (M_IDX * BLOCK_N)}
+        num_iterators=2, inputs={M: i, N: j}, outputs={M: SHMEM_IDX, N: j}
     )
 
     @tkw.wave(constraints)
     def test(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
     ):
-        res = tkw.read(a, elements_per_thread=1)
+        res = tkw.read(a, elements_per_thread=4)
         shmem = tkw.allocate(
-            shape=(M, N),
-            distributed_shape=(int(BLOCK_M/2), BLOCK_N),
+            shape=(SHMEM_DIM, N),
+            distributed_shape=(int(BLOCK_M/num_waves), BLOCK_N),
             dtype=tkl.i32,
         )
         inf_reg = tkl.Register[M, N, tkl.i32](1e6)
-        tkw.write(inf_reg, shmem, elements_per_thread=1)
-        m_idx = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-        tkw.set_symbol(M_IDX, m_idx)
-        res = tkw.atomic_min(res, shmem, elements_per_thread=1, mapping=mapping)
-        res = tkw.read(shmem, elements_per_thread=1)
-        tkw.write(res, a, elements_per_thread=1)
+        tkw.write(inf_reg, shmem, elements_per_thread=4)
+        shmem_idx = tkw.self_index(SHMEM_DIM, tkl.i64, elements_per_thread=4)
+        tkw.set_symbol(SHMEM_IDX, shmem_idx)
+        res = tkw.atomic_min(res, shmem, elements_per_thread=4, mapping=mapping)
+        res = tkw.read(shmem, elements_per_thread=4)
+        tkw.write(res, a, elements_per_thread=4)
 
     a = device_randint(low=0, high=10, size=shape, dtype=torch.int32)
-    # b = torch.min(a, dim=0)[0].detach()
+    b = torch.min(a, dim=0)[0].detach()
+
     options = WaveCompileOptions(
         subs={
             M: shape[0],
             N: shape[1],
+            SHMEM_DIM: shape[0]/num_waves,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
         run_bench=run_bench,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
-        wave_runtime=True,
     )
     options = set_default_run_config(options)
     test = wave_compile(options, test)
     test(a)
-    # assert_close(a[0,:], b)
+    assert_close(a[0,:], b)
