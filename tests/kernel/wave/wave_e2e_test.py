@@ -1858,12 +1858,16 @@ def test_atomic_min(shape, use_buffer_ops, request):
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
             waves_per_block=(1, 2, 1),
-            vector_shapes={M: int(BLOCK_M/num_waves), N: BLOCK_N, SHMEM_DIM: int(BLOCK_M/num_waves)},
+            vector_shapes={
+                M: int(BLOCK_M / num_waves),
+                N: BLOCK_N,
+                SHMEM_DIM: int(BLOCK_M / num_waves),
+            },
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, int(BLOCK_M/num_waves))]
+    constraints += [tkw.WaveConstraint(M, int(BLOCK_M / num_waves))]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
@@ -1879,7 +1883,7 @@ def test_atomic_min(shape, use_buffer_ops, request):
         res = tkw.read(a, elements_per_thread=4)
         shmem = tkw.allocate(
             shape=(SHMEM_DIM, N),
-            distributed_shape=(int(BLOCK_M/num_waves), BLOCK_N),
+            distributed_shape=(int(BLOCK_M / num_waves), BLOCK_N),
             dtype=tkl.i32,
         )
         inf_reg = tkl.Register[M, N, tkl.i32](1e6)
@@ -1897,7 +1901,7 @@ def test_atomic_min(shape, use_buffer_ops, request):
         subs={
             M: shape[0],
             N: shape[1],
-            SHMEM_DIM: shape[0]/num_waves,
+            SHMEM_DIM: shape[0] / num_waves,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
@@ -1908,4 +1912,4 @@ def test_atomic_min(shape, use_buffer_ops, request):
     options = set_default_run_config(options)
     test = wave_compile(options, test)
     test(a)
-    assert_close(a[0,:], b)
+    assert_close(a[0, :], b)
