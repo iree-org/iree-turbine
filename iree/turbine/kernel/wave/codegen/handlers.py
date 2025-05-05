@@ -444,10 +444,6 @@ def handle_atomic_op(op):
                 # float types. LLVM already supports fmin and fmax (https://llvm.org/docs/LangRef.html#atomicrmw-instruction)
                 # and thus atomicrmw operation in MLIR dialect needs to target those instructions with "workgroup" scope.
                 raise NotImplementedError(f"Atomic ops don't support float types yet\n")
-            if elements_per_thread > 1:
-                raise ValidationError(
-                    f"More than 1 elements per thread is currently not well tested\n"
-                )
 
             lhs = lhs.ir_value
             rhs = rhs.ir_value
@@ -455,10 +451,7 @@ def handle_atomic_op(op):
                 lhs.type.rank == 0 or lhs.type.rank == 1
             ), f"expected lhs_type.rank == 1 but got {lhs.type.rank}, {node}"
 
-            # Get start indices for every element in thread
-            # TODO: Use shared_memory_indexing to remove global indexing, needs
-            # debugging to get the correct index.
-            local_index = remove_global_indexing(node.index, emitter.constraints)
+            node_index = node.index
             if mapping:
                 assert (
                     mapping.is_input_identity()
@@ -469,17 +462,18 @@ def handle_atomic_op(op):
                 index_mapping = tuple(i.subs(idxc.subs) for i in index_mapping)
                 iters = mapping.iters
                 subs = [
-                    (sym, expr.start) for sym, expr in zip(iters.keys(), local_index.values())
+                    (sym, expr.start) for sym, expr in zip(iters.keys(), node.index.values())
                 ] + list(idxc.subs.items())
-                local_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
+                node_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
 
-            start_indices = [_build_start_indices(emitter, local_index)]
-            keys = list(local_index.keys())
+            # Get start indices for every element in thread
+            start_indices = [_build_start_indices(emitter, node_index)]
+            keys = list(node_index.keys())
             fastest_dim = get_fastest_index(node.index)
             for i in range(elements_per_thread - 1):
-                new_index = copy.deepcopy(local_index)
+                new_index = copy.deepcopy(node_index)
                 key = keys[fastest_dim]
-                new_index[key].start += i + 1
+                new_index[key] += i + 1
                 start_idx = _build_start_indices(emitter, new_index)
                 start_indices.append(start_idx)
 
