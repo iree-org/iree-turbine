@@ -1470,6 +1470,7 @@ class Conditional(NestedRegionOp):
 class Iterate(NestedRegionOp):
     axis: IndexSymbol
     init_args: Sequence[Any]
+    step: int
     subgraph_name: str
     implicit_captures: Sequence[fx.Proxy]
     start: Optional[IndexExpr] = None
@@ -1488,6 +1489,7 @@ class Iterate(NestedRegionOp):
             node = Iterate(
                 *args,
                 **kwargs,
+                step=1,
                 subgraph_name=subgraph_name,
                 implicit_captures=implicit_captures,
             )

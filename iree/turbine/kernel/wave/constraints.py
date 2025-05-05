@@ -602,7 +602,7 @@ class WaveConstraint(Constraint):
 
     dim: IndexExpr
     tile_size: IndexExpr
-    wave_id: Optional[IndexExpr] = None
+    wave_id: Optional[IndexExpr | int] = None
 
     def apply(self) -> IndexSequence:
         if self.wave_id is None:

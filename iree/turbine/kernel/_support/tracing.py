@@ -455,7 +455,9 @@ class Launchable(ABC):
 class LaunchContext(ABC):
     __tk_context_idname__ = "ExecutionContext"
 
-    def __init__(self, constant_bindings: Dict[IndexSymbol, int] = {}, **kwargs):
+    def __init__(
+        self, constant_bindings: Dict[IndexSymbol, int | IndexSymbol] = {}, **kwargs
+    ):
         self.constant_bindings = constant_bindings
         self.kwargs = kwargs
 
