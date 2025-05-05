@@ -6,7 +6,7 @@ import warnings
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Tuple, Union, OrderedDict
+from typing import Tuple, Union, OrderedDict, Sequence
 
 from iree.compiler.tools.core import compile_file, CompilerToolError
 from iree.runtime import VmModule
@@ -55,7 +55,9 @@ def clear_cache_dir():
     shutil.rmtree(CACHE_BASE_DIR)
 
 
-def _out_of_process_compile(func_name, key_hashes_and_flags) -> Tuple[str, Tuple[bool]]:
+def _out_of_process_compile(
+    func_name: str, key_hashes_and_flags: Sequence[Tuple[str, Sequence[str]]]
+) -> Tuple[str, Tuple[bool]]:
     """Runs compilation via command line tool. Does not raise an exception if compilation fails."""
     mlir_path = CACHE_BASE_DIR / func_name / f"{func_name}.mlir"
     if not mlir_path.is_file():
@@ -234,7 +236,7 @@ def get_launchable(
             parameter_providers=(),
             entry_point=f"{func_name}$async",
         )
-    elif Path(BOO_TUNING_SPEC_PATH).is_file():
+    elif BOO_TUNING_SPEC_PATH != "":
         module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
         launch = Launchable.from_vm_module(
             _user_flags_jit_callback(

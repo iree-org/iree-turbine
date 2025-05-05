@@ -276,19 +276,12 @@ def _get_preload_args():
         type=int,
         help="Specify a maximum number of concurrent processes.",
     )
-    # parser.add_argument(
-    #     "--extra-compile-flags",
-    #     "-f",
-    #     nargs="*",
-    #     type=str,
-    #     help="Specify additional compile flags to use when generating vmfbs.",
-    # )
     return parser.parse_known_args()
 
 
 if __name__ == "__main__":
     args, extra_compile_flags = _get_preload_args()
-    if Path(BOO_TUNING_SPEC_PATH).is_file():
+    if BOO_TUNING_SPEC_PATH != "":
         extra_compile_flags.extend(
             [f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}"]
         )
