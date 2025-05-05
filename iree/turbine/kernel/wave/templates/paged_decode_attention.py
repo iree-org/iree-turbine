@@ -73,9 +73,9 @@ def get_paged_decode_attention_kernels(
     PHASE_1_BLOCK_B = 64
     PHASE_1_ELEMS_PER_THREAD = PHASE_1_BLOCK_B // THREADS_PER_WAVE
     PHASE_1_BLOCK_N = 1
-    HEAD_BLOCK_SIZE = 16
+    B_WAVES = 2
+    HEAD_BLOCK_SIZE = 16 * B_WAVES
     head_ratio = shape.num_query_heads // shape.num_kv_heads
-    B_WAVES = 1
 
     LOG2E = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
