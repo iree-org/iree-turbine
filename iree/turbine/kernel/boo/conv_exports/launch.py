@@ -79,7 +79,13 @@ def _out_of_process_compile(
             command
         )
         logger.debug("compile command:\n%s", command)
-        ret = subprocess.run(command, capture_output=True, shell=True)
+        try:
+            ret = subprocess.run(command, capture_output=True, shell=True, timeout=10)
+        except subprocess.TimeoutExpired as e:
+            logger.warning("Process timed out. See message:\n%s", str(e))
+            vmfb_path.unlink(missing_ok=True)
+            success.append(False)
+            continue
         if ret.returncode != 0:
             logger.warning("failed executing compile command: %s", command)
             # clean-up any empty vmfb files created
@@ -98,7 +104,7 @@ def _user_flags_jit_callback(func_name: str, extra_flags, source: str):
         cl_list = ["iree-compile"] + flags + [str(mlir_path), "-o", str(vmfb_path)]
         command = shlex.join(cl_list)
         (vmfb_path.parent / f"compile_command_{vmfb_path.stem}.txt").write_text(command)
-        ret = subprocess.run(command, capture_output=True, shell=True)
+        ret = subprocess.run(command, capture_output=True, shell=True, timeout=10)
         if ret.returncode != 0:
             raise RuntimeError(
                 f"Failed compilation with diagnostics: {ret.stderr.decode()}."
