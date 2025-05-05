@@ -23,7 +23,9 @@ def apply_shared_memory_indexing_corrections(
 
     def shared_memory_ops(node: fx.Node):
         custom = get_custom(node)
-        if isinstance(custom, (AtomicMin, Read, Write)) and is_shared_mem_access(custom):
+        if isinstance(custom, (AtomicMin, Read, Write)) and is_shared_mem_access(
+            custom
+        ):
             custom.index = remove_global_indexing(custom.index, constraints)
         return False
 

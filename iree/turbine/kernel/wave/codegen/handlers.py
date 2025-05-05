@@ -462,9 +462,12 @@ def handle_atomic_op(op):
                 index_mapping = tuple(i.subs(idxc.subs) for i in index_mapping)
                 iters = mapping.iters
                 subs = [
-                    (sym, expr.start) for sym, expr in zip(iters.keys(), node.index.values())
+                    (sym, expr.start)
+                    for sym, expr in zip(iters.keys(), node.index.values())
                 ] + list(idxc.subs.items())
-                node_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
+                node_index = {
+                    key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)
+                }
 
             # Get start indices for every element in thread
             start_indices = [_build_start_indices(emitter, node_index)]

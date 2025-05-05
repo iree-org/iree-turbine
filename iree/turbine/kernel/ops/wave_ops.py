@@ -1252,6 +1252,7 @@ class AtomicMin(BinaryOpBase, ABC):
     """
     Represents an atomic operation in the graph.
     Takes in value and buffer to perform the operation on.
+    The minimum (modified) value is written on to the buffer.
     """
 
     elements_per_thread: Optional[Any] = None
