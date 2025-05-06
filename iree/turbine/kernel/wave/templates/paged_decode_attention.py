@@ -70,11 +70,8 @@ def get_paged_decode_attention_kernels(
         PHASE_1 = (1,)
 
     THREADS_PER_WAVE = 64
-    PHASE_1_BLOCK_B_WAVES = 2
+    PHASE_1_BLOCK_B_WAVES = 1
     PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
-    PHASE_1_ELEMS_PER_THREAD = PHASE_1_BLOCK_B // (
-        THREADS_PER_WAVE * PHASE_1_BLOCK_B_WAVES
-    )
     PHASE_1_BLOCK_N = 1
     B_WAVES = 1 if mha else 4
     HEAD_BLOCK_SIZE = 16 * B_WAVES
@@ -363,10 +360,8 @@ def get_paged_decode_attention_kernels(
         ],
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
-        req_index = tkw.read(request_indices, elements_per_thread=1)
-        seq_length = tkw.read(
-            request_indices, mapping=seq_len_mapping, elements_per_thread=1
-        )
+        req_index = tkw.read(request_indices)
+        seq_length = tkw.read(request_indices, mapping=seq_len_mapping)
         seq_length = seq_length - req_index
         splits_active = tkw.apply_expr(seq_length, lambda x: sympy.Min(x, U))
         tkw.set_symbol(SPLITS_ACTIVE, splits_active)
@@ -381,8 +376,8 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, B, N, tkl.f32],
         ):
-            x_j = tkw.read(logits, elements_per_thread=PHASE_1_ELEMS_PER_THREAD)
-            xm_j = tkw.read(logits_max, elements_per_thread=PHASE_1_ELEMS_PER_THREAD)
+            x_j = tkw.read(logits)
+            xm_j = tkw.read(logits_max)
             m_j = tkw.maximum(xm_j, partial_max)
             old_scale = tkw.exp2(partial_max - m_j)
             new_scale = tkw.exp2(xm_j - m_j)
@@ -400,7 +395,6 @@ def get_paged_decode_attention_kernels(
             res_f16,
             output,
             mapping=mapping,
-            elements_per_thread=PHASE_1_ELEMS_PER_THREAD,
         )
 
     if mha:
