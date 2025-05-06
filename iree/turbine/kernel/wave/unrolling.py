@@ -10,6 +10,7 @@ from .utils.general_utils import get_tiling_constraint
 from iree.turbine.kernel._support.tracing import CapturedTrace
 import torch.fx as fx
 from ..ops.wave_ops import Iterate, Output, Placeholder, get_custom
+from sympy import Integer
 
 
 def remap_iter_args(
@@ -42,14 +43,16 @@ def unroll(
         tiling_constraint = get_tiling_constraint(iterate, constraints)
         iterate.count = subs_idxc(tiling_constraint.count)
         assert isinstance(
-            iterate.count, int
+            iterate.count, int | Integer
         ), "Iteration count must be a statically determinable integer"
     if iterate.count / unroll_factor < 1:
         raise ValueError("Unroll factor is too large for the iteration count.")
     if iterate.count % unroll_factor != 0:
         raise ValueError("Unroll factor must divide the iteration count evenly.")
+    if iterate.condition is not None:
+        raise ValueError("Unrolling is not supported for iterates with conditions.")
 
-    iterate.count = iterate.count / unroll_factor
+    iterate.count = iterate.count // unroll_factor
     iterate.step = iterate.step * unroll_factor
 
     graph = trace.get_subgraph(iterate.subgraph_name)

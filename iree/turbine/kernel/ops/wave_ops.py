@@ -1589,7 +1589,7 @@ class Iterate(NestedRegionOp):
         CustomOp.index.fset(self, value)
 
     @property
-    def count(self) -> int:
+    def count(self) -> Optional[int]:
         if hasattr(self.fx_node, "count"):
             return self.fx_node.count
         return None
