@@ -1857,7 +1857,7 @@ def test_atomic_min(shape, use_buffer_ops, request):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 2, 1),
+            waves_per_block=(1, num_waves, 1),
             vector_shapes={
                 M: int(BLOCK_M / num_waves),
                 N: BLOCK_N,
@@ -1888,7 +1888,7 @@ def test_atomic_min(shape, use_buffer_ops, request):
         )
         inf_reg = tkl.Register[M, N, tkl.i32](1e6)
         tkw.write(inf_reg, shmem, elements_per_thread=4)
-        shmem_idx = tkw.self_index(SHMEM_DIM, tkl.i64, elements_per_thread=4)
+        shmem_idx = tkw.self_index(SHMEM_DIM, tkl.i64)
         tkw.set_symbol(SHMEM_IDX, shmem_idx)
         res = tkw.atomic_min(res, shmem, elements_per_thread=4, mapping=mapping)
         res = tkw.read(shmem, elements_per_thread=4)
