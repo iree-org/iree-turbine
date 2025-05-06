@@ -2400,7 +2400,7 @@ def test_atomic_min():
     BLOCK_M = 2
     BLOCK_N = 64
     num_waves = 2
-    shape = (2,64)
+    shape = (2, 64)
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(

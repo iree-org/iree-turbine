@@ -479,8 +479,12 @@ def handle_atomic_op(op):
                 key = keys[fastest_dim]
                 new_index[key] += i
                 start_idx = _build_start_indices(emitter, new_index)
-                lhs_val = vector_d.extract(lhs, static_position=[i], dynamic_position=[])
-                atomic_results.append(binary_fn(lhs_val, rhs, start_idx, emitter.options))
+                lhs_val = vector_d.extract(
+                    lhs, static_position=[i], dynamic_position=[]
+                )
+                atomic_results.append(
+                    binary_fn(lhs_val, rhs, start_idx, emitter.options)
+                )
 
             result = vector_d.from_elements(lhs_type, atomic_results)
             emitter.bind_node_proxy(node, IRProxyValue(result))
