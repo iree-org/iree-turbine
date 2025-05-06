@@ -468,6 +468,17 @@ class Device:
 def _device_import_torch_tensor_cpu(device: Device, t: torch.Tensor) -> HalBufferView:
     hal_device = device.hal_device
     element_type = dtype_to_element_type(t.dtype)
+
+    if (t.dtype == torch.bfloat16):
+        t = t.view(torch.int16)
+
+    if (t.dtype in {
+        torch.float8_e4m3fn,
+        torch.float8_e4m3fnuz,
+        torch.float8_e5m2,
+        torch.float8_e5m2fnuz}):
+        t = t.view(torch.int8)
+
     # TODO: In this case, we should be importing the raw buffer, but this is not
     # generically exposed to Python in the IREE runtime.
     bv = device.hal_device.allocator.allocate_buffer_copy(
@@ -490,7 +501,7 @@ def _device_export_torch_tensor_cpu(
     shape = list(like.shape)
     np_dtype = torch_dtype_to_numpy(like.dtype)
     mapped_array = mapped_memory.asarray(shape, np_dtype)
-    return torch.from_numpy(mapped_array)
+    return torch.from_numpy(mapped_array).view(like.dtype)
 
 
 ################################################################################
