@@ -131,6 +131,10 @@ DTYPE_TO_ELEMENT_TYPE: dict[torch.dtype, HalElementType] = {
     torch.quint8: HalElementType.OPAQUE_8,
     torch.complex64: HalElementType.COMPLEX_64,
     torch.complex128: HalElementType.COMPLEX_128,
+    torch.float8_e4m3fn: HalElementType.FLOAT_8_E4M3_FN,
+    torch.float8_e4m3fnuz: HalElementType.FLOAT_8_E4M3_FNUZ,
+    torch.float8_e5m2: HalElementType.FLOAT_8_E5M2,
+    torch.float8_e5m2fnuz: HalElementType.FLOAT_8_E5M2_FNUZ,
 }
 
 
@@ -153,6 +157,11 @@ TORCH_DTYPE_TO_NUMPY = {
     torch.bool: np.dtype("?"),
     torch.complex64: np.dtype("c8"),
     torch.complex128: np.dtype("c16"),
+    torch.bfloat16: np.dtype("i2"),
+    torch.float8_e4m3fn: np.dtype("i1"),
+    torch.float8_e4m3fnuz: np.dtype("i1"),
+    torch.float8_e5m2: np.dtype("i1"),
+    torch.float8_e5m2fnuz: np.dtype("i1"),
 }
 
 

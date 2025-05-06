@@ -158,6 +158,18 @@ class TorchCUDAInterop(unittest.TestCase):
         expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
         torch.testing.assert_close(result.cpu(), expected)
 
+    def testJitBF16(self):
+        from iree.turbine.ops import _str_format_test_ops as test_ops
+
+        t = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0, 5.0], device="cuda:0", dtype=torch.bfloat16
+        )
+        result = test_ops.test_add(t, t)
+        expected = torch.tensor(
+            [2.0, 4.0, 6.0, 8.0, 10.0], device="cpu", dtype=torch.bfloat16
+        )
+        torch.testing.assert_close(result.cpu(), expected)
+
 
 class TorchCPUInterop(unittest.TestCase):
     def testJitStrFormat(self):
@@ -175,6 +187,16 @@ class TorchCPUInterop(unittest.TestCase):
         result = test_ops.test_add(t, t)
         expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
         torch.testing.assert_close(result, expected)
+
+    def testJitBF16(self):
+        from iree.turbine.ops import _str_format_test_ops as test_ops
+
+        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu", dtype=torch.bfloat16)
+        result = test_ops.test_add(t, t)
+        expected = torch.tensor(
+            [2.0, 4.0, 6.0, 8.0, 10.0], device="cpu", dtype=torch.bfloat16
+        )
+        torch.testing.assert_close(result.cpu(), expected)
 
 
 if __name__ == "__main__":
