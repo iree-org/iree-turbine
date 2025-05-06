@@ -192,7 +192,7 @@ class TorchCPUInterop(unittest.TestCase):
         from iree.turbine.ops import _str_format_test_ops as test_ops
 
         t = torch.tensor(
-            [1.0, 2.0, 3.0, 4.0, 5.0], device="cuda:0", dtype=torch.bfloat16
+            [1.0, 2.0, 3.0, 4.0, 5.0], device="cpu", dtype=torch.bfloat16
         )
         result = test_ops.test_add(t, t)
         expected = torch.tensor(
