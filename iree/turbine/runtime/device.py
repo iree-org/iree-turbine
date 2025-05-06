@@ -50,6 +50,7 @@ __all__ = [
     "DeviceState",
 ]
 
+
 # TODO: move this down into iree as an extention to the
 #       driver api.
 class _HipSemaphoreInterop:
@@ -469,14 +470,15 @@ def _device_import_torch_tensor_cpu(device: Device, t: torch.Tensor) -> HalBuffe
     hal_device = device.hal_device
     element_type = dtype_to_element_type(t.dtype)
 
-    if (t.dtype == torch.bfloat16):
+    if t.dtype == torch.bfloat16:
         t = t.view(torch.int16)
 
-    if (t.dtype in {
+    if t.dtype in {
         torch.float8_e4m3fn,
         torch.float8_e4m3fnuz,
         torch.float8_e5m2,
-        torch.float8_e5m2fnuz}):
+        torch.float8_e5m2fnuz,
+    }:
         t = t.view(torch.int8)
 
     # TODO: In this case, we should be importing the raw buffer, but this is not
