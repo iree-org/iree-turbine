@@ -72,7 +72,7 @@ def get_paged_decode_attention_kernels(
     THREADS_PER_WAVE = 64
     PHASE_1_BLOCK_B_WAVES = 1
     PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
-    PHASE_1_BLOCK_N = sympy.Min(64, N)
+    PHASE_1_BLOCK_N = min(64, shape.head_size_kv)
     B_WAVES = 1 if mha else 4
     HEAD_BLOCK_SIZE = 16 * B_WAVES
     head_ratio = shape.num_query_heads // shape.num_kv_heads
