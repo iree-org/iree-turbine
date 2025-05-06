@@ -184,6 +184,20 @@ class CustomOp(ABC):
         """
         ...
 
+    @property
+    def single_dispatch(self) -> bool:
+        """Indicates whether the CustomOp should be forced into a single dispatch using a util.func pipeline attribute.
+
+        It is recommended to only use this for more complicated ops which would not automatically get compiled into a single dispatch.
+        E.g. A fused conv + bias-add + relu custom op.
+
+        For eager contexts, this will apply the pipeline attribute to the main$async function.
+
+        For aot contexts, this currently does nothing, but could eventually attempt to apply an `util.inline.never` attribute,
+        in addition to the pipeline attribute, to the function being called by the InlineKernelBuilder.
+        """
+        return False
+
     @abstractmethod
     def select(self, sel: "KernelSelection"):
         """Performs kernel selection.
