@@ -72,7 +72,7 @@ def get_paged_decode_attention_kernels(
     THREADS_PER_WAVE = 64
     PHASE_1_BLOCK_B_WAVES = 1
     PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
-    PHASE_1_BLOCK_N = 1
+    PHASE_1_BLOCK_N = sympy.Min(64, N)
     B_WAVES = 1 if mha else 4
     HEAD_BLOCK_SIZE = 16 * B_WAVES
     head_ratio = shape.num_query_heads // shape.num_kv_heads
@@ -167,7 +167,7 @@ def get_paged_decode_attention_kernels(
         vector_shapes = {
             S: 0,
             B: BLOCK_B // PHASE_1_BLOCK_B_WAVES,
-            N: BLOCK_N,
+            N: 1,
             U: 1,
         }
         waves_per_block = (PHASE_1_BLOCK_B_WAVES, 1, 1)
@@ -395,6 +395,7 @@ def get_paged_decode_attention_kernels(
             res_f16,
             output,
             mapping=mapping,
+            elements_per_thread=1,
         )
 
     if mha:
