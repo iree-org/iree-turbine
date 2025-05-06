@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from .._support.tracing import CapturedTrace
-from ..ops.wave_ops import AtomicMin, Read, Write, get_custom
+from ..ops.wave_ops import AtomicOp, Read, Write, get_custom
 from ..lang.global_symbols import *
 from .utils.general_utils import remove_global_indexing, is_shared_mem_access
 from .constraints import Constraint
@@ -23,7 +23,7 @@ def apply_shared_memory_indexing_corrections(
 
     def shared_memory_ops(node: fx.Node):
         custom = get_custom(node)
-        if isinstance(custom, (AtomicMin, Read, Write)) and is_shared_mem_access(
+        if isinstance(custom, (AtomicOp, Read, Write)) and is_shared_mem_access(
             custom
         ):
             custom.index = remove_global_indexing(custom.index, constraints)
