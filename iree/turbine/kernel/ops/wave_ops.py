@@ -1189,6 +1189,10 @@ class Allocate(CustomOp):
     def type(self) -> "Memory":
         return Memory[(*self.shape, self.address_space, self.dtype)]
 
+    @property
+    def memory_type(self) -> "Memory":
+        return self.address_space
+
 
 @define_op("self_index")
 @dataclass
@@ -1252,7 +1256,9 @@ class AtomicOp(BinaryOpBase, ABC):
     """
     Represents an atomic operation in the graph.
     Takes in value (register) and buffer (shared/global) as inputs,
-    and writes the modified value back on to the buffer.
+    and writes the modified value back on to the buffer. Mapping
+    attribute maps the index from wave kernel to the shared memory
+    index the wavegroup operates on.
     """
 
     elements_per_thread: Optional[Any] = None
