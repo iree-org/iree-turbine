@@ -1,11 +1,15 @@
 import os
+import shlex
 import shutil
+import subprocess
 import warnings
 
 from pathlib import Path
-from typing import Union, OrderedDict
+from tempfile import TemporaryDirectory
+from typing import Tuple, Union, OrderedDict, Sequence
 
 from iree.compiler.tools.core import compile_file, CompilerToolError
+from iree.runtime import VmModule
 
 from .conv import ConvSignature
 from ....aot import export
@@ -36,6 +40,9 @@ def set_boo_cache(cache_dir: Union[Path, str, None] = None) -> Path:
 
 set_boo_cache()
 BOO_CACHE_ON = int(os.environ.get("BOO_CACHE_ON", 1))
+BOO_TUNING_SPEC_PATH = os.environ.get(
+    "BOO_TUNING_SPEC_PATH", str(Path(__file__).parent / "tuning_specs.mlir")
+)
 
 
 def is_cache_enabled() -> bool:
@@ -48,26 +55,88 @@ def clear_cache_dir():
     shutil.rmtree(CACHE_BASE_DIR)
 
 
-def _out_of_process_compile(func_name, key_hashes_and_flags):
+def _out_of_process_compile(
+    func_name: str, key_hashes_and_flags: Sequence[Tuple[str, Sequence[str]]]
+) -> Tuple[str, Tuple[bool]]:
+    """Runs compilation via command line tool. Does not raise an exception if compilation fails."""
     mlir_path = CACHE_BASE_DIR / func_name / f"{func_name}.mlir"
     if not mlir_path.is_file():
         logger.debug("no mlir file found at %s", str(mlir_path))
-        return
-
+        return func_name, tuple([False] * len(key_hashes_and_flags))
+    success = []
     for key_hash, flags in key_hashes_and_flags:
+        vmfb_path: Path = CACHE_BASE_DIR / func_name / f"{key_hash}.vmfb"
+        if vmfb_path.is_file():
+            logger.debug("found vmfb in cache: %s", str(vmfb_path))
+            success.append(True)
+            continue
+        logger.debug("Compiling vmfb to cache: %s", str(vmfb_path))
+        cl_list = (
+            ["iree-compile"] + list(flags) + [str(mlir_path), "-o", str(vmfb_path)]
+        )
+        command = shlex.join(cl_list)
+        (CACHE_BASE_DIR / func_name / f"compile_command_{key_hash}.txt").write_text(
+            command
+        )
+        logger.debug("compile command:\n%s", command)
         try:
-            vmfb_path: Path = CACHE_BASE_DIR / func_name / f"{key_hash}.vmfb"
-            if vmfb_path.is_file():
-                logger.debug("found vmfb in cache: %s", str(vmfb_path))
-                continue
+            ret = subprocess.run(command, capture_output=True, shell=True, timeout=10)
+        except subprocess.TimeoutExpired as e:
+            logger.warning("Process timed out. See message:\n%s", str(e))
+            vmfb_path.unlink(missing_ok=True)
+            success.append(False)
+            continue
+        if ret.returncode != 0:
+            logger.warning("failed executing compile command: %s", command)
+            # clean-up any empty vmfb files created
+            vmfb_path.unlink(missing_ok=True)
+        print(ret.stdout.decode())
+        print(ret.stderr.decode())
+        success.append(ret.returncode == 0)
+    return func_name, tuple(success)
+
+
+def _user_flags_jit_callback(func_name: str, extra_flags, source: str):
+    """VmModule callback for out-of-process compilation with extra flags provided.
+    If boo cache is disabled, this will create temporary files for compilation."""
+
+    def _compile(flags, mlir_path, vmfb_path):
+        cl_list = ["iree-compile"] + flags + [str(mlir_path), "-o", str(vmfb_path)]
+        command = shlex.join(cl_list)
+        (vmfb_path.parent / f"compile_command_{vmfb_path.stem}.txt").write_text(command)
+        ret = subprocess.run(command, capture_output=True, shell=True, timeout=10)
+        if ret.returncode != 0:
+            raise RuntimeError(
+                f"Failed compilation with diagnostics: {ret.stderr.decode()}."
+            )
+        return vmfb_path.read_bytes()
+
+    def callback(device):
+        key_hash = device.get_type_key_hash()
+        vmfb_path: Path = CACHE_BASE_DIR / func_name / f"{key_hash}.vmfb"
+        vm_instance = device.vm_instance
+
+        if is_cache_enabled() and vmfb_path.is_file():
+            logger.debug("Loading vmfb from cache: %s", str(vmfb_path))
+            vmfb = vmfb_path.read_bytes()
+            return VmModule.copy_buffer(vm_instance, vmfb)
+
+        flags = list(device.compile_target_flags) + list(extra_flags)
+
+        if is_cache_enabled():
+            mlir_path = CACHE_BASE_DIR / func_name / f"{func_name}.mlir"
             logger.debug("Compiling vmfb to cache: %s", str(vmfb_path))
-            options = {
-                "output_file": str(vmfb_path),
-                "extra_args": flags,
-            }
-            compile_file(str(mlir_path), **options)
-        except CompilerToolError as e:
-            logger.debug("failed compilation with diagnostics: %s", str(e))
+            vmfb = _compile(flags, mlir_path, vmfb_path)
+            return VmModule.copy_buffer(vm_instance, vmfb)
+
+        with TemporaryDirectory() as td:
+            mlir_path = Path(td) / "source.mlir"
+            mlir_path.write_text(source)
+            vmfb_path = Path(td) / "target.vmfb"
+            vmfb = _compile(flags, mlir_path, vmfb_path)
+            return VmModule.copy_buffer(vm_instance, vmfb)
+
+    return callback
 
 
 def _get_module_asm(
@@ -171,6 +240,16 @@ def get_launchable(
         launch = Launchable.from_file_cache_only(
             cache_dir,
             parameter_providers=(),
+            entry_point=f"{func_name}$async",
+        )
+    elif BOO_TUNING_SPEC_PATH != "":
+        module_asm = _get_module_asm(signature, func_name, use_custom=use_custom)
+        launch = Launchable.from_vm_module(
+            _user_flags_jit_callback(
+                func_name,
+                (f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}",),
+                module_asm,
+            ),
             entry_point=f"{func_name}$async",
         )
     else:
