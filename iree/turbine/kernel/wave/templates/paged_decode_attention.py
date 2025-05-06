@@ -70,11 +70,13 @@ def get_paged_decode_attention_kernels(
         PHASE_1 = (1,)
 
     THREADS_PER_WAVE = 64
-    PHASE_1_BLOCK_B = 64
-    PHASE_1_ELEMS_PER_THREAD = PHASE_1_BLOCK_B // THREADS_PER_WAVE
+    PHASE_1_BLOCK_B_WAVES = 2
+    PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
+    PHASE_1_ELEMS_PER_THREAD = PHASE_1_BLOCK_B // (
+        THREADS_PER_WAVE * PHASE_1_BLOCK_B_WAVES
+    )
     PHASE_1_BLOCK_N = 1
     B_WAVES = 1 if mha else 4
-
     HEAD_BLOCK_SIZE = 16 * B_WAVES
     head_ratio = shape.num_query_heads // shape.num_kv_heads
 
@@ -171,7 +173,7 @@ def get_paged_decode_attention_kernels(
             N: BLOCK_N,
             U: 1,
         }
-        waves_per_block = (1, 1, 1)
+        waves_per_block = (PHASE_1_BLOCK_B_WAVES, 1, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
