@@ -114,7 +114,7 @@ class IndexingContext:
     __tk_context_idname__ = "IndexingContext"
 
     def __init__(self):
-        self.subs: dict[IndexSymbol, int] = {}
+        self.subs: dict[IndexSymbol, int | IndexSymbol] = {}
         self.special_subs: dict[IndexSymbol, Any] = {}
         # Indexed by .instance
         self.shaped_bindings: dict[Any, _ShapedBinding] = {}
@@ -431,14 +431,14 @@ def backed_sym_index_type(assumption: IndexRelation) -> Type[SymIndex]:
 class IndexSequence:
     start: IndexExpr | int
     size: IndexExpr | int
-    stride: Optional[IndexExpr | int] = 1
+    stride: IndexExpr | int = 1
 
     @staticmethod
     def _subs(
         value: int | IndexExpr, map: dict[IndexExpr, IndexExpr]
     ) -> int | IndexExpr:
         if isinstance(value, (sympy.Basic, IndexSequence)):
-            return value.subs(map)
+            return value.subs(map)  # type: ignore
         return value
 
     def subs(self, map: dict[IndexExpr, IndexExpr]):

@@ -1470,9 +1470,9 @@ class Conditional(NestedRegionOp):
 class Iterate(NestedRegionOp):
     axis: IndexSymbol
     init_args: Sequence[Any]
-    step: int
     subgraph_name: str
     implicit_captures: Sequence[fx.Proxy]
+    step: int = 1
     start: Optional[IndexExpr] = None
     condition: Optional[IndexExpr] = None
 

@@ -31,7 +31,7 @@ def unroll(
 ) -> None:
     """
     Unroll an iterate node in the graph `unroll_factor` times.
-    This is done by creating `unroll_factor` copies of the iteration body
+    This is done by creating `unroll_factor` - 1 copies of the iteration body
     and adjusting the step size and boundaries accordingly.
     """
     assert unroll_factor > 1, "Unroll factor must be greater than 1"
@@ -41,6 +41,9 @@ def unroll(
         # determined from the constraints, e.g. when unrolling is used before the scheduling pass.
         tiling_constraint = get_tiling_constraint(iterate, constraints)
         iterate.count = subs_idxc(tiling_constraint.count)
+        assert isinstance(
+            iterate.count, int
+        ), "Iteration count must be a statically determinable integer"
     if iterate.count / unroll_factor < 1:
         raise ValueError("Unroll factor is too large for the iteration count.")
     if iterate.count % unroll_factor != 0:
@@ -65,6 +68,19 @@ def unroll(
         else:
             return old_arg
 
+    # Iterate `unroll_factor - 1` times over the original body nodes and create
+    # copies of them. We only need (unroll_factor-1) new copies because the
+    # original body already counts as the first instance, giving us a total of
+    # unroll_factor instances when combined.
+    #
+    # For each copy, we maintain a value_use_map that tracks the mapping from
+    # original fx.Nodes to their corresponding copied nodes. This ensures that:
+    # 1. When a node refers to a value produced by a previous node, it refers to
+    #    the correct copy of that value in the unrolled sequence
+    # 2. Each unrolled iteration correctly chains its inputs/outputs with the
+    #    previous iteration (using value_mapper to translate references)
+    # 3. The final output from the last unrolled copy becomes the new output
+    #    of the entire unrolled loop body
     original_body_nodes = list(graph.nodes)
     for unroll_idx in range(0, unroll_factor - 1):
         for node in original_body_nodes:

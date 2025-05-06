@@ -409,7 +409,6 @@ def test_partial_unroll_iteration():
         hoist_loop_invariant_ops(trace, constraints)
         minimize_global_loads(trace, constraints)
         apply_shared_memory_indexing_corrections(trace, constraints)
-        # schedule_graph(trace, constraints, options)
 
         # Check the graph before unrolling
         # Find iterate and unroll

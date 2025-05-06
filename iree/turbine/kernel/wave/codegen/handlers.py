@@ -879,7 +879,7 @@ def handle_conditional(emitter: WaveEmitter, node: fx.Node):
 @handle_op(iterate)
 def handle_iterate(emitter: WaveEmitter, node: fx.Node):
     try:
-        axis, init_args, step, subgraph, implicit_capture, start, condition = node.args
+        axis, init_args, subgraph, implicit_capture, step, start, condition = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
@@ -973,7 +973,7 @@ def add_iter_arg_subs(
 
 def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
     try:
-        axis, init_args, step, subgraph, implicit_capture, start, condition = node.args
+        axis, init_args, subgraph, implicit_capture, step, start, condition = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
