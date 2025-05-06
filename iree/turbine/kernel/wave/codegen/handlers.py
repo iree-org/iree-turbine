@@ -102,7 +102,7 @@ from ...compiler.vector_codegen import (
 from ...compiler.utils import strides_from_symbolic_shape
 from ..constraints import HardwareConstraint, GenericDot
 from ..utils.classes import ShuffleMode
-from ..utils.general_utils import remove_global_indexing, get_fastest_index
+from ..utils.general_utils import get_fastest_index
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
 
@@ -447,9 +447,10 @@ def handle_atomic_op(op):
 
             lhs = lhs.ir_value
             rhs = rhs.ir_value
+            lhs_type = lhs.type
             assert (
-                lhs.type.rank == 0 or lhs.type.rank == 1
-            ), f"expected lhs_type.rank == 1 but got {lhs.type.rank}, {node}"
+                lhs_type.rank == 0 or lhs_type.rank == 1
+            ), f"expected lhs_type.rank == 1 but got {lhs_type.rank}, {node}"
 
             node_index = node.index
             if mapping:
@@ -469,18 +470,19 @@ def handle_atomic_op(op):
                     key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)
                 }
 
-            # Get start indices for every element in thread
-            start_indices = [_build_start_indices(emitter, node_index)]
+            # Get start indices for every element in thread and unroll the op
+            atomic_results = []
             keys = list(node_index.keys())
             fastest_dim = get_fastest_index(node.index)
-            for i in range(elements_per_thread - 1):
+            for i in range(elements_per_thread):
                 new_index = copy.deepcopy(node_index)
                 key = keys[fastest_dim]
-                new_index[key] += i + 1
+                new_index[key] += i
                 start_idx = _build_start_indices(emitter, new_index)
-                start_indices.append(start_idx)
+                lhs_val = vector_d.extract(lhs, static_position=[i], dynamic_position=[])
+                atomic_results.append(binary_fn(lhs_val, rhs, start_idx, emitter.options))
 
-            result = binary_fn(lhs, rhs, start_indices, emitter.options)
+            result = vector_d.from_elements(lhs_type, atomic_results)
             emitter.bind_node_proxy(node, IRProxyValue(result))
 
     return decorator
@@ -733,23 +735,16 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
 def handle_atomic_min(
     val: Value, buffer: Value, idx: list[Value], options: WaveCompileOptions
 ) -> OpResult:
-    value_type = val.type
-    value_element_type = get_type_or_element_type(value_type)
+    value_element_type = get_type_or_element_type(val.type)
     atomic_kind = None
+    # Only scalars are supported currently
     if _is_float_type(value_element_type):
         atomic_kind = arith_d.AtomicRMWKind.minimumf
     elif _is_integer_like_type(value_element_type) and _is_signed_or_signless_type(
         value_element_type
     ):
         atomic_kind = arith_d.AtomicRMWKind.mins
-    num_elements = val.type.shape[0]
-    unroll_result = []
-    for i in range(num_elements):
-        a = vector_d.extract(val, static_position=[i], dynamic_position=[])
-        atomic_result = memref_d.atomic_rmw(atomic_kind, a, buffer, idx[i])
-        unroll_result.append(atomic_result)
-
-    result = vector_d.from_elements(value_type, unroll_result)
+    result = memref_d.atomic_rmw(atomic_kind, val, buffer, idx)
     return result
 
 

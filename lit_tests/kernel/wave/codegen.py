@@ -2390,41 +2390,63 @@ def test_scanop_cumsum():
 
 @run_test
 def test_atomic_min():
-    BLOCK_M = 1
-    BLOCK_N = sympy.Max(sympy.Min(N, 256), 64)
+    M = tkl.sym.M
+    N = tkl.sym.N
+    SHMEM_DIM = tkl.sym.SHMEM_DIM
+    SHMEM_IDX = tkl.sym.SHMEM_IDX
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_M = 2
+    BLOCK_N = 64
+    num_waves = 2
+    shape = (2,64)
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
-            threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
-            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+            threads_per_wave=wave_size,
+            waves_per_block=(1, num_waves, 1),
+            vector_shapes={
+                M: int(BLOCK_M / num_waves),
+                N: BLOCK_N,
+                SHMEM_DIM: int(BLOCK_M / num_waves),
+            },
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(M, int(BLOCK_M / num_waves))]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
-    shape = (3, 64)
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    mapping = tkw.IndexMapping(
+        num_iterators=2, inputs={M: i, N: j}, outputs={M: SHMEM_IDX, N: j}
+    )
 
     @tkw.wave(constraints)
     def atomic_min_codegen(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
     ):
-        res = tkw.read(a, elements_per_thread=1)
+        res = tkw.read(a, elements_per_thread=4)
         shmem = tkw.allocate(
-            shape=(M, N), distributed_shape=(BLOCK_M, BLOCK_N), dtype=tkl.i32
+            shape=(SHMEM_DIM, N),
+            distributed_shape=(int(BLOCK_M / num_waves), BLOCK_N),
+            dtype=tkl.i32,
         )
-        zero_reg = tkl.Register[M, N, tkl.i32](-1e6)
-        tkw.write(zero_reg, shmem, elements_per_thread=1)
-        res = tkw.atomic_min(res, shmem, elements_per_thread=1)
-        fin = tkw.read(shmem, elements_per_thread=1)
-        tkw.write(fin, a, elements_per_thread=1)
+        inf_reg = tkl.Register[M, N, tkl.i32](1e6)
+        tkw.write(inf_reg, shmem, elements_per_thread=4)
+        shmem_idx = tkw.self_index(SHMEM_DIM, tkl.i64)
+        tkw.set_symbol(SHMEM_IDX, shmem_idx)
+        res = tkw.atomic_min(res, shmem, elements_per_thread=4, mapping=mapping)
+        res = tkw.read(shmem, elements_per_thread=4)
+        tkw.write(res, a, elements_per_thread=4)
 
     options = WaveCompileOptions(
         subs={
             M: shape[0],
             N: shape[1],
+            SHMEM_DIM: shape[0] / num_waves,
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
@@ -2436,8 +2458,24 @@ def test_atomic_min():
     atomic_min_codegen = wave_compile(options, atomic_min_codegen)
     print(atomic_min_codegen.asm)
 
-    # CHECK-LABEL: @atomic_min_codegen
-    # CHECK: memref.alloc
-    # CHECK: memref.atomic_rmw
-    # CHECK: vector.load
-    # CHECK: vector.store
+    # CHECK-LABEL: test_atomic_min
+    # CHECK-DAG:     #[[map0:.*]] = affine_map<()[s0] -> (s0 * 4 - (s0 floordiv 64) * 192)>
+    # CHECK-DAG:     #[[map1:.*]] = affine_map<()[s0] -> (s0 * 4 - (s0 floordiv 64) * 192 + 1)>
+    # CHECK-DAG:     #[[map2:.*]] = affine_map<()[s0] -> (s0 * 4 - (s0 floordiv 64) * 192 + 2)>
+    # CHECK-DAG:     #[[map3:.*]] = affine_map<()[s0] -> (s0 * 4 - (s0 floordiv 64) * 192 + 3)>
+    # CHECK:         func.func @atomic_min_codegen
+    # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
+    # CHECK-DAG:        %[[thread_id_x:.*]] = gpu.thread_id  x
+    # CHECK:            %[[alloc:.*]] = memref.alloc
+    # CHECK:            amdgpu.lds_barrier
+    # CHECK-DAG:        %[[val_0:.+]] = affine.apply #[[map0]]()[%[[thread_id_x]]]
+    # CHECK:            vector.store %{{.*}}, %[[alloc]][%[[C0]], %[[val_0]]]
+    # CHECK:            %[[atm_0:.+]] = memref.atomic_rmw mins %{{.*}}, %[[alloc]][%[[C0]], %[[val_0]]]
+    # CHECK-DAG:        %[[val_1:.+]] = affine.apply #[[map1]]()[%[[thread_id_x]]]
+    # CHECK:            %[[atm_1:.+]] = memref.atomic_rmw mins %{{.*}}, %[[alloc]][%[[C0]], %[[val_1]]]
+    # CHECK-DAG:        %[[val_2:.+]] = affine.apply #[[map2]]()[%[[thread_id_x]]]
+    # CHECK:            %[[atm_2:.+]] = memref.atomic_rmw mins %{{.*}}, %[[alloc]][%[[C0]], %[[val_2]]]
+    # CHECK-DAG:        %[[val_3:.+]] = affine.apply #[[map3]]()[%[[thread_id_x]]]
+    # CHECK:            %[[atm_3:.+]] = memref.atomic_rmw mins %{{.*}}, %[[alloc]][%[[C0]], %[[val_3]]]
+    # CHECK:            amdgpu.lds_barrier
+    # CHECK:            vector.load %[[alloc]][%[[C0]], %[[val_0]]]

@@ -1248,11 +1248,11 @@ class SchedulingBarrier(CustomOp):
 
 @define_op("atomic_min")
 @dataclass
-class AtomicMin(BinaryOpBase, ABC):
+class AtomicOp(BinaryOpBase, ABC):
     """
     Represents an atomic operation in the graph.
-    Takes in value and buffer to perform the operation on.
-    The minimum (modified) value is written on to the buffer.
+    Takes in value (register) and buffer (shared/global) as inputs,
+    and writes the modified value back on to the buffer.
     """
 
     elements_per_thread: Optional[Any] = None
