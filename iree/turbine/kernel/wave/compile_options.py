@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 from .scheduling.schedule_enums import SchedulingType
-from .._support.indexing import IndexExpr
+from .._support.indexing import IndexExpr, IndexSymbol
 from .utils.classes import KernelLaunchInfo
 from ..compiler.kernel_codegen import KernelBufferUsage
 
@@ -17,7 +17,7 @@ class WaveCompileOptions:
     func_name: str = "isolated_benchmark"
 
     # === Symbol mappings ===
-    subs: dict[str, Any] = field(default_factory=list)
+    subs: dict[str | IndexSymbol, Any] = field(default_factory=list)
     dynamic_symbols_map: dict[str, IndexExpr] = field(default_factory=dict)
     dynamic_symbols: list[str] = field(default_factory=list)
 

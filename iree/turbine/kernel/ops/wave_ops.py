@@ -1472,6 +1472,7 @@ class Iterate(NestedRegionOp):
     init_args: Sequence[Any]
     subgraph_name: str
     implicit_captures: Sequence[fx.Proxy]
+    step: int = 1
     start: Optional[IndexExpr] = None
     condition: Optional[IndexExpr] = None
 
@@ -1488,6 +1489,7 @@ class Iterate(NestedRegionOp):
             node = Iterate(
                 *args,
                 **kwargs,
+                step=1,
                 subgraph_name=subgraph_name,
                 implicit_captures=implicit_captures,
             )
@@ -1587,7 +1589,7 @@ class Iterate(NestedRegionOp):
         CustomOp.index.fset(self, value)
 
     @property
-    def count(self) -> int:
+    def count(self) -> Optional[int]:
         if hasattr(self.fx_node, "count"):
             return self.fx_node.count
         return None
