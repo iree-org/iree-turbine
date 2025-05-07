@@ -242,7 +242,7 @@ class WaveCacheManager(object):
         cur_module_path.write_text(module_str)
         kernel_sig_str = json.dumps([usage.name for usage in kernel_sig])
         cur_kernelsig_path.write_text(kernel_sig_str)
-        cur_hsaco_path = glob.glob(str(WAVE_RUNTIME_DIR / "*.hsaco"))
+        cur_hsaco_path = glob.glob(str(get_wave_runtime_dir() / "*.hsaco"))
         # Copy the hsaco file to the cache directory only if it exists.
         if cur_hsaco_path:
             cur_hsaco_path = cur_hsaco_path[0]
