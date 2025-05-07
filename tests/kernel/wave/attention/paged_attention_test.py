@@ -250,6 +250,8 @@ def testPagedFlashDecoding(
         phase_1,
         hyperparams_0,
         hyperparams_1,
+        dynamic_symbols,
+        dynamic_symbols_map,
     ) = get_paged_decode_attention_kernels(
         shape,
         mfma_variant,
@@ -282,6 +284,8 @@ def testPagedFlashDecoding(
         run_bench=run_bench,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -310,6 +314,8 @@ def testPagedFlashDecoding(
         run_bench=run_bench,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -436,6 +442,8 @@ def testPagedFlashDecodingMHA(
         phase_1,
         hyperparams_0,
         hyperparams_1,
+        dynamic_symbols,
+        dynamic_symbols_map,
     ) = get_paged_decode_attention_kernels(
         shape,
         mfma_variant,
@@ -469,6 +477,8 @@ def testPagedFlashDecodingMHA(
         run_bench=run_bench,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -497,6 +507,8 @@ def testPagedFlashDecodingMHA(
         run_bench=run_bench,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(

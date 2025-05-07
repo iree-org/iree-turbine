@@ -410,8 +410,6 @@ def get_paged_decode_attention_kernels(
             B: shape.num_query_heads,
             N: shape.head_size_kv,
             K1: shape.head_size,
-            K2: shape.kv_lens,
-            S: shape.num_seqs,
             U: num_kv_splits,
         }
     else:
@@ -425,18 +423,23 @@ def get_paged_decode_attention_kernels(
             B: shape.num_query_heads,
             N: shape.head_size_kv,
             K1: shape.head_size,
-            K2: shape.kv_lens,
             BH: shape.num_kv_heads,
-            S: shape.num_seqs,
             U: num_kv_splits,
         }
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
+    dynamic_symbols = [K2, S]
+    dynamic_symbols_map = {
+        K2: shape.kv_lens,
+        S: shape.num_seqs,
+    }
 
     return (
         phase_0,
         phase_1,
         symbols_0,
         symbols_1,
+        dynamic_symbols,
+        dynamic_symbols_map,
     )
