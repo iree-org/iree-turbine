@@ -47,23 +47,57 @@ def pytest_configure(config):
     )
 
 
+def _get_worker_id(config):
+    """
+    Returns the worker id for the current worker if running with pytest-xdist.
+    None if pytest-xdist is not installed or not running in parallel.
+    """
+    # Extract the worker id using internal pytest APIs.
+    if not hasattr(config, "workerinput"):
+        return None
+
+    # workerid has format 'gw0', 'gw1', etc.
+    worker_id = config.workerinput["workerid"]
+    if not worker_id.startswith("gw"):
+        return None
+
+    # skip the 'gw' prefix.
+    return int(worker_id[2:])
+
+
 def _set_default_device(config):
+    """
+    Distributes the tests over multiple GPUs.
+    """
     distribute = int(config.getoption("--gpu-distribute"))
     if distribute < 1:
         return
 
-    if not hasattr(config, "workerinput"):
+    worker_id = _get_worker_id(config)
+    if worker_id is None:
         return
 
-    worker_id = config.workerinput["workerid"]
-    if not worker_id.startswith("gw"):
-        return
-
-    device_id = int(worker_id[2:]) % int(distribute)
+    device_id = worker_id % distribute
 
     import iree.turbine.kernel.wave.utils.general_utils as general_utils
 
     general_utils.DEFAULT_GPU_DEVICE = device_id
+
+
+def _set_cache_dir(config):
+    """
+    Sets the unique cache directory for the current worker to avoid race conditions.
+    """
+    worker_id = _get_worker_id(config)
+    if worker_id is None:
+        return
+
+    import iree.turbine.kernel.wave.cache as cache
+
+    base_cache_dir = cache.CACHE_BASE_DIR
+    cache.CACHE_BASE_DIR = base_cache_dir / f"worker_{worker_id}"
+    base_runtime_dir = cache.WAVE_RUNTIME_DIR
+    cache.WAVE_RUNTIME_DIR = base_runtime_dir / f"worker_{worker_id}"
 
 
 def _has_marker(item, marker):
@@ -72,6 +106,7 @@ def _has_marker(item, marker):
 
 def pytest_collection_modifyitems(config, items):
     _set_default_device(config)
+    _set_cache_dir(config)
     run_e2e = config.getoption("--run-e2e")
     run_expensive = config.getoption("--run-expensive-tests")
     run_perf = config.getoption("--runperf")

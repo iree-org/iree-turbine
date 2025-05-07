@@ -9,7 +9,7 @@ from .compile_options import WaveCompileOptions
 from .cache import (
     is_cache_enabled,
     get_cache_manager,
-    WAVE_RUNTIME_DIR,
+    get_wave_runtime_dir,
 )
 from .utils.compile_utils import compile_to_vmfb
 from .utils.run_utils import invoke_vmfb, _write_file
@@ -92,7 +92,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # dumping of binaries and store in wave runtime directory. If we
     # are caching, this will be moved to the appropriate directory.
     if options.wave_runtime:
-        options.dump_binaries = str(WAVE_RUNTIME_DIR)
+        options.dump_binaries = str(get_wave_runtime_dir())
 
     # Recompile kernel from scratch if not found in cache.
     (
