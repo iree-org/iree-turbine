@@ -59,6 +59,9 @@ def _get_worker_id(config):
 
 
 def _set_default_device(config):
+    """
+    Distributes the tests over multiple GPUs.
+    """
     distribute = int(config.getoption("--gpu-distribute"))
     if distribute < 1:
         return
@@ -75,6 +78,9 @@ def _set_default_device(config):
 
 
 def _set_cache_dir(config):
+    """
+    Sets the unique cache directory for the current worker to avoid race conditions.
+    """
     worker_id = _get_worker_id(config)
     if worker_id is None:
         return
