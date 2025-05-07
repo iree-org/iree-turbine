@@ -6,21 +6,23 @@ from .builder import (
 )
 
 from .ir import (
+    ArrayAttr,
     Block,
+    F32Type,
     FunctionType,
     IndexType,
     InsertionPoint,
-    IrType,
-    Location,
-    ArrayAttr,
-    SymbolRefAttr,
-    MemRefType,
-    RankedTensorType,
-    flow_d,
-    func_d,
-    F32Type,
     IntegerAttr,
     IntegerType,
+    IrType,
+    Location,
+    MemRefType,
+    RankedTensorType,
+    SymbolRefAttr,
+    arith_d,
+    flow_d,
+    func_d,
+    tensor_d,
 )
 
 from .._support.indexing import IndexSymbol
@@ -52,6 +54,17 @@ def get_dynamic_dims(bindings: list[BindingDesc], dynamic_symbols: list[IndexSym
             if dim in dynamic_symbols:
                 dynamic_dims.append(dim)
     return dynamic_dims
+
+
+def get_dynamic_dim_param_index(
+    symbol: IndexSymbol, bindings: list[BindingDesc]
+) -> tuple[int, int]:
+    for i, b in enumerate(bindings):
+        for j, dim in enumerate(b.kernel_buffer_type.symbolic_shape):
+            if dim == symbol:
+                return i, j
+
+    raise ValueError(f"Symbol {symbol} not found in bindings")
 
 
 def isolated_test_call(
@@ -97,6 +110,17 @@ def isolated_test_call(
         }
         with InsertionPoint(entry_block):
             assert isinstance(entry_block, Block)
+
+            dynamic_argument_map = {}
+            for symbol in dynamic_symbols:
+                param_index, dim_index = get_dynamic_dim_param_index(
+                    symbol, sig.kernel_buffer_bindings
+                )
+                arg = entry_block.arguments[param_index]
+                idx = arith_d.constant(IndexType.get(), dim_index)
+                val = tensor_d.dim(arg, idx)
+                dynamic_argument_map[symbol] = val
+
             # Create a flow.dispatch op to the kernel
             dispatch = SymbolRefAttr.get([exe.sym_name.value, entrypoint])
             entrypoints = ArrayAttr.get([dispatch])
