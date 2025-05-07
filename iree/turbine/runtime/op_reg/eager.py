@@ -14,6 +14,7 @@ import torch
 from iree.runtime import (
     HalBufferView,
     HalElementType,
+    HalFence,
     VmRef,
     VmVariantList,
 )
@@ -42,6 +43,10 @@ from .base import (
 from .compiler import (
     compile_standalone_kernel,
     KernelCompileConfig,
+)
+
+from ..invoke import (
+    invoke_vm_function,
 )
 
 __all__ = [
@@ -150,14 +155,18 @@ def eager_dispatch(ksel: KernelSelection):
                     assert isinstance(list_arg, list)
                     push_scalar(list_arg[i])
 
-    if config.async_invocations:
-        raise NotImplementedError("Async execution not yet implemented")
-
-    # Invoke.
     ret_list = VmVariantList(len(ksel.result_descs))
-    start = default_timer()
-    vm_context.invoke(vm_f, arg_list, ret_list)
-    invoke_time = default_timer() - start
+
+    invoke_time = invoke_vm_function(
+        device,
+        config.async_invocations,
+        vm_context,
+        vm_f,
+        arg_list,
+        ret_list,
+        timer=default_timer,
+    )
+
     if tracer.enabled:
         _log_eager_dispatch(config, arg_list, invoke_time * 1000)
 

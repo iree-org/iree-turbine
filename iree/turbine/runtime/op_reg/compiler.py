@@ -25,7 +25,10 @@ from ...support.exceptions import (
 )
 
 from ...support.ir_imports import (
+    Attribute,
     Location,
+    PassManager,
+    SymbolTable,
 )
 
 from ...support.logging import (
@@ -85,7 +88,10 @@ def _testing_get_cache_size() -> int:
 
 
 def compile_standalone_kernel(
-    device: Device, ksel: KernelSelection, func_name: str = "main"
+    device: Device,
+    ksel: KernelSelection,
+    func_name: str = "main",
+    async_invocations: bool = True,
 ) -> tuple[VmContext, VmFunction, KernelCompileConfig]:
     # Early exit on cache hit.
     cache_key = f"{ksel.spec_key}::{device.type_cache_key}"
@@ -95,10 +101,29 @@ def compile_standalone_kernel(
 
     # Cache miss.
     start = default_timer()
-    config = KernelCompileConfig(cache_key, list(device.compile_target_flags))
+    config = KernelCompileConfig(
+        cache_key,
+        list(device.compile_target_flags),
+        async_invocations=async_invocations,
+    )
     kb = FreeFuncKernelBuilder.create_module(ksel, func_name=func_name)
     with kb.ip, Location.unknown():
         ksel.op.generate(ksel, kb)
+
+    symb = func_name
+    if config.async_invocations:
+        pm = PassManager.parse("builtin.module(torch-iree-func-conversion)", kb.context)
+        pm.run(kb.module_op)
+        symb += "$async"
+
+    func = SymbolTable(kb.module_op)[symb]
+    if kb.ksel.op.single_dispatch:
+        pipeline_attr = Attribute.parse(
+            '#util.preprocessing_pipeline<"iree-preprocessing-make-single-dispatch">',
+            kb.context,
+        )
+        func.attributes["preprocessing_pipeline"] = pipeline_attr
+
     kb.module_op.verify()
     # DO NOT SUBMIT: https://github.com/iree-org/iree/issues/17132
     enable_debug_info = False
@@ -138,7 +163,8 @@ def compile_standalone_kernel(
     # subtle ref-counting/shutdown sequencing issues that need to be resolved.
     # vm_module = VmModule.wrap_buffer(vm_instance, mapped_memory)
     vm_context = VmContext(vm_instance, [device.create_hal_module(), vm_module])
-    main_function = vm_module.lookup_function("main")
+    call_func = f"{func_name}$async" if config.async_invocations else func_name
+    main_function = vm_module.lookup_function(call_func)
 
     if tracer.enabled:
         config.tracing_key = tracer.save_jit_kernel_artifacts(
