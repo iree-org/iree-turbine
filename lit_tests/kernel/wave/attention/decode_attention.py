@@ -48,6 +48,8 @@ def test_paged_flash_decoding():
         phase_1,
         hyperparams_0,
         hyperparams_1,
+        dynamic_symbols,
+        dynamic_symbols_map,
     ) = get_paged_decode_attention_kernels(
         shape, mfma_variant, num_kv_splits, k_shape, v_shape
     )
@@ -58,6 +60,8 @@ def test_paged_flash_decoding():
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
     )
     phase_0 = wave_compile(options, phase_0)
@@ -91,6 +95,8 @@ def test_paged_flash_decoding():
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
     )
     phase_1 = wave_compile(options, phase_1)
