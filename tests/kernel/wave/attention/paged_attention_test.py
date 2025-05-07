@@ -256,7 +256,6 @@ def testPagedFlashDecoding(
         num_kv_splits,
         key_cache_4d.shape,
         value_cache_4d.shape,
-        block_table.shape,
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
@@ -276,8 +275,6 @@ def testPagedFlashDecoding(
     output = device_zeros(
         shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
     )
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape.head_size)
 
     options = WaveCompileOptions(
         subs=hyperparams_0,
@@ -296,10 +293,9 @@ def testPagedFlashDecoding(
     options = set_default_run_config(options)
     phase_0 = wave_compile(options, phase_0)
 
-    # TODO: Add scaling of QK as part of kernel.
     # TODO: Add variant of non-transposed V attention kernel.
     asm_qk = phase_0(
-        query * dk_sqrt * log2e,
+        query,
         key_cache_4d,
         value_cache_4d,
         request_indices,
@@ -446,7 +442,6 @@ def testPagedFlashDecodingMHA(
         num_kv_splits,
         key_cache_4d.shape,
         value_cache_4d.shape,
-        block_table.shape,
         mha=True,
     )
     hyperparams_0.update(get_default_scheduling_params())
@@ -467,8 +462,6 @@ def testPagedFlashDecodingMHA(
     output = device_zeros(
         shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
     )
-    log2e = 1.44269504089
-    dk_sqrt = math.sqrt(1.0 / shape.head_size)
 
     options = WaveCompileOptions(
         subs=hyperparams_0,
@@ -487,10 +480,9 @@ def testPagedFlashDecodingMHA(
     options = set_default_run_config(options)
     phase_0 = wave_compile(options, phase_0)
 
-    # TODO: Add scaling of QK as part of kernel.
     # TODO: Add variant of non-transposed V attention kernel.
     asm_qk = phase_0(
-        query * dk_sqrt * log2e,
+        query,
         key_cache_4d,
         value_cache_4d,
         request_indices,

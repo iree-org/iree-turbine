@@ -12,6 +12,7 @@ import sympy
 from enum import Enum
 from collections import namedtuple
 import math
+from typing import Optional
 
 paged_decode_attention_shape = namedtuple(
     "paged_decode_attention_shape",
@@ -33,7 +34,7 @@ def get_paged_decode_attention_kernels(
     num_kv_splits: int,
     k_shape: tuple[int],
     v_shape: tuple[int],
-    block_table_shape: tuple[int],
+    layer_scaling: Optional[float] = None,
     mha: bool = False,
 ):
     if mha:
@@ -75,6 +76,10 @@ def get_paged_decode_attention_kernels(
     HEAD_BLOCK_SIZE = 16
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     B_WAVES = 1
+
+    LOG2E = 1.44269504089
+    dk_sqrt = math.sqrt(1.0 / shape.head_size)
+    layer_scaling = (layer_scaling or dk_sqrt) * LOG2E
 
     def phase_0_constraints():
         # K1, K2 are reduction dimensions that are fixed (not distributed) so
@@ -256,6 +261,8 @@ def get_paged_decode_attention_kernels(
         # Output has shape [NUM_KV_SPLITS, NUM_SEQS, NUM_HEADS, HEAD_DIM]
         # =========================================================================
 
+        layer_scale_reg = tkl.Register[S, B, K2, tkl.f32](layer_scaling)
+
         init_max = tkl.Register[S, B, tkl.f32](-1e6)
         init_sum = tkl.Register[S, B, tkl.f32](0.0)
         new_acc = tkl.Register[S, N, B, tkl.f32](0.0)
@@ -311,6 +318,7 @@ def get_paged_decode_attention_kernels(
             imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
+            x_j = x_j * layer_scale_reg
             k2_index = tkw.self_index(K2, tkl.i32)
             mask = tkw.apply_expr(k2_index, lambda x: x < (SPLIT_OFF + SPLIT_LEN))
             mask = tkw.broadcast(mask, target_shape=[B, K2])

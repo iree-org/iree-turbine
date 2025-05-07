@@ -49,7 +49,7 @@ def test_paged_flash_decoding():
         hyperparams_0,
         hyperparams_1,
     ) = get_paged_decode_attention_kernels(
-        shape, mfma_variant, num_kv_splits, k_shape, v_shape, block_table_shape
+        shape, mfma_variant, num_kv_splits, k_shape, v_shape
     )
 
     options = WaveCompileOptions(
