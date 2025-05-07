@@ -293,7 +293,6 @@ def testPagedFlashDecoding(
     options = set_default_run_config(options)
     phase_0 = wave_compile(options, phase_0)
 
-    # TODO: Add scaling of QK as part of kernel.
     # TODO: Add variant of non-transposed V attention kernel.
     asm_qk = phase_0(
         query,
@@ -481,7 +480,6 @@ def testPagedFlashDecodingMHA(
     options = set_default_run_config(options)
     phase_0 = wave_compile(options, phase_0)
 
-    # TODO: Add scaling of QK as part of kernel.
     # TODO: Add variant of non-transposed V attention kernel.
     asm_qk = phase_0(
         query,
