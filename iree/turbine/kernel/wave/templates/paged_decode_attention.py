@@ -208,11 +208,10 @@ def get_paged_decode_attention_kernels(
         outputs={S: i},
     )
 
-    K2_dim = k_shape[1]
     # Returns the key for the given token index.
     k_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K2_dim, BH: j, K2: d0 % K2_dim, K1: l},
+        inputs={S: d0 // K2, BH: j, K2: d0 % K2, K1: l},
         outputs={S: i, BH: j, K2: k, K1: l},
         dynamic_val_mappings={K2: k},
     )
@@ -220,7 +219,7 @@ def get_paged_decode_attention_kernels(
     # Returns the value for the given token index.
     v_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K2_dim, BH: j, N: k, K2: d0 % K2_dim},
+        inputs={S: d0 // K2, BH: j, N: k, K2: d0 % K2},
         outputs={S: i, BH: j, N: k, K2: l},
         dynamic_val_mappings={K2: l},
     )
