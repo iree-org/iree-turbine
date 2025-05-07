@@ -47,23 +47,42 @@ def pytest_configure(config):
     )
 
 
+def _get_worker_id(config):
+    if not hasattr(config, "workerinput"):
+        return None
+
+    worker_id = config.workerinput["workerid"]
+    if not worker_id.startswith("gw"):
+        return None
+
+    return int(worker_id[2:])
+
+
 def _set_default_device(config):
     distribute = int(config.getoption("--gpu-distribute"))
     if distribute < 1:
         return
 
-    if not hasattr(config, "workerinput"):
+    worker_id = _get_worker_id(config)
+    if worker_id is None:
         return
 
-    worker_id = config.workerinput["workerid"]
-    if not worker_id.startswith("gw"):
-        return
-
-    device_id = int(worker_id[2:]) % int(distribute)
+    device_id = worker_id % distribute
 
     import iree.turbine.kernel.wave.utils.general_utils as general_utils
 
     general_utils.DEFAULT_GPU_DEVICE = device_id
+
+
+def _set_cache_dir(config):
+    worker_id = _get_worker_id(config)
+    if worker_id is None:
+        return
+
+    import iree.turbine.kernel.wave.cache as cache
+
+    base = cache.CACHE_BASE_DIR
+    cache.CACHE_BASE_DIR = base / f"worker_{worker_id}"
 
 
 def _has_marker(item, marker):
@@ -72,6 +91,7 @@ def _has_marker(item, marker):
 
 def pytest_collection_modifyitems(config, items):
     _set_default_device(config)
+    _set_cache_dir(config)
     run_e2e = config.getoption("--run-e2e")
     run_expensive = config.getoption("--run-expensive-tests")
     run_perf = config.getoption("--runperf")
