@@ -21,7 +21,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
-from .cache import WAVE_RUNTIME_DIR
+from .cache import get_wave_runtime_dir
 from ..compiler.ir import Context, Module, Operation
 from .codegen import WaveEmitter
 from .constraints import (

@@ -42,6 +42,14 @@ def is_cache_enabled() -> bool:
     return bool(WAVE_CACHE_ON)
 
 
+def get_cache_base_dir() -> Path:
+    return CACHE_BASE_DIR
+
+
+def get_wave_runtime_dir() -> Path:
+    return WAVE_RUNTIME_DIR
+
+
 @dataclass
 class WaveCache:
     """
