@@ -48,13 +48,20 @@ def pytest_configure(config):
 
 
 def _get_worker_id(config):
+    """
+    Returns the worker id for the current worker if running with pytest-xdist.
+    None if pytest-xdist is not installed or not running in parallel.
+    """
+    # Extract the worker id using internal pytest APIs.
     if not hasattr(config, "workerinput"):
         return None
 
+    # workerid has format 'gw0', 'gw1', etc.
     worker_id = config.workerinput["workerid"]
     if not worker_id.startswith("gw"):
         return None
 
+    # skip the 'gw' prefix.
     return int(worker_id[2:])
 
 
