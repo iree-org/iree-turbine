@@ -242,15 +242,16 @@ def invoke_with_wave_runtime(
     Invokes the kernel with the wave runtime.
     """
     import wave_runtime
-    from ..cache import WAVE_RUNTIME_DIR, CACHE_BASE_DIR
+    from ..cache import get_wave_runtime_dir, get_cache_base_dir
 
     # Get the path to the binary.
     if options.kernel_hash:
         binary = (
-            str(CACHE_BASE_DIR / options.kernel_hash / options.kernel_hash) + ".hsaco"
+            str(get_cache_base_dir() / options.kernel_hash / options.kernel_hash)
+            + ".hsaco"
         )
     else:
-        binary = glob.glob(str(WAVE_RUNTIME_DIR / "*.hsaco"))[0]
+        binary = glob.glob(str(get_wave_runtime_dir() / "*.hsaco"))[0]
 
     dynamic_dims = tuple(options.dynamic_symbols_map.values())
     # Update the grid size as this may vary depending
