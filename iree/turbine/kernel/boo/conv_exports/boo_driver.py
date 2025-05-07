@@ -40,7 +40,7 @@ command-line arguments are appended to the arguments from the file.
     csv_file.write("arguments,min_time (us)\n")
 
     runner_parser = argparse.ArgumentParser()
-    runner_parser.add_argument("--timing", "-t", type=int, help="Enable timing")
+    runner_parser.add_argument("--time", "-t", type=int, help="Enable timing")
     for file_args in mio_file_args:
         driver_args = file_args + extra_cli_args
         timing_args, runner_args = runner_parser.parse_known_args(driver_args)
