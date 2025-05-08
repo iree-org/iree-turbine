@@ -3,11 +3,47 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from typing import TypeVar
+
+import sympy
+
+from ..._support.indexing import IndexingContext
+from ...lang.wave_types import IndexMapping
 from .general_utils import infer_dim
 from .symbol_utils import IndexExpr, IndexSymbol, subs_idxc
-from ...lang.wave_types import IndexMapping
-from ..._support.indexing import IndexingContext
-import sympy
+
+K = TypeVar("K")  # Key type
+V = TypeVar("V")  # Value type
+
+
+def get_dict_with_updated_key(
+    original_dict: dict[K, V], old_key: K, new_key: K
+) -> dict[K, V]:
+    """
+    Update a key in a dictionary while preserving the original insertion order of values.
+
+    Args:
+        original_dict: The dictionary to update
+        old_key: The key to replace
+        new_key: The new key to use
+
+    Returns:
+        A new dictionary with the updated key and same value order
+    """
+    if old_key not in original_dict:
+        raise KeyError(f"Old key '{old_key}' not found in dictionary")
+    if new_key in original_dict and new_key != old_key:
+        raise KeyError(f"New key '{new_key}' already exists in dictionary")
+
+    # Create a new dictionary with the same order but updated key
+    new_dict = {}
+    for key, value in original_dict.items():
+        if key == old_key:
+            new_dict[new_key] = value
+        else:
+            new_dict[key] = value
+
+    return new_dict
 
 
 def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
