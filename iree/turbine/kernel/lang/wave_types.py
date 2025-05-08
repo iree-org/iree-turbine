@@ -151,6 +151,21 @@ class Register(metaclass=KernelBufferMeta):
         )
 
 
+class SymbolBind:
+    """
+    Represents a binding between a symbol and a kernel argument.
+    """
+
+    dtype: DataType
+
+    def __class_getitem__(cls, dt: DataType) -> Type["SymbolBind"]:
+        class Subtype(cls):
+            dtype = dt
+
+        Subtype.__name__ = cls.__name__
+        return Subtype
+
+
 SymbolsMap: TypeAlias = dict[IndexSymbol, IndexExpr]
 
 

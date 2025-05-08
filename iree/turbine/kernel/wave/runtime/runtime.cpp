@@ -62,22 +62,22 @@ static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
     uint64_t *ptr = (uint64_t *)kernelArguments;
     for (auto val : tensors) *ptr++ = val;
 
-    uint32_t *ptr2 = (uint32_t *)ptr;
-    for (auto dim : dynamicDims) {
-        *ptr2++ = static_cast<uint32_t>(dim);
-        *ptr2++ = static_cast<uint32_t>(dim >> 32);
-    }
-
-    uint32_t* ptr3 = ptr2;
+    uint32_t* ptr2 = (uint32_t *)ptr;
     // ToDo: we would like to use bit_cast in the follow-up PR.
     for (auto arg : scalarArgs){
         if (nb::isinstance<nb::int_>(arg)){
-            *ptr3++ = static_cast<uint32_t>(nb::cast<uint32_t>(arg));
+            *ptr2++ = static_cast<uint32_t>(nb::cast<uint32_t>(arg));
         }
         else if (nb::isinstance<nb::float_>(scalarArgs[0])){
             float val = nb::cast<float>(arg);
-            std::memcpy(ptr3++, &val, sizeof(float));
+            std::memcpy(ptr2++, &val, sizeof(float));
         }
+    }
+
+    uint32_t *ptr3 = (uint32_t *)ptr2;
+    for (auto dim : dynamicDims) {
+        *ptr3++ = static_cast<uint32_t>(dim);
+        *ptr3++ = static_cast<uint32_t>(dim >> 32);
     }
 
     void *hipLaunchParams[] = {

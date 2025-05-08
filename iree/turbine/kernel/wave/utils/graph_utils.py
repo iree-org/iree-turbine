@@ -59,6 +59,11 @@ def DCE(trace: CapturedTrace):
         if custom.users or custom.has_side_effects or is_global_write(node):
             return False
 
+        if isinstance(custom, Placeholder) and custom.graph == trace.get_root_graph():
+            # Do not remove root placeholders as they correspond to kernel
+            # arguments and removind them will change the kernel signature.
+            return False
+
         if has_nested_writes(node):
             return False
 
