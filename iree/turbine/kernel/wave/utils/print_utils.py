@@ -6,7 +6,6 @@
 import torch.fx as fx
 from iree.turbine.kernel.ops.wave_ops import NestedRegionOp, Placeholder, get_custom
 from ..._support.tracing import CapturedTrace
-from ...ops.wave_ops import get_custom
 from typing import Sequence, Optional
 import timeit
 
