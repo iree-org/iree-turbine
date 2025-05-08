@@ -70,12 +70,12 @@ def get_paged_decode_attention_kernels(
         PHASE_1 = (1,)
 
     THREADS_PER_WAVE = 64
-    PHASE_1_BLOCK_B = 64
-    PHASE_1_ELEMS_PER_THREAD = PHASE_1_BLOCK_B // THREADS_PER_WAVE
-    PHASE_1_BLOCK_N = 1
-    HEAD_BLOCK_SIZE = 16
+    PHASE_1_BLOCK_B_WAVES = 1
+    PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
+    PHASE_1_BLOCK_N = 16
+    B_WAVES = 1 if mha else 4
+    HEAD_BLOCK_SIZE = 16 * B_WAVES
     head_ratio = shape.num_query_heads // shape.num_kv_heads
-    B_WAVES = 1
 
     LOG2E = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
@@ -159,18 +159,18 @@ def get_paged_decode_attention_kernels(
 
     def phase_1_constraints() -> list[tkw.Constraint]:
         constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(B, BLOCK_B, 0)]
-        constraints += [tkw.WaveConstraint(B, BLOCK_B)]
+        constraints += [tkw.WaveConstraint(B, BLOCK_B // PHASE_1_BLOCK_B_WAVES)]
         constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
         constraints += [tkw.WaveConstraint(N, BLOCK_N)]
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
         constraints += [tkw.TilingConstraint(U, BLOCK_U, iters=SPLITS_ACTIVE)]
         vector_shapes = {
             S: 0,
-            B: BLOCK_B,
-            N: BLOCK_N,
+            B: BLOCK_B // PHASE_1_BLOCK_B_WAVES,
+            N: 1,
             U: 1,
         }
-        waves_per_block = (1, 1, 1)
+        waves_per_block = (PHASE_1_BLOCK_B_WAVES, 1, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
@@ -350,10 +350,8 @@ def get_paged_decode_attention_kernels(
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
-        req_index = tkw.read(request_indices, elements_per_thread=1)
-        seq_length = tkw.read(
-            request_indices, mapping=seq_len_mapping, elements_per_thread=1
-        )
+        req_index = tkw.read(request_indices)
+        seq_length = tkw.read(request_indices, mapping=seq_len_mapping)
         seq_length = seq_length - req_index
         splits_active = tkw.apply_expr(seq_length, lambda x: sympy.Min(x, U))
         tkw.set_symbol(SPLITS_ACTIVE, splits_active)
@@ -368,8 +366,8 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, B, N, tkl.f32],
         ):
-            x_j = tkw.read(logits, elements_per_thread=PHASE_1_ELEMS_PER_THREAD)
-            xm_j = tkw.read(logits_max, elements_per_thread=PHASE_1_ELEMS_PER_THREAD)
+            x_j = tkw.read(logits)
+            xm_j = tkw.read(logits_max)
             m_j = tkw.maximum(xm_j, partial_max)
             old_scale = tkw.exp2(partial_max - m_j)
             new_scale = tkw.exp2(xm_j - m_j)
@@ -387,7 +385,7 @@ def get_paged_decode_attention_kernels(
             res_f16,
             output,
             mapping=mapping,
-            elements_per_thread=PHASE_1_ELEMS_PER_THREAD,
+            elements_per_thread=1,  # TODO: cannot remove this yet as vector shapes are inferred incorrectly
         )
 
     if mha:
