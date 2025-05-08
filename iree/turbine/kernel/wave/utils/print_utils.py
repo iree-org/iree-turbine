@@ -80,8 +80,8 @@ def try_apply_pass(
                 counter = 1
                 while f"{name}_{counter}" in pass_times:
                     counter += 1
-                name = f"{name}_{counter}"
-                pass_times[name] = end - start
+                pass_name = f"{name}_{counter}"
+                pass_times[pass_name] = end - start
     except Exception:
         print(f"Error in pass: {name}\n")
         print_trace(trace)
