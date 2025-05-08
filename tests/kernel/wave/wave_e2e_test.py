@@ -1864,13 +1864,16 @@ def test_atomic_min(shape, use_buffer_ops, request):
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, int(BLOCK_M / num_waves))]
+    constraints += [tkw.WaveConstraint(M, sympy.Integer(1))]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     mapping = tkw.IndexMapping(
         num_iterators=2, inputs={M: i, N: j}, outputs={M: sympy.Integer(0), N: j}
+    )
+    read_mapping = tkw.IndexMapping(
+        num_iterators=2, inputs={M: sympy.Integer(0), N: j}, outputs={M: i, N: j}
     )
 
     @tkw.wave(constraints)
@@ -1892,7 +1895,7 @@ def test_atomic_min(shape, use_buffer_ops, request):
         inf_reg = tkl.Register[M, N, tkl.i32](1e6)
         tkw.write(inf_reg, shmem, elements_per_thread=4)
         res = tkw.atomic_min(res, shmem, elements_per_thread=4, mapping=mapping)
-        res = tkw.read(shmem, elements_per_thread=4)
+        res = tkw.read(shmem, elements_per_thread=4, mapping=read_mapping)
         tkw.write(res, c, elements_per_thread=4)
 
     a = device_randint(low=0, high=10, size=shape, dtype=torch.int32)
@@ -1914,3 +1917,4 @@ def test_atomic_min(shape, use_buffer_ops, request):
     test = wave_compile(options, test)
     test(a, c)
     assert_close(c[0, :], b)
+    assert_close(c[1, :], b)

@@ -367,8 +367,13 @@ class HardwareConstraint(Constraint):
         stride: int,
     ) -> IndexSequence:
         thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
-        if workgroup_dim == 0:
-            thread_id = thread_id % self.threads_per_wave
+        # We have an assumption that the thread dimensions in each wave is of shape (64,1,1).
+        # In cases other than dimension 0, we also calculate the modulus of thread_id with the
+        # number of threads in that dimension to prevent double counting of thread ID in thread
+        # independent index.
+        # TODO: Change threads_per_wave to specify all 3 dimensions as opposed to just first.
+        threads_per_dim = self.threads_per_wave if workgroup_dim == 0 else 1
+        thread_id = thread_id % threads_per_dim
         return IndexSequence(
             thread_id * elements_per_thread, elements_per_thread, stride
         )
