@@ -193,10 +193,9 @@ def get_extend_attention_rpe_kernel(
         kv_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
         kv_indices: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
         rpe: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
-        max_len_extend: tkl.i32,
+        max_len_extend: MAX_EXTEND_SEQ_LEN,
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
-        tkw.set_symbol(MAX_EXTEND_SEQ_LEN, max_len_extend)
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
         init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)

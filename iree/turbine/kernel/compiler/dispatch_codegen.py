@@ -195,9 +195,9 @@ class StreamExecutable:
 
             # Map dynamic symbols to block arguments.
             dynamic_symbols_mapping = {
-                k: v
+                k.symbol_type: v
                 for k, v in zip(
-                    dynamic_symbols, workgroup_builder.entry_block.arguments
+                    dynamic_dim_bindings, workgroup_builder.entry_block.arguments
                 )
             }
 

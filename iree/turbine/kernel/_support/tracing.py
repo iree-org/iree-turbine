@@ -31,7 +31,7 @@ from ..lang.grid import Grid
 from ..lang.types import (
     Index,
 )
-from ..lang.wave_types import IndexMapping
+from ..lang.wave_types import IndexMapping, SymbolBind
 from ..ops.wave_ops import CustomOp
 
 from .regions import RegionGraph, SubgraphTracer
@@ -109,6 +109,11 @@ class KernelTracer(SubgraphTracer):
             if isinstance(t, DataType) and node.op == "placeholder":
                 node.meta["arg_id"] = self.current_arg_id
                 node.meta["dtype"] = t
+                node.meta["symbolic_type"] = []
+                self.current_arg_id += 1
+            elif issubclass(t, SymbolBind) and node.op == "placeholder":
+                node.meta["arg_id"] = self.current_arg_id
+                node.meta["dtype"] = t.dtype
                 node.meta["symbolic_type"] = []
                 self.current_arg_id += 1
             elif isinstance(t, KernelBufferMeta):

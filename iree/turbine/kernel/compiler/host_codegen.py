@@ -74,6 +74,11 @@ def isolated_test_call(
         input_tensors += [
             IndexType.get() for _ in set(dynamic_symbols).difference(argument_dims)
         ]
+        input_tensors += [
+            b.as_mlir_type()
+            for b in sig.dynamic_dim_bindings
+            if b.symbol_type not in argument_dims
+        ]
 
         output_types = [b.as_mlir_type() for b in sig.kernel_buffer_output_bindings]
         output_tensors = memref_to_tensor(output_types)

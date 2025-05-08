@@ -34,7 +34,7 @@ from ..lang.kernel_buffer import (
     KernelBufferUsage,
     is_kernel_buffer_meta_derived,
 )
-from ..lang.wave_types import Memory
+from ..lang.wave_types import Memory, SymbolBind
 from ..lang.grid import Grid
 from ..ops.wave_ops import get_custom, Placeholder, NestedRegionOp, Read, Write
 
@@ -270,6 +270,16 @@ class KernelSignature:
                         BindingType.SYMBOL_VALUE,
                         name=node.target,
                         symbol_type=t,
+                    )
+                )
+            elif issubclass(t, SymbolBind):
+                self.bindings.append(
+                    BindingDesc(
+                        ("node", node),
+                        BindingType.SYMBOL_VALUE,
+                        name=node.target,
+                        symbol_type=t.symbol,
+                        scalar_type=t.dtype,
                     )
                 )
             else:
