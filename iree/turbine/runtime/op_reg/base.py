@@ -35,6 +35,14 @@ from ...support.ir_imports import (
     arith_d,
     builtin_d,
     func_d,
+    flow_d,
+)
+
+from iree.turbine.kernel.compiler.kernel_codegen import KernelSignature
+from iree.turbine.kernel.compiler.dispatch_codegen import StreamExecutable
+
+from iree.turbine.kernel.compiler.builder import (
+    ModuleBuilder,
 )
 
 from ...support.logging import runtime_logger as logger
@@ -48,7 +56,6 @@ __all__ = [
     "AttrArg",
     "CustomOp",
     "FreeFuncKernelBuilder",
-    "WaveKernelBuilder",
     "IntArg",
     "KernelBuilder",
     "KernelSelection",
@@ -879,118 +886,6 @@ class FreeFuncKernelBuilder(KernelBuilder):
         with context, Location.unknown():
             module_op = builtin_d.ModuleOp()
             return FreeFuncKernelBuilder(
-                ksel,
-                module_body=module_op.body,
-                symbol_table=SymbolTable(module_op),
-                func_name=func_name,
-                is_public=is_public,
-            )
-
-    def yield_results(self, *results: Value):
-        """Yields results of the kernel computation."""
-        assert not self.yielded, "yield_results has already been called"
-        ksel = self.ksel
-        expected_count = len(ksel.result_descs) + len(ksel.inplace_tied_arg_descs)
-        assert (
-            len(results) == expected_count
-        ), f"Mismatched yielded results and declared+inplace: Expected={expected_count}, Got={len(results)}"
-        with self.ip, Location.unknown():
-            func_d.ReturnOp(results)
-        self.yielded = True
-
-
-# TODO: emit stream.executable from Wave kernel + func.func from wave asm
-class WaveKernelBuilder(KernelBuilder):
-    """Kernel builder that emits the body of the kernel into a stream.executable dispatchable kernel."""
-
-    def __init__(
-        self,
-        ksel: KernelSelection,
-        *,
-        module_body: Block,
-        symbol_table: SymbolTable,
-        func_name: Optional[str] = None,
-        is_public: bool = True,
-    ):
-        self.module_op = module_body.owner
-        context = self.module_op.context
-        if func_name is None:
-            func_name = ksel.op.name
-        with context, Location.unknown(), InsertionPoint(module_body):
-            # Assemble arg types.
-            arg_types = []
-            for d in ksel.arg_descs:
-                assert d is not None, "NYI: None arguments"
-                arity = d.ir_arity
-                if not d.is_list:
-                    if arity == 1:
-                        arg_types.append(IrType.parse(d.mlir_type_asm))
-                    else:
-                        continue
-                else:
-                    for i in range(arity):
-                        arg_types.append(IrType.parse(d.mlir_type_asm[i]))
-
-            # Assemble result types.
-            result_types = []
-            for d in (*ksel.result_descs, *ksel.inplace_tied_arg_descs):
-                if not d.is_list:
-                    if d.ir_arity == 1:
-                        result_types.append(IrType.parse(d.mlir_type_asm))
-                    else:
-                        continue
-                else:
-                    raise AssertionError("NYI: arity > 1 results")
-
-            # Create the func.
-            ftype = FunctionType.get(arg_types, result_types)
-            func_op = func_d.FuncOp(func_name, ftype)
-            if not is_public:
-                func_op.attributes["sym_visibility"] = StringAttr.get("private")
-            entry_block: Block = func_op.add_entry_block()
-            symbol_table.insert(func_op)
-
-        # Map inputs to arg bindings, lining up with arguments that are elided.
-        block_arguments = list(entry_block.arguments)
-        block_arg_index = 0
-        arg_bindings: list[Optional[Value]] = []
-        for desc in ksel.arg_descs:
-            assert desc is not None, "NYI: None arguments"
-            arity = desc.ir_arity
-            if not desc.is_list:
-                if arity == 1:
-                    arg_bindings.append(block_arguments[block_arg_index])
-                    block_arg_index += 1
-                else:
-                    arg_bindings.append(None)
-            else:
-                arg_bindings.append(
-                    block_arguments[block_arg_index : block_arg_index + arity]
-                )
-                block_arg_index += arity
-
-        super().__init__(
-            ksel,
-            arg_bindings,
-            ip=InsertionPoint(entry_block),
-            module_body=module_body,
-            symbol_table=symbol_table,
-        )
-
-    @staticmethod
-    def create_module(
-        ksel: KernelSelection,
-        *,
-        context: Optional[Context] = None,
-        func_name: Optional[str] = None,
-        is_public: bool = True,
-    ) -> "WaveKernelBuilder":
-        """Short-cut to create a new module with a single function in one shot."""
-        if context is None:
-            context = Context()
-        with context, Location.unknown():
-            module_op = builtin_d.ModuleOp()
-            return WaveKernelBuilder(
                 ksel,
                 module_body=module_op.body,
                 symbol_table=SymbolTable(module_op),

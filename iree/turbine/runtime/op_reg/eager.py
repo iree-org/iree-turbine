@@ -54,7 +54,7 @@ __all__ = [
 ]
 
 
-def eager_dispatch(ksel: KernelSelection, is_wave: bool = False):
+def eager_dispatch(ksel: KernelSelection):
     """Main entry-point for handling dispatch of a selected kernel via a generator."""
     # Scan arg descs and decide on a compute device.
     # For now, we compute on the first device that we support.
@@ -100,7 +100,7 @@ def eager_dispatch(ksel: KernelSelection, is_wave: bool = False):
 
     # Compile.
     # TODO: We can do compilation asynchronously with the device movement
-    vm_context, vm_f, config = compile_standalone_kernel(device, ksel, is_wave=is_wave)
+    vm_context, vm_f, config = compile_standalone_kernel(device, ksel)
 
     # Build the concrete args, issuing device movement as necessary.
     arg_list = VmVariantList(len(ksel.arg_descs))
