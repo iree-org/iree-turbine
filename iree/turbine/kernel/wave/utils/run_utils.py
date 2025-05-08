@@ -124,7 +124,7 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     # we want scalars to be at the end during codegen/dispatch to iree
     # to maintain the consistency.
     for input in inputs:
-        if isinstance(input, (float, int)):
+        if isinstance(input, float):
             # arg_list.push_float(input)
             # Currently, `push_float` is not working on the iree side.
             raise NotImplementedError("Float inputs are not supported.")
