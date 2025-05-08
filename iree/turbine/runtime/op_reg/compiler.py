@@ -43,7 +43,6 @@ from ..tracing import tracer
 
 from .base import (
     FreeFuncKernelBuilder,
-    WaveKernelBuilder,
     KernelSelection,
 )
 
@@ -136,7 +135,6 @@ def compile_standalone_kernel(
     )
     kb = FreeFuncKernelBuilder.create_module(ksel, func_name=func_name)
     config = KernelCompileConfig(cache_key, list(device.compile_target_flags))
-    kb = FreeFuncKernelBuilder.create_module(ksel, func_name=func_name)
     with kb.ip, Location.unknown():
         ksel.op.generate(ksel, kb)
 
