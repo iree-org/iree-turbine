@@ -421,6 +421,37 @@ def _create_buffer_read_write(
         return None
 
 
+def emit_contiguous_read_write(
+    mem: Value,
+    value: Optional[Value],
+    vector_type: Optional[IrType],
+    start_indices: tuple[Value],
+    is_read: bool,
+    buffer_ops_enabled: bool,
+    data: Optional[Value],
+    offset_th: Optional[Value],
+) -> Optional[Value]:
+    """
+    Emit contiguous read or write.
+
+    If buffer ops are not enabled, emit vector.load or vector.store.
+    Otherwise, emit buffer.load or buffer.store.
+    """
+    if not buffer_ops_enabled:
+        if is_read:
+            return vector_d.load(vector_type, mem, start_indices)
+        else:
+            vector_d.store(value, mem, start_indices)
+            return
+    else:
+        offset_th = arith_d.index_cast(IntegerType.get_signless(32), offset_th)
+        if is_read:
+            return _create_buffer_read_write(vector_type, data, offset_th)
+        else:
+            _create_buffer_read_write(vector_type, data, offset_th, value)
+            return
+
+
 def _create_vec_read_write(
     emitter: WaveEmitter,
     symbolic_shape: tuple[IndexExpr, ...],
@@ -435,21 +466,50 @@ def _create_vec_read_write(
     mask: Optional[Value],
     offsets_vec: Optional[Value],
 ) -> Optional[Value]:
+
+    # Determine if this is a read or write.
     is_read = value is None
+
+    # Determine whether to use buffer ops.
+    # Only use buffer ops when specified by user and on global mem.
+    use_buffer_ops = mem.type.memory_space is None
+    buffer_ops_enabled = (
+        emitter.options.use_buffer_load_ops
+        if is_read
+        else emitter.options.use_buffer_store_ops
+    )
+    buffer_ops_enabled = buffer_ops_enabled and use_buffer_ops
+
+    # TODO: If strides cannot be converted into integers, means they are dynamic
+    # and linearize breaks, need to investigate later.
+    strides = strides_from_symbolic_shape(
+        IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
+    )
+    has_int_strides = all(isinstance(s, int) for s in strides)
+    if has_int_strides:
+        strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
+
+    # Linearize memref if buffer ops are enabled and strides are integers.
+    data, offset_th = None, None
+    if buffer_ops_enabled and has_int_strides:
+        data, offset_th = _linearize_memref(
+            mem, start_indices_wg, start_indices_th, strides
+        )
+
     if mask is None and offsets_vec is None:
-        if is_read:
-            return vector_d.load(vector_type, mem, start_indices)
-        else:
-            vector_d.store(value, mem, start_indices)
-            return
+        return emit_contiguous_read_write(
+            mem,
+            value,
+            vector_type,
+            start_indices,
+            is_read,
+            buffer_ops_enabled,
+            data,
+            offset_th,
+        )
 
     mask_splat = _get_splat_input(mask)
     splatted_masked = offsets_vec is None and mask_splat is not None
-
-    # Only use buffer ops if it's gather/scatter or splated masked op on global mem.
-    use_buffer_ops = (
-        offsets_vec is not None or splatted_masked
-    ) and mem.type.memory_space is None
 
     if vector_type is None:
         vector_type = value.type
@@ -462,26 +522,11 @@ def _create_vec_read_write(
 
     if memory.type.address_space == SHARED_ADDRESS_SPACE:
         symbolic_shape = memory.distributed_shape
-    strides = strides_from_symbolic_shape(
-        IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
-    )
 
     def extract(vec, ind):
         return vector_d.extract(vec, static_position=[ind], dynamic_position=[])
 
-    # TODO: If strides cannot be converted into integers, means they are dynamic
-    # and linearize breaks, need to investigate later.
-    has_int_strides = all(isinstance(s, int) for s in strides)
-    buffer_ops_enabled = (
-        emitter.options.use_buffer_load_ops
-        if is_read
-        else emitter.options.use_buffer_store_ops
-    )
-    if buffer_ops_enabled and has_int_strides and use_buffer_ops:
-        strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
-        data, offset_th = _linearize_memref(
-            mem, start_indices_wg, start_indices_th, strides
-        )
+    if buffer_ops_enabled and has_int_strides:
 
         if offsets_vec is None:
             offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
@@ -568,7 +613,6 @@ def _create_vec_read_write(
         if has_int_strides:
             vec1 = VectorType.get([1], element_type)
             vec1_mask = VectorType.get([1], IntegerType.get_signless(1))
-            strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
             data, _ = _linearize_memref(
                 mem, start_indices, (0,) * len(start_indices), strides
             )
