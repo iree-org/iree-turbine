@@ -60,6 +60,8 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
             input_cpu = input.cpu().contiguous()
             device_array = rt.asdevicearray(device, input_cpu)
             arg_list.push_ref(device_array._buffer_view)
+        elif isinstance(input, int):
+            arg_list.push_int(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
 
@@ -109,8 +111,11 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     for input in inputs:
         if isinstance(input, torch.Tensor):
             push_tensor_to_arg_list(input)
+        elif isinstance(input, int):
+            arg_list.push_int(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
+
     for output in outputs:
         if isinstance(output, torch.Tensor):
             push_tensor_to_arg_list(output)
