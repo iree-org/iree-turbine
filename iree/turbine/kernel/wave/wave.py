@@ -586,8 +586,20 @@ class LaunchableWave(Launchable):
             partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
         ]
 
+        pass_times = {}
         for p in graph_passes:
-            try_apply_pass(p, trace, print_ir_before, print_ir_after)
+            try_apply_pass(p, trace, print_ir_before, print_ir_after, pass_times)
+
+        if options.print_pass_times:
+            pass_times_list = sorted(
+                pass_times.items(), key=lambda x: x[1], reverse=True
+            )
+
+            import datetime
+
+            print(f"Pass times:")
+            for k, v in pass_times_list:
+                print(f"    {k}: {datetime.timedelta(seconds=v)}")
 
         if "all" in print_ir_after or "last" in print_ir_after:
             # Take advantage of Python leaking loop variables
