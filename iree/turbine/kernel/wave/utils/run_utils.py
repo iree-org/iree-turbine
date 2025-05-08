@@ -285,6 +285,7 @@ def invoke_with_wave_runtime(
         kern_args.append(arg_tensor.data_ptr())
 
     kernel_args = wave_runtime.Int64Vector(kern_args)
+    dynamic_dims = tuple(x for x in dynamic_dims if x is not None)
     dyn_dims = wave_runtime.Int64Vector(dynamic_dims)
     # Launch the kernel.
     wave_runtime.launch(kernel_launch_info, kernel_args, dyn_dims, scalar_args)
