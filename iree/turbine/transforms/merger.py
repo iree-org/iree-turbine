@@ -144,6 +144,13 @@ class Merger:
             self._nested_symbol_table_ops.append(source)
             self._target_body.append(source)
 
+        # Merge stream executables.
+        executables = get_top_level_ops(self.source_module, "stream.executable")
+        for exe_op in executables:
+            exe_op.detach_from_parent()
+            self._nested_symbol_table_ops.append(exe_op)
+            self._target_body.append(exe_op)
+
         # Merge functions.
         funcs = get_top_level_ops(self.source_module, "func.func", "util.func")
         for func_op in funcs:
