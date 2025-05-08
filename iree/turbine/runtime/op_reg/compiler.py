@@ -134,7 +134,6 @@ def compile_standalone_kernel(
         async_invocations=async_invocations,
     )
     kb = FreeFuncKernelBuilder.create_module(ksel, func_name=func_name)
-    config = KernelCompileConfig(cache_key, list(device.compile_target_flags))
     with kb.ip, Location.unknown():
         ksel.op.generate(ksel, kb)
 

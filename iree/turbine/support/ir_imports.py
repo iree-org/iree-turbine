@@ -8,7 +8,6 @@
 """Unifies all imports of iree.compiler.ir into one place."""
 
 from iree.compiler.ir import (
-    AffineMap,
     ArrayAttr,
     AsmState,
     Attribute,
@@ -59,7 +58,6 @@ from iree.compiler.passmanager import (
 from iree.compiler.dialects import (
     builtin as builtin_d,
     flow as flow_d,
-    stream as stream_d,
     func as func_d,
     util as util_d,
     arith as arith_d,

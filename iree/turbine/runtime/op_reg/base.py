@@ -35,14 +35,6 @@ from ...support.ir_imports import (
     arith_d,
     builtin_d,
     func_d,
-    flow_d,
-)
-
-from iree.turbine.kernel.compiler.kernel_codegen import KernelSignature
-from iree.turbine.kernel.compiler.dispatch_codegen import StreamExecutable
-
-from iree.turbine.kernel.compiler.builder import (
-    ModuleBuilder,
 )
 
 from ...support.logging import runtime_logger as logger
@@ -941,16 +933,13 @@ def _create_impl_trampoline(op: CustomOp):
         if eager_override is not NotImplemented:
             return eager_override
 
-        is_wave = False
-        if "wave" in op.name.lower():
-            is_wave = True
         ksel = EagerKernelSelection(op, args)
         op.select(ksel)
         if logger.isEnabledFor(logging.DEBUG):
             logging.debug(
                 "Dispatch on %s for specialization %s", op.name, ksel.spec_key
             )
-        return eager_dispatch(ksel, is_wave=is_wave)
+        return eager_dispatch(ksel)
 
     return handler
 
