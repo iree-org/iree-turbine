@@ -12,6 +12,7 @@ from ..._support.indexing import (
 )
 from ...compiler.base import CodegenError
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
+from ...lang.wave_types import IndexMapping
 from ...ops.wave_ops import (
     get_custom,
     Read,
@@ -19,6 +20,7 @@ from ...ops.wave_ops import (
     CustomOp,
     Iterate,
 )
+from ..utils.mapping_utils import get_dict_with_updated_key
 import iree.turbine.kernel.lang as tkl
 
 
@@ -116,6 +118,23 @@ def _multi_buffer_memory_location(
                     else:
                         offset = buffer_selector * block_size
                     op.index[dim].start = op.index[dim].start + offset
+
+                    # Update the mapping for the operation as the keys for the
+                    # mapping have to match the shape of memory location the
+                    # operation reads from / writes to, which we change below.
+                    if isinstance(op.mapping, IndexMapping):
+                        input_mapping = op.mapping.input_mapping
+                        output_mapping = op.mapping.output_mapping
+                        if dim in input_mapping:
+                            op.mapping.input_mapping = get_dict_with_updated_key(
+                                input_mapping, dim, dim * buffer_count
+                            )
+                            input_mapping = op.mapping.input_mapping
+                        if dim in output_mapping:
+                            op.mapping.output_mapping = get_dict_with_updated_key(
+                                output_mapping, dim, dim * buffer_count
+                            )
+                            output_mapping = op.mapping.output_mapping
 
     # Create new shape with increased non-reduction dimensions
     new_shape = []
