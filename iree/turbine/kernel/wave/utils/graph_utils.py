@@ -367,3 +367,42 @@ def get_outer_node(outer_node: fx.Node) -> fx.Node:
     while "lifted" in outer_node.meta:
         outer_node = outer_node.meta["lifted"]
     return outer_node
+
+
+def is_barrier_between_same_graph(src: fx.Node, dst: fx.Node) -> bool:
+    """
+    Checks if there is a barrier between the source and destination nodes,
+    assuming that they are in the same graph.
+    """
+    prev_node, next_node = src.prev, dst.next
+    found_src, found_dst = prev_node == src, next_node == dst
+    while prev_node.prev.op != "root" and not found_src:
+        prev_node, found_src = prev_node.prev, prev_node == src
+    if not found_src:
+        return False
+    while next_node.next.op != "root" and not found_dst:
+        next_node, found_dst = next_node.next, next_node == dst
+    return found_dst
+
+
+def is_barrier_between(src: fx.Node, dst: fx.Node) -> bool:
+    """
+    Checks if there is a barrier between the source and destination nodes.
+    """
+    if src.graph == dst.graph:
+        return is_barrier_between_same_graph(src, dst)
+    else:
+        assert src.graph.parent_op, "src must be in a nested graph"
+        assert dst.graph.parent_op, "dst must be in a nested graph"
+        assert (
+            src.graph.parent_op.graph == dst.graph.parent_op.graph
+        ), "src and dst parent ops must be in the same graph"
+        # Check if there is a barrier in the src graph between src and output.
+        src_check = is_barrier_between_same_graph(src, list(src.graph.nodes)[-1])
+        # Check if there is a barrier in the graph above between src root and dst root.
+        root_check = is_barrier_between_same_graph(
+            src.graph.parent_op, dst.graph.parent_op
+        )
+        # Check if there is a barrier in the dst graph between the root and dst.
+        dst_check = is_barrier_between_same_graph(list(dst.graph.nodes)[0], dst)
+        return src_check or root_check or dst_check

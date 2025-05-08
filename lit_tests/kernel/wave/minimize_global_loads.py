@@ -119,9 +119,9 @@ def test_gemm():
         # CHECK-NEXT: %register_M:1_N:0_K:0
         # CHECK-NEXT: %register_M:1_N:1_K:0
         # CHECK-NEXT: %allocate_1
-        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
+        # CHECK-SAME: ((N, K), (BLOCK_N, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4, None, None)
         # CHECK-NEXT: %allocate
-        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4)
+        # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4, None, None)
         # CHECK-NEXT: iterate
         # CHECK-SAME (K, [%register_M:0_N:0_K:0, %register_M:1_N:1_K:0, %register_M:1_N:0_K:0, %register_M:0_N:1_K:0]
         # CHECK-NEXT: %get_result_M:0_N:0_K:0

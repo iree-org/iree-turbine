@@ -54,7 +54,7 @@ from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
 from .promotion import promote_placeholders, compute_shared_memory_usage
-from .reuse_shared_allocs import reuse_shared_allocs
+from .memory_analysis.minimize_shared_allocs import minimize_shared_allocs
 from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
 from .shared_memory_indexing import (
@@ -441,6 +441,7 @@ class LaunchableWave(Launchable):
     def build_initial_pass_pipeline(
         self,
         trace: CapturedTrace,
+        options: WaveCompileOptions,
         print_ir_before: Sequence[str] = [],
         print_ir_after: Sequence[str] = [],
     ):
@@ -463,7 +464,12 @@ class LaunchableWave(Launchable):
             substitute_vector_shapes,
             partial(add_get_results, trace),
             partial(infer_types, trace),
-            partial(promote_placeholders, trace, self.constraints),
+            partial(
+                promote_placeholders,
+                trace,
+                self.constraints,
+                options.reorder_allocs,
+            ),
             partial(
                 set_node_indices,
                 trace,
@@ -520,7 +526,7 @@ class LaunchableWave(Launchable):
 
         # Initial passes, pre-optimization.
         graph_passes = self.build_initial_pass_pipeline(
-            trace, print_ir_before, print_ir_after
+            trace, options, print_ir_before, print_ir_after
         )
 
         # Optimizations.
@@ -530,7 +536,11 @@ class LaunchableWave(Launchable):
             partial(hoist_loop_invariant_ops, trace, self.constraints),
             partial(global_to_shared_gathers, trace, self.constraints),
             partial(minimize_global_loads, trace, self.constraints),
-            partial(reuse_shared_allocs, trace),
+            partial(
+                minimize_shared_allocs,
+                trace,
+                options.minimize_shared_allocs,
+            ),
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
         ]
 

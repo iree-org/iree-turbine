@@ -62,6 +62,7 @@ def test_extend_attention():
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
+        minimize_shared_allocs=True,
     )
     extend_attention = wave_compile(options, extend_attention)
     print(extend_attention.asm)
@@ -78,8 +79,9 @@ def test_extend_attention():
 
     # CHECK-LABEL:        func.func @extend_attention
     # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
-    # CHECK-DAG:            %[[ALLOC1:.*]] = memref.alloc() : memref<32x1x68xf16, #gpu.address_space<workgroup>>
-    # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC0:.*]] = memref.alloc() : memref<4352xf16, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC1:.*]] = memref.reinterpret_cast %[[ALLOC0]] to offset: [0], sizes: [32, 1, 68], strides: [68, 68, 1] : memref<4352xf16, #gpu.address_space<workgroup>> to memref<32x1x68xf16, strided<[68, 68, 1]>, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC2:.*]] = memref.reinterpret_cast %[[ALLOC0]] to offset: [2176], sizes: [1, 32, 68], strides: [2176, 68, 1] : memref<4352xf16, #gpu.address_space<workgroup>> to memref<1x32x68xf16, strided<[2176, 68, 1], offset: 2176>, #gpu.address_space<workgroup>>
     # CHECK-COUNT-4:        vector.maskedload
     # CHECK:                scf.for
     # 3 masked load for sequence idx, 2 for k_cache, and 1 for v_cache.
@@ -96,9 +98,9 @@ def test_extend_attention():
     # CHECK-COUNT-2:            arith.addf
     # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
     # CHECK-COUNT-8:            amdgpu.mfma
+    # CHECK-COUNT-4:        vector.maskedload
     # CHECK:                amdgpu.lds_barrier
     # CHECK-NOT:            amdgpu.lds_barrier
-    # CHECK-COUNT-4:        vector.maskedload
     # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
     # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
     # CHECK:                scf.for
@@ -163,6 +165,7 @@ def test_causal_extend_attention():
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
+        minimize_shared_allocs=True,
     )
     extend_attention = wave_compile(options, extend_attention)
     print(extend_attention.asm)
@@ -172,8 +175,9 @@ def test_causal_extend_attention():
     # CHECK-LABEL:       func.func @extend_attention
     # CHECK-DAG:            %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
     # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
-    # CHECK-DAG:            %[[ALLOC1:.*]] = memref.alloc() : memref<32x1x68xf16, #gpu.address_space<workgroup>>
-    # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC0:.*]] = memref.alloc() : memref<4352xf16, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC1:.*]] = memref.reinterpret_cast %[[ALLOC0]] to offset: [0], sizes: [32, 1, 68], strides: [68, 68, 1] : memref<4352xf16, #gpu.address_space<workgroup>> to memref<32x1x68xf16, strided<[68, 68, 1]>, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC2:.*]] = memref.reinterpret_cast %[[ALLOC0]] to offset: [2176], sizes: [1, 32, 68], strides: [2176, 68, 1] : memref<4352xf16, #gpu.address_space<workgroup>> to memref<1x32x68xf16, strided<[2176, 68, 1], offset: 2176>, #gpu.address_space<workgroup>>
     # CHECK-COUNT-4:        vector.maskedload
     # CHECK:                scf.for
     # 3 masked load for sequence idx, 2 for k_cache, and 1 for v_cache.
@@ -216,10 +220,10 @@ def test_causal_extend_attention():
     # CHECK:                %[[NQ_LOOP_BOUND_SPLAT:.*]] = vector.splat %[[NQ_TILE_UPPER_BOUND]]
     # CHECK:                arith.minsi {{.*}}, %[[NQ_LOOP_BOUND_SPLAT]]
 
+    # CHECK-COUNT-4:        vector.maskedload
     # CHECK:                amdgpu.lds_barrier
     # CHECK-NOT:            amdgpu.lds_barrier
 
-    # CHECK-COUNT-4:        vector.maskedload
     # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
     # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
 
@@ -308,6 +312,7 @@ def test_causal_extend_attention_32x32x8():
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
+        minimize_shared_allocs=True,
     )
     extend_attention = wave_compile(options, extend_attention)
     print(extend_attention.asm)
@@ -315,8 +320,9 @@ def test_causal_extend_attention_32x32x8():
     # CHECK-LABEL:       test_causal_extend_attention_32x32x8
     # CHECK:             func.func @extend_attention
     # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
-    # CHECK-DAG:            %[[ALLOC1:.*]] = memref.alloc() : memref<32x1x68xf16, #gpu.address_space<workgroup>>
-    # CHECK-DAG:            %[[ALLOC2:.*]] = memref.alloc() : memref<1x32x68xf16, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC0:.*]] = memref.alloc() : memref<4352xf16, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC1:.*]] = memref.reinterpret_cast %[[ALLOC0]] to offset: [0], sizes: [32, 1, 68], strides: [68, 68, 1] : memref<4352xf16, #gpu.address_space<workgroup>> to memref<32x1x68xf16, strided<[68, 68, 1]>, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC2:.*]] = memref.reinterpret_cast %[[ALLOC0]] to offset: [2176], sizes: [1, 32, 68], strides: [2176, 68, 1] : memref<4352xf16, #gpu.address_space<workgroup>> to memref<1x32x68xf16, strided<[2176, 68, 1], offset: 2176>, #gpu.address_space<workgroup>>
     # CHECK-COUNT-8:        vector.maskedload
     # CHECK:                scf.for
     # 3 masked load for sequence idx, 2 for k_cache, and 1 for v_cache.
@@ -352,9 +358,9 @@ def test_causal_extend_attention_32x32x8():
 
     # CHECK-COUNT-2:            gpu.shuffle xor {{.*}}
     # CHECK-COUNT-8:            amdgpu.mfma
+    # CHECK-COUNT-8:        vector.maskedload
     # CHECK:                amdgpu.lds_barrier
     # CHECK-NOT:            amdgpu.lds_barrier
-    # CHECK-COUNT-8:        vector.maskedload
     # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
     # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
     # CHECK:                scf.for
@@ -439,6 +445,7 @@ def test_extend_attention_custom_mask():
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
+        minimize_shared_allocs=True,
     )
     extend_attention = wave_compile(options, extend_attention)
     print(extend_attention.asm)
