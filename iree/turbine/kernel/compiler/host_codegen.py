@@ -74,11 +74,13 @@ def isolated_test_call(
         input_tensors += [
             IndexType.get() for _ in set(dynamic_symbols).difference(argument_dims)
         ]
-        input_tensors += [
-            b.as_mlir_type()
+        # Symbol bindings
+        symbol_bindings = [
+            b.symbol_type
             for b in sig.dynamic_dim_bindings
             if b.symbol_type not in argument_dims
         ]
+        input_tensors += [IndexType.get() for _ in symbol_bindings]
 
         output_types = [b.as_mlir_type() for b in sig.kernel_buffer_output_bindings]
         output_tensors = memref_to_tensor(output_types)
@@ -100,6 +102,11 @@ def isolated_test_call(
         dynamic_argument_map = {
             k: v for k, v in zip(dynamic_symbols, entry_block.arguments[offset:])
         }
+        for i, sym in enumerate(symbol_bindings):
+            dynamic_argument_map[sym] = entry_block.arguments[
+                offset + len(dynamic_symbols) + i
+            ]
+
         with InsertionPoint(entry_block):
             assert isinstance(entry_block, Block)
             # Create a flow.dispatch op to the kernel
@@ -116,7 +123,10 @@ def isolated_test_call(
             )
             out = flow_d.DispatchOp(
                 output_tensors,
-                [dynamic_argument_map[dim] for dim in dynamic_symbols],
+                [
+                    dynamic_argument_map[dim]
+                    for dim in dynamic_symbols + symbol_bindings
+                ],
                 entrypoints,
                 entry_block.arguments,
                 [dynamic_argument_map[dim] for dim in argument_dims],
