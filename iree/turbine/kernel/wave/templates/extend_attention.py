@@ -216,7 +216,9 @@ def get_extend_attention_kernel(
         custom_mask,
         mask_offsets,
         c,
+        max_len_extend,
     ):
+        tkw.set_symbol(MAX_EXTEND_SEQ_LEN, max_len_extend)
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
         init_sum = tkl.Register[H, N_Q, tkl.f32](0.0)
         init_max = tkl.Register[H, N_Q, tkl.f32](-1e6)
@@ -398,10 +400,22 @@ def get_extend_attention_kernel(
         qo_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
         kv_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
         kv_indices: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
+        max_len_extend: tkl.i32,
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         extend_attention_core(
-            q, k, v, k_cache, v_cache, qo_indptr, kv_indptr, kv_indices, None, None, c
+            q,
+            k,
+            v,
+            k_cache,
+            v_cache,
+            qo_indptr,
+            kv_indptr,
+            kv_indices,
+            None,
+            None,
+            c,
+            max_len_extend,
         )
 
     @tkw.wave(constraints)
@@ -422,6 +436,7 @@ def get_extend_attention_kernel(
             MASK_LEN, GLOBAL_ADDRESS_SPACE, tkl.i8, num_seqs_layout
         ],
         mask_offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
+        max_len_extend: tkl.i32,
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         extend_attention_core(
@@ -436,6 +451,7 @@ def get_extend_attention_kernel(
             custom_mask,
             mask_offsets,
             c,
+            max_len_extend,
         )
 
     hyperparams = {
@@ -454,12 +470,11 @@ def get_extend_attention_kernel(
         D_Q: shape.head_size,
     }
 
-    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN]
+    dynamic_symbols = [N_Q, N_KV, S]
     dynamic_symbols_map = {
         N_Q: q_shape[0],
         N_KV: k_shape[0],
         S: shape.num_seqs,
-        MAX_EXTEND_SEQ_LEN: shape.max_seq_len,
     }
 
     if use_custom_mask:
