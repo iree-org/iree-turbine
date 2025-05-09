@@ -32,12 +32,14 @@ Values: 0xABCD where:
     * 0 = CDNA1
     * 1 = CDNA2
     * 2 = CDNA3
+    * 3 = CDNA4
     * 8 = RDNA3
 * C = element type of A-matrix:
   * 0 = 64-bit float (e.g. IEEE754 double precision)
   * 1 = 32-bit float (e.g. IEEE754 single precision, and "xf32" fast variants)
   * 2 = 16-bit float (incl. IREE754 half and bf16)
   * 3 = 8-bit float (incl. f8E5M2, f8E4M3, and "FNUZ" variants)
+  * 4 = MX float (incl. F8E5M2, F8E4M3FN, F6E2M3FN, F6E3M2FN, F4E2M1FN variants)
   * C = 8-bit integer (any signedness)
 * D enumerates intrinsics that share the same 0xABC* bits.
 """
@@ -59,6 +61,12 @@ class MMAType(Enum):
     F32_32x32x16_K4_F8 = 0x1233
     I32_16x16x32_I8 = 0x12C0
     I32_32x32x16_I8 = 0x12C1
+
+
+class ScaledMMAType(Enum):
+    # Intrinsics introduced in CDNA4
+    F32_16x16x128_F8F6F4 = 0x1340
+    F32_32x32x64_F8F6F4 = 0x1341
 
 
 class MMAOperand(Enum):
@@ -210,7 +218,7 @@ class HardwareConstraint(Constraint):
 
     threads_per_wave: int
     waves_per_block: Optional[tuple[int, int, int]] = None
-    mma_type: Optional[MMAType] = MMAType.F32_16x16x16_F16
+    mma_type: Optional[MMAType | ScaledMMAType] = MMAType.F32_16x16x16_F16
     vector_shapes: Optional[dict[IndexSymbol, int]] = None
     max_bits_per_load: int = 128
 
@@ -228,7 +236,7 @@ class HardwareConstraint(Constraint):
             case _:
                 raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
 
-    def mma_matrix_shapes(self, mma_type: Optional[MMAType]) -> tuple[int]:
+    def mma_matrix_shapes(self, mma_type: Optional[MMAType | ScaledMMAType]) -> tuple[int]:
         # TODO: Eventually the shapes and indices should be provided by a tool
         if mma_type == None:
             mma_type = self.mma_type
@@ -255,10 +263,14 @@ class HardwareConstraint(Constraint):
                 | MMAType.I32_32x32x16_I8
             ):
                 return (32, 32, 16)
+            case ScaledMMAType.F32_16x16x128_F8F6F4:
+                return (16, 16, 128)
+            case ScaledMMAType.F32_32x32x64_F8F6F4:
+                return (32, 32, 64)
             case _:
                 raise ValueError(f"Unsupported MMA type: {mma_type}")
 
-    def mma_index_offset(self, mma_type: Optional[MMAType]):
+    def mma_index_offset(self, mma_type: Optional[MMAType | ScaledMMAType]):
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
@@ -348,6 +360,33 @@ class HardwareConstraint(Constraint):
                         + 4 * floor(lane / 32)
                         + (GPR_NUM % 4),  # K
                     ]
+            case ScaledMMAType.F32_16x16x128_F8F6F4:
+                offset = [
+                    Piecewise(
+                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16) + (GPR_NUM % 4), MMA_ACC)
+                    ),  # M
+                    lane % 16,  # N
+                    Piecewise(
+                        (32 * floor(lane / 16), ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
+                        (floor(lane / 16), MMA_LHS_SCALE | MMA_RHS_SCALE)
+                    ),  # K
+                ]
+            case ScaledMMAType.F32_32x32x64_F8F6F4:
+                offset = [
+                    Piecewise(
+                        (lane % 32, ~MMA_ACC),
+                        (
+                            (8 * floor(GPR_NUM / 4) % 32)
+                            + 4 * floor(lane / 32)
+                            + (GPR_NUM % 4),
+                            MMA_ACC,
+                        ),
+                    ),  # M
+                    lane % 32,  # N
+                    Piecewise((32 * floor(lane / 32), ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
+                              (floor(lane / 32), MMA_LHS_SCALE | MMA_RHS_SCALE),
+                        ), # K
+                ]
             case _:
                 raise ValueError("Unsupported MMA type")
         return offset
@@ -402,7 +441,7 @@ class HardwareConstraint(Constraint):
         self,
         dim: IndexSymbol,
         constraint_index: int | MMAOperand,
-        mma_type: MMAType,
+        mma_type: MMAType | ScaledMMAType,
     ) -> IndexSequence:
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
@@ -462,6 +501,30 @@ class HardwareConstraint(Constraint):
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
                     1,  # N
                     8,  # K
+                ]
+                stride = [
+                    Piecewise((1, ~MMA_ACC), (32, MMA_ACC)),  # M
+                    1,  # N
+                    1,  # K
+                ]
+            case ScaledMMAType.F32_16x16x128_F8F6F4:
+                size = [
+                    Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
+                    1,  # N
+                    Piecewise((32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
+                              (1, MMA_LHS_SCALE | MMA_RHS_SCALE)),  # K
+                ]
+                stride = [
+                    Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
+                    1,  # N
+                    1,  # K
+                ]
+            case ScaledMMAType.F32_32x32x64_F8F6F4:
+                size = [
+                    Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
+                    1,  # N
+                    Piecewise((32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
+                              (1, MMA_LHS_SCALE | MMA_RHS_SCALE)),  # K
                 ]
                 stride = [
                     Piecewise((1, ~MMA_ACC), (32, MMA_ACC)),  # M
