@@ -12,6 +12,7 @@ from ...ops.wave_ops import (
     GetResult,
     IterArg,
     MMA,
+    ScaledMMA,
     NestedRegionOp,
     Output,
     Placeholder,
@@ -124,6 +125,8 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
+            assert (hw_constraint.vector_shapes), f"Vector shapes for node {custom.fx_node} cannot be derived from hardware constraints: {custom}"
+
             update_vector_shapes = [
                 dim for dim in custom.index if dim in hw_constraint.vector_shapes
             ]
@@ -321,6 +324,57 @@ def populate_mma_source_indices(
     del mma_tuple[1][node.reduction_dim]
     return [lhs_tuple, rhs_tuple, acc_tuple, mma_tuple]
 
+def populate_scaled_mma_source_indices(
+    node: ScaledMMA,
+    mma_index: dict[ScaledMMA, dict[IndexSymbol, int]],
+    hardware_constraint: HardwareConstraint,
+):
+    """
+    Initialize the sources with the LHS, RHS, ACC and MMA node
+    and their index sequences and vector shapes. These will
+    be propagated to the rest of the graph.
+    """
+    index: dict[IndexSymbol, IndexSequence] = {}
+    mapping = mma_index[node]
+    for dim, dim_index in mapping.items():
+        index[dim] = hardware_constraint.apply_mma_mapping(
+            dim, dim_index, node.mma_type
+        )
+    node.index = combine_indices(node.index, index)
+    lhs_tuple = (
+        get_custom(node.lhs),
+        specialize_index(index, {MMA_LHS: 1, MMA_RHS: 0, MMA_ACC: 0, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0}),
+        node.vector_shapes,
+    )
+    lhs_scale_tuple = (
+        get_custom(node.lhs_scale),
+        specialize_index(index, {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 0, MMA_LHS_SCALE: 1, MMA_RHS_SCALE: 0}),
+        node.vector_shapes,
+    )
+    rhs_tuple = (
+        get_custom(node.rhs),
+        specialize_index(index, {MMA_LHS: 0, MMA_RHS: 1, MMA_ACC: 0, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0}),
+        node.vector_shapes,
+    )
+    rhs_scale_tuple = (
+        get_custom(node.rhs_scale),
+        specialize_index(index, {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 0, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 1}),
+        node.vector_shapes,
+    )
+    acc_tuple = (
+        get_custom(node.acc),
+        specialize_index(index, {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0}),
+        node.vector_shapes,
+    )
+    mma_tuple = (
+        node,
+        specialize_index(index, {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0}),
+        node.vector_shapes,
+    )
+    # Remove reduction dim from index of accumulator and mma nodes.
+    del acc_tuple[1][node.reduction_dim]
+    del mma_tuple[1][node.reduction_dim]
+    return [lhs_tuple, lhs_scale_tuple, rhs_tuple, rhs_scale_tuple, acc_tuple, mma_tuple]
 
 def populate_read_write_source_indices(
     node: Read | Write,
@@ -478,7 +532,7 @@ def propagate_indices(
         source, source_index, source_vector_shapes = sources.pop(0)
         if source in visited:
             continue
-        if not isinstance(source, (NestedRegionOp, MMA)):
+        if not isinstance(source, (NestedRegionOp, (MMA, ScaledMMA))):
             if not should_update_index(
                 source, source_index, source_vector_shapes, symbolic_constraints
             ):
@@ -504,14 +558,14 @@ def propagate_indices(
 
 def set_thread_dependent_index_from_mma(
     constraints: Sequence[Constraint],
-    mma_mapping: dict[MMA, dict[IndexSymbol, int]],
+    mma_mapping: dict[MMA | ScaledMMA, dict[IndexSymbol, int]],
     trace: CapturedTrace,
 ):
     """
     Set the thread dependent index based on the hardware constraint.
     """
     hardware_constraint = get_hardware_constraint(constraints)
-    sources: list[MMA] = list(mma_mapping.keys())
+    sources: list[MMA | ScaledMMA] = list(mma_mapping.keys())
     assert sources and len(sources) >= 1, "Unexpected empty MMA mapping."
     if not sources:
         sources = trace.walk(lambda node: isinstance(get_custom(node), (Read, Write)))
@@ -523,9 +577,17 @@ def set_thread_dependent_index_from_mma(
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)
-        new_sources = populate_mma_source_indices(
-            source, mma_mapping, hardware_constraint
-        )
+        if (isinstance(source, ScaledMMA)):
+            new_sources = populate_scaled_mma_source_indices(
+                source, mma_mapping, hardware_constraint
+            )
+        elif (isinstance(source, MMA)):
+            new_sources = populate_mma_source_indices(
+                source, mma_mapping, hardware_constraint
+            )
+        else:
+            assert False, "Invalid MMA type"
+
         visited = propagate_indices(
             new_sources,
             visited,
@@ -751,7 +813,7 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
     def get_index(custom: CustomOp):
         if not custom.indexing_dims:
             return None
-        if isinstance(custom, MMA):
+        if isinstance(custom, (MMA, ScaledMMA)):
             return custom.acc.index
         return custom.index
 
