@@ -46,7 +46,7 @@ command-line arguments are appended to the arguments from the file.
         timing_args, runner_args = runner_parser.parse_known_args(driver_args)
         func = lambda: run(runner_args)
         csv_file.write(shlex.join(driver_args) + ",")
-        if not timing_args.timing:
+        if not timing_args.time:
             func()
             continue
 
