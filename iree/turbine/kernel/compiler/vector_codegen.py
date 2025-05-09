@@ -880,6 +880,22 @@ def cast_vector(
         return vector_d.splat(vector_type, value)
 
 
+def cast_scalar(
+    emitter: ThreadEmitter, value):
+    proxy_value = cast_py_value(emitter, value)
+    value = proxy_value.ir_value
+
+    # After scalar promotion, promote to vector.
+    if VectorType.isinstance(value.type):
+        # Vector -> scalar.
+        zero = arith_d.ConstantOp(IndexType.get(), 0)
+        return vector_d.extractelement(value, position=zero)
+    else:
+        # Already a scalar. Coerce or return.
+        # No target element_type.
+        return value
+
+
 def cast_dtype(emitter: ThreadEmitter, dtype: dtype.DataType) -> IrType:
     try:
         ir_dtype = IrType.parse(dtype.ir_type_asm())
