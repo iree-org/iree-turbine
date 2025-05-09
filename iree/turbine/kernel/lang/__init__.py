@@ -28,5 +28,8 @@ from .._support.dtype import (
     f8e5m2fnuz,
     f8e4m3fn,
     f8e4m3fnuz,
+    f8e8m0fnu,
+    f6e2m3fn,
+    f4e2m1fn,
     index,
 )
