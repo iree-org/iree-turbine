@@ -2418,7 +2418,7 @@ def test_atomic_min():
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     mapping = tkw.IndexMapping(
-        num_iterators=2, inputs={M: i, N: j}, outputs={M: sympy.Integer(0), N: j}
+        num_iterators=2, inputs={M: sympy.Integer(0), N: j}, outputs={M: sympy.Integer(0), N: j}
     )
     read_mapping = tkw.IndexMapping(
         num_iterators=2, inputs={M: sympy.Integer(0), N: j}, outputs={M: i, N: j}
