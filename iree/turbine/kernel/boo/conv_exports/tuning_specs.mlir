@@ -3,6 +3,25 @@ module attributes {iree_codegen.tuning_spec_with_default_entrypoint, transform.w
     transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
     transform.yield
   }
+  transform.named_sequence @match_conv_2d_bfloat16_forward_2x30x46x2016_nhwc_2016x1x1x2016_fhwc_nhwf_1x1s_0x0p_1x1d_1g$async_dispatch_0_matmul_like_2760x2016x2016_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
+    %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
+    ^bb0(%arg1: tensor<2760x2016xbf16>, %arg2: tensor<2016x2016xbf16>, %arg3: tensor<2760x2016xf32>):
+      %1 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2) -> (d0, d2)>, affine_map<(d0, d1, d2) -> (d1, d2)>, affine_map<(d0, d1, d2) -> (d0, d1)>], iterator_types = ["parallel", "parallel", "reduction"]} ins(%arg1, %arg2 : tensor<2760x2016xbf16>, tensor<2016x2016xbf16>) outs(%arg3 : tensor<2760x2016xf32>) {
+      ^bb0(%in: bf16, %in_0: bf16, %out: f32):
+        %2 = arith.extf %in : bf16 to f32
+        %3 = arith.extf %in_0 : bf16 to f32
+        %4 = arith.mulf %2, %3 : f32
+        %5 = arith.addf %out, %4 : f32
+        linalg.yield %5 : f32
+      } -> tensor<2760x2016xf32>
+    } : (!transform.any_op) -> (!transform.any_value, !transform.any_value)
+    %0 = transform.param.constant #iree_codegen.compilation_info<lowering_config = #iree_gpu.lowering_config<{mma_kind = #iree_gpu.mma_layout<MFMA_F32_32x32x8_BF16>, padding = [96, 96, 48], promote_operands = [0, 1, 2], reduction = [0, 0, 6], subgroup = [1, 1, 0], subgroup_m_count = 3 : i64, subgroup_n_count = 3 : i64, workgroup = [96, 96, 0]}>, translation_info = <pipeline = LLVMGPUTileAndFuse workgroup_size = [576, 1, 1] subgroup_size = 64, {gpu_pipeline_options = #iree_gpu.pipeline_options<prefetch_shared_memory = true>, llvm_func_attrs = {"amdgpu-waves-per-eu" = "2"}}>> -> !transform.any_param
+    transform.yield %arg0, %0 : !transform.any_op, !transform.any_param
+  }
+  transform.named_sequence @module8189907815231141851_apply_op_config(%arg0: !transform.any_op {transform.readonly}, %arg1: !transform.any_param {transform.readonly}) {
+    transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
+    transform.yield
+  }
   transform.named_sequence @match_conv_2d_bfloat16_forward_2x59x91x2016_nhwc_2016x3x3x56_fhwc_nhwf_2x2s_1x1p_1x1d_36g$async_dispatch_0_conv_2x30x46x36x56x3x3x56_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
     %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
     ^bb0(%arg1: tensor<2x61x93x36x56xbf16>, %arg2: tensor<36x56x3x3x56xbf16>, %arg3: tensor<2x30x46x36x56xf32>):
@@ -408,7 +427,8 @@ module attributes {iree_codegen.tuning_spec_with_default_entrypoint, transform.w
   }
   transform.named_sequence @__kernel_config(%arg0: !transform.any_op {transform.consumed}) -> !transform.any_op attributes {iree_codegen.tuning_spec_entrypoint} {
     %updated_root = transform.foreach_match in %arg0
-        @match_conv_2d_bfloat16_forward_2x59x91x2016_nhwc_2016x3x3x56_fhwc_nhwf_2x2s_1x1p_1x1d_36g$async_dispatch_0_conv_2x30x46x36x56x3x3x56_bf16xbf16xf32 -> @apply_op_config,
+        @match_conv_2d_bfloat16_forward_2x30x46x2016_nhwc_2016x1x1x2016_fhwc_nhwf_1x1s_0x0p_1x1d_1g$async_dispatch_0_matmul_like_2760x2016x2016_bf16xbf16xf32 -> @apply_op_config,
+        @match_conv_2d_bfloat16_forward_2x59x91x2016_nhwc_2016x3x3x56_fhwc_nhwf_2x2s_1x1p_1x1d_36g$async_dispatch_0_conv_2x30x46x36x56x3x3x56_bf16xbf16xf32 -> @module8189907815231141851_apply_op_config,
         @match_conv_2d_bfloat16_forward_2x118x182x896_nhwc_896x3x3x56_fhwc_nhwf_2x2s_1x1p_1x1d_16g$async_dispatch_0_conv_2x59x91x16x56x3x3x56_bf16xbf16xf32 -> @"module-1904524209651108499_apply_op_config",
         @match_conv_2d_bfloat16_forward_2x235x363x448_nhwc_448x3x3x56_fhwc_nhwf_2x2s_1x1p_1x1d_8g$async_dispatch_0_conv_2x118x182x8x56x3x3x56_bf16xbf16xf32 -> @module3432973299303531041_apply_op_config,
         @match_conv_2d_bfloat16_forward_2x470x725x224_nhwc_224x3x3x56_fhwc_nhwf_2x2s_1x1p_1x1d_4g$async_dispatch_0_conv_2x235x363x4x56x3x3x56_bf16xbf16xf32 -> @"module-5987359365513314828_apply_op_config",
