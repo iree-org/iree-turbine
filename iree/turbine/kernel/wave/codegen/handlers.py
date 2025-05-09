@@ -73,6 +73,7 @@ from ...ops.wave_ops import (
     minimum,
     atan2,
     mma,
+    scaled_mma,
     permute,
     reciprocal,
     register,
@@ -99,6 +100,7 @@ from ...compiler.vector_codegen import (
     cast_py_literal,
     cast_py_value,
     cast_vector,
+    cast_scalar,
 )
 from ...compiler.utils import strides_from_symbolic_shape
 from ..constraints import HardwareConstraint, GenericDot
@@ -372,6 +374,53 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
 
     m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
     result = emit_mfma(m, n, k, acc, values)
+    emitter.bind_node_proxy(node, IRProxyValue(result))
+
+
+def emit_mfma_scaled(m: int, n: int, k: int, acc: Value, values: list[Value], scales: list[Value]) -> Value:
+    m = get_constant_attr(m, IntegerType.get_signless(32))
+    n = get_constant_attr(n, IntegerType.get_signless(32))
+    k = get_constant_attr(k, IntegerType.get_signless(32))
+    idx_a = get_constant_attr(0, IntegerType.get_signless(32))
+    idx_b = get_constant_attr(0, IntegerType.get_signless(32))
+
+    result = amdgpu_d.scaled_mfma(
+        m=m,
+        n=n,
+        k=k,
+        source_a=values[0],
+        source_b=values[1],
+        dest_c=acc,
+        scales_a=scales[0],
+        scales_b=scales[1],
+        scales_idx_a=idx_a,
+        scales_idx_b=idx_b,
+    )
+    return result
+
+@handle_op(scaled_mma)
+def handle_scaled_mma(emitter: WaveEmitter, node: fx.Node):
+    try:
+        lhs, lhs_scale, rhs, rhs_scale, acc, mma_type = node.args
+        acc = cast_vector(emitter, acc)
+        values = [cast_vector(emitter, val) for val in [lhs, rhs]]
+        scales = [cast_scalar(emitter, val) for val in [lhs_scale, rhs_scale]]
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    hardware_constraints = [
+        constraint
+        for constraint in emitter.constraints
+        if isinstance(constraint, HardwareConstraint)
+    ]
+    if not hardware_constraints:
+        raise CodegenError("No hardware constraints found.")
+
+    if mma_type is None:
+        mma_type = hardware_constraints[0].mma_type
+
+    m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
+    result = emit_mfma_scaled(m, n, k, acc, values, scales)
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
