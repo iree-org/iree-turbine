@@ -21,13 +21,13 @@ def apply_shared_memory_indexing_corrections(
     and Tiling constraints.
     """
 
-    def shared_memory_ops(node: fx.Node):
+    def is_shared_memory_ops(node: fx.Node):
         custom = get_custom(node)
         if isinstance(custom, (AtomicOp, Read, Write)) and is_shared_mem_access(custom):
             custom.index = remove_global_indexing(custom.index, constraints)
         return False
 
-    trace.walk(shared_memory_ops)
+    trace.walk(is_shared_memory_ops)
 
 
 def align_index_sizes(trace: CapturedTrace, constraints: list[Constraint]):

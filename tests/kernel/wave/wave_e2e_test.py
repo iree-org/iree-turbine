@@ -1998,9 +1998,6 @@ def test_atomic_min(shape, use_buffer_ops, request):
     read_mapping = tkw.IndexMapping(
         num_iterators=2, inputs={M: sympy.Integer(0), N: j}, outputs={M: i, N: j}
     )
-    read_mapping = tkw.IndexMapping(
-        num_iterators=2, inputs={M: sympy.Integer(0), N: j}, outputs={M: i, N: j}
-    )
 
     @tkw.wave(constraints)
     def test(

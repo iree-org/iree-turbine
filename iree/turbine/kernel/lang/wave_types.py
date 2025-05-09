@@ -19,7 +19,7 @@ from .kernel_buffer import (
 from .._support.dtype import DataType
 from .._support.indexing import IndexExpr, IndexSymbol, index_symbol
 
-from sympy import Symbol
+from sympy import Integer, Symbol
 from sympy.core.expr import Expr
 from typing_extensions import Self
 
@@ -204,6 +204,10 @@ class IndexMapping:
         iter_shape = [None] * num_iterators
         for sym, expr in chain(inputs.items(), outputs.items()):
             i = iters.get(expr, None)
+            # If the expression is an integer, it is intended to be an index set in
+            # the kernel and can be used directly.
+            if isinstance(expr, Integer):
+                i = expr
             if i is None:
                 continue
 

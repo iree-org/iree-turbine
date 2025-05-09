@@ -454,13 +454,15 @@ def handle_atomic_op(op):
 
             node_index = node.index
             if mapping:
-                assert (
-                    mapping.is_input_identity()
-                ), "non-identity input mapping is not supported yet"
                 symbolic_shape = get_custom(node).type.symbolic_shape
-                index_mapping = mapping.map_output_indices(symbolic_shape)
+                input_index_mapping = mapping.map_input_indices(symbolic_shape)
+                output_index_mapping = mapping.map_output_indices(symbolic_shape)
+                assert input_index_mapping == output_index_mapping, (
+                    f"Atomic op operates on shared memory and expects input/output index\n"
+                    f"mapping on the memory to be the same\n"
+                )
                 idxc = IndexingContext.current()
-                index_mapping = tuple(i.subs(idxc.subs) for i in index_mapping)
+                index_mapping = tuple(i.subs(idxc.subs) for i in output_index_mapping)
                 iters = mapping.iters
                 subs = [
                     (sym, expr.start)
