@@ -1686,7 +1686,6 @@ def test_scalar_codegen(
         },
         canonicalize=True,
         run_bench=run_bench,
-        inplace=False,
         wave_runtime=use_wave_runtime,
     )
     test = wave_compile(options, test)
