@@ -8,7 +8,8 @@ from .builder import (
 from .ir import (
     ArrayAttr,
     Block,
-    FloatType,
+    F32Type,
+    F64Type,
     FunctionType,
     IndexType,
     InsertionPoint,
@@ -20,9 +21,9 @@ from .ir import (
     RankedTensorType,
     SymbolRefAttr,
     Value,
-    arith_d,
     flow_d,
     func_d,
+    arith_d,
 )
 
 from .._support.indexing import IndexSymbol
@@ -34,7 +35,7 @@ def memref_to_tensor(memrefs: list[IrType]):
     tensors = []
     for m in memrefs:
         # append scalars as-it-is to tensors list
-        if isinstance(m, (FloatType, IndexType)) or (
+        if isinstance(m, (F32Type, F64Type, IndexType)) or (
             isinstance(m, IntegerType) and m.is_signless
         ):
             tensors.append(m)
