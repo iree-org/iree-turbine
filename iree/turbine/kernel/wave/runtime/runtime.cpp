@@ -77,7 +77,7 @@ int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
     uint64_t *ptr = (uint64_t *)kernelArguments;
     for (auto val : tensors) *ptr++ = val;
 
-    uint32_t* ptr2 = ptr;
+    uint32_t* ptr2 = (uint32_t *)ptr;
     // ToDo: we would like to use bit_cast in the follow-up PR.
     for (auto arg : scalarArgs){
         if (nb::isinstance<nb::int_>(arg)){
