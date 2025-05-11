@@ -1688,6 +1688,7 @@ def test_scalar_codegen(
         run_bench=run_bench,
         wave_runtime=use_wave_runtime,
     )
+    options = set_default_run_config(options)
     test = wave_compile(options, test)
     test(a, scalar_c, scalar_d, b)
 
