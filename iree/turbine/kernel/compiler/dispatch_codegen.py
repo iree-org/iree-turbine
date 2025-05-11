@@ -181,12 +181,14 @@ class StreamExecutable:
 
             # Define the export.
             with InsertionPoint.at_block_begin(self._exe_block):
+                index_type = IndexType.get()
                 export_op = stream_d.ExecutableExportOp(name, name)
                 export_block = export_op.workgroup_count.blocks.append(
                     *(
                         [
-                            b.as_mlir_type()
-                            for b in dynamic_dim_bindings + scalar_bindings
+                            index_type
+                            for b in dynamic_dim_bindings
+                            + [b for b in scalar_bindings if b.symbol_type is not None]
                         ]
                     )
                 )
@@ -206,20 +208,12 @@ class StreamExecutable:
             }
 
             with InsertionPoint(workgroup_builder.entry_block):
-                index_type = IndexType.get()
                 for i, s in enumerate(scalar_bindings):
                     if s.symbol_type is None:
                         continue
 
                     offset = len(dynamic_dim_bindings) + i
-                    arg = arguments[offset]
-                    assert isinstance(
-                        arg.type, (IntegerType, IndexType)
-                    ), f"Expected symbol binding to be IntegerType or IndexType, got {arg.type}"
-                    if arg.type != index_type:
-                        arg = arith_d.index_cast(index_type, arg)
-
-                    dynamic_symbols_mapping[s.symbol_type] = arg
+                    dynamic_symbols_mapping[s.symbol_type] = arguments[offset]
 
                 result_type = index_type
                 workgroup_values = []

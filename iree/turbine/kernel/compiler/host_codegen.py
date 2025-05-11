@@ -6,21 +6,23 @@ from .builder import (
 )
 
 from .ir import (
+    ArrayAttr,
     Block,
+    F32Type,
     FunctionType,
     IndexType,
     InsertionPoint,
-    IrType,
-    Location,
-    ArrayAttr,
-    SymbolRefAttr,
-    MemRefType,
-    RankedTensorType,
-    flow_d,
-    func_d,
-    F32Type,
     IntegerAttr,
     IntegerType,
+    IrType,
+    Location,
+    MemRefType,
+    RankedTensorType,
+    SymbolRefAttr,
+    Value,
+    flow_d,
+    func_d,
+    arith_d,
 )
 
 from .._support.indexing import IndexSymbol
@@ -84,19 +86,40 @@ def isolated_test_call(
         ftype = FunctionType.get(input_tensors, output_tensors)
         func_op = func_d.FuncOp(func_name, ftype)
         actual_loc = FileLineColInfo.capture_current_location().to_mlir()
+        scalar_bindings = sig.scalar_bindings
         arg_locs = [
             (Location.name(b.name, actual_loc) if b.name is not None else actual_loc)
             for b in sig.kernel_buffer_bindings
-            + sig.scalar_bindings
+            + scalar_bindings
             + sig.dynamic_dim_bindings
         ]
         entry_block = func_op.add_entry_block(arg_locs)
-        offset = len(sig.kernel_buffer_bindings) + len(sig.scalar_bindings)
-        dynamic_argument_map = {
-            k: v for k, v in zip(dynamic_symbols, entry_block.arguments[offset:])
-        }
+        scalars_offset = len(sig.kernel_buffer_bindings)
+        scalars_count = len(scalar_bindings)
+        dynamic_offset = scalars_offset + scalars_count
+
+        def to_index(v: Value) -> Value:
+            t = v.type
+            if isinstance(t, IndexType):
+                return v
+
+            if isinstance(t, IntegerType):
+                return arith_d.index_cast(IndexType.get(), v)
+
+            assert False, f"Expected IndexType or IntegerType, got {v.type}"
 
         with InsertionPoint(entry_block):
+            arguments = entry_block.arguments
+            scalars_args = [
+                to_index(v)
+                for v, b in zip(
+                    arguments[scalars_offset:dynamic_offset], scalar_bindings
+                )
+                if b.symbol_type is not None
+            ]
+            dynamic_args = [to_index(v) for v in arguments[dynamic_offset:]]
+            dynamic_argument_map = {k: v for k, v in zip(dynamic_symbols, dynamic_args)}
+
             assert isinstance(entry_block, Block)
             # Create a flow.dispatch op to the kernel
             dispatch = SymbolRefAttr.get([exe.sym_name.value, entrypoint])
@@ -113,7 +136,7 @@ def isolated_test_call(
 
             out = flow_d.DispatchOp(
                 output_tensors,
-                [dynamic_argument_map[dim] for dim in dynamic_symbols],
+                [dynamic_argument_map[dim] for dim in dynamic_symbols] + scalars_args,
                 entrypoints,
                 entry_block.arguments,
                 [dynamic_argument_map[dim] for dim in argument_dims],
