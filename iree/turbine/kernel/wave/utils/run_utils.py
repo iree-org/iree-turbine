@@ -256,9 +256,9 @@ def invoke_with_wave_runtime(
         binary = glob.glob(str(get_wave_runtime_dir() / "*.hsaco"))[0]
 
     num_inputs = len(kernel_inputs)
-    dynamic_dims = tuple(options.dynamic_symbols_map.values()) | {
-        k: scalar_args[v - num_inputs] for k, v in bound_scalar_symbols.items()
-    }
+    dynamic_dims = tuple(options.dynamic_symbols_map.values()) + tuple(
+        (k, scalar_args[v - num_inputs]) for k, v in bound_scalar_symbols.items()
+    )
     # Update the grid size as this may vary depending
     # on the dynamic symbols.
     grid = compute_grid(dynamic_dims, options.kernel_launch_info.grid)
