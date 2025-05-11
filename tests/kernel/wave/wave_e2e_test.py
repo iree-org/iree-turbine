@@ -1630,8 +1630,10 @@ def test_cast(shape, request):
     [  # arg_vals are c, d, e, res
         (tkl.i32, torch.int32, (1, 2, 1, 3)),
         (tkl.f32, torch.float32, (1.0, 2.0, 1.0, 3.0)),
+        (tkl.i64, torch.int64, (1, 2, 1, 3)),
+        (tkl.f64, torch.float64, (1.0, 2.0, 1.0, 3.0)),
     ],
-    ids=["i32", "f32"],
+    ids=["i32", "f32", "i64", "f64"],
 )
 @param_bool("use_wave_runtime", "wr", [False, True])
 def test_scalar_codegen(
