@@ -75,6 +75,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
 
     # Check if this kernel has been compiled before, if the cache is enabled.
     cache_manager = None
+    bound_scalar_symbols = kernel.bound_scalar_symbols
     if is_cache_enabled():
         cache_manager = get_cache_manager()
         options.kernel_hash = cache_manager.get_hash(
@@ -90,7 +91,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
                 options,
                 cached_kernel.vmfb,
                 cached_kernel.asm,
-                kernel.bound_scalar_symbols,
+                bound_scalar_symbols,
             )
 
     # Create an indexing context and populate substitutions.
@@ -131,7 +132,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         asm = options.override_mlir
 
     if options.compile_to_mlir:
-        return WaveKernel(options, None, asm)
+        return WaveKernel(options, None, asm, bound_scalar_symbols)
 
     compiled_wave_vmfb = compile_to_vmfb(asm, options)
     if options.create_vmfb_file:
@@ -153,4 +154,4 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # Remove the indexing context.
     pop(IndexingContext)
 
-    return WaveKernel(options, compiled_wave_vmfb, asm, kernel.bound_scalar_symbols)
+    return WaveKernel(options, compiled_wave_vmfb, asm, bound_scalar_symbols)
