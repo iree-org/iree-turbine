@@ -21,9 +21,9 @@ from .ir import (
     RankedTensorType,
     SymbolRefAttr,
     Value,
+    arith_d,
     flow_d,
     func_d,
-    arith_d,
 )
 
 from .._support.indexing import IndexSymbol
