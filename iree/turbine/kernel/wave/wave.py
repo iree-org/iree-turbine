@@ -85,6 +85,7 @@ import torch.fx as fx
 import inspect
 import sympy
 import warnings
+from ..lang import SymbolBind
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -171,10 +172,12 @@ class LaunchableWave(Launchable):
         # TODO: needed for the wave_runtime grid calculations, we should really
         # just generate host wrapper suitable for wave_runtime instead of doing
         # it in python (and it will be faster as well).
-
-        types = get_type_hints(eager_function)
-        breakpoint()
-        self.bound_scalar_symbols = {}
+        hints = get_type_hints(eager_function)
+        self.bound_scalar_symbols = {
+            a.symbol: i
+            for i, a in enumerate(hints.values())
+            if issubclass(a, SymbolBind)
+        }
 
     @property
     def workgroup_constraints(self) -> list[WorkgroupConstraint]:

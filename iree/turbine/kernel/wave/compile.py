@@ -14,6 +14,7 @@ from .cache import (
 from .utils.compile_utils import compile_to_vmfb
 from .utils.run_utils import invoke_vmfb, _write_file
 from iree.turbine.kernel._support.context import push, pop
+from iree.turbine.kernel.lang import IndexSymbol
 
 
 class WaveKernel:
@@ -21,10 +22,17 @@ class WaveKernel:
     Represents a wave kernel that can be invoked by the user.
     """
 
-    def __init__(self, options: WaveCompileOptions, executable: Any, asm: str):
+    def __init__(
+        self,
+        options: WaveCompileOptions,
+        executable: Any,
+        asm: str,
+        bound_scalar_symbols: dict[IndexSymbol, int],
+    ):
         self.options = options
         self.executable = executable
         self.asm = asm
+        self.bound_scalar_symbols = bound_scalar_symbols
 
     def __call__(self, *args, **kwargs):
         return self.invoke(*args, **kwargs)
@@ -140,4 +148,4 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # Remove the indexing context.
     pop(IndexingContext)
 
-    return WaveKernel(options, compiled_wave_vmfb, asm)
+    return WaveKernel(options, compiled_wave_vmfb, asm, kernel.bound_scalar_symbols)

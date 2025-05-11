@@ -16,7 +16,7 @@ from .classes import KernelLaunchInfo
 from ..profiling import benchmark_module
 from itertools import chain
 from warnings import warn
-
+from iree.turbine.kernel.lang import IndexSymbol
 
 # Cache for the system context and vm function.
 RUNTIME_CACHE: dict[str, tuple[rt.SystemContext, rt.VmFunction]] = {}
@@ -151,9 +151,12 @@ def invoke_vmfb(
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
     scalar_args: list[int | float] = [],
+    bound_scalar_symbols: dict[IndexSymbol, int] = {},
 ):
     if options.wave_runtime:
-        invoke_with_wave_runtime(options, kernel_inputs, kernel_outputs, scalar_args)
+        invoke_with_wave_runtime(
+            options, kernel_inputs, kernel_outputs, scalar_args, bound_scalar_symbols
+        )
         return
 
     device = options.device
@@ -235,6 +238,7 @@ def invoke_with_wave_runtime(
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
     scalar_args: list[int | float],
+    bound_scalar_symbols: dict[IndexSymbol, int],
 ):
     """
     Invokes the kernel with the wave runtime.
@@ -251,7 +255,10 @@ def invoke_with_wave_runtime(
     else:
         binary = glob.glob(str(get_wave_runtime_dir() / "*.hsaco"))[0]
 
-    dynamic_dims = tuple(options.dynamic_symbols_map.values())
+    num_inputs = len(kernel_inputs)
+    dynamic_dims = tuple(options.dynamic_symbols_map.values()) | {
+        k: scalar_args[v - num_inputs] for k, v in bound_scalar_symbols.items()
+    }
     # Update the grid size as this may vary depending
     # on the dynamic symbols.
     grid = compute_grid(dynamic_dims, options.kernel_launch_info.grid)
@@ -273,11 +280,7 @@ def invoke_with_wave_runtime(
 
     # Ensure that the tensors are contiguous.
     kern_args = []
-    scalar_args = []
-    for arg_tensor in chain(kernel_inputs, scalar_args, kernel_outputs):
-        if isinstance(arg_tensor, (float, int)):
-            scalar_args.append(arg_tensor)
-            continue
+    for arg_tensor in chain(kernel_inputs, kernel_outputs):
         if not arg_tensor.is_contiguous():
             arg_tensor = arg_tensor.contiguous()
         kern_args.append(arg_tensor.data_ptr())
