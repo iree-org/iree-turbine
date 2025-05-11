@@ -1693,12 +1693,13 @@ def test_scalar_codegen(
     test = wave_compile(options, test)
     test(a, scalar_c, scalar_d, b)
 
+    expected_val = torch.full_like(b, arg_vals[3])
     if tkl.f32 == tkl_dtype and not use_wave_runtime:
         # TODO: iree runtime doesn't work with f32.
         with pytest.raises(Exception):
-            assert_close(b, arg_vals[3])
+            assert_close(b, expected_val)
     else:
-        assert_close(b, arg_vals[3])
+        assert_close(b, expected_val)
 
 
 #  This kernel copies of data from a into b if tid.x < threshold.
