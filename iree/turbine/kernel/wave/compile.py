@@ -86,7 +86,12 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         if cached_kernel:
             options.kernel_usages = cached_kernel.kernel_sig
             options.kernel_launch_info = cached_kernel.kernel_launch_info
-            return WaveKernel(options, cached_kernel.vmfb, cached_kernel.asm)
+            return WaveKernel(
+                options,
+                cached_kernel.vmfb,
+                cached_kernel.asm,
+                kernel.bound_scalar_symbols,
+            )
 
     # Create an indexing context and populate substitutions.
     push(IndexingContext, IndexingContext())
