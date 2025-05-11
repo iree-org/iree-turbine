@@ -263,6 +263,16 @@ class KernelSignature:
                         scalar_type=t,
                     )
                 )
+            elif issubclass(t, SymbolBind):
+                self.bindings.append(
+                    BindingDesc(
+                        ("node", node),
+                        BindingType.SCALAR_VALUE,
+                        name=node.target,
+                        symbol_type=t.symbol,
+                        scalar_type=t.dtype,
+                    )
+                )
             elif issubclass(t, IndexSymbol):
                 self.bindings.append(
                     BindingDesc(
@@ -270,16 +280,6 @@ class KernelSignature:
                         BindingType.SYMBOL_VALUE,
                         name=node.target,
                         symbol_type=t,
-                    )
-                )
-            elif issubclass(t, SymbolBind):
-                self.bindings.append(
-                    BindingDesc(
-                        ("node", node),
-                        BindingType.SYMBOL_VALUE,
-                        name=node.target,
-                        symbol_type=t.symbol,
-                        scalar_type=t.dtype,
                     )
                 )
             else:

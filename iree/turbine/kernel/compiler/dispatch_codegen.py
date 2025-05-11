@@ -24,14 +24,15 @@ from .ir import (
     IndexType,
     InsertionPoint,
     IntegerAttr,
+    IntegerType,
     IrType,
     Location,
     StringAttr,
     Value,
     arith_d,
     func_d,
-    stream_d,
     iree_codegen_d,
+    stream_d,
 )
 
 from .kernel_codegen import (
@@ -140,7 +141,6 @@ class StreamExecutable:
 
         with self._loc:
             binding_type = IrType.parse("!stream.binding")
-            index_type = IndexType.get()
 
             # Define the dispatch function.
             def abi_type(binding: BindingDesc):
@@ -183,7 +183,12 @@ class StreamExecutable:
             with InsertionPoint.at_block_begin(self._exe_block):
                 export_op = stream_d.ExecutableExportOp(name, name)
                 export_block = export_op.workgroup_count.blocks.append(
-                    *([b.as_mlir_type() for b in dynamic_dim_bindings])
+                    *(
+                        [
+                            b.as_mlir_type()
+                            for b in dynamic_dim_bindings + scalar_bindings
+                        ]
+                    )
                 )
 
             workgroup_builder = WorkgroupBuilder(
@@ -193,16 +198,30 @@ class StreamExecutable:
             # TODO: Support passing workload to the dispatch function.
             from ..wave.codegen import gen_sympy_index
 
+            arguments = workgroup_builder.entry_block.arguments
+
             # Map dynamic symbols to block arguments.
             dynamic_symbols_mapping = {
-                k.symbol_type: v
-                for k, v in zip(
-                    dynamic_dim_bindings, workgroup_builder.entry_block.arguments
-                )
+                k.symbol_type: v for k, v in zip(dynamic_dim_bindings, arguments)
             }
 
             with InsertionPoint(workgroup_builder.entry_block):
-                result_type = IndexType.get()
+                index_type = IndexType.get()
+                for i, s in enumerate(scalar_bindings):
+                    if s.symbol_type is None:
+                        continue
+
+                    offset = len(dynamic_dim_bindings) + i
+                    arg = arguments[offset]
+                    assert isinstance(
+                        arg.type, (IntegerType, IndexType)
+                    ), f"Expected symbol binding to be IntegerType or IndexType, got {arg.type}"
+                    if arg.type != index_type:
+                        arg = arith_d.index_cast(index_type, arg)
+
+                    dynamic_symbols_mapping[s.symbol_type] = arg
+
+                result_type = index_type
                 workgroup_values = []
                 for dim in grid.dims:
                     if isinstance(dim, IndexExpr):
