@@ -15,6 +15,7 @@ from .compile_utils import compile_to_vmfb
 from .classes import KernelLaunchInfo
 from ..profiling import benchmark_module
 from itertools import chain
+from warnings import warn
 
 
 # Cache for the system context and vm function.
@@ -66,6 +67,7 @@ def _invoke(
         elif isinstance(input, int):
             arg_list.push_int(input)
         elif isinstance(input, float):
+            warn("Currently, `push_float` is not working on the iree side")
             arg_list.push_float(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
@@ -117,6 +119,7 @@ def _inplace_invoke(
         elif isinstance(input, int):
             arg_list.push_int(input)
         elif isinstance(input, float):
+            warn("Currently, `push_float` is not working on the iree side")
             arg_list.push_float(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
@@ -231,6 +234,7 @@ def invoke_with_wave_runtime(
     options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
+    scalar_args: list[int | float],
 ):
     """
     Invokes the kernel with the wave runtime.

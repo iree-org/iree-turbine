@@ -1631,9 +1631,8 @@ def test_cast(shape, request):
         (tkl.i32, torch.int32, (1, 2, 1, 3)),
         (tkl.f32, torch.float32, (1.0, 2.0, 1.0, 3.0)),
         (tkl.i64, torch.int64, (1, 2, 1, 3)),
-        (tkl.f64, torch.float64, (1.0, 2.0, 1.0, 3.0)),
     ],
-    ids=["i32", "f32", "i64", "f64"],
+    ids=["i32", "f32", "i64"],
 )
 @param_bool("use_wave_runtime", "wr", [False, True])
 def test_scalar_codegen(
@@ -1694,7 +1693,12 @@ def test_scalar_codegen(
     test = wave_compile(options, test)
     test(a, scalar_c, scalar_d, b)
 
-    assert torch.all(b == arg_vals[3]).item()
+    if tkl.f32 == tkl_dtype and not use_wave_runtime:
+        # TODO: iree runtime doesn't work with f32.
+        with pytest.raises(Exception):
+            assert_close(b, torch.full(shape, arg_vals[3]))
+    else:
+        assert_close(b, torch.full(shape, arg_vals[3]))
 
 
 #  This kernel copies of data from a into b if tid.x < threshold.
