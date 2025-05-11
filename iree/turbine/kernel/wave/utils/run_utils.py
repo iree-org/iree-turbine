@@ -170,6 +170,7 @@ def invoke_vmfb(
         invoke_with_wave_runtime(options, kernel_inputs, kernel_outputs)
         return
 
+    device = options.device
     if options.run_bench:
         benchmark_flags = {}
         # If we use 1000 for bench_batch_size during compilation, and set this batch size to 1,
@@ -189,8 +190,6 @@ def invoke_vmfb(
             if isinstance(input, torch.Tensor)
         )
         device = get_device_uuid(device_list, device)
-    else:
-        device = options.device
 
     rt_config = rt.Config(device)
     device = rt_config.device
