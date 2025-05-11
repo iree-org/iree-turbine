@@ -609,11 +609,14 @@ class LaunchableWave(Launchable):
         # Add grid and block dims to kernel launch info.
         # Convert the grid into a lambda that we can use to compute the grid dimension.
         hw_constraint = get_hardware_constraint(self.constraints)
+        grid_symbols = list(options.dynamic_symbols_map.keys()) + list(
+            self.bound_scalar_symbols.keys()
+        )
         options.kernel_launch_info.grid = sympy.lambdify(
-            [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
+            [grid_symbols], self.grid_type.dims
         )
         options.kernel_launch_info.grid_str = lambdastr(
-            [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
+            [grid_symbols], self.grid_type.dims
         )
         options.kernel_launch_info.blocks = [
             int(x) for x in hw_constraint.threads_per_block

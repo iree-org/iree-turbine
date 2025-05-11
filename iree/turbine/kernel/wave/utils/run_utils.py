@@ -257,7 +257,7 @@ def invoke_with_wave_runtime(
 
     num_inputs = len(kernel_inputs)
     dynamic_dims = tuple(options.dynamic_symbols_map.values()) + tuple(
-        (k, scalar_args[v - num_inputs]) for k, v in bound_scalar_symbols.items()
+        scalar_args[v - num_inputs] for v in bound_scalar_symbols.values()
     )
     # Update the grid size as this may vary depending
     # on the dynamic symbols.

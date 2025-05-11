@@ -63,7 +63,12 @@ class WaveKernel:
                 kernel_outputs.append(arg)
 
         invoke_vmfb(
-            self.executable, self.options, kernel_inputs, kernel_outputs, scalar_args
+            self.executable,
+            self.options,
+            kernel_inputs,
+            kernel_outputs,
+            scalar_args,
+            self.bound_scalar_symbols,
         )
         return self.asm
 
