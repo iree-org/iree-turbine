@@ -14,6 +14,7 @@ from ..compile_options import WaveCompileOptions
 from .compile_utils import compile_to_vmfb
 from .classes import KernelLaunchInfo
 from ..profiling import benchmark_module
+from itertools import chain
 
 
 # Cache for the system context and vm function.
@@ -51,11 +52,13 @@ def get_device_uuid(device_list: list[str], device_str: str) -> tuple[int, str]:
     return device_str
 
 
-def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
-    arg_list = rt.VmVariantList(len(inputs) + len(dynamic_dims))
+def _invoke(
+    vm_context, device, entry_function, inputs, outputs, scalar_args, dynamic_dims
+):
+    arg_list = rt.VmVariantList(len(inputs) + len(scalar_args) + len(dynamic_dims))
     ret_list = rt.VmVariantList(len(outputs))
 
-    for input in inputs:
+    for input in chain(inputs, scalar_args, dynamic_dims):
         if isinstance(input, torch.Tensor):
             input_cpu = input.cpu().contiguous()
             device_array = rt.asdevicearray(device, input_cpu)
@@ -66,12 +69,6 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
             arg_list.push_float(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
-
-    for dynamic_dim in dynamic_dims:
-        if isinstance(dynamic_dim, int):
-            arg_list.push_int(dynamic_dim)
-        else:
-            raise ValueError(f"Unsupported dynamic dim type: {type(dynamic_dim)}")
 
     vm_context.invoke(entry_function, arg_list, ret_list)
 
@@ -90,8 +87,12 @@ _dl_tensor_name = ctypes.create_string_buffer(b"dltensor")
 _set_capsule_name = ctypes.pythonapi.PyCapsule_SetName
 
 
-def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
-    linearized_arg_len = len(inputs) + len(outputs) + len(dynamic_dims)
+def _inplace_invoke(
+    vm_context, device, entry_function, inputs, outputs, scalar_args, dynamic_dims
+):
+    linearized_arg_len = (
+        len(inputs) + len(outputs) + len(scalar_args) + len(dynamic_dims)
+    )
     # ret_list is 0 because we modify/write result in place.
     arg_list = rt.VmVariantList(linearized_arg_len)
     ret_list = rt.VmVariantList(0)
@@ -110,7 +111,7 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
 
     # Linearize arguments, In linearized arg_list, we first push in all inputs,
     # then all the outputs, and lastly all the dynamic dims.
-    for input in inputs:
+    for input in chain(inputs, outputs, scalar_args, dynamic_dims):
         if isinstance(input, torch.Tensor):
             push_tensor_to_arg_list(input)
         elif isinstance(input, int):
@@ -119,25 +120,6 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
             arg_list.push_float(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
-
-    for output in outputs:
-        if isinstance(output, torch.Tensor):
-            push_tensor_to_arg_list(output)
-        else:
-            raise ValueError(f"Unsupported output type: {type(output)}")
-    # we want scalars to be at the end during codegen/dispatch to iree
-    # to maintain the consistency.
-    # for input in inputs:
-    #     if isinstance(input, (float, int)):
-    #         # arg_list.push_float(input)
-    #         # Currently, `push_float` is not working on the iree side.
-    #         raise NotImplementedError("Float inputs are not supported.")
-
-    for dynamic_dim in dynamic_dims:
-        if isinstance(dynamic_dim, int):
-            arg_list.push_int(dynamic_dim)
-        else:
-            raise ValueError(f"Unsupported dynamic dim type: {type(dynamic_dim)}")
 
     try:
         vm_context.invoke(entry_function, arg_list, ret_list)
@@ -165,9 +147,10 @@ def invoke_vmfb(
     options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
+    scalar_args: list[int | float] = [],
 ):
     if options.wave_runtime:
-        invoke_with_wave_runtime(options, kernel_inputs, kernel_outputs)
+        invoke_with_wave_runtime(options, kernel_inputs, kernel_outputs, scalar_args)
         return
 
     device = options.device
@@ -218,6 +201,7 @@ def invoke_vmfb(
             func,
             kernel_inputs,
             kernel_outputs,
+            scalar_args,
             options.dynamic_symbols_map.values(),
         )
     else:
@@ -227,6 +211,7 @@ def invoke_vmfb(
             func,
             kernel_inputs,
             kernel_outputs,
+            scalar_args,
             options.dynamic_symbols_map.values(),
         )
 
@@ -285,7 +270,7 @@ def invoke_with_wave_runtime(
     # Ensure that the tensors are contiguous.
     kern_args = []
     scalar_args = []
-    for arg_tensor in kernel_inputs + kernel_outputs:
+    for arg_tensor in chain(kernel_inputs, scalar_args, kernel_outputs):
         if isinstance(arg_tensor, (float, int)):
             scalar_args.append(arg_tensor)
             continue

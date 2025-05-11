@@ -54,9 +54,9 @@ class WaveKernel:
             if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                 kernel_outputs.append(arg)
 
-        kernel_inputs.extend(scalar_args)
-
-        invoke_vmfb(self.executable, self.options, kernel_inputs, kernel_outputs)
+        invoke_vmfb(
+            self.executable, self.options, kernel_inputs, kernel_outputs, scalar_args
+        )
         return self.asm
 
 
