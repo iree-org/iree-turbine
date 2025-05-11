@@ -62,6 +62,8 @@ def _invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
             arg_list.push_ref(device_array._buffer_view)
         elif isinstance(input, int):
             arg_list.push_int(input)
+        elif isinstance(input, float):
+            arg_list.push_float(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
 
@@ -111,8 +113,13 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
     for input in inputs:
         if isinstance(input, torch.Tensor):
             push_tensor_to_arg_list(input)
+        elif isinstance(input, int):
+            arg_list.push_int(input)
+        elif isinstance(input, float):
+            arg_list.push_float(input)
         else:
             raise ValueError(f"Unsupported input type: {type(input)}")
+
     for output in outputs:
         if isinstance(output, torch.Tensor):
             push_tensor_to_arg_list(output)
@@ -120,11 +127,11 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
             raise ValueError(f"Unsupported output type: {type(output)}")
     # we want scalars to be at the end during codegen/dispatch to iree
     # to maintain the consistency.
-    for input in inputs:
-        if isinstance(input, (float, int)):
-            # arg_list.push_float(input)
-            # Currently, `push_float` is not working on the iree side.
-            raise NotImplementedError("Float inputs are not supported.")
+    # for input in inputs:
+    #     if isinstance(input, (float, int)):
+    #         # arg_list.push_float(input)
+    #         # Currently, `push_float` is not working on the iree side.
+    #         raise NotImplementedError("Float inputs are not supported.")
 
     for dynamic_dim in dynamic_dims:
         if isinstance(dynamic_dim, int):

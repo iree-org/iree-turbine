@@ -1633,7 +1633,10 @@ def test_cast(shape, request):
     ],
     ids=["i32", "f32"],
 )
-def test_scalar_codegen(shape, tkl_dtype, torch_dtype, arg_vals, request):
+@param_bool("use_wave_runtime", "wr", [False, True])
+def test_scalar_codegen(
+    shape, tkl_dtype, torch_dtype, arg_vals, request, use_wave_runtime
+):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
     N = tkl.sym.N
@@ -1684,7 +1687,7 @@ def test_scalar_codegen(shape, tkl_dtype, torch_dtype, arg_vals, request):
         canonicalize=True,
         run_bench=run_bench,
         inplace=False,
-        wave_runtime=True,
+        wave_runtime=use_wave_runtime,
     )
     test = wave_compile(options, test)
     test(a, scalar_c, scalar_d, b)
