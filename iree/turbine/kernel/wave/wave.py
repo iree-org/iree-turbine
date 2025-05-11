@@ -152,6 +152,10 @@ def wave_trace_only(constraints: Optional[list[Constraint]] = None):
     return decorator
 
 
+def _is_symbol_bind(a: Any) -> bool:
+    return inspect.isclass(a) and issubclass(a, SymbolBind)
+
+
 class LaunchableWave(Launchable):
     def __init__(
         self,
@@ -174,9 +178,7 @@ class LaunchableWave(Launchable):
         # it in python (and it will be faster as well).
         hints = get_type_hints(eager_function)
         self.bound_scalar_symbols = {
-            a.symbol: i
-            for i, a in enumerate(hints.values())
-            if issubclass(a, SymbolBind)
+            a.symbol: i for i, a in enumerate(hints.values()) if _is_symbol_bind(a)
         }
 
     @property
