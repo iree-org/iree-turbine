@@ -8,7 +8,7 @@
 from sympy.utilities.lambdify import lambdastr
 from itertools import chain
 import iree.turbine.kernel.lang as tkl
-from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
+from ..compiler import builder, dispatch_codegen, kernel_codegen
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
@@ -80,17 +80,11 @@ from .utils.general_utils import (
 )
 
 # Others
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence, get_type_hints
 import torch.fx as fx
 import inspect
 import sympy
 import warnings
-from pathlib import Path
-import sys
-import subprocess
-import os
-import shutil
-import glob
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -173,6 +167,14 @@ class LaunchableWave(Launchable):
         self._sig = inspect.signature(eager_function)
 
         self.grid_type = Grid[tuple(get_grid_shape(self.workgroup_constraints))]
+
+        # TODO: needed for the wave_runtime grid calculations, we should really
+        # just generate host wrapper suitable for wave_runtime instead of doing
+        # it in python (and it will be faster as well).
+
+        types = get_type_hints(eager_function)
+        breakpoint()
+        self.bound_scalar_symbols = {}
 
     @property
     def workgroup_constraints(self) -> list[WorkgroupConstraint]:
