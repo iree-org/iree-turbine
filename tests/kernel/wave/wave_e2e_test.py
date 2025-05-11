@@ -1696,9 +1696,9 @@ def test_scalar_codegen(
     if tkl.f32 == tkl_dtype and not use_wave_runtime:
         # TODO: iree runtime doesn't work with f32.
         with pytest.raises(Exception):
-            assert_close(b, torch.full(shape, arg_vals[3]))
+            assert_close(b, arg_vals[3])
     else:
-        assert_close(b, torch.full(shape, arg_vals[3]))
+        assert_close(b, arg_vals[3])
 
 
 #  This kernel copies of data from a into b if tid.x < threshold.
