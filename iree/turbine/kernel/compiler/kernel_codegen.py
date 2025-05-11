@@ -160,12 +160,8 @@ class BindingDesc:
             return IndexType.get()
         elif binding_type == BindingType.SYMBOL_VALUE:
             return IndexType.get()
-        elif (
-            binding_type == BindingType.SCALAR_VALUE and self.scalar_type.is_float_asm()
-        ):
-            return F32Type.get()
-        elif binding_type == BindingType.SCALAR_VALUE and self.scalar_type.is_int_asm():
-            return IntegerType.get_signless(32)
+        elif binding_type == BindingType.SCALAR_VALUE:
+            return IrType.parse(self.scalar_type.ir_type_asm())
         else:
             raise AssertionError("Unhandled switch BindingType")
 
