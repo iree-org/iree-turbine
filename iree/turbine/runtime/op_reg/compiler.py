@@ -46,8 +46,6 @@ from .base import (
     KernelSelection,
 )
 
-from ...transforms.rewriter import Pass
-
 
 @dataclass(slots=True)
 class KernelCompileConfig:
@@ -141,9 +139,9 @@ def compile_standalone_kernel(
 
     symb = func_name
     if config.async_invocations:
-        p = Pass(kb.module_op)
-        p.inline()
-        pm = PassManager.parse("builtin.module(torch-iree-func-conversion)", kb.context)
+        pm = PassManager.parse(
+            "builtin.module(inline, torch-iree-func-conversion)", kb.context
+        )
         pm.run(kb.module_op)
         symb += "$async"
 
