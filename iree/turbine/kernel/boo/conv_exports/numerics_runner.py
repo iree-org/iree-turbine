@@ -12,7 +12,7 @@ from iree.turbine.kernel.boo.conv_exports import (
     Mode,
     command_to_signature,
 )
-from iree.turbine.kernel.boo.conv_exports.generate import _load_commands
+from iree.turbine.kernel.boo.conv_exports.utils import load_commands
 
 
 def compare(y: torch.Tensor, y_ref: torch.Tensor) -> Dict[str, Union[bool, float]]:
@@ -143,7 +143,7 @@ def _get_arg_parser():
 
 
 def main(args):
-    commands = _load_commands(args.commands_file)
+    commands = load_commands(args.commands_file)
     results = _run(commands, args.allow_jit_compile)
     dumps = json.dumps(results, indent=4, separators=(",", " : "))
     if not args.output_file:
