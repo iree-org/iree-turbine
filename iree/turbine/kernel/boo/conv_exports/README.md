@@ -197,30 +197,3 @@ export PATH="$PWD/build/:$PATH"
 2. I run into `buffer overflow detected: terminated`, what's wrong?
 
   **A:** Ensure that you consistently use the `iree-tracy-capture` built alongside the IREE compiler. You should either use both from `iree-base-runtime` or from local built setup, but do not combine different sources. This is a known issue when use the locally built iree compiler together with `tracy-capture` from upstream. To determine whether a failure is triggered by `tracy-capture`, try running Boo driver with `-t 0` and see if the problem still exists.
-
-## generate.py script (deprecated)
-
-This tool is an early iteration for generating some sample MLIR files for compiler triage.
-
-To quickly generate some IR examples, install iree-turbine (e.g., `pip install -e .` from the base directory for iree-turbine), then
-
-```
-cd iree/turbine/boo/conv_exports
-python generate.py -o all_convs --commands-file="sample_commands.txt"
-```
-
-This will populate a new directory `iree/turbine/kernel/boo/conv_exports/all_convs/` containing IR matching the MiOpen signatures in `sample_commands.txt`.
-
-If you want to use a different pass pipeline on mlir import to lower to linalg or iree-input, the `generate.py` script allows running a user-specified pass pipeline from the initial torch-mlir IR. For example,
-
-```
-python generate.py -o all_convs -f "sample_commands.txt" --pipeline="builtin.module(torch-to-iree, iree-preprocessing-transpose-convolution-pipeline)"
-```
-
-Will sometimes fuse the transposes with the auto-generated `nchw` conv coming from pytorch.
-
-There are also flags in `generate.py` for:
-
-1. Running a single MiOpen driver signature. E.g.  `python generate.py -c "convbfp16 -n 16 -c 96 -H 48 -W 32 -k 288 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -g 1 -F 1 -t 1 --in_layout NHWC --out_layout NHWC --fil_layout NHWC"` will print the IR for that one convolution.
-2. Filtering the provided signatures by number of spatial dims (`-N` / `--num-spatial-dims`)
-3. Filtering the provided signatures by type (`-F`/ `--forw`) forward conv = "fwd", input backward = "bwd", weight backward = "wrw".

@@ -9,7 +9,7 @@ from iree.turbine.kernel.boo.conv_exports.conv import (
     ConvSignature,
     ConvSignatureStorage,
 )
-from iree.turbine.kernel.boo.conv_exports.generate import _load_commands
+from iree.turbine.kernel.boo.conv_exports.utils import load_commands
 from iree.turbine.kernel.boo.conv_exports.launch import (
     BOO_TUNING_SPEC_PATH,
     _get_module_asm,
@@ -71,7 +71,7 @@ class CachePopulator:
 
     def _assemble_signatures(self):
         if self.commands_file:
-            self.commands += _load_commands(self.commands_file)
+            self.commands += load_commands(self.commands_file)
             self.commands_file = None
         if len(self.commands) > 0:
             new_signatures = [command_to_signature(c) for c in self.commands]
