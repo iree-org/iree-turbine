@@ -110,6 +110,8 @@ To see other options, run:
 python preload.py --help
 ```
 
+If you just want to generate mlir files, you can pass `--device ""` or `-d ""`.
+
 #### From python
 
 ```python

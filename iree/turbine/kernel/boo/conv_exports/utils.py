@@ -19,6 +19,7 @@ __all__ = [
     "Permutation",
 ]
 
+
 def load_commands(commands_file):
     """loads commands from a text file."""
     # try an absolute path
@@ -34,6 +35,7 @@ def load_commands(commands_file):
         )
     commands = [c for c in path.read_text().splitlines() if c.startswith("conv")]
     return commands
+
 
 class Permutation:
     """Composable and invertible lists which represent the second argument of `torch.permute`."""

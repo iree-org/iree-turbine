@@ -1,4 +1,5 @@
 import os
+import sys
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Dict, List, Tuple, Sequence, Union
@@ -56,7 +57,7 @@ class CachePopulator:
     ):
         self.cache_dir = set_boo_cache(cache_dir)
         self.torch_devices = devices or _get_unique_torch_device_list()
-        self.torch_devices = [torch.device(d) for d in self.torch_devices]
+        self.torch_devices = [torch.device(d) for d in self.torch_devices if d != ""]
         self.signatures = list(signatures)
         self.commands = list(commands)
         self.commands_file = commands_file
@@ -212,7 +213,9 @@ def _mlir_import(sig_storage: ConvSignatureStorage) -> Tuple[str, bool]:
 def cl_main(args, extra_flags: List[str]):
     if args.cache_dir:
         set_boo_cache(args.cache_dir)
-    devices = [args.device] if args.device else _get_unique_torch_device_list()
+    devices = (
+        [args.device] if args.device is not None else _get_unique_torch_device_list()
+    )
     populator = CachePopulator(
         devices=devices,
         commands_file=args.commands_file,
