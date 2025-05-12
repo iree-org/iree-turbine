@@ -150,7 +150,7 @@ def compile_standalone_kernel(
             kb.context,
         )
         func.attributes["preprocessing_pipeline"] = pipeline_attr
-    breakpoint()
+
     kb.module_op.verify()
     # DO NOT SUBMIT: https://github.com/iree-org/iree/issues/17132
     enable_debug_info = False
