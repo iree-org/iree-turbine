@@ -553,7 +553,7 @@ def propagate_indices(
 
 def set_thread_dependent_index_from_mma(
     constraints: Sequence[Constraint],
-    mma_mapping: dict[MMA, dict[IndexSymbol, int]],
+    mma_mapping: dict[MMA | ScaledMMA, dict[IndexSymbol, int]],
     trace: CapturedTrace,
 ):
     """
@@ -572,12 +572,12 @@ def set_thread_dependent_index_from_mma(
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)
-        if (isinstance(source, MMA)):
-            new_sources = populate_mma_source_indices(
+        if (isinstance(source, ScaledMMA)):
+            new_sources = populate_scaled_mma_source_indices(
                 source, mma_mapping, hardware_constraint
             )
-        elif (isinstance(source, ScaledMMA)):
-            new_sources = populate_scaled_mma_source_indices(
+        elif (isinstance(source, MMA)):
+            new_sources = populate_mma_source_indices(
                 source, mma_mapping, hardware_constraint
             )
         else:
