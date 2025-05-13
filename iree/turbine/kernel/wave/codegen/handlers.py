@@ -192,17 +192,13 @@ def handle_allocate(emitter: WaveEmitter, node: fx.Node):
         strides = strides_from_symbolic_shape(
             idxc, memref_shape, allow_mixed_shapes=True
         )
-        layout = StridedLayoutAttr.get(offset, strides)
-        memref_type = MemRefType.get(memref_shape, element_type, layout, address_space)
-        alloc = memref_d.reinterpret_cast(
+        memref_type = MemRefType.get(memref_shape, element_type, None, address_space)
+        offset = arith_d.constant(IndexType.get(), int(offset))
+        alloc = memref_d.view(
             memref_type,
             parent,
-            offsets=[],
-            sizes=[],
-            strides=[],
-            static_offsets=[offset],
-            static_sizes=memref_shape,
-            static_strides=strides,
+            offset,
+            [],
         )
         emitter.bind_node_proxy(node, IRProxyValue(alloc))
         return

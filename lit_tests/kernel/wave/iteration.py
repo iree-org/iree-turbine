@@ -124,11 +124,11 @@ def test_iteration():
     # CHECK-DAG:            %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:            %[[C4:.*]] = arith.constant 4 : index
     # CHECK-DAG:            %[[C1:.*]] = arith.constant 1 : index
+    # CHECK-COUNT-1:        memref.alloc
     # CHECK:                scf.for %[[ARG3:.*]] = %[[C0]] to %[[C10]] step %[[C1]] {
     # CHECK:                    amdgpu.lds_barrier
     # CHECK:                    scf.for %arg4 = %[[C0]] to %[[C4]] step %[[C1]]
     # CHECK:                        amdgpu.lds_barrier
-    # CHECK-COUNT-2:                memref.alloc
     # CHECK-COUNT-1:                vector.load
     # CHECK-COUNT-1:                vector.store
     # CHECK-COUNT-1:                vector.load
@@ -212,6 +212,7 @@ def test_iteration_with_condition():
     # CHECK-DAG:            %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:            %[[C4:.*]] = arith.constant 4 : index
     # CHECK-DAG:            %[[C1:.*]] = arith.constant 1 : index
+    # CHECK-COUNT-1:        memref.alloc
     # CHECK-DAG:            %[[INIT_B:.*]] = arith.index_cast
     # CHECK:                scf.while (%[[ARG:.*]] = %[[INIT_B]]) : (index) -> index {
     # CHECK:                   %[[COND:.*]] = arith.cmpi slt, %[[ARG]], %[[C10]] : index
@@ -221,7 +222,6 @@ def test_iteration_with_condition():
     # CHECK:                    amdgpu.lds_barrier
     # CHECK:                    %[[ARG4:.*]] = scf.for %[[ARG5:.*]] = %[[C0]] to %[[C4]] step %[[C1]] iter_args(%[[ARG6:.*]] = %[[CST:.*]]) -> (vector<4xf32>) {
     # CHECK:                        amdgpu.lds_barrier
-    # CHECK-COUNT-2:                memref.alloc
     # CHECK-COUNT-1:                vector.load
     # CHECK-COUNT-1:                vector.store
     # CHECK-COUNT-1:                vector.load
@@ -316,6 +316,7 @@ def test_iteration_with_condition_and_init_value():
     # CHECK-DAG:            %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:            %[[C10:.*]] = arith.constant 10 : index
     # CHECK-DAG:            %[[CST_0:.*]] = arith.constant dense<0.000000e+00> : vector<4xf32>
+    # CHECK-COUNT-1:        memref.alloc
     # CHECK:                %[[CAST_INIT_B:.*]] = arith.index_cast
     # CHECK:                %[[WHILE:.*]] = scf.while (%[[ACC:.*]] = %[[CST_0]], %[[B:.*]] = %[[CAST_INIT_B]]) : (vector<4xf32>, index) -> (vector<4xf32>, index) {
     # CHECK:                    %[[COND:.*]] = arith.cmpi slt, %[[B]], %[[C10]] : index
@@ -325,7 +326,6 @@ def test_iteration_with_condition_and_init_value():
     # CHECK:                    amdgpu.lds_barrier
     # CHECK:                    %[[FOR:.*]] = scf.for %[[ARG7:.*]] = %[[C0]] to %[[C4]] step %[[C1]] iter_args(%[[ARG8:.*]] = %[[CST_0]]) -> (vector<4xf32>) {
     # CHECK:                        amdgpu.lds_barrier
-    # CHECK-COUNT-2:                memref.alloc
     # CHECK-COUNT-1:                vector.load
     # CHECK-COUNT-1:                vector.store
     # CHECK-COUNT-1:                vector.load

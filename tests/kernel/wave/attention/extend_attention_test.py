@@ -423,7 +423,6 @@ def testExtendAttention(
         dump_intermediates="./inter",
         gpu_native_math_precision=True,
         wave_runtime=(True if use_wave_runtime else False),
-        minimize_shared_allocs=True,
     )
     options = set_default_run_config(options)
     extend_attention = wave_compile(options, extend_attention)

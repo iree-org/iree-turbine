@@ -66,7 +66,7 @@ class WaveCompileOptions:
     use_fast_math: bool = False
 
     # === Compiler options ===
-    minimize_shared_allocs: bool = False
+    minimize_shared_allocs: bool = True
     reorder_allocs: bool = True
 
     # === Print options ===

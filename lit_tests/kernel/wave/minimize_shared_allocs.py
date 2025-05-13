@@ -41,10 +41,11 @@ def test_attention():
         reorder_allocs=False,
     )
     # In this example, by not reordering the allocs, we end up with a 2x
-    # saving in total shared memory usage (from 4352 to 2176).
+    # saving in total shared memory usage (from 17408 to 8704).
     base_attention = wave_compile(options, base_attention)
     print(base_attention.asm)
 
     # We end up with just 1 allocation that is reused.
-    # CHECK:        %alloc = memref.alloc() : memref<4352xf16, #gpu.address_space<workgroup>>
-    # CHECK-DAG:    %reinterpret_cast = memref.reinterpret_cast %alloc to offset: [0], sizes: [1, 64, 68], strides: [4352, 68, 1] : memref<4352xf16, #gpu.address_space<workgroup>> to memref<1x64x68xf16, strided<[4352, 68, 1]>, #gpu.address_space<workgroup>>
+    # CHECK-DAG:    %[[C0:.+]] = arith.constant 0 : index
+    # CHECK:        %[[alloc:.+]] = memref.alloc() : memref<8704xi8, #gpu.address_space<workgroup>>
+    # CHECK-DAG:    %[[VIEW:.+]] = memref.view %[[alloc]][%[[C0]]][] : memref<8704xi8, #gpu.address_space<workgroup>> to memref<1x64x68xf16, #gpu.address_space<workgroup>>

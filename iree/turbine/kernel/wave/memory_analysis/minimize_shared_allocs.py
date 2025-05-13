@@ -14,7 +14,7 @@ from ..utils.graph_utils import get_users
 from ..utils.symbol_utils import subs_idxc
 from dataclasses import dataclass
 from ...lang.global_symbols import *
-from ..._support.dtype import i8
+from ..._support.dtype import i8, DataType
 from .solver import (
     determine_allocations_offsets,
 )
@@ -76,9 +76,13 @@ def compute_live_intervals(allocs: list[fx.Node]):
     return live_intervals
 
 
-def get_shared_memory_allocation_size(alloc: fx.Node) -> tuple[int, int, int]:
+def get_shared_memory_allocation_size(
+    alloc: fx.Node, dtype: DataType
+) -> tuple[int, int, int]:
     custom = get_custom(alloc)
-    return math.prod([subs_idxc(x) for x in custom.distributed_shape])
+    return math.prod([subs_idxc(x) for x in custom.distributed_shape]) * (
+        dtype.bitwidth() // 8
+    )
 
 
 def get_use(
@@ -128,11 +132,13 @@ def minimize_shared_allocs(trace: CapturedTrace, minimize_shared_allocs: bool):
     update_sort_keys(trace, trace.get_root_graph())
 
     allocs = trace.walk(lambda x: isinstance(get_custom(x), Allocate))
+    if not allocs:
+        return
     live_intervals = compute_live_intervals(allocs)
 
     alloc_info = [
         (
-            get_shared_memory_allocation_size(x),
+            get_shared_memory_allocation_size(x, get_custom(x).dtype),
             live_intervals[x].start,
             live_intervals[x].end,
         )
@@ -141,36 +147,42 @@ def minimize_shared_allocs(trace: CapturedTrace, minimize_shared_allocs: bool):
     offsets, allocation_size = determine_allocations_offsets(alloc_info)
     if offsets is None:
         raise ValueError("No feasible solution found for shared memory allocation.")
+    allocs_to_offsets = {allocs[i]: offsets[i] for i in range(len(allocs))}
 
     shared_memory = np.zeros(allocation_size, dtype=np.int8)
     time_sorted_allocs = sorted(allocs, key=lambda x: live_intervals[x].start)
     last_use = None
-    for i, alloc in enumerate(time_sorted_allocs):
-        offset = offsets[i]
-        if np.any(
-            shared_memory[offset : offset + get_shared_memory_allocation_size(alloc)]
-        ):
+    for alloc in time_sorted_allocs:
+        shared_memory_size = get_shared_memory_allocation_size(
+            alloc, get_custom(alloc).dtype
+        )
+        offset = allocs_to_offsets[alloc]
+        if np.any(shared_memory[offset : offset + shared_memory_size]):
             first_use = get_first_use(alloc, live_intervals[alloc])
             insert_barrier_if_needed(alloc, first_use, last_use)
-        shared_memory[offset : offset + get_shared_memory_allocation_size(alloc)] = 1
+        shared_memory[offset : offset + shared_memory_size] = 1
         last_use = get_last_use(alloc, live_intervals[alloc])
 
     # Create a 1D parent allocation for each allocation.
-    combined_shape = set()
+    combined_shape = []
+    visited = set()
     for alloc in allocs:
-        combined_shape.update(get_custom(alloc).shape)
+        for dim in get_custom(alloc).shape:
+            if dim not in visited:
+                visited.add(dim)
+                combined_shape.append(dim)
 
     first_node = list(trace.get_root_graph().nodes)[0]
     with trace.get_root_graph().inserting_before(first_node):
         parent = Allocate(
             shape=list(combined_shape),
             distributed_shape=[allocation_size],
-            dtype=get_custom(allocs[0]).type.dtype,
+            dtype=i8,
             address_space=SHARED_ADDRESS_SPACE,
         )
         parent.add_to_graph(trace.get_root_graph())
 
-    for alloc, offset in zip(allocs, offsets):
+    for alloc, offset in allocs_to_offsets.items():
         get_custom(alloc).update_arg("parent", parent)
         get_custom(alloc).update_arg("offset", offset)
 
