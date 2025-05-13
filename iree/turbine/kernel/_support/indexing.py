@@ -2,7 +2,7 @@ from typing import Any, ClassVar, Optional, Type, TypeVar, Union
 
 from abc import ABC
 from dataclasses import dataclass
-
+from typing import TypeAlias
 import sympy
 
 from . import context
@@ -39,8 +39,8 @@ SubtypeT = TypeVar("SubtypeT")
 # These are just light-weight helpers around sympy symbols and expressions.
 ###############################################################################
 
-IndexSymbol = sympy.Symbol
-IndexExpr = sympy.Expr
+IndexSymbol: TypeAlias = sympy.Symbol
+IndexExpr: TypeAlias = sympy.Expr
 
 
 def index_symbol(name: str) -> IndexSymbol:
