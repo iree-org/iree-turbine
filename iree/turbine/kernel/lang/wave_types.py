@@ -204,10 +204,6 @@ class IndexMapping:
         iter_shape = [None] * num_iterators
         for sym, expr in chain(inputs.items(), outputs.items()):
             i = iters.get(expr, None)
-            # If the expression is an integer, it is intended to be an index set in
-            # the kernel and can be used directly.
-            if isinstance(expr, Integer):
-                i = expr
             if i is None:
                 continue
 
@@ -216,6 +212,16 @@ class IndexMapping:
                 current is None or current == sym
             ), f"Iterator conflict: {current} and {sym}"
             iter_shape[i] = sym
+
+        # If number of iterators is less than the symbol assigned iterators
+        # and the expression in the mapping is an integer, the integer denotes
+        # an index
+        if num_iterators > iter_shape.count(None):
+            for sym, expr in chain(inputs.items(), outputs.items()):
+                i = iters.get(expr, None)
+                if isinstance(expr, Integer):
+                    i = expr
+                    iter_shape[expr] = sym
 
         assert all(
             i is not None for i in iter_shape
