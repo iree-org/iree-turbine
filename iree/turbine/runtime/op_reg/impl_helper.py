@@ -45,6 +45,7 @@ from .base import (
 
 __all__ = [
     "TemplateLoader",
+    "ASMLoader",
     "StrFormatTemplateLoader",
     "call_function",
 ]
@@ -99,6 +100,16 @@ class TemplateLoader(ABC):
         )
         merger.merge()
         return kb.symbol_table[function_name]
+
+
+class ASMLoader(TemplateLoader):
+    """Performs the same tasks as other template loaders, but uses a pre-loaded python string asm."""
+
+    def __init__(self, asm: str):
+        self.asm = asm
+
+    def load_template(self, kb: KernelBuilder, name: str, **kwargs) -> Operation:
+        return self._parse_module_asm(kb, self.asm)
 
 
 class StrFormatTemplateLoader(TemplateLoader):
