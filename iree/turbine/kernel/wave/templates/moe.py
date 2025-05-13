@@ -37,7 +37,7 @@ def get_moe_kernel(
     BLOCK_N = tkl.sym.BLOCK_N
     BLOCK_K = tkl.sym.BLOCK_K
     # Address space (for GPU, shared(1) or global(0))
-    ADDRESS_SPACE = GLOBAL_ADDRESS_SPACE
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     MFMA_INPUT_ELS_PER_THREAD = tkl.sym.MFMA_INPUT_ELS_PER_THREAD
     MFMA_OUTPUT_ELS_PER_THREAD = tkl.sym.MFMA_OUTPUT_ELS_PER_THREAD
@@ -52,7 +52,7 @@ def get_moe_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
+            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
           # vector_shapes={M: 0, N: 0, K: 64},
         )
@@ -70,26 +70,23 @@ def get_moe_kernel(
         # dimension were tiled, then we would need to materialize a loop.
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
-            # a_reg: tkw.Register[M, K, tkl.f16]
-            a_reg = tkw.read(a, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
-            # b_reg: tkw.Register[N, K, tkl.f16]
-            b_reg = tkw.read(b, elements_per_thread=MFMA_INPUT_ELS_PER_THREAD)
-            # acc: tkw.Register[M, N, tkl.f32]
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
+
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
         # repeat represents the results of the loop
-        tkw.write(repeat, c, elements_per_thread=MFMA_OUTPUT_ELS_PER_THREAD)
+        tkw.write(repeat, c)
 
     hyperparams = {
-        BLOCK_M: 16,
-        BLOCK_N: 16,
-        BLOCK_K: 16,
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        BLOCK_M: 64,
+        BLOCK_N: 64,
+        BLOCK_K: 32,
         M: m,
         N: n,
         K: k,
-        MFMA_INPUT_ELS_PER_THREAD: get_mfma_load_elems_per_thread(mfma_variant),
-        MFMA_OUTPUT_ELS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant),
     }
 
     dynamic_symbols = []

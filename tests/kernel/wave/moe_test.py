@@ -121,25 +121,23 @@ def torch_tkw_moe(a, w1, w2, score, topk):
     topk_weight = topk_weight.view(-1)
     topk_ids = topk_ids.view(-1)
     dtype = tkl.f16 if a.dtype == torch.float16 else tkl.bf16
+    rtol, atol = 1e-1, 1e-2
     for i in range(w1.shape[0]):
         mask = topk_ids == i
         if mask.sum():
-            tmp = torch.zeros(mask.sum(), w2.shape[1], dtype=torch.float32)
+            m = int(mask.sum())
+            partial_out = torch.zeros(m, w2.shape[1], dtype=torch.float32, device=a.device)
             moe_kernel = get_wave_moe_kernel(
-                int(mask.sum()), # M
-                D, # K
+                m, # M
+                w2.shape[-1], # K
                 w2.shape[1], # N
                 MMAType.F32_16x16x16_F16,
                 dtype,
             )
             lhs = silu_and_mul(a[mask] @ w1[i].transpose(0, 1))
             rhs = w2[i]
-            # To plug tkw kernel in for testing:
-            # 1. Uncomment this
-           #moe_kernel(lhs, rhs, tmp)
-            # 2. Comment this
-            tmp = lhs @ rhs.transpose(0, 1)
-            out[mask] = tmp
+            moe_kernel(lhs, rhs, partial_out)
+            out[mask] = partial_out.to(dtype=a.dtype)
     return (
         out.view(B, -1, w2.shape[1]) * topk_weight.view(B, -1, 1).to(out.dtype)
     ).sum(dim=1)
@@ -171,14 +169,15 @@ def testReferenceMoe(
     dtype: DataType,
 ):
     rtol, atol = 1e-1, 1e-2
+    device = "cuda"
 
     if dtype == torch.float16 and k == 1024:
         pytest.skip("This combination generates NaNs")
 
-    a = torch.rand((m, k), dtype=dtype)
-    w1 = torch.rand((e, 2 * n, k), dtype=dtype)
-    w2 = torch.rand((e, k, n), dtype=dtype)
-    score = torch.rand((m, e), dtype=dtype)
+    a = torch.rand((m, k), dtype=dtype, device=device)
+    w1 = torch.rand((e, 2 * n, k), dtype=dtype, device=device)
+    w2 = torch.rand((e, k, n), dtype=dtype, device=device)
+    score = torch.rand((m, e), dtype=dtype, device=device)
 
     ref_output = torch_ref_moe(a, w1, w2, score, topk)
     tkw_output = torch_tkw_moe(a, w1, w2, score, topk)
