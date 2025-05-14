@@ -536,11 +536,6 @@ class LaunchableWave(Launchable):
             partial(hoist_loop_invariant_ops, trace, self.constraints),
             partial(global_to_shared_gathers, trace, self.constraints),
             partial(minimize_global_loads, trace, self.constraints),
-            partial(
-                minimize_shared_allocs,
-                trace,
-                options.minimize_shared_allocs,
-            ),
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
         ]
 
@@ -578,6 +573,11 @@ class LaunchableWave(Launchable):
         )
 
         graph_passes += [
+            partial(
+                minimize_shared_allocs,
+                trace,
+                options.minimize_shared_allocs,
+            ),
             # Align sizes to WG/Tile sizes
             # This pass changes indexing keys, which can interfere with other passes,
             # so it should be called close to the end of pipeline.

@@ -242,6 +242,7 @@ def emit_interwave_reduction(
         Placeholder.from_fx_node(get_custom(allocate_node)), execute_on_lane0_graph
     )
     placeholder_allocate.type = get_custom(allocate_node).type
+    placeholder_allocate.meta["lifted"] = allocate_node
 
     # 2. Create write into shared memory
     write = Write(placeholder_src, placeholder_allocate, 1).add_to_graph(

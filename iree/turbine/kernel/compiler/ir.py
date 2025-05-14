@@ -5,7 +5,6 @@ from iree.compiler.ir import (
     FlatSymbolRefAttr,
     SymbolRefAttr,
     AffineMapAttr,
-    StridedLayoutAttr,
     Attribute,
     RankedTensorType,
     ArrayAttr,

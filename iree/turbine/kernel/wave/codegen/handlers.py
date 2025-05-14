@@ -34,7 +34,6 @@ from ...compiler.ir import (
     scf_d,
     vector_d,
     llvm_d,
-    StridedLayoutAttr,
 )
 from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
@@ -187,12 +186,6 @@ def handle_allocate(emitter: WaveEmitter, node: fx.Node):
 
     if parent is not None:
         parent = cast_py_value(emitter, parent).ir_value
-        idxc = IndexingContext.current()
-
-        strides = strides_from_symbolic_shape(
-            idxc, memref_shape, allow_mixed_shapes=True
-        )
-        memref_type = MemRefType.get(memref_shape, element_type, None, address_space)
         offset = arith_d.constant(IndexType.get(), int(offset))
         alloc = memref_d.view(
             memref_type,

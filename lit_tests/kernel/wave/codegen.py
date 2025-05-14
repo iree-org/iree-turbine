@@ -1661,7 +1661,9 @@ def test_block_reduce_sum():
 
     # CHECK-LABEL: test_block_reduce_sum
     # CHECK-DAG: #[[map2:.+]] = affine_map<()[s0] -> ((s0 floordiv 64) mod 4)>
+    # CHECK-DAG: %[[c0:.+]] = arith.constant 0 : index
     # CHECK: %[[tid:.+]] = gpu.thread_id  x
+    # CHECK: %[[alloc:.+]] = memref.alloc() : memref<8xi8, #gpu.address_space<workgroup>>
 
     # Local Reduce
     # CHECK-COUNT-2: vector.extract_strided_slice
@@ -1672,15 +1674,15 @@ def test_block_reduce_sum():
     # CHECK-NEXT: %[[global_reduce:.+]] = arith.addf
 
     # Write partial wave result into shared memory to be accessible by other waves.
-    # CHECK: %[[alloc:.+]] = memref.alloc() : memref<4xf16, #gpu.address_space<workgroup>>
+    # CHECK: %[[view:.+]] = memref.view %[[alloc]][%[[c0]]][] : memref<8xi8, #gpu.address_space<workgroup>> to memref<4xf16, #gpu.address_space<workgroup>>
     # CHECK: scf.if {{.*}} {
     # CHECK:    %[[wave_id:.+]] = affine.apply #[[map2]]()[%[[tid]]]
-    # CHECK:    vector.store %[[global_reduce]], %[[alloc]][%[[wave_id]]] : memref<4xf16, #gpu.address_space<workgroup>>, vector<1xf16>
+    # CHECK:    vector.store %[[global_reduce]], %[[view]][%[[wave_id]]] : memref<4xf16, #gpu.address_space<workgroup>>, vector<1xf16>
     # CHECK: }
     # CHECK-NEXT: amdgpu.lds_barrier
 
     # Get all partial wave results and locally reduce
-    # CHECK: %[[wave_res:.+]] = vector.load %[[alloc]]
+    # CHECK: %[[wave_res:.+]] = vector.load %[[view]]
     # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [0]
     # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [1]
     # CHECK-NEXT: arith.addf
