@@ -24,7 +24,8 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.templates.moe import (
-    get_moe_kernel,
+    get_gemm_kernel,
+    get_silu_and_mul_kernel,
 )
 from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.lang import DataType
@@ -33,19 +34,57 @@ import torch.nn.functional as F
 torch.manual_seed(0)
 
 
-def silu_and_mul(x: torch.Tensor) -> torch.Tensor:
+def silu_and_mul_ref(x: torch.Tensor) -> torch.Tensor:
     d = x.shape[-1] // 2
     return F.silu(x[..., :d]) * x[..., d:]
 
 
-def get_wave_moe_kernel(
+def get_wave_silu_and_mul_kernel(
+    m: int,
+    n: int,
+    datatype: DataType,
+):
+    assert datatype in [torch.float16, torch.bfloat16], f"Unsupported datatype: {datatype}"
+    silu_and_mul_kernel, symbols, _, _ = get_silu_and_mul_kernel(
+        m,
+        n,
+        tkl.f16 if datatype == torch.float16 else tkl.bf16
+    )
+    symbols.update(get_default_scheduling_params())
+
+    options = WaveCompileOptions(
+        subs=symbols,
+        canonicalize=True,
+        run_bench=False,
+        waves_per_eu=2,
+        denorm_fp_math_f32="preserve-sign",
+        schedule=SchedulingType.NONE,
+        wave_runtime=True,
+        use_scheduling_barriers=enable_scheduling_barriers,
+    )
+    options = set_default_run_config(options)
+    silu_and_mul = wave_compile(options, silu_and_mul_kernel)
+    return silu_and_mul
+
+
+def silu_and_mul(x: torch.Tensor) -> torch.Tensor:
+    assert len(x.shape) == 2, f"Expect 2D tensor input to silu, got {len(x.shape)}"
+    wave_kernel = get_wave_silu_and_mul_kernel(x.shape[0], x.shape[1], x.dtype)
+
+    d = x.shape[-1] // 2
+    out = torch.zeros(x.shape[0], d, dtype=x.dtype, device=x.device)
+    wave_kernel(x[..., :d], x[..., d:], out)
+    return out
+
+
+def get_wave_gemm_kernel(
     m: int,
     k: int,
     n: int,
     mfma_variant: MMAType,
     datatype: DataType,
 ):
-    moe, symbols, _, _ = get_moe_kernel(
+    gemm, symbols, _, _ = get_gemm_kernel(
         m,
         k,
         n,
@@ -65,8 +104,8 @@ def get_wave_moe_kernel(
         use_scheduling_barriers=enable_scheduling_barriers,
     )
     options = set_default_run_config(options)
-    moe = wave_compile(options, moe)
-    return moe
+    gemm = wave_compile(options, gemm)
+    return gemm
 
 
 def torch_ref_moe(a, w1, w2, score, topk):
@@ -80,7 +119,7 @@ def torch_ref_moe(a, w1, w2, score, topk):
     for i in range(w1.shape[0]):
         mask = topk_ids == i
         if mask.sum():
-            out[mask] = silu_and_mul(a[mask] @ w1[i].transpose(0, 1)) @ w2[
+            out[mask] = silu_and_mul_ref(a[mask] @ w1[i].transpose(0, 1)) @ w2[
                 i
             ].transpose(0, 1)
     return (
@@ -127,16 +166,32 @@ def torch_tkw_moe(a, w1, w2, score, topk):
         if mask.sum():
             m = int(mask.sum())
             partial_out = torch.zeros(m, w2.shape[1], dtype=torch.float32, device=a.device)
-            moe_kernel = get_wave_moe_kernel(
+            gemm_kernel_out = get_wave_gemm_kernel(
                 m, # M
                 w2.shape[-1], # K
                 w2.shape[1], # N
                 MMAType.F32_16x16x16_F16,
                 dtype,
             )
-            lhs = silu_and_mul(a[mask] @ w1[i].transpose(0, 1))
+            tmp = torch.zeros(m, w1.shape[1], dtype=torch.float32, device=a.device)
+            gemm_kernel_tmp = get_wave_gemm_kernel(
+                m, # M
+                w1.shape[-1], # K
+                w1.shape[1], # N
+                MMAType.F32_16x16x16_F16,
+                dtype,
+            )
+           #print(a[mask].shape)
+           #print(w1[i].shape)
+           #print(m, w1.shape[-1], w1.shape[1])
+            gemm_kernel_tmp(a[mask], w1[i], tmp)
+            tmp = tmp.to(dtype=a.dtype)
+           #torch.testing.assert_close(
+           #    tmp, a[mask] @ w1[i].transpose(0, 1), rtol=rtol, atol=atol, check_device=False
+           #)
+            lhs = silu_and_mul(tmp)
             rhs = w2[i]
-            moe_kernel(lhs, rhs, partial_out)
+            gemm_kernel_out(lhs, rhs, partial_out)
             out[mask] = partial_out.to(dtype=a.dtype)
     return (
         out.view(B, -1, w2.shape[1]) * topk_weight.view(B, -1, 1).to(out.dtype)
@@ -151,6 +206,8 @@ m_values = [1, 33, 64, 222]
 n_values = [128, 1024, 2048]
 k_values = [128, 511, 1024]
 dtypes = [torch.float16, torch.bfloat16]
+dtypes = [torch.float16]
+dtypes = [torch.bfloat16]
 
 
 @require_e2e

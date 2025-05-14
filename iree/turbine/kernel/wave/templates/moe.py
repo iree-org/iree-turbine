@@ -19,7 +19,7 @@ import math
 import sympy
 
 
-def get_moe_kernel(
+def get_gemm_kernel(
     m: int,
     k: int,
     n: int,
@@ -59,7 +59,7 @@ def get_moe_kernel(
     ]
 
     @tkw.wave(constraints)
-    def moe(
+    def gemm(
         a: tkl.Memory[M, K, ADDRESS_SPACE, datatype],
         b: tkl.Memory[N, K, ADDRESS_SPACE, datatype],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
@@ -92,4 +92,66 @@ def get_moe_kernel(
     dynamic_symbols = []
     dynamic_symbols_map = {}
 
-    return moe, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return gemm, hyperparams, dynamic_symbols, dynamic_symbols_map
+
+
+def get_silu_and_mul_kernel(
+    m: int,
+    n: int,
+    datatype: DataType,
+):
+    # Input sizes
+    M = tkl.sym.M
+    N = tkl.sym.N
+    # Each workgroup works on single row of input data, and rows are further
+    # split into blocks of size up to 256. We have single wave per WG,
+    # and with default wave size of 64, each thread is operating on up to 4
+    # elements.
+    wave_size = 64
+    BLOCK_M = 1
+    # Tile size cannot be dynamic, so we use a fixed value here.
+    BLOCK_N = sympy.Max(sympy.Min(n, 256), wave_size)
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, N: BLOCK_N},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def silu_and_mul(
+        x1: tkl.Memory[M, N, ADDRESS_SPACE, datatype],
+        x2: tkl.Memory[M, N, ADDRESS_SPACE, datatype],
+        out: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, datatype],
+    ):
+        x1_reg = tkw.read(x1)
+        cst_m1 = tkl.Register[M, N, datatype](-1.0)
+        cst_1 = tkl.Register[M, N, datatype](-1.0)
+        exp_out = tkw.exp2(x1_reg * cst_m1)
+        sigmoid = cst_1 / (cst_1 + exp_out)
+        silu = sigmoid * x1_reg
+
+        x2_reg = tkw.read(x2)
+        res = silu * x2_reg
+
+        tkw.write(res, out)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        M: m,
+        N: n,
+    }
+
+    dynamic_symbols = []
+    dynamic_symbols_map = {}
+
+    return silu_and_mul, hyperparams, dynamic_symbols, dynamic_symbols_map
