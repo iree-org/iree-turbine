@@ -213,9 +213,11 @@ class IndexMapping:
             ), f"Iterator conflict: {current} and {sym}"
             iter_shape[i] = sym
 
-        # If number of iterators is less than the symbol assigned iterators
-        # and the expression in the mapping is an integer, the integer denotes
-        # an index
+        # If number of iterators is less than the symbol assigned iterators and the 
+        # expression in the mapping is an integer, the integer denotes an index.
+        # Example: For a buffer of shape 1xN with identitiy mapping (i:0, j:N), the iter_shape
+        # for 0th index will not be set until this point. If the mapping expression is an integer,
+        # that is assumed to denote the index and is used to set the iterator symbol.
         if num_iterators > iter_shape.count(None):
             for sym, expr in chain(inputs.items(), outputs.items()):
                 i = iters.get(expr, None)
