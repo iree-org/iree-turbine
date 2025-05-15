@@ -12,9 +12,6 @@ from ...ops.wave_ops import (
     Write,
     NestedRegionOp,
     Output,
-    SetSymbol,
-    SetPrio,
-    SharedMemoryBarrier,
     ExtractSlice,
     GetResult,
     CustomOp,
@@ -23,7 +20,6 @@ from ...ops.wave_ops import (
     Conditional,
     MMA,
     IterArg,
-    WorkgroupBarrier,
 )
 from ..._support.indexing import IndexSymbol
 from typing import Callable, Sequence
@@ -59,14 +55,7 @@ def DCE(trace: CapturedTrace):
     def is_removable_operator(node: fx.Node) -> bool:
         custom = get_custom(node)
 
-        if (
-            custom.users
-            or isinstance(
-                custom,
-                (Output, SetSymbol, SetPrio, SharedMemoryBarrier, WorkgroupBarrier),
-            )
-            or is_global_write(node)
-        ):
+        if custom.users or custom.skip_dce or is_global_write(node):
             return False
 
         if has_nested_writes(node):

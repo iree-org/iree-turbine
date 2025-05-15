@@ -729,6 +729,10 @@ class CustomOp(ABC):
     def type(self, value: Any):
         self.fx_node.type = value
 
+    @property
+    def skip_dce(self) -> bool:
+        return False
+
     def infer_type(self):
         """
         Infer the type of this operator using the types
@@ -975,6 +979,10 @@ class Output(CustomOp):
         self.fx_node.tkw_op_name = self.tkw_op_name
         return self.fx_node
 
+    @property
+    def skip_dce(self) -> bool:
+        return True
+
 
 @dataclass
 class Placeholder(CustomOp):
@@ -1140,6 +1148,10 @@ class SetPrio(CustomOp):
 
     priority: int
 
+    @property
+    def skip_dce(self) -> bool:
+        return True
+
 
 @define_op("shared_memory_barrier")
 @dataclass
@@ -1147,6 +1159,10 @@ class SharedMemoryBarrier(CustomOp):
     """
     Represents a shared memory barrier in the graph.
     """
+
+    @property
+    def skip_dce(self) -> bool:
+        return True
 
 
 @define_op("scheduling_barrier")
@@ -1184,6 +1200,10 @@ class WorkgroupBarrier(CustomOp):
     in the workgroup has called a WorkgroupBarrier(does not have to
     be in the same location).
     """
+
+    @property
+    def skip_dce(self) -> bool:
+        return True
 
 
 @define_op("register")
@@ -1774,6 +1794,10 @@ class SetSymbol(CustomOp):
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         return get_custom(self.register_).indexing_dims
+
+    @property
+    def skip_dce(self) -> bool:
+        return True
 
 
 @define_py_op(operator.getitem)
