@@ -280,6 +280,13 @@ def get_extend_attention_kernel(
             if logit_cap > 0:
                 logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
                 x_j = logit_cap_reg * tkw.tanh_approx(x_j * logit_cap_reg_inv)
+                # We could use tkw.softsign to provide ~10% performance improvement, but this will compromise accuracy.
+                # x_j = logit_cap_reg * tkw.softsign(
+                #     x_j * logit_cap_reg_inv,
+                #     logit_cap=30.0,
+                #     apply_scaling=True,
+                #     head_dim=128,
+                # )
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
@@ -343,6 +350,13 @@ def get_extend_attention_kernel(
             if logit_cap > 0:
                 logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
                 x_j = logit_cap_reg * tkw.tanh_approx(x_j * logit_cap_reg_inv)
+                # We could use tkw.softsign to provide ~10% performance improvement, but this will compromise accuracy.
+                # x_j = logit_cap_reg * tkw.softsign(
+                #     x_j * logit_cap_reg_inv,
+                #     logit_cap=30.0,
+                #     apply_scaling=True,
+                #     head_dim=128,
+                # )
             n_kv_index = tkw.self_index(N_KV, tkl.i32)
             mask = tkw.apply_expr(n_kv_index, lambda x: x < N_KV)
             mask = tkw.broadcast(mask, target_shape=[N_Q, N_KV])
