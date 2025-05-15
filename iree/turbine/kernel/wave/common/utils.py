@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+
 def scaled_dot_product_attention_bhsd(
     query: Tensor,
     key: Tensor,
