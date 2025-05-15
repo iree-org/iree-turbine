@@ -129,7 +129,14 @@ def minimize_shared_allocs(trace: CapturedTrace, minimize_shared_allocs: bool):
         return
     update_sort_keys(trace, trace.get_root_graph())
 
-    allocs = trace.walk(lambda x: isinstance(get_custom(x), Allocate))
+    def is_shared_alloc(alloc: fx.Node) -> bool:
+        custom = get_custom(alloc)
+        return (
+            isinstance(custom, Allocate)
+            and custom.address_space == SHARED_ADDRESS_SPACE
+        )
+
+    allocs = trace.walk(is_shared_alloc)
     if not allocs:
         return
     live_intervals = compute_live_intervals(allocs)
