@@ -45,6 +45,7 @@ from .base import (
 
 __all__ = [
     "TemplateLoader",
+    "ASMLoader",
     "StrFormatTemplateLoader",
     "call_function",
 ]
@@ -99,6 +100,16 @@ class TemplateLoader(ABC):
         )
         merger.merge()
         return kb.symbol_table[function_name]
+
+
+class ASMLoader(TemplateLoader):
+    """Performs the same tasks as other template loaders, but uses a pre-loaded python string asm."""
+
+    def __init__(self, asm: str):
+        self.asm = asm
+
+    def load_template(self, kb: KernelBuilder, name: str, **kwargs) -> Operation:
+        return self._parse_module_asm(kb, self.asm)
 
 
 class StrFormatTemplateLoader(TemplateLoader):
@@ -167,13 +178,18 @@ class JinjaTemplateLoader(TemplateLoader):
 
 
 def call_function(target_function: Operation, *operands: Value) -> Sequence[Value]:
-    """Emits a util.call for a util.func target function operation."""
+    """Emits a func.call/util.call for a func.func/util.func target function operation."""
     target_symbol = FlatSymbolRefAttr.get(
         StringAttr(target_function.attributes["sym_name"]).value
     )
     ftype = FunctionType(TypeAttr(target_function.attributes["function_type"]).value)
+    op_name = (
+        "func.call" if target_function.operation.name == "func.func" else "util.call"
+    )
+    target_function.attributes["sym_visibility"] = StringAttr.get("private")
+
     return Operation.create(
-        "util.call",
+        op_name,
         results=ftype.results,
         operands=operands,
         attributes={
