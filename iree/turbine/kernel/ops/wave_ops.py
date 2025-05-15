@@ -141,6 +141,15 @@ def abs(src: "Register") -> "Register":
     ...
 
 
+def softsign(
+    src: "Register",
+    logit_cap: float = 30.0,
+    apply_scaling: bool = False,
+    head_dim: int = None,
+) -> "Register":
+    ...
+
+
 def tanh_approx(src: "Register") -> "Register":
     ...
 
@@ -877,7 +886,21 @@ class UnaryPyOp(CustomOp, ABC):
         src_type = get_custom(self.arg).type
         self.type = src_type
 
+@define_interface_op("softsign")
+@dataclass
+class SoftsignOp(CustomOp, ABC):
+    arg: fx.Node
+    logit_cap: float = 30.0
+    apply_scaling: bool = False
+    head_dim: int = None
 
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    def infer_type(self):
+        src_type = get_custom(self.arg).type
+        self.type = src_type
 @define_op("select")
 @dataclass
 class SelectOp(CustomOp):
