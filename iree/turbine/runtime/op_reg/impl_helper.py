@@ -178,7 +178,7 @@ class JinjaTemplateLoader(TemplateLoader):
 
 
 def call_function(target_function: Operation, *operands: Value) -> Sequence[Value]:
-    """Emits a util.call for a util.func target function operation."""
+    """Emits a func.call/util.call for a func.func/util.func target function operation."""
     target_symbol = FlatSymbolRefAttr.get(
         StringAttr(target_function.attributes["sym_name"]).value
     )
@@ -186,6 +186,8 @@ def call_function(target_function: Operation, *operands: Value) -> Sequence[Valu
     op_name = (
         "func.call" if target_function.operation.name == "func.func" else "util.call"
     )
+    target_function.attributes["sym_visibility"] = StringAttr.get("private")
+
     return Operation.create(
         op_name,
         results=ftype.results,
