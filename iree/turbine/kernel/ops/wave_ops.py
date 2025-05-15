@@ -141,6 +141,10 @@ def abs(src: "Register") -> "Register":
     ...
 
 
+def softsign(src: "Register") -> "Register":
+    ...
+
+
 def tanh_approx(src: "Register") -> "Register":
     ...
 
@@ -855,6 +859,7 @@ class ComparisonPyOp(BinaryOpBase, ABC):
 @define_interface_op("roundeven")
 @define_interface_op("tanh")
 @define_interface_op("tanh_approx")
+@define_interface_op("softsign")
 @define_py_op(operator.neg)
 @define_py_op(operator.invert)
 @dataclass
