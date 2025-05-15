@@ -48,7 +48,6 @@ from iree.turbine.kernel.wave.utils.reference_kernel_utils import (
     scaled_dot_product_attention_bhsd,
 )
 
-
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
 @pytest.mark.parametrize(
