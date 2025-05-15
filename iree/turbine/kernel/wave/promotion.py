@@ -38,7 +38,10 @@ def apply_padding(
 
 
 def apply_promotion_pattern(
-    custom_node: Read | Write, allocate_node: Allocate, last_write_to_shared: fx.Node
+    custom_node: Read | Write,
+    allocate_node: Allocate,
+    last_write_to_shared: fx.Node,
+    reorder_allocs: bool = True,
 ):
     """
     Decompose and reorders read_from_global -> write_to_shared -> read_from_shared sequence.
@@ -83,9 +86,18 @@ def apply_promotion_pattern(
             # If we have multiple nested region ops in the graph, then the last_write_to_shared
             # can be in a different graph, so we add a check to ensure that the last_write_to_shared
             # is always in the same graph as the custom_node.
-            if last_write_to_shared and last_write_to_shared.graph == custom_node.graph:
-                moved_src = move_node_after(custom_node.fx_node, last_write_to_shared)
-                custom_node = get_custom(moved_src)
+            # While this minimizes lds_barrier count, it increases the live ranges of
+            # the allocated memory and prevents reuse of the allocated memory. So we only
+            # move the custom_node if minimize shared memory allocation pass is disabled.
+            if reorder_allocs:
+                if (
+                    last_write_to_shared
+                    and last_write_to_shared.graph == custom_node.graph
+                ):
+                    moved_src = move_node_after(
+                        custom_node.fx_node, last_write_to_shared
+                    )
+                    custom_node = get_custom(moved_src)
             with custom_node.graph.inserting_after(custom_node.fx_node):
                 promoted_read = Read(
                     allocate_node.fx_node, elements_per_thread
@@ -107,6 +119,7 @@ def promote_node(
     last_write_to_shared: fx.Node,
     address_space: IndexSymbol,
     constraints: list[Constraint],
+    reorder_allocs: bool = True,
 ):
     """Promotes the given operand in the provided graph
     to the specified address space.
@@ -128,12 +141,16 @@ def promote_node(
         )
         allocate_node.add_to_graph(node.graph)
     last_write_to_shared = apply_promotion_pattern(
-        node, allocate_node, last_write_to_shared
+        node, allocate_node, last_write_to_shared, reorder_allocs
     )
     return last_write_to_shared
 
 
-def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
+def promote_placeholders(
+    graph: CapturedTrace,
+    constraints: list[Constraint],
+    reorder_allocs: bool = True,
+):
     read_or_write_nodes = graph.walk(
         lambda node: isinstance(get_custom(node), Read)
         or isinstance(get_custom(node), Write)
@@ -146,7 +163,11 @@ def promote_placeholders(graph: CapturedTrace, constraints: list[Constraint]):
         address_space = subs_idxc(custom.memory_type.address_space)
         if address_space == SHARED_ADDRESS_SPACE:
             last_write_to_shared = promote_node(
-                custom, last_write_to_shared, address_space, constraints
+                custom,
+                last_write_to_shared,
+                address_space,
+                constraints,
+                reorder_allocs,
             )
 
 
@@ -160,6 +181,9 @@ def compute_shared_memory_usage(
     is_allocate = lambda x: isinstance(get_custom(x), Allocate)
     for alloc in graph.walk(is_allocate):
         custom_alloc = get_custom(alloc)
+        # Ignore allocations that are slices of a larger allocation.
+        if custom_alloc.parent is not None:
+            continue
         shape = subs_idxc(math.prod(custom_alloc.distributed_shape))
         bits = custom_alloc.type.dtype.bitwidth()
         kernel_launch_info.shared_memory_bytes += int((shape * bits) // 8)

@@ -1093,6 +1093,8 @@ class Allocate(CustomOp):
     dtype: DataType
     address_space: AddressSpace
     padding: int = 0
+    parent: Optional[fx.Node] = None
+    offset: Optional[IndexExpr] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -1125,20 +1127,6 @@ class SharedMemoryBarrier(CustomOp):
     """
     Represents a shared memory barrier in the graph.
     """
-
-    def is_barrier_between(self, src: fx.Node, dst: fx.Node) -> bool:
-        """
-        Checks if there is a barrier between the source and destination nodes.
-        """
-        prev_node, next_node = self.fx_node.prev, self.fx_node.next
-        found_src, found_dst = prev_node == src, next_node == dst
-        while prev_node.prev.op != "root" and not found_src:
-            prev_node, found_src = prev_node.prev, prev_node == src
-        if not found_src:
-            return False
-        while next_node.next.op != "root" and not found_dst:
-            next_node, found_dst = next_node.next, next_node == dst
-        return found_dst
 
 
 @define_op("scheduling_barrier")
