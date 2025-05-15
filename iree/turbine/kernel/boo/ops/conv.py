@@ -15,20 +15,47 @@ __all__ = [
 
 class _BooConv(torch.autograd.Function):
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(ctx, x, w, b=None, kwargs={}):
         x = x.detach()
         w = w.detach()
+
+        # set original dtype and autocast dtype
+        _og_dtype = x.dtype
+        _dtype = (
+            w.dtype
+            if not torch.is_autocast_enabled()
+            else torch.get_autocast_gpu_dtype()
+        )
+
+        # convert everything to w.dtype or autocast dtype
+        x = x.to(dtype=_dtype)
+        w = w.to(dtype=_dtype)
+        b = b if b is None else b.to(dtype=_dtype)
+
+        # save lowp inputs for backward kernels
         ctx.save_for_backward(x, w)
+
         ctx.kwargs = kwargs
         ctx.use_bias = b is not None
         kwargs["mode"] = "fwd"
+
+        # TODO: set the dtype such that we don't cast back down to bfloat16 if autocasted from f32.
         sig = ConvSignature.get(x, w, b, **kwargs)
+
+        # Save the output layout for backward conv.
         ctx.output_layout = sig.output_layout
+
+        # Get a launchable and apply.
         conv = get_launchable(sig)
         args = (x, w) if b is None else (x, w, b.detach())
-        return conv(*args)
+        result = conv(*args)
+
+        # Cast back to original dtype if necessary.
+        return result.to(dtype=_og_dtype)
 
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     @torch.autograd.function.once_differentiable
     def backward(ctx, grad_output):
         input_grad = weight_grad = bias_grad = None
@@ -36,16 +63,29 @@ class _BooConv(torch.autograd.Function):
         args = (x, w)
         kwargs = ctx.kwargs
 
+        # get original and autocast dtypes
+        _og_dtype = grad_output.dtype
+        _dtype = (
+            _og_dtype
+            if not torch.is_autocast_enabled()
+            else torch.get_autocast_gpu_dtype()
+        )
+
+        # saved tensors are already lowp, so just cast grad_output
+        grad_output = grad_output.to(dtype=_dtype)
+
         if ctx.needs_input_grad[0]:
             kwargs["mode"] = "bwd"
             bwd_sig = ConvSignature.get(*args, **kwargs)
             bwd_conv = get_launchable(bwd_sig)
             input_grad = bwd_conv(grad_output, w)
+            input_grad = input_grad.to(dtype=_og_dtype)
 
         if ctx.needs_input_grad[1]:
             kwargs["mode"] = "wrw"
             wrw_conv = get_launchable(ConvSignature.get(*args, **kwargs))
             weight_grad = wrw_conv(grad_output, x)
+            weight_grad = weight_grad.to(dtype=_og_dtype)
 
         if ctx.needs_input_grad[2] and ctx.use_bias:
             # TODO: use iree to perform the reduce sum?
@@ -55,7 +95,9 @@ class _BooConv(torch.autograd.Function):
                 if char != "C":
                     reduce_dims.append(i)
             bias_grad = torch.sum(grad_output, reduce_dims)
+            bias_grad = bias_grad.to(dtype=_og_dtype)
 
+        # return `None` for kwargs dict backward, since this will never be needed.
         return input_grad, weight_grad, bias_grad, None
 
 
