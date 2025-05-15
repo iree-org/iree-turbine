@@ -13,6 +13,7 @@ from ...ops.wave_ops import (
     NestedRegionOp,
     Output,
     SetSymbol,
+    SetPrio,
     SharedMemoryBarrier,
     ExtractSlice,
     GetResult,
@@ -22,6 +23,7 @@ from ...ops.wave_ops import (
     Conditional,
     MMA,
     IterArg,
+    WorkgroupBarrier,
 )
 from ..._support.indexing import IndexSymbol
 from typing import Callable, Sequence
@@ -59,7 +61,10 @@ def DCE(trace: CapturedTrace):
 
         if (
             custom.users
-            or isinstance(custom, (Output, SetSymbol, SharedMemoryBarrier))
+            or isinstance(
+                custom,
+                (Output, SetSymbol, SetPrio, SharedMemoryBarrier, WorkgroupBarrier),
+            )
             or is_global_write(node)
         ):
             return False

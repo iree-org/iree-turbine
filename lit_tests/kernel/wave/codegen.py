@@ -935,6 +935,38 @@ def test_unary_lowerings():
     # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[TANH_APPROX]]
 
 
+# Important to check lowering of scheduling/barrier ops.
+@run_test
+def test_scheduling_ops():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    @tkw.wave(constraints)
+    def schedule_ops(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
+        tkw.shared_memory_barrier()
+        tkw.set_prio(1)
+        tkw.read(a)
+        tkw.set_prio(0)
+        tkw.workgroup_barrier()
+
+    schedule_ops = wave_compile(get_wave_compile_options(), schedule_ops)
+    print(schedule_ops.asm)
+
+    # CHECK-LABEL:    func.func @schedule_ops
+    # CHECK:            amdgpu.lds_barrier
+    # CHECK:            rocdl.s.setprio 1
+    # CHECK:            vector.load
+    # CHECK:            rocdl.s.setprio 0
+    # CHECK:            rocdl.s.barrier
+
+
 @run_test
 def test_reduce_sum():
     M = tkl.sym.M

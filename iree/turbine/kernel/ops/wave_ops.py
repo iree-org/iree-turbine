@@ -70,7 +70,15 @@ def extract_slice(
     ...
 
 
+def set_prio(priority: int):
+    ...
+
+
 def shared_memory_barrier():
+    ...
+
+
+def workgroup_barrier():
     ...
 
 
@@ -1121,6 +1129,18 @@ class SelfIndex(CustomOp):
         return Register[(self.dim, self.dtype)]
 
 
+@define_op("set_prio")
+@dataclass
+class SetPrio(CustomOp):
+    """
+    An op that sets/tells hardware what level of priority certain instructions/region is.
+    This is useful for ping-pong or general case where two Waves share the same SIMD, but
+    we want to tell the SIMD to prioritize on wave or the other.
+    """
+
+    priority: int
+
+
 @define_op("shared_memory_barrier")
 @dataclass
 class SharedMemoryBarrier(CustomOp):
@@ -1153,6 +1173,17 @@ class SchedulingGroupBarrier(CustomOp):
 
     instructions: dict[Operation, int]
     sync_id: int
+
+
+@define_op("workgroup_barrier")
+@dataclass
+class WorkgroupBarrier(CustomOp):
+    """
+    Represents a synchronization of all threads in a workgroup.
+    Threads will wait on a WorkgroupBarrier until all the threads
+    in the workgroup has called a WorkgroupBarrier(does not have to
+    be in the same location).
+    """
 
 
 @define_op("register")
