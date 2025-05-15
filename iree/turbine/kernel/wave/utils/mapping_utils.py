@@ -5,6 +5,7 @@
 
 from .symbol_utils import IndexExpr, IndexSymbol, subs_idxc
 from ...lang.wave_types import IndexMapping
+from ..._support.indexing import IndexingContext
 import sympy
 
 
@@ -186,7 +187,7 @@ def approximate_difference(
 
 def check_is_mapping_contiguous(
     mapping: IndexMapping,
-    symbolc_shape: tuple[IndexExpr, ...],
+    symbolic_shape: tuple[IndexExpr, ...],
     index: tuple[IndexExpr, ...],
     elements_per_thread: int | IndexExpr,
     is_read: bool,
@@ -204,12 +205,12 @@ def check_is_mapping_contiguous(
         assert (
             mapping.is_output_identity()
         ), "non-identity output mapping is not supported yet"
-        index_mapping = mapping.map_input_indices(symbolc_shape)
+        index_mapping = mapping.map_input_indices(symbolic_shape)
     else:
         assert (
             mapping.is_input_identity()
         ), "non-identity input mapping is not supported yet"
-        index_mapping = mapping.map_output_indices(symbolc_shape)
+        index_mapping = mapping.map_output_indices(symbolic_shape)
 
     index_mapping = tuple(subs_idxc(i) for i in index_mapping)
     iters = mapping.iters
@@ -228,3 +229,23 @@ def check_is_mapping_contiguous(
     expected_diff[-1] = 1
 
     return diff == expected_diff
+
+
+def transform_index_on_mapping(
+    mapping: IndexMapping,
+    symbolic_shape: tuple[IndexExpr, ...],
+    index: tuple[IndexExpr, ...],
+) -> tuple[IndexExpr, ...]:
+    """ "Transforms the index according to the specified mapping"""
+    input_index_mapping = mapping.map_input_indices(symbolic_shape)
+    idxc = IndexingContext.current()
+    index_mapping = tuple(i.subs(idxc.subs) for i in input_index_mapping)
+    iters = mapping.iters
+    subs = [
+        (sym, expr.start) for sym, expr in zip(iters.keys(), index.values())
+    ] + list(idxc.subs.items())
+    transformed_index = {
+        key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)
+    }
+
+    return transformed_index
