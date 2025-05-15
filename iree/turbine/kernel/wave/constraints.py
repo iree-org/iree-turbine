@@ -60,10 +60,12 @@ class MMAType(Enum):
     I32_16x16x32_I8 = 0x12C0
     I32_32x32x16_I8 = 0x12C1
 
+
 class ScaledMMAType(Enum):
     # Intrinsics introduced in CDNA4
     F32_16x16x128_F8F6F4 = 0x1340
     F32_32x32x64_F8F6F4 = 0x1341
+
 
 class MMAOperand(Enum):
     M = 0
@@ -346,7 +348,7 @@ class HardwareConstraint(Constraint):
                     lane % 16,  # N
                     Piecewise(
                         (32 * floor(lane / 16), ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                        (4 * floor(lane / 16), MMA_LHS_SCALE | MMA_RHS_SCALE)
+                        (floor(lane / 16), MMA_LHS_SCALE | MMA_RHS_SCALE)
                     ),  # K
                 ]
             case ScaledMMAType.F32_32x32x64_F8F6F4:
@@ -362,7 +364,7 @@ class HardwareConstraint(Constraint):
                     ),  # M
                     lane % 32,  # N
                     Piecewise((32 * floor(lane / 32), ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                              (4 * floor(lane / 32), MMA_LHS_SCALE | MMA_RHS_SCALE),
+                              (floor(lane / 32), MMA_LHS_SCALE | MMA_RHS_SCALE),
                         ), # K
                 ]
             case _:
@@ -485,7 +487,7 @@ class HardwareConstraint(Constraint):
                     Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
                     1,  # N
                     Piecewise((32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                              (4, MMA_LHS_SCALE | MMA_RHS_SCALE)),  # K
+                              (1, MMA_LHS_SCALE | MMA_RHS_SCALE)),  # K
                 ]
                 stride = [
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
@@ -497,7 +499,7 @@ class HardwareConstraint(Constraint):
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
                     1,  # N
                     Piecewise((32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                              (4, MMA_LHS_SCALE | MMA_RHS_SCALE)),  # K
+                              (1, MMA_LHS_SCALE | MMA_RHS_SCALE)),  # K
                 ]
                 stride = [
                     Piecewise((1, ~MMA_ACC), (32, MMA_ACC)),  # M

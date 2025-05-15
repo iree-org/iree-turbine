@@ -90,6 +90,7 @@ from ...compiler.vector_codegen import (
     cast_py_literal,
     cast_py_value,
     cast_vector,
+    cast_scalar,
 )
 from ..constraints import HardwareConstraint, GenericDot
 from ..utils.classes import ShuffleMode
@@ -368,7 +369,7 @@ def handle_scaled_mma(emitter: WaveEmitter, node: fx.Node):
         lhs, lhs_scale, rhs, rhs_scale, acc, mma_type = node.args
         acc = cast_vector(emitter, acc)
         values = [cast_vector(emitter, val) for val in [lhs, rhs]]
-        scales = [cast_vector(emitter, val) for val in [lhs_scale, rhs_scale]]
+        scales = [cast_scalar(emitter, val) for val in [lhs_scale, rhs_scale]]
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
