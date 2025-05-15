@@ -65,6 +65,10 @@ class WaveCompileOptions:
     use_buffer_store_ops: bool = False
     use_fast_math: bool = False
 
+    # === Compiler options ===
+    minimize_shared_allocs: bool = True
+    reorder_allocs: bool = True
+
     # === Print options ===
     print_ir_after: list[str] = field(default_factory=list)
     print_ir_before: list[str] = field(default_factory=list)

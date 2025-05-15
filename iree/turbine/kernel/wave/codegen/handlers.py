@@ -90,6 +90,7 @@ from ...compiler.vector_codegen import (
     cast_py_value,
     cast_vector,
 )
+from ...compiler.utils import strides_from_symbolic_shape
 from ..constraints import HardwareConstraint, GenericDot
 from ..utils.classes import ShuffleMode
 from ..utils.symbol_utils import subs_idxc
@@ -166,13 +167,35 @@ def handle_scalar(emitter: WaveEmitter, node: fx.Node):
 @handle_op(allocate)
 def handle_allocate(emitter: WaveEmitter, node: fx.Node):
     try:
-        shape, distributed_shape, dtype, address_space, padding = node.args
+        (
+            shape,
+            distributed_shape,
+            dtype,
+            address_space,
+            padding,
+            parent,
+            offset,
+        ) = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
+
     memref_shape = cast_py_literal(emitter, distributed_shape)
     element_type = IrType.parse(dtype.ir_type_asm())
     address_space = Attribute.parse("#gpu.address_space<workgroup>")
     memref_type = MemRefType.get(memref_shape, element_type, None, address_space)
+
+    if parent is not None:
+        parent = cast_py_value(emitter, parent).ir_value
+        offset = arith_d.constant(IndexType.get(), int(offset))
+        alloc = memref_d.view(
+            memref_type,
+            parent,
+            offset,
+            [],
+        )
+        emitter.bind_node_proxy(node, IRProxyValue(alloc))
+        return
+
     alloc = memref_d.alloc(memref_type, [], [])
     emitter.bind_node_proxy(node, IRProxyValue(alloc))
 
