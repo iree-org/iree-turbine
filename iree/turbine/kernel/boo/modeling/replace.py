@@ -80,10 +80,40 @@ class BooConv2d(torch.nn.Module):
         return result.squeeze(0) if no_batch else result
 
 
-def replace_conv2d_with_boo_conv(model):
+def replace_conv2d_with_boo_conv(model, **kwargs):
+    """Replace Conv2d modules in a model, with matching kwargs, with BooConv2d.
+
+    For example:
+
+    ```python
+    model = replace_conv2d_with_boo_conv(model, stride=(1,1))
+    ```
+
+    This will replace all Conv2d with stride=(1,1) in `model` with an equivalent BooConv2d.
+    Not passing any kwargs will replace all Conv2d modules with BooConv2d.
+    """
+
     for name, module in model.named_modules():
         if isinstance(module, torch.nn.Conv2d):
-            logger.debug("Found Conv2d to replace with BooConv2d : %s", str(module))
+            logger.debug("Found Conv2d: %s", str(module))
+
+            skip = False
+            for k, v in kwargs.items():
+                attr = module.__getattribute__(k)
+                logger.debug(
+                    "For key (%s), got value (%s) and requested %s.",
+                    str(k),
+                    str(attr),
+                    str(v),
+                )
+                if v != attr:
+                    skip = True
+                    break
+
+            if skip:
+                continue
+
+            logger.debug("Replacing Conv2d with BooConv2d : %s", str(module))
             custom_conv = BooConv2d(
                 module.in_channels,
                 module.out_channels,
@@ -95,7 +125,6 @@ def replace_conv2d_with_boo_conv(model):
                 module.bias is not None,
             )
 
-            # Copy weights and bias if applicable
             custom_conv.weight = torch.nn.Parameter(module.weight.data.clone())
             if module.bias is not None:
                 custom_conv.bias = torch.nn.Parameter(module.bias.data.clone())
