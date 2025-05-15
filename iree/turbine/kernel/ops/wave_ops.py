@@ -70,7 +70,7 @@ def extract_slice(
     ...
 
 
-def set_prio(priority: int):
+def set_wave_prio(priority: int):
     ...
 
 
@@ -1137,9 +1137,9 @@ class SelfIndex(CustomOp):
         return Register[(self.dim, self.dtype)]
 
 
-@define_op("set_prio")
+@define_op("set_wave_prio")
 @dataclass
-class SetPrio(CustomOp):
+class SetWavePrio(CustomOp):
     """
     An op that sets/tells hardware what level of priority certain instructions/region is.
     This is useful for ping-pong or general case where two Waves share the same SIMD, but

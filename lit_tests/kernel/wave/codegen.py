@@ -951,9 +951,9 @@ def test_scheduling_ops():
     @tkw.wave(constraints)
     def schedule_ops(a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16]):
         tkw.shared_memory_barrier()
-        tkw.set_prio(1)
+        tkw.set_wave_prio(1)
         tkw.read(a)
-        tkw.set_prio(0)
+        tkw.set_wave_prio(0)
         tkw.workgroup_barrier()
 
     schedule_ops = wave_compile(get_wave_compile_options(), schedule_ops)

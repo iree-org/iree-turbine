@@ -78,7 +78,7 @@ from ...ops.wave_ops import (
     scheduling_group_barrier,
     self_index,
     select,
-    set_prio,
+    set_wave_prio,
     set_symbol,
     shared_memory_barrier,
     shuffle,
@@ -1081,14 +1081,14 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
-@handle_op(set_prio)
-def handle_set_prio(emitter: WaveEmitter, node: fx.Node):
+@handle_op(set_wave_prio)
+def handle_set_wave_prio(emitter: WaveEmitter, node: fx.Node):
     try:
         prio = node.args[0]
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     if not isinstance(prio, int):
-        raise ValueError("Expected prio in SetPrioOp to be integer.")
+        raise ValueError("Expected prio in SetWavePrioOp to be integer.")
     rocdl_d.s_setprio(prio)
 
 
