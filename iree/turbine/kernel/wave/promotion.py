@@ -138,9 +138,7 @@ def promote_node(
         # If the read/write operation already has a set distributed shape at the kernel
         # we use that for allocation. Otherwise deduce the shape from constraints.
         memory_node = get_custom(node.memory)
-        if isinstance(memory_node, Allocate) and hasattr(
-            memory_node, "distributed_shape"
-        ):
+        if isinstance(memory_node, Allocate) and memory_node.distributed_shape:
             constrained_shape = memory_node.distributed_shape
         padding, padded_shape = apply_padding(constrained_shape, node.type.dtype)
         allocate_node = Allocate(

@@ -1914,6 +1914,7 @@ def test_atomic_min(shape, use_buffer_ops, request):
         run_bench=run_bench,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
+        minimize_shared_allocs=False,
     )
     options = set_default_run_config(options)
     test = wave_compile(options, test)
