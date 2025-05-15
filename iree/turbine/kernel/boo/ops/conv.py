@@ -19,14 +19,13 @@ class _BooConv(torch.autograd.Function):
     def forward(ctx, x, w, b=None, kwargs={}):
         x = x.detach()
         w = w.detach()
+        device_type = x.device.type
+
+        do_autocast = device_type == "cuda" and torch.is_autocast_enabled("cuda")
 
         # set original dtype and autocast dtype
         _og_dtype = x.dtype
-        _dtype = (
-            w.dtype
-            if not torch.is_autocast_enabled()
-            else torch.get_autocast_gpu_dtype()
-        )
+        _dtype = w.dtype if not do_autocast else torch.get_autocast_dtype("cuda")
 
         # convert everything to w.dtype or autocast dtype
         x = x.to(dtype=_dtype)
@@ -63,13 +62,12 @@ class _BooConv(torch.autograd.Function):
         args = (x, w)
         kwargs = ctx.kwargs
 
+        device_type = grad_output.device.type
+        do_autocast = device_type == "cuda" and torch.is_autocast_enabled("cuda")
+
         # get original and autocast dtypes
         _og_dtype = grad_output.dtype
-        _dtype = (
-            _og_dtype
-            if not torch.is_autocast_enabled()
-            else torch.get_autocast_gpu_dtype()
-        )
+        _dtype = _og_dtype if not do_autocast else torch.get_autocast_dtype("cuda")
 
         # saved tensors are already lowp, so just cast grad_output
         grad_output = grad_output.to(dtype=_dtype)
