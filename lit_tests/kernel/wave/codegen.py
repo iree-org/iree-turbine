@@ -2420,7 +2420,7 @@ def test_atomic_min():
     mapping = tkw.IndexMapping(
         num_iterators=2,
         inputs={M: sympy.Integer(0), N: j},
-        outputs={M: sympy.Integer(0), N: j},
+        outputs={M: i, N: j},
     )
     read_mapping = tkw.IndexMapping(
         num_iterators=2, inputs={M: sympy.Integer(0), N: j}, outputs={M: i, N: j}
@@ -2453,6 +2453,7 @@ def test_atomic_min():
         use_buffer_load_ops=False,
         use_buffer_store_ops=False,
         compile_to_mlir=True,
+        minimize_shared_allocs=False,
     )
 
     atomic_min_codegen = wave_compile(options, atomic_min_codegen)
@@ -2467,9 +2468,8 @@ def test_atomic_min():
     # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
     # CHECK-DAG:        %[[thread_id_x:.*]] = gpu.thread_id  x
     # CHECK-DAG:        %[[thread_id_y:.*]] = gpu.thread_id  y
-    # CHECK:            %[[alloc:.*]] = memref.alloc
-    # CHECK:            amdgpu.lds_barrier
     # CHECK-DAG:        %[[val_0:.+]] = affine.apply #[[map0]]()[%[[thread_id_x]]]
+    # CHECK:            %[[alloc:.*]] = memref.alloc
     # CHECK:            vector.store %{{.*}}, %[[alloc]][%[[thread_id_y]], %[[val_0]]]
     # CHECK:            %[[atm_0:.+]] = memref.atomic_rmw mins %{{.*}}, %[[alloc]][%[[C0]], %[[val_0]]]
     # CHECK-DAG:        %[[val_1:.+]] = affine.apply #[[map1]]()[%[[thread_id_x]]]
