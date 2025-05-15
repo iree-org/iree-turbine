@@ -1254,10 +1254,9 @@ class SchedulingBarrier(CustomOp):
 @dataclass
 class AtomicOp(BinaryOpBase, ABC):
     """
-    Represents an atomic operation in the graph.
-    Takes in value (register) and buffer (shared/global) as inputs,
-    and writes the modified value back on to the buffer. Mapping
-    attribute maps the index from wave kernel to the shared memory
+    Represents an atomic operation in the graph. Takes in Register and
+    Memory as inputs and writes the modified value back on to the buffer.
+    Mapping attribute maps the index from wave kernel to the shared memory
     index the wavegroup operates on.
     """
 
@@ -1535,7 +1534,7 @@ class Read(CustomOp):
 
         return check_is_mapping_contiguous(
             mapping=mapping,
-            symbolc_shape=mem_shape,
+            symbolic_shape=mem_shape,
             index=self.index,
             elements_per_thread=self.elements_per_thread,
             is_read=True,
@@ -1849,7 +1848,7 @@ class Write(CustomOp):
 
         return check_is_mapping_contiguous(
             mapping=mapping,
-            symbolc_shape=mem_shape,
+            symbolic_shape=mem_shape,
             index=self.index,
             elements_per_thread=self.elements_per_thread,
             is_read=False,

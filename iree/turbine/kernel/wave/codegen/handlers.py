@@ -103,6 +103,7 @@ from ...compiler.utils import strides_from_symbolic_shape
 from ..constraints import HardwareConstraint, GenericDot
 from ..utils.classes import ShuffleMode
 from ..utils.general_utils import get_fastest_index
+from ..utils.mapping_utils import transform_index_on_mapping
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
 
@@ -452,32 +453,19 @@ def handle_atomic_op(op):
                 lhs_type.rank == 0 or lhs_type.rank == 1
             ), f"expected lhs_type.rank == 1 but got {lhs_type.rank}, {node}"
 
-            node_index = node.index
+            start_index = node.index
             if mapping:
                 symbolic_shape = get_custom(node).type.symbolic_shape
-                input_index_mapping = mapping.map_input_indices(symbolic_shape)
-                output_index_mapping = mapping.map_output_indices(symbolic_shape)
-                assert input_index_mapping == output_index_mapping, (
-                    f"Atomic op operates on shared memory and expects input/output index\n"
-                    f"mapping on the memory to be the same\n"
+                start_index = transform_index_on_mapping(
+                    mapping, symbolic_shape, start_index
                 )
-                idxc = IndexingContext.current()
-                index_mapping = tuple(i.subs(idxc.subs) for i in output_index_mapping)
-                iters = mapping.iters
-                subs = [
-                    (sym, expr.start)
-                    for sym, expr in zip(iters.keys(), node.index.values())
-                ] + list(idxc.subs.items())
-                node_index = {
-                    key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)
-                }
 
             # Get start indices for every element in thread and unroll the op
             atomic_results = []
-            keys = list(node_index.keys())
+            keys = list(start_index.keys())
             fastest_dim = get_fastest_index(node.index)
             for i in range(elements_per_thread):
-                new_index = copy.deepcopy(node_index)
+                new_index = copy.deepcopy(start_index)
                 key = keys[fastest_dim]
                 new_index[key] += i
                 start_idx = _build_start_indices(emitter, new_index)
