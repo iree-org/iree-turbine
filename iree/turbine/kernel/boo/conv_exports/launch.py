@@ -247,7 +247,10 @@ def get_launchable(
         launch = Launchable.from_vm_module(
             _user_flags_jit_callback(
                 func_name,
-                (f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}",),
+                (
+                    f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}",
+                    "--iree-llvmgpu-set-workgroup-distribution-along=x",
+                ),
                 module_asm,
             ),
             entry_point=f"{func_name}$async",
