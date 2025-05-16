@@ -12,8 +12,6 @@ from ...ops.wave_ops import (
     Write,
     NestedRegionOp,
     Output,
-    SetSymbol,
-    SharedMemoryBarrier,
     ExtractSlice,
     GetResult,
     CustomOp,
@@ -57,11 +55,7 @@ def DCE(trace: CapturedTrace):
     def is_removable_operator(node: fx.Node) -> bool:
         custom = get_custom(node)
 
-        if (
-            custom.users
-            or isinstance(custom, (Output, SetSymbol, SharedMemoryBarrier))
-            or is_global_write(node)
-        ):
+        if custom.users or custom.has_side_effects or is_global_write(node):
             return False
 
         if has_nested_writes(node):

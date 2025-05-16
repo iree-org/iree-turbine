@@ -31,6 +31,7 @@ from ...compiler.ir import (
     gpu_d,
     math_d,
     memref_d,
+    rocdl_d,
     scf_d,
     vector_d,
     llvm_d,
@@ -77,11 +78,13 @@ from ...ops.wave_ops import (
     scheduling_group_barrier,
     self_index,
     select,
+    set_wave_prio,
     set_symbol,
     shared_memory_barrier,
     shuffle,
     tanh,
     tanh_approx,
+    workgroup_barrier,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
@@ -1078,6 +1081,17 @@ def handle_iterate_while(emitter: WaveEmitter, node: fx.Node):
 ###############################################################################
 
 
+@handle_op(set_wave_prio)
+def handle_set_wave_prio(emitter: WaveEmitter, node: fx.Node):
+    try:
+        prio = node.args[0]
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    if not isinstance(prio, int):
+        raise ValueError("Expected prio in SetWavePrioOp to be integer.")
+    rocdl_d.s_setprio(prio)
+
+
 @handle_op(shared_memory_barrier)
 def handle_shared_memory_barrier(emitter: WaveEmitter, node: fx.Node):
     amdgpu_d.lds_barrier()
@@ -1113,6 +1127,11 @@ def handle_scheduling_group_barrier(emitter: WaveEmitter, node: fx.Node):
         llvm_d.call_intrinsic(
             None, "llvm.amdgcn.sched.group.barrier", [mask, counts, sync_id], [], []
         )
+
+
+@handle_op(workgroup_barrier)
+def handle_workgroup_barrier(emitter: WaveEmitter, node: fx.Node):
+    rocdl_d.s_barrier()
 
 
 ###############################################################################

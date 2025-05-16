@@ -70,7 +70,15 @@ def extract_slice(
     ...
 
 
+def set_wave_prio(priority: int):
+    ...
+
+
 def shared_memory_barrier():
+    ...
+
+
+def workgroup_barrier():
     ...
 
 
@@ -721,6 +729,10 @@ class CustomOp(ABC):
     def type(self, value: Any):
         self.fx_node.type = value
 
+    @property
+    def has_side_effects(self) -> bool:
+        return False
+
     def infer_type(self):
         """
         Infer the type of this operator using the types
@@ -967,6 +979,10 @@ class Output(CustomOp):
         self.fx_node.tkw_op_name = self.tkw_op_name
         return self.fx_node
 
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
 
 @dataclass
 class Placeholder(CustomOp):
@@ -1121,12 +1137,32 @@ class SelfIndex(CustomOp):
         return Register[(self.dim, self.dtype)]
 
 
+@define_op("set_wave_prio")
+@dataclass
+class SetWavePrio(CustomOp):
+    """
+    An op that sets/tells hardware what level of priority certain instructions/region is.
+    This is useful for ping-pong or general case where two Waves share the same SIMD, but
+    we want to tell the SIMD to prioritize on wave or the other.
+    """
+
+    priority: int
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
+
+
 @define_op("shared_memory_barrier")
 @dataclass
 class SharedMemoryBarrier(CustomOp):
     """
     Represents a shared memory barrier in the graph.
     """
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
 
 
 @define_op("scheduling_barrier")
@@ -1153,6 +1189,21 @@ class SchedulingGroupBarrier(CustomOp):
 
     instructions: dict[Operation, int]
     sync_id: int
+
+
+@define_op("workgroup_barrier")
+@dataclass
+class WorkgroupBarrier(CustomOp):
+    """
+    Represents a synchronization of all threads in a workgroup.
+    Threads will wait on a WorkgroupBarrier until all the threads
+    in the workgroup has called a WorkgroupBarrier(does not have to
+    be in the same location).
+    """
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
 
 
 @define_op("register")
@@ -1743,6 +1794,10 @@ class SetSymbol(CustomOp):
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         return get_custom(self.register_).indexing_dims
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
 
 
 @define_py_op(operator.getitem)
