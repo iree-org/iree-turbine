@@ -13,7 +13,7 @@ from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Iterate, CustomOp, get_custom, IterArg
-from .._support.indexing import IndexingContext, IndexExpr
+from .._support.indexing import IndexingContext, IndexExpr, index_symbol
 from .symbolic_constraints import SymbolicAlias
 from .._support.tracing import (
     CapturedTrace,
@@ -178,7 +178,9 @@ class LaunchableWave(Launchable):
         # it in python (and it will be faster as well).
         hints = get_type_hints(eager_function)
         self.bound_scalar_symbols = {
-            a.symbol: i for i, a in enumerate(hints.values()) if _is_symbol_bind(a)
+            index_symbol(name): i
+            for i, (name, arg) in enumerate(hints.items())
+            if _is_symbol_bind(arg)
         }
 
     @property
@@ -222,7 +224,7 @@ class LaunchableWave(Launchable):
         ]
 
     def _trace(self) -> CapturedTrace:
-        region_graph = KernelRegionGraph()
+        region_graph = KernelRegionGraph(self._f)
         with CompiledContext(region_graph, grid_type=self.grid_type) as context:
             # Get all explictly defined custom ops
             custom_ops: dict[str, wave_ops.CustomOp] = {

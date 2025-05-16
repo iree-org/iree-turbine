@@ -157,16 +157,10 @@ class SymbolBind:
     """
 
     dtype: DataType
-    symbol: IndexSymbol
 
-    def __class_getitem__(
-        cls, dtype_and_sym: tuple[DataType, IndexSymbol]
-    ) -> Type["SymbolBind"]:
-        dt, sym = dtype_and_sym
-
+    def __class_getitem__(cls, dt: DataType) -> Type["SymbolBind"]:
         class Subtype(cls):
             dtype = dt
-            symbol = sym
 
         Subtype.__name__ = cls.__name__
         return Subtype

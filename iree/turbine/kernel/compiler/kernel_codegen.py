@@ -27,6 +27,7 @@ from iree.turbine.kernel._support.dtype import DataType
 from .._support.indexing import (
     IndexingContext,
     IndexSymbol,
+    index_symbol,
 )
 
 from ..lang.kernel_buffer import (
@@ -49,11 +50,9 @@ from .builder import (
 from .ir import (
     Block,
     FunctionType,
-    F32Type,
     IndexType,
     InsertionPoint,
     IrType,
-    IntegerType,
     Location,
     Operation,
     Value,
@@ -260,12 +259,13 @@ class KernelSignature:
                     )
                 )
             elif issubclass(t, SymbolBind):
+                sym = index_symbol(node.meta["symbol_name"])
                 self.bindings.append(
                     BindingDesc(
                         ("node", node),
                         BindingType.SCALAR_VALUE,
                         name=node.target,
-                        symbol_type=t.symbol,
+                        symbol_type=sym,
                         scalar_type=t.dtype,
                     )
                 )

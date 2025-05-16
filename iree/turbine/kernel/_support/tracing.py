@@ -44,6 +44,8 @@ from ..ops.base import (
 from . import context
 from .dtype import DataType
 
+import inspect
+
 try:
     from typing import assert_type
 except ImportError:
@@ -60,12 +62,18 @@ TCallable = TypeVar("TCallable", bound=Callable)
 
 
 class KernelRegionGraph(RegionGraph):
+    func: Callable
+
+    def __init__(self, func: Callable):
+        super().__init__()
+        self.func = func
+
     def new_subtracer(
         self,
         region_graph: "RegionGraph",
         parent: Optional["SubgraphTracer"] = None,
     ) -> "KernelTracer":
-        return KernelTracer(region_graph, parent=parent)
+        return KernelTracer(region_graph, parent=parent, func=self.func)
 
 
 ###############################################################################
@@ -98,6 +106,18 @@ class KernelBufferProxy(fx.Proxy):
 class KernelTracer(SubgraphTracer):
     """Custom Tracer for generating a trace of a kernel computation."""
 
+    arg_names: list[str] = []
+
+    def __init__(
+        self,
+        region_graph: RegionGraph,
+        parent: Optional["SubgraphTracer"] = None,
+        func: Callable = None,
+    ):
+        super().__init__(region_graph, parent)
+        if func is not None:
+            self.arg_names = inspect.getfullargspec(func).args
+
     # Property to keep track of current number of arguments.
     current_arg_id = 0
 
@@ -113,6 +133,7 @@ class KernelTracer(SubgraphTracer):
                 self.current_arg_id += 1
             elif issubclass(t, SymbolBind) and node.op == "placeholder":
                 node.meta["arg_id"] = self.current_arg_id
+                node.meta["symbol_name"] = self.arg_names[self.current_arg_id]
                 node.meta["dtype"] = t.dtype
                 node.meta["symbolic_type"] = []
                 self.current_arg_id += 1

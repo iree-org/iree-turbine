@@ -398,7 +398,7 @@ def get_extend_attention_kernel(
         qo_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
         kv_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
         kv_indices: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
-        max_len_extend: tkl.SymbolBind[tkl.i32, MAX_EXTEND_SEQ_LEN],
+        MAX_EXTEND_SEQ_LEN: tkl.SymbolBind[tkl.i32],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         extend_attention_core(
@@ -433,7 +433,7 @@ def get_extend_attention_kernel(
             MASK_LEN, GLOBAL_ADDRESS_SPACE, tkl.i8, num_seqs_layout
         ],
         mask_offsets: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
-        max_len_extend: tkl.SymbolBind[tkl.i32, MAX_EXTEND_SEQ_LEN],
+        MAX_EXTEND_SEQ_LEN: tkl.SymbolBind[tkl.i32],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         extend_attention_core(
