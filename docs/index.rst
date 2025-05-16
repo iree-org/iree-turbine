@@ -15,10 +15,17 @@ API reference material
 
 .. toctree::
    :maxdepth: 1
-   :caption: TK and TKW
+   :caption: TK
    :glob:
 
    kernel/*
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Wave
+   :glob:
+
+   wave/*
 
 
 Project documentation
