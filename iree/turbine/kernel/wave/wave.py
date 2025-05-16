@@ -597,7 +597,7 @@ class LaunchableWave(Launchable):
 
             print(f"Pass times:")
             for k, v in pass_times_list:
-                print(f"    {k}: {v}s")
+                print(f"    {k}: {v:.4f}s")
 
         if "all" in print_ir_after or "last" in print_ir_after:
             # Take advantage of Python leaking loop variables
