@@ -174,7 +174,7 @@ def load_inputs(directory):
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
-@pytest.mark.parametrize("dtype", [torch.float16])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @pytest.mark.parametrize("num_kv_splits", [8])
 @pytest.mark.parametrize(
@@ -256,8 +256,7 @@ def testPagedFlashDecoding(
         shape,
         mfma_variant,
         num_kv_splits,
-        key_cache_4d.shape,
-        value_cache_4d.shape,
+        input_dtype=dtype,
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
@@ -354,7 +353,10 @@ def testPagedFlashDecoding(
     else:
         ref_vllm_output = torch.load(os.path.join(artifact_directory, "output.pt"))
 
-    assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3)
+    if dtype == torch.bfloat16:
+        assert_close(output, ref_vllm_output, rtol=1e-2, atol=1e-2, check_dtype=False)
+    else:
+        assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3)
 
 
 @require_e2e
@@ -448,8 +450,7 @@ def testPagedFlashDecodingMHA(
         shape,
         mfma_variant,
         num_kv_splits,
-        key_cache_4d.shape,
-        value_cache_4d.shape,
+        input_dtype=dtype,
         mha=True,
     )
     hyperparams_0.update(get_default_scheduling_params())
@@ -547,4 +548,7 @@ def testPagedFlashDecodingMHA(
     else:
         ref_vllm_output = torch.load(os.path.join(artifact_directory, "output.pt"))
 
-    assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3)
+    if dtype == torch.bfloat16:
+        assert_close(output, ref_vllm_output, rtol=1e-2, atol=1e-2, check_dtype=False)
+    else:
+        assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3)

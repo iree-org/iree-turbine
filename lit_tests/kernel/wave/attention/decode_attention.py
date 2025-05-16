@@ -51,7 +51,9 @@ def test_paged_flash_decoding():
         dynamic_symbols,
         dynamic_symbols_map,
     ) = get_paged_decode_attention_kernels(
-        shape, mfma_variant, num_kv_splits, k_shape, v_shape
+        shape,
+        mfma_variant,
+        num_kv_splits,
     )
 
     options = WaveCompileOptions(
