@@ -2179,10 +2179,29 @@ class Permute(CustomOp, ABC):
         src_to_target = {
             src: self.target_shape[src_shape.index(src)] for src in src_shape
         }
+        # If `vector_shapes`` is unknown assume we need to switch the strides.
+        if self.vector_shapes is None:
+            return {
+                k: IndexSequence(v.start, v.size, index[src_to_target[k]].stride)
+                for k, v in index.items()
+                if k in src_shape
+            }
+
+        # Compute the trivial iterators, ie. where `vector_shapes == 0`.
+        trivial_iterators = [k for k, v in self.vector_shapes.items() if v == 0]
+        # Extend the trivial iterators via the permutation relation.
+        trivial_iterators.extend(
+            [src_to_target[d] for d in trivial_iterators if d in src_to_target]
+        )
+        trivial_iterators = set(trivial_iterators)
+        # The index sequence is computed based on whether an iterator is trivial or not.
+        get_sequence = (
+            lambda k, seq: seq
+            if k in trivial_iterators
+            else IndexSequence(seq.start, seq.size, index[src_to_target[k]].stride)
+        )
         permuted_index = {
-            k: IndexSequence(v.start, v.size, index[src_to_target[k]].stride)
-            for k, v in index.items()
-            if k in src_shape
+            k: get_sequence(k, index[k]) for k in self.target_shape if k in index
         }
         return permuted_index
 
