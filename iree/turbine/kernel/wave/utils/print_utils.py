@@ -63,30 +63,30 @@ def try_apply_pass(
     print_ir_after: Sequence[str] = [],
     pass_times: Optional[dict[str, float]] = None,
 ):
-    name = p.__name__
-    if "all" in print_ir_before or name in print_ir_before:
-        print(f"***Before {name}***\n")
+    pass_name = p.__name__
+    if "all" in print_ir_before or pass_name in print_ir_before:
+        print(f"***Before {pass_name}***\n")
         print_trace(trace)
     try:
         start = timeit.default_timer()
         p()
         end = timeit.default_timer()
         if pass_times is not None:
-            if name not in pass_times:
-                pass_times[name] = end - start
-            else:
+            print_name = pass_name
+            if pass_name in pass_times:
                 # Make name unique by adding a counter if it already exists
                 counter = 1
-                while f"{name}_{counter}" in pass_times:
+                while f"{pass_name}_{counter}" in pass_times:
                     counter += 1
-                pass_name = f"{name}_{counter}"
-                pass_times[pass_name] = end - start
+                print_name = f"{pass_name}_{counter}"
+
+            pass_times[print_name] = end - start
     except Exception:
-        print(f"Error in pass: {name}\n")
+        print(f"Error in pass: {pass_name}\n")
         print_trace(trace)
         raise
-    if "all" in print_ir_after or name in print_ir_after:
-        print(f"***After {name}***\n")
+    if "all" in print_ir_after or pass_name in print_ir_after:
+        print(f"***After {pass_name}***\n")
         print_trace(trace)
 
 
