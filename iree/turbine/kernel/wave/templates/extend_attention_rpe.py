@@ -193,6 +193,7 @@ def get_extend_attention_rpe_kernel(
         kv_indptr: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32, num_seqs_layout],
         kv_indices: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
         rpe: tkl.Memory[N_KV, GLOBAL_ADDRESS_SPACE, tkl.f32, rpe_layout],
+        MAX_EXTEND_SEQ_LEN: tkl.SymbolBind[tkl.i32],
         c: tkl.Memory[N_Q, H, D_KV, GLOBAL_ADDRESS_SPACE, wave_output_dtype, o_layout],
     ):
         c_reg = tkl.Register[H, D_KV, N_Q, tkl.f32](0.0)
@@ -366,12 +367,11 @@ def get_extend_attention_rpe_kernel(
         D_Q: shape.head_size,
     }
 
-    dynamic_symbols = [N_Q, N_KV, S, MAX_EXTEND_SEQ_LEN]
+    dynamic_symbols = [N_Q, N_KV, S]
     dynamic_symbols_map = {
         N_Q: q_shape[0],
         N_KV: k_shape[0],
         S: shape.num_seqs,
-        MAX_EXTEND_SEQ_LEN: shape.max_seq_len,
     }
 
     return extend_attention_rpe, hyperparams, dynamic_symbols, dynamic_symbols_map

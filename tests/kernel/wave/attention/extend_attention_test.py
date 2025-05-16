@@ -439,6 +439,7 @@ def testExtendAttention(
             kv_indices,
             custom_mask,
             mask_offsets,
+            max_len_extend,
             output,
         )
     else:
@@ -451,6 +452,7 @@ def testExtendAttention(
             qo_indptr,
             kv_indptr,
             kv_indices,
+            max_len_extend,
             output,
         )
 
@@ -589,6 +591,7 @@ def testExtendRpeAttention(
         kv_indptr,
         kv_indices,
         rpe_bias,
+        max_len_extend,
         output,
     )
 

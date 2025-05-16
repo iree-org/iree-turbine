@@ -14,6 +14,7 @@ from .cache import (
 from .utils.compile_utils import compile_to_vmfb
 from .utils.run_utils import invoke_vmfb, _write_file
 from iree.turbine.kernel._support.context import push, pop
+from iree.turbine.kernel.lang import IndexSymbol
 
 
 class WaveKernel:
@@ -21,10 +22,17 @@ class WaveKernel:
     Represents a wave kernel that can be invoked by the user.
     """
 
-    def __init__(self, options: WaveCompileOptions, executable: Any, asm: str):
+    def __init__(
+        self,
+        options: WaveCompileOptions,
+        executable: Any,
+        asm: str,
+        bound_scalar_symbols: dict[IndexSymbol, int],
+    ):
         self.options = options
         self.executable = executable
         self.asm = asm
+        self.bound_scalar_symbols = bound_scalar_symbols
 
     def __call__(self, *args, **kwargs):
         return self.invoke(*args, **kwargs)
@@ -54,9 +62,14 @@ class WaveKernel:
             if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                 kernel_outputs.append(arg)
 
-        kernel_inputs.extend(scalar_args)
-
-        invoke_vmfb(self.executable, self.options, kernel_inputs, kernel_outputs)
+        invoke_vmfb(
+            self.executable,
+            self.options,
+            kernel_inputs,
+            kernel_outputs,
+            scalar_args,
+            self.bound_scalar_symbols,
+        )
         return self.asm
 
 
@@ -67,6 +80,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
 
     # Check if this kernel has been compiled before, if the cache is enabled.
     cache_manager = None
+    bound_scalar_symbols = kernel.bound_scalar_symbols
     if is_cache_enabled():
         cache_manager = get_cache_manager()
         options.kernel_hash = cache_manager.get_hash(
@@ -78,7 +92,12 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         if cached_kernel:
             options.kernel_usages = cached_kernel.kernel_sig
             options.kernel_launch_info = cached_kernel.kernel_launch_info
-            return WaveKernel(options, cached_kernel.vmfb, cached_kernel.asm)
+            return WaveKernel(
+                options,
+                cached_kernel.vmfb,
+                cached_kernel.asm,
+                bound_scalar_symbols,
+            )
 
     # Create an indexing context and populate substitutions.
     push(IndexingContext, IndexingContext())
@@ -118,7 +137,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         asm = options.override_mlir
 
     if options.compile_to_mlir:
-        return WaveKernel(options, None, asm)
+        return WaveKernel(options, None, asm, bound_scalar_symbols)
 
     compiled_wave_vmfb = compile_to_vmfb(asm, options)
     if options.create_vmfb_file:
@@ -140,4 +159,4 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # Remove the indexing context.
     pop(IndexingContext)
 
-    return WaveKernel(options, compiled_wave_vmfb, asm)
+    return WaveKernel(options, compiled_wave_vmfb, asm, bound_scalar_symbols)
