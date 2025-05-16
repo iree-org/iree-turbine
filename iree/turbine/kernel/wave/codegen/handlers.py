@@ -82,6 +82,7 @@ from ...ops.wave_ops import (
     shuffle,
     tanh,
     tanh_approx,
+    softsign,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
@@ -836,6 +837,55 @@ def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
         result = math_d.copysign(r, a)
     else:
         raise ValidationError(f"Unhandled operand type for tanh_approx: {element_type}")
+    return result
+
+
+@handle_unary_op(softsign)
+def handle_softsign(source: Value, options: WaveCompileOptions) -> OpResult:
+    """
+    Implements softsign-like logit cap using reciprocal:
+        logit = logit / (1 + abs(logit / cap))
+              = logit * (1 / (1 + abs(logit * (1 / cap))))
+              = logit * reciprocal(1 + abs(logit * reciprocal(cap)))
+    """
+    element_type = get_type_or_element_type(source.type)
+
+    if not _is_float_type(element_type):
+        raise ValidationError(
+            f"Unhandled operand type for logit_softsign: {element_type}"
+        )
+
+    # Constants
+    scale_s = 128 ** (-0.5)  # for Grok: scale factor based on shape
+    logit_cap = 30.0
+    cap_val = logit_cap * scale_s
+    reci_cap = 1 / cap_val
+    reci_cap_const = get_constant_attr(reci_cap, element_type)
+    one = arith_d.ConstantOp(
+        source.type,
+        DenseElementsAttr.get_splat(source.type, get_constant_attr(1.0, element_type)),
+    )
+    reciprocal_cap = arith_d.ConstantOp(
+        source.type, DenseElementsAttr.get_splat(source.type, reci_cap_const)
+    )
+
+    # scaled = logit * (1 / cap)
+    scaled = arith_d.mulf(source, reciprocal_cap, fastmath=get_fast_math_flags(options))
+
+    # abs_scaled = abs(logit * (1 / cap))
+    abs_scaled = math_d.absf(scaled)
+
+    # denom = 1 + abs(...)
+    denom = arith_d.addf(one, abs_scaled, fastmath=get_fast_math_flags(options))
+
+    # reciprocal_denom = 1 / denom
+    reciprocal_denom = arith_d.divf(one, denom, fastmath=get_fast_math_flags(options))
+
+    # result = logit * (1 / denom)
+    result = arith_d.mulf(
+        source, reciprocal_denom, fastmath=get_fast_math_flags(options)
+    )
+
     return result
 
 
