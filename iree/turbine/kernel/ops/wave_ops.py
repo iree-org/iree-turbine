@@ -17,6 +17,7 @@ from typing import (
 from typing_extensions import Self
 import torch.fx as fx
 
+from ..lang.kernel_buffer import AddressSpace
 from ..lang.wave_types import Memory, Register, IndexMapping
 from ..lang.global_symbols import *
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
@@ -41,7 +42,10 @@ PlaceholderT = TypeVar("PlaceholderT", bound="Placeholder")
 
 
 def allocate(
-    shape: tuple[IndexExpr], dtype: DataType, address_space: IndexSymbol
+    shape: tuple[IndexExpr],
+    distributed_shape: tuple[IndexExpr],
+    dtype: DataType,
+    address_space: IndexSymbol,
 ) -> "Memory":
     ...
 
@@ -166,6 +170,15 @@ def maximum(lhs: "Register", rhs: "Register") -> "Register":
 
 
 def minimum(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def atomic_min(
+    lhs: "Register",
+    rhs: "Memory",
+    elements_per_thread: Optional[IndexExpr | int] = None,
+    mapping: Optional[IndexMapping] = None,
+) -> "Register":
     ...
 
 
@@ -1107,7 +1120,7 @@ class Allocate(CustomOp):
     shape: tuple[IndexExpr]
     distributed_shape: tuple[IndexExpr]
     dtype: DataType
-    address_space: AddressSpace
+    address_space: AddressSpace = SHARED_ADDRESS_SPACE
     padding: int = 0
     parent: Optional[fx.Node] = None
     offset: Optional[IndexExpr] = None
@@ -1119,6 +1132,10 @@ class Allocate(CustomOp):
     @property
     def type(self) -> "Memory":
         return Memory[(*self.shape, self.address_space, self.dtype)]
+
+    @property
+    def memory_type(self) -> "Memory":
+        return self.address_space
 
 
 @define_op("self_index")
@@ -1175,6 +1192,34 @@ class SchedulingBarrier(CustomOp):
     """
 
     operations: list[Operation]
+
+
+@define_op("atomic_min")
+@dataclass
+class AtomicOp(BinaryOpBase, ABC):
+    """
+    Represents an atomic operation in the graph. Takes in Register and
+    Memory as inputs and writes the modified value back on to the buffer.
+    Mapping attribute maps the index from wave kernel to the shared memory
+    index the wavegroup operates on.
+    """
+
+    elements_per_thread: Optional[Any] = None
+    mapping: Optional[IndexMapping] = None
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        if self.mapping is not None:
+            return list(self.mapping.output_shape)
+        # TODO: This could contain ints.
+        return list(self.memory_type.symbolic_shape)
+
+    def infer_type(self):
+        self.type = get_custom(self.lhs).type
+
+    @property
+    def memory_type(self) -> "Memory":
+        return get_custom(self.lhs).type
 
 
 @define_op("scheduling_group_barrier")
@@ -1433,7 +1478,7 @@ class Read(CustomOp):
 
         return check_is_mapping_contiguous(
             mapping=mapping,
-            symbolc_shape=mem_shape,
+            symbolic_shape=mem_shape,
             index=self.index,
             elements_per_thread=self.elements_per_thread,
             is_read=True,
@@ -1747,7 +1792,7 @@ class Write(CustomOp):
 
         return check_is_mapping_contiguous(
             mapping=mapping,
-            symbolc_shape=mem_shape,
+            symbolic_shape=mem_shape,
             index=self.index,
             elements_per_thread=self.elements_per_thread,
             is_read=False,
