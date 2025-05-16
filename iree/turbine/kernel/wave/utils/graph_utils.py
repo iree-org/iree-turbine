@@ -55,7 +55,7 @@ def DCE(trace: CapturedTrace):
     def is_removable_operator(node: fx.Node) -> bool:
         custom = get_custom(node)
 
-        if custom.users or custom.skip_dce or is_global_write(node):
+        if custom.users or custom.has_side_effects or is_global_write(node):
             return False
 
         if has_nested_writes(node):

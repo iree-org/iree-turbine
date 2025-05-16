@@ -730,7 +730,7 @@ class CustomOp(ABC):
         self.fx_node.type = value
 
     @property
-    def skip_dce(self) -> bool:
+    def has_side_effects(self) -> bool:
         return False
 
     def infer_type(self):
@@ -980,7 +980,7 @@ class Output(CustomOp):
         return self.fx_node
 
     @property
-    def skip_dce(self) -> bool:
+    def has_side_effects(self) -> bool:
         return True
 
 
@@ -1149,7 +1149,7 @@ class SetWavePrio(CustomOp):
     priority: int
 
     @property
-    def skip_dce(self) -> bool:
+    def has_side_effects(self) -> bool:
         return True
 
 
@@ -1161,7 +1161,7 @@ class SharedMemoryBarrier(CustomOp):
     """
 
     @property
-    def skip_dce(self) -> bool:
+    def has_side_effects(self) -> bool:
         return True
 
 
@@ -1202,7 +1202,7 @@ class WorkgroupBarrier(CustomOp):
     """
 
     @property
-    def skip_dce(self) -> bool:
+    def has_side_effects(self) -> bool:
         return True
 
 
@@ -1796,7 +1796,7 @@ class SetSymbol(CustomOp):
         return get_custom(self.register_).indexing_dims
 
     @property
-    def skip_dce(self) -> bool:
+    def has_side_effects(self) -> bool:
         return True
 
 
