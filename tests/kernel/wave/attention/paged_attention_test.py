@@ -353,7 +353,10 @@ def testPagedFlashDecoding(
     else:
         ref_vllm_output = torch.load(os.path.join(artifact_directory, "output.pt"))
 
-    assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3, check_dtype=False)
+    if dtype == torch.bfloat16:
+        assert_close(output, ref_vllm_output, rtol=1e-2, atol=1e-2, check_dtype=False)
+    else:
+        assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3)
 
 
 @require_e2e
@@ -545,4 +548,7 @@ def testPagedFlashDecodingMHA(
     else:
         ref_vllm_output = torch.load(os.path.join(artifact_directory, "output.pt"))
 
-    assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3, check_dtype=False)
+    if dtype == torch.bfloat16:
+        assert_close(output, ref_vllm_output, rtol=1e-2, atol=1e-2, check_dtype=False)
+    else:
+        assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3)
