@@ -326,7 +326,7 @@ def get_paged_decode_attention_kernels(
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
-            imm_f16 = tkw.cast(e_delta, tkl.f16)  # [S, B, K2] NxK
+            imm_f16 = tkw.cast(e_delta, wave_input_dtype)  # [S, B, K2] NxK
             v_reg = tkw.read(
                 v,
                 mapping=v_mapping,
