@@ -62,9 +62,9 @@ TCallable = TypeVar("TCallable", bound=Callable)
 
 
 class KernelRegionGraph(RegionGraph):
-    func: Callable
+    func: Optional[Callable] = None
 
-    def __init__(self, func: Callable):
+    def __init__(self, func: Optional[Callable] = None):
         super().__init__()
         self.func = func
 
@@ -112,7 +112,7 @@ class KernelTracer(SubgraphTracer):
         self,
         region_graph: RegionGraph,
         parent: Optional["SubgraphTracer"] = None,
-        func: Callable = None,
+        func: Optional[Callable] = None,
     ):
         super().__init__(region_graph, parent)
         if func is not None:
