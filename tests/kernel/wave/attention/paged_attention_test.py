@@ -174,7 +174,7 @@ def load_inputs(directory):
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", shapes)
-@pytest.mark.parametrize("dtype", [torch.float16])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @pytest.mark.parametrize("num_kv_splits", [8])
 @pytest.mark.parametrize(
@@ -256,8 +256,7 @@ def testPagedFlashDecoding(
         shape,
         mfma_variant,
         num_kv_splits,
-        key_cache_4d.shape,
-        value_cache_4d.shape,
+        dtype=dtype,
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
@@ -448,8 +447,7 @@ def testPagedFlashDecodingMHA(
         shape,
         mfma_variant,
         num_kv_splits,
-        key_cache_4d.shape,
-        value_cache_4d.shape,
+        dtype=dtype,
         mha=True,
     )
     hyperparams_0.update(get_default_scheduling_params())

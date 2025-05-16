@@ -8,11 +8,13 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.constraints import MMAType
+from iree.turbine.kernel.wave.utils.general_utils import torch_dtype_to_wave
 import sympy
 from enum import Enum
 from collections import namedtuple
 import math
 from typing import Optional
+import torch
 
 paged_decode_attention_shape = namedtuple(
     "paged_decode_attention_shape",
@@ -32,13 +34,15 @@ def get_paged_decode_attention_kernels(
     shape: paged_decode_attention_shape,
     mfma_variant: tuple[MMAType, MMAType],
     num_kv_splits: int,
-    k_shape: tuple[int],
-    v_shape: tuple[int],
+    input_dtype: torch.dtype = torch.float16,
     layer_scaling: Optional[float] = None,
     mha: bool = False,
 ):
     if mha:
         assert shape.num_query_heads == shape.num_kv_heads
+
+    wave_input_dtype = torch_dtype_to_wave(input_dtype)
+
     # Input sizes
     S = tkl.sym.S  # Num seqs
     B = tkl.sym.B
@@ -234,9 +238,9 @@ def get_paged_decode_attention_kernels(
     # The kv-cache layout here is (SEQ, HEADS, HEAD_DIM).
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
-        q: tkl.Memory[S, B, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[S, K2, BH, K1, ADDRESS_SPACE, tkl.f16],
-        v: tkl.Memory[S, K2, BH, N, ADDRESS_SPACE, tkl.f16],
+        q: tkl.Memory[S, B, K1, GLOBAL_ADDRESS_SPACE, wave_input_dtype],
+        k: tkl.Memory[S, K2, BH, K1, ADDRESS_SPACE, wave_input_dtype],
+        v: tkl.Memory[S, K2, BH, N, ADDRESS_SPACE, wave_input_dtype],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         kv_indices: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
