@@ -21,6 +21,8 @@ BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_K = tkl.sym.BLOCK_K
 BLOCK_B = tkl.sym.BLOCK_B
+LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
@@ -1476,3 +1478,69 @@ def test_broadcast_batched_gemm_with_vmma():
     # CHECK-COUNT-2:     vector.extract_strided_slice
     # CHECK-COUNT-1:     amdgpu.mfma
     # CHECK:            scf.yield
+
+
+@run_test
+def test_batched_gemm_with_permute():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+            vector_shapes={B: 0},
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def batched_gemm_with_permute(
+        a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[B, N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, B, N, ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(
+            acc: tkl.Register[B, M, N, tkl.f32],
+        ) -> tkl.Register[B, M, N, tkl.f32]:
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        res = tkw.permute(repeat, target_shape=[M, B, N])
+        tkw.write(res, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    options = WaveCompileOptions(
+        subs={
+            B: 64,
+            M: 64,
+            N: 64,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 16,
+            BLOCK_B: 1,
+            LOAD_ELEMS_PER_THREAD: 4,
+            STORE_ELEMS_PER_THREAD: 4,
+            ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+        print_ir_after=["all"],
+    )
+    batched_gemm_with_permute = wave_compile(options, batched_gemm_with_permute)
+    print(batched_gemm_with_permute.asm)
+    # CHECK-LABEL:    func.func @batched_gemm_with_permute
+    # CHECK: %[[WG:.*]] = stream.dispatch.workgroup.id[2] : index
+    # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
+    # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
+    # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
+    # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
