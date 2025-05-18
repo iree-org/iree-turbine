@@ -19,6 +19,11 @@ from typing import Optional, Callable
 
 T = index_symbol("$INITIATION_INTERVAL")
 
+try:
+    from aplp_lib import perform_aplp_pyo3 as compute_aplp
+except ImportError as e:
+    print(f"Could not import Rust APLP module 'aplp_lib.perform_aplp_pyo3': {e}")
+
 
 @dataclass
 class EdgeWeight:
@@ -264,6 +269,58 @@ def evaluate_all_pairs_longest_paths(
         if math.isinf(D_static[k]) or k[0] == k[1]:
             del D_static[k]
     return D_static
+
+
+def all_pairs_longest_paths_unevaluated(
+    graph: fx.Graph, edges: list[Edge]
+) -> dict[tuple[fx.Node, fx.Node], list[tuple[float, int]]]:
+    """
+    For each node in the graph, compute the longest path to all other nodes.
+    Uses the Floyd-Warshall algorithm and assumes that the cycles don't
+    have positive weights. This function computes the distances in parallel
+    by parallelizing across the start nodes.
+
+    """
+
+    N = len(graph.nodes)
+
+    all_nodes = list(graph.nodes)
+    py_edges_list = []
+    for edge in edges:
+        i = all_nodes.index(edge._from)
+        j = all_nodes.index(edge._to)
+        py_edges_list.append(
+            (i, j, float(edge.weight.delay), float(edge.weight.iteration_difference))
+        )
+
+    D = compute_aplp(N, py_edges_list)
+
+    # Convert from index to node based representation.
+    G: dict[tuple[fx.Node, fx.Node], list[tuple[float, int]]] = {}
+    for (i, j), paths in D.items():
+        from_node = all_nodes[i]
+        to_node = all_nodes[j]
+        G[(from_node, to_node)] = [(delay, iter_diff) for delay, iter_diff in paths]
+    return G
+
+
+def all_pairs_longest_paths_evaluated(
+    graph: fx.Graph,
+    G: dict[tuple[fx.Node, fx.Node], list[tuple[float, int]]],
+    initiation_interval: int,
+) -> dict[tuple[fx.Node, fx.Node], int]:
+    """
+    Substitute the initiation interval into the longest paths. Remove
+    any negative infinity values.
+    """
+    D = {}
+    for from_node, to_node in G:
+        if from_node == to_node:
+            continue
+        D[(from_node, to_node)] = int(
+            max([d - i * initiation_interval for d, i in G[(from_node, to_node)]])
+        )
+    return D
 
 
 def topological_sort(scc: dict[fx.Node, list[fx.Node]]) -> dict[fx.Node, list[fx.Node]]:
