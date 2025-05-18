@@ -113,8 +113,8 @@ def test_gemm():
     # CHECK:          func.func @gemm
     # CHECK-COUNT-1:    memref.alloc()
     # CHECK:            scf.for
-    # CHECK:              amdgpu.lds_barrier
     # CHECK:              vector.load
+    # CHECK:              amdgpu.lds_barrier
     # CHECK:              vector.store
     # CHECK:              vector.load
     # CHECK:              vector.store
@@ -408,8 +408,8 @@ def test_batched_gemm():
     # CHECK:          func.func @batched_gemm
     # CHECK-COUNT-1:    memref.alloc()
     # CHECK:            scf.for
-    # CHECK:              amdgpu.lds_barrier
     # CHECK:              vector.load
+    # CHECK:              amdgpu.lds_barrier
     # CHECK:              vector.store
     # CHECK:              vector.load
     # CHECK:              vector.store

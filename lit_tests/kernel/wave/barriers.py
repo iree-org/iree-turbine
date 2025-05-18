@@ -236,6 +236,8 @@ def test_gemm():
         # CHECK-NEXT: %read_M:0_N:0_K:1
         # CHECK-NEXT: %read_M:1_N:0_K:0
         # CHECK-NEXT: %read_M:1_N:0_K:1
+        # Barrier is from read_shared of previous iter.
+        # CHECK-NEXT: %shared_memory_barrier
         # CHECK-NEXT: %write_shared_M:0_N:0_K:0
         # CHECK-NEXT: %write_shared_M:0_N:0_K:1
         # CHECK-NEXT: %write_shared_M:1_N:0_K:0

@@ -158,8 +158,6 @@ class CapturedTrace:
         return self.region_graph.subgraphs[name]
 
     def add_subgraph(self, name: str, graph: fx.Graph):
-        for _, subgraph in self.region_graph.subgraphs.items():
-            subgraph.subgraphs[name] = graph
         self.region_graph.subgraphs[name] = graph
 
     def get_root_graph(self) -> fx.Graph:

@@ -264,7 +264,9 @@ def emit_interwave_reduction(
         ),
         graph,
     )
+    execute_on_lane0_graph.parent_op = execute_on_lane0
     trace.add_subgraph(subgraph_name, execute_on_lane0_graph)
+    trace.get_root_graph().subgraphs[subgraph_name] = execute_on_lane0_graph
 
     # Read shared_memory[:num_waves] and locally reduce.
     # write_dependency on both execute_on_lane0 and write to prevent DCE.

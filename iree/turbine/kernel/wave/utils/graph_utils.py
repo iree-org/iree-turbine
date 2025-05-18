@@ -20,6 +20,7 @@ from ...ops.wave_ops import (
     Conditional,
     MMA,
     IterArg,
+    SharedMemoryBarrier,
 )
 from ..._support.indexing import IndexSymbol
 from typing import Callable, Sequence
@@ -368,15 +369,12 @@ def is_barrier_between_same_graph(src: fx.Node, dst: fx.Node) -> bool:
     Checks if there is a barrier between the source and destination nodes,
     assuming that they are in the same graph.
     """
-    prev_node, next_node = src.prev, dst.next
-    found_src, found_dst = prev_node == src, next_node == dst
-    while prev_node.prev.op != "root" and not found_src:
-        prev_node, found_src = prev_node.prev, prev_node == src
-    if not found_src:
-        return False
-    while next_node.next.op != "root" and not found_dst:
-        next_node, found_dst = next_node.next, next_node == dst
-    return found_dst
+    next_node = src.next
+    while next_node != dst and next_node.next.op != "root":
+        if isinstance(get_custom(next_node), SharedMemoryBarrier):
+            return True
+        next_node = next_node.next
+    return False
 
 
 def is_barrier_between(src: fx.Node, dst: fx.Node) -> bool:
@@ -384,7 +382,22 @@ def is_barrier_between(src: fx.Node, dst: fx.Node) -> bool:
     Checks if there is a barrier between the source and destination nodes.
     """
     if src.graph == dst.graph:
-        return is_barrier_between_same_graph(src, dst)
+        # The following cases are handled when src and dst are in same graph:
+        # 1. src and dst is on the same iteration step and src < dst (topographic).
+        # 2. src and dst are on different iteration step and src > dst (topographic).
+
+        # Case 1:
+        if dst >= src:
+            return is_barrier_between_same_graph(src, dst)
+
+        # Case 2:
+        if dst < src:
+            # Check between src and end of loop.
+            if is_barrier_between_same_graph(src, list(src.graph.nodes)[-1]):
+                return True
+            # If cannot find between src to end of loop,
+            # then, we check beginning of loop to dst.
+            return is_barrier_between_same_graph(list(dst.graph.nodes)[0], dst)
     else:
         # The following cases are handled when src and dst are in different graphs:
         # 1. src and dst graphs at the same nested level.
