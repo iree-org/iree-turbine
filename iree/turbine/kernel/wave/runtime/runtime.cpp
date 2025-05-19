@@ -97,10 +97,9 @@ static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
 static void unload_binary(void *ptr) noexcept
 {
     auto module = reinterpret_cast<hipModule_t>(ptr);
-
-    // Assume it will never fail as we cant do anything meaningful about it
-    // anyway.
-    (void)hipModuleUnload(module);
+    if (auto e = hipModuleUnload(module)) {
+        nb::print(nb::str("Failed to unload module: ") + nb::str(hipGetErrorString(e)));
+    }
 }
 
 static nb::tuple load_binary(const std::string &path, const std::string &func_name)
