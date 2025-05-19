@@ -644,6 +644,7 @@ def construct_pipelined_loop(
         visualize,
         use_scheduling_barriers,
     )
+    pipelined_reduction_graph.parent_op = graph.parent_op
     trace.add_subgraph(
         get_custom(pipelined_reduction).subgraph_name, pipelined_reduction_graph
     )

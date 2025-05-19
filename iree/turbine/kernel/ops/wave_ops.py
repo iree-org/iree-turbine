@@ -1027,7 +1027,7 @@ class Placeholder(CustomOp):
             return
 
         # Cleanup dead captures
-        subgraph = custom.graph.subgraphs[custom.subgraph_name]
+        subgraph = custom.get_root_graph().subgraphs[custom.subgraph_name]
         live_captures = []
         for var in custom.implicit_captures:
             if custom.get_captured_fx_node(subgraph, var):
@@ -1468,6 +1468,20 @@ class NestedRegionOp(CustomOp):
 
         return None
 
+    def get_root_graph(self):
+        """
+        Return the "root"/outermost layer of our computation graph.
+        This is done by iteratively accessing parent_graph of current
+        graph. This is done until we find the "root" graph who
+        will have "subgraph" attribute.
+        """
+        cur_graph = self.graph
+        while not hasattr(cur_graph, "subgraphs"):
+            if not hasattr(cur_graph, "parent_op"):
+                raise ValueError("All subgraphs should have parent_op")
+            cur_graph = cur_graph.parent_op.graph
+        return cur_graph
+
 
 @define_op("conditional")
 @dataclass
@@ -1550,26 +1564,12 @@ class Iterate(NestedRegionOp):
 
         return wrapper
 
-    def get_root_graph(self):
-        """
-        Return the "root"/outermost layer of our computation graph.
-        This is done by iteratively accessing parent_graph of current
-        graph. This is done until we find the "root" graph who
-        will have "subgraph" attribute.
-        """
-        cur_graph = self.graph
-        while not hasattr(cur_graph, "subgraphs"):
-            if not hasattr(cur_graph, "parent_op"):
-                raise ValueError("All subgraphs should have parent_op")
-            cur_graph = cur_graph.parent_op.graph
-        return cur_graph
-
     @property
     def indexing_dims(self) -> list[IndexSymbol] | list[list[IndexSymbol]]:
         expand_dims: list[IndexSymbol] = []
         return_node = [
             nested_node
-            for nested_node in self.graph.subgraphs[self.subgraph_name].nodes
+            for nested_node in self.get_root_graph().subgraphs[self.subgraph_name].nodes
             if isinstance(get_custom(nested_node), Output)
         ]
         assert len(return_node) == 1
