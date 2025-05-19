@@ -126,7 +126,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # dumping of binaries and store in wave runtime directory. If we
     # are caching, this will be moved to the appropriate directory.
     if options.wave_runtime:
-        options.dump_binaries = get_wave_runtime_dir()
+        options.dump_binaries = str(get_wave_runtime_dir())
 
     # Recompile kernel from scratch if not found in cache.
     (
