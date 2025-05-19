@@ -116,7 +116,7 @@ NB_MODULE(wave_runtime, m)
     nb::bind_vector<Int32Vector>(m, "Int32Vector");
     nb::class_<KernelLaunchInfo>(m, "KernelLaunchInfo")
         .def(nb::init<uintptr_t, int, int, int, int, int, int, int>())
-        .def_rw("function", &KernelLaunchInfo::function)
+        .def_rw("gpu_func", &KernelLaunchInfo::function)
         .def_rw("sharedMemoryBytes", &KernelLaunchInfo::sharedMemoryBytes)
         .def_rw("gridX", &KernelLaunchInfo::gridX)
         .def_rw("gridY", &KernelLaunchInfo::gridY)

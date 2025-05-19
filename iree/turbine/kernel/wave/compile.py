@@ -23,13 +23,24 @@ class WaveKernel:
     Represents a wave kernel that can be invoked by the user.
     """
 
-    def __init__(self, options: WaveCompileOptions, executable: Any, asm: str, gpu_binary_path: Optional[str]):
+    def __init__(
+        self,
+        options: WaveCompileOptions,
+        executable: Any,
+        asm: str,
+        gpu_binary_path: Optional[str],
+    ):
         self.options = options
         self.executable = executable
         self.asm = asm
         if gpu_binary_path:
             import wave_runtime
-            self.gpu_binary, self.gpu_func = wave_runtime.load_binary(gpu_binary_path, options.kernel_launch_info.func_name)
+
+            self.gpu_binary, self.gpu_func = wave_runtime.load_binary(
+                gpu_binary_path, options.kernel_launch_info.func_name
+            )
+        else:
+            self.gpu_func = None
 
     def __call__(self, *args, **kwargs):
         return self.invoke(*args, **kwargs)
@@ -61,7 +72,9 @@ class WaveKernel:
 
         kernel_inputs.extend(scalar_args)
 
-        invoke_vmfb(self.executable, self.options, kernel_inputs, kernel_outputs, self.gpu_func)
+        invoke_vmfb(
+            self.executable, self.options, kernel_inputs, kernel_outputs, self.gpu_func
+        )
         return self.asm
 
 
@@ -85,9 +98,16 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
             options.kernel_usages = cached_kernel.kernel_sig
             options.kernel_launch_info = cached_kernel.kernel_launch_info
             if options.wave_runtime:
-                binary_path = str(get_cache_base_dir() / options.kernel_hash / options.kernel_hash) + ".hsaco"
+                binary_path = (
+                    str(
+                        get_cache_base_dir() / options.kernel_hash / options.kernel_hash
+                    )
+                    + ".hsaco"
+                )
 
-            return WaveKernel(options, cached_kernel.vmfb, cached_kernel.asm, binary_path)
+            return WaveKernel(
+                options, cached_kernel.vmfb, cached_kernel.asm, binary_path
+            )
 
     # Create an indexing context and populate substitutions.
     push(IndexingContext, IndexingContext())
