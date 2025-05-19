@@ -96,8 +96,6 @@ def _set_cache_dir(config):
 
     base_cache_dir = cache.CACHE_BASE_DIR
     cache.CACHE_BASE_DIR = base_cache_dir / f"worker_{worker_id}"
-    base_runtime_dir = cache.WAVE_RUNTIME_DIR
-    cache.WAVE_RUNTIME_DIR = base_runtime_dir / f"worker_{worker_id}"
 
 
 def _has_marker(item, marker):
