@@ -86,6 +86,16 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # Check if this kernel has been compiled before, if the cache is enabled.
     cache_manager = None
     binary_path = None
+
+    def get_binary_path():
+        if is_cache_enabled():
+            return (
+                str(get_cache_base_dir() / options.kernel_hash / options.kernel_hash)
+                + ".hsaco"
+            )
+        else:
+            return glob.glob(str(get_wave_runtime_dir() / "*.hsaco"))[0]
+
     if is_cache_enabled():
         cache_manager = get_cache_manager()
         options.kernel_hash = cache_manager.get_hash(
@@ -98,12 +108,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
             options.kernel_usages = cached_kernel.kernel_sig
             options.kernel_launch_info = cached_kernel.kernel_launch_info
             if options.wave_runtime:
-                binary_path = (
-                    str(
-                        get_cache_base_dir() / options.kernel_hash / options.kernel_hash
-                    )
-                    + ".hsaco"
-                )
+                binary_path = get_binary_path()
 
             return WaveKernel(
                 options, cached_kernel.vmfb, cached_kernel.asm, binary_path
@@ -121,8 +126,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # dumping of binaries and store in wave runtime directory. If we
     # are caching, this will be moved to the appropriate directory.
     if options.wave_runtime:
-        runtime_dir = get_wave_runtime_dir()
-        options.dump_binaries = str(runtime_dir)
+        options.dump_binaries = get_binary_path()
 
     # Recompile kernel from scratch if not found in cache.
     (
@@ -170,6 +174,6 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # Remove the indexing context.
     pop(IndexingContext)
     if options.wave_runtime:
-        binary_path = glob.glob(str(runtime_dir / "*.hsaco"))[0]
+        binary_path = get_binary_path()
 
     return WaveKernel(options, compiled_wave_vmfb, asm, binary_path)
