@@ -100,14 +100,14 @@ static void unload_binary(void *ptr)
     HIP_CHECK_EXC(hipModuleUnload(module));
 }
 
-static py::tuple load_binary(const std::string &path, const std::string &func_name)
+static nb::tuple load_binary(const std::string &path, const std::string &func_name)
 {
     hipModule_t module;
     hipFunction_t function;
     HIP_CHECK_EXC(hipModuleLoad(&module, path.c_str()));
     HIP_CHECK_EXC(hipModuleGetFunction(&function, module, func_name.c_str()));
-    py::capsule capsule(reinterpret_cast<void *>(module), &unload_binary);
-    return py::make_tuple(capsule, reinterpret_cast<uintptr_t>(function));
+    nb::capsule capsule(reinterpret_cast<void *>(module), &unload_binary);
+    return nb::make_tuple(capsule, reinterpret_cast<uintptr_t>(function));
 }
 
 NB_MODULE(wave_runtime, m)
