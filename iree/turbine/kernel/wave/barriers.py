@@ -16,7 +16,7 @@ def add_shared_memory_barriers(
     trace: CapturedTrace,
     graph: Optional[fx.Graph] = None,
     last_node: Optional[fx.Node] = None,
-    check_cycle: Optional[bool] = False,
+    checking_next_iter: Optional[bool] = False,
 ) -> fx.Node:
     """
     Adds shared memory barriers to the graph. The barriers are inserted
@@ -53,8 +53,8 @@ def add_shared_memory_barriers(
 
     # Synchronize before the write to shared memory to avoid stepping over
     # shared reads in the previous iteration of a loop.
-    if is_reduction_subgraph(graph) and last_node and not check_cycle:
+    if is_reduction_subgraph(graph) and last_node and not checking_next_iter:
         # Add barriers between ops from different iterations in the same loop.
-        add_shared_memory_barriers(trace, graph, last_node, check_cycle=True)
+        add_shared_memory_barriers(trace, graph, last_node, checking_next_iter=True)
 
     return last_node
