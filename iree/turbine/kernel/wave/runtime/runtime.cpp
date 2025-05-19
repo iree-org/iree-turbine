@@ -94,10 +94,13 @@ static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
     return hipSuccess;
 }
 
-static void unload_binary(void *ptr)
+static void unload_binary(void *ptr) noexcept
 {
     auto module = reinterpret_cast<hipModule_t>(ptr);
-    HIP_CHECK_EXC(hipModuleUnload(module));
+
+    // Assume it will never fail as we cant do anything meaningful about it
+    // anyway.
+    (void)hipModuleUnload(module);
 }
 
 static nb::tuple load_binary(const std::string &path, const std::string &func_name)
