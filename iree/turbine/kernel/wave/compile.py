@@ -123,7 +123,6 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     if options.wave_runtime:
         runtime_dir = get_wave_runtime_dir()
         options.dump_binaries = str(runtime_dir)
-        binary_path = glob.glob(str(runtime_dir / "*.hsaco"))[0]
 
     # Recompile kernel from scratch if not found in cache.
     (
@@ -170,5 +169,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
 
     # Remove the indexing context.
     pop(IndexingContext)
+    if options.wave_runtime:
+        binary_path = glob.glob(str(runtime_dir / "*.hsaco"))[0]
 
     return WaveKernel(options, compiled_wave_vmfb, asm, binary_path)
