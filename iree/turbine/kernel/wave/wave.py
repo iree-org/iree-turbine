@@ -21,7 +21,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
-from .cache import get_wave_runtime_dir
+from .cache import get_temp_binary_dir
 from ..compiler.ir import Context, Module, Operation
 from .codegen import WaveEmitter
 from .constraints import (
@@ -507,7 +507,7 @@ class LaunchableWave(Launchable):
             # If the kernel is being cached, then it will be referenced from the
             # cache directory. When kernels are not being cached, we remove them
             # to ensure that at any time there is only one hsaco file in this directory.
-            remove_files_with_extension(get_wave_runtime_dir(), ".hsaco")
+            remove_files_with_extension(get_temp_binary_dir(), ".hsaco")
 
         print_ir_after = options.print_ir_after
         print_ir_before = options.print_ir_before

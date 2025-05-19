@@ -10,7 +10,7 @@ from .compile_options import WaveCompileOptions
 from .cache import (
     get_cache_base_dir,
     get_cache_manager,
-    get_wave_runtime_dir,
+    get_temp_binary_dir,
     is_cache_enabled,
 )
 from .utils.compile_utils import compile_to_vmfb
@@ -94,7 +94,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
                 + ".hsaco"
             )
         else:
-            return glob.glob(str(get_wave_runtime_dir() / "*.hsaco"))[0]
+            return glob.glob(str(get_temp_binary_dir() / "*.hsaco"))[0]
 
     if is_cache_enabled():
         cache_manager = get_cache_manager()
@@ -126,7 +126,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # dumping of binaries and store in wave runtime directory. If we
     # are caching, this will be moved to the appropriate directory.
     if options.wave_runtime:
-        options.dump_binaries = str(get_wave_runtime_dir())
+        options.dump_binaries = get_temp_binary_dir()
 
     # Recompile kernel from scratch if not found in cache.
     (
