@@ -250,7 +250,6 @@ def invoke_with_wave_runtime(
     grid = compute_grid(dynamic_dims, options.kernel_launch_info.grid)
 
     # Populate all the information required to launch the kernel.
-    hash_str = "" if not options.kernel_hash else options.kernel_hash
     kernel_launch_info = wave_runtime.KernelLaunchInfo(
         gpu_func,
         options.kernel_launch_info.shared_memory_bytes,
