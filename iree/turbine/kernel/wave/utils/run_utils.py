@@ -7,9 +7,8 @@ from dataclasses import dataclass
 import torch
 import functools
 import iree.runtime as rt
-from typing import Callable
+from typing import Callable, Optional, Any
 import ctypes
-import glob
 from ..compile_options import WaveCompileOptions
 from .compile_utils import compile_to_vmfb
 from .classes import KernelLaunchInfo
@@ -156,9 +155,10 @@ def invoke_vmfb(
     options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
+    gpu_func: Optional[Any] = None,
 ):
     if options.wave_runtime:
-        invoke_with_wave_runtime(options, kernel_inputs, kernel_outputs)
+        invoke_with_wave_runtime(options, kernel_inputs, kernel_outputs, gpu_func)
         return
 
     device = options.device
@@ -237,21 +237,12 @@ def invoke_with_wave_runtime(
     options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
+    gpu_func: Any,
 ):
     """
     Invokes the kernel with the wave runtime.
     """
     import wave_runtime
-    from ..cache import get_wave_runtime_dir, get_cache_base_dir
-
-    # Get the path to the binary.
-    if options.kernel_hash:
-        binary = (
-            str(get_cache_base_dir() / options.kernel_hash / options.kernel_hash)
-            + ".hsaco"
-        )
-    else:
-        binary = glob.glob(str(get_wave_runtime_dir() / "*.hsaco"))[0]
 
     dynamic_dims = tuple(options.dynamic_symbols_map.values())
     # Update the grid size as this may vary depending
@@ -261,9 +252,7 @@ def invoke_with_wave_runtime(
     # Populate all the information required to launch the kernel.
     hash_str = "" if not options.kernel_hash else options.kernel_hash
     kernel_launch_info = wave_runtime.KernelLaunchInfo(
-        binary,
-        options.kernel_launch_info.func_name,
-        hash_str,
+        gpu_func,
         options.kernel_launch_info.shared_memory_bytes,
         grid[0],
         grid[1],

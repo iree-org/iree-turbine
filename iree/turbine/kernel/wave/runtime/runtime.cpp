@@ -6,7 +6,6 @@
 #include <hip/hip_runtime.h>
 #include <hip/hip_runtime_api.h>
 #include <ATen/hip/HIPContext.h>
-#include <unordered_map>
 
 namespace nb = nanobind;
 
@@ -37,34 +36,20 @@ namespace nb = nanobind;
 
 struct KernelLaunchInfo
 {
-    std::string kernel, function, kernelHash;
+    uintptr_t function; // function pointer to the kernel
     int sharedMemoryBytes;
     int gridX, gridY, gridZ;
     int blockX, blockY, blockZ;
 };
 
-std::unordered_map<std::string, std::tuple<hipModule_t, hipFunction_t>> cache;
 using Int64Vector = std::vector<uint64_t>;
 using Int32Vector = std::vector<uint32_t>;
 
-int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
+static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
     const Int64Vector &dynamicDims, nb::list scalarArgs)
 {
     hipStream_t stream = at::hip::getCurrentHIPStream();
-    hipModule_t module;
-    hipFunction_t function;
-
-    if (cache.count(info.kernelHash))
-    {
-        std::tie(module, function) = cache.at(info.kernelHash);
-    }
-    else
-    {
-        HIP_CHECK_RETURN(hipModuleLoad(&module, info.kernel.c_str()));
-        HIP_CHECK_RETURN(hipModuleGetFunction(&function, module, info.function.c_str()));
-        if (!info.kernelHash.empty())
-            cache[info.kernelHash] = std::make_tuple(module, function);
-    }
+    hipFunction_t function = reinterpret_cast<hipFunction_t>(info.function);
 
     size_t scalarSize = sizeof(uint32_t); // 32-bit for both float and int
 
@@ -101,15 +86,28 @@ int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
         HIP_LAUNCH_PARAM_BUFFER_SIZE,
         &kernArgSize,
         HIP_LAUNCH_PARAM_END};
+
     HIP_CHECK_RETURN(hipModuleLaunchKernel(function, info.gridX, info.gridY, info.gridZ,
                                            info.blockX, info.blockY, info.blockZ, info.sharedMemoryBytes,
                                            stream, nullptr, (void **)&hipLaunchParams));
 
-    // Always unload the module if the kernel hash is empty.
-    if (info.kernelHash.empty())
-        HIP_CHECK_RETURN(hipModuleUnload(module));
-
     return hipSuccess;
+}
+
+static void unload_binary(void *ptr)
+{
+    auto module = reinterpret_cast<hipModule_t>(ptr);
+    HIP_CHECK_EXC(hipModuleUnload(module));
+}
+
+static py::tuple load_binary(const std::string &path, const std::string &func_name)
+{
+    hipModule_t module;
+    hipFunction_t function;
+    HIP_CHECK_EXC(hipModuleLoad(&module, path.c_str()));
+    HIP_CHECK_EXC(hipModuleGetFunction(&function, module, func_name.c_str()));
+    py::capsule capsule(reinterpret_cast<void *>(module), &unload_binary);
+    return py::make_tuple(capsule, reinterpret_cast<uintptr_t>(function));
 }
 
 NB_MODULE(wave_runtime, m)
@@ -117,10 +115,8 @@ NB_MODULE(wave_runtime, m)
     nb::bind_vector<Int64Vector>(m, "Int64Vector");
     nb::bind_vector<Int32Vector>(m, "Int32Vector");
     nb::class_<KernelLaunchInfo>(m, "KernelLaunchInfo")
-        .def(nb::init<const std::string &, const std::string &, const std::string &, int, int, int, int, int, int, int>())
-        .def_rw("kernel", &KernelLaunchInfo::kernel)
+        .def(nb::init<uintptr_t, int, int, int, int, int, int, int>())
         .def_rw("function", &KernelLaunchInfo::function)
-        .def_rw("kernelHash", &KernelLaunchInfo::kernelHash)
         .def_rw("sharedMemoryBytes", &KernelLaunchInfo::sharedMemoryBytes)
         .def_rw("gridX", &KernelLaunchInfo::gridX)
         .def_rw("gridY", &KernelLaunchInfo::gridY)
@@ -129,4 +125,5 @@ NB_MODULE(wave_runtime, m)
         .def_rw("blockY", &KernelLaunchInfo::blockY)
         .def_rw("blockZ", &KernelLaunchInfo::blockZ);
     m.def("launch", &launch);
+    m.def("load_binary", &load_binary);
 }
