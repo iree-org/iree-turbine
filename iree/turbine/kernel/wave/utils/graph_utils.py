@@ -46,7 +46,7 @@ def DCE(trace: CapturedTrace):
         if not isinstance(custom, NestedRegionOp):
             return False
 
-        subgraph = custom.graph.subgraphs[custom.subgraph_name]
+        subgraph = custom.get_root_graph().subgraphs[custom.subgraph_name]
         for node in subgraph.nodes:
             if is_global_write(node) or has_nested_writes(node):
                 return True
@@ -180,7 +180,7 @@ def get_users(
             if node == custom.condition:
                 users.append(user)
             else:
-                subgraph = custom.graph.subgraphs[custom.subgraph_name]
+                subgraph = custom.get_root_graph().subgraphs[custom.subgraph_name]
                 var = custom.get_captured_fx_node(subgraph, node)
                 assert var is not None, "Invalid captured var"
                 for u in var.users:
@@ -225,7 +225,9 @@ def get_inputs(
             reduction, Iterate
         ), f"GetResult must be using a Reduction, but\n{custom}\nis using\n{reduction}"
         # Map get result to output
-        reduction_subgraph = reduction.graph.subgraphs[reduction.subgraph_name]
+        reduction_subgraph = reduction.get_root_graph().subgraphs[
+            reduction.subgraph_name
+        ]
         if len(reduction.init_args) == 1:
             outputs = reduction.outputs(reduction_subgraph)
             if isinstance(outputs, Sequence):
