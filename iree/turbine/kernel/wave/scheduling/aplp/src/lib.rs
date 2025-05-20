@@ -99,6 +99,7 @@ fn perform_aplp_pyo3(
         raw_edges_vec.push(edge);
     }
 
+    // Release the GIL for the duration of the computation.
     let final_d_matrix = py.allow_threads(|| compute_aplp_internal(node_count, raw_edges_vec));
 
     // Convert the Rust result (Vec<Vec<Vec<(f32,f32)>>>) to a Python dictionary
