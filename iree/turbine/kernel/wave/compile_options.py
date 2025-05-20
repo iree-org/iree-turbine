@@ -70,6 +70,8 @@ class WaveCompileOptions:
     # === Compiler options ===
     minimize_shared_allocs: bool = True
     reorder_allocs: bool = True
+    override_schedule: str = None
+    dump_schedule: str = None
 
     # === Print options ===
     print_ir_after: list[str] = field(default_factory=list)
