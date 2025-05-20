@@ -611,7 +611,7 @@ class CustomOp(ABC):
         """Erase the current node from the graph where it exists."""
         assert (
             not self.fx_node.users
-        ), f"Attempting to erase {self.fx_node} which has {len(self.fx.users)} users!"
+        ), f"Attempting to erase {self.fx_node} which has {len(self.fx_node.users)} users!"
         self.graph.erase_node(self.fx_node)
 
     @classmethod

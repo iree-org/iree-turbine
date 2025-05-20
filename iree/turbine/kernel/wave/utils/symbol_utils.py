@@ -9,14 +9,16 @@ import sympy
 
 
 def safe_subs(
-    input: IndexExpr | int, subs: dict[IndexSymbol, int | IndexSymbol]
+    input: IndexExpr | int,
+    subs: dict[IndexSymbol, int | IndexSymbol],
+    simultaneous: bool = False,
 ) -> IndexSymbol | int:
     """
     Substitute input using provided `subs` list if input is sympy object.
     Otherwise return input unchanged.
     """
     if isinstance(input, (sympy.Basic, IndexSequence)):
-        return input.subs(subs)  # type: ignore
+        return input.subs(subs, simultaneous=simultaneous)  # type: ignore
 
     return input
 
