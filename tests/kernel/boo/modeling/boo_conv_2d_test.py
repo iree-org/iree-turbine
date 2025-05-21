@@ -7,6 +7,7 @@
 import unittest
 import tempfile
 from pathlib import Path
+import pytest
 
 import torch
 
@@ -140,6 +141,99 @@ class BooConv2dTest(unittest.TestCase):
             )
             self.assertIn(
                 "conv_2d_float32_weight_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+
+    def testCompileWithBackwardF32(self):
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td)
+            set_boo_cache(cache_dir)
+            x = torch.ones(
+                [10, 3, 16, 16],
+                device=self.device,
+                dtype=torch.float32,
+                requires_grad=True,
+            ).to(memory_format=torch.channels_last)
+            model2 = replace_conv2d_with_boo_conv(self.model1).to(
+                memory_format=torch.channels_last
+            )
+            compiled = torch.compile(model2)
+
+            y = compiled(x)
+            loss = y.sum()
+
+            loss.backward()
+
+            func_names = [i.name for i in cache_dir.glob("*")]
+            self.assertIn(
+                "conv_2d_float32_forward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_float32_forward_b_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_float32_input_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_float32_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_float32_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_float32_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU to test.")
+    def testCompileWithBackwardAMPGPU(self):
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td)
+            set_boo_cache(cache_dir)
+            x = torch.ones(
+                [10, 3, 16, 16],
+                device=self.device,
+                dtype=torch.float32,
+                requires_grad=True,
+            ).to(memory_format=torch.channels_last)
+            model2 = replace_conv2d_with_boo_conv(self.model1).to(
+                memory_format=torch.channels_last
+            )
+            compiled = torch.compile(model2)
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                y = compiled(x)
+                loss = y.sum()
+
+            loss.backward()
+
+            func_names = [i.name for i in cache_dir.glob("*")]
+            self.assertIn(
+                "conv_2d_bfloat16_forward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_bfloat16_forward_b_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_bfloat16_input_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_bfloat16_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_bfloat16_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                func_names,
+            )
+            self.assertIn(
+                "conv_2d_bfloat16_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
 
