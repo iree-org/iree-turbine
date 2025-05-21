@@ -1238,13 +1238,10 @@ def handle_extract(emitter: WaveEmitter, node: fx.Node):
     assert isinstance(offset, list) and len(offset) == 1
     extract_vector = cast_vector(emitter, register)
     result_type = VectorType.get([1], extract_vector.type.element_type)
-    element = vector_d.extract_strided_slice(
-        result_type,
-        extract_vector,
-        offset,
-        [1],
-        [1],
+    element = vector_d.extract(
+        extract_vector, static_position=offset, dynamic_position=[]
     )
+    element = vector_d.splat(result_type, element)
 
     emitter.bind_node_proxy(node, IRProxyValue(element))
 
