@@ -7,6 +7,7 @@
 import unittest
 import tempfile
 from pathlib import Path
+import pytest
 
 import torch
 
@@ -189,6 +190,7 @@ class BooConv2dTest(unittest.TestCase):
                 func_names,
             )
 
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU to test.")
     def testCompileWithBackwardAMPGPU(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
