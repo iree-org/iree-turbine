@@ -37,6 +37,7 @@ from ..ops.wave_ops import (
 from ..lang.global_symbols import *
 
 from .scheduling.schedule_enums import SchedulingType
+from .utils.general_utils import get_hardware_constraint
 from .utils.symbol_utils import subs_idxc
 
 
@@ -49,7 +50,7 @@ Formatting for schedule reordering strategies:
 Values: 0xAB where:
 * A = Strategy types:
   * 0 = No reordering
-  * 1 = Vanilla reordering
+  * 1 = Reordering w/o Ping Pong
   * 2 = Ping Pong reordering
 * B enumerates different strategy that share the same 0xA* bits.
 """
@@ -121,9 +122,11 @@ def schedule_nodes_to_graph(graph, node_map, nodes):
         node_map[node] = new_node.fx_node
 
 
-def reoreder_graph(graph, clusters):
+def reorder_graph(graph, clusters):
     node_list = list(graph.nodes)
     prune_duplicates = lambda x: list(dict.fromkeys(x))
+    # This lambda filters away scheduling ops generated in this pass
+    # such as SetWavePrio, WorkgroupBarrier, SchedulingBarriers.
     prune_reordering_nodes = lambda x: [
         x for x in flattened_cluster if x.graph == graph
     ]
@@ -156,14 +159,14 @@ def reoreder_graph(graph, clusters):
     if len(node_list) != total_reordered_node:
         return None
 
-    # Schedule pre-cluster nodes in new graph.
-    reorder_graph = fx.Graph()
+    # Schedule pre-cluster, cluster, and post-cluster nodes in new graph.
+    reordered_graph = fx.Graph()
     node_map = {}
-    schedule_nodes_to_graph(reorder_graph, node_map, pre_cluster_nodes)
-    schedule_nodes_to_graph(reorder_graph, node_map, flattened_cluster)
-    schedule_nodes_to_graph(reorder_graph, node_map, post_cluster_nodes)
+    schedule_nodes_to_graph(reordered_graph, node_map, pre_cluster_nodes)
+    schedule_nodes_to_graph(reordered_graph, node_map, flattened_cluster)
+    schedule_nodes_to_graph(reordered_graph, node_map, post_cluster_nodes)
 
-    return reorder_graph
+    return reordered_graph
 
 
 ##############################################################
@@ -211,7 +214,7 @@ def insert_cond_barrier(cond_reg, trace, graph):
     return cond_barrier
 
 
-def add_asymmetric_to_loop(custom_iterate, trace, hardware_constraint):
+def add_conditional_barriers_to_loop(custom_iterate, trace, hardware_constraint):
     """
     This function wraps loop with two cond barriers. First, hold half of the wave
     (waveHi) in a block before the loop so the barriers in the loop synchronize
@@ -253,6 +256,8 @@ def insert_prefetch_loop_barriers(custom_iterate, clusters):
     with graph.inserting_before(custom_iterate.fx_node):
         SharedMemoryBarrier().add_to_graph(graph)
     cluster_graph = clusters[-1].graph
+    # TODO: Replace this with just lgmkcnt or change lowering of
+    # SharedMemoryBarrier to only do lgmkcnt w/os sbarrier
     clusters.append(SharedMemoryBarrier().add_to_graph(cluster_graph))
     return
 
@@ -281,9 +286,15 @@ def transform_two_PP_clusters(
     local_write_lhs,
     local_write_rhs,
 ):
+    num_slices = 2
     sliced_mma_nodes, sliced_local_load_lhs, sliced_local_load_rhs = slice_mma(
-        mma_nodes, local_load_lhs, local_load_rhs, num_slice=2
+        mma_nodes, local_load_lhs, local_load_rhs, num_slice=num_slices
     )
+    # Check that we have valid slice size for local_loads and mmas.
+    assert len(sliced_mma_nodes) == len(sliced_local_load_rhs)
+    assert len(sliced_mma_nodes) == len(sliced_local_load_lhs)
+    assert len(sliced_mma_nodes) == num_slices
+
     clusters = []
     tmp_graph = fx.Graph()
     # 1st cluster interleaved local and global reads.
@@ -375,9 +386,7 @@ def schedule_reordering(
     # Only handles if scheduling type is prefetch
     if scheduling_type != SchedulingType.PREFETCH:
         return
-    hardware_constraint = next(
-        c for c in constraints if isinstance(c, HardwareConstraint)
-    )
+    hardware_constraint = get_hardware_constraint(constraints)
     iterate_nodes = trace.walk(lambda node: isinstance(get_custom(node), Iterate))
     if not iterate_nodes:
         return
@@ -423,7 +432,7 @@ def schedule_reordering(
             insert_prefetch_loop_barriers(custom_iterate, clusters)
         else:
             raise ValueError("Unhandled SchedReorderStrategy case.")
-        reordered_graph = reoreder_graph(graph, clusters)
+        reordered_graph = reorder_graph(graph, clusters)
         # Skip to next Iterate if fail to reorder graph.
         if reordered_graph is None:
             continue
@@ -432,4 +441,4 @@ def schedule_reordering(
         trace.add_subgraph(reordered_subgraph_name, reordered_graph)
         trace.get_root_graph().subgraphs[reordered_subgraph_name] = reordered_graph
         custom_iterate.update_arg("subgraph_name", reordered_subgraph_name)
-        add_asymmetric_to_loop(custom_iterate, trace, hardware_constraint)
+        add_conditional_barriers_to_loop(custom_iterate, trace, hardware_constraint)
