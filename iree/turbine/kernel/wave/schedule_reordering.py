@@ -140,12 +140,10 @@ def reorder_graph(graph, clusters):
     latest_cluster_node = ordered_cluster[-1]
 
     # Slice node_list to get precluster nodes
-    pre_cluster_end = node_list.index(earliest_cluster_node)
-    pre_cluster_nodes = node_list[0:pre_cluster_end]
+    pre_cluster_nodes = [x for x in node_list if x < earliest_cluster_node]
 
     # Slice node_list to get post cluster nodes
-    post_cluster_start = node_list.index(latest_cluster_node) + 1
-    post_cluster_nodes = node_list[post_cluster_start:]
+    post_cluster_nodes = [x for x in node_list if x > latest_cluster_node]
 
     total_reordered_node = (
         len(pre_cluster_nodes) + len(ordered_cluster) + len(post_cluster_nodes)
