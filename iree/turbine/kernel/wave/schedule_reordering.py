@@ -7,6 +7,7 @@
 from enum import Enum
 
 import math
+from dataclasses import dataclass
 import torch
 import torch.fx as fx
 from torch.utils import _pytree as pytree
@@ -61,52 +62,50 @@ class SchedReorderStrategy(Enum):
     TWO_PP_CLUSTER = 0x20
 
 
+"""
+Track tile size requirements for different reordering strategies.
+"""
+
+
+@dataclass
+class CompatibleBlockSize:
+    block_m: int
+    block_n: int
+    block_k: int
+
+
+twoPPConfig = CompatibleBlockSize(128, 256, 64)
+
+
 def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
     custom.add_to_graph(graph)
     custom = custom.fx_node
     return custom
 
 
-def has_single_root_mma(mma_nodes):
-    # Check only has single M, N, K dimensions.
-    indexing_dims = set(
-        [tuple(get_custom(mma_node).indexing_dims) for mma_node in mma_nodes]
-    )
-    if len(indexing_dims) != 1:
-        return False
-
-    # Check each MMA has unique expand dims => all come from a single non-expanded MMAOp.
-    hash_expand_dim = lambda x: tuple([(k, v) for k, v in x.expanded_dims.items()])
-    reduction_dims = set(
-        [hash_expand_dim(get_custom(mma_node)) for mma_node in mma_nodes]
-    )
-    if len(reduction_dims) != len(mma_nodes):
-        return False
-
-    # Check only a single reduction dim.
-    reduction_dims = set([get_custom(mma_node).reduction_dim for mma_node in mma_nodes])
-    if len(reduction_dims) != 1:
-        return False
-    return True
-
-
 def get_mma_tile_size(mma_nodes, constraints):
-    m_dims = set()
-    n_dims = set()
-    k_dims = set()
-    for mma_node in mma_nodes:
-        custom = get_custom(mma_node)
-        lhs_dim = set(get_custom(custom.lhs).indexing_dims)
-        rhs_dim = set(get_custom(custom.rhs).indexing_dims)
-        acc_dim = set(get_custom(custom.acc).indexing_dims)
+    # Check that all MMA nodes comes from single pre_expanded source.
+    # Early exit if not.
+    pre_expansion_ids = set([get_custom(node).pre_expansion_id for node in mma_nodes])
+    if len(pre_expansion_ids) != 1:
+        return None, None, None
 
-        m_dims.update(list(lhs_dim - rhs_dim))
-        n_dims.update(list(rhs_dim - lhs_dim))
-        # Subtract by acc dim to remove batch dims.
-        k_dims.update(list(rhs_dim.intersection(lhs_dim) - acc_dim))
+    # Just using first one because we know it all came from same source,
+    # and hence all the dims should be the same.
+    mma_node = mma_nodes[0]
+    custom = get_custom(mma_node)
+    lhs_dim = set(get_custom(custom.lhs).indexing_dims)
+    rhs_dim = set(get_custom(custom.rhs).indexing_dims)
+    acc_dim = set(get_custom(custom.acc).indexing_dims)
+
+    m_dims = list(lhs_dim - rhs_dim)
+    n_dims = list(rhs_dim - lhs_dim)
+    # Subtract by acc dim to remove batch dims.
+    k_dims = list(rhs_dim.intersection(lhs_dim) - acc_dim)
+    # Only expected single dim for each M,N,K.
     if len(m_dims) != 1 or len(n_dims) != 1 or len(k_dims) != 1:
         return None, None, None
-    mnk_dim = [list(dim)[0] for dim in (m_dims, n_dims, k_dims)]
+    mnk_dim = [m_dims[0], n_dims[0], k_dims[0]]
     mnk_tile = [
         subs_idxc(tile_sym) for tile_sym in get_constrained_shape(mnk_dim, constraints)
     ]
@@ -271,7 +270,11 @@ def select_reorder_strategy(mTile, nTile, kTile, hardware_constraint):
     flat_wave_count = math.prod(hardware_constraint.waves_per_block)
     if flat_wave_count != 8:
         return SchedReorderStrategy.NONE
-    if mTile % 128 == 0 and nTile % 256 == 0 and kTile % 64 == 0:
+    if (
+        mTile % twoPPConfig.block_m == 0
+        and nTile % twoPPConfig.block_n == 0
+        and kTile % twoPPConfig.block_k == 0
+    ):
         return SchedReorderStrategy.TWO_PP_CLUSTER
     else:
         return SchedReorderStrategy.NONE
@@ -402,8 +405,6 @@ def schedule_reordering(
         )
         # Early exit if no MMA found.
         if not mma_nodes:
-            continue
-        if not has_single_root_mma(mma_nodes):
             continue
         local_load_lhs, local_load_rhs = get_local_loads(mma_nodes)
         local_write_lhs = get_local_writes(local_load_lhs)

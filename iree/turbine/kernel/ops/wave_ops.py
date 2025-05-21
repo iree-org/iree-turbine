@@ -733,6 +733,16 @@ class CustomOp(ABC):
     def has_side_effects(self) -> bool:
         return False
 
+    @property
+    def pre_expansion_id(self) -> int:
+        if hasattr(self.fx_node, "pre_expansion_id"):
+            return self.fx_node.pre_expansion_id
+        return None
+
+    @pre_expansion_id.setter
+    def pre_expansion_id(self, value: int):
+        self.fx_node.pre_expansion_id = value
+
     def infer_type(self):
         """
         Infer the type of this operator using the types
