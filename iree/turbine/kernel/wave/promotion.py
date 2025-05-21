@@ -135,6 +135,11 @@ def promote_node(
     symbolic_shape = node.type.symbolic_shape
     with node.graph.inserting_after(node.graph._root):
         constrained_shape = get_constrained_shape(symbolic_shape, constraints)
+        # If the read/write operation already has a set distributed shape at the kernel
+        # we use that for allocation. Otherwise deduce the shape from constraints.
+        memory_node = get_custom(node.memory)
+        if isinstance(memory_node, Allocate) and memory_node.distributed_shape:
+            constrained_shape = memory_node.distributed_shape
         padding, padded_shape = apply_padding(constrained_shape, node.type.dtype)
         allocate_node = Allocate(
             symbolic_shape, padded_shape, node.type.dtype, address_space, padding
