@@ -142,31 +142,17 @@ def main():
 
     # Run benchmark for each configuration
     for shape_config in config["shapes"]:
-        if not flash_attn_enabled:
-            benchmark_sdpa(
-                shape_config["batch_size"],
-                shape_config["num_heads"],
-                shape_config["seq_len_q"],
-                shape_config["seq_len_k"],
-                shape_config["head_dim"],
-                args.num_warmup,
-                args.num_iterations,
-                wave_nn.functional.wave_sdpa,
-                args.output,
-            )
-
-        if flash_attn_enabled:
-            benchmark_sdpa(
-                shape_config["batch_size"],
-                shape_config["num_heads"],
-                shape_config["seq_len_q"],
-                shape_config["seq_len_k"],
-                shape_config["head_dim"],
-                args.num_warmup,
-                args.num_iterations,
-                flash_attn_func,
-                args.output,
-            )
+        benchmark_sdpa(
+            shape_config["batch_size"],
+            shape_config["num_heads"],
+            shape_config["seq_len_q"],
+            shape_config["seq_len_k"],
+            shape_config["head_dim"],
+            args.num_warmup,
+            args.num_iterations,
+            flash_attn_func if flash_attn_enabled else wave_nn.functional.wave_sdpa,
+            args.output,
+        )
 
 
 if __name__ == "__main__":
