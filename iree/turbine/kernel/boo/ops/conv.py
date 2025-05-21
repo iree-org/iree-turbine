@@ -4,106 +4,236 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from typing import Sequence, Tuple
+
 import torch
 
-from ..conv_exports import ConvSignature, get_launchable
+from ..conv_exports import ConvSignature, get_launchable, DEFAULT_LAYOUTS
 
 __all__ = [
     "boo_conv",
 ]
 
 
-class _BooConv(torch.autograd.Function):
-    @staticmethod
-    @torch.amp.custom_fwd(device_type="cuda")
-    def forward(ctx, x, w, b=None, kwargs={}):
-        x = x.detach()
-        w = w.detach()
-        device_type = x.device.type
+@torch.library.custom_op("iree_turbine::boo_convolution", mutates_args=())
+def boo_convolution(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    b: None | torch.Tensor,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+    input_layout: str,
+    kernel_layout: str,
+    output_layout: str,
+) -> torch.Tensor:
+    x = x.detach()
+    w = w.detach()
 
-        do_autocast = device_type == "cuda" and torch.is_autocast_enabled("cuda")
+    sig = ConvSignature(
+        input_shape=x.shape,
+        kernel_shape=w.shape,
+        input_layout=input_layout,
+        kernel_layout=kernel_layout,
+        output_layout=output_layout,
+        bias=(b is not None),
+        dtype=x.dtype,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        transposed=False,
+        output_padding=0,
+        groups=groups,
+        mode="fwd",
+    )
 
-        # set original dtype and autocast dtype
-        _og_dtype = x.dtype
-        _dtype = w.dtype if not do_autocast else torch.get_autocast_dtype("cuda")
+    # Get a launchable and apply.
+    conv = get_launchable(sig)
+    args = (x, w) if b is None else (x, w, b.detach())
+    return conv(*args)
 
-        # convert everything to w.dtype or autocast dtype
-        x = x.to(dtype=_dtype)
-        w = w.to(dtype=_dtype)
-        b = b if b is None else b.to(dtype=_dtype)
 
-        # save lowp inputs for backward kernels
-        ctx.save_for_backward(x, w)
+@boo_convolution.register_fake
+def _(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    b: None | torch.Tensor,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+    input_layout: str,
+    kernel_layout: str,
+    output_layout: str,
+) -> torch.Tensor:
+    sig = ConvSignature(
+        input_shape=x.shape,
+        kernel_shape=w.shape,
+        input_layout=input_layout,
+        kernel_layout=kernel_layout,
+        output_layout=output_layout,
+        bias=(b is not None),
+        dtype=x.dtype,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        transposed=False,
+        output_padding=0,
+        groups=groups,
+        mode="fwd",
+    )
+    return torch.empty(sig.output_shape, dtype=sig.dtype, device=x.device)
 
-        ctx.kwargs = kwargs
-        ctx.use_bias = b is not None
-        kwargs["mode"] = "fwd"
 
-        # TODO: set the dtype such that we don't cast back down to bfloat16 if autocasted from f32.
-        sig = ConvSignature.get(x, w, b, **kwargs)
+@torch.library.custom_op(
+    "iree_turbine::boo_convolution_backward",
+    mutates_args=(),
+    schema="(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)",
+)
+def _boo_convolution_backward(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    grad_output: torch.Tensor,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+    input_layout: str,
+    kernel_layout: str,
+    output_layout: str,
+    mask: Tuple[bool, bool, bool],
+) -> Tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
 
-        # Save the output layout for backward conv.
-        ctx.output_layout = sig.output_layout
+    kwargs = {
+        "stride": stride,
+        "padding": padding,
+        "dilation": dilation,
+        "groups": groups,
+        "input_layout": input_layout,
+        "kernel_layout": kernel_layout,
+        "output_layout": output_layout,
+    }
 
-        # Get a launchable and apply.
-        conv = get_launchable(sig)
-        args = (x, w) if b is None else (x, w, b.detach())
-        result = conv(*args)
+    input_grad = weight_grad = bias_grad = None
 
-        # Cast back to original dtype if necessary.
-        return result.to(dtype=_og_dtype)
+    if mask[0]:
+        bwd_sig = ConvSignature.get(x, w, mode="bwd", **kwargs)
+        bwd_conv = get_launchable(bwd_sig)
+        input_grad = bwd_conv(grad_output, w)
 
-    @staticmethod
-    @torch.amp.custom_bwd(device_type="cuda")
-    @torch.autograd.function.once_differentiable
-    def backward(ctx, grad_output):
-        input_grad = weight_grad = bias_grad = None
-        x, w = ctx.saved_tensors
-        args = (x, w)
-        kwargs = ctx.kwargs
+    if mask[1]:
+        wrw_conv = get_launchable(ConvSignature.get(x, w, mode="wrw", **kwargs))
+        weight_grad = wrw_conv(grad_output, x)
 
-        device_type = grad_output.device.type
-        do_autocast = device_type == "cuda" and torch.is_autocast_enabled("cuda")
+    if mask[2]:
+        # TODO: use iree to perform the reduce sum?
+        output_layout = output_layout
+        reduce_dims = []
+        for i, char in enumerate(output_layout):
+            if char != "C":
+                reduce_dims.append(i)
+        bias_grad = torch.sum(grad_output, reduce_dims)
 
-        # get original and autocast dtypes
-        _og_dtype = grad_output.dtype
-        _dtype = _og_dtype if not do_autocast else torch.get_autocast_dtype("cuda")
+    return input_grad, weight_grad, bias_grad
 
-        # saved tensors are already lowp, so just cast grad_output
-        grad_output = grad_output.to(dtype=_dtype)
 
-        if ctx.needs_input_grad[0]:
-            kwargs["mode"] = "bwd"
-            bwd_sig = ConvSignature.get(*args, **kwargs)
-            bwd_conv = get_launchable(bwd_sig)
-            input_grad = bwd_conv(grad_output, w)
-            input_grad = input_grad.to(dtype=_og_dtype)
+@_boo_convolution_backward.register_fake
+def _b(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    grad_output: torch.Tensor,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+    input_layout: str,
+    kernel_layout: str,
+    output_layout: str,
+    mask: Tuple[bool, bool, bool],
+) -> Tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+    input_grad = weight_grad = bias_grad = None
+    if mask[0]:
+        input_grad = torch.empty_like(x)
+    if mask[1]:
+        weight_grad = torch.empty_like(w)
+    if mask[2]:
+        output_channels = w.shape[kernel_layout.find("N")]
+        bias_grad = torch.empty([output_channels], dtype=x.dtype, device=x.device)
+    return input_grad, weight_grad, bias_grad
 
-        if ctx.needs_input_grad[1]:
-            kwargs["mode"] = "wrw"
-            wrw_conv = get_launchable(ConvSignature.get(*args, **kwargs))
-            weight_grad = wrw_conv(grad_output, x)
-            weight_grad = weight_grad.to(dtype=_og_dtype)
 
-        if ctx.needs_input_grad[2] and ctx.use_bias:
-            # TODO: use iree to perform the reduce sum?
-            output_layout = ctx.output_layout
-            reduce_dims = []
-            for i, char in enumerate(output_layout):
-                if char != "C":
-                    reduce_dims.append(i)
-            bias_grad = torch.sum(grad_output, reduce_dims)
-            bias_grad = bias_grad.to(dtype=_og_dtype)
+def boo_convolution_backward(ctx, grad_output):
+    x, w = ctx.saved_tensors
 
-        # return `None` for kwargs dict backward, since this will never be needed.
-        return input_grad, weight_grad, bias_grad, None
+    mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
+
+    input_grad, weight_grad, bias_grad = _boo_convolution_backward(
+        x,
+        w,
+        grad_output,
+        ctx.stride,
+        ctx.padding,
+        ctx.dilation,
+        ctx.groups,
+        ctx.input_layout,
+        ctx.kernel_layout,
+        ctx.output_layout,
+        mask,
+    )
+
+    # return `None` for attribute args
+    return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
+
+
+def boo_convolution_context(
+    ctx,
+    inputs,
+    output,
+):
+    (
+        x,
+        w,
+        b,
+        stride,
+        padding,
+        dilation,
+        groups,
+        input_layout,
+        kernel_layout,
+        output_layout,
+    ) = inputs
+
+    ctx.save_for_backward(x.detach(), w.detach())
+    ctx.stride = stride
+    ctx.padding = padding
+    ctx.dilation = dilation
+    ctx.groups = groups
+    ctx.input_layout = input_layout
+    ctx.kernel_layout = kernel_layout
+    ctx.output_layout = output_layout
+
+    ctx.use_bias = b is not None
+
+
+boo_convolution.register_autograd(
+    boo_convolution_backward, setup_context=boo_convolution_context
+)
 
 
 def boo_conv(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor | None = None,
-    **kwargs
+    *,
+    stride: int | Sequence[int] = 1,
+    padding: int | Sequence[int] = 0,
+    dilation: int | Sequence[int] = 1,
+    groups: int = 1,
+    shared_layout: str | None = None,
+    input_layout: str | None = None,
+    kernel_layout: str | None = None,
+    output_layout: str | None = None,
 ):
     """
     Applies a differentiable forward convolution kernel.
@@ -114,8 +244,6 @@ def boo_conv(
         padding        : int or int[]
         dilation       : int or int[]
         groups         : int
-        output_padding : int or int[]
-        transposed     : bool
 
     Users can also specify alternative layouts for each convolution:
 
@@ -127,5 +255,35 @@ def boo_conv(
     These layouts should be permutations of "NCH", "NCHW", or "NCDHW".
     """
 
-    filtered_kwargs = {key: value for key, value in kwargs.items() if value is not None}
-    return _BooConv.apply(input, weight, bias, filtered_kwargs)
+    num_spatial_dims = len(weight.shape) - 2
+
+    def listify(value) -> Sequence[int]:
+        if isinstance(value, Sequence):
+            return value
+        if isinstance(value, int):
+            return [value] * num_spatial_dims
+        return list(value)
+
+    _infer = lambda layout: shared_layout or layout or DEFAULT_LAYOUTS[num_spatial_dims]
+
+    # The decorators torch.amp.custom_fwd/custom_bwd don't seem to work with torch.library.custom_op
+    # For now, this is a quick hack to manually do the casting outside our custom op.
+    device_type = input.device.type
+    if torch.is_autocast_enabled(device_type):
+        dtype = torch.get_autocast_dtype(device_type)
+        input = input.to(dtype=dtype)
+        weight = weight.to(dtype=dtype)
+        bias = bias if bias is None else bias.to(dtype=dtype)
+
+    return boo_convolution(
+        input,
+        weight,
+        bias,
+        listify(stride),
+        listify(padding),
+        listify(dilation),
+        groups,
+        _infer(input_layout),
+        _infer(kernel_layout),
+        _infer(output_layout),
+    )
