@@ -1419,9 +1419,21 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
 
     # Determine whether to extract or combine.
     if len(args) > 1:
+        vectors = [cast_vector(emitter, arg) for arg in args]
+        shape = vectors[0].type.shape[0]
+        if shape == 1:
+            values = [
+                vector_d.extract(vector, static_position=[0], dynamic_position=[])
+                for vector in vectors
+            ]
+            element_type = vectors[0].type.element_type
+            vector_type = VectorType.get([shape * len(args)], element_type)
+            result = vector_d.from_elements(vector_type, values)
+            emitter.bind_node_proxy(node, IRProxyValue(result))
+            return
+
         concatenated = None
-        for i, sub_arg in enumerate(args):
-            vector = cast_vector(emitter, sub_arg)
+        for i, vector in enumerate(vectors):
             shape = vector.type.shape[0]
             if concatenated is None:
                 element_type = vector.type.element_type
