@@ -69,21 +69,38 @@ def train_loop(
     train_loader,
     memory_format=torch.channels_last,
     autocast_dtype=torch.bfloat16,
+    do_warmup=True,
 ):
     """Runs a training loop and generates a profile to `trace_path`."""
     device = "cuda"
     # Define loss function and optimizer
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = optim.SGD(resnet_model.parameters(), lr=0.001, momentum=0.9)
+    resnet_model.train()
+
+    # grab some warmup args
+    if do_warmup:
+        inputs, _ = train_loader.dataset[0]
+        new_shape = [train_loader.batch_size] + list(inputs.shape)
+        inputs = inputs.expand(new_shape)
+        labels = torch.zeros(
+            [train_loader.batch_size], dtype=torch.int64, device=device
+        )
+        inputs = inputs.to(device=device, memory_format=memory_format)
+        with torch.amp.autocast(
+            device_type=torch.device(device).type, dtype=autocast_dtype
+        ):
+            outputs = resnet_model(inputs)
+            loss = criterion(outputs, labels)
+
+        loss.backward()
 
     # Training loop
     epochs = 3
-    maybe_ctx = lambda iter, ctx: (contextlib.nullcontext() if iter == 0 else ctx)
     with profile(
         activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True
     ) as prof:
         for epoch in range(epochs):
-            resnet_model.train()
             running_loss = 0.0
             for idx, (inputs, labels) in enumerate(train_loader):
                 # For sake of time, only running a few data points
@@ -92,21 +109,21 @@ def train_loop(
                 inputs, labels = inputs.to(
                     device=device, memory_format=memory_format
                 ), labels.to(device=device)
+
                 optimizer.zero_grad()  # Zero the gradients
+
+                # Do forward and loss calculation in autocast context.
                 with torch.amp.autocast(
                     device_type=torch.device(device).type, dtype=autocast_dtype
                 ):
-                    with maybe_ctx(
-                        idx + epoch,
-                        record_function(f"forward epoch {epoch}, iter {idx}"),
-                    ):
+                    with record_function(f"forward epoch {epoch}, iter {idx}"):
                         outputs = resnet_model(inputs)  # Forward pass
-                    loss = criterion(outputs, labels)  # Calculate loss
+                    with record_function(f"loss epoch {epoch}, iter {idx}"):
+                        loss = criterion(outputs, labels)  # Calculate loss
 
-                with maybe_ctx(
-                    idx + epoch, record_function(f"backward epoch {epoch}, iter {idx}")
-                ):
+                with record_function(f"backward epoch {epoch}, iter {idx}"):
                     loss.backward()  # Backpropagate
+
                 optimizer.step()  # Update weights
 
                 running_loss += loss.item()
