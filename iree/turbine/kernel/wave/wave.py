@@ -54,6 +54,7 @@ from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
 from .promotion import promote_placeholders, compute_shared_memory_usage
+from .schedule_reordering import schedule_reordering
 from .memory_analysis.minimize_shared_allocs import minimize_shared_allocs
 from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
@@ -568,6 +569,14 @@ class LaunchableWave(Launchable):
                 trace,
                 self.constraints,
                 use_scheduling_barriers,
+                scheduling_type,
+            )
+        )
+        graph_passes.append(
+            partial(
+                schedule_reordering,
+                trace,
+                self.constraints,
                 scheduling_type,
             )
         )
