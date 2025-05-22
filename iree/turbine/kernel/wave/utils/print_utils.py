@@ -6,7 +6,8 @@
 import torch.fx as fx
 from iree.turbine.kernel.ops.wave_ops import NestedRegionOp, Placeholder, get_custom
 from ..._support.tracing import CapturedTrace
-from typing import Sequence
+from typing import Sequence, Optional
+import timeit
 
 
 def print_graph(graph: fx.Graph):
@@ -60,18 +61,32 @@ def try_apply_pass(
     trace: CapturedTrace,
     print_ir_before: Sequence[str] = [],
     print_ir_after: Sequence[str] = [],
+    pass_times: Optional[dict[str, float]] = None,
 ):
-    if "all" in print_ir_before or p.__name__ in print_ir_before:
-        print(f"***Before {p.__name__}***\n")
+    pass_name = p.__name__
+    if "all" in print_ir_before or pass_name in print_ir_before:
+        print(f"***Before {pass_name}***\n")
         print_trace(trace)
     try:
+        start = timeit.default_timer()
         p()
+        end = timeit.default_timer()
+        if pass_times is not None:
+            print_name = pass_name
+            if pass_name in pass_times:
+                # Make name unique by adding a counter if it already exists
+                counter = 1
+                while f"{pass_name}_{counter}" in pass_times:
+                    counter += 1
+                print_name = f"{pass_name}_{counter}"
+
+            pass_times[print_name] = end - start
     except Exception:
-        print(f"Error in pass: {p.__name__}\n")
+        print(f"Error in pass: {pass_name}\n")
         print_trace(trace)
         raise
-    if "all" in print_ir_after or p.__name__ in print_ir_after:
-        print(f"***After {p.__name__}***\n")
+    if "all" in print_ir_after or pass_name in print_ir_after:
+        print(f"***After {pass_name}***\n")
         print_trace(trace)
 
 

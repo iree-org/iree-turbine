@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from .utils.graph_utils import is_reduction_subgraph
+from .utils.graph_utils import is_reduction_subgraph, is_barrier_between
 from .._support.tracing import CapturedTrace
 from ..ops.wave_ops import get_custom, Read, SharedMemoryBarrier, Write, NestedRegionOp
 from ..lang.global_symbols import SHARED_ADDRESS_SPACE
@@ -16,6 +16,7 @@ def add_shared_memory_barriers(
     trace: CapturedTrace,
     graph: Optional[fx.Graph] = None,
     last_node: Optional[fx.Node] = None,
+    checking_next_iter: Optional[bool] = False,
 ) -> fx.Node:
     """
     Adds shared memory barriers to the graph. The barriers are inserted
@@ -38,7 +39,9 @@ def add_shared_memory_barriers(
             if last_node is None:
                 last_node = custom
                 continue
-            if type(custom) != type(last_node):
+            if type(custom) != type(last_node) and not is_barrier_between(
+                last_node.fx_node, custom.fx_node
+            ):
                 # Synchronize after the write to shared memory before we read from it.
                 with graph.inserting_before(node):
                     SharedMemoryBarrier().add_to_graph(graph)
@@ -49,10 +52,9 @@ def add_shared_memory_barriers(
             )
 
     # Synchronize before the write to shared memory to avoid stepping over
-    # reads in the previous iteration of a loop.
-    if is_reduction_subgraph(graph) and last_node:
-        # Insert barrier at start of block, if load from shared memory exist.
-        with graph.inserting_after(graph._root):
-            SharedMemoryBarrier().add_to_graph(graph)
+    # shared reads in the previous iteration of a loop.
+    if is_reduction_subgraph(graph) and last_node and not checking_next_iter:
+        # Add barriers between ops from different iterations in the same loop.
+        add_shared_memory_barriers(trace, graph, last_node, checking_next_iter=True)
 
     return last_node

@@ -26,6 +26,7 @@ __all__ = [
     "ConvForward",
     "ConvBackwardWeight",
     "ConvBackwardInput",
+    "DEFAULT_LAYOUTS",
 ]
 
 

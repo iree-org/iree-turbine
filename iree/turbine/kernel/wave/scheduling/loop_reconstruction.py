@@ -109,6 +109,8 @@ def add_nodes_by_schedule(
                     )
             if custom_node.expanded_dims:
                 new_node.expanded_dims = custom_node.expanded_dims
+            if custom_node.pre_expansion_id:
+                new_node.pre_expansion_id = custom_node.pre_expansion_id
             # Add scheduling parameters for debugging.
             new_node.scheduling_parameters = node.scheduling_parameters
             # Update the rotating registers and argument context for the current node (if applicable).
@@ -644,6 +646,7 @@ def construct_pipelined_loop(
         visualize,
         use_scheduling_barriers,
     )
+    pipelined_reduction_graph.parent_op = graph.parent_op
     trace.add_subgraph(
         get_custom(pipelined_reduction).subgraph_name, pipelined_reduction_graph
     )

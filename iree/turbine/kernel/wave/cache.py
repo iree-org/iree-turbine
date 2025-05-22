@@ -14,6 +14,7 @@ import os
 import shutil
 import threading
 import math
+import tempfile
 
 from collections import OrderedDict, deque
 from dataclasses import dataclass, asdict
@@ -31,7 +32,6 @@ from .compile_options import WaveCompileOptions
 
 default_cache_base_dir = Path.home() / ".wave"
 CACHE_BASE_DIR = Path(os.environ.get("WAVE_CACHE_DIR", default_cache_base_dir))
-WAVE_RUNTIME_DIR = CACHE_BASE_DIR / "wave_runtime"
 WAVE_ALWAYS_COMPILE = int(os.environ.get("WAVE_ALWAYS_COMPILE", 0))
 WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 1))
 WAVE_CACHE_LIMIT = int(os.environ.get("WAVE_CACHE_LIMIT", 16))
@@ -46,8 +46,15 @@ def get_cache_base_dir() -> Path:
     return CACHE_BASE_DIR
 
 
-def get_wave_runtime_dir() -> Path:
-    return WAVE_RUNTIME_DIR
+_temp_binary_dir = None
+
+
+def get_temp_binary_dir() -> Path:
+    global _temp_binary_dir
+    if _temp_binary_dir is None:
+        _temp_binary_dir = tempfile.TemporaryDirectory()
+
+    return Path(_temp_binary_dir.name)
 
 
 @dataclass
@@ -242,7 +249,7 @@ class WaveCacheManager(object):
         cur_module_path.write_text(module_str)
         kernel_sig_str = json.dumps([usage.name for usage in kernel_sig])
         cur_kernelsig_path.write_text(kernel_sig_str)
-        cur_hsaco_path = glob.glob(str(get_wave_runtime_dir() / "*.hsaco"))
+        cur_hsaco_path = glob.glob(str(get_temp_binary_dir() / "*.hsaco"))
         # Copy the hsaco file to the cache directory only if it exists.
         if cur_hsaco_path:
             cur_hsaco_path = cur_hsaco_path[0]

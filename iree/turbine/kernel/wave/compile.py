@@ -1,15 +1,17 @@
-from typing import Any
+from typing import Any, Optional
 
 import torch
+import glob
 from copy import copy
-from .._support.indexing import IndexingContext, IndexExpr
+from .._support.indexing import IndexingContext
 from ..compiler import kernel_codegen, host_codegen
 from .compile_options import WaveCompileOptions
 
 from .cache import (
-    is_cache_enabled,
+    get_cache_base_dir,
     get_cache_manager,
-    get_wave_runtime_dir,
+    get_temp_binary_dir,
+    is_cache_enabled,
 )
 from .utils.compile_utils import compile_to_vmfb
 from .utils.run_utils import invoke_vmfb, _write_file
@@ -21,10 +23,24 @@ class WaveKernel:
     Represents a wave kernel that can be invoked by the user.
     """
 
-    def __init__(self, options: WaveCompileOptions, executable: Any, asm: str):
+    def __init__(
+        self,
+        options: WaveCompileOptions,
+        executable: Any,
+        asm: str,
+        gpu_binary_path: Optional[str],
+    ):
         self.options = options
         self.executable = executable
         self.asm = asm
+        if gpu_binary_path:
+            import wave_runtime
+
+            self.gpu_binary, self.gpu_func = wave_runtime.load_binary(
+                gpu_binary_path, options.kernel_launch_info.func_name
+            )
+        else:
+            self.gpu_func = None
 
     def __call__(self, *args, **kwargs):
         return self.invoke(*args, **kwargs)
@@ -56,7 +72,9 @@ class WaveKernel:
 
         kernel_inputs.extend(scalar_args)
 
-        invoke_vmfb(self.executable, self.options, kernel_inputs, kernel_outputs)
+        invoke_vmfb(
+            self.executable, self.options, kernel_inputs, kernel_outputs, self.gpu_func
+        )
         return self.asm
 
 
@@ -67,6 +85,17 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
 
     # Check if this kernel has been compiled before, if the cache is enabled.
     cache_manager = None
+    binary_path = None
+
+    def get_binary_path():
+        if is_cache_enabled():
+            return (
+                str(get_cache_base_dir() / options.kernel_hash / options.kernel_hash)
+                + ".hsaco"
+            )
+        else:
+            return glob.glob(str(get_temp_binary_dir() / "*.hsaco"))[0]
+
     if is_cache_enabled():
         cache_manager = get_cache_manager()
         options.kernel_hash = cache_manager.get_hash(
@@ -78,7 +107,12 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         if cached_kernel:
             options.kernel_usages = cached_kernel.kernel_sig
             options.kernel_launch_info = cached_kernel.kernel_launch_info
-            return WaveKernel(options, cached_kernel.vmfb, cached_kernel.asm)
+            if options.wave_runtime:
+                binary_path = get_binary_path()
+
+            return WaveKernel(
+                options, cached_kernel.vmfb, cached_kernel.asm, binary_path
+            )
 
     # Create an indexing context and populate substitutions.
     push(IndexingContext, IndexingContext())
@@ -92,7 +126,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     # dumping of binaries and store in wave runtime directory. If we
     # are caching, this will be moved to the appropriate directory.
     if options.wave_runtime:
-        options.dump_binaries = str(get_wave_runtime_dir())
+        options.dump_binaries = get_temp_binary_dir()
 
     # Recompile kernel from scratch if not found in cache.
     (
@@ -118,7 +152,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         asm = options.override_mlir
 
     if options.compile_to_mlir:
-        return WaveKernel(options, None, asm)
+        return WaveKernel(options, None, asm, None)
 
     compiled_wave_vmfb = compile_to_vmfb(asm, options)
     if options.create_vmfb_file:
@@ -139,5 +173,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
 
     # Remove the indexing context.
     pop(IndexingContext)
+    if options.wave_runtime:
+        binary_path = get_binary_path()
 
-    return WaveKernel(options, compiled_wave_vmfb, asm)
+    return WaveKernel(options, compiled_wave_vmfb, asm, binary_path)

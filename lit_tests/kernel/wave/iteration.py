@@ -126,10 +126,9 @@ def test_iteration():
     # CHECK-DAG:            %[[C1:.*]] = arith.constant 1 : index
     # CHECK-COUNT-1:        memref.alloc
     # CHECK:                scf.for %[[ARG3:.*]] = %[[C0]] to %[[C10]] step %[[C1]] {
-    # CHECK:                    amdgpu.lds_barrier
     # CHECK:                    scf.for %arg4 = %[[C0]] to %[[C4]] step %[[C1]]
-    # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-1:                vector.load
+    # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-1:                vector.store
     # CHECK-COUNT-1:                vector.load
     # CHECK-COUNT-1:                vector.store
@@ -219,10 +218,9 @@ def test_iteration_with_condition():
     # CHECK:                   scf.condition(%[[COND]]) %[[ARG]] : index
     # CHECK:                } do {
     # CHECK:                 ^bb0(%[[ARG:.*]]: index):
-    # CHECK:                    amdgpu.lds_barrier
     # CHECK:                    %[[ARG4:.*]] = scf.for %[[ARG5:.*]] = %[[C0]] to %[[C4]] step %[[C1]] iter_args(%[[ARG6:.*]] = %[[CST:.*]]) -> (vector<4xf32>) {
-    # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-1:                vector.load
+    # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-1:                vector.store
     # CHECK-COUNT-1:                vector.load
     # CHECK-COUNT-1:                vector.store
@@ -323,10 +321,9 @@ def test_iteration_with_condition_and_init_value():
     # CHECK:                    scf.condition(%[[COND]]) %[[ACC]], %[[B]] : vector<4xf32>, index
     # CHECK:                } do {
     # CHECK:                ^bb0(%[[ACC:.*]]: vector<4xf32>, %[[B:.*]]: index):
-    # CHECK:                    amdgpu.lds_barrier
     # CHECK:                    %[[FOR:.*]] = scf.for %[[ARG7:.*]] = %[[C0]] to %[[C4]] step %[[C1]] iter_args(%[[ARG8:.*]] = %[[CST_0]]) -> (vector<4xf32>) {
-    # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-1:                vector.load
+    # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-1:                vector.store
     # CHECK-COUNT-1:                vector.load
     # CHECK-COUNT-1:                vector.store

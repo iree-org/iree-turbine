@@ -145,21 +145,14 @@ class CapturedTrace:
         self.region_graph = region_graph
         self.root_graph = root_graph
         self.region_graph.subgraphs[root_graph].subgraphs = {}
-        # Allow graphs to access each other.
-        for name, graph in self.region_graph.subgraphs.items():
-            if not hasattr(graph, "subgraphs"):
-                graph.subgraphs = {}
-            # For each graph, add all other graphs as potential subgraphs.
-            for subname, subgraph in self.region_graph.subgraphs.items():
-                if subname != name:
-                    graph.subgraphs[subname] = subgraph
+        for name, subgraph in self.region_graph.subgraphs.items():
+            if name != root_graph:
+                self.region_graph.subgraphs[root_graph].subgraphs[name] = subgraph
 
     def get_subgraph(self, name: str) -> fx.Graph:
         return self.region_graph.subgraphs[name]
 
     def add_subgraph(self, name: str, graph: fx.Graph):
-        for _, subgraph in self.region_graph.subgraphs.items():
-            subgraph.subgraphs[name] = graph
         self.region_graph.subgraphs[name] = graph
 
     def get_root_graph(self) -> fx.Graph:

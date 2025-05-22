@@ -80,7 +80,6 @@ def test_paged_flash_decoding():
     # CHECK-COUNT-2:           vector.load
     # CHECK:                   %[[COUNT2:.*]] = affine.apply #[[map]]()[%[[COUNT1]]]
     # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT2]] step %[[C1]]
-    # CHECK:                        amdgpu.lds_barrier
     # 1 masked load block table, 1 for k_cache, and 1 for v_cache.
     # CHECK-COUNT-3:                vector.maskedload
     # CHECK:                        amdgpu.lds_barrier

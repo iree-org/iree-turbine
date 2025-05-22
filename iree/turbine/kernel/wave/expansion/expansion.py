@@ -558,6 +558,7 @@ def expand_node(
     new_node = node.copy(anchor=(node.fx_node.prev))
     new_node.fx_node.name = get_expanded_name(node, metadata.dim_query)
     new_node.expanded_dims = expanded_dims
+    new_node.pre_expansion_id = node.pre_expansion_id or id(node.fx_node)
 
     # Add new node to expansion context.
     expansion_context[key] = new_node

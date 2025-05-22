@@ -21,7 +21,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
-from .cache import get_wave_runtime_dir
+from .cache import get_temp_binary_dir
 from ..compiler.ir import Context, Module, Operation
 from .codegen import WaveEmitter
 from .constraints import (
@@ -54,6 +54,7 @@ from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
 from .promotion import promote_placeholders, compute_shared_memory_usage
+from .schedule_reordering import schedule_reordering
 from .memory_analysis.minimize_shared_allocs import minimize_shared_allocs
 from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
@@ -507,7 +508,7 @@ class LaunchableWave(Launchable):
             # If the kernel is being cached, then it will be referenced from the
             # cache directory. When kernels are not being cached, we remove them
             # to ensure that at any time there is only one hsaco file in this directory.
-            remove_files_with_extension(get_wave_runtime_dir(), ".hsaco")
+            remove_files_with_extension(get_temp_binary_dir(), ".hsaco")
 
         print_ir_after = options.print_ir_after
         print_ir_before = options.print_ir_before
@@ -571,6 +572,14 @@ class LaunchableWave(Launchable):
                 scheduling_type,
             )
         )
+        graph_passes.append(
+            partial(
+                schedule_reordering,
+                trace,
+                self.constraints,
+                scheduling_type,
+            )
+        )
 
         graph_passes += [
             partial(
@@ -586,8 +595,18 @@ class LaunchableWave(Launchable):
             partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
         ]
 
+        pass_times = {}
         for p in graph_passes:
-            try_apply_pass(p, trace, print_ir_before, print_ir_after)
+            try_apply_pass(p, trace, print_ir_before, print_ir_after, pass_times)
+
+        if options.print_pass_times:
+            pass_times_list = sorted(
+                pass_times.items(), key=lambda x: x[1], reverse=True
+            )
+
+            print(f"Pass times:")
+            for k, v in pass_times_list:
+                print(f"    {k}: {v:.4f}s")
 
         if "all" in print_ir_after or "last" in print_ir_after:
             # Take advantage of Python leaking loop variables
