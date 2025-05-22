@@ -1353,9 +1353,9 @@ def test_gemm_and_reduce():
     #         CHECK: %[[MAX:.+]] = arith.maximumf %[[ACC0]], %{{.*}}
     #         CHECK: %[[MMA:.+]] = amdgpu.mfma %{{.*}} * %{{.*}} + %[[ACC1]]
     #         CHECK: scf.yield %[[MAX]], %[[MMA]] : vector<1xf16>, vector<4xf32>
-    # CHECK: %[[MAX_EXT:.+]] = arith.extf %[[LOOP]]#0 : vector<1xf16> to vector<1xf32>
-    # CHECK: %[[BCAST_SRC:.+]] = vector.extract %[[MAX_EXT]][0] : f32 from vector<1xf32>
-    # CHECK: %[[BROADCAST:.+]] = vector.splat %[[BCAST_SRC]] : vector<4xf32>
+    # CHECK: %[[LOOP_VAL:.+]] = vector.extract %[[LOOP]]#0[0] : f16 from vector<1xf16>
+    # CHECK: %[[MAX_EXT:.+]] = arith.extf %[[LOOP_VAL]] : f16 to f32
+    # CHECK: %[[BROADCAST:.+]] = vector.splat %[[MAX_EXT]] : vector<4xf32>
     # CHECK: arith.divf %[[LOOP]]#1, %[[BROADCAST]] : vector<4xf32>
 
 
