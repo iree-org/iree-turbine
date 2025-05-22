@@ -6,6 +6,7 @@
 
 import pytest
 import torch
+import torch.nn.functional as F
 import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
@@ -21,6 +22,8 @@ from iree.turbine.kernel.wave.utils.torch_utils import (
     device_randn,
     device_randint,
     device_zeros,
+    device_ones,
+    to_default_device,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
@@ -28,12 +31,13 @@ from .common.utils import (
     require_e2e,
     require_cdna2,
     require_cdna3,
+    require_cdna4,
     perf_test,
     enable_scheduling_barriers,
     dump_generated_mlir,
     param_bool,
 )
-from iree.turbine.kernel.wave.constraints import MMAType, MMAOperand, GenericDot
+from iree.turbine.kernel.wave.constraints import MMAType, ScaledMMAType, MMAOperand, GenericDot
 import os
 import json
 from torch.testing import assert_close
@@ -1131,6 +1135,144 @@ def testF8Gemm(
     generate_iree_ref("mmt_f8", [a, b], [iree_ref])
     assert_close(c, iree_ref, atol=3e-5, rtol=3e-4, check_device=False)
 
+@require_e2e
+@require_cdna4
+@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE] # , SchedulingType.MODULO
+)
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        ScaledMMAType.F32_16x16x128_F8F6F4,
+        ScaledMMAType.F32_32x32x64_F8F6F4,
+    ],
+)
+def testScaledF8Gemm(
+    shape: tuple[int], enable_scheduling: SchedulingType, mfma_variant: MMAType, request
+):
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    # Input sizes
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        a_scale: tkl.Memory[M, K/32, ADDRESS_SPACE, tkl.f8e8m0fnu],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        b_scale: tkl.Memory[N, K/32, ADDRESS_SPACE, tkl.f8e8m0fnu],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            a_reg = tkw.cast(a_reg, tkl.f8e5m2)
+            a_scale_reg = tkw.read(a_scale)
+            b_reg = tkw.read(b)
+            b_reg = tkw.cast(b_reg, tkl.f8e5m2)
+            b_scale_reg = tkw.read(b_scale)
+            acc = tkw.scaled_mma(a_reg, a_scale_reg, b_reg, b_scale_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+        
+    def from_float(values):
+        result = torch.empty_like(values, dtype=torch.uint8)
+
+        is_invalid = torch.isnan(values) | torch.isinf(values) | (values <= 0)
+        result[is_invalid] = 255
+
+        valid_values = values[~is_invalid]
+        e = torch.floor(torch.log2(valid_values))
+        e_biased = e + 127
+        e_biased_int = e_biased.type(torch.int32)
+        e_biased_clamped = torch.clamp(e_biased_int, 0, 254)
+        result[~is_invalid] = e_biased_clamped.type(torch.uint8)
+
+        return result
+    
+    def run_torch(a, a_scales, b, b_scales, dtype=torch.float32):
+        m,k = a.shape
+        a_rs = torch.reshape(a, (-1, k//32, 32)).to(dtype)
+        b_rs = torch.reshape(b, (-1, k//32, 32)).to(dtype)
+        a_bc = torch.einsum('nkd,nk,d->nkd', a_rs, a_scales, torch.ones(32, dtype=dtype))
+        b_bc = torch.einsum('nkd,nk,d->nkd', b_rs, b_scales, torch.ones(32, dtype=dtype))
+        a_bc = torch.reshape(a_bc, a.shape)
+        b_bc = torch.reshape(b_bc, b.shape)
+        return a_bc @ b_bc 
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        BLOCK_M: 32,
+        BLOCK_N: 32,
+        BLOCK_K: 128,
+        M: shape[0],
+        N: shape[1],
+        K: shape[2],
+    }
+    hyperparams.update(get_default_scheduling_params())
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        run_bench=run_bench,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm)
+
+    a = device_randn(shape[0], shape[2], dtype=torch.float16)
+    a_scale = device_ones(shape[0], shape[2] // 32, dtype=torch.float32)
+    a_scale = to_default_device(from_float(a_scale))
+    b = device_randn(shape[1], shape[2], dtype=torch.float16)
+    b_scale = device_ones(shape[1], shape[2] // 32, dtype=torch.float32)
+    b_scale = to_default_device(from_float(b_scale))
+    c = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    asm = gemm(a, a_scale, b, b_scale, c)
+
+    if dump_generated_mlir:
+        filename = f"wave_gemm_{'x'.join(map(str, shape))}_scaled_f8.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    if run_bench and dump_perf is not None:
+        options.benchmark_results_file = os.path.join(
+            dump_perf, "iree_" + request.node.name + ".json"
+        )
+    torch_ref = run_torch(a, a_scale, b, b_scale)
+    assert_close(c, torch_ref, atol=3e-5, rtol=3e-4, check_device=False)
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_batched_gemm"))
