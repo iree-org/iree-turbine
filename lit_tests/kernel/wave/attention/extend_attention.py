@@ -91,7 +91,7 @@ def test_extend_attention():
     # CHECK-NEXT:               vector.store %{{.*}}, %[[ALLOC2]]
     # CHECK-COUNT-1:            vector.maskedload
     # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
-    # CHECK-COUNT-32:           vector.load %{{.*}}
+    # CHECK-COUNT-32:           memref.load %{{.*}}
     # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
     # CHECK-COUNT-8:            amdgpu.mfma
     # CHECK-COUNT-2:            arith.cmpi slt
@@ -107,7 +107,7 @@ def test_extend_attention():
     # CHECK:                scf.for
     # CHECK-COUNT-1:            vector.maskedload
     # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC2]]
-    # CHECK-COUNT-32:           vector.load %{{.*}}
+    # CHECK-COUNT-32:           memref.load %{{.*}}
     # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
     # CHECK-COUNT-8:            amdgpu.mfma
     # CHECK-COUNT-2:            arith.cmpi slt
@@ -188,7 +188,7 @@ def test_causal_extend_attention():
     # CHECK-NEXT:               vector.store %{{.*}}, %[[ALLOC2]]
     # CHECK-COUNT-1:            vector.maskedload
     # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
-    # CHECK-COUNT-32:           vector.load %{{.*}}
+    # CHECK-COUNT-32:           memref.load %{{.*}}
     # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
     # CHECK-COUNT-8:            amdgpu.mfma
 
@@ -219,8 +219,7 @@ def test_causal_extend_attention():
 
     # Expressions to compute loop bound based on causal mask
     # CHECK:                %[[NQ_TILE_UPPER_BOUND:.*]] = affine.apply #[[map32]]()[%[[workgroup_id_0]]]
-    # CHECK:                %[[NQ_LOOP_BOUND_SPLAT:.*]] = vector.splat %[[NQ_TILE_UPPER_BOUND]]
-    # CHECK:                arith.minsi {{.*}}, %[[NQ_LOOP_BOUND_SPLAT]]
+    # CHECK:                arith.minsi {{.*}}, %[[NQ_TILE_UPPER_BOUND]]
 
     # CHECK-COUNT-4:        vector.maskedload
     # CHECK:                amdgpu.lds_barrier
@@ -232,7 +231,7 @@ def test_causal_extend_attention():
     # CHECK:                scf.for
     # CHECK-COUNT-1:            vector.maskedload
     # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC2]]
-    # CHECK-COUNT-32:           vector.load %{{.*}}
+    # CHECK-COUNT-32:           memref.load %{{.*}}
     # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
     # CHECK-COUNT-8:            amdgpu.mfma
 
@@ -332,7 +331,7 @@ def test_causal_extend_attention_32x32x8():
     # CHECK-COUNT-2:            vector.maskedload
     # CHECK-COUNT-1:            vector.maskedload
     # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC1]]
-    # CHECK-COUNT-32:           vector.load %{{.*}}
+    # CHECK-COUNT-32:           memref.load %{{.*}}
     # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
     # CHECK-COUNT-8:            amdgpu.mfma
 
@@ -368,7 +367,7 @@ def test_causal_extend_attention_32x32x8():
     # CHECK:                scf.for
     # CHECK-COUNT-1:            vector.maskedload
     # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC2]]
-    # CHECK-COUNT-32:           vector.load %{{.*}}
+    # CHECK-COUNT-32:           memref.load %{{.*}}
     # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
     # CHECK-COUNT-8:            amdgpu.mfma
 

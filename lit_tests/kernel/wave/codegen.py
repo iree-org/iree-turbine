@@ -247,10 +247,8 @@ def test_read_write_diagonal():
     # CHECK-DAG:        %[[CST_1:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
     # CHECK:            %[[THREAD_ID_X:.*]] = gpu.thread_id  x
     # CHECK:            %[[D0:.*]] = affine.apply #[[map]]()[%[[THREAD_ID_X]]]
-    # CHECK:            %[[D1:.*]] = vector.splat %[[D0]] : vector<1xindex>
-    # CHECK:            %[[D2:.*]] = arith.index_cast %[[D1]] : vector<1xindex> to vector<1xi64>
-    # CHECK:            %[[D3:.*]] = vector.extract %[[D2]][0] : i64 from vector<1xi64>
-    # CHECK:            %[[D4:.*]] = vector.splat %[[D3]] : vector<16xi64>
+    # CHECK:            %[[D1:.*]] = arith.index_cast %[[D0]] : index to i64
+    # CHECK:            %[[D4:.*]] = vector.splat %[[D1]] : vector<16xi64>
     # CHECK:            %[[D5:.*]] = arith.cmpi sge, %[[D4]], %[[CST]] : vector<16xi64>
     # CHECK:            %[[D6:.*]] = arith.select %[[D5]], %[[CST_1]], %[[CST_0]] : vector<16xi1>, vector<16xf16>
     # CHECK:            %[[D7:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
@@ -389,7 +387,7 @@ def test_read_write_mapping():
     # We are transposing, so contiguous load becomes non-contiguous store
     # CHECK:            vector.load
     # CHECK-NOT:        vector.load
-    # CHECK-COUNT-16:   vector.store
+    # CHECK-COUNT-16:   memref.store
 
 
 @run_test
@@ -448,8 +446,8 @@ def test_read_write_dynamic_mapping():
     # CHECK:            %[[D5:.*]] = affine.apply #[[map1]]()[%[[THREAD_ID_X]]]
     # CHECK:            %[[D6:.*]] = vector.splat %[[D5]] : vector<16xindex>
     # CHECK:            %[[D7:.*]] = arith.addi %[[D6]], %[[D4]] overflow<nsw, nuw> : vector<16xindex>
-    # CHECK-COUNT-16:   vector.load
-    # CHECK-COUNT-16:   vector.extract
+    # CHECK-COUNT-16:   memref.load
+    # CHECK-NOT:        vector.extract
     # CHECK:            %[[RES:.*]] = vector.from_elements
     # CHECK:            %[[D58:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
     # CHECK:            vector.store %[[RES]], %[[D58]][%[[D1]], %[[C0]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
@@ -501,10 +499,9 @@ def test_read_write_dynamic_mapping_broadcast():
     print(read_write_dynamic_mapping_broadcast.asm)
 
     # CHECK-LABEL:    func.func @read_write_dynamic_mapping_broadcast
-    # CHECK:            %[[OFF:.*]] = vector.load %{{.*}}[%[[M:.*]], %{{.*}}] : memref<16x1xi32, strided<[1, 1], offset: ?>>, vector<1xi32>
-    # CHECK:            %[[IDX:.*]] = arith.index_cast %[[OFF]] : vector<1xi32> to vector<1xindex>
-    # CHECK:            %[[IDX1:.*]] = vector.extract %[[IDX]][0] : index from vector<1xindex>
-    # CHECK:            %[[RES:.*]] = vector.load %{{.*}}[%[[M]], %[[IDX1]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
+    # CHECK:            %[[OFF:.*]] = memref.load %{{.*}}[%[[M:.*]], %{{.*}}] : memref<16x1xi32, strided<[1, 1], offset: ?>>
+    # CHECK:            %[[IDX:.*]] = arith.index_cast %[[OFF]] : i32 to index
+    # CHECK:            %[[RES:.*]] = vector.load %{{.*}}[%[[M]], %[[IDX]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
     # CHECK:            vector.store %[[RES]], %{{.*}}[%[[M]], %{{.*}}] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<16xf16>
 
 
@@ -580,15 +577,13 @@ def test_read_write_dynamic_mapping_chain():
     # CHECK:          %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x2xi32, strided<[2, 1], offset: ?>>
     # CHECK:          %[[D1:.*]] = affine.apply #[[map0]]()[%[[THREAD_ID_X]]]
     # CHECK:          %[[D2:.*]] = affine.apply #[[map1]]()[%[[WORKGROUP_ID_1]]]
-    # CHECK:          %[[D3:.*]] = vector.load %[[D0]][%[[D1]], %[[D2]]] : memref<16x2xi32, strided<[2, 1], offset: ?>>, vector<1xi32>
+    # CHECK:          %[[D3:.*]] = memref.load %[[D0]][%[[D1]], %[[D2]]] : memref<16x2xi32, strided<[2, 1], offset: ?>>
     # CHECK:          %[[D4:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x4xi32, strided<[4, 1], offset: ?>>
-    # CHECK:          %[[D5:.*]] = arith.index_cast %[[D3]] : vector<1xi32> to vector<1xindex>
-    # CHECK:          %[[D6:.*]] = vector.extract %[[D5]][0] : index from vector<1xindex>
-    # CHECK:          %[[D7:.*]] = vector.load %[[D4]][%[[D1]], %[[D6]]] : memref<16x4xi32, strided<[4, 1], offset: ?>>, vector<1xi32>
+    # CHECK:          %[[D5:.*]] = arith.index_cast %[[D3]] : i32 to index
+    # CHECK:          %[[D6:.*]] = memref.load %[[D4]][%[[D1]], %[[D5]]] : memref<16x4xi32, strided<[4, 1], offset: ?>>
     # CHECK:          %[[D8:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
-    # CHECK:          %[[D9:.*]] = arith.index_cast %[[D7]] : vector<1xi32> to vector<1xindex>
-    # CHECK:          %[[D10:.*]] = vector.extract %[[D9]][0] : index from vector<1xindex>
-    # CHECK:          %[[D11:.*]] = vector.load %[[D8]][%[[D1]], %[[D10]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
+    # CHECK:          %[[D9:.*]] = arith.index_cast %[[D6]] : i32 to index
+    # CHECK:          %[[D11:.*]] = vector.load %[[D8]][%[[D1]], %[[D9]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
     # CHECK:          %[[D12:.*]] = stream.binding.subspan %[[ARG3]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
     # CHECK:          %[[D13:.*]] = affine.apply #[[map2]]()[%[[WORKGROUP_ID_1]]]
     # CHECK:          vector.store %[[D11]], %[[D12]][%[[D1]], %[[D13]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<4xf16>
@@ -646,11 +641,10 @@ def test_read_write_dynamic_symbol():
     #  CHECK-SAME:      (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding, %[[ARG3:.*]]: index)
     #   CHECK-DAG:      %[[C0:.*]] = arith.constant 0 : index
     #       CHECK:      %[[A2:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
-    #       CHECK:      %[[O1:.*]] = vector.load %[[A2]][%[[M:.*]], %[[N:.*]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>, vector<1xi32>
-    #       CHECK:      %[[O2:.*]] = arith.index_cast %[[O1]] : vector<1xi32> to vector<1xindex>
-    #       CHECK:      %[[O3:.*]] = vector.extract %[[O2]][0] : index from vector<1xindex>
+    #       CHECK:      %[[O1:.*]] = memref.load %[[A2]][%[[M:.*]], %[[N:.*]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>
+    #       CHECK:      %[[O2:.*]] = arith.index_cast %[[O1]] : i32 to index
     #       CHECK:      %[[A1:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<?x16xf16, strided<[16, 1], offset: ?>>{%arg3}
-    #       CHECK:      %[[RES:.*]] = vector.load %[[A1]][%[[O3]], %[[N]]] : memref<?x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
+    #       CHECK:      %[[RES:.*]] = vector.load %[[A1]][%[[O2]], %[[N]]] : memref<?x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
     #       CHECK:      %[[A3:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
     #       CHECK:      vector.store %[[RES]], %[[A3]][%[[M]], %[[N]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
 
@@ -706,15 +700,14 @@ def test_read_write_dynamic_symbol_expr():
 
     # CHECK-LABEL:    func.func @test_dyn_expr
     #  CHECK-SAME:      (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding, %[[ARG3:.*]]: index)
-    #   CHECK-DAG:      %[[CST:.*]] = arith.constant dense<15> : vector<1xindex>
+    #   CHECK-DAG:      %[[CST:.*]] = arith.constant 15 : index
     #   CHECK-DAG:      %[[C0:.*]] = arith.constant 0 : index
     #       CHECK:      %[[A2:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
-    #       CHECK:      %[[O1:.*]] = vector.load %[[A2]][%[[M:.*]], %[[N:.*]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>, vector<1xi32>
-    #       CHECK:      %[[O2:.*]] = arith.index_cast %[[O1]] : vector<1xi32> to vector<1xindex>
-    #       CHECK:      %[[O3:.*]] = arith.subi %[[CST]], %[[O2]] : vector<1xindex>
-    #       CHECK:      %[[O4:.*]] = vector.extract %[[O3]][0] : index from vector<1xindex>
+    #       CHECK:      %[[O1:.*]] = memref.load %[[A2]][%[[M:.*]], %[[N:.*]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>
+    #       CHECK:      %[[O2:.*]] = arith.index_cast %[[O1]] : i32 to index
+    #       CHECK:      %[[O3:.*]] = arith.subi %[[CST]], %[[O2]] : index
     #       CHECK:      %[[A1:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<?x16xf16, strided<[16, 1], offset: ?>>{%arg3}
-    #       CHECK:      %[[RES:.*]] = vector.load %[[A1]][%[[O4]], %[[N]]] : memref<?x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
+    #       CHECK:      %[[RES:.*]] = vector.load %[[A1]][%[[O3]], %[[N]]] : memref<?x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
     #       CHECK:      %[[A3:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
     #       CHECK:      vector.store %[[RES]], %[[A3]][%[[M]], %[[N]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
 
@@ -755,16 +748,14 @@ def test_read_write_conditional():
 
     # CHECK-LABEL:    func.func @test_conditional
     #  CHECK-SAME:      (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
-    #   CHECK-DAG:      %[[CST:.*]] = arith.constant dense<0> : vector<1xindex>
     #   CHECK-DAG:      %[[C0:.*]] = arith.constant 0 : index
     #       CHECK:      %[[A1:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
     #       CHECK:      %[[RES:.*]] = vector.load %[[A1]][%[[M:.*]], %[[N:.*]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
     #       CHECK:      %[[A2:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x16xi32, strided<[16, 1], offset: ?>>
-    #       CHECK:      %[[O1:.*]] = vector.load %[[A2]][%[[M]], %[[N]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>, vector<1xi32>
-    #       CHECK:      %[[O2:.*]] = arith.index_cast %[[O1]] : vector<1xi32> to vector<1xindex>
-    #       CHECK:      %[[O3:.*]] = arith.cmpi sgt, %[[O2]], %[[CST]] : vector<1xindex>
-    #       CHECK:      %[[O4:.*]] = vector.extract %[[O3]][0] : i1 from vector<1xi1>
-    #       CHECK:      scf.if %[[O4]] {
+    #       CHECK:      %[[O1:.*]] = memref.load %[[A2]][%[[M]], %[[N]]] : memref<16x16xi32, strided<[16, 1], offset: ?>>
+    #       CHECK:      %[[O2:.*]] = arith.index_cast %[[O1]] : i32 to index
+    #       CHECK:      %[[O3:.*]] = arith.cmpi sgt, %[[O2]], %[[C0]] : index
+    #       CHECK:      scf.if %[[O3]] {
     #       CHECK:        %[[A3:.*]] = stream.binding.subspan %[[ARG2]][%[[C0]]] : !stream.binding -> memref<16x16xf16, strided<[16, 1], offset: ?>>
     #       CHECK:        vector.store %[[RES]], %[[A3]][%[[M]], %[[N]]] : memref<16x16xf16, strided<[16, 1], offset: ?>>, vector<1xf16>
     #       CHECK:      }
@@ -1044,7 +1035,7 @@ def test_reduce_sum():
     # Elementwise
     # CHECK: arith.mulf {{.*}} : vector<2xf16>
     # Local Reduction
-    # CHECK: arith.addf {{.*}} : vector<1xf16>
+    # CHECK: arith.addf {{.*}} : f16
     # Global Reduction
     # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : vector<1xf16>
     # CHECK: arith.addf {{.*}} : vector<1xf16>
@@ -1116,9 +1107,9 @@ def test_mutliple_local_reduce_sum():
     # Reduce all sources locally.
     # CHECK: %[[SRC_REDUC:.+]] = arith.addf %[[LHS]], %[[RHS]] : vector<2xf16>
     # Do Local Reductions.
-    # CHECK: %[[LOCAL_REDUC0:.+]] = vector.extract_strided_slice %[[SRC_REDUC]] {offsets = [0], sizes = [1], strides = [1]}
-    # CHECK: %[[LOCAL_REDUC1:.+]] = vector.extract_strided_slice %[[SRC_REDUC]] {offsets = [1], sizes = [1], strides = [1]}
-    # CHECK: %[[REDUC_0:.+]] = arith.addf %[[LOCAL_REDUC0]], %[[LOCAL_REDUC1]] : vector<1xf16>
+    # CHECK: %[[LOCAL_REDUC0:.+]] = vector.extract %[[SRC_REDUC]][0] : f16 from vector<2xf16>
+    # CHECK: %[[LOCAL_REDUC1:.+]] = vector.extract %[[SRC_REDUC]][1] : f16 from vector<2xf16>
+    # CHECK: %[[REDUC_0:.+]] = arith.addf %[[LOCAL_REDUC0]], %[[LOCAL_REDUC1]] : f16
     # Expanded Global Max Reduction
     # CHECK-COUNT-6: gpu.shuffle  xor
 
@@ -1192,14 +1183,14 @@ def test_reduction_and_elemwise():
     # CHECK: %[[TILED:.+]]:2 = scf.for %[[ITER:.+]] = %[[C0_IDX]] to %[[C4_IDX]] step %[[C1_IDX]]
     # CHECK-SAME: iter_args(%[[ACC0:.+]] = %[[INIT]], %[[ACC1:.+]] = %[[INIT]]) -> (vector<1xf16>, vector<1xf16>) {
     # 1st Expanded Local Reduction
-    # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+    # CHECK: arith.maximumf {{.*}} : f16
     # 1st Expanded Global Reduction
     # CHECK-COUNT-6: gpu.shuffle  xor
     # 1st Expanded Accumulator Reduction
     # CHECK: %[[ACC_REDUCE_0:.+]] = arith.maximumf %[[ACC0]], %{{.*}}
 
     # 2nd Expanded Local Reduction
-    # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+    # CHECK: arith.maximumf {{.*}} : f16
     # 2nd Expanded Global Reduction
     # CHECK-COUNT-6: gpu.shuffle  xor
     # 2nd Expanded Accumulator Reduction
@@ -1288,7 +1279,7 @@ def test_tiled_reduce_max():
     # Elementwise
     # CHECK: arith.mulf {{.*}} : vector<2xf16>
     # Local Reduction
-    # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+    # CHECK: arith.maximumf {{.*}} : f16
     # Global Reduction
     # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : vector<1xf16>
     # CHECK: arith.maximumf {{.*}} : vector<1xf16>
@@ -1379,7 +1370,7 @@ def test_tiled_reduce_min():
     # Elementwise
     # CHECK: arith.mulf {{.*}} : vector<2xf16>
     # Local Reduction
-    # CHECK: arith.minimumf {{.*}} : vector<1xf16>
+    # CHECK: arith.minimumf {{.*}} : f16
     # Global Reduction
     # CHECK: gpu.shuffle  xor %{{.+}}, %[[C1]], %{{.+}} : vector<1xf16>
     # CHECK: arith.minimumf {{.*}} : vector<1xf16>
@@ -1547,28 +1538,28 @@ def test_multiple_reduction_iv():
     # CHECK-SAME: iter_args(%[[ACC0:.+]] = %[[INIT_MAX]], %[[ACC1:.+]] = %[[INIT_MAX]], %[[ACC2:.+]] = %[[INIT_SUM]], %[[ACC3:.+]] = %[[INIT_SUM]])
     # CHECK-SAME: -> (vector<1xf16>, vector<1xf16>, vector<1xf16>, vector<1xf16>) {
     # 1st Expanded Local Max Reduction
-    # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+    # CHECK: arith.maximumf {{.*}} : f16
     # 1st Expanded Global Max Reduction
     # CHECK-COUNT-6: gpu.shuffle  xor
     # 1st Expanded Accumulator Max Reduction
     # CHECK: %[[ACC_MAX_0:.+]] = arith.maximumf %[[ACC0]], %{{.*}}
 
     # 2nd Expanded Local Max Reduction
-    # CHECK: arith.maximumf {{.*}} : vector<1xf16>
+    # CHECK: arith.maximumf {{.*}} : f16
     # 2nd Expanded Global Max Reduction
     # CHECK-COUNT-6: gpu.shuffle  xor
     # 2nd Expanded Accumulator Max Reduction
     # CHECK: %[[ACC_MAX_1:.+]] = arith.maximumf %[[ACC1]], %{{.*}}
 
     # 1st Expanded Local Sum Reduction
-    # CHECK: arith.addf {{.*}} : vector<1xf16>
+    # CHECK: arith.addf {{.*}} : f16
     # 1st Expanded Global Sum Reduction
     # CHECK-COUNT-6: gpu.shuffle  xor
     # 1st Expanded Accumulator Sum Reduction
     # CHECK: %[[ACC_SUM_0:.+]] = arith.addf %[[ACC2]], %{{.*}}
 
     # 2nd Expanded Local Sum Reduction
-    # CHECK: arith.addf {{.*}} : vector<1xf16>
+    # CHECK: arith.addf {{.*}} : f16
     # 2nd Expanded Global Sum Reduction
     # CHECK-COUNT-6: gpu.shuffle  xor
     # 2nd Expanded Accumulator Sum Reduction
@@ -1647,8 +1638,8 @@ def test_reduce_propagate_broadcast():
     # CHECK: %[[BROADCAST:.+]] = vector.splat %[[EXTRACT]] : vector<2xf32>
     # CHECK: %[[SUBF:.+]] = arith.subf %{{.+}}, %[[BROADCAST]] : vector<2xf32>
     # CHECK: %[[EXP2:.+]] = math.exp2 %[[SUBF]] : vector<2xf32>
-    # CHECK: %[[EXP2_SLICE_0:.+]] = vector.extract_strided_slice %[[EXP2]] {offsets = [0], sizes = [1], strides = [1]} : vector<2xf32> to vector<1xf32>
-    # CHECK: %[[EXP2_SLICE_1:.+]] = vector.extract_strided_slice %[[EXP2]] {offsets = [1], sizes = [1], strides = [1]} : vector<2xf32> to vector<1xf32>
+    # CHECK: %[[EXP2_SLICE_0:.+]] = vector.extract %[[EXP2]][0] : f32 from vector<2xf32>
+    # CHECK: %[[EXP2_SLICE_1:.+]] = vector.extract %[[EXP2]][1] : f32 from vector<2xf32>
     # CHECK: arith.addf %[[EXP2_SLICE_0]], %[[EXP2_SLICE_1]]
     # CHECK-COUNT-6: gpu.shuffle xor
 
@@ -1715,7 +1706,7 @@ def test_block_reduce_sum():
     # CHECK: %[[alloc:.+]] = memref.alloc() : memref<8xi8, #gpu.address_space<workgroup>>
 
     # Local Reduce
-    # CHECK-COUNT-2: vector.extract_strided_slice
+    # CHECK-COUNT-2: vector.extract
     # CHECK-NEXT: arith.addf
 
     # Global Reduce
@@ -1732,12 +1723,12 @@ def test_block_reduce_sum():
 
     # Get all partial wave results and locally reduce
     # CHECK: %[[wave_res:.+]] = vector.load %[[view]]
-    # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [0]
-    # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [1]
+    # CHECK: vector.extract %[[wave_res]][0] : f16 from vector<4xf16>
+    # CHECK: vector.extract %[[wave_res]][1] : f16 from vector<4xf16>
     # CHECK-NEXT: arith.addf
-    # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [2]
+    # CHECK: vector.extract %[[wave_res]][2] : f16 from vector<4xf16>
     # CHECK-NEXT: arith.addf
-    # CHECK: vector.extract_strided_slice %[[wave_res]] {offsets = [3]
+    # CHECK: vector.extract %[[wave_res]][3] : f16 from vector<4xf16>
     # CHECK-NEXT: arith.addf
 
 
@@ -1803,16 +1794,14 @@ def test_explicit_broadcast():
 
     # Slicing RHS
     # CHECK: %[[RHS:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<256xf16
-    # CHECK: %[[RHS_0:.+]] = vector.load %[[RHS]][%[[X_SLICE_0]]] : memref<256xf16, strided<[1], offset: ?>>, vector<1xf16>
-    # CHECK: %[[RHS_1:.+]] = vector.load %[[RHS]][%[[X_SLICE_1]]] : memref<256xf16, strided<[1], offset: ?>>, vector<1xf16>
+    # CHECK: %[[RHS_0:.+]] = memref.load %[[RHS]][%[[X_SLICE_0]]] : memref<256xf16, strided<[1], offset: ?>>
+    # CHECK: %[[RHS_1:.+]] = memref.load %[[RHS]][%[[X_SLICE_1]]] : memref<256xf16, strided<[1], offset: ?>>
 
     # 1st Broadcast RHS
-    # CHECK: %[[EXTRACT_0:.+]] = vector.extract %[[RHS_0]][0] : f16 from vector<1xf16>
-    # CHECK: %[[BCAST_RHS_0:.+]] = vector.splat %[[EXTRACT_0]] : vector<2xf16>
+    # CHECK: %[[BCAST_RHS_0:.+]] = vector.splat %[[RHS_0]] : vector<2xf16>
 
     # 2nd Broadcast RHS
-    # CHECK: %[[EXTRACT_1:.+]] = vector.extract %[[RHS_1]][0] : f16 from vector<1xf16>
-    # CHECK: %[[BCAST_RHS_1:.+]] = vector.splat %[[EXTRACT_1]] : vector<2xf16>
+    # CHECK: %[[BCAST_RHS_1:.+]] = vector.splat %[[RHS_1]] : vector<2xf16>
 
     # Broadcast-ADD RHS
     # CHECK: arith.addf %[[LHS_0]], %[[BCAST_RHS_0]] : vector<2xf16>
@@ -1880,16 +1869,14 @@ def test_broadcast_add():
 
     # Slicing RHS
     # CHECK: %[[RHS:.+]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<256xf16
-    # CHECK: %[[RHS_0:.+]] = vector.load %[[RHS]][%[[X_SLICE_0]]] : memref<256xf16, strided<[1], offset: ?>>, vector<1xf16>
-    # CHECK: %[[RHS_1:.+]] = vector.load %[[RHS]][%[[X_SLICE_1]]] : memref<256xf16, strided<[1], offset: ?>>, vector<1xf16>
+    # CHECK: %[[RHS_0:.+]] = memref.load %[[RHS]][%[[X_SLICE_0]]] : memref<256xf16, strided<[1], offset: ?>>
+    # CHECK: %[[RHS_1:.+]] = memref.load %[[RHS]][%[[X_SLICE_1]]] : memref<256xf16, strided<[1], offset: ?>>
 
     # 1st Broadcast RHS
-    # CHECK: %[[EXTRACT_0:.+]] = vector.extract %[[RHS_0]][0] : f16 from vector<1xf16>
-    # CHECK: %[[BCAST_RHS_0:.+]] = vector.splat %[[EXTRACT_0]] : vector<2xf16>
+    # CHECK: %[[BCAST_RHS_0:.+]] = vector.splat %[[RHS_0]] : vector<2xf16>
 
     # 2nd Broadcast RHS
-    # CHECK: %[[EXTRACT_1:.+]] = vector.extract %[[RHS_1]][0] : f16 from vector<1xf16>
-    # CHECK: %[[BCAST_RHS_1:.+]] = vector.splat %[[EXTRACT_1]] : vector<2xf16>
+    # CHECK: %[[BCAST_RHS_1:.+]] = vector.splat %[[RHS_1]] : vector<2xf16>
 
     # Broadcast-ADD RHS
     # CHECK: arith.addf %[[LHS_0]], %[[BCAST_RHS_0]] : vector<2xf16>

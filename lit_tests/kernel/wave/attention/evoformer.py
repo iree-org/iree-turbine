@@ -1,6 +1,5 @@
 # RUN: python %s | FileCheck %s
 
-import iree.turbine.kernel as tk
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
@@ -13,7 +12,6 @@ from iree.turbine.kernel.wave.utils.mma_utils import (
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
-import torch
 
 # Input sizes
 B = tkl.sym.B
@@ -109,11 +107,11 @@ def test_evoformer():
             partial_max: tkl.Register[B, BN, H, M, tkl.f32],
             partial_sum: tkl.Register[B, BN, H, M, tkl.f32],
             acc: tkl.Register[B, BN, H, N, M, tkl.f32],
-        ) -> (
+        ) -> tuple[
             tkl.Register[B, BN, H, M, tkl.f32],
             tkl.Register[B, BN, H, M, tkl.f32],
             tkl.Register[B, BN, H, N, M, tkl.f32],
-        ):
+        ]:
             imm_reg = tkl.Register[B, BN, H, K2, M, tkl.f32](0.0)
             q_reg = tkw.read(
                 q, mapping=q_mapping, elements_per_thread=LOAD_ELEMS_PER_THREAD
@@ -199,7 +197,7 @@ def test_evoformer():
     # CHECK:                    {{.*}} = vector.maskedload
     # CHECK:                    vector.store {{.*}}
     # CHECK:                    amdgpu.lds_barrier
-    # CHECK-COUNT-16:           {{.*}} = vector.load
+    # CHECK-COUNT-16:           {{.*}} = memref.load
     # CHECK-COUNT-4:            {{.*}} = vector.load
     # CHECK-COUNT-8:           {{.*}} = amdgpu.mfma
     # CHECK-COUNT-2:            {{.*}} = vector.load
