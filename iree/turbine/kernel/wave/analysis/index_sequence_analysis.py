@@ -497,7 +497,8 @@ def should_update_index(
         return set(source_index.keys()).issubset(set(non_batch_dims))
 
     # Otherwise, check if the non-batch dims are a subset of the source index.
-    if not set(non_batch_dims).issubset(set(source_index.keys())):
+    vars = [sym for expr in non_batch_dims for sym in expr.free_symbols]
+    if not set(vars).issubset(set(source_index.keys())):
         return False
 
     return True
