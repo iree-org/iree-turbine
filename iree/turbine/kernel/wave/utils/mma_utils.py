@@ -44,7 +44,7 @@ def get_mma_dimensional_mapping(
     trace: CapturedTrace,
     hardware_constraint: HardwareConstraint,
 ) -> tuple[
-    dict[MMA, dict[IndexSymbol, int]], dict[MMA, dict[IndexSymbol, list[fx.Node]]]
+    dict[MMA | ScaledMMA, dict[IndexSymbol, int]], dict[MMA | ScaledMMA, dict[IndexSymbol, list[fx.Node]]]
 ]:
     """
     Given a trace, determine the MMA dimensional mapping for all the
@@ -55,11 +55,11 @@ def get_mma_dimensional_mapping(
     V to the MMA K dimension (2). We maintain this map per mma node and
     also update the vector_shapes of the mma node based on this information.
     """
-
     def is_mma(node):
         return isinstance(get_custom(node), (MMA, ScaledMMA))
 
-    mapping: dict[MMA | ScaledMMA, dict[IndexSymbol, int]] = {}
+    mapping: dict[MMA, dict[IndexSymbol, int]] = {}
+
     mma_nodes = trace.walk(is_mma)
     for node in mma_nodes:
         custom: MMA | ScaledMMA = get_custom(node)
@@ -83,6 +83,7 @@ def get_mma_dimensional_mapping(
                 ), f"Expected 1 reduction dimension, got {reduction_dim_candidates}"
 
             k = reduction_dim_candidates.pop()
+
         except KeyError as e:
             raise RuntimeError(
                 f"{node}: Invalid MMA shapes\n{lhs_shape=}\n{rhs_shape=}\n{acc_shape=}\n{m=}, {n=}\n{custom}"
@@ -91,6 +92,33 @@ def get_mma_dimensional_mapping(
             raise RuntimeError(
                 f"{node}: Invalid MMA shapes\n{lhs_shape=}\n{rhs_shape=}\n{acc_shape=}\n{m=}, {n=}, {k=}\n{custom}"
             )
+
+        if isinstance(custom, ScaledMMA):
+            lhs_scale_shape = custom.lhs_scale_type.symbolic_shape
+            rhs_scale_shape = custom.rhs_scale_type.symbolic_shape
+            try:
+                scale_reduction_dim_candidates = (set(lhs_scale_shape) & set(rhs_scale_shape)) - set(
+                    acc_shape
+                )
+                if len(scale_reduction_dim_candidates) > 1:
+                    # Indicates we have batch dimensions as well.
+                    # Eliminate these using the vector shapes.
+                    for dim, value in hardware_constraint.vector_shapes.items():
+                        if dim in scale_reduction_dim_candidates and value == 0:
+                            scale_reduction_dim_candidates.remove(dim)
+                    assert (
+                        len(scale_reduction_dim_candidates) == 1
+                    ), f"Expected 1 reduction dimension, got {scale_reduction_dim_candidates}"
+
+                k_scale = scale_reduction_dim_candidates.pop()
+            except KeyError as e:
+                raise RuntimeError(
+                    f"{node}: Invalid Scaled MMA shapes\n{lhs_scale_shape=}\n{rhs_scale_shape=}\n{acc_shape=}\n{m=}, {n=}\n{custom}"
+                )
+            if m not in lhs_scale_shape or n not in rhs_scale_shape:
+                raise RuntimeError(
+                    f"{node}: Invalid Scaled MMA shapes\n{lhs_scale_shape=}\n{rhs_scale_shape=}\n{acc_shape=}\n{m=}, {n=}, {k=}\n{custom}"
+                )
 
         if custom not in mapping:
             mapping[custom] = {}
@@ -102,6 +130,10 @@ def get_mma_dimensional_mapping(
             n: hardware_constraint.mma_matrix_shapes(custom.mma_type)[1],
             k: hardware_constraint.mma_matrix_shapes(custom.mma_type)[2],
         }
+        if isinstance(custom, ScaledMMA):
+            custom.vector_shapes[k_scale] = hardware_constraint.mma_matrix_shapes(
+                custom.mma_type)[2] // hardware_constraint.scaled_mma_scale_factor(custom.mma_type)
+
         if hardware_constraint.vector_shapes:
             custom.vector_shapes.update(hardware_constraint.vector_shapes)
         custom.reduction_dim = k
