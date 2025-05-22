@@ -2189,8 +2189,11 @@ class Permute(CustomOp, ABC):
         # Compute the non-unit shapes, both source and target
         non_unit_src = [d for d in src_shape if d in non_unit_its]
         non_unit_tgt = [d for d in self.target_shape if d in non_unit_its]
-        # If the permutation is fixed on the non-unit iterators, then permute
-        # only the indices
+        # If `non_unit_src == non_unit_tgt` permute only the indices of the op.
+        # For example, if `src_shape == [B, M, N]`, `tgt_shape = [M, B, N]`,
+        # and `vector_shape(B) == 0`, then `non_unit_src = [M, N]`,
+        # `non_unit_tgt = [M, N]`. Meaning only trivial operators are being
+        # permuted, thus only the order of the indices must be updated.
         if non_unit_src == non_unit_tgt:
             return {k: index[k] for k in self.target_shape if k in index}
         # Else, permute the strides.

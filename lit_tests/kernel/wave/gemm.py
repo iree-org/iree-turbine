@@ -21,8 +21,6 @@ BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_K = tkl.sym.BLOCK_K
 BLOCK_B = tkl.sym.BLOCK_B
-LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
-STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
@@ -1510,13 +1508,13 @@ def test_batched_gemm_with_permute():
         def repeat(
             acc: tkl.Register[B, M, N, tkl.f32],
         ) -> tkl.Register[B, M, N, tkl.f32]:
-            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
 
         res = tkw.permute(repeat, target_shape=[M, B, N])
-        tkw.write(res, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+        tkw.write(res, c)
 
     options = WaveCompileOptions(
         subs={
@@ -1528,8 +1526,6 @@ def test_batched_gemm_with_permute():
             BLOCK_N: 32,
             BLOCK_K: 16,
             BLOCK_B: 1,
-            LOAD_ELEMS_PER_THREAD: 4,
-            STORE_ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
         },
         canonicalize=True,
@@ -1538,6 +1534,8 @@ def test_batched_gemm_with_permute():
     )
     batched_gemm_with_permute = wave_compile(options, batched_gemm_with_permute)
     print(batched_gemm_with_permute.asm)
+    # Verify that the batch dimension `B = WG` is in it's correct location after
+    # the permtue, ie: `[M, B, N]` instead of `[B, M, N]`.
     # CHECK-LABEL:    func.func @batched_gemm_with_permute
     # CHECK: %[[WG:.*]] = stream.dispatch.workgroup.id[2] : index
     # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
