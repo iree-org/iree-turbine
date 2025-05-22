@@ -75,16 +75,15 @@ def test_paged_flash_decoding():
     # CHECK-DAG:               %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:               %[[C1:.*]] = arith.constant 1 : index
     # CHECK-COUNT-2:           vector.load
-    # CHECK:                   %[[COUNT0:.*]] = arith.minsi %{{.*}}, %{{.*}} : vector<1xindex>
-    # CHECK:                   %[[COUNT1:.*]] = vector.extract %[[COUNT0]][0] : index from vector<1xindex>
+    # CHECK:                   %[[COUNT0:.*]] = arith.minsi %{{.*}}, %{{.*}} : index
     # CHECK-COUNT-2:           vector.load
-    # CHECK:                   %[[COUNT2:.*]] = affine.apply #[[map]]()[%[[COUNT1]]]
-    # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT2]] step %[[C1]]
+    # CHECK:                   %[[COUNT1:.*]] = affine.apply #[[map]]()[%[[COUNT0]]]
+    # CHECK:                   scf.for %{{.*}} = %[[C0]] to %[[COUNT1]] step %[[C1]]
     # 1 masked load block table, 1 for k_cache, and 1 for v_cache.
     # CHECK-COUNT-3:                vector.maskedload
     # CHECK:                        amdgpu.lds_barrier
     # CHECK-COUNT-4:                amdgpu.mfma
-    # CHECK:                  %[[COND:.*]] = arith.cmpi sgt, %[[COUNT1]], %[[C0]] : index
+    # CHECK:                  %[[COND:.*]] = arith.cmpi sgt, %[[COUNT0]], %[[C0]] : index
     # CHECK:                  scf.if %[[COND]] {
     # CHECK-COUNT-1:          arith.divf
     # CHECK-COUNT-1:          math.log2
@@ -104,7 +103,7 @@ def test_paged_flash_decoding():
     print(phase_1.asm)
 
     # CHECK-LABEL:       func.func @phase_1
-    # CHECK:               vector.load
+    # CHECK:               memref.load
     # CHECK:               scf.for
     # CHECK-COUNT-2:           vector.maskedload
     # CHECK-COUNT-1:           arith.maximumf
