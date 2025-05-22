@@ -322,7 +322,7 @@ def create_inputs(
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("is_causal", "causal")
 @param_bool("use_buffer_ops", "buf_ops")
-@param_bool("use_wave_runtime", "wr", [False, True])
+@param_bool("use_wave_runtime", "wr")
 @param_bool("use_custom_mask", "cmask")
 @pytest.mark.parametrize(
     "mfma_variant",

@@ -183,12 +183,14 @@ def load_inputs(directory):
         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
     ],
 )
+@param_bool("use_wave_runtime", "wr")
 def testPagedFlashDecoding(
     shape: tuple[int],
     dtype: torch.dtype,
     enable_scheduling: SchedulingType,
     num_kv_splits: int,
     mfma_variant: MMAType,
+    use_wave_runtime: bool,
     request,
 ):
     torch.manual_seed(0)
@@ -285,6 +287,7 @@ def testPagedFlashDecoding(
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
+        wave_runtime=use_wave_runtime,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -315,6 +318,7 @@ def testPagedFlashDecoding(
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
+        wave_runtime=use_wave_runtime,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
