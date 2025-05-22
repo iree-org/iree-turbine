@@ -2184,11 +2184,29 @@ class Permute(CustomOp, ABC):
         So say we have a permute operation that swaps [B, M, N] to
         [M, N, B], then we swap the strides of the dimensions.
         """
+        # Assert if `vector_shapes` is unknown
+        assert (
+            self.vector_shapes is not None
+        ), "`vector_shapes` must be set before calling this function"
+
         custom_src = get_custom(self.arg)
         src_shape = custom_src.type.symbolic_shape
         src_to_target = {
             src: self.target_shape[src_shape.index(src)] for src in src_shape
         }
+        # Compute the non-unit iterators, ie. where `vector_shapes != 0`
+        non_unit_its = [k for k, v in self.vector_shapes.items() if v != 0]
+        # Compute the non-unit shapes, both source and target
+        non_unit_src = [d for d in src_shape if d in non_unit_its]
+        non_unit_tgt = [d for d in self.target_shape if d in non_unit_its]
+        # If `non_unit_src == non_unit_tgt` permute only the indices of the op.
+        # For example, if `src_shape == [B, M, N]`, `tgt_shape = [M, B, N]`,
+        # and `vector_shape(B) == 0`, then `non_unit_src = [M, N]`,
+        # `non_unit_tgt = [M, N]`. Meaning only trivial operators are being
+        # permuted, thus only the order of the indices must be updated.
+        if non_unit_src == non_unit_tgt:
+            return {k: index[k] for k in self.target_shape if k in index}
+        # Else, permute the strides.
         permuted_index = {
             k: IndexSequence(v.start, v.size, index[src_to_target[k]].stride)
             for k, v in index.items()
