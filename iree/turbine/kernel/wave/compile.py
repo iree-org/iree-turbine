@@ -47,8 +47,7 @@ class WaveKernel:
         if not options.wave_runtime:
 
             def loader(device):
-                rt_config = rt.Config(device)
-                vm_instance = rt_config.vm_instance
+                vm_instance = device.vm_instance
                 return rt.VmModule.copy_buffer(vm_instance, self.executable)
 
             self.launchable = Launchable.from_vm_module(
