@@ -14,7 +14,12 @@ from .cache import (
     is_cache_enabled,
 )
 from .utils.compile_utils import compile_to_vmfb
-from .utils.run_utils import invoke_vmfb, _write_file, invoke_with_wave_runtime
+from .utils.run_utils import (
+    _write_file,
+    invoke_with_wave_runtime,
+    print_bench_result,
+    benchmark_module,
+)
 from iree.turbine.kernel._support.context import push, pop
 from iree.turbine.runtime.launch import Launchable
 import iree.runtime as rt
@@ -97,6 +102,26 @@ class WaveKernel:
                 *kernel_outputs,
                 *list(self.options.dynamic_symbols_map.values()),
             )
+
+        if self.options.run_bench:
+            benchmark_flags = {}
+            # If we use 1000 for bench_batch_size during compilation, and set this batch size to 1,
+            # then the latency is in milliseconds.
+            benchmark_flags["batch_size"] = 1
+
+            if self.options.benchmark_repetitions is not None:
+                benchmark_flags["benchmark_repetitions"] = int(
+                    self.options.benchmark_repetitions
+                )
+            benchmark_results = benchmark_module(
+                self.options,
+                kernel_inputs,
+                kernel_outputs,
+                self.executable,
+                self.options.func_name,
+                **benchmark_flags,
+            )
+            print_bench_result(benchmark_results, self.options.bench_file)
 
         return self.asm
 
