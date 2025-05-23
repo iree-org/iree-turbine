@@ -523,7 +523,8 @@ def _device_import_torch_tensor_cuda_hip(
     # TODO: The 'None' here tells the producer to synchronize on the default
     # stream. For async, we should advance our timeline and signal when an
     # event is raised on Torch's stream at the current position.
-    capsule = t.__dlpack__(None)
+    # capsule = t.__dlpack__(None)
+    capsule = torch.to_dlpack(t)
     bv = device.hal_device.from_dlpack_capsule(capsule)
     # TODO: iree runtime renames the capsule to `dltensor_used`, but doesn't free up the renamed capsule.
     # Instead of renaming the capsule so it gets freed, we should address the bug in iree-runtime.
