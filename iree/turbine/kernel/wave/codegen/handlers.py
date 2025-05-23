@@ -1148,13 +1148,10 @@ def handle_extract(emitter: WaveEmitter, node: fx.Node):
     assert isinstance(offset, list) and len(offset) == 1
     extract_vector = cast_vector(emitter, register)
     result_type = VectorType.get([1], extract_vector.type.element_type)
-    element = vector_d.extract_strided_slice(
-        result_type,
-        extract_vector,
-        offset,
-        [1],
-        [1],
+    element = vector_d.extract(
+        extract_vector, static_position=offset, dynamic_position=[]
     )
+    element = vector_d.splat(result_type, element)
 
     emitter.bind_node_proxy(node, IRProxyValue(element))
 
@@ -1332,9 +1329,21 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
 
     # Determine whether to extract or combine.
     if len(args) > 1:
+        vectors = [cast_vector(emitter, arg) for arg in args]
+        shape = vectors[0].type.shape[0]
+        if shape == 1:
+            values = [
+                vector_d.extract(vector, static_position=[0], dynamic_position=[])
+                for vector in vectors
+            ]
+            element_type = vectors[0].type.element_type
+            vector_type = VectorType.get([shape * len(args)], element_type)
+            result = vector_d.from_elements(vector_type, values)
+            emitter.bind_node_proxy(node, IRProxyValue(result))
+            return
+
         concatenated = None
-        for i, sub_arg in enumerate(args):
-            vector = cast_vector(emitter, sub_arg)
+        for i, vector in enumerate(vectors):
             shape = vector.type.shape[0]
             if concatenated is None:
                 element_type = vector.type.element_type
