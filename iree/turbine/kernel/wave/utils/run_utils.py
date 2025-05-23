@@ -228,6 +228,14 @@ def invoke_vmfb(
         _print_bench_result(benchmark_results, options.bench_file)
 
 
+def invoke_with_iree_runtime(
+    options: WaveCompileOptions,
+    kernel_inputs: list[torch.Tensor],
+    kernel_outputs: list[torch.Tensor],
+):
+    pass
+
+
 def invoke_with_wave_runtime(
     gpu_func: Any,
     options: WaveCompileOptions,
@@ -263,8 +271,6 @@ def invoke_with_wave_runtime(
         if isinstance(arg_tensor, (float, int)):
             scalar_args.append(arg_tensor)
             continue
-        if not arg_tensor.is_contiguous():
-            arg_tensor = arg_tensor.contiguous()
         kern_args.append(arg_tensor.data_ptr())
 
     kernel_args = wave_runtime.Int64Vector(kern_args)
