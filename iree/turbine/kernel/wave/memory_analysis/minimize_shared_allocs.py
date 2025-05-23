@@ -19,39 +19,7 @@ from .solver import (
     determine_allocations_offsets,
 )
 import math
-from ..utils.graph_utils import is_barrier_between
-
-
-def update_sort_keys(
-    trace: CapturedTrace, graph: fx.Graph, prefix: Optional[tuple] = ()
-):
-    """
-    Update the sort keys of the graph so that
-    consecutive nodes have consecutive sort keys.
-    Also, broadcast the sort keys for ops in nested graphs.
-    After this pass, the sort keys are unique and monotonically increasing.
-    For example, if we have a graph with nodes [a, b, c, d], and c is a nested
-    region with ops [e, f, g], then the sort keys will be:
-
-    a: (0,)
-    b: (1,)
-    c: (2,)
-        e: (2, 0)
-        f: (2, 1)
-        g: (2, 2)
-    d: (3,)
-
-    so that we can always say that a < b < c < e < f < g < d.
-    """
-    for i, node in enumerate(graph.nodes):
-        node._sort_key = prefix + (i,)
-        custom = get_custom(node)
-        if isinstance(custom, NestedRegionOp):
-            update_sort_keys(
-                trace,
-                trace.region_graph.subgraphs[custom.subgraph_name],
-                node._sort_key,
-            )
+from ..utils.graph_utils import is_barrier_between, update_sort_keys
 
 
 @dataclass
