@@ -5,10 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import torch
-from typing import Any
-from .utils.run_utils import compile_and_invoke
 from ...support.conversions import TORCH_DTYPE_TO_IREE_TYPE_ASM
-from .compile import WaveCompileOptions
 from iree.turbine.runtime.launch import Launchable
 
 
@@ -163,7 +160,6 @@ def generate_iree_ref(
     kernel_type: str,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    options: WaveCompileOptions,
 ):
     """
     Generate a reference output for the given kernel type and arguments.
@@ -221,13 +217,3 @@ def generate_iree_ref(
     else:
         for r, k in zip(res, kernel_outputs):
             k[:] = r
-
-    # options.func_name = kernel_type
-    # options.inplace = False
-    # options.dynamic_symbols_map = {}
-    # compile_and_invoke(
-    #     asm,
-    #     kernel_inputs,
-    #     kernel_outputs,
-    #     options,
-    # )
