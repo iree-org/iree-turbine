@@ -96,7 +96,6 @@ class WaveKernel:
                 *kernel_inputs,
                 *kernel_outputs,
                 *list(self.options.dynamic_symbols_map.values()),
-                device=None,
             )
 
         return self.asm
