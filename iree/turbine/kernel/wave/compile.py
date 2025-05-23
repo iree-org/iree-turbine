@@ -16,6 +16,8 @@ from .cache import (
 from .utils.compile_utils import compile_to_vmfb
 from .utils.run_utils import invoke_vmfb, _write_file, invoke_with_wave_runtime
 from iree.turbine.kernel._support.context import push, pop
+from iree.turbine.runtime.launch import Launchable
+import iree.runtime as rt
 
 
 class WaveKernel:
@@ -42,10 +44,22 @@ class WaveKernel:
         else:
             self.gpu_func = None
 
-    def __call__(self, *args, **kwargs):
-        return self.invoke(*args, **kwargs)
+        if not options.wave_runtime:
 
-    def invoke(self, *args, **kwargs):
+            def loader(device):
+                rt_config = rt.Config(device)
+                vm_instance = rt_config.vm_instance
+                return rt.VmModule.copy_buffer(vm_instance, self.executable)
+
+            self.launchable = Launchable.from_vm_module(
+                loader,
+                entry_point=options.kernel_launch_info.func_name,
+            )
+
+    def __call__(self, *args):
+        return self.invoke(*args)
+
+    def invoke(self, *args):
         """
         Invokes the wave kernel with the given arguments.
         Returns the assembly code of the compiled kernel.
@@ -59,15 +73,10 @@ class WaveKernel:
         # ToDo: we should expose the `usage` as a property in binding desc
         #       so that we can reduce the code and use `zip``.
         usage_idx = 0
-        device = None
         for arg in args:
             if isinstance(arg, (int, float)):
                 scalar_args.append(arg)
             elif isinstance(arg, torch.Tensor):
-                # TODO: Can we actually support non-contiguous tensors, please?
-                if not arg.is_contiguous():
-                    arg = arg.contiguous()
-
                 usage = self.options.kernel_usages[usage_idx]
                 usage_idx += 1
                 if usage == kernel_codegen.KernelBufferUsage.INPUT:
@@ -83,9 +92,14 @@ class WaveKernel:
             invoke_with_wave_runtime(
                 self.gpu_func, self.options, kernel_inputs, kernel_outputs
             )
-            return self.asm
+        else:
+            self.launchable(
+                *kernel_inputs,
+                *kernel_outputs,
+                *list(self.options.dynamic_symbols_map.values()),
+                device=None,
+            )
 
-        invoke_vmfb(self.executable, self.options, kernel_inputs, kernel_outputs)
         return self.asm
 
 
