@@ -250,6 +250,17 @@ class HardwareConstraint(Constraint):
             case _:
                 raise ValueError(f"Unsupported MMA type: {mma_type}")
 
+    def scaled_mma_block_size(self, mma_type: Optional[ScaledMMAType]) -> int:
+        if mma_type == None:
+            mma_type = self.mma_type
+
+        match mma_type:
+            case (ScaledMMAType.F32_16x16x128_F8F6F4
+                  | ScaledMMAType.F32_32x32x64_F8F6F4):
+                return 32
+            case _:
+                raise ValueError(f"Unsupported MMA type: {mma_type}")
+
     def mma_index_offset(self, mma_type: Optional[MMAType | ScaledMMAType]):
         lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
