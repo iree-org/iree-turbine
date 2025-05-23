@@ -59,16 +59,23 @@ class WaveKernel:
         # ToDo: we should expose the `usage` as a property in binding desc
         #       so that we can reduce the code and use `zip``.
         usage_idx = 0
+        device = None
         for arg in args:
-            if not isinstance(arg, torch.Tensor):
+            if isinstance(arg, (int, float)):
                 scalar_args.append(arg)
-                continue
-            usage = self.options.kernel_usages[usage_idx]
-            usage_idx += 1
-            if usage == kernel_codegen.KernelBufferUsage.INPUT:
-                kernel_inputs.append(arg)
-            if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
-                kernel_outputs.append(arg)
+            elif isinstance(arg, torch.Tensor):
+                # TODO: Can we actually support non-contiguous tensors, please?
+                if not arg.is_contiguous():
+                    arg = arg.contiguous()
+
+                usage = self.options.kernel_usages[usage_idx]
+                usage_idx += 1
+                if usage == kernel_codegen.KernelBufferUsage.INPUT:
+                    kernel_inputs.append(arg)
+                if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
+                    kernel_outputs.append(arg)
+            else:
+                raise ValueError(f"Unsupported argument type: {type(arg)}")
 
         kernel_inputs.extend(scalar_args)
 
