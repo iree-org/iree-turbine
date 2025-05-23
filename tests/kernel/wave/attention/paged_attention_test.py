@@ -46,6 +46,7 @@ shapes = [(16, 1, 64, 64, 32, 2, 100)]
 shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
 shapes += [(128, 2, 80, 80, 32, 2, 500)]
+shapes += [(128, 2, 512, 512, 32, 32, 500)]
 
 # Test shapes for MHA paged attention
 # (NUM_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
