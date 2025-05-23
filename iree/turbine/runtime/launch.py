@@ -199,7 +199,9 @@ class Launchable:
             f"Could not load a target binary for device {turbine_device}"
         )
 
-    def __call__(self, *args, device: Optional[torch.device] = None):
+    def __call__(
+        self, *args, device: Optional[torch.device] = None, outputs: Sequence[Any] = ()
+    ):
         turbine_device: Optional[Device] = (
             None if device is None else get_device_from_torch(device)
         )
@@ -238,7 +240,13 @@ class Launchable:
 
         vm_context, vm_function = self._resolve_target_binary(turbine_device)
 
-        ret_list = VmVariantList(1)
+        ret_list = VmVariantList(len(outputs))
+        for output in outputs:
+            if isinstance(output, Tensor):
+                assert output.is_contiguous(), "Outputs must be contiguous"
+                ret_list.push_ref(turbine_device.import_torch_tensor(arg))
+            else:
+                raise ValueError(f"Unsupported output type: {type(output)}")
 
         invoke_vm_function(
             turbine_device, self._is_async, vm_context, vm_function, arg_list, ret_list
