@@ -155,12 +155,7 @@ def invoke_vmfb(
     options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    gpu_func: Optional[Any] = None,
 ):
-    if options.wave_runtime:
-        invoke_with_wave_runtime(options, kernel_inputs, kernel_outputs, gpu_func)
-        return
-
     device = options.device
     if options.run_bench:
         benchmark_flags = {}
@@ -234,10 +229,10 @@ def invoke_vmfb(
 
 
 def invoke_with_wave_runtime(
+    gpu_func: Any,
     options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    gpu_func: Any,
 ):
     """
     Invokes the kernel with the wave runtime.

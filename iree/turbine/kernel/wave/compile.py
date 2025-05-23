@@ -14,7 +14,7 @@ from .cache import (
     is_cache_enabled,
 )
 from .utils.compile_utils import compile_to_vmfb
-from .utils.run_utils import invoke_vmfb, _write_file
+from .utils.run_utils import invoke_vmfb, _write_file, invoke_with_wave_runtime
 from iree.turbine.kernel._support.context import push, pop
 
 
@@ -72,9 +72,13 @@ class WaveKernel:
 
         kernel_inputs.extend(scalar_args)
 
-        invoke_vmfb(
-            self.executable, self.options, kernel_inputs, kernel_outputs, self.gpu_func
-        )
+        if self.options.wave_runtime:
+            invoke_with_wave_runtime(
+                self.gpu_func, self.options, kernel_inputs, kernel_outputs
+            )
+            return self.asm
+
+        invoke_vmfb(self.executable, self.options, kernel_inputs, kernel_outputs)
         return self.asm
 
 
