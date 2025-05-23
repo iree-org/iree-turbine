@@ -46,6 +46,7 @@ shapes = [(16, 1, 64, 64, 32, 2, 100)]
 shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
 shapes += [(128, 2, 80, 80, 32, 2, 500)]
+shapes += [(128, 2, 512, 512, 32, 32, 500)]
 
 # Test shapes for MHA paged attention
 # (NUM_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
@@ -183,12 +184,14 @@ def load_inputs(directory):
         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
     ],
 )
+@param_bool("use_wave_runtime", "wr")
 def testPagedFlashDecoding(
     shape: tuple[int],
     dtype: torch.dtype,
     enable_scheduling: SchedulingType,
     num_kv_splits: int,
     mfma_variant: MMAType,
+    use_wave_runtime: bool,
     request,
 ):
     torch.manual_seed(0)
@@ -285,6 +288,7 @@ def testPagedFlashDecoding(
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
+        wave_runtime=use_wave_runtime,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -315,6 +319,7 @@ def testPagedFlashDecoding(
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
+        wave_runtime=use_wave_runtime,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
