@@ -70,7 +70,7 @@ def to_index(v: Value) -> Value:
     if isinstance(t, IntegerType):
         return arith_d.index_cast(IndexType.get(), v)
 
-    assert False, f"Expected IndexType or IntegerType, got {v.type}"
+    assert False, f"Expected IndexType or IntegerType, got {t}"
 
 
 def isolated_test_call(
