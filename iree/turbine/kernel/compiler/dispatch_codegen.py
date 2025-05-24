@@ -24,7 +24,6 @@ from .ir import (
     IndexType,
     InsertionPoint,
     IntegerAttr,
-    IntegerType,
     IrType,
     Location,
     StringAttr,
