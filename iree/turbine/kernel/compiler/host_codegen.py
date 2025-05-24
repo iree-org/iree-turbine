@@ -62,6 +62,17 @@ def get_dynamic_dims(bindings: list[BindingDesc], dynamic_symbols: list[IndexSym
     return dynamic_dims
 
 
+def to_index(v: Value) -> Value:
+    t = v.type
+    if isinstance(t, IndexType):
+        return v
+
+    if isinstance(t, IntegerType):
+        return arith_d.index_cast(IndexType.get(), v)
+
+    assert False, f"Expected IndexType or IntegerType, got {v.type}"
+
+
 def isolated_test_call(
     mb: ModuleBuilder,
     exe: StreamExecutable,
@@ -106,16 +117,6 @@ def isolated_test_call(
         scalars_offset = len(sig.kernel_buffer_bindings)
         scalars_count = len(scalar_bindings)
         dynamic_offset = scalars_offset + scalars_count
-
-        def to_index(v: Value) -> Value:
-            t = v.type
-            if isinstance(t, IndexType):
-                return v
-
-            if isinstance(t, IntegerType):
-                return arith_d.index_cast(IndexType.get(), v)
-
-            assert False, f"Expected IndexType or IntegerType, got {v.type}"
 
         with InsertionPoint(entry_block):
             arguments = entry_block.arguments
