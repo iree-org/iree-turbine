@@ -1157,6 +1157,7 @@ def testScaledF8Gemm(
     M = tkl.sym.M
     N = tkl.sym.N
     K = tkl.sym.K
+    K_SCALE = tkl.sym.K_SCALE
     # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
@@ -1180,9 +1181,9 @@ def testScaledF8Gemm(
     @tkw.wave(constraints)
     def gemm(
         a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
-        a_scale: tkl.Memory[M, K/32, ADDRESS_SPACE, tkl.f8e8m0fnu],
+        a_scale: tkl.Memory[M, K_SCALE, ADDRESS_SPACE, tkl.f8e8m0fnu],
         b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        b_scale: tkl.Memory[N, K/32, ADDRESS_SPACE, tkl.f8e8m0fnu],
+        b_scale: tkl.Memory[N, K_SCALE, ADDRESS_SPACE, tkl.f8e8m0fnu],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
