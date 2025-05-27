@@ -210,7 +210,7 @@ def testPureGemm(
                 dump_perf, "iree_" + perf_filename
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
 
@@ -328,7 +328,7 @@ def testPingPongGemm(
                 dump_perf, "iree_" + perf_filename
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
 
@@ -478,7 +478,7 @@ def testGemmDot(
                 dump_perf, "iree_" + perf_filename
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False, atol=1e-3, rtol=1e-3)
 
 
@@ -621,7 +621,7 @@ def testVMFMAGemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, atol=2e-4, rtol=3e-4, check_device=False)
 
 
@@ -766,7 +766,7 @@ def testCDNA2IntGemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.int32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
 
@@ -879,7 +879,7 @@ def testCDNA3IntGemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.int32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
 
@@ -989,7 +989,7 @@ def testF8Gemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt_f8", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt_f8", [a, b], [iree_ref])
     assert_close(c, iree_ref, atol=3e-5, rtol=3e-4, check_device=False)
 
 
@@ -1094,7 +1094,7 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-    generate_iree_ref("bmmt", [a, b], [iree_ref], options)
+    generate_iree_ref("bmmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
     torch_ref = torch.matmul(a, b.transpose(-2, -1))
@@ -1206,7 +1206,7 @@ def testSequentialBatchedGemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-    generate_iree_ref("bmmt", [a, b], [iree_ref], options)
+    generate_iree_ref("bmmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
     torch_ref = torch.matmul(a, b.transpose(-2, -1))
