@@ -109,7 +109,7 @@ def get_mma_dimensional_mapping(
                     assert (
                         len(scale_reduction_dim_candidates) == 1
                     ), f"Expected 1 reduction dimension, got {scale_reduction_dim_candidates}"
-
+                breakpoint()
                 k_scale = scale_reduction_dim_candidates.pop()
             except KeyError as e:
                 raise RuntimeError(
