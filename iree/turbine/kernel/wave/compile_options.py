@@ -28,7 +28,6 @@ class WaveCompileOptions:
     # === Runtime options ===
     kernel_launch_info: KernelLaunchInfo = field(default_factory=KernelLaunchInfo)
     kernel_usages: tuple[KernelBufferUsage] = None
-    inplace: bool = True
 
     # === Backend options ===
     backend: str = "rocm"
