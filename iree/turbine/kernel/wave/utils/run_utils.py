@@ -202,6 +202,9 @@ def invoke_vmfb(
         if options.kernel_hash:
             RUNTIME_CACHE[options.kernel_hash] = (ctx, func)
 
+    if options.torch_synchronize:
+        torch.cuda.synchronize()
+
     if options.inplace:
         _inplace_invoke(
             ctx.vm_context,
