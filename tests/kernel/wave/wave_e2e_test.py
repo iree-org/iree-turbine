@@ -1557,9 +1557,6 @@ def test_igemm_conv(
             "conv_2d_" + layout,
             [x, we],
             [iree_ref],
-            options,
-            stride=stride,
-            run_bench=True,
         )
 
 

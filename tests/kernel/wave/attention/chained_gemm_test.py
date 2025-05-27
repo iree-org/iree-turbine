@@ -171,7 +171,7 @@ def testChainedGemm(
             print(f"IR dumped to {filename}")
 
     iree_ref = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
-    generate_iree_ref("chain_mmt", [q, k, v], [iree_ref], options)
+    generate_iree_ref("chain_mmt", [q, k, v], [iree_ref])
     assert_close(output, iree_ref, check_device=False, atol=0, rtol=0)
 
     torch_qk = torch.matmul(q, k.transpose(-1, -2))
@@ -322,5 +322,5 @@ def testChainedGemmF8(
             f.write(asm)
 
     iree_ref = device_zeros(batch, v_head_dim, q_seq_len, dtype=torch.float32)
-    generate_iree_ref("chain_mmt_f8", [q, k, v], [iree_ref], options)
+    generate_iree_ref("chain_mmt_f8", [q, k, v], [iree_ref])
     assert_close(output, iree_ref, atol=7e-5, rtol=2e-3, check_device=False)
