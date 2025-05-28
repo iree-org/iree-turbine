@@ -1680,7 +1680,6 @@ def test_scalar_codegen(shape, tkl_dtype, torch_dtype, arg_vals, request):
         },
         canonicalize=True,
         run_bench=run_bench,
-        inplace=False,
         wave_runtime=True,
     )
     test = wave_compile(options, test)

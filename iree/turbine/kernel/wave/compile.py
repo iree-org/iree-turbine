@@ -14,8 +14,15 @@ from .cache import (
     is_cache_enabled,
 )
 from .utils.compile_utils import compile_to_vmfb
-from .utils.run_utils import invoke_vmfb, _write_file
+from .utils.run_utils import (
+    _write_file,
+    invoke_with_wave_runtime,
+    print_bench_result,
+    benchmark_module,
+)
 from iree.turbine.kernel._support.context import push, pop
+from iree.turbine.runtime.launch import Launchable
+import iree.runtime as rt
 
 
 class WaveKernel:
@@ -42,10 +49,21 @@ class WaveKernel:
         else:
             self.gpu_func = None
 
-    def __call__(self, *args, **kwargs):
-        return self.invoke(*args, **kwargs)
+        if not options.wave_runtime:
 
-    def invoke(self, *args, **kwargs):
+            def loader(device):
+                vm_instance = device.vm_instance
+                return rt.VmModule.copy_buffer(vm_instance, self.executable)
+
+            self.launchable = Launchable.from_vm_module(
+                loader,
+                entry_point=options.func_name,
+            )
+
+    def __call__(self, *args):
+        return self.invoke(*args)
+
+    def invoke(self, *args):
         """
         Invokes the wave kernel with the given arguments.
         Returns the assembly code of the compiled kernel.
@@ -60,21 +78,51 @@ class WaveKernel:
         #       so that we can reduce the code and use `zip``.
         usage_idx = 0
         for arg in args:
-            if not isinstance(arg, torch.Tensor):
+            if isinstance(arg, (int, float)):
                 scalar_args.append(arg)
-                continue
-            usage = self.options.kernel_usages[usage_idx]
-            usage_idx += 1
-            if usage == kernel_codegen.KernelBufferUsage.INPUT:
-                kernel_inputs.append(arg)
-            if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
-                kernel_outputs.append(arg)
+            elif isinstance(arg, torch.Tensor):
+                usage = self.options.kernel_usages[usage_idx]
+                usage_idx += 1
+                if usage == kernel_codegen.KernelBufferUsage.INPUT:
+                    kernel_inputs.append(arg)
+                if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
+                    kernel_outputs.append(arg)
+            else:
+                raise ValueError(f"Unsupported argument type: {type(arg)}")
 
         kernel_inputs.extend(scalar_args)
 
-        invoke_vmfb(
-            self.executable, self.options, kernel_inputs, kernel_outputs, self.gpu_func
-        )
+        if self.options.wave_runtime:
+            invoke_with_wave_runtime(
+                self.gpu_func, self.options, kernel_inputs, kernel_outputs
+            )
+        else:
+            self.launchable(
+                *kernel_inputs,
+                *kernel_outputs,
+                *list(self.options.dynamic_symbols_map.values()),
+            )
+
+        if self.options.run_bench:
+            benchmark_flags = {}
+            # If we use 1000 for bench_batch_size during compilation, and set this batch size to 1,
+            # then the latency is in milliseconds.
+            benchmark_flags["batch_size"] = 1
+
+            if self.options.benchmark_repetitions is not None:
+                benchmark_flags["benchmark_repetitions"] = int(
+                    self.options.benchmark_repetitions
+                )
+            benchmark_results = benchmark_module(
+                self.options,
+                kernel_inputs,
+                kernel_outputs,
+                self.executable,
+                self.options.func_name,
+                **benchmark_flags,
+            )
+            print_bench_result(benchmark_results, self.options.bench_file)
+
         return self.asm
 
 
