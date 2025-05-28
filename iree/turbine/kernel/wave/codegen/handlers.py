@@ -651,13 +651,12 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
 
 @handle_binary_op(atan2)
 def handle_atan2(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
-    element_type_lhs = get_type_or_element_type(lhs.type)
-    element_type_rhs = get_type_or_element_type(rhs.type)
+    element_type = get_type_or_element_type(lhs.type)
 
-    if _is_float_type(element_type_lhs) and _is_float_type(element_type_rhs):
+    if _is_float_type(element_type):
         result = math_d.atan2(lhs, rhs, fastmath=get_fast_math_flags(options))
     else:
-        raise ValidationError(f"Found unhandled operand type for atan2: {element_type_lhs} and {element_type_rhs}")
+        raise ValidationError(f"Found unhandled operand type for atan2: {element_type}")
     return result
 
 ###############################################################################
