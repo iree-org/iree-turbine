@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import os
 from typing import Sequence, Tuple
 
 import torch
@@ -13,6 +14,8 @@ from ..conv_exports import ConvSignature, get_launchable, DEFAULT_LAYOUTS
 __all__ = [
     "boo_conv",
 ]
+
+BOO_USE_BACKWARD_KERNELS = int(os.getenv("BOO_USE_BACKWARD_KERNELS", "0"))
 
 
 @torch.library.custom_op("iree_turbine::boo_convolution", mutates_args=())
@@ -163,6 +166,44 @@ def _b(
     return input_grad, weight_grad, bias_grad
 
 
+def pytorch_convolution_backward(ctx, grad_output):
+    x, w = ctx.saved_tensors
+
+    mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
+
+    # return to NCHW if necessary
+    rank = len(x.shape)
+    perm = [0] + [rank - 1] + list(range(1, rank - 1))
+    inv_perm = [0] + list(range(2, rank)) + [1]
+    if ctx.input_layout.endswith("C"):
+        x = x.permute(perm)
+    if ctx.kernel_layout.endswith("C"):
+        w = w.permute(perm)
+    if ctx.output_layout.endswith("C"):
+        grad_output = grad_output.permute(perm)
+
+    input_grad, weight_grad, bias_grad = torch.ops.aten.convolution_backward(
+        grad_output,
+        x,
+        w,
+        None,
+        ctx.stride,
+        ctx.padding,
+        ctx.dilation,
+        False,
+        [0] * len(ctx.stride),
+        ctx.groups,
+        mask,
+    )
+
+    if ctx.input_layout.endswith("C"):
+        input_grad = input_grad.permute(inv_perm)
+    if ctx.kernel_layout.endswith("C"):
+        weight_grad = weight_grad.permute(inv_perm)
+    # return `None` for attribute args
+    return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
+
+
 def boo_convolution_backward(ctx, grad_output):
     x, w = ctx.saved_tensors
 
@@ -216,8 +257,14 @@ def boo_convolution_context(
     ctx.use_bias = b is not None
 
 
+_backward_to_register = (
+    boo_convolution_backward
+    if (BOO_USE_BACKWARD_KERNELS)
+    else pytorch_convolution_backward
+)
+
 boo_convolution.register_autograd(
-    boo_convolution_backward, setup_context=boo_convolution_context
+    _backward_to_register, setup_context=boo_convolution_context
 )
 
 
