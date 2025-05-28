@@ -1187,9 +1187,9 @@ def testScaledF8Gemm(
     @tkw.wave(constraints)
     def gemm(
         a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
-        a_scale: tkl.Memory[M, K_SCALE, ADDRESS_SPACE, tkl.i8],
+        a_scale: tkl.Memory[M, K_SCALE, GLOBAL_ADDRESS_SPACE, tkl.i8],
         b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        b_scale: tkl.Memory[N, K_SCALE, ADDRESS_SPACE, tkl.i8],
+        b_scale: tkl.Memory[N, K_SCALE, GLOBAL_ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
@@ -1297,6 +1297,7 @@ def testScaledF8Gemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     torch_ref = run_torch(a, a_scale, b, b_scale)
+    # TODO: See why filled ones is working for some entries but broken for others.
     assert_close(c, torch_ref, atol=3e-5, rtol=3e-4, check_device=False)
 
 

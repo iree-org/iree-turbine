@@ -364,8 +364,7 @@ class HardwareConstraint(Constraint):
             case ScaledMMAType.F32_16x16x128_F8F6F4:
                 offset = [
                     Piecewise(
-                        (lane % 16, ~MMA_ACC),
-                        (4 * floor(lane / 16) + (GPR_NUM % 4), MMA_ACC),
+                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
                     ),  # M
                     lane % 16,  # N
                     32 * floor(lane / 16),  # K
