@@ -1,19 +1,17 @@
-# Copyright 2024 The IREE Authors
+# Copyright 2025 The IREE Authors
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import torch
-from typing import Any
-from .utils.run_utils import compile_and_invoke
 from ...support.conversions import TORCH_DTYPE_TO_IREE_TYPE_ASM
-from .compile import WaveCompileOptions
+from iree.turbine.runtime.launch import Launchable
 
 
 def get_chain_mmt_asm(
     query_type: str, key_type: str, value_type: str, output_type: str
-) -> str:
+) -> tuple[str, str]:
     B, M, K1, input_dtype = query_type.split("x")
     B, K2, K1, input_dtype = key_type.split("x")
     B, N, K2, input_dtype = value_type.split("x")
@@ -22,7 +20,8 @@ def get_chain_mmt_asm(
     intermediate_cast_type = f"{B}x{K2}x{M}x{input_dtype}"
     transposed_cast_type = f"{B}x{M}x{K2}x{input_dtype}"
     transposed_output_type = f"{B}x{M}x{N}x{output_dtype}"
-    return f"""
+    return (
+        f"""
     func.func @chain_mmt(%query: tensor<{query_type}>, %key: tensor<{key_type}>, %value: tensor<{value_type}>) -> tensor<{output_type}> {{
       %c0 = arith.constant 0.0 : f32
       %init = tensor.empty() : tensor<{intermediate_output_type}>
@@ -39,12 +38,14 @@ def get_chain_mmt_asm(
       %init4 = tensor.empty() : tensor<{output_type}>
       %transpose2 = linalg.transpose ins(%result2: tensor<{transposed_output_type}>) outs(%init4: tensor<{output_type}>) permutation=[0, 2, 1]
       return %transpose2 : tensor<{output_type}>
-    }}"""
+    }}""",
+        "chain_mmt",
+    )
 
 
 def get_chain_mmt_f8_asm(
     query_type: str, key_type: str, value_type: str, output_type: str
-) -> str:
+) -> tuple[str, str]:
     B, M, K1, input_dtype = query_type.split("x")
     B, K2, K1, input_dtype = key_type.split("x")
     B, N, K2, input_dtype = value_type.split("x")
@@ -57,7 +58,8 @@ def get_chain_mmt_f8_asm(
     query_f8_type = "x".join([B, M, K1, f8_dtype])
     key_f8_type = "x".join([B, K2, K1, f8_dtype])
     value_f8_type = "x".join([B, N, K2, f8_dtype])
-    return f"""
+    return (
+        f"""
     func.func @chain_mmt_f8(%query: tensor<{query_type}>, %key: tensor<{key_type}>, %value: tensor<{value_type}>) -> tensor<{output_type}> {{
       %c0 = arith.constant 0.0 : f32
       %init = tensor.empty() : tensor<{intermediate_output_type}>
@@ -77,7 +79,9 @@ def get_chain_mmt_f8_asm(
       %init4 = tensor.empty() : tensor<{output_type}>
       %transpose2 = linalg.transpose ins(%result2: tensor<{transposed_output_type}>) outs(%init4: tensor<{output_type}>) permutation=[0, 2, 1]
       return %transpose2 : tensor<{output_type}>
-    }}"""
+    }}""",
+        "chain_mmt_f8",
+    )
 
 
 def get_mmt_asm(
@@ -86,7 +90,7 @@ def get_mmt_asm(
     acc_type: str,
     batch: bool = False,
     cast_fp8: bool = False,
-) -> str:
+) -> tuple[str, str]:
     acc_dtype = acc_type.split("x")[-1]
     operator = "batch_matmul_transpose_b" if batch else "matmul_transpose_b"
     func_name = "bmmt" if batch else "mmt"
@@ -118,14 +122,15 @@ def get_mmt_asm(
                      outs(%inital_result: tensor<{acc_type}>) -> tensor<{acc_type}>
           return %result : tensor<{acc_type}>
         }}"""
-    return matmul_function
+    return matmul_function, func_name
 
 
 def get_conv_asm(
     conv_type: str, lhs_type: str, rhs_type: str, res_type: str, stride: int
-) -> str:
+) -> tuple[str, str]:
     res_dtype = res_type.split("x")[-1]
-    return f"""
+    return (
+        f"""
     func.func @conv_{conv_type}(%lhs: tensor<{lhs_type}>, %rhs: tensor<{rhs_type}>) -> tensor<{res_type}> {{
       %c0 = arith.constant 0.0 : {res_dtype}
       %init = tensor.empty() : tensor<{res_type}>
@@ -135,7 +140,9 @@ def get_conv_asm(
                 ins(%lhs, %rhs : tensor<{lhs_type}>, tensor<{rhs_type}>)
                 outs(%inital_result : tensor<{res_type}>) -> tensor<{res_type}>
       return %result : tensor<{res_type}>
-    }}"""
+    }}""",
+        f"conv_{conv_type}",
+    )
 
 
 def dtype_str(dtype: torch.dtype) -> str:
@@ -153,7 +160,6 @@ def generate_iree_ref(
     kernel_type: str,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    options: WaveCompileOptions,
 ):
     """
     Generate a reference output for the given kernel type and arguments.
@@ -165,7 +171,7 @@ def generate_iree_ref(
         lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
-        asm = get_mmt_asm(
+        asm, func_name = get_mmt_asm(
             lhs_type,
             rhs_type,
             acc_type,
@@ -176,36 +182,38 @@ def generate_iree_ref(
         lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
-        asm = get_mmt_asm(lhs_type, rhs_type, acc_type, batch=True)
+        asm, func_name = get_mmt_asm(lhs_type, rhs_type, acc_type, batch=True)
     elif kernel_type == "chain_mmt":
         query_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         key_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         value_type = get_type_str(kernel_inputs[2].shape, kernel_inputs[2].dtype)
         output_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
-        asm = get_chain_mmt_asm(query_type, key_type, value_type, output_type)
+        asm, func_name = get_chain_mmt_asm(
+            query_type, key_type, value_type, output_type
+        )
     elif kernel_type == "chain_mmt_f8":
         query_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         key_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         value_type = get_type_str(kernel_inputs[2].shape, kernel_inputs[2].dtype)
         output_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
-        asm = get_chain_mmt_f8_asm(query_type, key_type, value_type, output_type)
+        asm, func_name = get_chain_mmt_f8_asm(
+            query_type, key_type, value_type, output_type
+        )
     elif kernel_type.startswith(conv_str):
         lhs_type = get_type_str(kernel_inputs[0].shape, kernel_inputs[0].dtype)
         rhs_type = get_type_str(kernel_inputs[1].shape, kernel_inputs[1].dtype)
         acc_type = get_type_str(kernel_outputs[0].shape, kernel_outputs[0].dtype)
         conv_type = kernel_type[len(conv_str) :]
-        asm = get_conv_asm(
+        asm, func_name = get_conv_asm(
             conv_type, lhs_type, rhs_type, acc_type, int(kwargs["stride"])
         )
     else:
         raise ValueError(f"Unknown kernel type: {kernel_type}")
 
-    options.func_name = kernel_type
-    options.inplace = False
-    options.dynamic_symbols_map = {}
-    compile_and_invoke(
-        asm,
-        kernel_inputs,
-        kernel_outputs,
-        options,
-    )
+    launchable = Launchable.jit_compile(asm, entry_point=func_name)
+    res = launchable(*kernel_inputs, outputs=kernel_outputs)
+    if len(kernel_outputs) == 1:
+        kernel_outputs[0][:] = res
+    else:
+        for r, k in zip(res, kernel_outputs):
+            k[:] = r

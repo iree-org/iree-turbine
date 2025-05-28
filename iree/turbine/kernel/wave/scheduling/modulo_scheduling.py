@@ -11,15 +11,14 @@ from .graph_utils import (
     EdgeWeight,
     find_strongly_connected_components,
     find_cycles_in_scc,
-    all_pairs_longest_paths,
-    evaluate_all_pairs_longest_paths,
+    all_pairs_longest_paths_unevaluated,
+    all_pairs_longest_paths_evaluated,
     topological_sort,
     topological_sort_nodes,
 )
 from typing import Callable
 import numpy as np
 import math
-import multiprocessing as mp
 
 logger = get_logger("turbine.wave.modulo_scheduling")
 
@@ -41,6 +40,8 @@ class ModuloScheduler:
         self.edges = edges
         self.resources = resources
         self.seed = 2024
+        self.cached_edges_to = {}
+        self.cached_edges_from = {}
 
     def get_edge(self, from_node: fx.Node, to_node: fx.Node) -> Edge:
         """
@@ -58,10 +59,14 @@ class ModuloScheduler:
         Returns the edges that originate from a scheduled node and end
         in the specified node from the list of provided edges.
         """
+        if to_node not in self.cached_edges_to:
+            self.cached_edges_to[to_node] = [
+                (from_, to_node) for (from_, to_) in edges if to_ == to_node
+            ]
         return [
             (from_, to_node)
-            for (from_, to_) in edges
-            if to_ == to_node and from_ in self.schedule
+            for (from_, _) in self.cached_edges_to[to_node]
+            if from_ in self.schedule
         ]
 
     def get_edges_to_scheduled_node(
@@ -71,10 +76,14 @@ class ModuloScheduler:
         Returns the edges that end in a scheduled node and originate
         from the specified node from the list of provided edges.
         """
+        if from_node not in self.cached_edges_from:
+            self.cached_edges_from[from_node] = [
+                (from_node, to_) for (from_, to_) in edges if from_ == from_node
+            ]
         return [
             (from_node, to_)
-            for (from_, to_) in edges
-            if from_ == from_node and to_ in self.schedule
+            for (_, to_) in self.cached_edges_from[from_node]
+            if to_ in self.schedule
         ]
 
     def all_scc_scheduled(self, sccs: dict[fx.Node, list[fx.Node]]) -> bool:
@@ -112,19 +121,16 @@ class ModuloScheduler:
         T_max_range = 3 * T0
         success = False
 
-        # We cannot create create child processes when running in daemon process
-        # so just run sequentially.
-        # TODO: Find a way to reuse processes from the outside pool if we are
-        # already running inside.
-        if mp.current_process().daemon:
-            pool = None
-        else:
-            pool = mp.get_context("fork").Pool(processes=mp.cpu_count())
+        self.e_star_symbolic = all_pairs_longest_paths_unevaluated(
+            self.graph, self.edges
+        )
 
         for T in range(T0, T0 + T_max_range):
             logger.debug(f"Trying initiation interval: {T}.")
             self.RT = np.zeros((T, len(self.resources)))
-            self.e_star = all_pairs_longest_paths(self.graph, self.edges, T, pool)
+            self.e_star = all_pairs_longest_paths_evaluated(
+                self.graph, self.e_star_symbolic, T
+            )
             logger.debug(f"All Pairs Longest Paths: {self.e_star}.")
             self.schedule: dict[fx.Node, int] = {}
             for _, scc in topological_sort(sccs).items():
@@ -132,7 +138,7 @@ class ModuloScheduler:
                 s0 = {}
                 for node in scc:
                     candidate_edges = self.get_edges_from_scheduled_node(
-                        self.e_star, node
+                        self.e_star.keys(), node
                     )
                     s0[node] = 0
                     if candidate_edges:
@@ -160,10 +166,6 @@ class ModuloScheduler:
         else:
             raise Exception("Failed to schedule the graph.")
 
-        if pool is not None:
-            pool.close()
-            pool.join()
-
         self._initiation_interval = T
         return self.schedule, success
 
@@ -189,7 +191,7 @@ class ModuloScheduler:
                 [
                     self.schedule[from_node] + self.e_star[(from_node, to_node)]
                     for (from_node, to_node) in self.get_edges_from_scheduled_node(
-                        self.e_star, node
+                        self.e_star.keys(), node
                     )
                 ]
             )
@@ -197,7 +199,7 @@ class ModuloScheduler:
                 [
                     self.schedule[to_node] - self.e_star[(from_node, to_node)]
                     for (from_node, to_node) in self.get_edges_to_scheduled_node(
-                        self.e_star, node
+                        self.e_star.keys(), node
                     )
                 ]
             )

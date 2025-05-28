@@ -11,7 +11,6 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import copy
-import tempfile
 import pytest
 import torch
 from torch.testing import assert_close
@@ -27,10 +26,8 @@ from iree.turbine.kernel.wave.cache import (
     reset_cache_manager,
 )
 from iree.turbine.kernel.lang.global_symbols import *
-from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
-    get_default_arch,
 )
 from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,

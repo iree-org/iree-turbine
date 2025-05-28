@@ -1620,3 +1620,69 @@ def test_broadcast_batched_gemm_with_vmma():
     # CHECK-COUNT-2:     vector.extract_strided_slice
     # CHECK-COUNT-1:     amdgpu.mfma
     # CHECK:            scf.yield
+
+
+@run_test
+def test_batched_gemm_with_permute():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+            vector_shapes={B: 0},
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def batched_gemm_with_permute(
+        a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[B, N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, B, N, ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(
+            acc: tkl.Register[B, M, N, tkl.f32],
+        ) -> tkl.Register[B, M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        res = tkw.permute(repeat, target_shape=[M, B, N])
+        tkw.write(res, c)
+
+    options = WaveCompileOptions(
+        subs={
+            B: 64,
+            M: 64,
+            N: 64,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 16,
+            BLOCK_B: 1,
+            ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+        print_ir_after=["all"],
+    )
+    batched_gemm_with_permute = wave_compile(options, batched_gemm_with_permute)
+    print(batched_gemm_with_permute.asm)
+    # Verify that the batch dimension `B = WG` is in it's correct location after
+    # the permtue, ie: `[M, B, N]` instead of `[B, M, N]`.
+    # CHECK-LABEL:    func.func @batched_gemm_with_permute
+    # CHECK: %[[WG:.*]] = stream.dispatch.workgroup.id[2] : index
+    # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
+    # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
+    # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
+    # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]

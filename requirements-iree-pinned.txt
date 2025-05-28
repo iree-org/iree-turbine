@@ -7,5 +7,7 @@
 # Uncomment to skip versions from PyPI (so _only_ nightly versions).
 # --no-index
 
-iree-base-compiler==3.5.0rc20250521
-iree-base-runtime==3.5.0rc20250521
+# TODO: We have a pretty bad regression in Wave between 3.5.0rc20250516 and
+# 3.5.0rc20250517. I'm locking to 3.5.0rc20250516 until further investigation.
+iree-base-compiler==3.5.0rc20250516
+iree-base-runtime==3.5.0rc20250516

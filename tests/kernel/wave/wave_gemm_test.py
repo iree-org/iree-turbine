@@ -210,7 +210,7 @@ def testPureGemm(
                 dump_perf, "iree_" + perf_filename
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
 
@@ -328,7 +328,7 @@ def testPingPongGemm(
                 dump_perf, "iree_" + perf_filename
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
 
@@ -478,7 +478,7 @@ def testGemmDot(
                 dump_perf, "iree_" + perf_filename
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False, atol=1e-3, rtol=1e-3)
 
 
@@ -621,7 +621,7 @@ def testVMFMAGemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, atol=2e-4, rtol=3e-4, check_device=False)
 
 
@@ -766,7 +766,7 @@ def testCDNA2IntGemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.int32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
 
@@ -879,7 +879,7 @@ def testCDNA3IntGemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.int32)
-    generate_iree_ref("mmt", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
 
@@ -989,7 +989,7 @@ def testF8Gemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    generate_iree_ref("mmt_f8", [a, b], [iree_ref], options)
+    generate_iree_ref("mmt_f8", [a, b], [iree_ref])
     assert_close(c, iree_ref, atol=3e-5, rtol=3e-4, check_device=False)
 
 
@@ -1094,7 +1094,7 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-    generate_iree_ref("bmmt", [a, b], [iree_ref], options)
+    generate_iree_ref("bmmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
     torch_ref = torch.matmul(a, b.transpose(-2, -1))
@@ -1206,7 +1206,7 @@ def testSequentialBatchedGemm(
             dump_perf, "iree_" + request.node.name + ".json"
         )
     iree_ref = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
-    generate_iree_ref("bmmt", [a, b], [iree_ref], options)
+    generate_iree_ref("bmmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
 
     torch_ref = torch.matmul(a, b.transpose(-2, -1))
@@ -1446,3 +1446,113 @@ def testSequentialBatchedGemmWhileWithOutputSum(
     torch_ref = torch.matmul(a, b.transpose(-2, -1))
     assert_close(c.to(torch.float16), torch_ref, atol=1e-3, rtol=5e-3)
     assert_close(d.T, torch.sum(c, dim=0), atol=1e-3, rtol=5e-3)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("test_batched_gemm"))
+@pytest.mark.parametrize(
+    "enable_scheduling",
+    [SchedulingType.NONE],
+)
+def testBatchedGemmWithPermute(
+    shape: tuple[int], enable_scheduling: SchedulingType, request
+):
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    # Input sizes
+    B = tkl.sym.B
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    # Workgroup tile sizes
+    BLOCK_B = tkl.sym.BLOCK_B
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+    # Load and store sizes
+    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(2, 2, 1), vector_shapes={B: 0}
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def batched_gemm_with_permute(
+        a: tkl.Memory[B, M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[B, N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, B, N, ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(
+            acc: tkl.Register[B, M, N, tkl.f32],
+        ) -> tkl.Register[B, M, N, tkl.f32]:
+            a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            b_reg = tkw.read(b, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        res = tkw.permute(repeat, target_shape=[M, B, N])
+        tkw.write(res, c, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    hyperparams = {
+        ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
+        BLOCK_M: 32,
+        BLOCK_N: 32,
+        BLOCK_K: 16,
+        BLOCK_B: 1,
+        B: shape[0],
+        M: shape[1],
+        N: shape[2],
+        K: shape[3],
+        LOAD_ELEMS_PER_THREAD: 4,
+        STORE_ELEMS_PER_THREAD: 4,
+    }
+    hyperparams.update(get_default_scheduling_params())
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        run_bench=run_bench,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    batched_gemm_with_permute = wave_compile(options, batched_gemm_with_permute)
+
+    torch.manual_seed(0)
+    a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
+    b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
+    c = device_zeros(shape[1], shape[0], shape[2], dtype=torch.float32)
+    asm = batched_gemm_with_permute(a, b, c)
+
+    if dump_generated_mlir:
+        filename = f"wave_batched_gemm_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    torch_ref = (
+        torch.bmm(a, b.permute(0, 2, 1).contiguous()).permute(1, 0, 2).contiguous()
+    )
+    assert_close(c.to(torch.float16), torch_ref, atol=1e-3, rtol=5e-3)
