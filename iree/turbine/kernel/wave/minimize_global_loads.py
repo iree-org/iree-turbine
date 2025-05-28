@@ -162,8 +162,12 @@ def identify_optimizable_loads(
         actual_number_of_loads = len(
             [x for x in global_read_nodes if get_custom(x).memory == custom.memory]
         )
-        if expected_number_of_loads >= actual_number_of_loads:
-            continue
+
+        try:
+            if expected_number_of_loads >= actual_number_of_loads:
+                continue
+        except:
+            breakpoint()
 
         expanded_dynamic_vals = None
         memory_load_elems_per_thread = load_elems_per_thread

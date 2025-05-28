@@ -125,7 +125,10 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
-            assert (hw_constraint.vector_shapes), f"Vector shapes for node {custom.fx_node} cannot be derived from hardware constraints: {custom}"
+            try:
+                assert (hw_constraint.vector_shapes), f"Vector shapes for node {custom.fx_node} cannot be derived from hardware constraints: {custom}"
+            except:
+                breakpoint()
 
             update_vector_shapes = [
                 dim for dim in custom.index if dim in hw_constraint.vector_shapes

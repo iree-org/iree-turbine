@@ -203,6 +203,7 @@ def generate_iree_ref(
     options.func_name = kernel_type
     options.inplace = False
     options.dynamic_symbols_map = {}
+    options.kernel_hash = None
     compile_and_invoke(
         asm,
         kernel_inputs,

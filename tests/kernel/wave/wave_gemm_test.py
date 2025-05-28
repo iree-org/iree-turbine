@@ -1095,6 +1095,7 @@ def testScaledF8Gemm(
         M: shape[0],
         N: shape[1],
         K: shape[2],
+        K_SCALE: shape[2]//32,
     }
     hyperparams.update(get_default_scheduling_params())
 
