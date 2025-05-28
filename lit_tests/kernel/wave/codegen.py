@@ -896,6 +896,7 @@ def test_unary_lowerings():
         res = tkw.softsign(res, logit_cap=30.0, apply_scaling=True, head_dim=128)
         res = tkw.roundeven(res)
         res = tkw.sin(res)
+        res = tkw.cos(res)
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_b, b, elements_per_thread=4)
 
@@ -947,6 +948,8 @@ def test_unary_lowerings():
 
     # Tests sin
     # CHECK: %[[SIN:.+]] = math.sin %[[ROUNDEVEN]]
+    # Tests cos
+    # CHECK: %[[COS:.+]] = math.cos %[[SIN]]
 
 
 # Important to check lowering of scheduling/barrier ops.
