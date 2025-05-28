@@ -245,6 +245,10 @@ def cast(src: "Register", dtype: DataType) -> "Register":
     ...
 
 
+def bitcast(src: "Register", dtype: DataType) -> "Register":
+    ...
+
+
 def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
     ...
 
@@ -2281,6 +2285,25 @@ class ShuffleOp(CustomOp):
 
     def infer_type(self):
         self.type = get_custom(self.arg).type
+
+
+@define_op("bitcast")
+@dataclass
+class BitcastOp(CustomOp, ABC):
+    """
+    Represents a cast operation.
+    """
+
+    arg: fx.Node
+    dtype: DataType
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    def infer_type(self):
+        src_shape = get_custom(self.arg).type.symbolic_shape
+        self.type = Register[(*src_shape, self.dtype)]
 
 
 @define_op("cast")
