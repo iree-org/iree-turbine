@@ -1,3 +1,7 @@
+import os
+# enable backward boo kernels for testing
+os.environ["BOO_USE_BACKWARD_KERNELS"] = "1"
+
 import unittest
 import pytest
 import tempfile
