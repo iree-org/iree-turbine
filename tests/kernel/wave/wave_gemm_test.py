@@ -1187,9 +1187,9 @@ def testScaledF8Gemm(
     @tkw.wave(constraints)
     def gemm(
         a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
-        a_scale: tkl.Memory[M, K_SCALE, ADDRESS_SPACE, tkl.f8e8m0fnu],
+        a_scale: tkl.Memory[M, K_SCALE, ADDRESS_SPACE, tkl.i8],
         b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        b_scale: tkl.Memory[N, K_SCALE, ADDRESS_SPACE, tkl.f8e8m0fnu],
+        b_scale: tkl.Memory[N, K_SCALE, ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
@@ -1199,9 +1199,11 @@ def testScaledF8Gemm(
             a_reg = tkw.read(a)
             a_reg = tkw.cast(a_reg, tkl.f8e5m2)
             a_scale_reg = tkw.read(a_scale)
+            a_scale_reg = tkw.bitcast(a_scale_reg, tkl.f8e8m0fnu)
             b_reg = tkw.read(b)
             b_reg = tkw.cast(b_reg, tkl.f8e5m2)
             b_scale_reg = tkw.read(b_scale)
+            b_scale_reg = tkw.bitcast(b_scale_reg, tkl.f8e8m0fnu)
             acc = tkw.scaled_mma(a_reg, a_scale_reg, b_reg, b_scale_reg, acc)
             return acc
 
@@ -1222,19 +1224,30 @@ def testScaledF8Gemm(
 
         return result
 
+    def e8m0_to_f32(x):
+        x_f32 = 2 ** ((x - 127).to(torch.float32))
+        x_f32[x_f32 == 128] = float("nan")
+        return x_f32
+
     def run_torch(a, a_scales, b, b_scales, dtype=torch.float32):
         m, k = a.shape
         a_rs = torch.reshape(a, (-1, k // 32, 32)).to(dtype)
         b_rs = torch.reshape(b, (-1, k // 32, 32)).to(dtype)
         a_bc = torch.einsum(
-            "nkd,nk,d->nkd", a_rs, a_scales, torch.ones(32, dtype=dtype)
+            "nkd,nk,d->nkd",
+            a_rs,
+            a_scales,
+            torch.ones(32, dtype=dtype, device=a_rs.device),
         )
         b_bc = torch.einsum(
-            "nkd,nk,d->nkd", b_rs, b_scales, torch.ones(32, dtype=dtype)
+            "nkd,nk,d->nkd",
+            b_rs,
+            b_scales,
+            torch.ones(32, dtype=dtype, device=a_rs.device),
         )
         a_bc = torch.reshape(a_bc, a.shape)
         b_bc = torch.reshape(b_bc, b.shape)
-        return a_bc @ b_bc
+        return a_bc @ b_bc.T
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -1267,12 +1280,12 @@ def testScaledF8Gemm(
 
     a = device_randn(shape[0], shape[2], dtype=torch.float16)
     a_scale = device_ones(shape[0], shape[2] // 32, dtype=torch.float32)
-    a_scale = to_default_device(from_float(a_scale))
+    a_scale = to_default_device(a_scale)
     b = device_randn(shape[1], shape[2], dtype=torch.float16)
     b_scale = device_ones(shape[1], shape[2] // 32, dtype=torch.float32)
-    b_scale = to_default_device(from_float(b_scale))
+    b_scale = to_default_device(b_scale)
     c = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    asm = gemm(a, a_scale, b, b_scale, c)
+    asm = gemm(a, from_float(a_scale), b, from_float(b_scale), c)
 
     if dump_generated_mlir:
         filename = f"wave_gemm_{'x'.join(map(str, shape))}_scaled_f8.mlir"

@@ -50,6 +50,7 @@ from ...ops.wave_ops import (
     abs,
     allocate,
     apply_expr,
+    bitcast,
     broadcast,
     cast,
     conditional,
@@ -1462,6 +1463,24 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
         src_elem_type, dst_elem_type, fastmath=get_fast_math_flags(emitter.options)
     )
     casted_vector = conversion_op(dst_vector_type, vector_src)
+    emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
+
+
+@handle_op(bitcast)
+def handle_bitcast(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, dtype = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    vector_src = cast_vector(emitter, register)
+    src_vector_type = vector_src.type
+    dst_elem_type = IrType.parse(dtype.ir_type_asm())
+    dst_vector_type = VectorType.get(src_vector_type.shape, dst_elem_type)
+
+    if src_vector_type == dst_vector_type:
+        emitter.bind_node_proxy(node, IRProxyValue(vector_src))
+        return
+    casted_vector = vector_d.bitcast(dst_vector_type, vector_src)
     emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
 
 
