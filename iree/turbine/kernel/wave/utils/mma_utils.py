@@ -19,6 +19,7 @@ from ..constraints import (
     MMAType,
     ScaledMMAType,
     MMAOperand,
+    ScaledMMAOperand,
 )
 import torch.fx as fx
 
@@ -109,7 +110,7 @@ def get_mma_dimensional_mapping(
                     assert (
                         len(scale_reduction_dim_candidates) == 1
                     ), f"Expected 1 reduction dimension, got {scale_reduction_dim_candidates}"
-                breakpoint()
+
                 k_scale = scale_reduction_dim_candidates.pop()
             except KeyError as e:
                 raise RuntimeError(
@@ -131,6 +132,7 @@ def get_mma_dimensional_mapping(
             k: hardware_constraint.mma_matrix_shapes(custom.mma_type)[2],
         }
         if isinstance(custom, ScaledMMA):
+            mapping[custom][k_scale] = ScaledMMAOperand.K_SCALE
             custom.vector_shapes[k_scale] = hardware_constraint.mma_matrix_shapes(
                 custom.mma_type)[2] // hardware_constraint.scaled_mma_block_size(custom.mma_type)
 
