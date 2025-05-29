@@ -321,10 +321,11 @@ def test_causal_extend_attention_32x32x8():
 
     # CHECK-LABEL:       test_causal_extend_attention_32x32x8
     # CHECK:             func.func @extend_attention
+    # CHECK-DAG:            %[[C4608:.*]] = arith.constant 4608 : index
     # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
-    # CHECK-DAG:            %[[ALLOC0:.*]] = memref.alloc() : memref<8704xi8, #gpu.address_space<workgroup>>
-    # CHECK-DAG:            %[[ALLOC1:.*]] = memref.view %[[ALLOC0]][%[[C0]]][] : memref<8704xi8, #gpu.address_space<workgroup>> to memref<32x1x68xf16, #gpu.address_space<workgroup>>
-    # CHECK-DAG:            %[[ALLOC2:.*]] = memref.view %[[ALLOC0]][%[[C4352]]][] : memref<8704xi8, #gpu.address_space<workgroup>> to memref<1x32x68xf16, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC0:.*]] = memref.alloc() : memref<8960xi8, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC1:.*]] = memref.view %[[ALLOC0]][%[[C0]]][] : memref<8960xi8, #gpu.address_space<workgroup>> to memref<32x1x68xf16, #gpu.address_space<workgroup>>
+    # CHECK-DAG:            %[[ALLOC2:.*]] = memref.view %[[ALLOC0]][%[[C4352]]][] : memref<8960xi8, #gpu.address_space<workgroup>> to memref<1x32x68xf16, #gpu.address_space<workgroup>>
     # CHECK-COUNT-8:        vector.maskedload
     # CHECK:                scf.for
     # 3 masked load for sequence idx, 2 for k_cache, and 1 for v_cache.
@@ -360,6 +361,8 @@ def test_causal_extend_attention_32x32x8():
 
     # CHECK-COUNT-2:            gpu.shuffle xor {{.*}}
     # CHECK-COUNT-8:            amdgpu.mfma
+    # CHECK:                %[[ALLOC3:.*]] = memref.view %[[ALLOC0]][%[[C0]]][] : memref<8960xi8, #gpu.address_space<workgroup>> to memref<1x64x36xf16, #gpu.address_space<workgroup>>
+    # CHECK:                %[[ALLOC4:.*]] = memref.view %[[ALLOC0]][%[[C4608]]][] : memref<8960xi8, #gpu.address_space<workgroup>> to memref<1x32x68xf16, #gpu.address_space<workgroup>>
     # CHECK-COUNT-8:        vector.maskedload
     # CHECK:                amdgpu.lds_barrier
     # CHECK-NOT:            amdgpu.lds_barrier
@@ -367,9 +370,9 @@ def test_causal_extend_attention_32x32x8():
     # CHECK:                stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x4x64xf16, strided<[256, 64, 1], offset: ?>>
     # CHECK:                scf.for
     # CHECK-COUNT-1:            vector.maskedload
-    # CHECK-COUNT-1:            vector.store %{{.*}}, %[[ALLOC2]]
-    # CHECK-COUNT-32:           vector.load %{{.*}}
-    # CHECK-COUNT-8:            vector.load %[[ALLOC2]]
+    # CHECK-COUNT-2:            vector.store %{{.*}}, %[[ALLOC4]]
+    # CHECK-COUNT-8:            vector.maskedload %{{.*}}
+    # CHECK-COUNT-8:            vector.load %[[ALLOC4]]
     # CHECK-COUNT-8:            amdgpu.mfma
 
     # softcap/logitcap modifier:

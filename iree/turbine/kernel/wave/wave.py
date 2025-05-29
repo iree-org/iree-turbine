@@ -53,6 +53,7 @@ from .expansion.expansion import expand_graph, add_get_results
 from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
+from .in_thread_transpose import in_thread_transpose
 from .promotion import promote_placeholders, compute_shared_memory_usage
 from .schedule_reordering import schedule_reordering
 from .memory_analysis.minimize_shared_allocs import minimize_shared_allocs
@@ -535,6 +536,7 @@ class LaunchableWave(Launchable):
             partial(decompose_vmma_ops, trace, self.constraints),
             partial(decompose_dot_mma, trace, self.constraints),
             partial(hoist_loop_invariant_ops, trace, self.constraints),
+            partial(in_thread_transpose, trace, self.constraints),
             partial(global_to_shared_gathers, trace, self.constraints),
             partial(minimize_global_loads, trace, self.constraints),
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),

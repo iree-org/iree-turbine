@@ -435,16 +435,18 @@ class IndexSequence:
 
     @staticmethod
     def _subs(
-        value: int | IndexExpr, map: dict[IndexExpr, IndexExpr]
+        value: int | IndexExpr,
+        map: dict[IndexExpr, IndexExpr],
+        simultaneous: bool = False,
     ) -> int | IndexExpr:
         if isinstance(value, (sympy.Basic, IndexSequence)):
-            return value.subs(map)  # type: ignore
+            return value.subs(map, simultaneous=simultaneous)  # type: ignore
         return value
 
-    def subs(self, map: dict[IndexExpr, IndexExpr]):
-        start = self._subs(self.start, map)
-        size = self._subs(self.size, map)
-        stride = self._subs(self.stride, map)
+    def subs(self, map: dict[IndexExpr, IndexExpr], simultaneous: bool = False):
+        start = self._subs(self.start, map, simultaneous)
+        size = self._subs(self.size, map, simultaneous)
+        stride = self._subs(self.stride, map, simultaneous)
         return IndexSequence(start, size, stride)
 
     @staticmethod
