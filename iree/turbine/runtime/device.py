@@ -81,42 +81,50 @@ class _HipSemaphoreInterop:
         self.library.hipEventQuery.argtypes = [ctypes.c_void_p]
         self.library.hipEventQuery.restype = ctypes.c_int32
 
-    def get_timepoint_import(self):
-        evt = ctypes.c_void_p(0)
-        ret = self.library.hipEventCreate(evt, 2)
-        if ret != 0:
-            raise RuntimeError("Could not create hip event")
-        ret = self.library.hipEventRecord(
-            evt, ctypes.c_void_p(torch.cuda.current_stream().cuda_stream)
-        )
-        if ret != 0:
-            raise RuntimeError("Could not record hip event")
+    def no_sync(self):
+        return True
 
-        timepoint = HalExternalTimepoint()
-        timepoint.compatibility = SemaphoreCompatibility.DEVICE_WAIT
-        timepoint.flags = ExternalTimepointFlags.NONE
-        timepoint.hip_event = evt.value
-        return timepoint
+    def get_timepoint_import(self):
+        return None
+        #evt = ctypes.c_void_p(0)
+        #ret = self.library.hipEventCreate(evt, 2)
+        #if ret != 0:
+        #    raise RuntimeError("Could not create hip event")
+        #ret = self.library.hipEventRecord(
+        #    evt, ctypes.c_void_p(torch.cuda.current_stream().cuda_stream)
+        #)
+        #if ret != 0:
+        #    raise RuntimeError("Could not record hip event")
+        #timepoint = HalExternalTimepoint()
+        #timepoint.compatibility = SemaphoreCompatibility.DEVICE_WAIT
+        #timepoint.flags = ExternalTimepointFlags.NONE
+        #timepoint.hip_event = evt.value
+        #return timepoint
 
     def wait_exported_timepoint(self, timepoint: HalExternalTimepoint):
-        ret = self.library.hipStreamWaitEvent(
-            ctypes.c_void_p(torch.cuda.current_stream().cuda_stream),
-            ctypes.c_void_p(timepoint.hip_event),
-            0,
-        )
-        if ret != 0:
-            raise RuntimeError("Could not wait on event")
+        return
+        #ret = self.library.hipStreamWaitEvent(
+        #    ctypes.c_void_p(torch.cuda.current_stream().cuda_stream),
+        #    ctypes.c_void_p(timepoint.hip_event),
+        #    0,
+        #)
+        #if ret != 0:
+        #    raise RuntimeError("Could not wait on event")
 
     def destroy_timepoint_event(self, timepoint: HalExternalTimepoint):
-        ret = self.library.hipEventDestroy(ctypes.c_void_p(timepoint.hip_event))
-        if ret != 0:
-            raise RuntimeError(f"Could not destroy event got {ret}")
-        return True
+        return
+        #ret = self.library.hipEventDestroy(ctypes.c_void_p(timepoint.hip_event))
+        #if ret != 0:
+        #    raise RuntimeError(f"Could not destroy event got {ret}")
+        #return True
 
 
 class _CudaSemaphoreInterop:
     def __init__(self):
         pass
+    
+    def no_sync(self):
+        return False
 
     def get_timepoint_import(self):
         # For now we don't actually support timepoint import in Cuda.
@@ -141,6 +149,8 @@ class _NullSemaphoreInterop:
     def destroy_timepoint_event(self, timepoint: HalExternalTimepoint):
         return True
 
+    def no_sync(self):
+        return False
 
 _CONFIG_LOCK = Lock()
 _GLOBAL_VM_INSTANCE: Optional[VmInstance] = None
@@ -305,7 +315,7 @@ class Device:
                 timepoint_export,
             )
             return timepoint_export
-        else:
+        elif not self._device_interop.no_sync():
             self._main_timepoint += 1
             return None
 
@@ -314,7 +324,7 @@ class Device:
             self._try_clean_external_timepoints()
             self._device_interop.wait_exported_timepoint(external_timepoint)
             self._external_timepoints.append((external_timepoint, self._main_timepoint))
-        else:
+        elif not self._device_interop.no_sync():
             self._main_timeline.wait(self._main_timepoint)
 
     def __new__(
@@ -665,7 +675,7 @@ def _create_device_from_torch(torch_device: torch.device) -> Optional[Device]:
 
 def _create_cuda_device(torch_device: torch.device, props) -> Optional[Device]:
     # Note that the dlpack device type code for real CUDA ROCM is 2.
-    device = _create_cuda_like_device(torch_device, props, "hip", 2)
+    device = _create_cuda_like_device(torch_device, props, "hip", 2, None)
     if device:
         device.compile_target_flags = device.compile_target_flags + (
             f"--iree-hal-cuda-llvm-target-arch=sm_{props.major}{props.minor}",
@@ -675,8 +685,9 @@ def _create_cuda_device(torch_device: torch.device, props) -> Optional[Device]:
 
 
 def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
+    device_params = {"hip_external_stream" : str(torch.cuda.current_stream(torch_device).cuda_stream)}
     # Note that the dlpack device type code for ROCM is 10.
-    device = _create_cuda_like_device(torch_device, props, "hip", 10)
+    device = _create_cuda_like_device(torch_device, props, "hip", 10, device_params)
     # The gcnArchName comes back like gfx90a:sramecc+:xnack- for a fully
     # specified target. However the IREE target-chip flag only expects the
     # prefix. See: https://github.com/iree-org/iree/issues/17402
@@ -701,7 +712,8 @@ def _get_uuid_to_info_mapping(driver) -> Dict[str, Dict[str, Any]]:
 
 
 def _create_cuda_like_device(
-    torch_device: torch.device, props, driver_name: str, dlpack_device_type_code: int
+    torch_device: torch.device, props, driver_name: str, dlpack_device_type_code: int,
+    device_params
 ) -> Optional[Device]:
     uuid = str(torch.cuda.get_device_properties(torch_device).uuid)
     driver = get_driver(driver_name)
@@ -709,7 +721,7 @@ def _create_cuda_like_device(
     device_info = info_mapping.get(uuid)
     if device_info is None:
         return None
-    hal_device = driver.create_device(device_info)
+    hal_device = driver.create_device(device_info, device_params)
     device_state = DeviceState(
         driver=driver,
         device=hal_device,
