@@ -14,53 +14,31 @@ import math
 import sympy
 
 
-def get_speculative_kernel(
-    batch_size: int,
-    num_draft_tokens: int,
-    d: int,
-    seq_len: int,
-    num_speculative_tokens: int,
-    threshold_acc: float,
-    threshold_single: float,
-):
-    
-    # define iterators
-    i = tkw.IndexMapping.iterator(0)
-    j = tkw.IndexMapping.iterator(1)
-    k = tkw.IndexMapping.iterator(2)
-    
-    dynamic_symbols = []
-    dynamic_symbols_map = {}
-    
-    return dynamic_symbols, dynamic_symbols_map
-
-
 def get_speculative_decoding_kernel(
     batch_size: int,
     num_draft_tokens: int,
     d: int,
     seq_len: int,
 ):
-
-    B = tkl.sym.B
-    N = tkl.sym.N
-    D = tkl.sym.D
     S = tkl.sym.S
+    DECODE_N = tkl.sym.DECODE_N
+    DECODE_D = tkl.sym.DECODE_D
+    SEQ_LEN = tkl.sym.SEQ_LEN
     BLOCK_D = tkl.sym.BLOCK_D
-    BLOCK_B = tkl.sym.BLOCK_B
+    BLOCK_S = tkl.sym.BLOCK_S
     BLOCK_N = tkl.sym.BLOCK_N
     LAST_OFFSET = tkl.sym.LAST_OFFSET
     LAST_IDX = tkl.sym.LAST_IDX
 
-    constraints = [tkw.WorkgroupConstraint(D, BLOCK_D, 0)]
-    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
-    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1, primary=False)]
-    constraints += [tkw.WaveConstraint(D, BLOCK_D)]
+    constraints = [tkw.WorkgroupConstraint(DECODE_D, BLOCK_D, 0)]
+    constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 1)]
+    constraints += [tkw.WorkgroupConstraint(DECODE_N, BLOCK_N, 1, primary=False)]
+    constraints += [tkw.WaveConstraint(DECODE_D, BLOCK_D)]
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={B: 0, N: 0, D: 64},
+            vector_shapes={S: 0, DECODE_N: 0, DECODE_D: 64},
         )
     ]
 
@@ -69,36 +47,36 @@ def get_speculative_decoding_kernel(
     k = tkw.IndexMapping.iterator(2)
     q_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={B: i, N: LAST_OFFSET, D: k},
-        outputs={B: i, N: j, D: k},
+        inputs={S: i, DECODE_N: LAST_OFFSET, DECODE_D: k},
+        outputs={S: i, DECODE_N: j, DECODE_D: k},
     )
 
     p_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={B: i, N: LAST_OFFSET, D: k},
-        outputs={B: i, N: j, D: k},
+        inputs={S: i, DECODE_N: LAST_OFFSET, DECODE_D: k},
+        outputs={S: i, DECODE_N: j, DECODE_D: k},
     )
 
     uniform_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={B: i, D: sympy.Integer(0)},
-        outputs={B: i, D: j},
+        inputs={S: i, DECODE_D: sympy.Integer(0)},
+        outputs={S: i, DECODE_D: j},
     )
 
     o_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={B: i, N: j},
-        outputs={S: LAST_IDX},
+        inputs={S: i, DECODE_N: j},
+        outputs={SEQ_LEN: LAST_IDX},
     )
 
     @tkw.wave(constraints)
     def tree_speculative_sampling(
-        q: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        p: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        cur_prob_offset: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        uniform_sample: tkl.Memory[B, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        last_accepted_retrive_idx_vec: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        predicts: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        q: tkl.Memory[S, DECODE_N, DECODE_D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        p: tkl.Memory[S, DECODE_N, DECODE_D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        cur_prob_offset: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        uniform_sample: tkl.Memory[S, DECODE_D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        last_accepted_retrive_idx_vec: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        predicts: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE, tkl.i32],
     ):
         last_offset = tkw.read(cur_prob_offset, elements_per_thread=1)
         tkw.set_symbol(LAST_OFFSET, last_offset)
@@ -117,31 +95,31 @@ def get_speculative_decoding_kernel(
         coin = tkw.read(uniform_sample, mapping=uniform_mapping)
         diff = q_reg - p_reg
 
-        zero = tkl.Register[D, tkl.f32](0.0)
+        zero = tkl.Register[DECODE_D, tkl.f32](0.0)
         relu_diff = tkw.maximum(diff, zero)
-        sum_relu = tkw.sum(relu_diff, dim=D)
-        cdf = tkw.cumsum(relu_diff, dim=D)
+        sum_relu = tkw.sum(relu_diff, dim=DECODE_D)
+        cdf = tkw.cumsum(relu_diff, dim=DECODE_D)
 
-        u = tkw.broadcast(coin * sum_relu, target_shape=[B, N, D])
+        u = tkw.broadcast(coin * sum_relu, target_shape=[S, DECODE_N, DECODE_D])
         greater_than_u = cdf > u
-        pad_token = tkl.Register[B, N, D, tkl.i32](1e6)
-        token_idx = tkl.Register[B, N, D, tkl.i32](THREAD_0)
+        pad_token = tkl.Register[S, DECODE_N, DECODE_D, tkl.i32](1e6)
+        token_idx = tkl.Register[S, DECODE_N, DECODE_D, tkl.i32](THREAD_0)
 
         # TODO: Set default sampled_id = d - 1, if no valid token can be found
         #       We can implement with `ballot(greater_than_u)` and early exit
         #       /return d-1 if output are all zeros.
         valid_lane_token_idx = tkw.select(greater_than_u, token_idx, pad_token)
-        min_valid_token_idx = tkw.min(valid_lane_token_idx, dim=D)
+        min_valid_token_idx = tkw.min(valid_lane_token_idx, dim=DECODE_D)
         tkw.write(min_valid_token_idx, predicts, mapping=o_mapping)
 
     hyperparams = {
-        BLOCK_B: 1,
+        BLOCK_S: 1,
         BLOCK_N: 1,
         BLOCK_D: 64,
-        B: batch_size,
-        N: num_draft_tokens,
-        D: d,
-        S: seq_len,
+        S: batch_size,
+        DECODE_N: num_draft_tokens,
+        DECODE_D: d,
+        SEQ_LEN: seq_len,
     }
 
     dynamic_symbols = []
@@ -168,7 +146,7 @@ def get_speculative_sampling_kernel(
     BLOCK_S = tkl.sym.BLOCK_S
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
-    
+
     # constraints from decode
     DECODE_D = tkl.sym.DECODE_D
     DECODE_N = tkl.sym.DECODE_N
@@ -180,7 +158,15 @@ def get_speculative_sampling_kernel(
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={B: num_draft_tokens, J: 0, CUR_INDEX: 0, S: 0, D: d, DECODE_D: 64, DECODE_N: 0},
+            vector_shapes={
+                B: num_draft_tokens,
+                J: 0,
+                CUR_INDEX: 0,
+                S: 0,
+                D: d,
+                DECODE_D: 64,
+                DECODE_N: 0,
+            },
         )
     ]
     constraints += [tkw.WorkgroupConstraint(DECODE_D, BLOCK_D, 0)]
@@ -204,7 +190,7 @@ def get_speculative_sampling_kernel(
         BLOCK_D: 64,
         SEQ_LEN: seq_len,
     }
-    
+
     dynamic_symbols = []
     dynamic_symbols_map = {}
 
@@ -212,11 +198,11 @@ def get_speculative_sampling_kernel(
     DRAFT_TOKEN_ID = tkl.sym.DRAFT_TOKEN_ID
     NUM_ACCEPTED_TOKENS = tkl.sym.NUM_ACCEPTED_TOKENS
     LAST_ACCEPTED_RETRIEVE_IDX = tkl.sym.LAST_ACCEPTED_RETRIEVE_IDX
-    
+
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     k = tkw.IndexMapping.iterator(2)
-    
+
     mapping_2d = tkw.IndexMapping(
         num_iterators=2,
         inputs={S: i, B: CUR_INDEX},
@@ -299,13 +285,11 @@ def get_speculative_sampling_kernel(
     cur_prob_offset_vec_layout = tkl.MemoryLayout(shape=[batch_size, 1, 1])
     last_accepted_retrieve_idx_vec_layout = tkl.MemoryLayout(shape=[batch_size, 1, 1])
     predict_layout = tkl.MemoryLayout(shape=[batch_size * num_draft_tokens])
-    
-    
-    
+
     # integrating decode kernel
     LAST_OFFSET = tkl.sym.LAST_OFFSET
     LAST_IDX = tkl.sym.LAST_IDX
-    
+
     q_mapping = tkw.IndexMapping(
         num_iterators=3,
         inputs={S: i, DECODE_N: LAST_OFFSET, DECODE_D: k},
@@ -329,9 +313,7 @@ def get_speculative_sampling_kernel(
         inputs={S: i, DECODE_N: j},
         outputs={SEQ_LEN: LAST_IDX},
     )
-    
-    
-    
+
     # Kernel.
     # =================================================================================
     @tkw.wave(constraints)
@@ -355,6 +337,15 @@ def get_speculative_sampling_kernel(
         last_accepted_retrieve_idx_vec: tkl.Memory[
             S, B, D, ADDRESS_SPACE_0, tkl.i32, last_accepted_retrieve_idx_vec_layout
         ],
+        # decode args
+        q: tkl.Memory[S, DECODE_N, DECODE_D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        p: tkl.Memory[S, DECODE_N, DECODE_D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        cur_prob_offset_decode: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        uniform_sample: tkl.Memory[S, DECODE_D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        last_accepted_retrive_idx_vec_decode: tkl.Memory[
+            S, GLOBAL_ADDRESS_SPACE, tkl.i32
+        ],
+        predicts_decode: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE, tkl.i32],
     ):
         one = tkw.Register[S, B, D, tkl.i32](1)
         zero = tkw.Register[S, B, D, tkl.i32](0)
@@ -553,22 +544,11 @@ def get_speculative_sampling_kernel(
         tkw.write(cur_prob_offset, cur_prob_offset_vec, elements_per_thread=1)
         tkw.write(num_accepted_tokens, accept_token_num, elements_per_thread=1)
 
-
-    
-
-    @tkw.wave(constraints)
-    def tree_speculative_sampling(
-        q: tkl.Memory[S, DECODE_N, DECODE_D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        p: tkl.Memory[S, DECODE_N, DECODE_D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        cur_prob_offset: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        uniform_sample: tkl.Memory[S, DECODE_D, GLOBAL_ADDRESS_SPACE, tkl.f32],
-        last_accepted_retrive_idx_vec: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        predicts: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE, tkl.i32],
-    ):
-        last_offset = tkw.read(cur_prob_offset, elements_per_thread=1)
+        # decode
+        last_offset = tkw.read(cur_prob_offset_vec, elements_per_thread=1)
         tkw.set_symbol(LAST_OFFSET, last_offset)
 
-        last_idx = tkw.read(last_accepted_retrive_idx_vec, elements_per_thread=1)
+        last_idx = tkw.read(last_accepted_retrieve_idx_vec, elements_per_thread=1)
         tkw.set_symbol(LAST_IDX, last_idx)
 
         q_reg = tkw.read(q, mapping=q_mapping)
@@ -582,23 +562,21 @@ def get_speculative_sampling_kernel(
         coin = tkw.read(uniform_sample, mapping=uniform_mapping)
         diff = q_reg - p_reg
 
-        zero = tkl.Register[D, tkl.f32](0.0)
+        zero = tkl.Register[DECODE_D, tkl.f32](0.0)
         relu_diff = tkw.maximum(diff, zero)
-        sum_relu = tkw.sum(relu_diff, dim=D)
-        cdf = tkw.cumsum(relu_diff, dim=D)
+        sum_relu = tkw.sum(relu_diff, dim=DECODE_D)
+        # cdf = tkw.cumsum(relu_diff, dim=DECODE_D)
 
-        u = tkw.broadcast(coin * sum_relu, target_shape=[B, N, D])
-        greater_than_u = cdf > u
-        pad_token = tkl.Register[B, N, D, tkl.i32](1e6)
-        token_idx = tkl.Register[B, N, D, tkl.i32](THREAD_0)
+        # u = tkw.broadcast(coin * sum_relu, target_shape=[S, DECODE_N, DECODE_D])
+        # greater_than_u = cdf > u
+        # pad_token = tkl.Register[S, DECODE_N, DECODE_D, tkl.i32](1e6)
+        # token_idx = tkl.Register[S, DECODE_N, DECODE_D, tkl.i32](THREAD_0)
 
-        # TODO: Set default sampled_id = d - 1, if no valid token can be found
-        #       We can implement with `ballot(greater_than_u)` and early exit
-        #       /return d-1 if output are all zeros.
-        valid_lane_token_idx = tkw.select(greater_than_u, token_idx, pad_token)
-        min_valid_token_idx = tkw.min(valid_lane_token_idx, dim=D)
-        tkw.write(min_valid_token_idx, predicts, mapping=o_mapping)
-
-
+        # # TODO: Set default sampled_id = d - 1, if no valid token can be found
+        # #       We can implement with `ballot(greater_than_u)` and early exit
+        # #       /return d-1 if output are all zeros.
+        # valid_lane_token_idx = tkw.select(greater_than_u, token_idx, pad_token)
+        # min_valid_token_idx = tkw.min(valid_lane_token_idx, dim=DECODE_D)
+        # tkw.write(min_valid_token_idx, predicts_decode, mapping=o_mapping)
 
     return speculative_sampling, hyperparams, dynamic_symbols, dynamic_symbols_map
