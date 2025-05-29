@@ -71,8 +71,8 @@ def get_speculative_decoding_kernel(
 
     uniform_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={BATCH_SIZE: i, VOCAB_SIZE: sympy.Integer(0)},
-        outputs={BATCH_SIZE: i, VOCAB_SIZE: j},
+        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: sympy.Integer(0)},
+        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
     )
 
     output_mapping = tkw.IndexMapping(
@@ -173,19 +173,6 @@ def get_speculative_sampling_kernel(
     dynamic_symbols = []
     dynamic_symbols_map = {}
 
-    hyperparams = {
-        BLOCK_NUM_DRAFT_TOK: 1,
-        NUM_DRAFT_TOKENS: num_draft_tokens,
-        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
-        BATCH_SIZE: batch_size,
-        BLOCK_BATCH_SIZE: 1,
-        VOCAB_SIZE: vocab_size,
-    }
-
-    dynamic_symbols = []
-    dynamic_symbols_map = {}
-
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
@@ -249,7 +236,7 @@ def get_speculative_sampling_kernel(
     write_mapping_1d = tkw.IndexMapping(
         num_iterators=2,
         inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
-        outputs={NUM_DRAFT_TOKENS: LAST_ACCEPTED_RETRIEVE_IDX},
+        outputs={SEQ_LEN: LAST_ACCEPTED_RETRIEVE_IDX},
     )
 
     write_mapping_3d = tkw.IndexMapping(
