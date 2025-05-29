@@ -1917,7 +1917,6 @@ def test_binary_lowerings():
 
     binary_lowerings = wave_compile(get_wave_compile_options(), binary_lowerings)
     print(binary_lowerings.asm)
- 
 
     # CHECK-LABEL: func @binary_lowerings
     # CHECK: %[[SUB:.+]] = arith.subf

@@ -177,8 +177,10 @@ def maximum(lhs: "Register", rhs: "Register") -> "Register":
 def minimum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
+
 def atan2(lhs: "Register", rhs: "Register") -> "Register":
     ...
+
 
 def broadcast(
     arg: "Register", target_shape: Optional[Sequence[IndexExpr | int]] = None

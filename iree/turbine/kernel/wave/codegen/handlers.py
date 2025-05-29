@@ -649,6 +649,7 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
         )
     return result
 
+
 @handle_binary_op(atan2)
 def handle_atan2(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(lhs.type)
@@ -658,6 +659,7 @@ def handle_atan2(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResul
     else:
         raise ValidationError(f"Found unhandled operand type for atan2: {element_type}")
     return result
+
 
 ###############################################################################
 # Unary math Ops
