@@ -273,7 +273,6 @@ def get_paged_decode_attention_kernels(
         seq_length = seq_length - req_index
         tkw.set_symbol(KV_START_IDX, req_index)
         tkw.set_symbol(SEQ_LEN, seq_length)
-        tkw.set_symbol(K2, seq_length)
 
         seq_length_per_split = tkw.apply_expr(
             seq_length, lambda x: sympy.ceiling(x / U)
@@ -283,6 +282,7 @@ def get_paged_decode_attention_kernels(
         split_offset = tkw.broadcast(split_offset, target_shape=[S, U])
         split_offset = split_offset * seq_length_per_split
         tkw.set_symbol(SPLIT_OFF, split_offset)
+        tkw.set_symbol(K2, split_offset + seq_length_per_split)
 
         seq_length_per_split = tkw.broadcast(seq_length_per_split, target_shape=[S, U])
         seq_length = tkw.broadcast(seq_length, target_shape=[S, U])
