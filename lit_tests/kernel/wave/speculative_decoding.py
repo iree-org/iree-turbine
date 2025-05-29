@@ -24,7 +24,7 @@ def test_speculative_decoding():
         threshold_single=0.01,
         threshold_acc=0.01,
         num_draft_tokens=6,
-        d=20,
+        vocab_size=20,
     )
 
     # Create the kernel with the hyperparameters

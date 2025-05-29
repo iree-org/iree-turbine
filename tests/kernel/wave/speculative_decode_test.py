@@ -6,13 +6,11 @@
 
 import pytest
 import torch
-import iree.turbine.kernel as tk
 from iree.turbine.kernel.lang.global_symbols import *
 from .common.utils import (
     require_cdna3,
     require_e2e,
     enable_scheduling_barriers,
-    dump_generated_mlir,
 )
 from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
@@ -30,11 +28,13 @@ import torch.nn.functional as F
 torch.manual_seed(0)
 
 
-def get_wave_speculative_decoding_kernel(batch_size, num_draft_tokens, d, seq_len):
+def get_wave_speculative_decoding_kernel(
+    batch_size, num_draft_tokens, vocab_size, seq_len
+):
     speculative_decoding, symbols, _, _ = get_speculative_decoding_kernel(
         batch_size,
         num_draft_tokens,
-        d,
+        vocab_size,
         seq_len,
     )
     symbols.update(get_default_scheduling_params())
@@ -60,7 +60,7 @@ def get_wave_speculative_sampling_kernel(
     threshold_acc,
     threshold_single,
     num_draft_tokens,
-    d,
+    vocab_size,
 ):
     speculative_sampling, symbols, _, _ = get_speculative_sampling_kernel(
         batch_size,
@@ -68,7 +68,7 @@ def get_wave_speculative_sampling_kernel(
         threshold_acc,
         threshold_single,
         num_draft_tokens,
-        d,
+        vocab_size,
     )
     symbols.update(get_default_scheduling_params())
 
@@ -101,7 +101,7 @@ def reference_sampling_kernel(
     batch_size,
     num_speculative_tokens,
     num_draft_tokens,
-    d,
+    vocab_size,
     threshold_single,
     threshold_acc,
 ):
@@ -166,7 +166,7 @@ def tree_speculative_sampling_target_only(
     batch_size,
     num_speculative_tokens,
     num_draft_tokens,
-    d,
+    vocab_size,
     threshold_single=1.0,
     threshold_acc=1.0,
     deterministic=True,
@@ -187,7 +187,7 @@ def tree_speculative_sampling_target_only(
         threshold_acc,
         threshold_single,
         num_draft_tokens,
-        d,
+        vocab_size,
     )
     sampling_kernel(
         uniform_samples,
@@ -205,7 +205,7 @@ def tree_speculative_sampling_target_only(
     )
 
     wave_kernel = get_wave_speculative_decoding_kernel(
-        batch_size, num_draft_tokens, d, seq_len
+        batch_size, num_draft_tokens, vocab_size, seq_len
     )
     wave_kernel(
         target_probs,
@@ -217,6 +217,7 @@ def tree_speculative_sampling_target_only(
     )
 
 
+# threshold_single, threshold_acc, expected_predicts, expected_accept_index, expected_accept_token_num
 test_cases = [
     (
         1,
@@ -226,8 +227,8 @@ test_cases = [
         [3, 2],
     ),
     (
-        0,  # threshold_single
-        0,  # threshold_acc
+        0,
+        0,
         [1, 2, 18, -1, -1, -1, 11, -1, -1, -1, 12, 18],
         [[0, 1, 2, -1], [6, 10, 11, -1]],
         [2, 2],
@@ -325,7 +326,7 @@ def testReferenceSpeculativeDecoding(
         batch_size=bs,
         num_speculative_tokens=num_spec_step,
         num_draft_tokens=num_draft_tokens,
-        d=vocab_size,
+        vocab_size=vocab_size,
         threshold_single=threshold_single,
         threshold_acc=threshold_acc,
         deterministic=True,
