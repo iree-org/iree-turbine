@@ -290,6 +290,7 @@ def get_paged_decode_attention_kernels(
             lambda x, y, z: sympy.Min(x, sympy.Max(y - z, 0)),
         )
         tkw.set_symbol(SPLIT_LEN, seq_length_per_split)
+        tkw.set_symbol(K2, seq_length_per_split)
 
         @tkw.iterate(K2, init_args=[init_max, init_sum, new_acc])
         def loop(
@@ -423,7 +424,7 @@ def get_paged_decode_attention_kernels(
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
     dynamic_symbols = [K2, S]
     dynamic_symbols_map = {
-        K2: shape.kv_lens,
+        # K2: shape.kv_lens,
         S: shape.num_seqs,
     }
 
