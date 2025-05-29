@@ -34,13 +34,13 @@ from ..common.utils import (
     param_bool,
     require_cdna3,
     require_e2e,
+    scaled_dot_product_attention_bhsd,
 )
 from ..common.shapes import get_test_shapes
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
     get_vanilla_attention_kernel,
     get_bshd_attention_kernel,
     get_bhsd_attention_kernel,
-    scaled_dot_product_attention_bhsd,
 )
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
