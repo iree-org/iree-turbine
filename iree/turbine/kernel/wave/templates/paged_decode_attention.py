@@ -290,7 +290,9 @@ def get_paged_decode_attention_kernels(
             lambda x, y, z: sympy.Min(x, sympy.Max(y - z, 0)),
         )
         tkw.set_symbol(SPLIT_LEN, seq_length_per_split)
-        tkw.set_symbol(K2, seq_length_per_split)
+
+        seq_length_per_split = tkw.cast(seq_length_per_split, tkl.i32)
+        tkw.set_symbol(K2, req_index + seq_length_per_split)
 
         @tkw.iterate(K2, init_args=[init_max, init_sum, new_acc])
         def loop(
