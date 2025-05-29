@@ -50,6 +50,7 @@ def get_paged_decode_attention_kernels(
     K1 = tkl.sym.K1
     K2 = tkl.sym.K2
     K3 = tkl.sym.K3
+    SK2 = tkl.sym.SK2
     SEQ_LEN = tkl.sym.SEQ_LEN
     KV_START_IDX = tkl.sym.KV_START_IDX
     SPLIT_OFF = tkl.sym.SPLIT_OFF
@@ -216,7 +217,7 @@ def get_paged_decode_attention_kernels(
     # Returns the key for the given token index.
     k_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K3, BH: j, K2: d0 % K3, K1: l},
+        inputs={SK2: d0, BH: j, K1: l},
         outputs={S: i, BH: j, K2: k, K1: l},
         dynamic_val_mappings={K2: k},
     )
@@ -224,7 +225,7 @@ def get_paged_decode_attention_kernels(
     # Returns the value for the given token index.
     v_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K3, BH: j, N: k, K2: d0 % K3},
+        inputs={SK2: d0, BH: j, N: k},
         outputs={S: i, BH: j, N: k, K2: l},
         dynamic_val_mappings={K2: l},
     )
@@ -240,8 +241,8 @@ def get_paged_decode_attention_kernels(
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
         q: tkl.Memory[S, B, K1, GLOBAL_ADDRESS_SPACE, wave_input_dtype],
-        k: tkl.Memory[S, K2, BH, K1, ADDRESS_SPACE, wave_input_dtype],
-        v: tkl.Memory[S, K2, BH, N, ADDRESS_SPACE, wave_input_dtype],
+        k: tkl.Memory[SK2, BH, K1, ADDRESS_SPACE, wave_input_dtype],
+        v: tkl.Memory[SK2, BH, N, ADDRESS_SPACE, wave_input_dtype],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         kv_indices: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
@@ -292,7 +293,6 @@ def get_paged_decode_attention_kernels(
             lambda x, y, z: sympy.Min(x, sympy.Max(y - z, 0)),
         )
         tkw.set_symbol(SPLIT_LEN, seq_length_per_split)
-
 
         @tkw.iterate(K2, init_args=[init_max, init_sum, new_acc])
         def loop(
@@ -424,11 +424,12 @@ def get_paged_decode_attention_kernels(
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
-    dynamic_symbols = [K2, K3, S]
+    dynamic_symbols = [K2, K3, S, SK2]
     dynamic_symbols_map = {
         K2: shape.kv_lens,
         K3: shape.kv_lens,
         S: shape.num_seqs,
+        SK2: shape.num_seqs * shape.kv_lens,
     }
 
     return (
