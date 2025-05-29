@@ -60,8 +60,8 @@ def get_speculative_decoding_kernel(
 
     uniform_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={B: i, D: sympy.Integer(0)},
-        outputs={B: i, D: j},
+        inputs={B: i, N: LAST_OFFSET},
+        outputs={B: i, N: j},
     )
 
     o_mapping = tkw.IndexMapping(
@@ -75,7 +75,7 @@ def get_speculative_decoding_kernel(
         q: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         p: tkl.Memory[B, N, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
         cur_prob_offset: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        uniform_sample: tkl.Memory[B, D, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        uniform_sample: tkl.Memory[B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         last_accepted_retrive_idx_vec: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.i32],
         predicts: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
     ):
