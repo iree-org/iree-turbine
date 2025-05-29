@@ -26,6 +26,7 @@ from ..common.utils import (
     enable_scheduling_barriers,
     require_e2e,
     require_cdna3,
+    scaled_dot_product_attention_bhsd,
 )
 from ..common.shapes import get_test_shapes
 from iree.turbine.kernel.wave.templates.gqa_vanilla_attention import (
@@ -34,7 +35,6 @@ from iree.turbine.kernel.wave.templates.gqa_vanilla_attention import (
 from iree.turbine.kernel.wave.templates.attention_common import AttentionShape
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
-from iree.turbine.kernel.wave.common.utils import scaled_dot_product_attention_bhsd
 
 
 @require_e2e
