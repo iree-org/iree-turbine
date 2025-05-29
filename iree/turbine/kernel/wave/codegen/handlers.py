@@ -85,6 +85,7 @@ from ...ops.wave_ops import (
     tanh,
     tanh_approx,
     workgroup_barrier,
+    softsign,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
@@ -840,6 +841,61 @@ def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
     else:
         raise ValidationError(f"Unhandled operand type for tanh_approx: {element_type}")
     return result
+
+
+@handle_op(softsign)
+def handle_softsign(emitter: WaveEmitter, node: fx.Node) -> None:
+    """
+    Implements softsign-like logit cap using reciprocal:
+        logit = logit / (1 + abs(logit / cap))
+              = logit * (1 / (1 + abs(logit * (1 / cap))))
+              = logit * reciprocal(1 + abs(logit * reciprocal(cap)))
+    """
+    try:
+        src_arg, logit_cap, apply_scaling, head_dim = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments for softsign") from e
+
+    source = cast_py_value(emitter, src_arg).ir_value
+    element_type = get_type_or_element_type(source.type)
+    opts = emitter.options
+
+    # Compute effective cap
+    if apply_scaling:
+        if head_dim is None:
+            raise ValidationError("`head_dim` must be provided if `apply_scaling=True`")
+        eff_cap = logit_cap * (head_dim**-0.5)
+    else:
+        eff_cap = logit_cap
+
+    # # Constants
+
+    reci_cap = 1.0 / eff_cap
+    reci_cap_const = get_constant_attr(reci_cap, element_type)
+    one = arith_d.ConstantOp(
+        source.type,
+        DenseElementsAttr.get_splat(source.type, get_constant_attr(1.0, element_type)),
+    )
+    reciprocal_cap = arith_d.ConstantOp(
+        source.type, DenseElementsAttr.get_splat(source.type, reci_cap_const)
+    )
+
+    # scaled = logit * (1 / cap)
+    scaled = arith_d.mulf(source, reciprocal_cap, fastmath=get_fast_math_flags(opts))
+
+    # abs_scaled = abs(logit * (1 / cap))
+    abs_scaled = math_d.absf(scaled)
+
+    # denom = 1 + abs(...)
+    denom = arith_d.addf(one, abs_scaled, fastmath=get_fast_math_flags(opts))
+
+    # reciprocal_denom = 1 / denom
+    reciprocal_denom = arith_d.divf(one, denom, fastmath=get_fast_math_flags(opts))
+
+    # result = logit * (1 / denom)
+    result = arith_d.mulf(source, reciprocal_denom, fastmath=get_fast_math_flags(opts))
+
+    emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
 @handle_unary_op(tanh)

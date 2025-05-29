@@ -893,6 +893,7 @@ def test_unary_lowerings():
         res_b = tkw.abs(b_reg)
         res = tkw.tanh(res)
         res = tkw.tanh_approx(res)
+        res = tkw.softsign(res, logit_cap=30.0, apply_scaling=True, head_dim=128)
         res = tkw.roundeven(res)
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_b, b, elements_per_thread=4)
@@ -931,8 +932,17 @@ def test_unary_lowerings():
     # CHECK: %[[R:.+]] = arith.addf %[[TEMP]], %[[RECIP]] : vector<4xf16>
     # CHECK: %[[TANH_APPROX:.+]] = math.copysign %[[R]], %[[TANH]] : vector<4xf16>
 
+    # Tests softsign
+    # CHECK: %[[ONE:.+]] = arith.constant dense<1.000000e+00> : vector<4xf16>
+    # CHECK: %[[CAP:.+]] = arith.constant dense<3.771970e-01> : vector<4xf16>
+    # CHECK: %[[SCALED:.+]] = arith.mulf %[[TANH_APPROX]], %[[CAP]] : vector<4xf16>
+    # CHECK: %[[ABS2:.+]] = math.absf %[[SCALED]] : vector<4xf16>
+    # CHECK: %[[ADD:.+]] = arith.addf %[[ONE]], %[[ABS2]] : vector<4xf16>
+    # CHECK: %[[RECIP_DENOM:.+]] = arith.divf %[[ONE]], %[[ADD]] : vector<4xf16>
+    # CHECK: %[[SOFTSIGN:.+]] = arith.mulf %[[TANH_APPROX]], %[[RECIP_DENOM]] : vector<4xf16>
+
     # Tests roundeven
-    # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[TANH_APPROX]]
+    # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[SOFTSIGN]]
 
 
 # Important to check lowering of scheduling/barrier ops.
