@@ -425,7 +425,7 @@ def get_paged_decode_attention_kernels(
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
-    dynamic_symbols = [K2, S]
+    dynamic_symbols = [K2, K3, S]
     dynamic_symbols_map = {
         K2: shape.kv_lens,
         K3: shape.kv_lens,
