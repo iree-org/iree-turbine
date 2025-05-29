@@ -61,6 +61,7 @@ def get_wave_speculative_sampling_kernel(
     threshold_single,
     num_draft_tokens,
     vocab_size,
+    seq_len,
 ):
     speculative_sampling, symbols, _, _ = get_speculative_sampling_kernel(
         batch_size,
@@ -69,6 +70,7 @@ def get_wave_speculative_sampling_kernel(
         threshold_single,
         num_draft_tokens,
         vocab_size,
+        seq_len,
     )
     symbols.update(get_default_scheduling_params())
 
@@ -188,6 +190,7 @@ def tree_speculative_sampling_target_only(
         threshold_single,
         num_draft_tokens,
         vocab_size,
+        seq_len,
     )
     sampling_kernel(
         uniform_samples,
