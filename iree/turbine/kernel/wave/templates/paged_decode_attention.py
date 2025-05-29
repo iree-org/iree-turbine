@@ -271,6 +271,7 @@ def get_paged_decode_attention_kernels(
         req_index = tkw.read(request_indices)
         # The sequence length is used to control the bounds of the loop over K2.
         seq_length = tkw.read(request_indices, mapping=seq_len_mapping)
+        tkw.set_symbol(K2, seq_length)
         seq_length = seq_length - req_index
         tkw.set_symbol(KV_START_IDX, req_index)
         tkw.set_symbol(SEQ_LEN, seq_length)
@@ -292,8 +293,6 @@ def get_paged_decode_attention_kernels(
         )
         tkw.set_symbol(SPLIT_LEN, seq_length_per_split)
 
-        seq_length_per_split = tkw.cast(seq_length_per_split, tkl.i32)
-        tkw.set_symbol(K2, req_index + seq_length_per_split)
 
         @tkw.iterate(K2, init_args=[init_max, init_sum, new_acc])
         def loop(
