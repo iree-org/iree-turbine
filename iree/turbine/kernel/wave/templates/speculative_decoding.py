@@ -120,10 +120,10 @@ def get_speculative_decoding_kernel(
         sum_relu = tkw.sum(relu_diff, dim=VOCAB_SIZE)
         cdf = tkw.cumsum(relu_diff, dim=VOCAB_SIZE)
 
-        threshold_u = tkw.broadcast(
+        threshold_dist_u = tkw.broadcast(
             coin * sum_relu, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
         )
-        greater_than_u = cdf > threshold_u
+        greater_than_u = cdf > threshold_dist_u
         pad_token = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](1e6)
         token_idx = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](
             THREAD_0
