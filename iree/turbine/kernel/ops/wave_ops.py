@@ -166,6 +166,10 @@ def tanh(src: "Register") -> "Register":
     ...
 
 
+def cos(src: "Register") -> "Register":
+    ...
+
+
 def roundeven(src: "Register") -> "Register":
     ...
 
@@ -896,6 +900,7 @@ class ComparisonPyOp(BinaryOpBase, ABC):
 @define_interface_op("sin")
 @define_interface_op("tanh")
 @define_interface_op("tanh_approx")
+@define_interface_op("cos")
 @define_py_op(operator.neg)
 @define_py_op(operator.invert)
 @dataclass

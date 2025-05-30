@@ -53,6 +53,7 @@ from ...ops.wave_ops import (
     broadcast,
     cast,
     conditional,
+    cos,
     eq,
     exp2,
     extract,
@@ -941,6 +942,16 @@ def handle_sin(source: Value, options: WaveCompileOptions) -> OpResult:
     else:
         raise ValidationError(f"Found unhandled operand type for sine: {element_type}")
     return sine_of_source
+
+
+@handle_unary_op(cos)
+def handle_cos(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        res = math_d.cos(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for cos: {element_type}")
+    return res
 
 
 ###############################################################################
