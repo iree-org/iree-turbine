@@ -67,6 +67,7 @@ from ...ops.wave_ops import (
     lt,
     maximum,
     minimum,
+    atan2,
     mma,
     permute,
     reciprocal,
@@ -647,6 +648,17 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
         raise ValidationError(
             f"Found unhandled operand type for minimum: {element_type}"
         )
+    return result
+
+
+@handle_binary_op(atan2)
+def handle_atan2(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+
+    if _is_float_type(element_type):
+        result = math_d.atan2(lhs, rhs, fastmath=get_fast_math_flags(options))
+    else:
+        raise ValidationError(f"Found unhandled operand type for atan2: {element_type}")
     return result
 
 
