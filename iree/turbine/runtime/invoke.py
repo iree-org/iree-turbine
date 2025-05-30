@@ -43,20 +43,19 @@ def invoke_vm_function(
 
     if is_async:
         external_timepoint = device.setup_iree_action()
-        if device._device_interop.no_sync():
-            wait_fence = HalFence(0)
-            signal_fence = HalFence(0)
-
-            arg_list.push_ref(wait_fence)
-            arg_list.push_ref(signal_fence)
-        else:
+        if device.sync:
             wait_fence = HalFence.create_at(
                 device._main_timeline, device._main_timepoint - 1
             )
-            signal_fence = HalFence.create_at(device._main_timeline, device._main_timepoint)
+            signal_fence = HalFence.create_at(
+                device._main_timeline, device._main_timepoint
+            )
+        else:
+            wait_fence = HalFence(0)
+            signal_fence = HalFence(0)
 
-            arg_list.push_ref(wait_fence)
-            arg_list.push_ref(signal_fence)
+        arg_list.push_ref(wait_fence)
+        arg_list.push_ref(signal_fence)
 
     # Invoke.
     start = timer()
