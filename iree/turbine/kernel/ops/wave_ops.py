@@ -182,6 +182,10 @@ def minimum(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
+def atan2(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
 def broadcast(
     arg: "Register", target_shape: Optional[Sequence[IndexExpr | int]] = None
 ) -> "Register":
@@ -853,6 +857,7 @@ class BinaryOpBase(CustomOp, ABC):
 @define_py_op(operator.truediv)
 @define_interface_op("maximum")
 @define_interface_op("minimum")
+@define_interface_op("atan2")
 @dataclass
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
