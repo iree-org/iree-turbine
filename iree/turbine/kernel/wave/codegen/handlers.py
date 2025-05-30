@@ -1238,6 +1238,9 @@ def handle_extract(emitter: WaveEmitter, node: fx.Node):
     assert isinstance(offset, list) and len(offset) == 1
     extract_vector = cast_vector(emitter, register)
     result_type = VectorType.get([1], extract_vector.type.element_type)
+    # Instead of using `extract_strided_slice` op, we use `extract` + `splat`
+    # to construct the result vector, to enable more opportunities for them to
+    # be fused with nearby elementwise and memory ops.
     element = vector_d.extract(
         extract_vector, static_position=offset, dynamic_position=[]
     )
@@ -1422,6 +1425,10 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
         vectors = [cast_vector(emitter, arg) for arg in args]
         shape = vectors[0].type.shape[0]
         if shape == 1:
+            # If source is 1-element vector or scalar (which will be casted to
+            # 1-element vector by `cast_vector`), we can construct the result
+            # vector using `extract` and a single `from_elements` op instead of
+            # series of `insert_strided_slice` ops.
             values = [
                 vector_d.extract(vector, static_position=[0], dynamic_position=[])
                 for vector in vectors
