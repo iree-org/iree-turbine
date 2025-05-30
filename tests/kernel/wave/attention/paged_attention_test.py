@@ -133,15 +133,14 @@ def create_inputs(
     block_table = device_arange(num_seqs * kv_lens, dtype=torch.int32).reshape(
         num_seqs, kv_lens
     )
-    d = kv_lens // 10
-    if d > 0:
-        kv_lens_tensor = device_randint(
-            kv_lens - d, kv_lens + d, (num_seqs,), dtype=torch.int32
-        )
-    else:
-        kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
+    kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
     request_indices = device_zeros(num_seqs + 1, dtype=torch.int32)
     request_indices[1 : num_seqs + 1] = torch.cumsum(kv_lens_tensor, dim=0)
+    d = kv_lens // 10
+    if d > 0:
+        request_indices[1:num_seqs] += device_randint(
+            -d, d, (num_seqs - 1,), dtype=torch.int32
+        )
     return (
         query,
         key_cache,
@@ -163,15 +162,14 @@ def create_mha_inputs(
     key_cache = device_randn(num_seqs, kv_lens, num_heads, head_size, dtype=dtype)
     value_cache = device_randn(num_seqs, kv_lens, num_heads, head_size, dtype=dtype)
     block_table = device_arange(num_seqs, kv_lens, dtype=torch.int32)
-    d = kv_lens // 10
-    if d > 0:
-        kv_lens_tensor = device_randint(
-            kv_lens - d, kv_lens + d, (num_seqs,), dtype=torch.int32
-        )
-    else:
-        kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
+    kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
     request_indices = device_zeros(num_seqs + 1, dtype=torch.int32)
     request_indices[1 : num_seqs + 1] = torch.cumsum(kv_lens_tensor, dim=0)
+    d = kv_lens // 10
+    if d > 0:
+        request_indices[1:num_seqs] += device_randint(
+            -d, d, (num_seqs - 1,), dtype=torch.int32
+        )
     return query, key_cache, value_cache, block_table, request_indices, kv_lens_tensor
 
 
