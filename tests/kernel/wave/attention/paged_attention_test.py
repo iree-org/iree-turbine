@@ -141,6 +141,7 @@ def create_inputs(
         request_indices[1:num_seqs] += device_randint(
             -d, d, (num_seqs - 1,), dtype=torch.int32
         )
+        kv_lens_tensor = request_indices[1:] - request_indices[:-1]
     return (
         query,
         key_cache,
@@ -170,6 +171,7 @@ def create_mha_inputs(
         request_indices[1:num_seqs] += device_randint(
             -d, d, (num_seqs - 1,), dtype=torch.int32
         )
+        kv_lens_tensor = request_indices[1:] - request_indices[:-1]
     return query, key_cache, value_cache, block_table, request_indices, kv_lens_tensor
 
 
