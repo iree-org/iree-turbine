@@ -74,6 +74,7 @@ from ...ops.wave_ops import (
     scalar,
     reshape,
     roundeven,
+    sin,
     scheduling_barrier,
     scheduling_group_barrier,
     self_index,
@@ -918,6 +919,16 @@ def handle_roundeven(source: Value, options: WaveCompileOptions) -> OpResult:
             f"Found unhandled operand type for roundeven: {element_type}"
         )
     return roundeven
+
+
+@handle_unary_op(sin)
+def handle_sin(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        sine_of_source = math_d.sin(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for sine: {element_type}")
+    return sine_of_source
 
 
 ###############################################################################
