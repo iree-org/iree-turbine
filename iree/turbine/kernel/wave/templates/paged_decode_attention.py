@@ -96,7 +96,10 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
         constraints += [
             tkw.TilingConstraint(
-                K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
+                K2,
+                BLOCK_K2,
+                iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2),
+                start=SPLIT_OFF + KV_START_IDX,
             )
         ]
 
@@ -140,7 +143,10 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
         constraints += [
             tkw.TilingConstraint(
-                K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
+                K2,
+                BLOCK_K2,
+                iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2),
+                start=SPLIT_OFF + KV_START_IDX,
             )
         ]
 
@@ -232,7 +238,7 @@ def get_paged_decode_attention_kernels(
     # Returns token indices into the k-v cache for the given sequence (d0).
     kv_indices_mapping = tkw.IndexMapping(
         num_iterators=1,
-        inputs={K2: i + KV_START_IDX},
+        inputs={K2: i},
         outputs={K2: i},
     )
 
@@ -292,7 +298,6 @@ def get_paged_decode_attention_kernels(
             lambda x, y, z: sympy.Min(x, sympy.Max(y - z, 0)),
         )
         tkw.set_symbol(SPLIT_LEN, seq_length_per_split)
-
 
         @tkw.iterate(K2, init_args=[init_max, init_sum, new_acc])
         def loop(
