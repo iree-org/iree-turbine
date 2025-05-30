@@ -21,13 +21,11 @@ def scaled_dot_product_attention_bhsd(
     This version mimics PyTorch's `torch.nn.functional.scaled_dot_product_attention`
     with optional causal masking and improved numerical stability.
     Intended for comparison and debugging purposes.
-
     Args:
         query (Tensor): query tensor of shape [B, H, S_q, D].
         key (Tensor): key tensor of shape [B, H, S_k, D].
         value (Tensor): value tensor of shape [B, H, S_k, D].
         is_causal (bool): If True, applies causal masking to the attention logits.
-
     Returns:
         Tensor: Output tensor of shape [B, H, S_q, D] after applying attention.
     """
