@@ -63,7 +63,7 @@ def ref_paged_attn(
     key_cache: torch.Tensor,
     value_cache: torch.Tensor,
     query_lens: List[int],
-    kv_lens: List[int],
+    request_indices: List[int],
     block_tables: torch.Tensor,
     scale: float,
     causal: Optional[bool] = False,
@@ -78,11 +78,12 @@ def ref_paged_attn(
     start_idx = 0
     for i in range(num_seqs):
         query_len = query_lens[i]
-        kv_len = kv_lens[i]
+        kv_start_idx = request_indices[i]
+        kv_len = request_indices[i + 1] - kv_start_idx
         q = query[start_idx : start_idx + query_len]
         q *= scale
 
-        block_indices = block_tables[i, :kv_len]
+        block_indices = block_tables[kv_start_idx : kv_start_idx + kv_len]
 
         k = key_cache[block_indices].view(-1, num_kv_heads, head_size)
         v = value_cache[block_indices].view(-1, num_kv_heads, head_size)
@@ -130,9 +131,7 @@ def create_inputs(
     value_cache = device_randn(
         num_seqs * kv_lens, num_kv_heads, head_size_kv, dtype=dtype
     )
-    block_table = device_arange(num_seqs * kv_lens, dtype=torch.int32).reshape(
-        num_seqs, kv_lens
-    )
+    block_table = device_arange(num_seqs * kv_lens, dtype=torch.int32)
     kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
     request_indices = device_zeros(num_seqs + 1, dtype=torch.int32)
     request_indices[1 : num_seqs + 1] = torch.cumsum(kv_lens_tensor, dim=0)
@@ -162,16 +161,10 @@ def create_mha_inputs(
     query = device_randn(num_seqs, num_heads, head_size, dtype=dtype)
     key_cache = device_randn(num_seqs, kv_lens, num_heads, head_size, dtype=dtype)
     value_cache = device_randn(num_seqs, kv_lens, num_heads, head_size, dtype=dtype)
-    block_table = device_arange(num_seqs, kv_lens, dtype=torch.int32)
+    block_table = device_arange(num_seqs * kv_lens, dtype=torch.int32)
     kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
     request_indices = device_zeros(num_seqs + 1, dtype=torch.int32)
     request_indices[1 : num_seqs + 1] = torch.cumsum(kv_lens_tensor, dim=0)
-    d = kv_lens // 10
-    if d > 0:
-        request_indices[1:num_seqs] += device_randint(
-            -d, d, (num_seqs - 1,), dtype=torch.int32
-        )
-        kv_lens_tensor = request_indices[1:] - request_indices[:-1]
     return query, key_cache, value_cache, block_table, request_indices, kv_lens_tensor
 
 
@@ -320,7 +313,7 @@ def testPagedFlashDecoding(
         key_cache_4d,
         value_cache_4d,
         request_indices,
-        torch.flatten(block_table),
+        block_table,
         phase_0_output,
         phase_0_output_max,
     )
@@ -362,7 +355,7 @@ def testPagedFlashDecoding(
             key_cache=key_cache,
             value_cache=value_cache,
             query_lens=torch.ones(shape.num_seqs, dtype=torch.int32),
-            kv_lens=kv_lens_tensor,
+            request_indices=request_indices,
             block_tables=block_table,
             scale=scale,
             causal=False,
@@ -516,7 +509,7 @@ def testPagedFlashDecodingMHA(
         key_cache_4d,
         value_cache_4d,
         request_indices,
-        torch.flatten(block_table),
+        block_table,
         phase_0_output,
         phase_0_output_max,
     )
@@ -557,7 +550,7 @@ def testPagedFlashDecodingMHA(
             key_cache=key_cache,
             value_cache=value_cache,
             query_lens=torch.ones(shape.num_seqs, dtype=torch.int32),
-            kv_lens=kv_lens_tensor,
+            request_indices=request_indices,
             block_tables=block_table,
             scale=scale,
             causal=False,
