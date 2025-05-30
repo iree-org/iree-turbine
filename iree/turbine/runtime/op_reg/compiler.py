@@ -81,10 +81,25 @@ class KernelCompileConfig:
 
 # TODO: The cache should be more than just a simple dict. Can be persistent
 KERNEL_CACHE: dict[str, tuple[VmContext, VmFunction, KernelCompileConfig]] = {}
+MODULE_CACHE: dict[str, tuple[VmModule, KernelCompileConfig]] = {}
 
 
 def _testing_get_cache_size() -> int:
     return len(KERNEL_CACHE)
+
+
+def _testing_get_sub_cache_size() -> int:
+    return len(MODULE_CACHE)
+
+
+def assemble_invocable(
+    call_func: str, vm_module: VmModule, device: Device
+) -> tuple[VmContext, VmFunction]:
+    """Creates a VmContext and returns it with a VmFuncton extracted by name from the given vm module."""
+    vm_instance = device.vm_instance
+    vm_context = VmContext(vm_instance, [device.create_hal_module(), vm_module])
+    main_function = vm_module.lookup_function(call_func)
+    return vm_context, main_function
 
 
 def compile_standalone_kernel(
@@ -93,11 +108,23 @@ def compile_standalone_kernel(
     func_name: str = "main",
     async_invocations: bool = True,
 ) -> tuple[VmContext, VmFunction, KernelCompileConfig]:
-    # Early exit on cache hit.
-    cache_key = f"{ksel.spec_key}::{device.type_cache_key}"
+    # Early exit on full cache hit.
+    cache_key = f"{ksel.spec_key}::{device.instance_cache_key}"
     cache_hit = KERNEL_CACHE.get(cache_key)
     if cache_hit is not None:
         return cache_hit
+
+    # Try to get at least a VMFB cache hit.
+    # This sub cache avoids re-compilation for separate gpu's or cuda streams.
+    sub_cache_key = f"{ksel.spec_key}::{device.type_cache_key}"
+    sub_cache_hit = MODULE_CACHE.get(sub_cache_key)
+    if sub_cache_hit is not None:
+        vm_module, config = sub_cache_hit
+        call_func = f"{func_name}$async" if config.async_invocations else func_name
+        vm_context, vm_function = assemble_invocable(call_func, vm_module, device)
+        cache_hit = (vm_context, vm_function, config)
+        KERNEL_CACHE[cache_key] = cache_hit
+        return vm_context, vm_function, config
 
     # Cache miss.
     start = default_timer()
@@ -159,12 +186,15 @@ def compile_standalone_kernel(
     # unreliable capturing mapped memory from the compiler.
     # See: https://github.com/iree-org/iree/issues/17403
     vm_module = VmModule.copy_buffer(vm_instance, mapped_memory)
+
+    sub_cache_hit = (vm_module, config)
+    MODULE_CACHE[sub_cache_key] = sub_cache_hit
+
+    call_func = f"{func_name}$async" if config.async_invocations else func_name
     # TODO: We should be able to wrap the buffer as below but there are some
     # subtle ref-counting/shutdown sequencing issues that need to be resolved.
     # vm_module = VmModule.wrap_buffer(vm_instance, mapped_memory)
-    vm_context = VmContext(vm_instance, [device.create_hal_module(), vm_module])
-    call_func = f"{func_name}$async" if config.async_invocations else func_name
-    main_function = vm_module.lookup_function(call_func)
+    vm_context, main_function = assemble_invocable(call_func, vm_module, device)
 
     if tracer.enabled:
         config.tracing_key = tracer.save_jit_kernel_artifacts(
