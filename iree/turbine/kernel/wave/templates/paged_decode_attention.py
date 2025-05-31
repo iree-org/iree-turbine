@@ -49,6 +49,7 @@ def get_paged_decode_attention_kernels(
     N = tkl.sym.N
     K1 = tkl.sym.K1
     K2 = tkl.sym.K2
+    K3 = tkl.sym.K3
     SEQ_LEN = tkl.sym.SEQ_LEN
     KV_START_IDX = tkl.sym.KV_START_IDX
     SPLIT_OFF = tkl.sym.SPLIT_OFF
@@ -95,7 +96,10 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
         constraints += [
             tkw.TilingConstraint(
-                K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
+                K2,
+                BLOCK_K2,
+                iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2),
+                start=SPLIT_OFF + KV_START_IDX,
             )
         ]
 
@@ -139,7 +143,10 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
         constraints += [
             tkw.TilingConstraint(
-                K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
+                K2,
+                BLOCK_K2,
+                iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2),
+                start=SPLIT_OFF + KV_START_IDX,
             )
         ]
 
@@ -215,7 +222,7 @@ def get_paged_decode_attention_kernels(
     # Returns the key for the given token index.
     k_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K2, BH: j, K2: d0 % K2, K1: l},
+        inputs={S: d0 // K3, BH: j, K2: d0 % K3, K1: l},
         outputs={S: i, BH: j, K2: k, K1: l},
         dynamic_val_mappings={K2: k},
     )
@@ -223,7 +230,7 @@ def get_paged_decode_attention_kernels(
     # Returns the value for the given token index.
     v_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K2, BH: j, N: k, K2: d0 % K2},
+        inputs={S: d0 // K3, BH: j, N: k, K2: d0 % K3},
         outputs={S: i, BH: j, N: k, K2: l},
         dynamic_val_mappings={K2: l},
     )
@@ -231,7 +238,7 @@ def get_paged_decode_attention_kernels(
     # Returns token indices into the k-v cache for the given sequence (d0).
     kv_indices_mapping = tkw.IndexMapping(
         num_iterators=1,
-        inputs={K2: i + KV_START_IDX},
+        inputs={K2: i},
         outputs={K2: i},
     )
 
@@ -270,6 +277,7 @@ def get_paged_decode_attention_kernels(
         req_index = tkw.read(request_indices)
         # The sequence length is used to control the bounds of the loop over K2.
         seq_length = tkw.read(request_indices, mapping=seq_len_mapping)
+        tkw.set_symbol(K2, seq_length)
         seq_length = seq_length - req_index
         tkw.set_symbol(KV_START_IDX, req_index)
         tkw.set_symbol(SEQ_LEN, seq_length)
@@ -316,7 +324,9 @@ def get_paged_decode_attention_kernels(
             x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
             x_j = x_j * layer_scale_reg
             k2_index = tkw.self_index(K2, tkl.i32)
-            mask = tkw.apply_expr(k2_index, lambda x: x < (SPLIT_OFF + SPLIT_LEN))
+            mask = tkw.apply_expr(
+                k2_index, lambda x: x < (SPLIT_OFF + SPLIT_LEN + KV_START_IDX)
+            )
             mask = tkw.broadcast(mask, target_shape=[B, K2])
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, zero, neg_infinity)
@@ -421,9 +431,10 @@ def get_paged_decode_attention_kernels(
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
-    dynamic_symbols = [K2, S]
+    dynamic_symbols = [K2, K3, S]
     dynamic_symbols_map = {
         K2: shape.kv_lens,
+        K3: shape.kv_lens,
         S: shape.num_seqs,
     }
 
