@@ -76,7 +76,7 @@ def test_cast():
         a_reg = tkw.cast(a_reg, tkl.f16)
         tkw.write(a_reg, b, elements_per_thread=16)
 
-    options = get_wave_compile_options(canonicalize=True)
+    options = get_wave_compile_options(canonicalize=False)
     test = wave_compile(options, test)
     print(test.asm)
 
