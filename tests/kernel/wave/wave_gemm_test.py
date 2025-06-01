@@ -218,11 +218,7 @@ def testPureGemm(
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
     "enable_scheduling",
-    [
-        SchedulingType.NONE,
-        SchedulingType.PREFETCH,
-        SchedulingType.MODULO
-    ],
+    [SchedulingType.NONE, SchedulingType.PREFETCH, SchedulingType.MODULO],
 )
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -267,14 +263,12 @@ def testNonTransposeGemm(
 
     if dynamic_dims:
         constraints += [tkw.Assumption(K > BLOCK_K * 4)]
-    
+
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     # Transpose during read for expected shape: (M, K) @ (N, K) -> (M, N)
     b_mapping = tkw.IndexMapping(
-        num_iterators=2,
-        inputs = {N: i, K: j},
-        outputs={N: i, K: j}
+        num_iterators=2, inputs={N: i, K: j}, outputs={N: i, K: j}
     )
 
     @tkw.wave(constraints)
@@ -284,6 +278,7 @@ def testNonTransposeGemm(
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
         @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
@@ -352,7 +347,10 @@ def testNonTransposeGemm(
                 dump_perf, "iree_" + perf_filename
             )
     torch_ref = torch.matmul(a, b)
-    assert_close(c.to(torch.float16), torch_ref, atol=1e-2, rtol=1e-2, check_device=False)
+    assert_close(
+        c.to(torch.float16), torch_ref, atol=1e-2, rtol=1e-2, check_device=False
+    )
+
 
 @require_e2e
 @pytest.mark.parametrize("shape", [(4096, 4096, 4096)])
