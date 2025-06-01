@@ -895,6 +895,8 @@ def test_unary_lowerings():
         res = tkw.tanh_approx(res)
         res = tkw.softsign(res, logit_cap=30.0, apply_scaling=True, head_dim=128)
         res = tkw.roundeven(res)
+        res = tkw.sin(res)
+        res = tkw.cos(res)
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_b, b, elements_per_thread=4)
 
@@ -943,6 +945,11 @@ def test_unary_lowerings():
 
     # Tests roundeven
     # CHECK: %[[ROUNDEVEN:.+]] = math.roundeven %[[SOFTSIGN]]
+
+    # Tests sin
+    # CHECK: %[[SIN:.+]] = math.sin %[[ROUNDEVEN]]
+    # Tests cos
+    # CHECK: %[[COS:.+]] = math.cos %[[SIN]]
 
 
 # Important to check lowering of scheduling/barrier ops.
@@ -1912,6 +1919,7 @@ def test_binary_lowerings():
         res = res * a_reg
         res = res / b_reg
         res = tkw.minimum(a_reg, b_reg)
+        res = tkw.atan2(res, a_reg)
         tkw.write(res, a, elements_per_thread=4)
 
     binary_lowerings = wave_compile(get_wave_compile_options(), binary_lowerings)
@@ -1922,6 +1930,7 @@ def test_binary_lowerings():
     # CHECK: %[[MUL:.+]] = arith.mulf %[[SUB]]
     # CHECK: %[[DIV:.+]] = arith.divf %[[MUL]]
     # CHECK: %[[MINIMUM:.+]] = arith.minimumf
+    # CHECK: %[[ATAN2:.+]] = math.atan2 %[[MINIMUM]]
 
 
 @run_test
