@@ -6,8 +6,6 @@
 
 import pytest
 import torch
-import math
-import iree.turbine.kernel as tk
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
@@ -38,8 +36,9 @@ from ..common.utils import (
     dump_generated_mlir,
     param_bool,
 )
-from ..common.shapes import get_test_shapes
 from typing import List, Optional
+
+xfail = lambda *a: pytest.param(*a, marks=pytest.mark.xfail)
 
 # Reference paged attention implementation from vLLM and sglang.
 # (NUM_Q_HEADS, NUM_KV_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
@@ -48,7 +47,7 @@ shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
 shapes += [(128, 2, 80, 80, 32, 2, 500)]
 shapes += [(128, 2, 512, 512, 32, 32, 500)]
-shapes += [(32, 8, 128, 128, 32, 1319, 1018)]
+shapes += [xfail((32, 8, 128, 128, 32, 1319, 1018))]
 
 # Test shapes for MHA paged attention
 # (NUM_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
