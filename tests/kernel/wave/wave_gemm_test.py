@@ -346,6 +346,7 @@ def testNonTransposeGemm(
             options.benchmark_results_file = os.path.join(
                 dump_perf, "iree_" + perf_filename
             )
+    # TODO: switch to comparison against generated iree_ref
     torch_ref = torch.matmul(a, b)
     assert_close(
         c.to(torch.float16), torch_ref, atol=1e-2, rtol=1e-2, check_device=False
