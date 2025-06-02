@@ -49,7 +49,7 @@ def get_paged_decode_attention_kernels(
     N = tkl.sym.N
     K1 = tkl.sym.K1
     K2 = tkl.sym.K2
-    K3 = tkl.sym.K3
+    KV_LENS = tkl.sym.KV_LENS
     SEQ_LEN = tkl.sym.SEQ_LEN
     KV_START_IDX = tkl.sym.KV_START_IDX
     SPLIT_OFF = tkl.sym.SPLIT_OFF
@@ -222,7 +222,7 @@ def get_paged_decode_attention_kernels(
     # Returns the key for the given token index.
     k_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K3, BH: j, K2: d0 % K3, K1: l},
+        inputs={S: d0 // KV_LENS, BH: j, K2: d0 % KV_LENS, K1: l},
         outputs={S: i, BH: j, K2: k, K1: l},
         dynamic_val_mappings={K2: k},
     )
@@ -230,7 +230,7 @@ def get_paged_decode_attention_kernels(
     # Returns the value for the given token index.
     v_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K3, BH: j, N: k, K2: d0 % K3},
+        inputs={S: d0 // KV_LENS, BH: j, N: k, K2: d0 % KV_LENS},
         outputs={S: i, BH: j, N: k, K2: l},
         dynamic_val_mappings={K2: l},
     )
@@ -431,10 +431,10 @@ def get_paged_decode_attention_kernels(
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
-    dynamic_symbols = [K2, K3, S]
+    dynamic_symbols = [K2, KV_LENS, S]
     dynamic_symbols_map = {
         K2: shape.kv_lens,
-        K3: shape.kv_lens,
+        KV_LENS: shape.kv_lens,
         S: shape.num_seqs,
     }
 
