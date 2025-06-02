@@ -2351,6 +2351,51 @@ class BitcastOp(CustomOp, ABC):
         src_shape = get_custom(self.arg).type.symbolic_shape
         self.type = Register[(*src_shape, self.dtype)]
 
+    def get_derived_indices(
+        self,
+    ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
+        return [(self.fx_node, self.index)]
+
+    def transform_index_backwards(
+        self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node when propagating index backwards, i.e.
+        from node to its arguments.
+        """
+        src_width = self.arg.type.dtype.bitwidth()
+        dst_width = self.type.dtype.bitwidth()
+        if src_width == dst_width:
+            return index
+        if src_width % dst_width != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if src_width % dst_width == 0."
+            )
+        scale_factor = int(src_width / dst_width)
+        dims = [(ind, val) for ind, val in index.items()]
+        fastest_dim, fastest_index = copy.deepcopy(
+            sorted(dims, key=lambda x: x[1].size)[-1]
+        )
+        if fastest_index.size % scale_factor != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if fastest dim % scale factor == 0."
+            )
+        updated_numel = int(fastest_index.size / scale_factor)
+        fastest_index.start = fastest_index.start.subs(
+            {fastest_index.size: updated_numel}
+        )
+        fastest_index.size = updated_numel
+        index[fastest_dim] = fastest_index
+        return index
+
+    def transform_index(
+        self, index: dict[IndexSymbol, IndexSequence]
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node based on the provided mapping.
+        """
+        return index
+
 
 @define_op("cast")
 @dataclass

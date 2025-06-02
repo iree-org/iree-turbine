@@ -41,6 +41,27 @@ def memref_to_tensor(memrefs: list[IrType]):
     return tensors
 
 
+def pack_subbyte_tensor_to_bytes(tensors: list[IrType]):
+    byte_width = 8
+    packed_tensors = []
+    for t in tensors:
+        if not RankedTensorType.isinstance(t):
+            packed_tensors.append(t)
+            continue
+        ty_width = t.element_type.width
+        if ty_width >= byte_width:
+            packed_tensors.append(t)
+            continue
+        fastest_dim = t.shape[-1]
+        if fastest_dim * ty_width % byte_width != 0:
+            raise ValueError(f"sub-byte agument of dtype{t} is not packable to bytes")
+        packed_fastest_dim = int(fastest_dim * ty_width / byte_width)
+        packed_shape = t.shape[:-1] + [packed_fastest_dim]
+        packed_ty = RankedTensorType.get(packed_shape, IntegerType.get_signless(8))
+        packed_tensors.append(packed_ty)
+    return packed_tensors
+
+
 def get_dynamic_dims(bindings: list[BindingDesc], dynamic_symbols: list[IndexSymbol]):
     dynamic_dims: list[IndexSymbol] = []
     for b in bindings:
@@ -67,6 +88,7 @@ def isolated_test_call(
             b.as_mlir_type() for b in sig.scalar_bindings
         ]
         input_tensors = memref_to_tensor(input_types)
+        input_tensors = pack_subbyte_tensor_to_bytes(input_tensors)
         argument_dims = get_dynamic_dims(sig.kernel_buffer_bindings, dynamic_symbols)
         # Adding unique dynamic dims as inputs.
         input_tensors += [IndexType.get() for _ in list(dict.fromkeys(argument_dims))]

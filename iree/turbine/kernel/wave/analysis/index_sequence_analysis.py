@@ -22,6 +22,7 @@ from ...ops.wave_ops import (
     SharedMemoryBarrier,
     Iterate,
     Write,
+    BitcastOp,
     WorkgroupBarrier,
     get_custom,
 )
@@ -88,7 +89,9 @@ def combine_derived_index(
 
 
 def set_derived_index(trace):
-    sources = trace.walk(lambda node: isinstance(get_custom(node), (Read, Write)))
+    sources = trace.walk(
+        lambda node: isinstance(get_custom(node), (Read, Write, BitcastOp))
+    )
 
     worklist = []
     for source in sources:
@@ -154,6 +157,7 @@ def set_node_indices(
         trace, get_hardware_constraint(constraints)
     )
     trace.walk(partial(set_thread_independent_index, constraints))
+    breakpoint()
 
     if (
         "all" in print_ir_after
@@ -193,6 +197,7 @@ def set_node_indices(
     ]
     for p in graph_passes:
         try_apply_pass(p, trace, print_ir_before, print_ir_after)
+    breakpoint()
 
 
 def compute_stride(
