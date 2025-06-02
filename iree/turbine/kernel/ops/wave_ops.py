@@ -25,6 +25,7 @@ from .._support.regions import RegionGraph
 from .._support.location import FileLineColInfo
 from .base import OpDispatcher
 import numpy as np
+from sympy import Symbol, Number
 
 if TYPE_CHECKING:
     from ..wave.constraints import Constraint
@@ -1439,7 +1440,10 @@ class ScaledMMA(CustomOp):
     ) -> dict[IndexSymbol, IndexSequence]:
         indices: dict[IndexSymbol, IndexSequence] = {}
         for dim in shape:
-            indices[dim] = self.index[dim].subs(operand_map)
+            try:
+                indices[dim] = self.index[dim].subs(operand_map)
+            except:
+                breakpoint()
         return indices
 
     @property
@@ -1537,16 +1541,26 @@ class Read(CustomOp):
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
     _write_dependency: Optional[list[fx.Node]] = None
 
+    def infer_dim(self, expr):
+        # Skip cases where infer_dim cannot or does not handle.
+        if expr.is_Symbol or expr.is_Number or len(expr.free_symbols) != 1:
+            return expr
+        dim_symbol = list(expr.free_symbols)[0]
+        return dim_symbol
+
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         if self.mapping is not None:
             return list(self.mapping.output_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [self.infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
         dtype = self.memory_type.dtype
-        self.type = Register[(*self.indexing_dims, dtype)]
+        shape = list(self.memory_type.symbolic_shape)
+        self.type = Register[(*shape, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -2344,12 +2358,24 @@ class BitcastOp(CustomOp, ABC):
     dtype: DataType
 
     @property
+    def scale_factor(self):
+        src_width = self.arg.type.dtype.bitwidth()
+        dst_width = self.dtype.bitwidth()
+        if src_width % dst_width != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if src_width % dst_width == 0."
+            )
+        return int(src_width / dst_width)
+
+    @property
     def indexing_dims(self) -> list[IndexSymbol]:
         return get_custom(self.arg).indexing_dims
 
     def infer_type(self):
         src_shape = get_custom(self.arg).type.symbolic_shape
-        self.type = Register[(*src_shape, self.dtype)]
+        dst_shape = list(src_shape)
+        dst_shape[-1] *= self.scale_factor
+        self.type = Register[(*dst_shape, self.dtype)]
 
     def get_derived_indices(
         self,

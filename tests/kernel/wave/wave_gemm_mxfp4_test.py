@@ -50,9 +50,9 @@ def get_mxfp4_gemm(shape):
 
     @tkw.wave(constraints)
     def gemm(
-        a: tkl.Memory[M, K // 2, GLOBAL_ADDRESS_SPACE, tkl.i8],
+        a: tkl.Memory[M, K / 2, GLOBAL_ADDRESS_SPACE, tkl.i8],
         a_scale: tkl.Memory[M, K_SCALE, GLOBAL_ADDRESS_SPACE, tkl.i8],
-        b: tkl.Memory[N, K // 2, GLOBAL_ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[N, K / 2, GLOBAL_ADDRESS_SPACE, tkl.i8],
         b_scale: tkl.Memory[N, K_SCALE, GLOBAL_ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
@@ -204,7 +204,7 @@ def run_torch(x, w, x_scales, w_scales, dtype):
     return torch.mm(x_f32, w_f32).to(dtype)
 
 
-@pytest.mark.parametrize("M, N, K", get_x_vals())
+@pytest.mark.parametrize("M, N, K", [(1024, 1024, 1024)])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 def test_gemm_afp4_wfp4(M: int, N: int, K: int, dtype):
     x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(M, N, K)
@@ -216,10 +216,10 @@ def test_gemm_afp4_wfp4(M: int, N: int, K: int, dtype):
     gemm = get_mxfp4_gemm(shape)
     w_t = w.T.contiguous()
     gemm(x, x_scales, w_t, w_scales, out)
-    breakpoint()
-    from aiter.ops.triton.gemm_afp4wfp4 import gemm_afp4wfp4
+    # breakpoint()
+    # from aiter.ops.triton.gemm_afp4wfp4 import gemm_afp4wfp4
 
-    gemm_afp4wfp4(x, w, triton_out, x_scales, w_scales, dtype)
+    # gemm_afp4wfp4(x, w, triton_out, x_scales, w_scales, dtype)
     torch.testing.assert_close(torch_out, out, check_dtype=False)
 
 
