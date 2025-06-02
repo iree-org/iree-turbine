@@ -65,7 +65,7 @@ def get_paged_decode_attention_kernels(
     BLOCK_BH = tkl.sym.BLOCK_BH
     BLOCK_N = tkl.sym.BLOCK_N
     BLOCK_U = tkl.sym.BLOCK_U
-    BLOCK_K2 = tkl.sym.BLOCK_K2
+    BLOCK_SPLIT = tkl.sym.BLOCK_SPLIT
     BLOCK_S = tkl.sym.BLOCK_S
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
@@ -97,8 +97,8 @@ def get_paged_decode_attention_kernels(
         constraints += [
             tkw.TilingConstraint(
                 K2,
-                BLOCK_K2,
-                iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2),
+                BLOCK_SPLIT,
+                iters=sympy.ceiling(SPLIT_LEN / BLOCK_SPLIT),
                 start=SPLIT_OFF + KV_START_IDX,
             )
         ]
@@ -144,8 +144,8 @@ def get_paged_decode_attention_kernels(
         constraints += [
             tkw.TilingConstraint(
                 K2,
-                BLOCK_K2,
-                iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2),
+                BLOCK_SPLIT,
+                iters=sympy.ceiling(SPLIT_LEN / BLOCK_SPLIT),
                 start=SPLIT_OFF + KV_START_IDX,
             )
         ]
@@ -408,7 +408,7 @@ def get_paged_decode_attention_kernels(
             BLOCK_B: 1,
             BLOCK_S: 1,
             BLOCK_U: 1,
-            BLOCK_K2: 64,
+            BLOCK_SPLIT: 64,
             B: shape.num_query_heads,
             N: shape.head_size_kv,
             K1: shape.head_size,
@@ -421,7 +421,7 @@ def get_paged_decode_attention_kernels(
             BLOCK_B: HEAD_BLOCK_SIZE,
             BLOCK_S: 1,
             BLOCK_U: 1,
-            BLOCK_K2: 16,
+            BLOCK_SPLIT: 16,
             B: shape.num_query_heads,
             N: shape.head_size_kv,
             K1: shape.head_size,
