@@ -157,13 +157,13 @@ def get_speculative_sampling_kernel(
     BLOCK_BATCH_SIZE = tkl.sym.BLOCK_BATCH_SIZE
     BLOCK_NUM_DRAFT_TOK = tkl.sym.BLOCK_NUM_DRAFT_TOK
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    GLOBAL_ADDRESS_SPACE = tkl.sym.GLOBAL_ADDRESS_SPACE
+    GLOBAL_ADDRESS_SPACE_0 = tkl.sym.GLOBAL_ADDRESS_SPACE
 
     hyperparams = {
         BLOCK_NUM_DRAFT_TOK: 1,
         NUM_DRAFT_TOKENS: num_draft_tokens,
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        GLOBAL_ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
+        GLOBAL_ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
         BATCH_SIZE: batch_size,
         BLOCK_BATCH_SIZE: 1,
         VOCAB_SIZE: vocab_size,
@@ -295,40 +295,40 @@ def get_speculative_sampling_kernel(
     @tkw.wave(constraints)
     def speculative_sampling(
         uniform_samples: tkl.Memory[
-            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE, tkl.f32
+            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE_0, tkl.f32
         ],
         target_probs: tkl.Memory[
-            BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, GLOBAL_ADDRESS_SPACE, tkl.f32
+            BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, GLOBAL_ADDRESS_SPACE_0, tkl.f32
         ],
         draft_probs: tkl.Memory[
-            BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, GLOBAL_ADDRESS_SPACE, tkl.f32
+            BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, GLOBAL_ADDRESS_SPACE_0, tkl.f32
         ],
         candidates: tkl.Memory[
-            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE, tkl.i32
+            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE_0, tkl.i32
         ],
         retrieve_index: tkl.Memory[
-            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE, tkl.i32
+            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE_0, tkl.i32
         ],
         retrieve_next_token: tkl.Memory[
-            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE, tkl.i32
+            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE_0, tkl.i32
         ],
         retrieve_next_sibling: tkl.Memory[
-            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE, tkl.i32
+            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE_0, tkl.i32
         ],
         # Outputs
-        predicts: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE, tkl.i32, predict_layout],
+        predicts: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE_0, tkl.i32, predict_layout],
         accept_token_num: tkl.Memory[
             BATCH_SIZE,
             NUM_DRAFT_TOKENS,
             VOCAB_SIZE,
-            GLOBAL_ADDRESS_SPACE,
+            GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
             accept_token_num_layout,
         ],
         accept_index: tkl.Memory[
             BATCH_SIZE,
             NUM_DRAFT_TOKENS,
-            GLOBAL_ADDRESS_SPACE,
+            GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
             accept_index_layout,
         ],
@@ -336,7 +336,7 @@ def get_speculative_sampling_kernel(
             BATCH_SIZE,
             NUM_DRAFT_TOKENS,
             VOCAB_SIZE,
-            GLOBAL_ADDRESS_SPACE,
+            GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
             cur_prob_offset_vec_layout,
         ],
@@ -344,7 +344,7 @@ def get_speculative_sampling_kernel(
             BATCH_SIZE,
             NUM_DRAFT_TOKENS,
             VOCAB_SIZE,
-            GLOBAL_ADDRESS_SPACE,
+            GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
             last_accepted_retrieve_idx_vec_layout,
         ],
