@@ -85,13 +85,18 @@ def get_test_shapes(test_name: str) -> list[tuple[int]]:
         MMAType.F32_32x32x8_F16,
     ],
 )
+@param_bool("transpose_b")
 def testPureGemm(
     shape: tuple[int],
     enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: MMAType,
+    transpose_b: bool,
     request,
 ):
+    if transpose_b and enable_scheduling != SchedulingType.NONE:
+        pytest.skip("scheduling doesn't work with mapping")
+
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
     # Input sizes
@@ -123,18 +128,23 @@ def testPureGemm(
     if dynamic_dims:
         constraints += [tkw.Assumption(K > BLOCK_K * 4)]
 
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+
+    # Mapping to handle transpose of b.
+    b_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={N: i, K: j},
+        outputs={N: i, K: j},
+    )
+
     # Wave-level micro-kernel.
     # Since warps are not directly addressable, there is no
     # explicit notion of a warp id (like a workgroup or thread id).
     # This kernel uses the input sizes M, N, K throughout, as the tiling
     # and data movement strategy is determined during the compilation process.
     # These can be influenced by introducing constraints.
-    @tkw.wave(constraints)
-    def gemm(
-        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
-    ):
+    def gemm_body(a, b, c):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
         # This microkernel encodes the fact that if the iterate
@@ -144,7 +154,7 @@ def testPureGemm(
             # a_reg: tkw.Register[M, K, tkl.f16]
             a_reg = tkw.read(a)
             # b_reg: tkw.Register[N, K, tkl.f16]
-            b_reg = tkw.read(b)
+            b_reg = tkw.read(b, mapping=b_mapping)
             # acc: tkw.Register[M, N, tkl.f32]
             acc = tkw.mma(a_reg, b_reg, acc)
             return acc
@@ -152,10 +162,33 @@ def testPureGemm(
         # repeat represents the results of the loop
         tkw.write(repeat, c)
 
+    if transpose_b:
+
+        @tkw.wave(constraints)
+        def gemm(
+            a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+            b: tkl.Memory[K, N, ADDRESS_SPACE, tkl.f16],
+            c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        ):
+            gemm_body(a, b, c)
+
+    else:
+
+        @tkw.wave(constraints)
+        def gemm(
+            a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+            b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+            c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        ):
+            gemm_body(a, b, c)
+
+    block_n = (
+        128 if transpose_b else 64
+    )  # bigger tile size for in-thread transpose to kick-in
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         BLOCK_M: 64,
-        BLOCK_N: 64,
+        BLOCK_N: block_n,
         BLOCK_K: 32,
         M: shape[0],
         N: shape[1],
@@ -197,7 +230,12 @@ def testPureGemm(
     a = device_randn(shape[0], shape[2], dtype=torch.float16)
     b = device_randn(shape[1], shape[2], dtype=torch.float16)
     c = device_zeros(shape[0], shape[1], dtype=torch.float32)
-    asm = gemm(a, b, c)
+
+    b_kernel = b
+    if transpose_b:
+        b_kernel = b.T.contiguous()
+
+    asm = gemm(a, b_kernel, c)
 
     if dump_generated_mlir:
         filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"

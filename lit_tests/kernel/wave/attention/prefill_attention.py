@@ -1,6 +1,5 @@
 # RUN: python %s | FileCheck %s
 
-import iree.turbine.kernel as tk
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils.general_utils import (
@@ -14,7 +13,6 @@ from iree.turbine.kernel.wave.templates.attention_common import (
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
-import torch
 
 
 @run_test
@@ -53,11 +51,8 @@ def test_prefill_attention():
     # CHECK-COUNT-1:            vector.maskedload
     # CHECK-COUNT-1:            vector.store
     # CHECK-COUNT-1:            vector.maskedload
-    # CHECK-COUNT-1:            vector.store
-    # CHECK-COUNT-1:            vector.maskedload
-    # CHECK-COUNT-1:            vector.store
-    # CHECK-COUNT-64:           vector.load
-    # CHECK-COUNT-16:           vector.load
+    # CHECK-COUNT-8:            vector.maskedload
+    # CHECK-COUNT-2:            vector.store
     # CHECK-COUNT-16:           amdgpu.mfma
     # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
     # CHECK-COUNT-16:           amdgpu.mfma
