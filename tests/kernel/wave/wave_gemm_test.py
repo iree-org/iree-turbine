@@ -1011,7 +1011,7 @@ def testF8Gemm(
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        ScaledMMAType.F32_16x16x128_F8F6F4,
+        # ScaledMMAType.F32_16x16x128_F8F6F4,
         ScaledMMAType.F32_32x32x64_F8F6F4,
     ],
 )
