@@ -222,7 +222,7 @@ def get_paged_decode_attention_kernels(
     # Returns the key for the given token index.
     k_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // KV_LENS, BH: j, KV_LENS: d0 % KV_LENS, K1: l},
+        inputs={S: d0 // KV_LENS, BH: j, SPLIT_ITER: d0 % KV_LENS, K1: l},
         outputs={S: i, BH: j, SPLIT_ITER: k, K1: l},
         dynamic_val_mappings={SPLIT_ITER: k},
     )
@@ -230,7 +230,7 @@ def get_paged_decode_attention_kernels(
     # Returns the value for the given token index.
     v_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // KV_LENS, BH: j, N: k, KV_LENS: d0 % KV_LENS},
+        inputs={S: d0 // KV_LENS, BH: j, N: k, SPLIT_ITER: d0 % KV_LENS},
         outputs={S: i, BH: j, N: k, SPLIT_ITER: l},
         dynamic_val_mappings={SPLIT_ITER: l},
     )
@@ -238,7 +238,7 @@ def get_paged_decode_attention_kernels(
     # Returns token indices into the k-v cache for the given sequence (d0).
     kv_indices_mapping = tkw.IndexMapping(
         num_iterators=1,
-        inputs={KV_LENS: i},
+        inputs={SPLIT_ITER: i},
         outputs={SPLIT_ITER: i},
     )
 
@@ -246,10 +246,10 @@ def get_paged_decode_attention_kernels(
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
         q: tkl.Memory[S, B, K1, GLOBAL_ADDRESS_SPACE, wave_input_dtype],
-        k: tkl.Memory[S, KV_LENS, BH, K1, ADDRESS_SPACE, wave_input_dtype],
-        v: tkl.Memory[S, KV_LENS, BH, N, ADDRESS_SPACE, wave_input_dtype],
+        k: tkl.Memory[S, SPLIT_ITER, BH, K1, ADDRESS_SPACE, wave_input_dtype],
+        v: tkl.Memory[S, SPLIT_ITER, BH, N, ADDRESS_SPACE, wave_input_dtype],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        kv_indices: tkl.Memory[KV_LENS, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        kv_indices: tkl.Memory[SPLIT_ITER, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
