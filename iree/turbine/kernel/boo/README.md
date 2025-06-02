@@ -31,7 +31,7 @@ y = boo_conv(x,w,b) # can also specify stride, dilation, padding, groups, and la
 
 ### Replace `Conv2d` in a model with `BooConv2d`:
 
-For a `resnet_18` boo convolution example with sample training, see `./examples/resnet_18_backwards.py`.
+For a `resnet_18` boo convolution example with sample training, see [`examples/resnet_18_backward.py`](examples/resnet_18_backward.py).
 
 ```python
 from iree.turbine.kernel.boo.modeling import replace_conv2d_with_boo_conv
