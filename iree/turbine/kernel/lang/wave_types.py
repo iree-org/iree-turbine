@@ -208,9 +208,9 @@ class IndexMapping:
                 continue
 
             current = iter_shape[i]
-            # assert (
-            #     current is None or current == sym
-            # ), f"Iterator conflict: {current} and {sym}"
+            assert (
+                current is None or current == sym
+            ), f"Iterator conflict: {current} and {sym}"
             iter_shape[i] = sym
 
         assert all(
