@@ -276,8 +276,11 @@ def get_speculative_sampling_kernel(
 
     write_mapping_2d_one_dim = tkw.IndexMapping(
         num_iterators=1,
-        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
-        outputs={BATCH_SIZE: i},
+        inputs={BATCH_SIZE: i},
+        outputs={
+            BATCH_SIZE: i // NUM_DRAFT_TOKENS,
+            NUM_DRAFT_TOKENS: i % NUM_DRAFT_TOKENS,
+        },
     )
 
     write_mapping_1d = tkw.IndexMapping(
@@ -317,9 +320,12 @@ def get_speculative_sampling_kernel(
     )
 
     write_zero_offset_mapping_one_dim = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={BATCH_SIZE: i, NUM_SPECULATIVE_TOKENS: j},
-        outputs={BATCH_SIZE: i * NUM_SPECULATIVE_TOKENS + j},  # TODO linearize
+        num_iterators=1,
+        inputs={BATCH_SIZE: i},
+        outputs={
+            BATCH_SIZE: i // NUM_DRAFT_TOKENS,
+            NUM_DRAFT_TOKENS: i % NUM_DRAFT_TOKENS,
+        },
     )
 
     def broadcast(x):
@@ -422,8 +428,6 @@ def get_speculative_sampling_kernel(
         predicts: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE_0, tkl.i32, predict_layout],
         accept_token_num: tkl.Memory[
             BATCH_SIZE,
-            NUM_DRAFT_TOKENS,
-            VOCAB_SIZE,
             GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
             accept_token_num_layout,
@@ -465,7 +469,6 @@ def get_speculative_sampling_kernel(
 
         coin = read_with_zero_offset_2d_one_dim(uniform_samples)
         last_accepted_retrieve_idx = read_with_zero_offset_2d_one_dim(retrieve_index)
-        # read_accept_index_val = read_with_zero_offset_2d_one_dim(accept_index)
         write_with_zero_offset_one_dim(last_accepted_retrieve_idx, accept_index)
         # last_accepted_retrieve_idx = tkw.broadcast(
         #     last_accepted_retrieve_idx,
@@ -563,8 +566,8 @@ def get_speculative_sampling_kernel(
 
                 @tkw.conditional(not_condition)
                 def else_():
-                    target_prob = read_3d_2_one_dim(target_probs)
-                    write_3d_one_dim(target_prob, draft_probs)
+                    target_prob = read_3d_2(target_probs)
+                    write_3d(target_prob, draft_probs)
 
                 # Update last_accepted_retrieve_idx.
                 last_accepted_retrieve_idx = tkw.select(
