@@ -100,7 +100,7 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
         # IREE runtime renames capsule to "dltensor_used" for some reason, but
         # only deletes capsules with "dltensor" name, which is causing a memory
         # leak.
-        _set_capsule_name(ctypes.py_object(capsule), _dl_tensor_name)
+        # _set_capsule_name(ctypes.py_object(capsule), _dl_tensor_name)
         arg_list.push_ref(arg_tensor_bv)
 
     # Linearize arguments, In linearized arg_list, we first push in all inputs,
