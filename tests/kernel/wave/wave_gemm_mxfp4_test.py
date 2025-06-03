@@ -50,9 +50,9 @@ def get_mxfp4_gemm(shape):
 
     @tkw.wave(constraints)
     def gemm(
-        a: tkl.Memory[M, K / 2, GLOBAL_ADDRESS_SPACE, tkl.i8],
+        a: tkl.Memory[M, K / 2, ADDRESS_SPACE, tkl.i8],
         a_scale: tkl.Memory[M, K_SCALE, GLOBAL_ADDRESS_SPACE, tkl.i8],
-        b: tkl.Memory[N, K / 2, GLOBAL_ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[N, K / 2, ADDRESS_SPACE, tkl.i8],
         b_scale: tkl.Memory[N, K_SCALE, GLOBAL_ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
