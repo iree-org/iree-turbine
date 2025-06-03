@@ -235,13 +235,6 @@ def get_paged_decode_attention_kernels(
         dynamic_val_mappings={SPLIT_ITER: l},
     )
 
-    # Returns token indices into the k-v cache for the given sequence (d0).
-    kv_indices_mapping = tkw.IndexMapping(
-        num_iterators=1,
-        inputs={SPLIT_ITER: i},
-        outputs={SPLIT_ITER: i},
-    )
-
     # The kv-cache layout here is (SEQ, HEADS, HEAD_DIM).
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
@@ -306,14 +299,8 @@ def get_paged_decode_attention_kernels(
             acc: tkl.Register[S, N, B, tkl.f32],
         ):
             q_reg = tkw.read(q)  # [S, B, K1] NxK
-            block_indices_v = tkw.read(
-                kv_indices,
-                mapping=kv_indices_mapping,
-            )
-            block_indices_k = tkw.read(
-                kv_indices,
-                mapping=kv_indices_mapping,
-            )
+            block_indices_v = tkw.read(kv_indices)
+            block_indices_k = tkw.read(kv_indices)
             k_reg = tkw.read(
                 k,
                 mapping=k_mapping,
