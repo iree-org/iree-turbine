@@ -73,13 +73,6 @@ class MMAOperand(Enum):
     K = 2
 
 
-class ScaledMMAOperand(Enum):
-    M = 0
-    N = 1
-    K = 2
-    K_SCALE = 3
-
-
 @dataclass
 class GenericDot:
     """
@@ -368,7 +361,6 @@ class HardwareConstraint(Constraint):
                     ),  # M
                     lane % 16,  # N
                     32 * floor(lane / 16),  # K
-                    floor(lane / 16),  # K_SCALE
                 ]
             case ScaledMMAType.F32_32x32x64_F8F6F4:
                 offset = [
@@ -383,7 +375,6 @@ class HardwareConstraint(Constraint):
                     ),  # M
                     lane % 32,  # N
                     32 * floor(lane / 32),  # K
-                    floor(lane / 32),  # K_SCALE
                 ]
             case _:
                 raise ValueError("Unsupported MMA type")
@@ -505,26 +496,22 @@ class HardwareConstraint(Constraint):
                     Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
                     1,  # N
                     32,  # K
-                    1,  # K_SCALE
                 ]
                 stride = [
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
                     1,  # N
                     1,  # K
-                    1,  # K_SCALE
                 ]
             case ScaledMMAType.F32_32x32x64_F8F6F4:
                 size = [
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
                     1,  # N
                     32,  # K
-                    1,  # K_SCALE
                 ]
                 stride = [
                     Piecewise((1, ~MMA_ACC), (32, MMA_ACC)),  # M
                     1,  # N
                     1,  # K
-                    1,  # K_SCALE
                 ]
             case _:
                 raise ValueError("Unsupported MMA type")

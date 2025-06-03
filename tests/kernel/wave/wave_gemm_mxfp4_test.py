@@ -51,9 +51,9 @@ def get_mxfp4_gemm(shape):
     @tkw.wave(constraints)
     def gemm(
         a: tkl.Memory[M, K / 2, ADDRESS_SPACE, tkl.i8],
-        a_scale: tkl.Memory[M, K_SCALE, GLOBAL_ADDRESS_SPACE, tkl.i8],
+        a_scale: tkl.Memory[M, K / 32, GLOBAL_ADDRESS_SPACE, tkl.i8],
         b: tkl.Memory[N, K / 2, ADDRESS_SPACE, tkl.i8],
-        b_scale: tkl.Memory[N, K_SCALE, GLOBAL_ADDRESS_SPACE, tkl.i8],
+        b_scale: tkl.Memory[N, K / 32, GLOBAL_ADDRESS_SPACE, tkl.i8],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
@@ -106,10 +106,10 @@ def generate_gemm_afp4wfp4_inputs(M, N, K):
     w = w.T
     # Scale of 1.0 in e8m0, bias 127.
     x_scales = torch.randint(
-        127, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8, device="cuda"
+        124, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8, device="cuda"
     )
     w_scales = torch.randint(
-        127, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8, device="cuda"
+        124, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8, device="cuda"
     )
     x_scales = x_scales.T
     w_scales = w_scales.T
