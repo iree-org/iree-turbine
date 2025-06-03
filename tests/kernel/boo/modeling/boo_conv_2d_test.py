@@ -16,11 +16,67 @@ import pytest
 
 import torch
 
-from iree.turbine.kernel.boo.modeling import BooConv2d, replace_conv2d_with_boo_conv
+from iree.turbine.kernel.boo.modeling import (
+    BooConv1d,
+    BooConv2d,
+    BooConv3d,
+    replace_conv2d_with_boo_conv,
+    replace_convs_with_boo,
+)
 from iree.turbine.kernel.boo.conv_exports import (
     set_boo_cache,
     ConvLaunchableRuntimeCache,
 )
+
+
+class BooConvReplacementTest(unittest.TestCase):
+    def setUp(self):
+        ConvLaunchableRuntimeCache.set_cache_limit(0)
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv0 = torch.nn.Conv3d(
+                    in_channels=3, out_channels=2, kernel_size=3, bias=False
+                )
+                self.conv1 = torch.nn.Conv2d(
+                    in_channels=2, out_channels=3, kernel_size=2, bias=True
+                )
+                self.conv2 = torch.nn.Conv1d(
+                    in_channels=3, out_channels=2, kernel_size=1, bias=False
+                )
+
+            def forward(self, x):
+                return self.conv2(
+                    self.conv1(self.conv0(x).flatten(-1, -2)).flatten(-1, -2)
+                )
+
+        self.model1 = M().to(device=self.device)
+
+    def testAllReplacements(self):
+        model = replace_convs_with_boo(self.model1)
+        for name, module in model.named_modules():
+            msg = f"Module {name} encountered improper conversion."
+            self.assertNotIsInstance(module, torch.nn.Conv1d, msg=msg)
+            self.assertNotIsInstance(module, torch.nn.Conv2d, msg=msg)
+            self.assertNotIsInstance(module, torch.nn.Conv3d, msg=msg)
+
+    def testOnly2dReplacement(self):
+        model = replace_conv2d_with_boo_conv(self.model1)
+        for name, module in model.named_modules():
+            msg = f"Module {name} encountered improper conversion."
+            self.assertNotIsInstance(module, BooConv1d, msg=msg)
+            self.assertNotIsInstance(module, torch.nn.Conv2d, msg=msg)
+            self.assertNotIsInstance(module, BooConv3d, msg=msg)
+
+    def test1dAnd2dReplacement(self):
+        model = replace_convs_with_boo(self.model1, allowed_spatial_dims=(1, 3))
+        for name, module in model.named_modules():
+            msg = f"Module {name} encountered improper conversion."
+            self.assertNotIsInstance(module, torch.nn.Conv1d, msg=msg)
+            self.assertNotIsInstance(module, BooConv2d, msg=msg)
+            self.assertNotIsInstance(module, torch.nn.Conv3d, msg=msg)
 
 
 class BooConv2dTest(unittest.TestCase):
