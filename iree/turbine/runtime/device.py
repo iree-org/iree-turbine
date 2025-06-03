@@ -510,9 +510,6 @@ def _device_export_torch_tensor_cpu(
 # CUDA and HIP import/export
 ################################################################################
 
-_dl_tensor_name = ctypes.create_string_buffer(b"dltensor")
-_set_capsule_name = ctypes.pythonapi.PyCapsule_SetName
-
 
 def _device_import_torch_tensor_cuda_hip(
     device: Device, t: torch.Tensor
@@ -525,9 +522,6 @@ def _device_import_torch_tensor_cuda_hip(
     # event is raised on Torch's stream at the current position.
     capsule = t.__dlpack__(None)
     bv = device.hal_device.from_dlpack_capsule(capsule)
-    # TODO: iree runtime renames the capsule to `dltensor_used`, but doesn't free up the renamed capsule.
-    # Instead of renaming the capsule so it gets freed, we should address the bug in iree-runtime.
-    _set_capsule_name(ctypes.py_object(capsule), _dl_tensor_name)
     return bv
 
 
