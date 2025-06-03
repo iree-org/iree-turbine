@@ -61,6 +61,7 @@ from ....support.logging import get_logger
 from copy import deepcopy, copy
 from iree.turbine.kernel._support.dtype import DataType
 from enum import Enum
+import copy
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -169,7 +170,12 @@ def resolve_scaled_indices(trace, constraints: list[Constraint]):
                         source.index[dim].size % scale_factor == 0,
                         "Size needs to be divisible by scale.",
                     )
+                assert (
+                    source.vector_shapes[dim] % scale_factor == 0,
+                    "Expected vector_shape to be divisble by scale.",
+                )
                 source.index[dim].size = max(source.index[dim].size // scale_factor, 1)
+                source.vector_shapes[dim] = source.vector_shapes[dim] // scale_factor
                 custom = get_custom(source)
                 if isinstance(custom, (Read, Write)):
                     assert (
@@ -180,7 +186,6 @@ def resolve_scaled_indices(trace, constraints: list[Constraint]):
                         custom.elements_per_thread / scale_factor
                     )
                     custom.update_arg("elements_per_thread", scaled_elem_per_thread)
-                # source.vector_shapes[dim] = source.vector_shapes[dim] // scale_factor
             else:
                 raise NotImplementedError(
                     "Currently only handle case of scaled index where scaling is division."
@@ -664,7 +669,7 @@ def propagate_indices(
                 continue
             # GetResults inherit their index from the Iterate node
             # and hence we don't need to update their index.
-            source.vector_shapes = source_vector_shapes
+            source.vector_shapes = copy.deepcopy(source_vector_shapes)
             if not isinstance(source, GetResult):
                 source_index = source.transform_index(source_index)
                 source.index = combine_indices(source.index, source_index)

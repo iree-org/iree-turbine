@@ -77,7 +77,7 @@ def get_mxfp4_gemm(shape):
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         BLOCK_M: 32,
         BLOCK_N: 32,
-        BLOCK_K: 128,
+        BLOCK_K: 256,
         M: shape[0],
         N: shape[1],
         K: shape[2],
@@ -204,7 +204,7 @@ def run_torch(x, w, x_scales, w_scales, dtype):
     return torch.mm(x_f32, w_f32).to(dtype)
 
 
-@pytest.mark.parametrize("M, N, K", [(1024, 1024, 1024)])
+@pytest.mark.parametrize("M, N, K", [(1024, 1024, 1024), (8192, 8192, 8192)])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 def test_gemm_afp4_wfp4(M: int, N: int, K: int, dtype):
     x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(M, N, K)
@@ -216,7 +216,6 @@ def test_gemm_afp4_wfp4(M: int, N: int, K: int, dtype):
     gemm = get_mxfp4_gemm(shape)
     w_t = w.T.contiguous()
     gemm(x, x_scales, w_t, w_scales, out)
-    # breakpoint()
     # from aiter.ops.triton.gemm_afp4wfp4 import gemm_afp4wfp4
 
     # gemm_afp4wfp4(x, w, triton_out, x_scales, w_scales, dtype)
