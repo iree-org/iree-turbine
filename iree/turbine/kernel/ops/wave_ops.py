@@ -1869,17 +1869,27 @@ class Write(CustomOp):
     mapping: Optional[IndexMapping] = None
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
 
+    def infer_dim(self, expr):
+        # Skip cases where infer_dim cannot or does not handle.
+        if expr.is_Symbol or expr.is_Number or len(expr.free_symbols) != 1:
+            return expr
+        dim_symbol = list(expr.free_symbols)[0]
+        return dim_symbol
+
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         if self.mapping is not None:
             return list(self.mapping.input_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [self.infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
         address_space = self.memory_type.address_space
+        shape = list(self.memory_type.symbolic_shape)
         dtype = self.memory_type.dtype
-        self.type = Memory[(*self.indexing_dims, address_space, dtype)]
+        self.type = Memory[(*shape, address_space, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
