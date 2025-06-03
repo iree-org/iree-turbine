@@ -196,9 +196,9 @@ def pytorch_convolution_backward(ctx, grad_output):
         mask,
     )
 
-    if ctx.input_layout.endswith("C"):
+    if ctx.input_layout.endswith("C") and mask[0]:
         input_grad = input_grad.permute(inv_perm)
-    if ctx.kernel_layout.endswith("C"):
+    if ctx.kernel_layout.endswith("C") and mask[1]:
         weight_grad = weight_grad.permute(inv_perm)
     # return `None` for attribute args
     return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
