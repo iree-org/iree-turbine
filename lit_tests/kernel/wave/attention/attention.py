@@ -159,11 +159,11 @@ def test_attention_32x32x8():
 
     # Test for reduction decomposition related to softmax.
     # CHECK-NOT:                arith.maximumf {{.*}}, {{.*}} : vector<16xf32>
-    # CHECK-COUNT-30:           arith.maximumf {{.*}}, {{.*}} : vector<1xf32>
+    # CHECK-COUNT-30:           arith.maximumf {{.*}}, {{.*}} : f32
     # CHECK:                    {{.*}} = gpu.shuffle xor {{.*}}
     # CHECK-COUNT-2:            arith.maximumf {{.*}}, {{.*}} : vector<1xf32>
     # CHECK:                    arith.addf {{.*}}, {{.*}} : vector<16xf32>
-    # CHECK-COUNT-14:           arith.addf {{.*}}, {{.*}} : vector<1xf32>
+    # CHECK-COUNT-14:           arith.addf {{.*}}, {{.*}} : f32
     # CHECK:                    {{.*}} = gpu.shuffle xor {{.*}}
     # CHECK-COUNT-2:            arith.addf {{.*}}, {{.*}} : vector<1xf32>
 
