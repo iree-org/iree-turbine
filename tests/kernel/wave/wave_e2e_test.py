@@ -1561,6 +1561,111 @@ def test_igemm_conv(
 
 
 @require_e2e
+@pytest.mark.parametrize(
+    "shape, stride_h, stride_w",
+    [
+        ((2, 3, 2, 1), 3, 1),
+        ((1, 4, 4, 2), 2, 2),
+        ((1, 7, 5, 3), 2, 3),
+    ],
+)
+def test_preprocessing_insert_slice_interleave(shape, stride_h, stride_w, request):
+    run_bench = request.config.getoption("--runperf")
+
+    # define symbols
+    N = tkl.sym.N
+    H = tkl.sym.H
+    W = tkl.sym.W
+    C = tkl.sym.C
+    H_OUT = tkl.sym.H_OUT
+    W_OUT = tkl.sym.W_OUT
+    STRIDE_H = tkl.sym.STRIDE_H
+    STRIDE_W = tkl.sym.STRIDE_W
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # base threads per wave
+    wave_size = 64
+    # HW constraints
+    constraints = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={N: 1, H: 1, W: 1, C: 1},
+        ),
+        # work group dims
+        tkw.WorkgroupConstraint(N, 1, 0),
+        tkw.WorkgroupConstraint(H, 1, 1),
+        tkw.WorkgroupConstraint(W, 1, 2),
+        tkw.WaveConstraint(N, 1),
+        tkw.WaveConstraint(H, 1),
+        tkw.WaveConstraint(W, 1),
+    ]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    k = tkw.IndexMapping.iterator(2)
+    l = tkw.IndexMapping.iterator(3)
+
+    mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={N: i, H: j, W: k, C: l},
+        outputs={
+            N: i,
+            H_OUT: j * STRIDE_H,
+            W_OUT: k * STRIDE_W,
+            C: l,
+        },
+    )
+
+    @tkw.wave(constraints)
+    def interleave_kernel(
+        x: tkl.Memory[N, H, W, C, ADDRESS_SPACE, tkl.f16],
+        out: tkl.Memory[N, H_OUT, W_OUT, C, ADDRESS_SPACE, tkl.f16],
+        stride_h: tkl.i32,
+        stride_w: tkl.i32,
+    ):
+        val = tkw.read(x)
+        print(stride_h)
+        tkw.set_symbol(STRIDE_H, stride_h)
+        tkw.set_symbol(STRIDE_W, stride_w)
+        tkw.write(val, out, mapping=mapping)
+
+    n, h, w, c = shape
+    x = device_randn((n, h, w, c), dtype=torch.float16)
+    out_ref = torch.zeros(
+        (n, h * stride_h, w * stride_w, c), dtype=torch.float16, device=x.device
+    )
+
+    for ni in range(n):
+        for hi in range(h):
+            for wi in range(w):
+                for ci in range(c):
+                    out_ref[ni, hi * stride_h, wi * stride_w, ci] = x[ni, hi, wi, ci]
+
+    out = torch.zeros_like(out_ref)
+
+    options = WaveCompileOptions(
+        subs={
+            N: n,
+            H: h,
+            W: w,
+            C: c,
+            H_OUT: h * stride_h,
+            W_OUT: w * stride_w,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+        wave_runtime=True,
+    )
+    options = set_default_run_config(options)
+    compiled = wave_compile(options, interleave_kernel)
+
+    compiled(x, out, stride_h, stride_w)
+    assert_close(out, out_ref, atol=1e-3, rtol=1e-3)
+
+
+@require_e2e
 @pytest.mark.parametrize("shape", [(256, 64)])
 def test_cast(shape, request):
     run_bench = request.config.getoption("--runperf")
