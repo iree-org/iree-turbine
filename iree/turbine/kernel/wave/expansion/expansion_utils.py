@@ -25,6 +25,7 @@ from ...ops.wave_ops import (
     NewRegister,
     ReduceOp,
     MMA,
+    ScaledMMA,
 )
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
 import itertools
