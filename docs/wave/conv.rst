@@ -56,10 +56,14 @@ the output has shape:
 
 where:
 
-.. math::
+.. code-block:: python
 
-   H_{out} = \left\lfloor \frac{H + 2P - HF}{S} \right\rfloor + 1, \quad
-   W_{out} = \left\lfloor \frac{W + 2P - WF}{S} \right\rfloor + 1
+    H_OUT = (H + 2 * padding - HF) // stride + 1
+    W_OUT = (W + 2 * padding - WF) // stride + 1
+    SZ_OUT = H_OUT * W_OUT
+
+    K = HF * WF * C
+    M = SZ_OUT * N
 
 Currently Padding can only be set to 0 (no padding).
 
