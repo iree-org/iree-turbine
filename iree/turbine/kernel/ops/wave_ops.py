@@ -149,6 +149,15 @@ def abs(src: "Register") -> "Register":
     ...
 
 
+def softsign(
+    src: "Register",
+    logit_cap: float = 30.0,
+    apply_scaling: bool = False,
+    head_dim: int = None,
+) -> "Register":
+    ...
+
+
 def tanh_approx(src: "Register") -> "Register":
     ...
 
@@ -157,7 +166,15 @@ def tanh(src: "Register") -> "Register":
     ...
 
 
+def cos(src: "Register") -> "Register":
+    ...
+
+
 def roundeven(src: "Register") -> "Register":
+    ...
+
+
+def sin(src: "Register") -> "Register":
     ...
 
 
@@ -166,6 +183,10 @@ def maximum(lhs: "Register", rhs: "Register") -> "Register":
 
 
 def minimum(lhs: "Register", rhs: "Register") -> "Register":
+    ...
+
+
+def atan2(lhs: "Register", rhs: "Register") -> "Register":
     ...
 
 
@@ -840,6 +861,7 @@ class BinaryOpBase(CustomOp, ABC):
 @define_py_op(operator.truediv)
 @define_interface_op("maximum")
 @define_interface_op("minimum")
+@define_interface_op("atan2")
 @dataclass
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
@@ -875,8 +897,10 @@ class ComparisonPyOp(BinaryOpBase, ABC):
 @define_interface_op("log2")
 @define_interface_op("reciprocal")
 @define_interface_op("roundeven")
+@define_interface_op("sin")
 @define_interface_op("tanh")
 @define_interface_op("tanh_approx")
+@define_interface_op("cos")
 @define_py_op(operator.neg)
 @define_py_op(operator.invert)
 @dataclass
@@ -894,6 +918,23 @@ class UnaryPyOp(CustomOp, ABC):
     @property
     def py_operator(self) -> str:
         return self.tkw_op_name
+
+    def infer_type(self):
+        src_type = get_custom(self.arg).type
+        self.type = src_type
+
+
+@define_interface_op("softsign")
+@dataclass
+class SoftsignOp(CustomOp, ABC):
+    arg: fx.Node
+    logit_cap: float = 30.0
+    apply_scaling: bool = False
+    head_dim: int = None
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
 
     def infer_type(self):
         src_type = get_custom(self.arg).type

@@ -53,6 +53,7 @@ from ...ops.wave_ops import (
     broadcast,
     cast,
     conditional,
+    cos,
     eq,
     exp2,
     extract,
@@ -67,6 +68,7 @@ from ...ops.wave_ops import (
     lt,
     maximum,
     minimum,
+    atan2,
     mma,
     permute,
     reciprocal,
@@ -74,6 +76,7 @@ from ...ops.wave_ops import (
     scalar,
     reshape,
     roundeven,
+    sin,
     scheduling_barrier,
     scheduling_group_barrier,
     self_index,
@@ -85,6 +88,7 @@ from ...ops.wave_ops import (
     tanh,
     tanh_approx,
     workgroup_barrier,
+    softsign,
 )
 from ...compiler.base import CodegenError, ValidationError, NDEBUG
 from ...compiler.builder import IRProxyValue
@@ -648,6 +652,17 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
     return result
 
 
+@handle_binary_op(atan2)
+def handle_atan2(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+
+    if _is_float_type(element_type):
+        result = math_d.atan2(lhs, rhs, fastmath=get_fast_math_flags(options))
+    else:
+        raise ValidationError(f"Found unhandled operand type for atan2: {element_type}")
+    return result
+
+
 ###############################################################################
 # Unary math Ops
 ###############################################################################
@@ -842,6 +857,61 @@ def handle_tanh_approx(source: Value, options: WaveCompileOptions) -> OpResult:
     return result
 
 
+@handle_op(softsign)
+def handle_softsign(emitter: WaveEmitter, node: fx.Node) -> None:
+    """
+    Implements softsign-like logit cap using reciprocal:
+        logit = logit / (1 + abs(logit / cap))
+              = logit * (1 / (1 + abs(logit * (1 / cap))))
+              = logit * reciprocal(1 + abs(logit * reciprocal(cap)))
+    """
+    try:
+        src_arg, logit_cap, apply_scaling, head_dim = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments for softsign") from e
+
+    source = cast_py_value(emitter, src_arg).ir_value
+    element_type = get_type_or_element_type(source.type)
+    opts = emitter.options
+
+    # Compute effective cap
+    if apply_scaling:
+        if head_dim is None:
+            raise ValidationError("`head_dim` must be provided if `apply_scaling=True`")
+        eff_cap = logit_cap * (head_dim**-0.5)
+    else:
+        eff_cap = logit_cap
+
+    # # Constants
+
+    reci_cap = 1.0 / eff_cap
+    reci_cap_const = get_constant_attr(reci_cap, element_type)
+    one = arith_d.ConstantOp(
+        source.type,
+        DenseElementsAttr.get_splat(source.type, get_constant_attr(1.0, element_type)),
+    )
+    reciprocal_cap = arith_d.ConstantOp(
+        source.type, DenseElementsAttr.get_splat(source.type, reci_cap_const)
+    )
+
+    # scaled = logit * (1 / cap)
+    scaled = arith_d.mulf(source, reciprocal_cap, fastmath=get_fast_math_flags(opts))
+
+    # abs_scaled = abs(logit * (1 / cap))
+    abs_scaled = math_d.absf(scaled)
+
+    # denom = 1 + abs(...)
+    denom = arith_d.addf(one, abs_scaled, fastmath=get_fast_math_flags(opts))
+
+    # reciprocal_denom = 1 / denom
+    reciprocal_denom = arith_d.divf(one, denom, fastmath=get_fast_math_flags(opts))
+
+    # result = logit * (1 / denom)
+    result = arith_d.mulf(source, reciprocal_denom, fastmath=get_fast_math_flags(opts))
+
+    emitter.bind_node_proxy(node, IRProxyValue(result))
+
+
 @handle_unary_op(tanh)
 def handle_tanh(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
@@ -862,6 +932,26 @@ def handle_roundeven(source: Value, options: WaveCompileOptions) -> OpResult:
             f"Found unhandled operand type for roundeven: {element_type}"
         )
     return roundeven
+
+
+@handle_unary_op(sin)
+def handle_sin(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        sine_of_source = math_d.sin(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for sine: {element_type}")
+    return sine_of_source
+
+
+@handle_unary_op(cos)
+def handle_cos(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        res = math_d.cos(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for cos: {element_type}")
+    return res
 
 
 ###############################################################################
@@ -1148,13 +1238,13 @@ def handle_extract(emitter: WaveEmitter, node: fx.Node):
     assert isinstance(offset, list) and len(offset) == 1
     extract_vector = cast_vector(emitter, register)
     result_type = VectorType.get([1], extract_vector.type.element_type)
-    element = vector_d.extract_strided_slice(
-        result_type,
-        extract_vector,
-        offset,
-        [1],
-        [1],
+    # Instead of using `extract_strided_slice` op, we use `extract` + `splat`
+    # to construct the result vector, to enable more opportunities for them to
+    # be fused with nearby elementwise and memory ops.
+    element = vector_d.extract(
+        extract_vector, static_position=offset, dynamic_position=[]
     )
+    element = vector_d.splat(result_type, element)
 
     emitter.bind_node_proxy(node, IRProxyValue(element))
 
@@ -1332,9 +1422,25 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
 
     # Determine whether to extract or combine.
     if len(args) > 1:
+        vectors = [cast_vector(emitter, arg) for arg in args]
+        shape = vectors[0].type.shape[0]
+        if shape == 1:
+            # If source is 1-element vector or scalar (which will be casted to
+            # 1-element vector by `cast_vector`), we can construct the result
+            # vector using `extract` and a single `from_elements` op instead of
+            # series of `insert_strided_slice` ops.
+            values = [
+                vector_d.extract(vector, static_position=[0], dynamic_position=[])
+                for vector in vectors
+            ]
+            element_type = vectors[0].type.element_type
+            vector_type = VectorType.get([shape * len(args)], element_type)
+            result = vector_d.from_elements(vector_type, values)
+            emitter.bind_node_proxy(node, IRProxyValue(result))
+            return
+
         concatenated = None
-        for i, sub_arg in enumerate(args):
-            vector = cast_vector(emitter, sub_arg)
+        for i, vector in enumerate(vectors):
             shape = vector.type.shape[0]
             if concatenated is None:
                 element_type = vector.type.element_type

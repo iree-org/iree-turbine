@@ -31,7 +31,7 @@ def construct_inputs(
     bench_with_constant_weights = options.bench_with_constant_weights
     tempfiles = []
     inputs = []
-    all_inputs = kernel_inputs + kernel_outputs if options.inplace else kernel_inputs
+    all_inputs = kernel_inputs + kernel_outputs
     all_inputs += options.dynamic_symbols_map.values()
     if bench_with_constant_weights:
         for inp in all_inputs:
