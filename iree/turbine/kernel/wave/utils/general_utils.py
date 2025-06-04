@@ -385,6 +385,26 @@ def is_gather(custom: CustomOp) -> bool:
     )
 
 
+def get_live_tensors() -> list[torch.Tensor]:
+    """
+    Get all alive torch tensors in program.
+    """
+    tensors = []
+    import gc
+
+    gc.collect()
+    for obj in gc.get_objects():
+        try:
+            if torch.is_tensor(obj) or (
+                hasattr(obj, "data") and torch.is_tensor(obj.data)
+            ):
+                tensors.append(obj)
+        except:
+            pass
+
+    return tensors
+
+
 def print_live_tensors():
     """
     Print all alive torch tensors in program.
@@ -396,15 +416,32 @@ def print_live_tensors():
     gc.collect()
 
     print("------ live tensors ---------")
-    for obj in gc.get_objects():
-        try:
-            if torch.is_tensor(obj) or (
-                hasattr(obj, "data") and torch.is_tensor(obj.data)
-            ):
-                print(hex(id(obj)), type(obj), obj.size())
-        except:
-            pass
+    for obj in get_live_tensors():
+        print(hex(id(obj)), type(obj), obj.size())
     print("-----------------------------")
+
+
+def check_leaks(f):
+    """
+    Decorator to check for torch tesnors leaks.
+    """
+
+    @functools.wraps(f)
+    def wrapper(*args, **kwds):
+        before = {id(obj) for obj in get_live_tensors()}
+        result = f(*args, **kwds)
+        after = get_live_tensors()
+        if len(after) > len(before):
+            print("Leaked tensors:")
+            for obj in after:
+                if id(obj) not in before:
+                    print(hex(id(obj)), type(obj), obj.size())
+            print("--------------------------------")
+            raise RuntimeError("Leaks detected")
+
+        return result
+
+    return wrapper
 
 
 def remove_files_with_extension(directory, extension):
