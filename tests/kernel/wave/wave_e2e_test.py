@@ -1662,7 +1662,7 @@ def test_preprocessing_insert_slice_interleave(shape, stride_h, stride_w, reques
     compiled = wave_compile(options, interleave_kernel)
 
     compiled(x, out, stride_h, stride_w)
-    assert_close(out, out_ref, atol=1e-3, rtol=1e-3)
+    assert_close(out, out_ref)
 
 
 @require_e2e
