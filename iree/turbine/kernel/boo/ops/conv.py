@@ -13,9 +13,23 @@ from ..conv_exports import ConvSignature, get_launchable, DEFAULT_LAYOUTS
 
 __all__ = [
     "boo_conv",
+    "enable_backward",
+    "disable_backward",
 ]
 
 BOO_USE_BACKWARD_KERNELS = int(os.getenv("BOO_USE_BACKWARD_KERNELS", "0"))
+
+
+def enable_backward():
+    """Allows toggling on Boo backward convolution kernels from python."""
+    global BOO_USE_BACKWARD_KERNELS
+    BOO_USE_BACKWARD_KERNELS = 1
+
+
+def disable_backward():
+    """Allows toggling off Boo backward convolution kernels from python."""
+    global BOO_USE_BACKWARD_KERNELS
+    BOO_USE_BACKWARD_KERNELS = 0
 
 
 @torch.library.custom_op("iree_turbine::boo_convolution", mutates_args=())
@@ -205,6 +219,9 @@ def pytorch_convolution_backward(ctx, grad_output):
 
 
 def boo_convolution_backward(ctx, grad_output):
+    if not BOO_USE_BACKWARD_KERNELS:
+        return pytorch_convolution_backward(ctx, grad_output)
+
     x, w = ctx.saved_tensors
 
     mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
@@ -257,14 +274,8 @@ def boo_convolution_context(
     ctx.use_bias = b is not None
 
 
-_backward_to_register = (
-    boo_convolution_backward
-    if (BOO_USE_BACKWARD_KERNELS)
-    else pytorch_convolution_backward
-)
-
 boo_convolution.register_autograd(
-    _backward_to_register, setup_context=boo_convolution_context
+    boo_convolution_backward, setup_context=boo_convolution_context
 )
 
 

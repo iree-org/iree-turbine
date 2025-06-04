@@ -1,7 +1,8 @@
-import os
-
-# enable backward boo kernels for testing
-os.environ["BOO_USE_BACKWARD_KERNELS"] = "1"
+# Copyright 2025 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import unittest
 import pytest
@@ -15,9 +16,106 @@ from iree.turbine.kernel.boo.conv_exports.launch import (
     set_boo_cache,
     ConvLaunchableRuntimeCache,
 )
-from iree.turbine.kernel.boo.ops import boo_conv
+from iree.turbine.kernel.boo.ops import boo_conv, enable_backward, disable_backward
 
 
+@pytest.fixture
+def use_backward():
+    enable_backward()
+    yield
+    disable_backward()
+
+
+@pytest.mark.parametrize(
+    ("x_grad", "w_grad"), ((False, False), (True, False), (False, True), (True, True))
+)
+def testBackwardCachePytorch(x_grad, w_grad):
+    ConvLaunchableRuntimeCache.set_cache_limit(0)
+    with tempfile.TemporaryDirectory() as td:
+        set_boo_cache(Path(td))
+        device = "cuda:0" if torch.cuda.is_available() else None
+        x = torch.ones(
+            [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=x_grad
+        )
+        w = torch.ones(
+            [1, 1, 2, 2], dtype=torch.float32, device=device, requires_grad=w_grad
+        )
+        y = boo_conv(x, w)
+
+        if not x_grad and not w_grad:
+            try:
+                y.sum().backward()
+            except RuntimeError as e:
+                return
+            except:
+                raise
+            assert False, "Expected a RuntimeError calling backwards."
+
+        y.sum().backward()
+        items = [x.name for x in Path(td).glob("*/")]
+
+        assert (
+            "conv_2d_float32_forward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+            in items
+        )
+        assert (
+            "conv_2d_float32_weight_backward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+            not in items
+        )
+        assert (
+            "conv_2d_float32_input_backward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+            not in items
+        )
+
+
+@pytest.mark.usefixtures("use_backward")
+@pytest.mark.parametrize(
+    ("x_grad", "w_grad"), ((False, False), (True, False), (False, True), (True, True))
+)
+def testBackwardCacheBoo(x_grad, w_grad):
+    ConvLaunchableRuntimeCache.set_cache_limit(0)
+    with tempfile.TemporaryDirectory() as td:
+        set_boo_cache(Path(td))
+        device = "cuda:0" if torch.cuda.is_available() else None
+        x = torch.ones(
+            [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=x_grad
+        )
+        w = torch.ones(
+            [1, 1, 2, 2], dtype=torch.float32, device=device, requires_grad=w_grad
+        )
+        y = boo_conv(x, w)
+
+        if not x_grad and not w_grad:
+            try:
+                y.sum().backward()
+            except RuntimeError as e:
+                return
+            except:
+                raise
+            assert False, "Expected a RuntimeError calling backwards."
+
+        y.sum().backward()
+        items = [x.name for x in Path(td).glob("*/")]
+
+        assert (
+            "conv_2d_float32_forward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+            in items
+        )
+
+        _validate = (
+            lambda name, expected: (name in items) if expected else (name not in items)
+        )
+        assert _validate(
+            "conv_2d_float32_weight_backward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g",
+            w_grad,
+        )
+        assert _validate(
+            "conv_2d_float32_input_backward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g",
+            x_grad,
+        )
+
+
+@pytest.mark.usefixtures("use_backward")
 class BooConvTest(unittest.TestCase):
     def setUp(self):
         ConvLaunchableRuntimeCache.set_cache_limit(0)
