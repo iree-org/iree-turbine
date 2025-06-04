@@ -4,11 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import os
-
-# enable backward boo kernels for testing
-os.environ["BOO_USE_BACKWARD_KERNELS"] = "1"
-
 import unittest
 import tempfile
 from pathlib import Path
@@ -16,6 +11,7 @@ import pytest
 
 import torch
 
+from iree.turbine.kernel.boo.ops import enable_backward, disable_backward
 from iree.turbine.kernel.boo.modeling import (
     BooConv1d,
     BooConv2d,
@@ -27,6 +23,13 @@ from iree.turbine.kernel.boo.conv_exports import (
     set_boo_cache,
     ConvLaunchableRuntimeCache,
 )
+
+
+@pytest.fixture(scope="class")
+def use_backward():
+    enable_backward()
+    yield
+    disable_backward()
 
 
 class BooConvReplacementTest(unittest.TestCase):
@@ -100,6 +103,7 @@ class BooConvModuleTest(unittest.TestCase):
         self.assertEqual(tuple(m.weight.shape), (2, 10, 6, 6, 6))
 
 
+@pytest.mark.usefixtures("use_backward")
 class BooConv2dLaunchingTest(unittest.TestCase):
     def setUp(self):
         ConvLaunchableRuntimeCache.set_cache_limit(0)
