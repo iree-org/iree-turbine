@@ -20,6 +20,7 @@ from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
 from iree.turbine.kernel.wave.utils.general_utils import (
     ceildiv,
+    check_leaks,
     get_default_scheduling_params,
 )
 from iree.turbine.kernel.wave.utils.run_utils import (
@@ -130,6 +131,7 @@ def test_dump_vmfb(shape, tmp_path, request):
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_copy"))
 @param_bool("use_buffer_ops", "buf_ops")
+@check_leaks
 def test_copy(shape, use_buffer_ops, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M

@@ -42,10 +42,6 @@ def get_device_uuid(device_list: list[str], device_str: str) -> tuple[int, str]:
     return device_str
 
 
-_dl_tensor_name = ctypes.create_string_buffer(b"dltensor")
-_set_capsule_name = ctypes.pythonapi.PyCapsule_SetName
-
-
 def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic_dims):
     linearized_arg_len = len(inputs) + len(outputs) + len(dynamic_dims)
     # ret_list is 0 because we modify/write result in place.
@@ -57,11 +53,6 @@ def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, dynamic
             arg_tensor = arg_tensor.contiguous()
         capsule = torch.to_dlpack(arg_tensor)
         arg_tensor_bv = device.from_dlpack_capsule(capsule)
-
-        # IREE runtime renames capsule to "dltensor_used" for some reason, but
-        # only deletes capsules with "dltensor" name, which is causing a memory
-        # leak.
-        _set_capsule_name(ctypes.py_object(capsule), _dl_tensor_name)
         arg_list.push_ref(arg_tensor_bv)
 
     # Linearize arguments, In linearized arg_list, we first push in all inputs,
