@@ -1435,15 +1435,20 @@ class ScaledMMA(CustomOp):
     def infer_type(self):
         self.type = self.acc_type
 
+    def infer_dim(self, expr):
+        # Skip cases where infer_dim cannot or does not handle.
+        if expr.is_Symbol or expr.is_Number or len(expr.free_symbols) != 1:
+            return expr
+        dim_symbol = list(expr.free_symbols)[0]
+        return dim_symbol
+
     def operand_index(
         self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
     ) -> dict[IndexSymbol, IndexSequence]:
         indices: dict[IndexSymbol, IndexSequence] = {}
-        for dim in shape:
-            try:
-                indices[dim] = self.index[dim].subs(operand_map)
-            except:
-                breakpoint()
+        for dim_size in shape:
+            dim = self.infer_dim(dim_size)
+            indices[dim] = self.index[dim].subs(operand_map)
         return indices
 
     @property

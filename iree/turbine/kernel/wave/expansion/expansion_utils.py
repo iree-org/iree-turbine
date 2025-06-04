@@ -48,6 +48,14 @@ class ExpansionMetadata:
         return str(self.__dict__)
 
 
+def infer_dim(expr):
+    # Skip cases where infer_dim cannot or does not handle.
+    if expr.is_Symbol or expr.is_Number or len(expr.free_symbols) != 1:
+        return expr
+    dim_symbol = list(expr.free_symbols)[0]
+    return dim_symbol
+
+
 def get_dim_scaling(
     constraints: Sequence[Constraint], node: CustomOp
 ) -> dict[IndexSymbol, int]:
@@ -65,10 +73,28 @@ def get_dim_scaling(
         raise ValueError("Exactly one hardware constraint must be provided")
 
     idxc = IndexingContext.current()
+    dim_to_shape = {
+        infer_dim(size_expr): size_expr for size_expr in node.type.symbolic_shape
+    }
     for constraint in constraints:
         if isinstance(constraint, (WorkgroupConstraint, TilingConstraint)):
             hw_cons = hardware_constraints[0]
-            tile_size = idxc.get_static_value(constraint.tile_size)
+
+            # Determining tile size
+            if (
+                constraint.dim in dim_to_shape
+                and constraint.dim != dim_to_shape[constraint.dim]
+            ):
+                # Sub in tile size into shape:
+                # (e.g, shape = K/32, constraint_tile = BLOCK_K -> tile_size = BLOCK_K/32)
+                tile_size = dim_to_shape[constraint.dim].subs(
+                    constraint.dim, constraint.tile_size
+                )
+                tile_size = idxc.get_static_value(tile_size)
+            else:
+                # Handle cases where dim is not part of shape but is part of indexing i.e MMA and K-dim.
+                tile_size = idxc.get_static_value(constraint.tile_size)
+
             if constraint.dim not in node.vector_shapes:
                 continue
             vector_size = node.vector_shapes[constraint.dim]
