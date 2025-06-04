@@ -11,6 +11,7 @@ from iree.turbine.kernel.ops.wave_ops import (
     Allocate,
     Read,
     Write,
+    IterArg,
 )
 from ..._support.tracing import CapturedTrace
 from typing import Sequence, Optional, Dict, Tuple, Callable
@@ -102,57 +103,101 @@ def _write_rrt_to_file(
     f.write("\n")
 
 
+def _is_separator_line(line: str) -> bool:
+    """Check if a line is a separator line (contains only pipes, dashes, and spaces)."""
+    return set(line.replace("|", "").replace("-", "").strip()) == set()
+
+
+def _find_rrt_boundaries(lines: list[str]) -> Tuple[Optional[int], Optional[int]]:
+    """Find the header and separator line indices for the RRT section.
+
+    Returns:
+        Tuple of (header_idx, sep_idx) or (None, None) if not found.
+    """
+    for i, line in enumerate(lines):
+        if line.strip().startswith("Cycle |"):
+            # Check if next line is separator
+            if i + 1 < len(lines) and _is_separator_line(lines[i + 1]):
+                return i, i + 1
+            break
+    return None, None
+
+
+def _extract_resource_names(header_line: str) -> list[str]:
+    """Extract resource names from the RRT header line.
+
+    Args:
+        header_line: The header line starting with 'Cycle |'
+
+    Returns:
+        List of resource names (excluding 'Cycle')
+    """
+    return [name.strip() for name in header_line.split("|")[1:]]
+
+
+def _parse_rrt_data(
+    lines: list[str], rrt_data_start: int, rrt_data_end: int, num_resources: int
+) -> Optional[np.ndarray]:
+    """Parse RRT data lines into a numpy array.
+
+    Args:
+        lines: All file lines
+        rrt_data_start: Starting index of RRT data
+        rrt_data_end: Ending index of RRT data
+        num_resources: Number of resource types
+
+    Returns:
+        Numpy array of shape (num_cycles, num_resources) or None if parsing fails
+    """
+    resource_reservations = np.zeros(
+        (rrt_data_end - rrt_data_start, num_resources), dtype=np.int32
+    )
+
+    for idx, line in enumerate(lines[rrt_data_start:rrt_data_end]):
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) == num_resources + 1:  # +1 for cycle column
+            try:
+                cycle = int(parts[0])
+                values = [int(v) for v in parts[1:]]
+                resource_reservations[idx] = values
+            except Exception:
+                return None
+        else:
+            return None
+
+    return resource_reservations
+
+
 def _parse_rrt_from_lines(
     lines: list[str], initiation_interval: int
 ) -> Tuple[Optional[np.ndarray], Optional[list[str]], Optional[int]]:
     """Parse resource reservation table from file lines.
     Returns a tuple of (resource_reservations, resource_names, rrt_end_line) or (None, None, None) if no RRT found.
     """
-    rrt_start_line = -1
-    rrt_end_line = -1
-
-    # Find RRT section boundaries
-    comment_and_header_offset = 4 + 2
-    for i, line in enumerate(lines):
-        if line.startswith("# Resource Reservation Table (RRT):"):
-            rrt_start_line = i
-            # 4 lines for the comments, 2 lines for the header and separator, and then the RRT data
-            rrt_end_line = (
-                rrt_start_line + comment_and_header_offset + initiation_interval
-            )
-
-    if rrt_start_line == -1 or rrt_end_line == -1:
-        return None, None, None
-
-    rrt_lines = lines[rrt_start_line : rrt_end_line + 1]
-    # Find the header line with resource names
-    header_line = None
-    for line in rrt_lines:
-        if not line.startswith("#") and "Cycle" in line and "|" in line:
-            header_line = line
-            break
-
-    if not header_line:
+    # Find RRT boundaries
+    header_idx, sep_idx = _find_rrt_boundaries(lines)
+    if header_idx is None or sep_idx is None:
         return None, None, None
 
     # Extract resource names from header
-    resource_names = [name.strip() for name in header_line.split("|")[1:]]
+    header_line = lines[header_idx]
+    resource_names = _extract_resource_names(header_line)
     num_resources = len(resource_names)
 
-    # Initialize RRT array
-    resource_reservations = np.zeros(
-        (initiation_interval, num_resources), dtype=np.int32
+    # Calculate RRT data boundaries
+    rrt_data_start = sep_idx + 1
+    rrt_data_end = rrt_data_start + initiation_interval
+    if rrt_data_end > len(lines):
+        return None, None, None
+
+    # Parse RRT data
+    resource_reservations = _parse_rrt_data(
+        lines, rrt_data_start, rrt_data_end, num_resources
     )
+    if resource_reservations is None:
+        return None, None, None
 
-    # Parse RRT data lines
-    for line in rrt_lines[comment_and_header_offset + 1 :]:
-        # Parse cycle and resource values
-        parts = [p.strip() for p in line.split("|")]
-        if len(parts) == num_resources + 1:  # +1 for cycle column
-            cycle = int(parts[0].strip())
-            values = [int(v.strip()) for v in parts[1:]]
-            resource_reservations[cycle] = values
-
+    rrt_end_line = rrt_data_end - 1
     return resource_reservations, resource_names, rrt_end_line
 
 
@@ -340,6 +385,104 @@ def _parse_sort_key(sort_key_str: str) -> tuple:
     return tuple(int(x.strip()) for x in inner.split(",") if x.strip())
 
 
+def _read_schedule_file(load_file: str) -> list[str]:
+    """Read and parse the schedule file into lines.
+
+    Args:
+        load_file: Path to the schedule file
+
+    Returns:
+        List of file lines
+    """
+    with open(load_file, "r") as f:
+        content = f.read()
+    return content.strip().split("\n")
+
+
+def _extract_schedule_data_lines(lines: list[str], rrt_end_line: int) -> list[str]:
+    """Extract schedule data lines from the file, filtering out headers and separators.
+
+    Args:
+        lines: All file lines
+        rrt_end_line: Line index where RRT section ends
+
+    Returns:
+        List of schedule data lines (excluding header)
+    """
+    data_lines = [
+        l
+        for l in lines[rrt_end_line + 1 :]
+        if l and not l.startswith("#") and "|" in l and not _is_separator_line(l)
+    ]
+    return data_lines[1:]  # Skip the header line
+
+
+def _build_node_map(graph: fx.Graph) -> Dict[tuple, fx.Node]:
+    """Build a mapping from sort keys to node objects.
+
+    Args:
+        graph: The FX graph containing nodes
+
+    Returns:
+        Dictionary mapping sort keys to nodes
+    """
+    return {node._sort_key: node for node in graph.nodes}
+
+
+def _process_schedule_line(
+    line: str, node_map: Dict[tuple, fx.Node]
+) -> Tuple[Optional[fx.Node], Optional[int], list[Edge], set[fx.Node]]:
+    """Process a single schedule line to extract node, cycle, and edges.
+
+    Args:
+        line: A schedule data line
+        node_map: Mapping from sort keys to nodes
+
+    Returns:
+        Tuple of (node, cycle, edges, nodes_to_add) or (None, None, [], set()) if invalid
+    """
+    parts = [x.strip() for x in line.split("|")]
+    if len(parts) != 7:
+        return None, None, [], set()
+
+    name, node_type, sort_key_str, cycle_str, _, _, user_sort_keys_str = parts
+
+    # Parse sort key and cycle
+    try:
+        sort_key = _parse_sort_key(sort_key_str)
+        cycle = int(cycle_str)
+    except (ValueError, TypeError):
+        return None, None, [], set()
+
+    if sort_key not in node_map:
+        return None, None, [], set()
+
+    node = node_map[sort_key]
+    edges = []
+    nodes_to_add = {node}
+
+    # Parse user sort keys and create edges
+    if user_sort_keys_str:
+        from_custom = get_custom(node)
+        for user_key_str in user_sort_keys_str.split(","):
+            try:
+                user_key = _parse_sort_key(user_key_str.strip())
+                if user_key in node_map:
+                    user_node = node_map[user_key]
+                    to_custom = get_custom(user_node)
+                    # Skip edges involving IterArg nodes
+                    if not isinstance(from_custom, IterArg) and not isinstance(
+                        to_custom, IterArg
+                    ):
+                        edge = Edge(node, user_node, EdgeWeight(0, 0))
+                        edges.append(edge)
+                        nodes_to_add.add(user_node)
+            except (ValueError, TypeError):
+                continue
+
+    return node, cycle, edges, nodes_to_add
+
+
 def load_schedule(load_file: str, graph: fx.Graph) -> Tuple[
     Dict[fx.Node, int],
     int,
@@ -350,7 +493,12 @@ def load_schedule(load_file: str, graph: fx.Graph) -> Tuple[
     Optional[list[str]],
 ]:
     """
-    Loads a schedule from a file in pipe-delimited table format.
+    Loads a schedule from a file into an existing graph.
+    This function:
+    1. Reads and parses the schedule file to extract metadata, resource data, and node specifications
+    2. Creates a schedule mapping nodes to their cycles
+    3. Creates edges between nodes based on user relationships
+
     Returns:
         - schedule: Dictionary mapping nodes to their cycles
         - initiation_interval: The initiation interval
@@ -359,15 +507,9 @@ def load_schedule(load_file: str, graph: fx.Graph) -> Tuple[
         - edges: List of Edge objects representing dependencies
         - resource_reservations: Optional numpy array of shape (II, num_resources) containing resource reservations
         - resource_names: Optional list of resource names corresponding to each column in resource_reservations
-    The stage column is ignored as it can be calculated from cycle and II.
-    The relative_cycle column is ignored as it can be calculated from cycle and II.
-    Separator lines (lines containing only dashes and pipes) are skipped.
     """
-    with open(load_file, "r") as f:
-        content = f.read()
-
-    # Parse file content
-    lines = content.strip().split("\n")
+    # Read and parse file
+    lines = _read_schedule_file(load_file)
 
     # Get metadata
     initiation_interval, num_stages = _parse_metadata_from_lines(lines)
@@ -378,55 +520,30 @@ def load_schedule(load_file: str, graph: fx.Graph) -> Tuple[
     resource_reservations, resource_names, rrt_end_line = _parse_rrt_from_lines(
         lines, initiation_interval
     )
-
     assert rrt_end_line is not None, "RRT not found in schedule file"
 
-    # Parse schedule data
-    data_lines = [
-        l
-        for l in lines[rrt_end_line + 1 :]
-        if l and not l.startswith("#") and "|" in l and not all(c in "-| " for c in l)
-    ][
-        1:
-    ]  # Skip the header line
+    # Extract schedule data lines
+    data_lines = _extract_schedule_data_lines(lines, rrt_end_line)
 
-    # Map node names back to node objects
-    node_map = {node._sort_key: node for node in graph.nodes}
+    # Build node mapping and process schedule
+    node_map = _build_node_map(graph)
     schedule = {}
     edges = []
-    nodes = set()  # Use a set to avoid duplicates
+    nodes = set()
 
+    # Process each schedule line
     for line in data_lines:
-        # Parse all columns (now including relative_cycle)
-        name, _, sort_key_str, cycle_str, _, _, user_sort_keys_str = [
-            x.strip() for x in line.split("|")
-        ]
-        # Convert sort key string to tuple safely
-        sort_key = _parse_sort_key(sort_key_str)
-        if sort_key in node_map:
-            node = node_map[sort_key]
-            schedule[node] = int(cycle_str)
-            nodes.add(node)
-
-            # Parse user sort keys and create edges
-            if user_sort_keys_str:
-                for user_key_str in user_sort_keys_str.split(","):
-                    user_key = _parse_sort_key(user_key_str.strip())
-                    if user_key in node_map:
-                        user_node = node_map[user_key]
-                        # Create Edge with default EdgeWeight
-                        edge = Edge(node, user_node, EdgeWeight(0, 0))
-                        edges.append(edge)
-                        nodes.add(user_node)
-
-    # Convert nodes set to list for consistent return type
-    nodes_list = list(nodes)
+        node, cycle, line_edges, nodes_to_add = _process_schedule_line(line, node_map)
+        if node is not None:
+            schedule[node] = cycle
+            edges.extend(line_edges)
+            nodes.update(nodes_to_add)
 
     return (
         schedule,
         initiation_interval,
         num_stages,
-        nodes_list,
+        list(nodes),
         edges,
         resource_reservations,
         resource_names,
@@ -691,3 +808,41 @@ def _format_mlir_type(type_obj):
     if "stream.binding" in type_str:
         return type_str.replace("!stream.binding<", "").replace(">", "")
     return type_str
+
+
+def parse_node_specs_from_schedule_file(schedule_path: str):
+    """
+    Parses the schedule file and returns a list of (name, sort_key, node_type).
+    """
+    with open(schedule_path, "r") as f:
+        content = f.read()
+    lines = content.strip().split("\n")
+    data_lines = [
+        l
+        for l in lines
+        if l and not l.startswith("#") and "|" in l and not all(c in "-| " for c in l)
+    ][
+        1:
+    ]  # Skip the header line
+
+    def _parse_sort_key(sort_key_str):
+        inner = sort_key_str.strip("()")
+        if not inner:
+            return tuple()
+        return tuple(int(x.strip()) for x in inner.split(",") if x.strip())
+
+    node_specs = []
+    for line in data_lines:
+        parts = [x.strip() for x in line.split("|")]
+        if len(parts) != 7:
+            continue  # Skip malformed or separator lines
+        name, node_type, sort_key_str, cycle_str, _, _, _ = parts
+        # Skip header lines or lines where sort_key_str is not a tuple
+        if not (sort_key_str.startswith("(") and sort_key_str.endswith(")")):
+            continue
+        try:
+            sort_key = _parse_sort_key(sort_key_str)
+        except Exception:
+            continue  # Skip lines where parsing sort_key fails
+        node_specs.append((name, sort_key, node_type))
+    return node_specs
