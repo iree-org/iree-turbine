@@ -71,8 +71,8 @@ def get_speculative_decoding_kernel(
 
     uniform_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={BATCH_SIZE: i, VOCAB_SIZE: sympy.Integer(0)},
-        outputs={BATCH_SIZE: i, VOCAB_SIZE: j},
+        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: sympy.Integer(0)},
+        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
     )
 
     output_mapping = tkw.IndexMapping(
@@ -91,7 +91,7 @@ def get_speculative_decoding_kernel(
         ],
         cur_prob_offset: tkl.Memory[BATCH_SIZE, GLOBAL_ADDRESS_SPACE, tkl.i32],
         uniform_samples: tkl.Memory[
-            BATCH_SIZE, VOCAB_SIZE, GLOBAL_ADDRESS_SPACE, tkl.f32
+            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE, tkl.f32
         ],
         last_accepted_retrive_idx_vec: tkl.Memory[
             BATCH_SIZE, GLOBAL_ADDRESS_SPACE, tkl.i32
@@ -124,14 +124,18 @@ def get_speculative_decoding_kernel(
             coin * sum_relu, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
         )
         greater_than_u = cdf > threshold_dist_u
-        pad_token = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](1e6)
+        # Initializing `pad_token` to the last token in the vocabulary to be default
+        # and within bounds.
+        pad_token = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](
+            VOCAB_SIZE - 1
+        )
         token_idx = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](
             THREAD_0
         )
 
-        # TODO: Set default sampled_id = d - 1, if no valid token can be found
-        #       We can implement with `ballot(greater_than_u)` and early exit
+        # TODO: We can implement with `ballot(greater_than_u)` and early exit
         #       /return d-1 if output are all zeros.
+        # If no valid token is found, use d-1 token.
         valid_lane_token_idx = tkw.select(greater_than_u, token_idx, pad_token)
         min_valid_token_idx = tkw.min(valid_lane_token_idx, dim=VOCAB_SIZE)
         tkw.write(min_valid_token_idx, predicts, mapping=output_mapping)
