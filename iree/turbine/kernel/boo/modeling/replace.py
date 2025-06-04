@@ -189,11 +189,11 @@ class BooConv3d(torch.nn.Module):
         no_batch = len(x.shape) == 4
         if no_batch:
             x = x.unsqueeze(0)
-        if x.is_contiguous(memory_format=torch.channels_last):
+        if x.is_contiguous(memory_format=torch.channels_last_3d):
             x = x.permute([0, 2, 3, 4, 1])
             input_layout = "NDHWC"
         w = self.weight
-        if w.is_contiguous(memory_format=torch.channels_last):
+        if w.is_contiguous(memory_format=torch.channels_last_3d):
             w = w.permute([0, 2, 3, 4, 1])
             kernel_layout = "NDHWC"
             output_layout = "NDHWC"
