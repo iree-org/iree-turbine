@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Dict, Sequence
+from typing import Dict, Iterable, Sequence, Any, Tuple
 import torch
 from ..ops.conv import boo_conv
 from ....support.logging import aot_logger as logger
@@ -16,6 +16,18 @@ __all__ = [
     "replace_convs_with_boo",
     "replace_conv2d_with_boo_conv",
 ]
+
+
+def make_tuple(a: Any, size: int) -> Tuple:
+    """Tries to convert `a` into a Tuple of ints."""
+    if isinstance(a, Iterable):
+        result = (item for item in a)
+        assert len(result) == size
+        assert isinstance(result[0], int)
+        return result
+    if isinstance(a, int):
+        return (a,) * size
+    raise TypeError(f"Input {a} is expected to be an iterable or int. Got {type(a)}.")
 
 
 class BooConv1d(torch.nn.Module):
@@ -33,12 +45,10 @@ class BooConv1d(torch.nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = (
-            [kernel_size] if isinstance(kernel_size, int) else kernel_size
-        )
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
+        self.kernel_size = make_tuple(kernel_size, 1)
+        self.stride = make_tuple(stride, 1)
+        self.padding = make_tuple(padding, 1)
+        self.dilation = make_tuple(dilation, 1)
         self.groups = groups
         self._bias = bias
 
@@ -91,12 +101,10 @@ class BooConv2d(torch.nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = (
-            [kernel_size] * 2 if isinstance(kernel_size, int) else kernel_size
-        )
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
+        self.kernel_size = make_tuple(kernel_size, 2)
+        self.stride = make_tuple(stride, 2)
+        self.padding = make_tuple(padding, 2)
+        self.dilation = make_tuple(dilation, 2)
         self.groups = groups
         self._bias = bias
 
@@ -157,12 +165,10 @@ class BooConv3d(torch.nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = (
-            [kernel_size] * 3 if isinstance(kernel_size, int) else kernel_size
-        )
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
+        self.kernel_size = make_tuple(kernel_size, 2)
+        self.stride = make_tuple(stride, 2)
+        self.padding = make_tuple(padding, 2)
+        self.dilation = make_tuple(dilation, 2)
         self.groups = groups
         self._bias = bias
 
