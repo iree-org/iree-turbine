@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import os
-from typing import Sequence, Tuple
+from typing import Sequence, Tuple, Any, Iterable
 
 import torch
 
@@ -13,6 +13,8 @@ from ..conv_exports import ConvSignature, get_launchable, DEFAULT_LAYOUTS
 
 __all__ = [
     "boo_conv",
+    "boo_convolution",
+    "make_tuple",
     "enable_backward",
     "disable_backward",
 ]
@@ -30,6 +32,18 @@ def disable_backward():
     """Allows toggling off Boo backward convolution kernels from python."""
     global BOO_USE_BACKWARD_KERNELS
     BOO_USE_BACKWARD_KERNELS = 0
+
+
+def make_tuple(a: Any, size: int) -> Tuple:
+    """Tries to convert `a` into a Tuple of ints."""
+    if isinstance(a, Iterable):
+        result = (item for item in a)
+        assert len(result) == size
+        assert isinstance(result[0], int)
+        return result
+    if isinstance(a, int):
+        return (a,) * size
+    raise TypeError(f"Input {a} is expected to be an iterable or int. Got {type(a)}.")
 
 
 @torch.library.custom_op("iree_turbine::boo_convolution", mutates_args=())
@@ -315,13 +329,6 @@ def boo_conv(
 
     num_spatial_dims = len(weight.shape) - 2
 
-    def listify(value) -> Sequence[int]:
-        if isinstance(value, Sequence):
-            return value
-        if isinstance(value, int):
-            return [value] * num_spatial_dims
-        return list(value)
-
     _infer = lambda layout: shared_layout or layout or DEFAULT_LAYOUTS[num_spatial_dims]
 
     # The decorators torch.amp.custom_fwd/custom_bwd don't seem to work with torch.library.custom_op
@@ -337,9 +344,9 @@ def boo_conv(
         input,
         weight,
         bias,
-        listify(stride),
-        listify(padding),
-        listify(dilation),
+        make_tuple(stride, num_spatial_dims),
+        make_tuple(padding, num_spatial_dims),
+        make_tuple(dilation, num_spatial_dims),
         groups,
         _infer(input_layout),
         _infer(kernel_layout),

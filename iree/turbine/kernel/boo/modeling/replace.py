@@ -6,7 +6,7 @@
 
 from typing import Dict, Iterable, Sequence, Any, Tuple
 import torch
-from ..ops.conv import boo_conv
+from ..ops.conv import boo_convolution, make_tuple
 from ....support.logging import aot_logger as logger
 
 __all__ = [
@@ -16,18 +16,6 @@ __all__ = [
     "replace_convs_with_boo",
     "replace_conv2d_with_boo_conv",
 ]
-
-
-def make_tuple(a: Any, size: int) -> Tuple:
-    """Tries to convert `a` into a Tuple of ints."""
-    if isinstance(a, Iterable):
-        result = (item for item in a)
-        assert len(result) == size
-        assert isinstance(result[0], int)
-        return result
-    if isinstance(a, int):
-        return (a,) * size
-    raise TypeError(f"Input {a} is expected to be an iterable or int. Got {type(a)}.")
 
 
 class BooConv1d(torch.nn.Module):
@@ -50,7 +38,6 @@ class BooConv1d(torch.nn.Module):
         self.padding = make_tuple(padding, 1)
         self.dilation = make_tuple(dilation, 1)
         self.groups = groups
-        self._bias = bias
 
         self.weight = torch.nn.Parameter(
             torch.randn(out_channels, in_channels // groups, *self.kernel_size)
@@ -68,13 +55,10 @@ class BooConv1d(torch.nn.Module):
         if no_batch:
             x = x.unsqueeze(0)
         # There is no 1-D channels_last format.
-        w = self.weight
-        if self._bias:
-            args = (x, w, self.bias)
-        else:
-            args = (x, w)
-        result = boo_conv(
-            *args,
+        result = boo_convolution(
+            x,
+            self.weight,
+            self.bias,
             stride=self.stride,
             padding=self.padding,
             dilation=self.dilation,
@@ -106,7 +90,6 @@ class BooConv2d(torch.nn.Module):
         self.padding = make_tuple(padding, 2)
         self.dilation = make_tuple(dilation, 2)
         self.groups = groups
-        self._bias = bias
 
         self.weight = torch.nn.Parameter(
             torch.randn(out_channels, in_channels // groups, *self.kernel_size)
@@ -131,12 +114,10 @@ class BooConv2d(torch.nn.Module):
             w = w.permute([0, 2, 3, 1])
             kernel_layout = "NHWC"
             output_layout = "NHWC"
-        if self._bias:
-            args = (x, w, self.bias)
-        else:
-            args = (x, w)
-        result = boo_conv(
-            *args,
+        result = boo_convolution(
+            x,
+            w,
+            self.bias,
             stride=self.stride,
             padding=self.padding,
             dilation=self.dilation,
@@ -170,7 +151,6 @@ class BooConv3d(torch.nn.Module):
         self.padding = make_tuple(padding, 2)
         self.dilation = make_tuple(dilation, 2)
         self.groups = groups
-        self._bias = bias
 
         self.weight = torch.nn.Parameter(
             torch.randn(out_channels, in_channels // groups, *self.kernel_size)
@@ -195,12 +175,10 @@ class BooConv3d(torch.nn.Module):
             w = w.permute([0, 2, 3, 4, 1])
             kernel_layout = "NDHWC"
             output_layout = "NDHWC"
-        if self._bias:
-            args = (x, w, self.bias)
-        else:
-            args = (x, w)
-        result = boo_conv(
-            *args,
+        result = boo_convolution(
+            x,
+            w,
+            self.bias,
             stride=self.stride,
             padding=self.padding,
             dilation=self.dilation,
