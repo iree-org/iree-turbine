@@ -161,6 +161,7 @@ def get_speculative_sampling_kernel(
     SEQ_LEN = tkl.sym.SEQ_LEN
     BLOCK_BATCH_SIZE = tkl.sym.BLOCK_BATCH_SIZE
     BLOCK_NUM_DRAFT_TOK = tkl.sym.BLOCK_NUM_DRAFT_TOK
+    BLOCK_VOCAB_SIZE = tkl.sym.BLOCK_VOCAB_SIZE
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     GLOBAL_ADDRESS_SPACE_0 = tkl.sym.GLOBAL_ADDRESS_SPACE
 
@@ -193,7 +194,8 @@ def get_speculative_sampling_kernel(
             },
         )
     ]
-    constraints += [tkw.WorkgroupConstraint(BATCH_SIZE, BLOCK_BATCH_SIZE, 0)]
+    constraints += [tkw.WorkgroupConstraint(BATCH_SIZE, BLOCK_BATCH_SIZE, 1)]
+    # constraints += [tkw.WorkgroupConstraint(BATCH_SIZE, BLOCK_BATCH_SIZE, 0)]
     constraints += [tkw.TilingConstraint(CUR_INDEX)]
     constraints += [tkw.TilingConstraint(J)]
 
@@ -278,8 +280,8 @@ def get_speculative_sampling_kernel(
         num_iterators=1,
         inputs={BATCH_SIZE: i},
         outputs={
-            BATCH_SIZE: i // NUM_DRAFT_TOKENS,
-            NUM_DRAFT_TOKENS: i % NUM_DRAFT_TOKENS,
+            BATCH_SIZE: i,
+            NUM_SPECULATIVE_TOKENS: NUM_ACCEPTED_TOKENS,
         },
     )
 
@@ -289,10 +291,10 @@ def get_speculative_sampling_kernel(
         outputs={SEQ_LEN: LAST_ACCEPTED_RETRIEVE_IDX},
     )
 
-    write_mapping_1d_one_dim = tkw.IndexMapping(
+    write_mapping_1d_one_dim = tkw.IndexMapping(  # check this
         num_iterators=1,
         inputs={BATCH_SIZE: i},
-        outputs={NUM_DRAFT_TOKENS: LAST_ACCEPTED_RETRIEVE_IDX},
+        outputs={SEQ_LEN: LAST_ACCEPTED_RETRIEVE_IDX},
     )
 
     write_mapping_3d = tkw.IndexMapping(
@@ -323,8 +325,8 @@ def get_speculative_sampling_kernel(
         num_iterators=1,
         inputs={BATCH_SIZE: i},
         outputs={
-            BATCH_SIZE: i // NUM_DRAFT_TOKENS,
-            NUM_DRAFT_TOKENS: i % NUM_DRAFT_TOKENS,
+            BATCH_SIZE: i,
+            NUM_SPECULATIVE_TOKENS: sympy.Integer(0),
         },
     )
 
@@ -393,11 +395,11 @@ def get_speculative_sampling_kernel(
             x, y, elements_per_thread=1, mapping=write_zero_offset_mapping_one_dim
         )
 
-    accept_token_num_layout = tkl.MemoryLayout(shape=[batch_size, 1, 1])
+    accept_token_num_layout = tkl.MemoryLayout(shape=[batch_size])
     accept_index_layout = tkl.MemoryLayout(shape=[batch_size, num_speculative_tokens])
-    cur_prob_offset_vec_layout = tkl.MemoryLayout(shape=[batch_size, 1, 1])
-    predict_layout = tkl.MemoryLayout(shape=[seq_len])
+    cur_prob_offset_vec_layout = tkl.MemoryLayout(shape=[batch_size])
     last_accepted_retrieve_idx_vec_layout = tkl.MemoryLayout(shape=[batch_size])
+    predict_layout = tkl.MemoryLayout(shape=[seq_len])
 
     # Kernel.
     # =================================================================================
@@ -434,7 +436,7 @@ def get_speculative_sampling_kernel(
         ],
         accept_index: tkl.Memory[
             BATCH_SIZE,
-            NUM_DRAFT_TOKENS,
+            NUM_SPECULATIVE_TOKENS,
             GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
             accept_index_layout,
