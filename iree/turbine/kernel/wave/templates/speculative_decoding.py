@@ -193,8 +193,9 @@ def get_speculative_sampling_kernel(
             },
         )
     ]
+    # we distribute BATCH_SIZE along WG dim_1 because of the mapping constraint.
+    # BATCH_SIZE can be lesser than num of threads.
     constraints += [tkw.WorkgroupConstraint(BATCH_SIZE, BLOCK_BATCH_SIZE, 1)]
-    # constraints += [tkw.WorkgroupConstraint(BATCH_SIZE, BLOCK_BATCH_SIZE, 0)]
     constraints += [tkw.TilingConstraint(CUR_INDEX)]
     constraints += [tkw.TilingConstraint(J)]
 
@@ -207,29 +208,14 @@ def get_speculative_sampling_kernel(
     j = tkw.IndexMapping.iterator(1)
     k = tkw.IndexMapping.iterator(2)
 
-    mapping_2d = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: CUR_INDEX},
-        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
-    )
-
-    mapping_2d_one_dim = tkw.IndexMapping(
+    # read mappings
+    read_mapping_2d_to_1d = tkw.IndexMapping(
         num_iterators=1,
         inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: CUR_INDEX},
         outputs={BATCH_SIZE: i},
     )
 
-    mapping_3d = tkw.IndexMapping(
-        num_iterators=3,
-        inputs={
-            BATCH_SIZE: i,
-            NUM_DRAFT_TOKENS: CUR_PROB_OFFSET,
-            VOCAB_SIZE: DRAFT_TOKEN_ID,
-        },
-        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j, VOCAB_SIZE: k},
-    )
-
-    mapping_3d_one_dim = tkw.IndexMapping(
+    read_mapping_3d_to_1d = tkw.IndexMapping(
         num_iterators=1,
         inputs={
             BATCH_SIZE: i,
@@ -239,43 +225,20 @@ def get_speculative_sampling_kernel(
         outputs={BATCH_SIZE: i},
     )
 
-    mapping_3d_2 = tkw.IndexMapping(
+    read_mapping_3d_to_3d = tkw.IndexMapping(
         num_iterators=3,
         inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: CUR_INDEX, VOCAB_SIZE: DRAFT_TOKEN_ID},
         outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j, VOCAB_SIZE: k},
     )
 
-    mapping_3d_2_one_dim = tkw.IndexMapping(
-        num_iterators=1,
-        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: CUR_INDEX, VOCAB_SIZE: DRAFT_TOKEN_ID},
-        outputs={BATCH_SIZE: i},
-    )
-
-    read_zero_offset_2d_mapping = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: sympy.Integer(0)},
-        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
-    )
-
-    read_zero_offset_2d_mapping_one_dim = tkw.IndexMapping(
+    read_mapping_zero_offset_2d_to_1d = tkw.IndexMapping(
         num_iterators=1,
         inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: sympy.Integer(0)},
         outputs={BATCH_SIZE: i},
     )
 
-    read_zero_offset_mapping_one_dim = tkw.IndexMapping(
-        num_iterators=1,
-        inputs={BATCH_SIZE: i, NUM_SPECULATIVE_TOKENS: j},
-        outputs={BATCH_SIZE: i},
-    )
-
-    write_mapping_2d = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
-        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: NUM_ACCEPTED_TOKENS},
-    )
-
-    write_mapping_2d_one_dim = tkw.IndexMapping(
+    # write mappings
+    write_mapping_1d_to_2d = tkw.IndexMapping(
         num_iterators=1,
         inputs={BATCH_SIZE: i},
         outputs={
@@ -284,19 +247,13 @@ def get_speculative_sampling_kernel(
         },
     )
 
-    write_mapping_1d = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
-        outputs={SEQ_LEN: LAST_ACCEPTED_RETRIEVE_IDX},
-    )
-
-    write_mapping_1d_one_dim = tkw.IndexMapping(  # check this
+    write_mapping_1d_to_1d = tkw.IndexMapping(
         num_iterators=1,
         inputs={BATCH_SIZE: i},
         outputs={SEQ_LEN: LAST_ACCEPTED_RETRIEVE_IDX},
     )
 
-    write_mapping_3d = tkw.IndexMapping(
+    write_mapping_3d_to_3d = tkw.IndexMapping(
         num_iterators=3,
         inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j, VOCAB_SIZE: k},
         outputs={
@@ -306,21 +263,7 @@ def get_speculative_sampling_kernel(
         },
     )
 
-    write_mapping_3d_one_dim = tkw.IndexMapping(
-        num_iterators=1,
-        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j, VOCAB_SIZE: k},
-        outputs={
-            BATCH_SIZE: i,
-        },
-    )
-
-    write_zero_offset_mapping = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
-        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: sympy.Integer(0)},
-    )
-
-    write_zero_offset_mapping_one_dim = tkw.IndexMapping(
+    write_mapping_zero_offset_1d_to_2d = tkw.IndexMapping(
         num_iterators=1,
         inputs={BATCH_SIZE: i},
         outputs={
@@ -329,76 +272,34 @@ def get_speculative_sampling_kernel(
         },
     )
 
-    def broadcast(x):
-        return tkw.broadcast(x, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE])
+    # read/write helper functions
+    def read_2d_into_1d(x):
+        return tkw.read(x, elements_per_thread=1, mapping=read_mapping_2d_to_1d)
 
-    def broadcast_one_dim(x):
-        return tkw.broadcast(x, target_shape=[BATCH_SIZE])
+    def read_3d_into_1d(x):
+        return tkw.read(x, elements_per_thread=1, mapping=read_mapping_3d_to_1d)
 
-    def read_2d(x):
-        return tkw.read(x, elements_per_thread=1, mapping=mapping_2d)
+    def read_3d_into_3d(x):
+        return tkw.read(x, elements_per_thread=1, mapping=read_mapping_3d_to_3d)
 
-    def read_2d_one_dim(x):
-        return tkw.read(x, elements_per_thread=1, mapping=mapping_2d_one_dim)
-
-    def read_3d(x):
-        return tkw.read(x, elements_per_thread=1, mapping=mapping_3d)
-
-    def read_3d_one_dim(x):
-        return tkw.read(x, elements_per_thread=1, mapping=mapping_3d_one_dim)
-
-    def read_3d_2(x):
-        return tkw.read(x, elements_per_thread=1, mapping=mapping_3d_2)
-
-    def read_3d_2_one_dim(x):
-        return tkw.read(x, elements_per_thread=1, mapping=mapping_3d_2_one_dim)
-
-    def read_with_zero_offset_2d(memory):
+    def read_with_zero_offset_2d_into_1d(memory):
         return tkw.read(
-            memory, elements_per_thread=1, mapping=read_zero_offset_2d_mapping
+            memory, elements_per_thread=1, mapping=read_mapping_zero_offset_2d_to_1d
         )
 
-    def read_with_zero_offset_2d_one_dim(memory):
-        return tkw.read(
-            memory, elements_per_thread=1, mapping=read_zero_offset_2d_mapping_one_dim
-        )
+    def write_2d_into_1d(x, y):
+        return tkw.write(x, y, elements_per_thread=1, mapping=write_mapping_1d_to_2d)
 
-    def read_accept_index(memory):
-        return tkw.read(
-            memory, elements_per_thread=1, mapping=read_zero_offset_mapping_one_dim
-        )
+    def write_1d_into_1d(x, y):
+        return tkw.write(x, y, elements_per_thread=1, mapping=write_mapping_1d_to_1d)
 
-    def write_2d(x, y):
-        return tkw.write(x, y, elements_per_thread=1, mapping=write_mapping_2d)
+    def write_3d_into_3d(x, y):
+        return tkw.write(x, y, elements_per_thread=1, mapping=write_mapping_3d_to_3d)
 
-    def write_2d_one_dim(x, y):
-        return tkw.write(x, y, elements_per_thread=1, mapping=write_mapping_2d_one_dim)
-
-    def write_1d(x, y):
-        return tkw.write(x, y, elements_per_thread=1, mapping=write_mapping_1d)
-
-    def write_1d_one_dim(x, y):
-        return tkw.write(x, y, elements_per_thread=1, mapping=write_mapping_1d_one_dim)
-
-    def write_3d(x, y):
-        return tkw.write(x, y, elements_per_thread=1, mapping=write_mapping_3d)
-
-    def write_3d_one_dim(x, y):
-        return tkw.write(x, y, elements_per_thread=1, mapping=write_mapping_3d_one_dim)
-
-    def write_with_zero_offset(x, y):
-        return tkw.write(x, y, elements_per_thread=1, mapping=write_zero_offset_mapping)
-
-    def write_with_zero_offset_one_dim(x, y):
+    def write_with_zero_offset_1d_into_2d(x, y):
         return tkw.write(
-            x, y, elements_per_thread=1, mapping=write_zero_offset_mapping_one_dim
+            x, y, elements_per_thread=1, mapping=write_mapping_zero_offset_1d_to_2d
         )
-
-    accept_token_num_layout = tkl.MemoryLayout(shape=[batch_size])
-    accept_index_layout = tkl.MemoryLayout(shape=[batch_size, num_speculative_tokens])
-    cur_prob_offset_vec_layout = tkl.MemoryLayout(shape=[batch_size])
-    last_accepted_retrieve_idx_vec_layout = tkl.MemoryLayout(shape=[batch_size])
-    predict_layout = tkl.MemoryLayout(shape=[seq_len])
 
     # Kernel.
     # =================================================================================
@@ -426,39 +327,32 @@ def get_speculative_sampling_kernel(
             BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE_0, tkl.i32
         ],
         # Outputs
-        predicts: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE_0, tkl.i32, predict_layout],
+        predicts: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE_0, tkl.i32],
         accept_token_num: tkl.Memory[
             BATCH_SIZE,
             GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
-            accept_token_num_layout,
         ],
         accept_index: tkl.Memory[
             BATCH_SIZE,
             NUM_SPECULATIVE_TOKENS,
             GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
-            accept_index_layout,
         ],
         cur_prob_offset_vec: tkl.Memory[
             BATCH_SIZE,
             GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
-            cur_prob_offset_vec_layout,
         ],
         last_accepted_retrieve_idx_vec: tkl.Memory[
             BATCH_SIZE,
             GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
-            last_accepted_retrieve_idx_vec_layout,
         ],
     ):
-        one = tkw.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](1)
-        one_one_dim = tkw.Register[BATCH_SIZE, tkl.i32](1)
-        zero = tkw.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](0)
-        zero_one_dim = tkw.Register[BATCH_SIZE, tkl.i32](0)
-        zero_f32 = tkw.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.f32](0.0)
-        zero_f32_one_dim = tkw.Register[BATCH_SIZE, tkl.f32](0.0)
+        one = tkw.Register[BATCH_SIZE, tkl.i32](1)
+        zero = tkw.Register[BATCH_SIZE, tkl.i32](0)
+        zero_f32 = tkw.Register[BATCH_SIZE, tkl.f32](0.0)
 
         threshold_acc_reg = tkw.Register[BATCH_SIZE, tkl.f32](threshold_acc)
         threshold_single_reg = tkw.Register[BATCH_SIZE, tkl.f32](threshold_single)
@@ -468,13 +362,9 @@ def get_speculative_sampling_kernel(
         )
         inner_loop_condition = (CUR_INDEX >= 0) & (sympy.Eq(GET_ITER_ARG(6), 0))
 
-        coin = read_with_zero_offset_2d_one_dim(uniform_samples)
-        last_accepted_retrieve_idx = read_with_zero_offset_2d_one_dim(retrieve_index)
-        write_with_zero_offset_one_dim(last_accepted_retrieve_idx, accept_index)
-        # last_accepted_retrieve_idx = tkw.broadcast(
-        #     last_accepted_retrieve_idx,
-        #     target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE],
-        # )
+        coin = read_with_zero_offset_2d_into_1d(uniform_samples)
+        last_accepted_retrieve_idx = read_with_zero_offset_2d_into_1d(retrieve_index)
+        write_with_zero_offset_1d_into_2d(last_accepted_retrieve_idx, accept_index)
 
         @tkw.iterate(
             J,
@@ -482,10 +372,10 @@ def get_speculative_sampling_kernel(
             condition=outer_loop_condition,
             init_args=[
                 zero,  # cur_index
-                zero_one_dim,  # num_accepted_tokens
+                zero,  # num_accepted_tokens
                 last_accepted_retrieve_idx,
-                zero_one_dim,  # cur_prob_offset
-                zero_f32_one_dim,  # prob_acc
+                zero,  # cur_prob_offset
+                zero_f32,  # prob_acc
                 coin,
                 zero,  # outer_done
             ],
@@ -501,8 +391,7 @@ def get_speculative_sampling_kernel(
         ):
 
             tkw.set_symbol(CUR_INDEX, cur_index)
-            cur_index = read_2d_one_dim(retrieve_next_token)
-            zero = tkw.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](0)
+            cur_index = read_2d_into_1d(retrieve_next_token)
 
             @tkw.iterate(
                 CUR_INDEX,
@@ -515,7 +404,7 @@ def get_speculative_sampling_kernel(
                     cur_prob_offset,
                     prob_acc,
                     coin,
-                    zero_one_dim,
+                    zero,
                 ],
             )
             def inner_loop(
@@ -528,11 +417,11 @@ def get_speculative_sampling_kernel(
                 inner_done,
             ):
                 tkw.set_symbol(CUR_INDEX, cur_index)
-                draft_index = read_2d_one_dim(retrieve_index)
-                draft_token_id = read_2d_one_dim(candidates)
+                draft_index = read_2d_into_1d(retrieve_index)
+                draft_token_id = read_2d_into_1d(candidates)
                 tkw.set_symbol(DRAFT_TOKEN_ID, draft_token_id)
                 tkw.set_symbol(CUR_PROB_OFFSET, cur_prob_offset)
-                target_prob_single = read_3d_one_dim(target_probs)
+                target_prob_single = read_3d_into_1d(target_probs)
 
                 condition = (coin <= (prob_acc / threshold_acc_reg)) | (
                     target_prob_single >= threshold_single_reg
@@ -541,7 +430,7 @@ def get_speculative_sampling_kernel(
 
                 # Update num_accepted_tokens if the condition is true.
                 num_accepted_tokens = tkw.select(
-                    condition, num_accepted_tokens + one_one_dim, num_accepted_tokens
+                    condition, num_accepted_tokens + one, num_accepted_tokens
                 )
                 tkw.set_symbol(NUM_ACCEPTED_TOKENS, num_accepted_tokens)
                 tkw.set_symbol(LAST_ACCEPTED_RETRIEVE_IDX, last_accepted_retrieve_idx)
@@ -549,52 +438,52 @@ def get_speculative_sampling_kernel(
                 # Update cur_prob_offset.
                 cur_prob_offset = tkw.select(
                     condition,
-                    broadcast_one_dim(cur_index),
-                    broadcast_one_dim(cur_prob_offset),
+                    cur_index,
+                    cur_prob_offset,
                 )
 
                 # Update coin.
                 coin = tkw.select(
                     condition,
-                    broadcast_one_dim(read_2d_one_dim(uniform_samples)),
-                    broadcast_one_dim(coin),
+                    read_2d_into_1d(uniform_samples),
+                    coin,
                 )
 
                 @tkw.conditional(condition)
                 def then_():
-                    write_1d_one_dim(draft_token_id, predicts)
-                    write_2d_one_dim(draft_index, accept_index)
+                    write_1d_into_1d(draft_token_id, predicts)
+                    write_2d_into_1d(draft_index, accept_index)
 
                 @tkw.conditional(not_condition)
                 def else_():
-                    target_prob = read_3d_2(target_probs)
-                    write_3d(target_prob, draft_probs)
+                    target_prob = read_3d_into_3d(target_probs)
+                    write_3d_into_3d(target_prob, draft_probs)
 
                 # Update last_accepted_retrieve_idx.
                 last_accepted_retrieve_idx = tkw.select(
                     condition,
-                    broadcast_one_dim(draft_index),
+                    draft_index,
                     last_accepted_retrieve_idx,
                 )
 
                 # Update prob_acc.
                 prob_acc = tkw.select(
                     condition,
-                    zero_f32_one_dim,
+                    zero_f32,
                     prob_acc + target_prob_single,
                 )
 
                 # Update cur_index.
                 cur_index = tkw.select(
                     not_condition,
-                    broadcast_one_dim(read_2d_one_dim(retrieve_next_sibling)),
-                    broadcast_one_dim(cur_index),
+                    read_2d_into_1d(retrieve_next_sibling),
+                    cur_index,
                 )
 
                 # Update inner_done.
                 inner_done = tkw.select(
                     condition,
-                    one_one_dim,
+                    one,
                     inner_done,
                 )
 
