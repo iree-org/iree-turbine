@@ -54,7 +54,7 @@ __all__ = [
 # TODO: move this down into iree as an extention to the
 #       driver api.
 class _HipSemaphoreInterop:
-    def __init__(self):
+    def __init__(self, sync):
         if platform.system() == "Windows":
             self.library = ctypes.CDLL("amdhip64.dll")
         else:
@@ -80,8 +80,11 @@ class _HipSemaphoreInterop:
 
         self.library.hipEventQuery.argtypes = [ctypes.c_void_p]
         self.library.hipEventQuery.restype = ctypes.c_int32
+        self.sync = sync
 
     def get_timepoint_import(self):
+        if not self.sync:
+            return None
         evt = ctypes.c_void_p(0)
         ret = self.library.hipEventCreate(evt, 2)
         if ret != 0:
@@ -91,7 +94,6 @@ class _HipSemaphoreInterop:
         )
         if ret != 0:
             raise RuntimeError("Could not record hip event")
-
         timepoint = HalExternalTimepoint()
         timepoint.compatibility = SemaphoreCompatibility.DEVICE_WAIT
         timepoint.flags = ExternalTimepointFlags.NONE
@@ -99,6 +101,8 @@ class _HipSemaphoreInterop:
         return timepoint
 
     def wait_exported_timepoint(self, timepoint: HalExternalTimepoint):
+        if not self.sync:
+            return
         ret = self.library.hipStreamWaitEvent(
             ctypes.c_void_p(torch.cuda.current_stream().cuda_stream),
             ctypes.c_void_p(timepoint.hip_event),
@@ -108,6 +112,8 @@ class _HipSemaphoreInterop:
             raise RuntimeError("Could not wait on event")
 
     def destroy_timepoint_event(self, timepoint: HalExternalTimepoint):
+        if not self.sync:
+            return True
         ret = self.library.hipEventDestroy(ctypes.c_void_p(timepoint.hip_event))
         if ret != 0:
             raise RuntimeError(f"Could not destroy event got {ret}")
@@ -115,7 +121,8 @@ class _HipSemaphoreInterop:
 
 
 class _CudaSemaphoreInterop:
-    def __init__(self):
+    def __init__(self, sync):
+        self.sync = sync
         pass
 
     def get_timepoint_import(self):
@@ -132,6 +139,9 @@ class _CudaSemaphoreInterop:
 
 
 class _NullSemaphoreInterop:
+    def __init__(self, sync):
+        self.sync = sync
+
     def get_timepoint_import(self):
         return None
 
@@ -181,6 +191,7 @@ class DeviceState:
         "instance",
         "enumerated_info",
         "torch_device",
+        "torch_stream",
         "dlpack_device_type_code",
     ]
 
@@ -192,6 +203,7 @@ class DeviceState:
         vm_instance: Optional[VmInstance] = None,
         enumerated_info: Optional[dict] = None,
         torch_device: Optional[torch.device] = None,
+        torch_stream: Optional[int] = None,
         dlpack_device_type_code: int = 0,
     ):
         self.instance = vm_instance or get_vm_instance()
@@ -199,6 +211,7 @@ class DeviceState:
         self.device = device if device else self.driver.create_default_device()
         self.enumerated_info = enumerated_info or {}
         self.torch_device = torch_device
+        self.torch_stream = torch_stream
         self.dlpack_device_type_code = dlpack_device_type_code
 
     @property
@@ -305,7 +318,7 @@ class Device:
                 timepoint_export,
             )
             return timepoint_export
-        else:
+        elif self.sync:
             self._main_timepoint += 1
             return None
 
@@ -314,7 +327,7 @@ class Device:
             self._try_clean_external_timepoints()
             self._device_interop.wait_exported_timepoint(external_timepoint)
             self._external_timepoints.append((external_timepoint, self._main_timepoint))
-        else:
+        elif self.sync:
             self._main_timeline.wait(self._main_timepoint)
 
     def __new__(
@@ -375,7 +388,9 @@ class Device:
         try:
             import_fn = TORCH_TENSOR_IMPORTERS[driver_id]
             export_fn = TORCH_TENSOR_EXPORTERS[driver_id]
-            self._device_interop = IREE_SEMAPHPORE_INTEROP[driver_id]()
+            self._device_interop = IREE_SEMAPHPORE_INTEROP[driver_id](
+                self._s.torch_stream is None
+            )
             self.import_torch_tensor = lambda t: import_fn(self, t)
             self.export_torch_tensor = lambda bv, t: export_fn(self, bv, t)
             self.compile_target_flags = DEVICE_TARGET_COMPILE_FLAGS[driver_id]
@@ -400,9 +415,7 @@ class Device:
 
     def _recompute_target_keys(self):
         self.type_cache_key = f"{self.driver_id}:{';'.join(self.compile_target_flags)}"
-        self.instance_cache_key = (
-            f"{self.driver_id}:{self._s.enumerated_info.get('device_id', None)}"
-        )
+        self.instance_cache_key = f"{self.driver_id}:{self._s.enumerated_info.get('device_id', None)}:{self._s.torch_stream}"
 
     @property
     def hal_device(self) -> HalDevice:
@@ -411,6 +424,10 @@ class Device:
     @property
     def vm_instance(self) -> VmInstance:
         return self._s.instance
+
+    @property
+    def sync(self) -> bool:
+        return self._s.torch_stream is None
 
     def create_hal_module(self) -> VmModule:
         s = self._s
@@ -517,9 +534,9 @@ def _device_import_torch_tensor_cuda_hip(
     # We currently only support contiguous, so ensure that.
     if not t.is_contiguous():
         t = t.contiguous()
-    # TODO: The 'None' here tells the producer to synchronize on the default
-    # stream. For async, we should advance our timeline and signal when an
-    # event is raised on Torch's stream at the current position.
+    # The None passed to tensor.__dlpack__ indicates we are doing no stream synchronization here.
+    # We launch kernels through IREE runtime on the same stream as pytorch. If using multiple
+    # streams, the user is expected to properly manage stream synchronization.
     capsule = t.__dlpack__(None)
     bv = device.hal_device.from_dlpack_capsule(capsule)
     return bv
@@ -539,9 +556,6 @@ def _device_export_torch_tensor_cuda_hip(
     )
     if t.dtype != like.dtype:
         t = t.view(like.dtype)
-    # TODO: For async, we should enqueue an event on Torch's stream which will
-    # signal when this tensor is produced (i.e. at the current point in our
-    # timeline).
     return t
 
 
@@ -608,13 +622,19 @@ def lookup_device_from_torch(
         mapping = _CURRENT_THREAD.device_by_torch_device
     except AttributeError:
         _CURRENT_THREAD.device_by_torch_device = mapping = {}
-    device = mapping.get(torch_device)
+    stream = (
+        None
+        if torch_device.type != "cuda"
+        else torch.cuda.current_stream(torch_device).cuda_stream
+    )
+    key = (torch_device, stream)
+    device = mapping.get(key)
     if device is not None or not create:
         return device
     logger.debug("Creating turbine device for torch.device = %r", torch_device)
     device = _create_device_from_torch(torch_device)
     if device is not None:
-        mapping[torch_device] = device
+        mapping[key] = device
     return device
 
 
@@ -659,7 +679,7 @@ def _create_device_from_torch(torch_device: torch.device) -> Optional[Device]:
 
 def _create_cuda_device(torch_device: torch.device, props) -> Optional[Device]:
     # Note that the dlpack device type code for real CUDA ROCM is 2.
-    device = _create_cuda_like_device(torch_device, props, "hip", 2)
+    device = _create_cuda_like_device(torch_device, props, "hip", 2, None)
     if device:
         device.compile_target_flags = device.compile_target_flags + (
             f"--iree-hal-cuda-llvm-target-arch=sm_{props.major}{props.minor}",
@@ -669,8 +689,10 @@ def _create_cuda_device(torch_device: torch.device, props) -> Optional[Device]:
 
 
 def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
+    stream = torch.cuda.current_stream(torch_device).cuda_stream
+    device_params = {"hip_external_stream": str(stream)}
     # Note that the dlpack device type code for ROCM is 10.
-    device = _create_cuda_like_device(torch_device, props, "hip", 10)
+    device = _create_cuda_like_device(torch_device, props, "hip", 10, device_params)
     # The gcnArchName comes back like gfx90a:sramecc+:xnack- for a fully
     # specified target. However the IREE target-chip flag only expects the
     # prefix. See: https://github.com/iree-org/iree/issues/17402
@@ -695,7 +717,11 @@ def _get_uuid_to_info_mapping(driver) -> Dict[str, Dict[str, Any]]:
 
 
 def _create_cuda_like_device(
-    torch_device: torch.device, props, driver_name: str, dlpack_device_type_code: int
+    torch_device: torch.device,
+    props,
+    driver_name: str,
+    dlpack_device_type_code: int,
+    device_params,
 ) -> Optional[Device]:
     uuid = str(torch.cuda.get_device_properties(torch_device).uuid)
     driver = get_driver(driver_name)
@@ -703,13 +729,14 @@ def _create_cuda_like_device(
     device_info = info_mapping.get(uuid)
     if device_info is None:
         return None
-    hal_device = driver.create_device(device_info)
+    hal_device = driver.create_device(device_info, device_params)
     device_state = DeviceState(
         driver=driver,
         device=hal_device,
         vm_instance=get_vm_instance(),
         enumerated_info=device_info,
         torch_device=torch_device,
+        torch_stream=torch.cuda.current_stream(torch_device).cuda_stream,
         dlpack_device_type_code=dlpack_device_type_code,
     )
     device = Device(device_state=device_state)
