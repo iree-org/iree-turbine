@@ -146,10 +146,10 @@ class BooConv3d(torch.nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = make_tuple(kernel_size, 2)
-        self.stride = make_tuple(stride, 2)
-        self.padding = make_tuple(padding, 2)
-        self.dilation = make_tuple(dilation, 2)
+        self.kernel_size = make_tuple(kernel_size, 3)
+        self.stride = make_tuple(stride, 3)
+        self.padding = make_tuple(padding, 3)
+        self.dilation = make_tuple(dilation, 3)
         self.groups = groups
 
         self.weight = torch.nn.Parameter(
