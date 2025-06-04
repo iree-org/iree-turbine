@@ -133,6 +133,10 @@ def set_symbol(symbol: IndexExpr, value: "Register"):
     ...
 
 
+def exp(src: "Register") -> "Register":
+    ...
+
+
 def exp2(src: "Register") -> "Register":
     ...
 
@@ -893,6 +897,7 @@ class ComparisonPyOp(BinaryOpBase, ABC):
 
 
 @define_interface_op("abs")
+@define_interface_op("exp")
 @define_interface_op("exp2")
 @define_interface_op("log2")
 @define_interface_op("reciprocal")
