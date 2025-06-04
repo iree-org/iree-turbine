@@ -139,7 +139,9 @@ def compile_standalone_kernel(
 
     symb = func_name
     if config.async_invocations:
-        pm = PassManager.parse("builtin.module(torch-iree-func-conversion)", kb.context)
+        pm = PassManager.parse(
+            "builtin.module(inline, torch-iree-func-conversion)", kb.context
+        )
         pm.run(kb.module_op)
         symb += "$async"
 
