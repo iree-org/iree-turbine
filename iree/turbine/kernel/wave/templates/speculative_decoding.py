@@ -161,7 +161,6 @@ def get_speculative_sampling_kernel(
     SEQ_LEN = tkl.sym.SEQ_LEN
     BLOCK_BATCH_SIZE = tkl.sym.BLOCK_BATCH_SIZE
     BLOCK_NUM_DRAFT_TOK = tkl.sym.BLOCK_NUM_DRAFT_TOK
-    BLOCK_VOCAB_SIZE = tkl.sym.BLOCK_VOCAB_SIZE
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     GLOBAL_ADDRESS_SPACE_0 = tkl.sym.GLOBAL_ADDRESS_SPACE
 
