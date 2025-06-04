@@ -23,7 +23,7 @@ class BooConv1d(torch.nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        kernel_size: int,
+        kernel_size: int | Sequence[int],
         stride: int | Sequence[int] = 1,
         padding: int | Sequence[int] = 0,
         dilation: int | Sequence[int] = 1,
@@ -33,7 +33,9 @@ class BooConv1d(torch.nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = kernel_size
+        self.kernel_size = (
+            [kernel_size] if isinstance(kernel_size, int) else kernel_size
+        )
         self.stride = stride
         self.padding = padding
         self.dilation = dilation
@@ -151,14 +153,14 @@ class BooConv2d(torch.nn.Module):
 class BooConv3d(torch.nn.Module):
     def __init__(
         self,
-        in_channels,
-        out_channels,
-        kernel_size,
-        stride=1,
-        padding=0,
-        dilation=1,
-        groups=1,
-        bias=True,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int | Sequence[int] = 1,
+        padding: int | Sequence[int] = 0,
+        dilation: int | Sequence[int] = 1,
+        groups: int = 1,
+        bias: bool = True,
     ):
         super().__init__()
         self.in_channels = in_channels

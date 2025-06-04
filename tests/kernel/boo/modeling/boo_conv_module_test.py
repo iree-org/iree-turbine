@@ -79,7 +79,28 @@ class BooConvReplacementTest(unittest.TestCase):
             self.assertNotIsInstance(module, torch.nn.Conv3d, msg=msg)
 
 
-class BooConv2dTest(unittest.TestCase):
+class BooConvModuleTest(unittest.TestCase):
+    def testBooConv1dParameters(self):
+        m = BooConv1d(9, 2, 6, 1, 2, 2, 3, True)
+        self.assertEqual(tuple(m.weight.shape), (2, 3, 6))
+        self.assertIsNotNone(m.bias)
+        self.assertEqual(tuple(m.bias.shape), (2,))
+
+    def testBooConv2dParameters(self):
+        m = BooConv2d(9, 2, 6, 1, 2, 2, 3, True)
+        self.assertEqual(tuple(m.weight.shape), (2, 3, 6, 6))
+        self.assertIsNotNone(m.bias)
+        self.assertEqual(tuple(m.bias.shape), (2,))
+        m2 = BooConv2d(10, 2, [2, 6], 1, 1, 1, 1, False)
+        self.assertEqual(tuple(m2.weight.shape), (2, 10, 2, 6))
+        self.assertIsNone(m2.bias)
+
+    def testBooConv3dParameters(self):
+        m = BooConv3d(10, 2, 6, 1, 2, 2, 1, True)
+        self.assertEqual(tuple(m.weight.shape), (2, 10, 6, 6, 6))
+
+
+class BooConv2dLaunchingTest(unittest.TestCase):
     def setUp(self):
         ConvLaunchableRuntimeCache.set_cache_limit(0)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
