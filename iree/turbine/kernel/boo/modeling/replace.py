@@ -57,14 +57,8 @@ class BooConv1d(torch.nn.Module):
         no_batch = len(x.shape) == 2
         if no_batch:
             x = x.unsqueeze(0)
-        if x.is_contiguous(memory_format=torch.channels_last):
-            x = x.permute([0, 2, 1])
-            input_layout = "NHC"
+        # There is no 1-D channels_last format.
         w = self.weight
-        if w.is_contiguous(memory_format=torch.channels_last):
-            w = w.permute([0, 2, 1])
-            kernel_layout = "NHC"
-            output_layout = "NHC"
         if self._bias:
             args = (x, w, self.bias)
         else:
@@ -79,8 +73,6 @@ class BooConv1d(torch.nn.Module):
             kernel_layout=kernel_layout,
             output_layout=output_layout,
         )
-        if output_layout == "NHC":
-            result = result.permute([0, 2, 1])
         return result.squeeze(0) if no_batch else result
 
 
