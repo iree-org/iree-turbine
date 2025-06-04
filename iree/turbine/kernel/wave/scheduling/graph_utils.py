@@ -19,11 +19,6 @@ from typing import Optional, Callable
 
 T = index_symbol("$INITIATION_INTERVAL")
 
-try:
-    from aplp_lib import perform_aplp_pyo3 as compute_aplp
-except ImportError as e:
-    print(f"Could not import Rust APLP module 'aplp_lib.perform_aplp_pyo3': {e}")
-
 
 @dataclass
 class EdgeWeight:
@@ -281,6 +276,7 @@ def all_pairs_longest_paths_unevaluated(
     by parallelizing across the start nodes.
 
     """
+    from aplp_lib import perform_aplp_pyo3 as compute_aplp
 
     N = len(graph.nodes)
 
