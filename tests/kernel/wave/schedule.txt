@@ -1,0 +1,42 @@
+Initiation Interval: 3
+Number of Stages: 3
+
+# Resource Reservation Table (RRT):
+# Each row represents a cycle in the initiation interval
+# Each column represents a resource type
+# Format: cycle | resource_usage
+
+Cycle | GLOBAL_MEMORY_UNITS | SHARED_MEMORY_UNITS | MMA_UNITS | VALU_UNITS | SHUFFLE_UNITS
+----- | ------------------- | ------------------- | --------- | ---------- | -------------
+    0 |                   2 |                   4 |         4 |          0 |             0
+    1 |                   0 |                   4 |         0 |          0 |             0
+    2 |                   0 |                   2 |         4 |          0 |             0
+
+Node Name                   | Node Type     | Node Sort Key   | Cycle   | Relative Cycle   | Stage   | User Sort Keys
+--------------------------- | ------------- | --------------- | ------- | ---------------- | ------- | ----------------------------
+read_21                     | ReadGlobal    | (4,)            | 0       | 0                | 0       | (5,)
+read_22                     | ReadGlobal    | (6,)            | 0       | 0                | 0       | (7,)
+write_10                    | WriteShared   | (5,)            | 2       | 2                | 0       | (12,), (13,), (14,), (15,)
+write_11                    | WriteShared   | (7,)            | 2       | 2                | 0       | (8,), (9,), (10,), (11,)
+--------------------------- | ------------- | --------------- | ------- | ---------------- | ------- | ----------------------------
+read_2_shared_M_1_N_0_K_1   | ReadShared    | (15,)           | 3       | 0                | 1       | (21,), (23,)
+read_2_shared_M_1_N_0_K_0   | ReadShared    | (14,)           | 3       | 0                | 1       | (20,), (22,)
+read_2_shared_M_0_N_0_K_1   | ReadShared    | (13,)           | 3       | 0                | 1       | (17,), (19,)
+read_4_shared_M_0_N_0_K_1   | ReadShared    | (9,)            | 3       | 0                | 1       | (17,), (21,)
+read_2_shared_M_0_N_0_K_0   | ReadShared    | (12,)           | 4       | 1                | 1       | (16,), (18,)
+read_4_shared_M_0_N_0_K_0   | ReadShared    | (8,)            | 4       | 1                | 1       | (16,), (20,)
+read_4_shared_M_0_N_1_K_0   | ReadShared    | (10,)           | 4       | 1                | 1       | (18,), (22,)
+read_4_shared_M_0_N_1_K_1   | ReadShared    | (11,)           | 4       | 1                | 1       | (19,), (23,)
+mma_M_0_N_0_K_0             | MMA           | (16,)           | 5       | 2                | 1       | (17,)
+mma_M_1_N_0_K_0             | MMA           | (20,)           | 5       | 2                | 1       | (21,)
+mma_M_0_N_1_K_0             | MMA           | (18,)           | 5       | 2                | 1       | (19,)
+mma_M_1_N_1_K_0             | MMA           | (22,)           | 5       | 2                | 1       | (23,)
+--------------------------- | ------------- | --------------- | ------- | ---------------- | ------- | ----------------------------
+mma_M_0_N_0_K_1             | MMA           | (17,)           | 6       | 0                | 2       | (0,)
+mma_M_1_N_0_K_1             | MMA           | (21,)           | 6       | 0                | 2       | (2,)
+mma_M_0_N_1_K_1             | MMA           | (19,)           | 6       | 0                | 2       | (1,)
+mma_M_1_N_1_K_1             | MMA           | (23,)           | 6       | 0                | 2       | (3,)
+acc_M_0_N_0_K_0             | IterArg       | (0,)            | 7       | 1                | 2       | (16,)
+acc_M_1_N_0_K_0             | IterArg       | (2,)            | 7       | 1                | 2       | (20,)
+acc_M_0_N_1_K_0             | IterArg       | (1,)            | 7       | 1                | 2       | (18,)
+acc_M_1_N_1_K_0             | IterArg       | (3,)            | 7       | 1                | 2       | (22,)
