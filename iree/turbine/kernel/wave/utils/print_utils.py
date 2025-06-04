@@ -176,7 +176,7 @@ def _parse_metadata_from_lines(lines: list[str]) -> Tuple[Optional[int], Optiona
 
 
 def _calculate_column_widths(
-    schedule_data: list[Tuple[fx.Node, int, int, str, list[str], int]]
+    schedule_data: list[Tuple[fx.Node, int, int, str, list[str], int]],
 ) -> dict[str, int]:
     """Calculate column widths for schedule table based on data."""
     col_widths = {
@@ -344,7 +344,8 @@ def _parse_sort_key(sort_key_str: str) -> tuple:
 
 
 def load_schedule(
-    load_file: str, graph: fx.Graph
+    load_file: str,
+    graph: fx.Graph,
 ) -> Tuple[
     Dict[fx.Node, int],
     int,
@@ -355,7 +356,12 @@ def load_schedule(
     Optional[list[str]],
 ]:
     """
-    Loads a schedule from a file in pipe-delimited table format.
+    Loads a schedule from a file into an existing graph.
+    This function:
+    1. Reads and parses the schedule file to extract metadata, resource data, and node specifications
+    2. Creates a schedule mapping nodes to their cycles
+    3. Creates edges between nodes based on user relationships
+
     Returns:
         - schedule: Dictionary mapping nodes to their cycles
         - initiation_interval: The initiation interval
@@ -364,9 +370,6 @@ def load_schedule(
         - edges: List of Edge objects representing dependencies
         - resource_reservations: Optional numpy array of shape (II, num_resources) containing resource reservations
         - resource_names: Optional list of resource names corresponding to each column in resource_reservations
-    The stage column is ignored as it can be calculated from cycle and II.
-    The relative_cycle column is ignored as it can be calculated from cycle and II.
-    Separator lines (lines containing only dashes and pipes) are skipped.
     """
     with open(load_file, "r") as f:
         content = f.read()
@@ -399,28 +402,35 @@ def load_schedule(
     edges = []
     nodes = set()  # Use a set to avoid duplicates
 
+    # Process each line to build schedule and edges
     for line in data_lines:
-        # Parse all columns (now including relative_cycle)
-        name, _, sort_key_str, cycle_str, _, _, user_sort_keys_str = [
+        name, node_type, sort_key_str, cycle_str, _, _, user_sort_keys_str = [
             x.strip() for x in line.split("|")
         ]
-        # Convert sort key string to tuple safely
         sort_key = _parse_sort_key(sort_key_str)
+        cycle = int(cycle_str)
+
         if sort_key in node_map:
             node = node_map[sort_key]
-            schedule[node] = int(cycle_str)
+            schedule[node] = cycle
             nodes.add(node)
 
             # Parse user sort keys and create edges
             if user_sort_keys_str:
+                from_custom = get_custom(node)
                 for user_key_str in user_sort_keys_str.split(","):
                     user_key = _parse_sort_key(user_key_str.strip())
                     if user_key in node_map:
                         user_node = node_map[user_key]
-                        # Create Edge with default EdgeWeight
-                        edge = Edge(node, user_node, EdgeWeight(0, 0))
-                        edges.append(edge)
-                        nodes.add(user_node)
+                        to_custom = get_custom(user_node)
+                        # Skip edges involving IterArg nodes
+                        if not isinstance(from_custom, IterArg) and not isinstance(
+                            to_custom, IterArg
+                        ):
+                            # Create Edge with default EdgeWeight
+                            edge = Edge(node, user_node, EdgeWeight(0, 0))
+                            edges.append(edge)
+                            nodes.add(user_node)
 
     # Convert nodes set to list for consistent return type
     nodes_list = list(nodes)
@@ -688,3 +698,34 @@ def _format_mlir_type(type_obj):
     if "stream.binding" in type_str:
         return type_str.replace("!stream.binding<", "").replace(">", "")
     return type_str
+
+
+def parse_node_specs_from_schedule_file(schedule_path: str):
+    """
+    Parses the schedule file and returns a list of (name, sort_key, node_type).
+    """
+    with open(schedule_path, "r") as f:
+        content = f.read()
+    lines = content.strip().split("\n")
+    data_lines = [
+        l
+        for l in lines
+        if l and not l.startswith("#") and "|" in l and not all(c in "-| " for c in l)
+    ][
+        1:
+    ]  # Skip the header line
+
+    def _parse_sort_key(sort_key_str):
+        inner = sort_key_str.strip("()")
+        if not inner:
+            return tuple()
+        return tuple(int(x.strip()) for x in inner.split(",") if x.strip())
+
+    node_specs = []
+    for line in data_lines:
+        name, node_type, sort_key_str, cycle_str, _, _, _ = [
+            x.strip() for x in line.split("|")
+        ]
+        sort_key = _parse_sort_key(sort_key_str)
+        node_specs.append((name, sort_key, node_type))
+    return node_specs
