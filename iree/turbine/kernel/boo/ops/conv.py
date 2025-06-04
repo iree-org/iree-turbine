@@ -5,11 +5,18 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import os
+import functools
+
 from typing import Sequence, Tuple, Any, Iterable
 
 import torch
 
-from ..conv_exports import ConvSignature, get_launchable, DEFAULT_LAYOUTS
+from ..conv_exports import (
+    ConvSignature,
+    get_launchable,
+    DEFAULT_LAYOUTS,
+    ConvLaunchableRuntimeCache,
+)
 
 __all__ = [
     "boo_conv",
@@ -37,13 +44,54 @@ def disable_backward():
 def make_tuple(a: Any, size: int) -> Tuple:
     """Tries to convert `a` into a Tuple of ints."""
     if isinstance(a, Iterable):
-        result = (item for item in a)
+        result = tuple(a)
         assert len(result) == size
         assert isinstance(result[0], int)
         return result
     if isinstance(a, int):
         return (a,) * size
     raise TypeError(f"Input {a} is expected to be an iterable or int. Got {type(a)}.")
+
+
+@functools.lru_cache(maxsize=None)
+def get_func_name(
+    input_shape: tuple,
+    kernel_shape: tuple,
+    dtype: str,
+    mode: str,
+    bias: bool,
+    stride: tuple,
+    padding: tuple,
+    dilation: tuple,
+    groups: int,
+    input_layout: str,
+    kernel_layout: str,
+    output_layout: str,
+) -> str:
+    num_spatial_dims = len(input_shape) - 2
+    name_items = [
+        "conv",
+        f"{num_spatial_dims}d",
+        str(dtype).removeprefix("torch."),
+        str(mode).lower(),
+    ]
+    if bias and mode == "FORWARD":
+        name_items.append("b")
+    l2s = lambda l: "x".join([str(i) for i in l])
+    name_items.extend(
+        [
+            l2s(input_shape),
+            input_layout.lower(),
+            l2s(kernel_shape),
+            kernel_layout.lower().replace("n", "f"),
+            output_layout.lower().replace("c", "f"),
+            l2s(stride) + "s",
+            l2s(padding) + "p",
+            l2s(dilation) + "d",
+            f"{groups}g",
+        ]
+    )
+    return "_".join(name_items)
 
 
 @torch.library.custom_op("iree_turbine::boo_convolution", mutates_args=())
@@ -61,6 +109,27 @@ def boo_convolution(
 ) -> torch.Tensor:
     x = x.detach()
     w = w.detach()
+
+    # Unfortunately, pytorch converts the tuple inputs to lists for some reason.
+    # We need to convert them back to tuples.
+    func_name = get_func_name(
+        tuple(x.shape),
+        tuple(w.shape),
+        str(x.dtype),
+        "FORWARD",
+        (b is not None),
+        tuple(stride),
+        tuple(padding),
+        tuple(dilation),
+        groups,
+        input_layout,
+        kernel_layout,
+        output_layout,
+    )
+    args = (x, w) if b is None else (x, w, b.detach())
+    cache_hit = ConvLaunchableRuntimeCache.get(func_name)
+    if cache_hit:
+        return cache_hit(*args)
 
     sig = ConvSignature(
         input_shape=x.shape,
@@ -81,7 +150,6 @@ def boo_convolution(
 
     # Get a launchable and apply.
     conv = get_launchable(sig)
-    args = (x, w) if b is None else (x, w, b.detach())
     return conv(*args)
 
 
