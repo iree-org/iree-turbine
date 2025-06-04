@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import contextlib
 import unittest
 import pytest
 import tempfile
@@ -42,16 +43,14 @@ def testBackwardCachePytorch(x_grad, w_grad):
         )
         y = boo_conv(x, w)
 
-        if not x_grad and not w_grad:
-            try:
-                y.sum().backward()
-            except RuntimeError as e:
-                return
-            except:
-                raise
-            assert False, "Expected a RuntimeError calling backwards."
+        context = (
+            contextlib.nullcontext()
+            if x_grad or w_grad
+            else pytest.raises(RuntimeError)
+        )
+        with context:
+            y.sum().backward()
 
-        y.sum().backward()
         items = [x.name for x in Path(td).glob("*/")]
 
         assert (
@@ -85,16 +84,14 @@ def testBackwardCacheBoo(x_grad, w_grad):
         )
         y = boo_conv(x, w)
 
-        if not x_grad and not w_grad:
-            try:
-                y.sum().backward()
-            except RuntimeError as e:
-                return
-            except:
-                raise
-            assert False, "Expected a RuntimeError calling backwards."
+        context = (
+            contextlib.nullcontext()
+            if x_grad or w_grad
+            else pytest.raises(RuntimeError)
+        )
+        with context:
+            y.sum().backward()
 
-        y.sum().backward()
         items = [x.name for x in Path(td).glob("*/")]
 
         assert (
