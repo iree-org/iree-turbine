@@ -124,6 +124,8 @@ def get_speculative_decoding_kernel(
             coin * sum_relu, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
         )
         greater_than_u = cdf > threshold_dist_u
+        # Initializing `pad_token` to the last token in the vocabulary to be default
+        # and within bounds.
         pad_token = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](
             VOCAB_SIZE - 1
         )
