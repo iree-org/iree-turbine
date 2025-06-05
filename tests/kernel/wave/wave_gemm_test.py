@@ -357,6 +357,7 @@ def testGemmSmallTiles(
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
     generate_iree_ref("mmt", [a, b], [iree_ref])
+    torch.set_printoptions(profile="full")
     print(c)
     print(iree_ref)
     assert_close(c, iree_ref, check_device=False)
