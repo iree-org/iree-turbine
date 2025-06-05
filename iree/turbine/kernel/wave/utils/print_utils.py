@@ -217,10 +217,8 @@ def _parse_metadata_from_lines(lines: list[str]) -> Tuple[Optional[int], Optiona
     return initiation_interval, num_stages
 
 
-def _calculate_column_widths(
-    schedule_data: list[Tuple[fx.Node, int, int, str, list[str], int]],
-) -> dict[str, int]:
-    """Calculate column widths for schedule table based on data."""
+def _calculate_simple_column_widths(data_lines: list[str]) -> dict[str, int]:
+    """Calculate column widths from data lines with minimal code."""
     col_widths = {
         "name": len("Node Name"),
         "type": len("Node Type"),
@@ -231,28 +229,22 @@ def _calculate_column_widths(
         "users": len("User Sort Keys"),
     }
 
-    for (
-        node,
-        cycle,
-        stage,
-        node_type,
-        user_sort_keys,
-        initiation_interval,
-    ) in schedule_data:
-        col_widths["name"] = max(col_widths["name"], len(str(node.name)))
-        col_widths["type"] = max(col_widths["type"], len(node_type))
-        col_widths["sort_key"] = max(col_widths["sort_key"], len(str(node._sort_key)))
-        col_widths["cycle"] = max(col_widths["cycle"], len(str(cycle)))
-        col_widths["relative_cycle"] = max(
-            col_widths["relative_cycle"], len(str(cycle % initiation_interval))
-        )
-        col_widths["stage"] = max(col_widths["stage"], len(str(stage)))
-        col_widths["users"] = max(col_widths["users"], len(", ".join(user_sort_keys)))
+    for line in data_lines:
+        parts = [x.strip() for x in line.split("|")]
+        if len(parts) == 7:
+            col_widths["name"] = max(col_widths["name"], len(parts[0]))
+            col_widths["type"] = max(col_widths["type"], len(parts[1]))
+            col_widths["sort_key"] = max(col_widths["sort_key"], len(parts[2]))
+            col_widths["cycle"] = max(col_widths["cycle"], len(parts[3]))
+            col_widths["relative_cycle"] = max(
+                col_widths["relative_cycle"], len(parts[4])
+            )
+            col_widths["stage"] = max(col_widths["stage"], len(parts[5]))
+            col_widths["users"] = max(col_widths["users"], len(parts[6]))
 
     # Add padding
     for key in col_widths:
-        col_widths[key] += 2  # Add 2 spaces padding on each side
-
+        col_widths[key] += 2
     return col_widths
 
 
@@ -324,52 +316,214 @@ def _write_schedule_data(
         f.write(row + "\n")
 
 
-def dump_schedule(
-    graph: fx.Graph,
+def _write_schedule_data_from_lines(f, lines: list[str], col_widths: dict[str, int]):
+    """Write schedule data directly from lines to file."""
+    separator = (
+        f"{'-' * col_widths['name']} | "
+        f"{'-' * col_widths['type']} | "
+        f"{'-' * col_widths['sort_key']} | "
+        f"{'-' * col_widths['cycle']} | "
+        f"{'-' * col_widths['relative_cycle']} | "
+        f"{'-' * col_widths['stage']} | "
+        f"{'-' * col_widths['users']}"
+    )
+
+    current_stage = None
+    for line in lines:
+        parts = [x.strip() for x in line.split("|")]
+        if len(parts) != 7:
+            f.write(line + "\n")  # Write non-schedule lines as-is
+            continue
+
+        (
+            name,
+            node_type,
+            sort_key_str,
+            cycle_str,
+            relative_cycle_str,
+            stage_str,
+            user_sort_keys_str,
+        ) = parts
+
+        try:
+            stage = int(stage_str)
+            # Add stage separator if we're moving to a new stage
+            if current_stage is not None and stage != current_stage:
+                f.write(separator + "\n")
+            current_stage = stage
+        except (ValueError, TypeError):
+            pass  # Skip stage separator logic if stage is not a number
+
+        # Format the line with proper column widths
+        row = (
+            f"{name:<{col_widths['name']}} | "
+            f"{node_type:<{col_widths['type']}} | "
+            f"{sort_key_str:<{col_widths['sort_key']}} | "
+            f"{cycle_str:<{col_widths['cycle']}} | "
+            f"{relative_cycle_str:<{col_widths['relative_cycle']}} | "
+            f"{stage_str:<{col_widths['stage']}} | "
+            f"{user_sort_keys_str:<{col_widths['users']}}"
+        )
+        f.write(row + "\n")
+
+
+def _write_schedule_file(
+    dump_file: str,
+    data_lines: list[str],
+    initiation_interval: int,
+    num_stages: int,
+    resource_reservations: Optional[np.ndarray] = None,
+    resource_names: Optional[list[str]] = None,
+    schedule_data: Optional[list] = None,
+):
+    """Write schedule data to file with proper formatting."""
+    with open(dump_file, "w") as f:
+        _write_metadata_to_file(f, initiation_interval, num_stages)
+        _write_rrt_to_file(
+            f, resource_reservations, resource_names, initiation_interval
+        )
+        col_widths = _calculate_simple_column_widths(data_lines)
+        _write_schedule_header(f, col_widths)
+
+        if schedule_data is not None:
+            _write_schedule_data(f, schedule_data, col_widths)
+        else:
+            _write_schedule_data_from_lines(f, data_lines, col_widths)
+
+
+def _update_schedule_line(
+    line: str, changed_cycles: Dict[tuple, int], initiation_interval: int
+) -> str:
+    """Update a single schedule line if the node's cycle has changed."""
+    parts = [x.strip() for x in line.split("|")]
+    if len(parts) != 7:
+        return line  # Keep non-schedule lines as-is
+
+    (
+        name,
+        node_type,
+        sort_key_str,
+        cycle_str,
+        relative_cycle_str,
+        stage_str,
+        user_sort_keys_str,
+    ) = parts
+
+    try:
+        sort_key = _parse_sort_key(sort_key_str)
+    except (ValueError, TypeError):
+        return line
+
+    if sort_key not in changed_cycles:
+        return line  # No change needed
+
+    # Update the cycle values
+    new_cycle = changed_cycles[sort_key]
+    new_relative_cycle = new_cycle % initiation_interval
+    new_stage = new_cycle // initiation_interval
+
+    return f"{name} | {node_type} | {sort_key_str} | {new_cycle} | {new_relative_cycle} | {new_stage} | {user_sort_keys_str}"
+
+
+def _dump_schedule_preserving_original(
+    schedule: Dict[fx.Node, int],
+    initiation_interval: int,
+    dump_file: str,
+    original_schedule_file: str,
+    resource_reservations: np.ndarray,
+    resource_names: list[str],
+):
+    """
+    Update and dump a schedule file, preserving the original file's structure and only modifying the cycles
+    of nodes present in the new schedule. Uses the provided resource_reservations and resource_names.
+    """
+    # Read and parse the original schedule file
+    lines = _read_schedule_file(original_schedule_file)
+    orig_initiation_interval, orig_num_stages = _parse_metadata_from_lines(lines)
+    if orig_initiation_interval is None or orig_num_stages is None:
+        raise ValueError(
+            "Original schedule file missing required metadata (II or num_stages)"
+        )
+
+    orig_resource_reservations, orig_resource_names, rrt_end_line = (
+        _parse_rrt_from_lines(lines, orig_initiation_interval)
+    )
+
+    orig_data_lines = _extract_schedule_data_lines(lines, rrt_end_line)
+
+    # Build mapping of changed cycles
+    changed_cycles = {node._sort_key: new_cycle for node, new_cycle in schedule.items()}
+
+    # Update lines with new cycles
+    updated_lines = [
+        _update_schedule_line(line, changed_cycles, initiation_interval)
+        for line in orig_data_lines
+    ]
+
+    # Write the updated schedule file
+    _write_schedule_file(
+        dump_file,
+        updated_lines,
+        orig_initiation_interval,
+        orig_num_stages,
+        resource_reservations,
+        resource_names,
+    )
+
+
+def _dump_schedule_new(
     schedule: Dict[fx.Node, int],
     initiation_interval: int,
     num_stages: int,
     dump_file: str,
-    resource_reservations: Optional[np.ndarray] = None,
-    resource_names: Optional[list[str]] = None,
+    resource_reservations: np.ndarray,
+    resource_names: list[str],
 ):
     """
-    Dumps the schedule to a file in pipe-delimited table format.
-    Each row contains: node_name | node_type | node_sort_key | cycle | relative_cycle | stage | user_sort_keys
-    The schedule metadata (II and num_stages) is stored at the top.
-    If provided, the resource reservation table is also stored.
-    Columns are padded to ensure pipe alignment.
-    Rows are sorted by cycle first, then by stage.
-    A separator line of dashes is added between different stages.
+    Create a new schedule file from scratch with the given schedule data.
     """
-    # Prepare schedule data for sorting
+    # Prepare schedule data and convert to lines in one pass
     schedule_data = []
+    data_lines = []
+
     for node, cycle in schedule.items():
-        user_sort_keys = [str(u._sort_key) for u in node.users]
         node_type = get_node_type(node)
+        user_sort_keys = [str(user._sort_key) for user in node.users]
         stage = cycle // initiation_interval
+
+        # Add to schedule data
         schedule_data.append(
             (node, cycle, stage, node_type, user_sort_keys, initiation_interval)
         )
 
-    # Sort the schedule data by cycle first, then by stage
-    schedule_data.sort(key=lambda x: (x[1], x[2]))  # Sort by (cycle, stage)
-
-    # Calculate column widths
-    col_widths = _calculate_column_widths(schedule_data)
-
-    with open(dump_file, "w") as f:
-        # Write metadata
-        _write_metadata_to_file(f, initiation_interval, num_stages)
-
-        # Write RRT if provided
-        _write_rrt_to_file(
-            f, resource_reservations, resource_names, initiation_interval
+        # Add to data lines for width calculation
+        line = (
+            f"{str(node.name)} | "
+            f"{node_type} | "
+            f"{str(node._sort_key)} | "
+            f"{str(cycle)} | "
+            f"{str(cycle % initiation_interval)} | "
+            f"{str(stage)} | "
+            f"{', '.join(user_sort_keys)}"
         )
+        data_lines.append(line)
 
-        # Write schedule table
-        _write_schedule_header(f, col_widths)
-        _write_schedule_data(f, schedule_data, col_widths)
+    # Sort both by stage, then by cycle
+    sorted_data = sorted(
+        zip(schedule_data, data_lines), key=lambda x: (x[0][2], x[0][1])
+    )
+    schedule_data, data_lines = zip(*sorted_data) if sorted_data else ([], [])
+
+    # Write the schedule file
+    _write_schedule_file(
+        dump_file,
+        data_lines,
+        initiation_interval,
+        num_stages,
+        resource_reservations,
+        resource_names,
+        schedule_data,
+    )
 
 
 def _parse_sort_key(sort_key_str: str) -> tuple:
@@ -846,3 +1000,42 @@ def parse_node_specs_from_schedule_file(schedule_path: str):
             continue  # Skip lines where parsing sort_key fails
         node_specs.append((name, sort_key, node_type))
     return node_specs
+
+
+def dump_schedule(
+    schedule: Dict[fx.Node, int],
+    initiation_interval: int,
+    num_stages: int,
+    dump_file: str,
+    resource_reservations: np.ndarray,
+    resource_names: list[str],
+    original_schedule_file: Optional[str] = None,
+):
+    """
+    Dumps the schedule to a file in pipe-delimited table format.
+    Each row contains: node_name | node_type | node_sort_key | cycle | relative_cycle | stage | user_sort_keys
+    The schedule metadata (II and num_stages) is stored at the top.
+    The resource reservation table is also stored.
+    Columns are padded to ensure pipe alignment.
+
+    If original_schedule_file is provided, the output will preserve its structure and only modify changed nodes.
+    If original_schedule_file is None, a new schedule file will be created from scratch.
+    """
+    if original_schedule_file is not None:
+        _dump_schedule_preserving_original(
+            schedule,
+            initiation_interval,
+            dump_file,
+            original_schedule_file,
+            resource_reservations,
+            resource_names,
+        )
+    else:
+        _dump_schedule_new(
+            schedule,
+            initiation_interval,
+            num_stages,
+            dump_file,
+            resource_reservations,
+            resource_names,
+        )
