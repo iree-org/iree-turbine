@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from ..._support.indexing import IndexExpr, IndexingContext, IndexSymbol, IndexSequence
-from typing import Any
+from typing import Any, Optional
 import sympy
 
 
@@ -28,3 +28,17 @@ def subs_idxc(input: Any) -> IndexSymbol | int:
     """
     idxc = IndexingContext.current()
     return safe_subs(input, idxc.subs)
+
+
+def get_min_expr(
+    expr1: Optional[IndexExpr], expr2: Optional[IndexExpr]
+) -> Optional[IndexExpr]:
+    """
+    Get minimum expression of two expressions.
+    """
+    if expr1 is None:
+        return expr2
+    if expr2 is None:
+        return expr1
+
+    return sympy.Min(expr1, expr2)

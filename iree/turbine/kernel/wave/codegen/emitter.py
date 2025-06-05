@@ -11,13 +11,12 @@ from dataclasses import dataclass
 from collections import namedtuple
 import sys
 from ..._support.location import FileLineColInfo
-
+from ..utils.general_utils import get_hardware_constraint
 import torch.fx as fx
 
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
-    _is_index_type,
     _is_integer_like_type,
 )
 

@@ -6,7 +6,7 @@
 
 import sympy
 import functools
-from typing import Any, Callable, ClassVar, Optional, List, Type, Dict
+from typing import Any, Optional, Dict
 
 import torch.fx as fx
 
@@ -14,7 +14,6 @@ from ...compiler.ir import (
     Attribute,
     DenseElementsAttr,
     IndexType,
-    InsertionPoint,
     IntegerAttr,
     IntegerType,
     IrType,
@@ -26,7 +25,6 @@ from ...compiler.ir import (
     amdgpu_d,
     arith_d,
     memref_d,
-    scf_d,
     vector_d,
 )
 
@@ -43,14 +41,13 @@ from ...ops.wave_ops import get_custom, read, write, CustomOp
 from ..utils.general_utils import find_index_bounds, get_fastest_index
 from ..utils.symbol_utils import safe_subs, subs_idxc
 
-from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
+from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, IndexSymbol
 from ...lang.wave_types import IndexMapping
 from ...lang.global_symbols import *
 
 from .emitter import (
     WaveEmitter,
     handle_op,
-    get_type_or_element_type,
     add_emitter_subs,
     gen_sympy_index,
     get_constant_attr,
@@ -121,9 +118,12 @@ def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
 
 
 def _build_mask(
-    emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
+    emitter: WaveEmitter,
+    index: dict[IndexExpr, IndexExpr],
+    elements_per_thread: int,
+    vector_shapes: dict[IndexSymbol, int],
 ) -> Optional[OpResult]:
-    bounds = find_index_bounds(emitter.constraints, index)
+    bounds = find_index_bounds(emitter.constraints, index, vector_shapes)
     if bounds is None:
         return None
 
@@ -135,7 +135,8 @@ def _build_mask(
     new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
 
     mask_expr = functools.reduce(
-        lambda a, b: sympy.And(a, b), (new_index[dim] < dim for dim in bounds)
+        lambda a, b: sympy.And(a, b),
+        (new_index[dim] < bound for dim, bound in bounds.items()),
     )
     mask = gen_sympy_index(add_emitter_subs(emitter), mask_expr)
 
@@ -167,6 +168,7 @@ def _construct_gather_scatter_indices(
     dynamic_vals: tuple[Any, ...],
     is_contiguous: bool,
     memory: CustomOp,
+    vector_shapes: dict[IndexSymbol, int],
 ) -> tuple[list[OpResult], list[OpResult], list[OpResult], OpResult, OpResult]:
     # Apply symbolic_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolic_shape is (N, M), result will
@@ -197,7 +199,7 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
 
-    mask = _build_mask(emitter, index, elements_per_thread)
+    mask = _build_mask(emitter, index, elements_per_thread, vector_shapes)
     if mask is None:
         mask_vec_type = VectorType.get(
             [elements_per_thread], IntegerType.get_signless(1)
@@ -632,6 +634,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
+    vector_shapes = get_custom(node).vector_shapes
 
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
@@ -645,6 +648,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             emitter,
             index,
             elements_per_thread,
+            vector_shapes,
         )
         result = _create_vec_read_write(
             emitter,
@@ -680,6 +684,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
             memory=get_custom(memory),
+            vector_shapes=vector_shapes,
         )
         result = _create_vec_read_write(
             emitter,
@@ -722,6 +727,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected write to have index attr.")
 
     index = node.index
+    vector_shapes = get_custom(node).vector_shapes
 
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
@@ -730,7 +736,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
-        mask = _build_mask(emitter, index, elements_per_thread)
+        mask = _build_mask(emitter, index, elements_per_thread, vector_shapes)
         _create_vec_read_write(
             emitter,
             output_shape,
@@ -769,6 +775,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
             memory=get_custom(memory),
+            vector_shapes=vector_shapes,
         )
 
         _create_vec_read_write(
