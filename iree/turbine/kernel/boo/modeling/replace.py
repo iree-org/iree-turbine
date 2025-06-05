@@ -55,10 +55,18 @@ class BooConv1d(torch.nn.Module):
         if no_batch:
             x = x.unsqueeze(0)
         # There is no 1-D channels_last format.
+        w = self.weight
+        bias = self.bias
+        device_type = x.device.type
+        if torch.is_autocast_enabled(device_type):
+            dtype = torch.get_autocast_dtype(device_type)
+            x = x.to(dtype=dtype)
+            w = w.to(dtype=dtype)
+            bias = bias if bias is None else bias.to(dtype=dtype)
         result = boo_convolution(
             x,
-            self.weight,
-            self.bias,
+            w,
+            bias,
             stride=self.stride,
             padding=self.padding,
             dilation=self.dilation,
@@ -114,10 +122,17 @@ class BooConv2d(torch.nn.Module):
             w = w.permute([0, 2, 3, 1])
             kernel_layout = "NHWC"
             output_layout = "NHWC"
+        bias = self.bias
+        device_type = x.device.type
+        if torch.is_autocast_enabled(device_type):
+            dtype = torch.get_autocast_dtype(device_type)
+            x = x.to(dtype=dtype)
+            w = w.to(dtype=dtype)
+            bias = bias if bias is None else bias.to(dtype=dtype)
         result = boo_convolution(
             x,
             w,
-            self.bias,
+            bias,
             stride=self.stride,
             padding=self.padding,
             dilation=self.dilation,
@@ -175,10 +190,17 @@ class BooConv3d(torch.nn.Module):
             w = w.permute([0, 2, 3, 4, 1])
             kernel_layout = "NDHWC"
             output_layout = "NDHWC"
+        bias = self.bias
+        device_type = x.device.type
+        if torch.is_autocast_enabled(device_type):
+            dtype = torch.get_autocast_dtype(device_type)
+            x = x.to(dtype=dtype)
+            w = w.to(dtype=dtype)
+            bias = bias if bias is None else bias.to(dtype=dtype)
         result = boo_convolution(
             x,
             w,
-            self.bias,
+            bias,
             stride=self.stride,
             padding=self.padding,
             dilation=self.dilation,
