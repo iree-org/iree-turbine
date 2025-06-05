@@ -69,6 +69,7 @@ jobs:
       - name: Install GPU rocm and pip deps (mi300)
         if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
         run: |
+          sudo apt update
           sudo apt install -y rocm
           python -m pip install --no-compile --upgrade pip
           # Note: We install in three steps in order to satisfy requirements
