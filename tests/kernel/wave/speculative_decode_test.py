@@ -28,32 +28,6 @@ import torch.nn.functional as F
 torch.manual_seed(0)
 
 
-def get_wave_speculative_decoding_kernel(
-    batch_size, num_draft_tokens, vocab_size, seq_len
-):
-    speculative_decoding, symbols, _, _ = get_speculative_decoding_kernel(
-        batch_size,
-        num_draft_tokens,
-        vocab_size,
-        seq_len,
-    )
-    symbols.update(get_default_scheduling_params())
-
-    options = WaveCompileOptions(
-        subs=symbols,
-        canonicalize=True,
-        run_bench=False,
-        waves_per_eu=2,
-        denorm_fp_math_f32="preserve-sign",
-        schedule=False,
-        wave_runtime=True,
-        use_scheduling_barriers=enable_scheduling_barriers,
-    )
-    options = set_default_run_config(options)
-    speculative_decoding = wave_compile(options, speculative_decoding)
-    return speculative_decoding
-
-
 def get_wave_speculative_sampling_kernel(
     batch_size,
     num_speculative_tokens,
@@ -205,18 +179,6 @@ def tree_speculative_sampling_target_only(
         accept_index,
         cur_prob_offset_vec,
         last_accepted_retrive_idx_vec,
-    )
-
-    wave_kernel = get_wave_speculative_decoding_kernel(
-        batch_size, num_draft_tokens, vocab_size, seq_len
-    )
-    wave_kernel(
-        target_probs,
-        draft_probs,
-        cur_prob_offset_vec,
-        uniform_samples,
-        last_accepted_retrive_idx_vec,
-        predicts,
     )
 
 

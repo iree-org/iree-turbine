@@ -163,6 +163,7 @@ def get_speculative_sampling_kernel(
     BLOCK_NUM_DRAFT_TOK = tkl.sym.BLOCK_NUM_DRAFT_TOK
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     GLOBAL_ADDRESS_SPACE_0 = tkl.sym.GLOBAL_ADDRESS_SPACE
+    BLOCK_VOCAB_SIZE = tkl.sym.BLOCK_VOCAB_SIZE
 
     hyperparams = {
         BLOCK_NUM_DRAFT_TOK: 1,
@@ -174,21 +175,37 @@ def get_speculative_sampling_kernel(
         BLOCK_BATCH_SIZE: 1,
         VOCAB_SIZE: vocab_size,
         SEQ_LEN: seq_len,
+        BLOCK_VOCAB_SIZE: 64,
     }
 
     dynamic_symbols = []
     dynamic_symbols_map = {}
+
+    ########################
+    # constraints = [tkw.WorkgroupConstraint(VOCAB_SIZE, BLOCK_VOCAB_SIZE, 0)]
+    # constraints += [
+    #     tkw.WorkgroupConstraint(NUM_DRAFT_TOKENS, BLOCK_NUM_DRAFT_TOK, 1, primary=False)
+    # ]
+    # constraints += [tkw.WaveConstraint(VOCAB_SIZE, BLOCK_VOCAB_SIZE)]
+    # constraints += [
+    #     tkw.HardwareConstraint(
+    #         threads_per_wave=64,
+    #         waves_per_block=(1, 1, 1),
+    #         vector_shapes={BATCH_SIZE: 0, NUM_DRAFT_TOKENS: 0, VOCAB_SIZE: 64},
+    #     )
+    # ]
+    ########################
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
             vector_shapes={
-                NUM_DRAFT_TOKENS: num_draft_tokens,
+                NUM_DRAFT_TOKENS: 0,  # num_draft_tokens,
                 J: 0,
                 CUR_INDEX: 0,
                 BATCH_SIZE: 0,
-                VOCAB_SIZE: vocab_size,
+                VOCAB_SIZE: 64,  # vocab_size,
                 NUM_SPECULATIVE_TOKENS: num_speculative_tokens,
             },
         )
@@ -198,6 +215,12 @@ def get_speculative_sampling_kernel(
     constraints += [tkw.WorkgroupConstraint(BATCH_SIZE, BLOCK_BATCH_SIZE, 1)]
     constraints += [tkw.TilingConstraint(CUR_INDEX)]
     constraints += [tkw.TilingConstraint(J)]
+
+    constraints += [
+        tkw.WorkgroupConstraint(NUM_DRAFT_TOKENS, BLOCK_NUM_DRAFT_TOK, 1, primary=False)
+    ]
+    constraints += [tkw.WorkgroupConstraint(VOCAB_SIZE, BLOCK_VOCAB_SIZE, 0)]
+    constraints += [tkw.WaveConstraint(VOCAB_SIZE, BLOCK_VOCAB_SIZE)]
 
     CUR_PROB_OFFSET = tkl.sym.CUR_PROB_OFFSET
     DRAFT_TOKEN_ID = tkl.sym.DRAFT_TOKEN_ID
@@ -270,6 +293,34 @@ def get_speculative_sampling_kernel(
             BATCH_SIZE: i,
             NUM_SPECULATIVE_TOKENS: sympy.Integer(0),
         },
+    )
+
+    # decode kernel mappings
+    LAST_OFFSET = tkl.sym.LAST_OFFSET
+    LAST_IDX = tkl.sym.LAST_IDX
+
+    target_probs_mapping = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: LAST_OFFSET, VOCAB_SIZE: k},
+        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j, VOCAB_SIZE: k},
+    )
+
+    draft_probs_mapping = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: LAST_OFFSET, VOCAB_SIZE: k},
+        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j, VOCAB_SIZE: k},
+    )
+
+    uniform_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: sympy.Integer(0)},
+        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
+    )
+
+    output_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
+        outputs={SEQ_LEN: LAST_IDX},
     )
 
     # read/write helper functions
@@ -542,5 +593,50 @@ def get_speculative_sampling_kernel(
         )
         tkw.write(cur_prob_offset, cur_prob_offset_vec, elements_per_thread=1)
         tkw.write(num_accepted_tokens, accept_token_num, elements_per_thread=1)
+
+        # decode kernel
+        last_offset = (
+            cur_prob_offset  # tkw.read(cur_prob_offset_vec, elements_per_thread=1)
+        )
+        tkw.set_symbol(LAST_OFFSET, last_offset)
+
+        last_idx = last_accepted_retrieve_idx  # tkw.read(last_accepted_retrieve_idx_vec, elements_per_thread=1)
+        tkw.set_symbol(LAST_IDX, last_idx)
+
+        target_probs_reg = tkw.read(target_probs, mapping=target_probs_mapping)
+        draft_probs_reg = tkw.read(draft_probs, mapping=draft_probs_mapping)
+
+        # TODO: Add conditioned mask once scalar codegen is landed.
+        # mask_cond = num_accepted_tokens != num_speculative_tokens_sub1
+        # mask_cond = tkw.broadcast(mask_cond, target_shape=[B, N, D])
+        # p_reg = tkw.select(mask_cond, p_reg, zero)
+
+        coin = tkw.read(uniform_samples, mapping=uniform_mapping)
+        diff = target_probs_reg - draft_probs_reg
+
+        zero = tkl.Register[VOCAB_SIZE, tkl.f32](0.0)
+        relu_diff = tkw.maximum(diff, zero)
+        sum_relu = tkw.sum(relu_diff, dim=VOCAB_SIZE)
+        cdf = tkw.cumsum(relu_diff, dim=VOCAB_SIZE)
+
+        threshold_dist_u = tkw.broadcast(
+            coin * sum_relu, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
+        )
+        greater_than_u = cdf > threshold_dist_u
+        # Initializing `pad_token` to the last token in the vocabulary to be default
+        # and within bounds.
+        pad_token = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](
+            VOCAB_SIZE - 1
+        )
+        token_idx = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](
+            THREAD_0
+        )
+
+        # TODO: We can implement with `ballot(greater_than_u)` and early exit
+        #       /return d-1 if output are all zeros.
+        # If no valid token is found, use d-1 token.
+        valid_lane_token_idx = tkw.select(greater_than_u, token_idx, pad_token)
+        min_valid_token_idx = tkw.min(valid_lane_token_idx, dim=VOCAB_SIZE)
+        tkw.write(min_valid_token_idx, predicts, mapping=output_mapping)
 
     return speculative_sampling, hyperparams, dynamic_symbols, dynamic_symbols_map
