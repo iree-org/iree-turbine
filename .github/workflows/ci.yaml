@@ -30,6 +30,12 @@ jobs:
         # Support for Python 3.13 depends on https://github.com/pytorch/pytorch/issues/130249
         version: ["3.10", "3.11", "3.12"]
         os: [ubuntu-24.04]
+        pytorch_requirements: ["pytorch-cpu-requirements.txt"]
+
+        include:
+          - version: "3.11"
+            os: linux-mi300-1gpu-ossci-iree-org
+            pytorch_requirements: "pytorch-rocm-requirements.txt"
     runs-on: ${{matrix.os}}
     env:
       VENV_DIR: ${{ github.workspace }}/.turbine-venv
@@ -55,7 +61,7 @@ jobs:
           # Note: We install in three steps in order to satisfy requirements
           # from non default locations first. Installing the PyTorch CPU
           # wheels saves multiple minutes and a lot of bandwidth on runner setup.
-          pip install --no-compile -r pytorch-cpu-requirements.txt
+          pip install --no-compile -r ${{ matrix.pytorch_requirements }}
           pip install --no-cache-dir -r requirements-iree-pinned.txt
           pip install -r requirements.txt -e .
 
