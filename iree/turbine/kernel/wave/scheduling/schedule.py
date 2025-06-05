@@ -119,7 +119,6 @@ def schedule_reduction(
 
         if dump_schedule_file:
             dump_schedule(
-                graph,
                 schedule,
                 initiation_interval,
                 num_stages,
