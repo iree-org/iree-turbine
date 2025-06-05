@@ -61,7 +61,6 @@ from ....support.logging import get_logger
 from copy import deepcopy, copy
 from iree.turbine.kernel._support.dtype import DataType
 from enum import Enum
-import copy
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -120,6 +119,8 @@ def is_scaled_dim(expr: sympy.Expr):
 
 
 def has_scaled_indices(node: fx.Node):
+    if isinstance(get_custom(node), (Iterate, Output)):
+        return False
     node_type = node.type
     if not node_type:
         return False
@@ -669,7 +670,7 @@ def propagate_indices(
                 continue
             # GetResults inherit their index from the Iterate node
             # and hence we don't need to update their index.
-            source.vector_shapes = copy.deepcopy(source_vector_shapes)
+            source.vector_shapes = deepcopy(source_vector_shapes)
             if not isinstance(source, GetResult):
                 source_index = source.transform_index(source_index)
                 source.index = combine_indices(source.index, source_index)
