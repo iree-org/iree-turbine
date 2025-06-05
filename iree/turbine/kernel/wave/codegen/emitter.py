@@ -580,30 +580,36 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
                     res = arith_d.andi(*_broadcast(res, operand))
                 stack.append(res)
             case sympy.Max():
-                rhs = stack.pop()
-                lhs = stack.pop()
-                _enforce_non_rational(rhs, term)
-                _enforce_non_rational(lhs, term)
-                rhs = _get_ir_value(rhs)
-                lhs = _get_ir_value(lhs)
-                elem_type = get_type_or_element_type(rhs.type)
-                if _is_integer_like_type(elem_type):
-                    res = arith_d.maxsi(*_broadcast(lhs, rhs))
-                else:
-                    res = arith_d.maximumf(*_broadcast(lhs, rhs))
+                count = len(term.args)
+                res = stack.pop()
+                _enforce_non_rational(res, term)
+                res = _get_ir_value(res)
+                elem_type = get_type_or_element_type(res.type)
+                for _ in range(count - 1):
+                    operand = stack.pop()
+                    _enforce_non_rational(operand, term)
+                    operand = _get_ir_value(operand)
+                    if _is_integer_like_type(elem_type):
+                        res = arith_d.maxsi(*_broadcast(res, operand))
+                    else:
+                        res = arith_d.maximumf(*_broadcast(res, operand))
+
                 stack.append(res)
             case sympy.Min():
-                rhs = stack.pop()
-                lhs = stack.pop()
-                _enforce_non_rational(rhs, term)
-                _enforce_non_rational(lhs, term)
-                rhs = _get_ir_value(rhs)
-                lhs = _get_ir_value(lhs)
-                elem_type = get_type_or_element_type(rhs.type)
-                if _is_integer_like_type(elem_type):
-                    res = arith_d.minsi(*_broadcast(lhs, rhs))
-                else:
-                    res = arith_d.minimumf(*_broadcast(lhs, rhs))
+                count = len(term.args)
+                res = stack.pop()
+                _enforce_non_rational(res, term)
+                res = _get_ir_value(res)
+                elem_type = get_type_or_element_type(res.type)
+                for _ in range(count - 1):
+                    operand = stack.pop()
+                    _enforce_non_rational(operand, term)
+                    operand = _get_ir_value(operand)
+                    if _is_integer_like_type(elem_type):
+                        res = arith_d.minsi(*_broadcast(res, operand))
+                    else:
+                        res = arith_d.minimumf(*_broadcast(res, operand))
+
                 stack.append(res)
             case sympy.logic.boolalg.BooleanFalse():
                 res = arith_d.constant(IntegerType.get_signless(1), 0)
