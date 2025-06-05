@@ -156,12 +156,9 @@ def align_index_vars(
         if dim not in index:
             continue
 
-        preferred_bound = constraint.get_preferred_bound(vector_shapes.get(dim, None))
+        preferred_bound = constraint.get_index_bound(vector_shapes.get(dim, None))
         if preferred_bound is not None:
-            assert (
-                dim not in key_subs or key_subs[dim] == preferred_bound
-            ), f"Dimension {dim} already in key_subs {key_subs} with value {key_subs[dim]}"
-            key_subs[dim] = preferred_bound
+            key_subs[dim] = get_min_expr(key_subs.get(dim, None), preferred_bound)
 
     return {safe_subs(key, key_subs): index[key] for key in index}
 
