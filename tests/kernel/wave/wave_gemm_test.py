@@ -37,7 +37,12 @@ from .common.utils import (
     dump_generated_mlir,
     param_bool,
 )
-from iree.turbine.kernel.wave.constraints import MMAType, ScaledMMAType, MMAOperand, GenericDot
+from iree.turbine.kernel.wave.constraints import (
+    MMAType,
+    ScaledMMAType,
+    MMAOperand,
+    GenericDot,
+)
 import os
 import json
 from torch.testing import assert_close
@@ -1135,11 +1140,12 @@ def testF8Gemm(
     generate_iree_ref("mmt_f8", [a, b], [iree_ref])
     assert_close(c, iree_ref, atol=3e-5, rtol=3e-4, check_device=False)
 
+
 @require_e2e
 @require_cdna4
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE] # , SchedulingType.MODULO
+    "enable_scheduling", [SchedulingType.NONE]  # , SchedulingType.MODULO
 )
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -1200,7 +1206,7 @@ def testScaledF8Gemm(
             return acc
 
         tkw.write(repeat, c)
-        
+
     def from_float(values):
         result = torch.empty_like(values, dtype=torch.uint8)
 
@@ -1215,16 +1221,20 @@ def testScaledF8Gemm(
         result[~is_invalid] = e_biased_clamped.type(torch.uint8)
 
         return result
-    
+
     def run_torch(a, a_scales, b, b_scales, dtype=torch.float32):
-        m,k = a.shape
-        a_rs = torch.reshape(a, (-1, k//32, 32)).to(dtype)
-        b_rs = torch.reshape(b, (-1, k//32, 32)).to(dtype)
-        a_bc = torch.einsum('nkd,nk,d->nkd', a_rs, a_scales, torch.ones(32, dtype=dtype))
-        b_bc = torch.einsum('nkd,nk,d->nkd', b_rs, b_scales, torch.ones(32, dtype=dtype))
+        m, k = a.shape
+        a_rs = torch.reshape(a, (-1, k // 32, 32)).to(dtype)
+        b_rs = torch.reshape(b, (-1, k // 32, 32)).to(dtype)
+        a_bc = torch.einsum(
+            "nkd,nk,d->nkd", a_rs, a_scales, torch.ones(32, dtype=dtype)
+        )
+        b_bc = torch.einsum(
+            "nkd,nk,d->nkd", b_rs, b_scales, torch.ones(32, dtype=dtype)
+        )
         a_bc = torch.reshape(a_bc, a.shape)
         b_bc = torch.reshape(b_bc, b.shape)
-        return a_bc @ b_bc 
+        return a_bc @ b_bc
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
@@ -1274,6 +1284,7 @@ def testScaledF8Gemm(
         )
     torch_ref = run_torch(a, a_scale, b, b_scale)
     assert_close(c, torch_ref, atol=3e-5, rtol=3e-4, check_device=False)
+
 
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("test_batched_gemm"))
