@@ -664,6 +664,7 @@ class WaveConstraint(DistributionConstraint):
     dim: IndexExpr
     tile_size: IndexExpr
     wave_id: Optional[IndexExpr | int] = None
+    wg_constraint: Optional[WorkgroupConstraint] = None
 
     def apply(self) -> IndexSequence:
         if self.wave_id is None:
@@ -692,6 +693,7 @@ class WaveConstraint(DistributionConstraint):
         assert (
             old_wave_id is None or self.wave_id == old_wave_id
         ), f"Conflicting preset wave_id old: {old_wave_id} new: {self.wave_id}"
+        self.wg_constraint = workgroup_constraint
 
     def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
         bound = None
@@ -699,7 +701,9 @@ class WaveConstraint(DistributionConstraint):
             vector_shape is not None
             and subs_idxc(self.tile_size) % subs_idxc(vector_shape) != 0
         ):
-            bound = self.apply().start + self.tile_size
+            bound = (
+                self.wg_constraint.apply().start + self.apply().start + self.tile_size
+            )
 
         return bound
 
