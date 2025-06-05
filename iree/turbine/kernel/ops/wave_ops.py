@@ -1518,7 +1518,11 @@ class Read(CustomOp):
 
     def infer_type(self):
         dtype = self.memory_type.dtype
-        shape = list(self.memory_type.symbolic_shape)
+        memory_shape = list(self.memory_type.symbolic_shape)
+        dim_to_shape = {self.infer_dim(expr): expr for expr in memory_shape}
+        # Sub in dim's value from memory's type into indexing dim who contains the
+        # correct order/mapping/tensor dims for dst type.
+        shape = [dim_to_shape.get(dim, None) or dim for dim in self.indexing_dims]
         self.type = Register[(*shape, dtype)]
 
     @property
@@ -1846,8 +1850,12 @@ class Write(CustomOp):
 
     def infer_type(self):
         address_space = self.memory_type.address_space
-        shape = list(self.memory_type.symbolic_shape)
+        memory_shape = list(self.memory_type.symbolic_shape)
         dtype = self.memory_type.dtype
+        dim_to_shape = {self.infer_dim(expr): expr for expr in memory_shape}
+        # Sub in dim's value from memory's type into indexing dim who contains the
+        # correct order/mapping/tensor dims for dst type.
+        shape = [dim_to_shape.get(dim, None) or dim for dim in self.indexing_dims]
         self.type = Memory[(*shape, address_space, dtype)]
 
     @property
