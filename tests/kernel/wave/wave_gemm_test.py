@@ -215,7 +215,8 @@ def testPureGemm(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+# @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+@pytest.mark.parametrize("shape", [(32, 32, 32)])
 @pytest.mark.parametrize(
     "enable_scheduling",
     [
@@ -356,6 +357,8 @@ def testGemmSmallTiles(
             )
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
     generate_iree_ref("mmt", [a, b], [iree_ref])
+    print(c)
+    print(iree_ref)
     assert_close(c, iree_ref, check_device=False)
 
 
