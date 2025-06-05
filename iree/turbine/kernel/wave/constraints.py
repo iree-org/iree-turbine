@@ -13,6 +13,8 @@ from sympy import ceiling, Piecewise, floor, Integer
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from ..lang.global_symbols import *
+from .utils.symbol_utils import subs_idxc, get_min_expr
+
 
 """
 Formatting for different target intrinsics:
@@ -164,6 +166,32 @@ class DistributionConstraint(Constraint):
 
         It may be different from the dimension of the tensor if the dimensions is not divisible
         by the tile size.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @property
+    def dim_bound(self) -> IndexExpr:
+        """
+        Returns the dimension bound for the constraint, which is usually an
+        actual dimension of the tensor.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    def get_preferred_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        """
+        Returns the preferred bound for the constraint, to minimize masking.
+
+        Return None if not needed.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        """
+        Returns the index bound for the constraint, which is usually an
+        actual dimension of the tensor.
+
+        If bounds is not needed (i.e. tile/vector sizes are perfectly aligned to the tensor dimension),
+        return None.
         """
         raise NotImplementedError("Subclasses must implement this method")
 
@@ -506,6 +534,30 @@ class WorkgroupConstraint(DistributionConstraint):
     def work_bound(self) -> IndexExpr:
         return self.count * self.tile_size
 
+    @property
+    def dim_bound(self) -> IndexExpr:
+        return self.dim
+
+    def get_preferred_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        if not self.get_index_bound(vector_shape):
+            return None
+
+        return self.dim_bound
+
+    def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        bound = None
+        if subs_idxc(self.work_bound) != subs_idxc(self.dim_bound):
+            bound = self.dim_bound
+
+        if (
+            vector_shape is not None
+            and subs_idxc(self.tile_size) % subs_idxc(vector_shape) != 0
+        ):
+            tile_bound = self.apply().start + self.tile_size
+            bound = get_min_expr(bound, tile_bound)
+
+        return bound
+
 
 def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]:
     sorted_constraints = sorted(
@@ -576,9 +628,33 @@ class TilingConstraint(DistributionConstraint):
     def work_bound(self) -> IndexExpr:
         return self.start + self.count * self.tile_size
 
+    def get_preferred_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        if not self.get_index_bound(vector_shape):
+            return None
+
+        return self.dim_bound
+
+    @property
+    def dim_bound(self) -> IndexExpr:
+        return self.dim
+
+    def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        bound = None
+        if subs_idxc(self.work_bound) != subs_idxc(self.dim_bound):
+            bound = self.dim_bound
+
+        if (
+            vector_shape is not None
+            and subs_idxc(self.tile_size) % subs_idxc(vector_shape) != 0
+        ):
+            tile_bound = self.apply().start + self.tile_size
+            bound = get_min_expr(bound, tile_bound)
+
+        return bound
+
 
 @dataclass
-class WaveConstraint(Constraint):
+class WaveConstraint(DistributionConstraint):
     """
     A constraint of the form `tkw.WaveConstraint(K, WAVE_K)` specifies
     that we want distribute the K dimension among multiple waves which
@@ -636,6 +712,20 @@ class WaveConstraint(Constraint):
         assert (
             old_wave_id is None or self.wave_id == old_wave_id
         ), f"Conflicting preset wave_id old: {old_wave_id} new: {self.wave_id}"
+
+    def get_preferred_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        # Set by workgroup constraint.
+        return None
+
+    def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        bound = None
+        if (
+            vector_shape is not None
+            and subs_idxc(self.tile_size) % subs_idxc(vector_shape) != 0
+        ):
+            bound = self.apply().start + self.tile_size
+
+        return bound
 
 
 def get_constrained_shape(

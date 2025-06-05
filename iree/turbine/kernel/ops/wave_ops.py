@@ -1403,7 +1403,7 @@ class MMA(CustomOp):
         # Local import to break circular dep.
         from ..wave.utils.general_utils import align_index_vars
 
-        self.index = align_index_vars(self.index, constraints)
+        self.index = align_index_vars(self.index, constraints, self.vector_shapes)
 
     @property
     def reduction_dim(self) -> IndexSymbol:
@@ -1453,7 +1453,7 @@ class Read(CustomOp):
         from ..wave.utils.general_utils import align_index_vars, is_shared_mem_access
 
         if is_shared_mem_access(self):
-            self.index = align_index_vars(self.index, constraints)
+            self.index = align_index_vars(self.index, constraints, self.vector_shapes)
 
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
@@ -1773,7 +1773,7 @@ class Write(CustomOp):
         from ..wave.utils.general_utils import align_index_vars, is_shared_mem_access
 
         if is_shared_mem_access(self):
-            self.index = align_index_vars(self.index, constraints)
+            self.index = align_index_vars(self.index, constraints, self.vector_shapes)
 
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
