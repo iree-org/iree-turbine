@@ -94,13 +94,24 @@ def construct_min_global_access_pattern(
     return new_index
 
 
+def infer_dim(expr):
+    # Skip cases where infer_dim cannot or does not handle.
+    if expr.is_Symbol or expr.is_Number or len(expr.free_symbols) != 1:
+        return expr
+    dim_symbol = list(expr.free_symbols)[0]
+    return dim_symbol
+
+
 def materialize_shape(
     constraint_tile_size: dict[IndexSymbol, int], symbolic_shape: list[IndexSymbol]
 ) -> list[int]:
     materialized_shape = []
-    for dim in symbolic_shape:
+    for size_expr in symbolic_shape:
+        dim = infer_dim(size_expr)
         if dim in constraint_tile_size:
-            materialized_shape.append(subs_idxc(constraint_tile_size[dim]))
+            materialized_shape.append(
+                subs_idxc(size_expr.subs(dim, constraint_tile_size[dim]))
+            )
         else:
             materialized_shape.append(subs_idxc(dim))
     return materialized_shape
@@ -162,11 +173,17 @@ def identify_optimizable_loads(
         actual_number_of_loads = len(
             [x for x in global_read_nodes if get_custom(x).memory == custom.memory]
         )
-        if expected_number_of_loads >= actual_number_of_loads:
-            continue
+
+        try:
+            if expected_number_of_loads >= actual_number_of_loads:
+                continue
+        except:
+            breakpoint()
 
         expanded_dynamic_vals = None
-        memory_load_elems_per_thread = load_elems_per_thread
+        memory_load_elems_per_thread = min(
+            load_elems_per_thread, materialized_shape[-1]
+        )
         memory_max_elements_per_load = max_elements_per_load
         if len(custom.mapping_dynamic_vals) > 0 and not allow_dynamic_transposed:
             expanded_dynamic_vals = set(

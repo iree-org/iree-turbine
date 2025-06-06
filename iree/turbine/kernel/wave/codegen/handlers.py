@@ -50,6 +50,7 @@ from ...ops.wave_ops import (
     abs,
     allocate,
     apply_expr,
+    bitcast,
     broadcast,
     cast,
     conditional,
@@ -71,6 +72,7 @@ from ...ops.wave_ops import (
     minimum,
     atan2,
     mma,
+    scaled_mma,
     permute,
     reciprocal,
     register,
@@ -97,6 +99,7 @@ from ...compiler.vector_codegen import (
     cast_py_literal,
     cast_py_value,
     cast_vector,
+    cast_scalar,
 )
 from ...compiler.utils import strides_from_symbolic_shape
 from ..constraints import HardwareConstraint, GenericDot
@@ -368,6 +371,56 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
 
     m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
     result = emit_mfma(m, n, k, acc, values)
+    emitter.bind_node_proxy(node, IRProxyValue(result))
+
+
+def emit_mfma_scaled(
+    m: int, n: int, k: int, acc: Value, values: list[Value], scales: list[Value]
+) -> Value:
+    m = get_constant_attr(m, IntegerType.get_signless(32))
+    n = get_constant_attr(n, IntegerType.get_signless(32))
+    k = get_constant_attr(k, IntegerType.get_signless(32))
+    idx_a = get_constant_attr(0, IntegerType.get_signless(32))
+    idx_b = get_constant_attr(0, IntegerType.get_signless(32))
+
+    result = amdgpu_d.scaled_mfma(
+        m=m,
+        n=n,
+        k=k,
+        source_a=values[0],
+        source_b=values[1],
+        dest_c=acc,
+        scales_a=scales[0],
+        scales_b=scales[1],
+        scales_idx_a=idx_a,
+        scales_idx_b=idx_b,
+    )
+    return result
+
+
+@handle_op(scaled_mma)
+def handle_scaled_mma(emitter: WaveEmitter, node: fx.Node):
+    try:
+        lhs, lhs_scale, rhs, rhs_scale, acc, mma_type = node.args
+        acc = cast_vector(emitter, acc)
+        values = [cast_vector(emitter, val) for val in [lhs, rhs]]
+        scales = [cast_scalar(emitter, val) for val in [lhs_scale, rhs_scale]]
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    hardware_constraints = [
+        constraint
+        for constraint in emitter.constraints
+        if isinstance(constraint, HardwareConstraint)
+    ]
+    if not hardware_constraints:
+        raise CodegenError("No hardware constraints found.")
+
+    if mma_type is None:
+        mma_type = hardware_constraints[0].mma_type
+
+    m, n, k = hardware_constraints[0].mma_matrix_shapes(mma_type)
+    result = emit_mfma_scaled(m, n, k, acc, values, scales)
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
@@ -1410,6 +1463,32 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
         src_elem_type, dst_elem_type, fastmath=get_fast_math_flags(emitter.options)
     )
     casted_vector = conversion_op(dst_vector_type, vector_src)
+    emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
+
+
+@handle_op(bitcast)
+def handle_bitcast(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, dtype = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    vector_src = cast_vector(emitter, register)
+    src_vector_type = vector_src.type
+    dst_elem_type = IrType.parse(dtype.ir_type_asm())
+    assert src_vector_type.rank == 1
+
+    # Determine shape and type of target bit cast
+    src_width = src_vector_type.element_type.width
+    dst_width = dst_elem_type.width
+    assert src_width % dst_width == 0 or dst_width % src_width == 0
+    scale_factor = src_width / dst_width
+    dst_vector_shape = int(src_vector_type.shape[0] * scale_factor)
+    dst_vector_type = VectorType.get([dst_vector_shape], dst_elem_type)
+
+    if src_vector_type == dst_vector_type:
+        emitter.bind_node_proxy(node, IRProxyValue(vector_src))
+        return
+    casted_vector = vector_d.bitcast(dst_vector_type, vector_src)
     emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
 
 

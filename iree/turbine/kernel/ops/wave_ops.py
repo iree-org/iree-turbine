@@ -25,6 +25,7 @@ from .._support.regions import RegionGraph
 from .._support.location import FileLineColInfo
 from .base import OpDispatcher
 import numpy as np
+from sympy import Symbol, Number
 
 if TYPE_CHECKING:
     from ..wave.constraints import Constraint
@@ -112,6 +113,16 @@ def scalar(dtype: DataType, value: float) -> "Register":
 
 
 def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
+    ...
+
+
+def scaled_mma(
+    lhs: "Register",
+    lhs_scale: "Register",
+    rhs: "Register",
+    rhs_scale: "Register",
+    acc: "Register",
+) -> "Register":
     ...
 
 
@@ -257,6 +268,10 @@ def eq(lhs: "Register", rhs: "Register") -> "Register":
 
 
 def cast(src: "Register", dtype: DataType) -> "Register":
+    ...
+
+
+def bitcast(src: "Register", dtype: DataType) -> "Register":
     ...
 
 
@@ -1375,6 +1390,152 @@ class MMA(CustomOp):
         self.fx_node.reduction_dim = value
 
 
+@define_op("scaled_mma")
+@dataclass
+class ScaledMMA(CustomOp):
+    lhs: fx.Node
+    lhs_scale: fx.Node
+    rhs: fx.Node
+    rhs_scale: fx.Node
+    acc: fx.Node
+    mma_type: Optional["ScaledMMAType"] = None
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        combined_dims = (
+            get_custom(self.lhs).indexing_dims
+            + get_custom(self.lhs_scale).indexing_dims
+            + get_custom(self.rhs).indexing_dims
+            + get_custom(self.rhs_scale).indexing_dims
+            + get_custom(self.acc).indexing_dims
+        )
+        unique_dims = list(dict.fromkeys(combined_dims))
+        return unique_dims
+
+    @property
+    def lhs_type(self) -> Memory:
+        return get_custom(self.lhs).type
+
+    @property
+    def lhs_scale_type(self) -> Memory:
+        return get_custom(self.lhs_scale).type
+
+    @property
+    def rhs_type(self) -> Memory:
+        return get_custom(self.rhs).type
+
+    @property
+    def rhs_scale_type(self) -> Memory:
+        return get_custom(self.rhs_scale).type
+
+    @property
+    def acc_type(self) -> Memory:
+        return get_custom(self.acc).type
+
+    def infer_type(self):
+        self.type = self.acc_type
+
+    def infer_dim(self, expr):
+        # Skip cases where infer_dim cannot or does not handle.
+        if expr.is_Symbol or expr.is_Number or len(expr.free_symbols) != 1:
+            return expr
+        dim_symbol = list(expr.free_symbols)[0]
+        return dim_symbol
+
+    def operand_index(
+        self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
+    ) -> dict[IndexSymbol, IndexSequence]:
+        indices: dict[IndexSymbol, IndexSequence] = {}
+        for dim_size in shape:
+            dim = self.infer_dim(dim_size)
+            indices[dim] = self.index[dim].subs(operand_map)
+        return indices
+
+    @property
+    def lhs_index(self) -> dict[IndexSymbol, IndexSequence]:
+        operand_map = {
+            MMA_LHS: 1,
+            MMA_RHS: 0,
+            MMA_ACC: 0,
+            MMA_LHS_SCALE: 0,
+            MMA_RHS_SCALE: 0,
+        }
+        return self.operand_index(operand_map, self.lhs_type.symbolic_shape)
+
+    @property
+    def lhs_scale_index(self) -> dict[IndexSymbol, IndexSequence]:
+        operand_map = {
+            MMA_LHS: 0,
+            MMA_RHS: 0,
+            MMA_ACC: 0,
+            MMA_LHS_SCALE: 1,
+            MMA_RHS_SCALE: 0,
+        }
+        return self.operand_index(operand_map, self.lhs_scale_type.symbolic_shape)
+
+    @property
+    def rhs_index(self) -> dict[IndexSymbol, IndexSequence]:
+        operand_map = {
+            MMA_LHS: 0,
+            MMA_RHS: 1,
+            MMA_ACC: 0,
+            MMA_LHS_SCALE: 0,
+            MMA_RHS_SCALE: 0,
+        }
+        return self.operand_index(operand_map, self.rhs_type.symbolic_shape)
+
+    @property
+    def rhs_scale_index(self) -> dict[IndexSymbol, IndexSequence]:
+        operand_map = {
+            MMA_LHS: 0,
+            MMA_RHS: 0,
+            MMA_ACC: 0,
+            MMA_LHS_SCALE: 0,
+            MMA_RHS_SCALE: 1,
+        }
+        return self.operand_index(operand_map, self.rhs_scale_type.symbolic_shape)
+
+    @property
+    def acc_index(self) -> dict[IndexSymbol, IndexSequence]:
+        operand_map = {
+            MMA_LHS: 0,
+            MMA_RHS: 0,
+            MMA_ACC: 1,
+            MMA_LHS_SCALE: 0,
+            MMA_RHS_SCALE: 0,
+        }
+        if self.acc_type is None:
+            return None
+        return self.operand_index(operand_map, self.acc_type.symbolic_shape)
+
+    def custom_string(self, value_map: dict[str, str]) -> str:
+        if self.index is None:
+            return super().custom_string(value_map)
+        custom_str = f"{self.tkw_op_name}("
+        custom_str += f"lhs={self.lhs} (index = {self.lhs_index}), "
+        custom_str += f"lhs_scale={self.lhs_scale} (index = {self.lhs_scale_index}), "
+        custom_str += f"rhs={self.rhs} (index = {self.rhs_index}), "
+        custom_str += f"rhs_scale={self.rhs_scale} (index = {self.rhs_scale_index}), "
+        custom_str += f"acc={self.acc} (index = {self.acc_index}))"
+        custom_str += f" type({self.fx_node.type})"
+        return custom_str
+
+    def align_index(self, constraints: list["Constraint"]) -> None:
+        # Local import to break circular dep.
+        from ..wave.utils.general_utils import align_index_vars
+
+        self.index = align_index_vars(self.index, constraints)
+
+    @property
+    def reduction_dim(self) -> IndexSymbol:
+        if hasattr(self.fx_node, "reduction_dim"):
+            return self.fx_node.reduction_dim
+
+    @reduction_dim.setter
+    def reduction_dim(self, value: IndexSymbol):
+        self.fx_node.reduction_dim = value
+
+
 @define_op("read")
 @dataclass
 class Read(CustomOp):
@@ -1385,16 +1546,30 @@ class Read(CustomOp):
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
     _write_dependency: Optional[list[fx.Node]] = None
 
+    def infer_dim(self, expr):
+        # Skip cases where infer_dim cannot or does not handle.
+        if expr.is_Symbol or expr.is_Number or len(expr.free_symbols) != 1:
+            return expr
+        dim_symbol = list(expr.free_symbols)[0]
+        return dim_symbol
+
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         if self.mapping is not None:
             return list(self.mapping.output_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [self.infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
         dtype = self.memory_type.dtype
-        self.type = Register[(*self.indexing_dims, dtype)]
+        memory_shape = list(self.memory_type.symbolic_shape)
+        dim_to_shape = {self.infer_dim(expr): expr for expr in memory_shape}
+        # Sub in dim's value from memory's type into indexing dim who contains the
+        # correct order/mapping/tensor dims for dst type.
+        shape = [dim_to_shape.get(dim, None) or dim for dim in self.indexing_dims]
+        self.type = Register[(*shape, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -1670,7 +1845,7 @@ class Iterate(NestedRegionOp):
                     [
                         (
                             get_custom(val).acc_index
-                            if isinstance(get_custom(val), MMA)
+                            if isinstance(get_custom(val), (MMA, ScaledMMA))
                             else val.index
                         )
                         for val in return_vals
@@ -1703,17 +1878,31 @@ class Write(CustomOp):
     mapping: Optional[IndexMapping] = None
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
 
+    def infer_dim(self, expr):
+        # Skip cases where infer_dim cannot or does not handle.
+        if expr.is_Symbol or expr.is_Number or len(expr.free_symbols) != 1:
+            return expr
+        dim_symbol = list(expr.free_symbols)[0]
+        return dim_symbol
+
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         if self.mapping is not None:
             return list(self.mapping.input_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [self.infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
         address_space = self.memory_type.address_space
+        memory_shape = list(self.memory_type.symbolic_shape)
         dtype = self.memory_type.dtype
-        self.type = Memory[(*self.indexing_dims, address_space, dtype)]
+        dim_to_shape = {self.infer_dim(expr): expr for expr in memory_shape}
+        # Sub in dim's value from memory's type into indexing dim who contains the
+        # correct order/mapping/tensor dims for dst type.
+        shape = [dim_to_shape.get(dim, None) or dim for dim in self.indexing_dims]
+        self.type = Memory[(*shape, address_space, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -2179,6 +2368,82 @@ class ShuffleOp(CustomOp):
 
     def infer_type(self):
         self.type = get_custom(self.arg).type
+
+
+@define_op("bitcast")
+@dataclass
+class BitcastOp(CustomOp, ABC):
+    """
+    Represents a cast operation.
+    """
+
+    arg: fx.Node
+    dtype: DataType
+
+    @property
+    def scale_factor(self):
+        src_width = self.arg.type.dtype.bitwidth()
+        dst_width = self.dtype.bitwidth()
+        if src_width % dst_width != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if src_width % dst_width == 0."
+            )
+        return int(src_width / dst_width)
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    def infer_type(self):
+        src_shape = get_custom(self.arg).type.symbolic_shape
+        dst_shape = list(src_shape)
+        dst_shape[-1] *= self.scale_factor
+        self.type = Register[(*dst_shape, self.dtype)]
+
+    def get_derived_indices(
+        self,
+    ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
+        return [(self.fx_node, self.index)]
+
+    def transform_index_backwards(
+        self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node when propagating index backwards, i.e.
+        from node to its arguments.
+        """
+        src_width = self.arg.type.dtype.bitwidth()
+        dst_width = self.type.dtype.bitwidth()
+        if src_width == dst_width:
+            return index
+        if src_width % dst_width != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if src_width % dst_width == 0."
+            )
+        scale_factor = int(src_width / dst_width)
+        dims = [(ind, val) for ind, val in index.items()]
+        fastest_dim, fastest_index = copy.deepcopy(
+            sorted(dims, key=lambda x: x[1].size)[-1]
+        )
+        if fastest_index.size % scale_factor != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if fastest dim % scale factor == 0."
+            )
+        updated_numel = int(fastest_index.size / scale_factor)
+        fastest_index.start = fastest_index.start.subs(
+            {fastest_index.size: updated_numel}
+        )
+        fastest_index.size = updated_numel
+        index[fastest_dim] = fastest_index
+        return index
+
+    def transform_index(
+        self, index: dict[IndexSymbol, IndexSequence]
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node based on the provided mapping.
+        """
+        return index
 
 
 @define_op("cast")
