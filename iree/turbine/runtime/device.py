@@ -624,11 +624,12 @@ def lookup_device_from_torch(
         mapping = _CURRENT_THREAD.device_by_torch_device
     except AttributeError:
         _CURRENT_THREAD.device_by_torch_device = mapping = {}
-    stream = (
-        None
-        if torch_device.type != "cuda"
-        else torch._C._cuda_getCurrentRawStream(torch_device.index)
-    )
+    stream = None
+    if torch_device.type == "cuda":
+        assert not torch.cuda._is_in_bad_fork()
+        # Note: If cuda is not initialized, this returns 0, which happens
+        # to be the cuda_stream int for the default stream.
+        stream = torch._C._cuda_getCurrentRawStream(torch_device.index)
     key = (torch_device, stream)
     device = mapping.get(key)
     if device is not None or not create:
