@@ -10,6 +10,7 @@ from ...ops.wave_ops import (
     get_custom,
     SchedulingGroupBarrier,
     MMA,
+    ScaledMMA,
     NewRegister,
 )
 from ..utils.general_utils import get_induction_variable
@@ -203,7 +204,7 @@ def add_missing_registers(graph: fx.Graph):
     """
     for node in graph.nodes:
         custom = get_custom(node)
-        if isinstance(custom, MMA):
+        if isinstance(custom, (MMA, ScaledMMA)):
             acc = get_custom(custom.acc)
             if acc.graph != custom.graph:
                 with custom.graph.inserting_before(node):
