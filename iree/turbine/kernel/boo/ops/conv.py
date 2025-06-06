@@ -196,7 +196,7 @@ BOO_LIBRARY.impl("convolution", _fake_fwd, "Meta")
     mutates_args=(),
     schema="(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)",
 )
-def _boo_convolution_backward(
+def boo_convolution_backward(
     x: torch.Tensor,
     w: torch.Tensor,
     grad_output: torch.Tensor,
@@ -243,7 +243,7 @@ def _boo_convolution_backward(
     return input_grad, weight_grad, bias_grad
 
 
-@_boo_convolution_backward.register_fake
+@boo_convolution_backward.register_fake
 def _b(
     x: torch.Tensor,
     w: torch.Tensor,
@@ -306,32 +306,6 @@ def pytorch_convolution_backward(ctx, grad_output):
     return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
 
 
-def boo_convolution_backward(ctx, grad_output):
-    if not BOO_USE_BACKWARD_KERNELS:
-        return pytorch_convolution_backward(ctx, grad_output)
-
-    x, w = ctx.saved_tensors
-
-    mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
-
-    input_grad, weight_grad, bias_grad = _boo_convolution_backward(
-        x,
-        w,
-        grad_output,
-        ctx.stride,
-        ctx.padding,
-        ctx.dilation,
-        ctx.groups,
-        ctx.input_layout,
-        ctx.kernel_layout,
-        ctx.output_layout,
-        mask,
-    )
-
-    # return `None` for attribute args
-    return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
-
-
 class BooConvolution(torch.autograd.Function):
     @staticmethod
     def forward(ctx, *args):
@@ -374,7 +348,29 @@ class BooConvolution(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        return boo_convolution_backward(ctx, grad_output)
+        if not BOO_USE_BACKWARD_KERNELS:
+            return pytorch_convolution_backward(ctx, grad_output)
+
+        x, w = ctx.saved_tensors
+
+        mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
+
+        input_grad, weight_grad, bias_grad = boo_convolution_backward(
+            x,
+            w,
+            grad_output,
+            ctx.stride,
+            ctx.padding,
+            ctx.dilation,
+            ctx.groups,
+            ctx.input_layout,
+            ctx.kernel_layout,
+            ctx.output_layout,
+            mask,
+        )
+
+        # return `None` for attribute args
+        return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
 
 
 def boo_convolution(x, w, b, *other_args):
