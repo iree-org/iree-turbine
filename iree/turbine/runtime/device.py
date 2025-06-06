@@ -613,6 +613,8 @@ def lookup_device_from_torch(
     torch_device: torch.device, *, create: bool = True
 ) -> Optional[Device]:
     """Gets a shared Device corresponding to the given torch.device.
+    For cuda torch.device types, the returned Device will be tied to
+    the current cuda stream.
 
     This will return None if the device is wholly unsupported or if
     create=False. Otherwise, faults in setting up the device are
@@ -625,7 +627,7 @@ def lookup_device_from_torch(
     stream = (
         None
         if torch_device.type != "cuda"
-        else torch.cuda.current_stream(torch_device).cuda_stream
+        else torch._C._cuda_getCurrentRawStream(torch_device.index)
     )
     key = (torch_device, stream)
     device = mapping.get(key)
