@@ -128,7 +128,7 @@ def remove_global_indexing(
             new_dim = new_index[key]
             if new_dim.has(constraint.induction_var):
                 new_dim = new_dim.subs({constraint.induction_var: 0})
-                if isinstance(new_dim.start, IndexSequence):
+                if isinstance(new_dim, IndexSequence):
                     new_dim.start = new_dim.start - constraint.start
                 else:
                     new_dim = new_dim - constraint.start
