@@ -41,6 +41,7 @@ from ..utils.general_utils import (
     get_largest_index_and_size,
     get_workgroup_constraints,
     partial,
+    infer_dim,
 )
 from ..utils.mma_utils import (
     get_mma_dimensional_mapping,
@@ -58,6 +59,7 @@ import sympy
 from typing import Sequence, Callable, Optional
 from ....support.logging import get_logger
 from copy import deepcopy, copy
+from enum import Enum
 from iree.turbine.kernel._support.dtype import DataType
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
@@ -101,6 +103,96 @@ def set_derived_index(trace):
         for inp in get_inputs(current)[0]:
             new_index = custom.transform_index_backwards(custom.index, inp)
             worklist.append((inp, new_index))
+
+
+def is_scaled_dim(expr: sympy.Expr):
+    # Skip for cases where it is a single symbol or number.
+    if expr.is_Symbol or expr.is_Number:
+        return False
+    # Unhandled case where expression is multiple operations.
+    if sympy.count_ops(expr) != 1:
+        return False
+    # Skip if cannot find a multiply which represents a scale
+    if not isinstance(expr, sympy.Mul):
+        return False
+    return True
+
+
+def has_scaled_indices(node: fx.Node):
+    if isinstance(get_custom(node), (Iterate, Output)):
+        return False
+    node_type = node.type
+    if not node_type:
+        return False
+    shape = node_type.symbolic_shape
+    # Skip for cases where it is a single symbol or number.
+    if all(not is_scaled_dim(dim) for dim in shape):
+        return False
+    # Only handle nodes with indices.
+    if not hasattr(node, "index"):
+        return False
+    return True
+
+
+class ScalingType(Enum):
+    MULTIPLY = 0x10
+    DIVIDE = 0x20
+
+
+def get_scale_from_dim(expr: sympy.Expr):
+    """
+    Checks if dim is a scaled dim and return the dim and it's scale
+    if it is indeed scaled dim. Returns the original input and None as scale
+    otherwise.
+    """
+    assert isinstance(expr, sympy.Mul)
+    assert len(expr.free_symbols) == 1
+    dim_symbol = list(expr.free_symbols)[0]
+    # Check that has expression is indeed dim / constant.
+    num, denom = expr.as_numer_denom()
+    # Check that denom is not fractional, one, or negative.
+    # note int(fractional_expr) -> 0.
+    if num != dim_symbol or int(denom) <= 1:
+        return expr, None, None
+    return dim_symbol, ScalingType.DIVIDE, int(denom)
+
+
+def resolve_scaled_indices(trace, constraints: list[Constraint]):
+    sources = trace.walk(lambda node: has_scaled_indices(node))
+    for source in sources:
+        for dim in source.type.symbolic_shape:
+            if not is_scaled_dim(dim):
+                continue
+            dim, scale_type, scale_factor = get_scale_from_dim(dim)
+            if scale_type == ScalingType.DIVIDE:
+                source.index[dim].start = source.index[dim].start / scale_factor
+                if source.index[dim].size != 1:
+                    assert (
+                        source.index[dim].size % scale_factor == 0,
+                        "Size needs to be divisible by scale.",
+                    )
+                assert (
+                    source.vector_shapes[dim] % scale_factor == 0,
+                    "Expected vector_shape to be divisble by scale.",
+                )
+                source.index[dim].size = max(source.index[dim].size // scale_factor, 1)
+                source.vector_shapes[dim] = source.vector_shapes[dim] // scale_factor
+                custom = get_custom(source)
+                if isinstance(custom, (Read, Write)):
+                    assert (
+                        custom.elements_per_thread % scale_factor == 0,
+                        "elem per thread needs to be divisble by scale.",
+                    )
+                    scaled_elem_per_thread = int(
+                        custom.elements_per_thread / scale_factor
+                    )
+                    if scaled_elem_per_thread == 0:
+                        breakpoint()
+                    custom.update_arg("elements_per_thread", scaled_elem_per_thread)
+            else:
+                raise NotImplementedError(
+                    "Currently only handle case of scaled index where scaling is division."
+                )
 
 
 def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
@@ -186,6 +278,7 @@ def set_node_indices(
     graph_passes += [
         partial(set_derived_index, trace),
         partial(resolve_thread_shapes, trace, constraints),
+        partial(resolve_scaled_indices, trace, constraints),
         partial(verify_nodes, trace, constraints),
     ]
     for p in graph_passes:
@@ -505,8 +598,10 @@ def should_update_index(
     # Get symbolic shape without any aliased variables.
     aliased_dims = [x.source for x in symbolic_constraints]
 
+    source_shape = source.type.symbolic_shape
+    source_dims = [infer_dim(dim) for dim in source_shape]
     if source.type:
-        symbolic_shape = set(source.type.symbolic_shape).difference(aliased_dims)
+        symbolic_shape = set(source_dims).difference(aliased_dims)
     else:
         symbolic_shape = []
 
@@ -526,8 +621,7 @@ def should_update_index(
         return set(source_index.keys()).issubset(set(non_batch_dims))
 
     # Otherwise, check if the non-batch dims are a subset of the source index.
-    vars = [sym for expr in non_batch_dims for sym in expr.free_symbols]
-    if not set(vars).issubset(set(source_index.keys())):
+    if not set(non_batch_dims).issubset(set(source_index.keys())):
         return False
 
     return True
@@ -569,7 +663,7 @@ def propagate_indices(
                 continue
             # GetResults inherit their index from the Iterate node
             # and hence we don't need to update their index.
-            source.vector_shapes = source_vector_shapes
+            source.vector_shapes = deepcopy(source_vector_shapes)
             if not isinstance(source, GetResult):
                 source_index = source.transform_index(source_index)
                 source.index = combine_indices(source.index, source_index)

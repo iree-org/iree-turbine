@@ -25,6 +25,7 @@ from .._support.regions import RegionGraph
 from .._support.location import FileLineColInfo
 from .base import OpDispatcher
 import numpy as np
+from sympy import Symbol, Number
 
 if TYPE_CHECKING:
     from ..wave.constraints import Constraint
@@ -267,6 +268,10 @@ def eq(lhs: "Register", rhs: "Register") -> "Register":
 
 
 def cast(src: "Register", dtype: DataType) -> "Register":
+    ...
+
+
+def bitcast(src: "Register", dtype: DataType) -> "Register":
     ...
 
 
@@ -1433,8 +1438,11 @@ class ScaledMMA(CustomOp):
     def operand_index(
         self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
     ) -> dict[IndexSymbol, IndexSequence]:
+        from ..wave.utils.general_utils import infer_dim
+
         indices: dict[IndexSymbol, IndexSequence] = {}
-        for dim in shape:
+        for dim_size in shape:
+            dim = infer_dim(dim_size)
             indices[dim] = self.index[dim].subs(operand_map)
         return indices
 
@@ -1535,14 +1543,25 @@ class Read(CustomOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        from ..wave.utils.general_utils import infer_dim
+
         if self.mapping is not None:
             return list(self.mapping.output_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
+        from ..wave.utils.general_utils import infer_dim
+
         dtype = self.memory_type.dtype
-        self.type = Register[(*self.indexing_dims, dtype)]
+        memory_shape = list(self.memory_type.symbolic_shape)
+        dim_to_shape = {infer_dim(expr): expr for expr in memory_shape}
+        # Sub in dim's value from memory's type into indexing dim who contains the
+        # correct order/mapping/tensor dims for dst type.
+        shape = [dim_to_shape.get(dim, None) or dim for dim in self.indexing_dims]
+        self.type = Register[(*shape, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -1853,15 +1872,26 @@ class Write(CustomOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        from ..wave.utils.general_utils import infer_dim
+
         if self.mapping is not None:
             return list(self.mapping.input_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
+        from ..wave.utils.general_utils import infer_dim
+
         address_space = self.memory_type.address_space
+        memory_shape = list(self.memory_type.symbolic_shape)
         dtype = self.memory_type.dtype
-        self.type = Memory[(*self.indexing_dims, address_space, dtype)]
+        dim_to_shape = {infer_dim(expr): expr for expr in memory_shape}
+        # Sub in dim's value from memory's type into indexing dim who contains the
+        # correct order/mapping/tensor dims for dst type.
+        shape = [dim_to_shape.get(dim, None) or dim for dim in self.indexing_dims]
+        self.type = Memory[(*shape, address_space, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -2346,6 +2376,82 @@ class CastOp(CustomOp, ABC):
     def infer_type(self):
         src_shape = get_custom(self.arg).type.symbolic_shape
         self.type = Register[(*src_shape, self.dtype)]
+
+
+@define_op("bitcast")
+@dataclass
+class BitcastOp(CustomOp, ABC):
+    """
+    Represents a cast operation.
+    """
+
+    arg: fx.Node
+    dtype: DataType
+
+    @property
+    def scale_factor(self):
+        src_width = self.arg.type.dtype.bitwidth()
+        dst_width = self.dtype.bitwidth()
+        if src_width % dst_width != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if src_width % dst_width == 0."
+            )
+        return int(src_width / dst_width)
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    def infer_type(self):
+        src_shape = get_custom(self.arg).type.symbolic_shape
+        dst_shape = list(src_shape)
+        dst_shape[-1] *= self.scale_factor
+        self.type = Register[(*dst_shape, self.dtype)]
+
+    def get_derived_indices(
+        self,
+    ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
+        return [(self.fx_node, self.index)]
+
+    def transform_index_backwards(
+        self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node when propagating index backwards, i.e.
+        from node to its arguments.
+        """
+        src_width = self.arg.type.dtype.bitwidth()
+        dst_width = self.type.dtype.bitwidth()
+        if src_width == dst_width:
+            return index
+        if src_width % dst_width != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if src_width % dst_width == 0."
+            )
+        scale_factor = int(src_width / dst_width)
+        dims = [(ind, val) for ind, val in index.items()]
+        fastest_dim, fastest_index = copy.deepcopy(
+            sorted(dims, key=lambda x: x[1].size)[-1]
+        )
+        if fastest_index.size % scale_factor != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if fastest dim % scale factor == 0."
+            )
+        updated_numel = int(fastest_index.size / scale_factor)
+        fastest_index.start = fastest_index.start.subs(
+            {fastest_index.size: updated_numel}
+        )
+        fastest_index.size = updated_numel
+        index[fastest_dim] = fastest_index
+        return index
+
+    def transform_index(
+        self, index: dict[IndexSymbol, IndexSequence]
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node based on the provided mapping.
+        """
+        return index
 
 
 @define_op("permute")

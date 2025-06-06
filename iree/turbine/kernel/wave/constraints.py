@@ -357,14 +357,10 @@ class HardwareConstraint(Constraint):
             case ScaledMMAType.F32_16x16x128_F8F6F4:
                 offset = [
                     Piecewise(
-                        (lane % 16, ~MMA_ACC),
-                        (4 * floor(lane / 16) + (GPR_NUM % 4), MMA_ACC),
+                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
                     ),  # M
                     lane % 16,  # N
-                    Piecewise(
-                        (32 * floor(lane / 16), ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                        (floor(lane / 16), MMA_LHS_SCALE | MMA_RHS_SCALE),
-                    ),  # K
+                    32 * floor(lane / 16),  # K
                 ]
             case ScaledMMAType.F32_32x32x64_F8F6F4:
                 offset = [
@@ -378,10 +374,7 @@ class HardwareConstraint(Constraint):
                         ),
                     ),  # M
                     lane % 32,  # N
-                    Piecewise(
-                        (32 * floor(lane / 32), ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                        (floor(lane / 32), MMA_LHS_SCALE | MMA_RHS_SCALE),
-                    ),  # K
+                    32 * floor(lane / 32),  # K
                 ]
             case _:
                 raise ValueError("Unsupported MMA type")
@@ -502,10 +495,7 @@ class HardwareConstraint(Constraint):
                 size = [
                     Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
                     1,  # N
-                    Piecewise(
-                        (32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                        (1, MMA_LHS_SCALE | MMA_RHS_SCALE),
-                    ),  # K
+                    32,  # K
                 ]
                 stride = [
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
@@ -516,10 +506,7 @@ class HardwareConstraint(Constraint):
                 size = [
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
                     1,  # N
-                    Piecewise(
-                        (32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                        (1, MMA_LHS_SCALE | MMA_RHS_SCALE),
-                    ),  # K
+                    32,  # K
                 ]
                 stride = [
                     Piecewise((1, ~MMA_ACC), (32, MMA_ACC)),  # M
@@ -528,10 +515,10 @@ class HardwareConstraint(Constraint):
                 ]
             case _:
                 raise ValueError("Unsupported MMA type")
-
-        assert isinstance(
-            constraint_index, MMAOperand
-        ), f"Invalid MMA operand {constraint_index}"
+        if isinstance(mma_type, MMAType):
+            assert isinstance(
+                constraint_index, MMAOperand
+            ), f"Invalid MMA operand {constraint_index}"
         return IndexSequence(
             offset[constraint_index.value],
             size[constraint_index.value],
