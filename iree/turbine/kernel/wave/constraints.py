@@ -540,7 +540,7 @@ class WorkgroupConstraint(DistributionConstraint):
         if not self.get_index_bound(vector_shape):
             return None
 
-        return self.dim_bound
+        return self.work_bound
 
     def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
         bound = None
@@ -635,7 +635,7 @@ class TilingConstraint(DistributionConstraint):
         if not self.get_index_bound(vector_shape):
             return None
 
-        return self.dim_bound
+        return self.work_bound
 
     def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
         bound = None
@@ -715,15 +715,9 @@ class WaveConstraint(DistributionConstraint):
         ), f"Conflicting preset wave_id old: {old_wave_id} new: {self.wave_id}"
         self.wg_constraint = workgroup_constraint
 
-    @property
-    def dim_bound(self) -> IndexExpr:
-        return self.dim
-
     def get_preferred_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
-        if not self.get_index_bound(vector_shape):
-            return None
-
-        return self.dim_bound
+        # Set by workgroup constraint.
+        return None
 
     def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
         bound = None
