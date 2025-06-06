@@ -55,7 +55,7 @@ class DeviceStreamTest(unittest.TestCase):
         _ = conv_2d_nhwc_fhwc(res0, input2, [1, 1], [1, 1])
 
         for _ in range(20):
-            # Do first conv on stream 1
+            # Do first conv on stream 1.
             with torch.cuda.stream(self.stream1):
                 res0 = conv_2d_nhwc_fhwc(input0, input1, [1, 1], [1, 1])
                 ev = torch.cuda.Event()
@@ -64,20 +64,23 @@ class DeviceStreamTest(unittest.TestCase):
             input0.record_stream(self.stream1)
             input1.record_stream(self.stream2)
 
-            # Do second conv on stream 2, waiting for stream 1's corresponding conv
+            # Do second conv on stream 2, waiting for stream 1's corresponding conv.
             with torch.cuda.stream(self.stream2):
                 ev.wait()
                 res = conv_2d_nhwc_fhwc(res0, input2, [1, 1], [1, 1])
             res0.record_stream(self.stream2)
             input2.record_stream(self.stream2)
 
-        # move the last result from each stream to host without blocking
+        # Move the last result from each stream to host without blocking.
         with torch.cuda.stream(self.stream1):
             cpu_last_result_1 = res0.to(device="cpu", non_blocking=True)
         with torch.cuda.stream(self.stream2):
             cpu_last_result_2 = res.to(device="cpu", non_blocking=True)
 
-        # validate the results match expectations
+        # Synchronize across all streams so the non-blocking device-to-host transfers complete.
+        torch.cuda.synchronize(torch_device)
+
+        # Validate the results match expectations.
         self.assertEqual(cpu_last_result_1[0, 0, 0, 0].item(), 16**3)
         self.assertEqual(cpu_last_result_2[0, 0, 0, 0].item(), 4 * (16**3))
 
