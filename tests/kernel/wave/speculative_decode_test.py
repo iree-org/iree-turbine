@@ -20,7 +20,6 @@ from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
 )
 from iree.turbine.kernel.wave.templates.speculative_decoding import (
-    get_speculative_decoding_kernel,
     get_speculative_sampling_kernel,
 )
 import torch.nn.functional as F
@@ -55,6 +54,7 @@ def get_wave_speculative_sampling_kernel(
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
         wave_runtime=True,
+        use_scheduling_barriers=enable_scheduling_barriers,
     )
     options = set_default_run_config(options)
     speculative_sampling = wave_compile(options, speculative_sampling)
@@ -156,7 +156,6 @@ def tree_speculative_sampling_target_only(
         [batch_size], dtype=torch.int32, device=draft_probs.device
     )
 
-    # TODO: Combine into one kernel.
     sampling_kernel = get_wave_speculative_sampling_kernel(
         batch_size,
         num_speculative_tokens,
