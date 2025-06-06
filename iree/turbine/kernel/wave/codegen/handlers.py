@@ -55,6 +55,7 @@ from ...ops.wave_ops import (
     conditional,
     cos,
     eq,
+    exp,
     exp2,
     extract,
     extract_slice,
@@ -709,6 +710,16 @@ def handle_invert(source: Value, options: WaveCompileOptions) -> OpResult:
         result = arith_d.xori(source, true)
     else:
         raise ValidationError(f"Inversion is not supported for type: {element_type}")
+    return result
+
+
+@handle_unary_op(exp)
+def handle_exp(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        result = math_d.exp(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for exp: {element_type}")
     return result
 
 

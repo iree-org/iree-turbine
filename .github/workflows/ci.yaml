@@ -23,14 +23,22 @@ concurrency:
 
 jobs:
   test:
-    name: "${{ matrix.os }} :: ${{ matrix.version }} :: Unit Tests and Type Checking"
+    name: "${{ matrix.name }} :: ${{ matrix.version }} :: Unit Tests and Type Checking"
     strategy:
       fail-fast: false
       matrix:
         # Support for Python 3.13 depends on https://github.com/pytorch/pytorch/issues/130249
+        name: [ubuntu-24.04]
         version: ["3.10", "3.11", "3.12"]
-        os: [ubuntu-24.04]
-    runs-on: ${{matrix.os}}
+        runs-on: [ubuntu-24.04]
+        pytorch_requirements: ["pytorch-cpu-requirements.txt"]
+
+        include:
+          - name: linux-mi300
+            version: "3.11"
+            runs-on: linux-mi300-1gpu-ossci-iree-org
+            pytorch_requirements: "pytorch-rocm-requirements.txt"
+    runs-on: ${{matrix.runs-on}}
     env:
       VENV_DIR: ${{ github.workspace }}/.turbine-venv
     steps:
@@ -53,9 +61,10 @@ jobs:
         run: |
           python -m pip install --no-compile --upgrade pip
           # Note: We install in three steps in order to satisfy requirements
-          # from non default locations first. Installing the PyTorch CPU
-          # wheels saves multiple minutes and a lot of bandwidth on runner setup.
-          pip install --no-compile -r pytorch-cpu-requirements.txt
+          # from non default locations first. Additionally, installing
+          # cpu/rocm-specific pytorch wheels first avoids installing
+          # unnecessary libraries included in default pytorch.
+          pip install --no-compile -r ${{ matrix.pytorch_requirements }}
           pip install --no-cache-dir -r requirements-iree-pinned.txt
           pip install -r requirements.txt -e .
 
