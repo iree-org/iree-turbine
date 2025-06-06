@@ -6,7 +6,7 @@
 
 from typing import Dict, Sequence
 import torch
-from ..ops.conv import boo_conv
+from ..ops.conv import boo_convolution, make_tuple
 from ....support.logging import aot_logger as logger
 
 __all__ = [
@@ -33,14 +33,11 @@ class BooConv1d(torch.nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = (
-            [kernel_size] if isinstance(kernel_size, int) else kernel_size
-        )
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
+        self.kernel_size = make_tuple(kernel_size, 1)
+        self.stride = make_tuple(stride, 1)
+        self.padding = make_tuple(padding, 1)
+        self.dilation = make_tuple(dilation, 1)
         self.groups = groups
-        self._bias = bias
 
         self.weight = torch.nn.Parameter(
             torch.randn(out_channels, in_channels // groups, *self.kernel_size)
@@ -59,19 +56,24 @@ class BooConv1d(torch.nn.Module):
             x = x.unsqueeze(0)
         # There is no 1-D channels_last format.
         w = self.weight
-        if self._bias:
-            args = (x, w, self.bias)
-        else:
-            args = (x, w)
-        result = boo_conv(
-            *args,
-            stride=self.stride,
-            padding=self.padding,
-            dilation=self.dilation,
-            groups=self.groups,
-            input_layout=input_layout,
-            kernel_layout=kernel_layout,
-            output_layout=output_layout,
+        bias = self.bias
+        device_type = x.device.type
+        if torch.is_autocast_enabled(device_type):
+            dtype = torch.get_autocast_dtype(device_type)
+            x = x.to(dtype=dtype)
+            w = w.to(dtype=dtype)
+            bias = bias if bias is None else bias.to(dtype=dtype)
+        result = boo_convolution(
+            x,
+            w,
+            bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
+            input_layout,
+            kernel_layout,
+            output_layout,
         )
         return result.squeeze(0) if no_batch else result
 
@@ -91,14 +93,11 @@ class BooConv2d(torch.nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = (
-            [kernel_size] * 2 if isinstance(kernel_size, int) else kernel_size
-        )
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
+        self.kernel_size = make_tuple(kernel_size, 2)
+        self.stride = make_tuple(stride, 2)
+        self.padding = make_tuple(padding, 2)
+        self.dilation = make_tuple(dilation, 2)
         self.groups = groups
-        self._bias = bias
 
         self.weight = torch.nn.Parameter(
             torch.randn(out_channels, in_channels // groups, *self.kernel_size)
@@ -123,19 +122,24 @@ class BooConv2d(torch.nn.Module):
             w = w.permute([0, 2, 3, 1])
             kernel_layout = "NHWC"
             output_layout = "NHWC"
-        if self._bias:
-            args = (x, w, self.bias)
-        else:
-            args = (x, w)
-        result = boo_conv(
-            *args,
-            stride=self.stride,
-            padding=self.padding,
-            dilation=self.dilation,
-            groups=self.groups,
-            input_layout=input_layout,
-            kernel_layout=kernel_layout,
-            output_layout=output_layout,
+        bias = self.bias
+        device_type = x.device.type
+        if torch.is_autocast_enabled(device_type):
+            dtype = torch.get_autocast_dtype(device_type)
+            x = x.to(dtype=dtype)
+            w = w.to(dtype=dtype)
+            bias = bias if bias is None else bias.to(dtype=dtype)
+        result = boo_convolution(
+            x,
+            w,
+            bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
+            input_layout,
+            kernel_layout,
+            output_layout,
         )
         if output_layout == "NHWC":
             result = result.permute([0, 3, 1, 2])
@@ -157,14 +161,11 @@ class BooConv3d(torch.nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = (
-            [kernel_size] * 3 if isinstance(kernel_size, int) else kernel_size
-        )
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
+        self.kernel_size = make_tuple(kernel_size, 3)
+        self.stride = make_tuple(stride, 3)
+        self.padding = make_tuple(padding, 3)
+        self.dilation = make_tuple(dilation, 3)
         self.groups = groups
-        self._bias = bias
 
         self.weight = torch.nn.Parameter(
             torch.randn(out_channels, in_channels // groups, *self.kernel_size)
@@ -189,19 +190,24 @@ class BooConv3d(torch.nn.Module):
             w = w.permute([0, 2, 3, 4, 1])
             kernel_layout = "NDHWC"
             output_layout = "NDHWC"
-        if self._bias:
-            args = (x, w, self.bias)
-        else:
-            args = (x, w)
-        result = boo_conv(
-            *args,
-            stride=self.stride,
-            padding=self.padding,
-            dilation=self.dilation,
-            groups=self.groups,
-            input_layout=input_layout,
-            kernel_layout=kernel_layout,
-            output_layout=output_layout,
+        bias = self.bias
+        device_type = x.device.type
+        if torch.is_autocast_enabled(device_type):
+            dtype = torch.get_autocast_dtype(device_type)
+            x = x.to(dtype=dtype)
+            w = w.to(dtype=dtype)
+            bias = bias if bias is None else bias.to(dtype=dtype)
+        result = boo_convolution(
+            x,
+            w,
+            bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
+            input_layout,
+            kernel_layout,
+            output_layout,
         )
         if output_layout == "NDHWC":
             result = result.permute([0, 4, 1, 2, 3])

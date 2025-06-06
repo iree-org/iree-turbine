@@ -6,6 +6,8 @@
 
 import argparse
 import contextlib
+from pathlib import Path
+from functools import partial
 
 try:
     import torchvision
@@ -95,43 +97,50 @@ def train_loop(
 
         loss.backward()
 
+    def dump_profile(profiler: profile):
+        profiler.export_chrome_trace(trace_path)
+
+    set_num = 15
+
+    def profiler_ctx(iter_num: int):
+        if set_num == iter_num:
+            return profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+                on_trace_ready=partial(dump_profile),
+            )
+        else:
+            return contextlib.nullcontext()
+
     # Training loop
     epochs = 3
-    with profile(
-        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True
-    ) as prof:
-        for epoch in range(epochs):
-            running_loss = 0.0
-            for idx, (inputs, labels) in enumerate(train_loader):
-                # For sake of time, only running a few data points
-                if idx > 10:
-                    break
+    for epoch in range(epochs):
+        running_loss = 0.0
+        for idx, (inputs, labels) in enumerate(train_loader):
+            # For sake of time, only running a few data points
+            if idx > 10:
+                break
+            with profiler_ctx(epoch * 10 + idx):
                 inputs, labels = inputs.to(
                     device=device, memory_format=memory_format
                 ), labels.to(device=device)
-
-                optimizer.zero_grad()  # Zero the gradients
 
                 # Do forward and loss calculation in autocast context.
                 with torch.amp.autocast(
                     device_type=torch.device(device).type, dtype=autocast_dtype
                 ):
-                    with record_function(f"forward epoch {epoch}, iter {idx}"):
-                        outputs = resnet_model(inputs)  # Forward pass
-                    with record_function(f"loss epoch {epoch}, iter {idx}"):
-                        loss = criterion(outputs, labels)  # Calculate loss
+                    outputs = resnet_model(inputs)  # Forward pass
+                    loss = criterion(outputs, labels)  # Calculate loss
 
-                with record_function(f"backward epoch {epoch}, iter {idx}"):
-                    loss.backward()  # Backpropagate
-
+                optimizer.zero_grad()  # Zero the gradients
+                loss.backward()  # Backpropagate
                 optimizer.step()  # Update weights
 
                 running_loss += loss.item()
 
-            print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader)}")
-
-    # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=100))
-    prof.export_chrome_trace(trace_path)
+        print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader)}")
 
 
 def _get_argparse():

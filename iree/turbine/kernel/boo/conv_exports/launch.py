@@ -190,7 +190,7 @@ class ConvLaunchableRuntimeCache:
         self.cache_limit = cache_limit
         self.session_cache: OrderedDict[str, Launchable] = OrderedDict()
 
-    def add_to_session_cache(self, key: str, launchable: Launchable):
+    def _add_to_session_cache(self, key: str, launchable: Launchable):
         self.session_cache[key] = launchable
         self.session_cache.move_to_end(key)
         if (
@@ -199,8 +199,22 @@ class ConvLaunchableRuntimeCache:
         ):
             self.session_cache.popitem(last=False)
 
-    def get(self, key: str) -> Launchable | None:
+    def _get(self, key: str) -> Launchable | None:
         return self.session_cache.get(key, None)
+
+    @staticmethod
+    def add(key: str, launchable: Launchable):
+        global _launchable_cache
+        if "_launchable_cache" not in globals():
+            _launchable_cache = ConvLaunchableRuntimeCache()
+        _launchable_cache._add_to_session_cache(key, launchable)
+
+    @staticmethod
+    def get(key: str) -> Launchable | None:
+        global _launchable_cache
+        if "_launchable_cache" not in globals():
+            _launchable_cache = ConvLaunchableRuntimeCache()
+        return _launchable_cache._get(key)
 
     @staticmethod
     def get_launchable_cache():
@@ -231,8 +245,7 @@ def get_launchable(
 ) -> Launchable:
     func_name = signature.get_func_name()
     session_cache_key = func_name + cache_only * "_no_jit"
-    launch_cache = ConvLaunchableRuntimeCache.get_launchable_cache()
-    launch = launch_cache.get(session_cache_key)
+    launch = ConvLaunchableRuntimeCache.get(session_cache_key)
     if launch:
         return launch
     cache_dir = CACHE_BASE_DIR / func_name if is_cache_enabled() else None
@@ -263,5 +276,5 @@ def get_launchable(
             entry_point=f"{func_name}$async",
             file_cache_dir=cache_dir,
         )
-    launch_cache.add_to_session_cache(session_cache_key, launch)
+    ConvLaunchableRuntimeCache.add(session_cache_key, launch)
     return launch
