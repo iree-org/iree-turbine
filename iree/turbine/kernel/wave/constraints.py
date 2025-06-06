@@ -549,7 +549,8 @@ class WorkgroupConstraint(DistributionConstraint):
 
         if (
             vector_shape is not None
-            and subs_idxc(self.tile_size) % subs_idxc(vector_shape) != 0
+            and vector_shape > 1
+            and subs_idxc(self.tile_size) % vector_shape != 0
         ):
             tile_bound = self.apply().start + self.tile_size
             bound = get_min_expr(bound, tile_bound)
@@ -643,7 +644,8 @@ class TilingConstraint(DistributionConstraint):
 
         if (
             vector_shape is not None
-            and subs_idxc(self.tile_size) % subs_idxc(vector_shape) != 0
+            and vector_shape > 1
+            and subs_idxc(self.tile_size) % vector_shape != 0
         ):
             tile_bound = self.apply().start + self.tile_size
             bound = get_min_expr(bound, tile_bound)
@@ -727,7 +729,8 @@ class WaveConstraint(DistributionConstraint):
         bound = None
         if (
             vector_shape is not None
-            and subs_idxc(self.tile_size) % subs_idxc(vector_shape) != 0
+            and vector_shape > 1
+            and subs_idxc(self.tile_size) % vector_shape != 0
         ):
             bound = (
                 self.wg_constraint.apply().start + self.apply().start + self.tile_size
