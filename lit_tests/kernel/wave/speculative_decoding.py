@@ -1,16 +1,11 @@
 # RUN: python %s | FileCheck %s
 
-from typing import Callable
-import iree.turbine.kernel as tk
-import iree.turbine.kernel.lang as tkl
-import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
 )
 from iree.turbine.kernel.wave.templates.speculative_decoding import (
-    get_speculative_decoding_kernel,
     get_speculative_sampling_kernel,
 )
 
@@ -37,8 +32,18 @@ def test_speculative_decoding():
     kernel = wave_compile(options, kernel)
     print(kernel.asm)
 
+    # CHECK-LABEL: func.func @speculative_sampling
+    # CHECK: (%arg0: !stream.binding, %arg1: !stream.binding, %arg2: !stream.binding, %arg3: !stream.binding,
+    # CHECK: %arg4: !stream.binding, %arg5: !stream.binding, %arg6: !stream.binding, %arg7: !stream.binding,
+    # CHECK: %arg8: !stream.binding, %arg9: !stream.binding, %arg10: !stream.binding, %arg11: !stream.binding)
+    # CHECK: vector.load
+    # CHECK: vector.load
+    # CHECK: vector.store
     # CHECK: scf.while
+    # CHECK: vector.extractelement
     # CHECK: scf.condition
+    # CHECK: do
+    # CHECK: ^bb0
     # CHECK: scf.while
     # CHECK: scf.condition
     # CHECK: arith.divf
@@ -48,11 +53,20 @@ def test_speculative_decoding():
     # CHECK: scf.if
     # CHECK: vector.store
     # CHECK: scf.if
+    # CHECK: affine.apply
+    # CHECK: vector.maskedstore
     # CHECK: vector.load
+    # CHECK: scf.yield
+    # CHECK: scf.yield
     # CHECK: vector.store
     # CHECK: arith.select
     # CHECK: arith.addf
     # CHECK: arith.select
-    # CHECK: scf.yield
-    # CHECK: scf.yield
+    # CHECK: gpu.shuffle  xor
+    # CHECK: arith.minsi
     # CHECK: return
+    # CHECK-LABEL: func.func @isolated_benchmark(
+    # CHECK: flow.dispatch @speculative_sampling::@speculative_sampling(
+    # CHECK-SAME: %arg0, %arg1, %arg2, %arg3,
+    # CHECK-SAME: %arg4, %arg5, %arg6, %arg7,
+    # CHECK-SAME: %arg8, %arg9, %arg10, %arg11)
