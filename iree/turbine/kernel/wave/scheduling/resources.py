@@ -10,11 +10,13 @@ from ...ops.wave_ops import (
     Read,
     Write,
     MMA,
+    ScaledMMA,
     IterArg,
     Output,
     get_custom,
     CustomOp,
     CastOp,
+    BitcastOp,
     UnaryPyOp,
     BinaryOpBase,
     ApplyExpr,
@@ -56,7 +58,7 @@ class Operation(Enum):
     SHUFFLE = "shuffle"
 
 
-SCHEDULING_NOOPS = (IterArg, Permute, Extract, Broadcast, CastOp, Reshape, SelfIndex)
+SCHEDULING_NOOPS = (IterArg, Permute, Extract, Broadcast, CastOp, BitcastOp, Reshape, SelfIndex)
 
 # This table contains the cycles required to execute each operation.
 delay_table = {
@@ -99,7 +101,7 @@ def get_custom_operation_type(custom: CustomOp) -> Operation:
             and custom.memory_type.address_space == SHARED_ADDRESS_SPACE
             else Operation.WRITE_GLOBAL
         )
-    elif isinstance(custom, MMA):
+    elif isinstance(custom, (MMA, ScaledMMA)):
         return Operation.MMA
     elif isinstance(custom, SCHEDULING_NOOPS + (Output,)):
         return Operation.NOOP
@@ -131,7 +133,7 @@ def annotate_resource_usage(
                 if custom.memory_type.address_space == GLOBAL_ADDRESS_SPACE
                 else resource_reservation_table[Operation.WRITE_SHARED]
             )
-        elif isinstance(custom, MMA):
+        elif isinstance(custom, (MMA, ScaledMMA)):
             custom.rrt = resource_reservation_table[Operation.MMA]
         elif isinstance(custom, ShuffleOp):
             custom.rrt = resource_reservation_table[Operation.SHUFFLE]
