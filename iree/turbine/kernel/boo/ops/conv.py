@@ -18,6 +18,8 @@ from ..conv_exports import (
     ConvLaunchableRuntimeCache,
 )
 
+from .library import define_schema, register_impl, register_meta
+
 __all__ = [
     "boo_conv",
     "boo_convolution",
@@ -26,7 +28,7 @@ __all__ = [
     "disable_backward",
 ]
 
-BOO_LIBRARY = torch.library.Library("boo", "DEF")
+# Toggle Using Boo Backward Kernels #
 
 BOO_USE_BACKWARD_KERNELS = int(os.getenv("BOO_USE_BACKWARD_KERNELS", "0"))
 
@@ -41,6 +43,9 @@ def disable_backward():
     """Allows toggling off Boo backward convolution kernels from python."""
     global BOO_USE_BACKWARD_KERNELS
     BOO_USE_BACKWARD_KERNELS = 0
+
+
+# Utilities #
 
 
 def make_tuple(a: Any, size: int) -> Tuple:
@@ -96,7 +101,16 @@ def get_func_name(
     return "_".join(name_items)
 
 
-def _boo_convolution(
+# Forward Convolution Implementations #
+
+define_schema(
+    "convolution",
+    "(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout) -> Tensor",
+)
+
+
+@register_impl("convolution")
+def _boo_convolution_impl(
     x: torch.Tensor,
     w: torch.Tensor,
     b: None | torch.Tensor,
@@ -152,7 +166,8 @@ def _boo_convolution(
     return conv(*args)
 
 
-def _fake_fwd(
+@register_meta("convolution")
+def _boo_convolution_meta(
     x: torch.Tensor,
     w: torch.Tensor,
     b: None | torch.Tensor,
@@ -183,20 +198,16 @@ def _fake_fwd(
     return torch.empty(sig.output_shape, dtype=sig.dtype, device=x.device)
 
 
-BOO_LIBRARY.define(
-    "convolution(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout) -> Tensor"
-)
-BOO_LIBRARY.impl("convolution", _boo_convolution, "CUDA")
-BOO_LIBRARY.impl("convolution", _boo_convolution, "CPU")
-BOO_LIBRARY.impl("convolution", _fake_fwd, "Meta")
+# Backward Convolution Implementations #
 
-# TODO: make this a direct BOO_LIBRARY.impl(...) instead of custom_op
-@torch.library.custom_op(
-    "boo::boo_convolution_backward",
-    mutates_args=(),
-    schema="(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)",
+define_schema(
+    "convolution_backward",
+    "(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)",
 )
-def boo_convolution_backward(
+
+
+@register_impl("convolution_backward")
+def _boo_convolution_backward_impl(
     x: torch.Tensor,
     w: torch.Tensor,
     grad_output: torch.Tensor,
@@ -243,8 +254,8 @@ def boo_convolution_backward(
     return input_grad, weight_grad, bias_grad
 
 
-@boo_convolution_backward.register_fake
-def _b(
+@register_meta("convolution_backward")
+def _boo_convolution_backward_meta(
     x: torch.Tensor,
     w: torch.Tensor,
     grad_output: torch.Tensor,
@@ -269,6 +280,7 @@ def _b(
 
 
 def pytorch_convolution_backward(ctx, grad_output):
+    """Fallback implementation for backward."""
     x, w = ctx.saved_tensors
 
     mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
@@ -306,7 +318,10 @@ def pytorch_convolution_backward(ctx, grad_output):
     return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
 
 
-class BooConvolution(torch.autograd.Function):
+# Autograd Implementation #
+
+
+class _BooConvolution(torch.autograd.Function):
     @staticmethod
     def forward(ctx, *args):
         (
@@ -355,7 +370,7 @@ class BooConvolution(torch.autograd.Function):
 
         mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
 
-        input_grad, weight_grad, bias_grad = boo_convolution_backward(
+        input_grad, weight_grad, bias_grad = torch.ops.boo.convolution_backward(
             x,
             w,
             grad_output,
@@ -370,7 +385,18 @@ class BooConvolution(torch.autograd.Function):
         )
 
         # return `None` for attribute args
-        return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
+        return (
+            input_grad,
+            weight_grad,
+            bias_grad,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
 
 def boo_convolution(x, w, b, *other_args):
@@ -379,10 +405,13 @@ def boo_convolution(x, w, b, *other_args):
         w.requires_grad or x.requires_grad or (b is not None and b.requires_grad)
     )
     return (
-        BooConvolution.apply(x, w, b, *other_args)
+        _BooConvolution.apply(x, w, b, *other_args)
         if use_autograd
         else torch.ops.boo.convolution(x, w, b, *other_args)
     )
+
+
+# Lazy Autograd Implementation #
 
 
 def boo_conv(
