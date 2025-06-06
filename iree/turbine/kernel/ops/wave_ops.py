@@ -472,6 +472,8 @@ class CustomOp(ABC):
         ]
         if hasattr(self.fx_node, "index") and self.fx_node.index:
             vars_list.append(f"index={self.fx_node.index}")
+        if hasattr(self.fx_node, "subgraph_name") and self.fx_node.subgraph_name:
+            vars_list.append(f"subgraph_name={self.fx_node.subgraph_name}")
         vars_str = ", ".join(vars_list)
         return f"{self.tkw_op_name}({vars_str}) type({self.fx_node.type})"
 
@@ -539,6 +541,8 @@ class CustomOp(ABC):
             "reduction_dim",
             "iter_idx",
             "location",
+            "expanded_dims",
+            "scheduling_parameters",
         ]
         for attr_name in core_attributes:
             if hasattr(self.fx_node, attr_name):
