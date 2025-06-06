@@ -41,6 +41,7 @@ from ...ops.wave_ops import get_custom, read, write, CustomOp
 from ..utils.general_utils import (
     find_index_bounds,
     get_fastest_index,
+    remove_global_indexing,
 )
 from ..utils.symbol_utils import safe_subs, subs_idxc
 
@@ -125,10 +126,14 @@ def _build_mask(
     index: dict[IndexExpr, IndexExpr],
     elements_per_thread: int,
     vector_shapes: dict[IndexSymbol, int],
+    is_shared_mem: bool,
 ) -> Optional[OpResult]:
     bounds = find_index_bounds(emitter.constraints, index, vector_shapes)
     if bounds is None:
         return None
+
+    if is_shared_mem:
+        bounds = remove_global_indexing(bounds, emitter.constraints)
 
     idxc = IndexingContext.current()
     fastest_dim = get_fastest_index(index)
@@ -202,7 +207,10 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
 
-    mask = _build_mask(emitter, index, elements_per_thread, vector_shapes)
+    is_shared_mem = subs_idxc(memory.type.address_space) == SHARED_ADDRESS_SPACE
+    mask = _build_mask(
+        emitter, index, elements_per_thread, vector_shapes, is_shared_mem
+    )
     if mask is None:
         mask_vec_type = VectorType.get(
             [elements_per_thread], IntegerType.get_signless(1)
@@ -644,6 +652,9 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     input_shape = _get_symbolic_shape(memory)
     elements_per_thread = cast_py_literal(emitter, elements_per_thread)
     if get_custom(node).has_identity_mapping():
+        is_shared_mem = (
+            subs_idxc(get_custom(memory).type.address_space) == SHARED_ADDRESS_SPACE
+        )
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
@@ -652,6 +663,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             index,
             elements_per_thread,
             vector_shapes,
+            is_shared_mem,
         )
         result = _create_vec_read_write(
             emitter,
@@ -736,10 +748,15 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
     output_shape = _get_symbolic_shape(memory)
     elements_per_thread = cast_py_literal(emitter, elements_per_thread)
     if get_custom(node).has_identity_mapping():
+        is_shared_mem = (
+            subs_idxc(get_custom(memory).type.address_space) == SHARED_ADDRESS_SPACE
+        )
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
-        mask = _build_mask(emitter, index, elements_per_thread, vector_shapes)
+        mask = _build_mask(
+            emitter, index, elements_per_thread, vector_shapes, is_shared_mem
+        )
         _create_vec_read_write(
             emitter,
             output_shape,
