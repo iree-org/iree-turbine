@@ -441,6 +441,13 @@ class IndexSequence:
             return value.subs(map)  # type: ignore
         return value
 
+    def has(self, symbol: IndexSymbol) -> bool:
+        return (
+            sympy.sympify(self.start).has(symbol)
+            or sympy.sympify(self.size).has(symbol)
+            or sympy.sympify(self.stride).has(symbol)
+        )
+
     def subs(self, map: dict[IndexExpr, IndexExpr]):
         start = self._subs(self.start, map)
         size = self._subs(self.size, map)

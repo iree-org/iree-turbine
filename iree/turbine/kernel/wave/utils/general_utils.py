@@ -126,7 +126,7 @@ def remove_global_indexing(
     for key in new_index:
         for constraint in tiling_constraints:
             new_dim = new_index[key]
-            if sympy.sympify(new_dim.start).has(constraint.induction_var):
+            if new_dim.has(constraint.induction_var):
                 new_dim = new_dim.subs({constraint.induction_var: 0})
                 new_dim.start = new_dim.start - constraint.start
                 new_index[key] = new_dim
