@@ -19,6 +19,7 @@ from .utils.general_utils import (
     ceildiv,
     is_shared_read,
     get_fastest_index,
+    infer_dim,
 )
 from .utils.graph_utils import (
     DCE,
@@ -98,9 +99,12 @@ def materialize_shape(
     constraint_tile_size: dict[IndexSymbol, int], symbolic_shape: list[IndexSymbol]
 ) -> list[int]:
     materialized_shape = []
-    for dim in symbolic_shape:
+    for size_expr in symbolic_shape:
+        dim = infer_dim(size_expr)
         if dim in constraint_tile_size:
-            materialized_shape.append(subs_idxc(constraint_tile_size[dim]))
+            materialized_shape.append(
+                subs_idxc(size_expr.subs(dim, constraint_tile_size[dim]))
+            )
         else:
             materialized_shape.append(subs_idxc(dim))
     return materialized_shape
@@ -166,7 +170,9 @@ def identify_optimizable_loads(
             continue
 
         expanded_dynamic_vals = None
-        memory_load_elems_per_thread = load_elems_per_thread
+        memory_load_elems_per_thread = min(
+            load_elems_per_thread, materialized_shape[-1]
+        )
         memory_max_elements_per_load = max_elements_per_load
         if len(custom.mapping_dynamic_vals) > 0 and not allow_dynamic_transposed:
             expanded_dynamic_vals = set(

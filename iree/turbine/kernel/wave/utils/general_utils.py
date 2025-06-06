@@ -455,3 +455,11 @@ def remove_files_with_extension(directory, extension):
             print(f"File not found: {file_path}")
         except Exception as e:
             print(f"Error removing {file_path}: {e}")
+
+
+def infer_dim(expr):
+    # Skip cases where infer_dim cannot or does not handle.
+    if expr.is_Symbol or expr.is_Number or len(expr.free_symbols) != 1:
+        return expr
+    dim_symbol = list(expr.free_symbols)[0]
+    return dim_symbol
