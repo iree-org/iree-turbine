@@ -775,17 +775,6 @@ class CustomOp(ABC):
         """
         pass
 
-    def align_index(self, constraints: list["Constraint"]) -> None:
-        """
-        Align index to WG/Tile sizes.
-
-        Some ops require their index sizes to be aligned to workgroup/tile sizes.
-        They should do it in this method.
-
-        Default implementation does nothing.
-        """
-        pass
-
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
     ) -> dict[IndexSymbol, IndexSequence]:
@@ -1359,12 +1348,6 @@ class MMA(CustomOp):
         custom_str += f" type({self.fx_node.type})"
         return custom_str
 
-    def align_index(self, constraints: list["Constraint"]) -> None:
-        # Local import to break circular dep.
-        from ..wave.utils.general_utils import align_index_vars
-
-        self.index = align_index_vars(self.index, constraints)
-
     @property
     def reduction_dim(self) -> IndexSymbol:
         if hasattr(self.fx_node, "reduction_dim"):
@@ -1407,13 +1390,6 @@ class Read(CustomOp):
     @write_dependency.setter
     def write_dependency(self, value: fx.Node):
         self.update_arg(len(self.fx_node.args) - 1, value)
-
-    def align_index(self, constraints: list["Constraint"]) -> None:
-        # Local import to break circular dep.
-        from ..wave.utils.general_utils import align_index_vars, is_shared_mem_access
-
-        if is_shared_mem_access(self):
-            self.index = align_index_vars(self.index, constraints)
 
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
@@ -1727,13 +1703,6 @@ class Write(CustomOp):
     def register_index(self) -> dict[IndexSymbol, IndexSequence]:
         custom = get_custom(self.register_)
         return custom.index
-
-    def align_index(self, constraints: list["Constraint"]) -> None:
-        # Local import to break circular dep.
-        from ..wave.utils.general_utils import align_index_vars, is_shared_mem_access
-
-        if is_shared_mem_access(self):
-            self.index = align_index_vars(self.index, constraints)
 
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
