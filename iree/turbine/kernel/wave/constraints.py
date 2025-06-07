@@ -177,12 +177,6 @@ class DistributionConstraint(Constraint):
         """
         raise NotImplementedError("Subclasses must implement this method")
 
-    def get_preferred_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
-        """
-        Returns the preferred bound for the constraint, to minimize masking.
-        """
-        raise NotImplementedError("Subclasses must implement this method")
-
     def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
         """
         Returns the index bound for the constraint, which is usually an
@@ -536,12 +530,6 @@ class WorkgroupConstraint(DistributionConstraint):
     def dim_bound(self) -> IndexExpr:
         return self.dim
 
-    def get_preferred_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
-        if not self.get_index_bound(vector_shape):
-            return None
-
-        return self.work_bound
-
     def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
         bound = None
         if subs_idxc(self.work_bound) != subs_idxc(self.dim_bound):
@@ -631,12 +619,6 @@ class TilingConstraint(DistributionConstraint):
     def dim_bound(self) -> IndexExpr:
         return self.dim
 
-    def get_preferred_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
-        if not self.get_index_bound(vector_shape):
-            return None
-
-        return self.work_bound
-
     def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
         bound = None
         if subs_idxc(self.work_bound) != subs_idxc(self.dim_bound):
@@ -714,10 +696,6 @@ class WaveConstraint(DistributionConstraint):
             old_wave_id is None or self.wave_id == old_wave_id
         ), f"Conflicting preset wave_id old: {old_wave_id} new: {self.wave_id}"
         self.wg_constraint = workgroup_constraint
-
-    def get_preferred_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
-        # Set by workgroup constraint.
-        return None
 
     def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
         bound = None
