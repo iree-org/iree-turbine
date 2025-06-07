@@ -186,9 +186,9 @@ def test_gemm_small_tile_size():
     # For tile sizes smaller than vector size, check we are using masked load/stores to shared memory
     # CHECK:              vector.maskedload %[[A]]
     # CHECK:              amdgpu.lds_barrier
-    # CHECK:              vector.maskedstore %[[VIEW0]]
-    # CHECK:              vector.maskedload %[[B]]
     # CHECK:              vector.maskedstore %[[VIEW1]]
+    # CHECK:              vector.maskedload %[[B]]
+    # CHECK:              vector.maskedstore %[[VIEW0]]
     # CHECK:              amdgpu.lds_barrier
     # CHECK:              vector.maskedload %[[VIEW0]]
     # CHECK:              vector.maskedload %[[VIEW1]]
