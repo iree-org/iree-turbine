@@ -28,6 +28,7 @@ from ...compiler.ir import (
     vector_d,
 )
 
+from ...compiler.base import ValidationError
 from ...compiler.utils import strides_from_symbolic_shape
 from ...compiler.builder import IRProxyValue
 from ...compiler.vector_codegen import (
@@ -653,7 +654,9 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
-    vector_shapes = get_custom(node).vector_shapes
+    vector_shapes = (
+        get_custom(node).vector_shapes or emitter.hardware_constraint.vector_shapes
+    )
 
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
@@ -750,7 +753,9 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected write to have index attr.")
 
     index = node.index
-    vector_shapes = get_custom(node).vector_shapes
+    vector_shapes = (
+        get_custom(node).vector_shapes or emitter.hardware_constraint.vector_shapes
+    )
 
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)

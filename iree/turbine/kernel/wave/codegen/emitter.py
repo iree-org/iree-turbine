@@ -45,13 +45,14 @@ from ...compiler.ir import (
 )
 
 
+from ..utils.general_utils import get_hardware_constraint
 from ...compiler.builder import IRProxyValue
 from ...compiler.kernel_codegen import BoundKernelSignature
 from ..._support.tracing import CapturedTrace
 from ...compiler.base import CodegenError, NDEBUG
 
 from ...lang.wave_types import IndexSymbol
-from ..constraints import Constraint, TilingConstraint
+from ..constraints import Constraint, TilingConstraint, HardwareConstraint
 from ..._support.indexing import IndexingContext, IndexExpr, xor
 from ..compile_options import WaveCompileOptions
 
@@ -157,6 +158,10 @@ class WaveEmitter:
                         induction_vars.append(self.induction_vars[constraint.dim])
 
         return induction_vars, induction_var_syms
+
+    @property
+    def hardware_constraint(self) -> HardwareConstraint:
+        return get_hardware_constraint(self.constraints)
 
 
 def handle_op(op: Callable[..., Any] | list[Callable[..., Any]]):
