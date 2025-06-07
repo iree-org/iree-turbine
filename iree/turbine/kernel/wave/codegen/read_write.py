@@ -129,11 +129,19 @@ def _build_mask(
     is_shared_mem: bool,
 ) -> Optional[OpResult]:
     bounds = find_index_bounds(emitter.constraints, index, vector_shapes)
-    if bounds is None:
-        return None
-
-    if is_shared_mem:
+    if is_shared_mem and bounds:
+        # For shared mem, we always access within vector_shapes bounds, so we
+        # can trim bounds even further.
         bounds = remove_global_indexing(bounds, emitter.constraints)
+        bounds = {k: safe_subs(v, {k: vector_shapes[k]}) for k, v in bounds.items()}
+        bounds = {
+            k: v
+            for k, v in bounds.items()
+            if subs_idxc(v % (vector_shapes[k] or 1)) != 0
+        }
+
+    if not bounds:
+        return None
 
     idxc = IndexingContext.current()
     fastest_dim = get_fastest_index(index)

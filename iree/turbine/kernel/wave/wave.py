@@ -590,7 +590,7 @@ class LaunchableWave(Launchable):
             # Align sizes to WG/Tile sizes
             # This pass changes indexing keys, which can interfere with other passes,
             # so it should be called close to the end of pipeline.
-            partial(align_index_sizes, trace, self.constraints),
+            # partial(align_index_sizes, trace, self.constraints),
             partial(add_shared_memory_barriers, trace),
             partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
         ]
