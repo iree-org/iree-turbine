@@ -60,7 +60,6 @@ from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
 from .shared_memory_indexing import (
     apply_shared_memory_indexing_corrections,
-    align_index_sizes,
 )
 
 # Utils
@@ -587,10 +586,6 @@ class LaunchableWave(Launchable):
                 trace,
                 options.minimize_shared_allocs,
             ),
-            # Align sizes to WG/Tile sizes
-            # This pass changes indexing keys, which can interfere with other passes,
-            # so it should be called close to the end of pipeline.
-            # partial(align_index_sizes, trace, self.constraints),
             partial(add_shared_memory_barriers, trace),
             partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
         ]
