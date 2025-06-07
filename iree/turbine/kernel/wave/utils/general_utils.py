@@ -141,32 +141,6 @@ def is_shared_mem_access(custom: "CustomOp") -> bool:
     return custom.memory_type.address_space == SHARED_ADDRESS_SPACE
 
 
-def align_index_vars(
-    index: dict[IndexSymbol, IndexSequence],
-    constraints: list[Constraint],
-    vector_shapes: Optional[dict[IndexSymbol, int]],
-) -> dict[IndexSymbol, IndexSequence]:
-    """
-    This function aligns index vars with Workgroup/Tiling constraints so it never
-    need partial reads/writes.
-    """
-    vector_shapes = vector_shapes or {}
-    key_subs = {}
-    for constraint in constraints:
-        if not isinstance(constraint, DistributionConstraint):
-            continue
-
-        dim = constraint.dim
-        if dim not in index:
-            continue
-
-        preferred_bound = constraint.get_preferred_bound(vector_shapes.get(dim, None))
-        if preferred_bound is not None:
-            key_subs[dim] = get_min_expr(key_subs.get(dim, None), preferred_bound)
-
-    return {safe_subs(key, key_subs): index[key] for key in index}
-
-
 def find_index_bounds(
     constraints: list[Constraint],
     index: dict[IndexExpr, IndexExpr],
