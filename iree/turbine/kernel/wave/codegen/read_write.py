@@ -28,6 +28,8 @@ from ...compiler.ir import (
     memref_d,
     scf_d,
     vector_d,
+    rocdl_d,
+    llvm_d,
 )
 
 from ...compiler.utils import strides_from_symbolic_shape
@@ -38,10 +40,13 @@ from ...compiler.vector_codegen import (
     cast_vector,
 )
 
+from iree.turbine.aot.support.ir_utils import get_conversion_op
+
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
 from ..utils.general_utils import find_index_bounds, get_fastest_index
 from ..utils.symbol_utils import safe_subs, subs_idxc
+from ..utils.classes import LDSTransposeRead
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, index_symbol
 from ...lang.wave_types import IndexMapping
@@ -616,6 +621,44 @@ def _create_vec_read_write(
             return
 
 
+# TODO: support more variants; currently hardcoded for tr8
+def emit_hardware_transpose_intrinsic(
+    vector_type: VectorType, start_indices, stride, kb_src, kb_ir_type, emitter
+) -> Value:
+    smem_base = memref_d.extract_aligned_pointer_as_index(kb_src)
+    partial_offset = arith_d.muli(start_indices[-2], stride)
+    smem_offset = arith_d.addi(partial_offset, start_indices[-1])
+    final_address = arith_d.addi(smem_base, smem_offset)
+
+    i64_type = IntegerType.get_signless(64)
+    final_address_i64 = arith_d.index_cast(i64_type, final_address)
+
+    ptr_type = llvm_d.PointerType.get(address_space=3, context=kb_ir_type.context)
+    llvm_ptr = llvm_d.inttoptr(ptr_type, final_address_i64)
+
+    i32_type = IntegerType.get_signless(32)
+    i32_vec_type = VectorType.get([2], i32_type)
+
+    packed_result = rocdl_d.ds_read_tr8_b64(i32_vec_type, llvm_ptr)
+
+    # bitcast to original 8 bit value
+    vtype = vector_type.element_type
+    vec8_v_type = VectorType.get([8], vtype)
+    result = vector_d.bitcast(vec8_v_type, packed_result)
+
+    # result = vector_d.from_elements(vector_type, elements)
+    print(f"vector_type: {vector_type}")
+    print(f"vector_type.shape: {vector_type.shape}")
+    print(f"start_indices: {start_indices}")
+    print(f"stride: {stride}")
+    print(f"Generated IR: packed_result = {packed_result}")
+    print(f"Address components:")
+    print(f"  smem_base: {smem_base}")
+    print(f"  tile_row: {start_indices[0]}")
+    print(f"  tile_col_with_offset: {start_indices[1]}")
+    return result
+
+
 @handle_op(read)
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
@@ -646,6 +689,21 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             index,
             elements_per_thread,
         )
+        memory_node = get_custom(memory)
+        use_hw_transpose = (
+            not mask
+            and hasattr(memory_node, "hardware_transpose")
+            and memory_node.hardware_transpose == LDSTransposeRead.tr8_b64
+            and subs_idxc(elements_per_thread) == 8
+        )
+        if use_hw_transpose:
+            stride_expr = memory_node.distributed_shape[-1]
+            stride = gen_sympy_index(add_emitter_subs(emitter), stride_expr)
+            # breakpoint()
+            # result = emit_hardware_transpose_intrinsic(
+            #     vector_type, start_indices, stride, kb_src, kb_ir_type, emitter
+            # )
+            # breakpoint()
         result = _create_vec_read_write(
             emitter,
             input_shape,
