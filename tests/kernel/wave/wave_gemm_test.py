@@ -1032,6 +1032,121 @@ def testCDNA3IntGemm(
 
 
 @require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
+@pytest.mark.parametrize(
+    "enable_scheduling",
+    [SchedulingType.NONE, SchedulingType.MODULO, SchedulingType.MODULO_MULTI_BUFFERED],
+)
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        MMAType.I32_16x16x32_I8,
+        MMAType.I32_32x32x16_I8,
+    ],
+)
+def testi8NonTransposeGemm(
+    shape: tuple[int], enable_scheduling: SchedulingType, mfma_variant: MMAType, request
+):
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+    # Input sizes
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
+        )
+    ]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    b_mapping = tkw.IndexMapping(
+        num_iterators=2, inputs={N: i, K: j}, outputs={N: i, K: j}
+    )
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[K, N, ADDRESS_SPACE, tkl.i8],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.i32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.i32](0.0)
+
+        # This microkernel encodes the fact that if the iterate
+        # dimension were tiled, then we would need to materialize a loop.
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.i32]) -> tkl.Register[M, N, tkl.i32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b, mapping=b_mapping)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        BLOCK_M: 64,
+        BLOCK_N: 64,
+        BLOCK_K: 32,
+        M: shape[0],
+        N: shape[1],
+        K: shape[2],
+    }
+    hyperparams.update(get_default_scheduling_params())
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        run_bench=run_bench,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm)
+
+    randint_hi = 4
+    a = device_randint(randint_hi, (shape[0], shape[2]), dtype=torch.int8)
+    b = device_randint(randint_hi, (shape[2], shape[1]), dtype=torch.int8)
+    c = device_zeros(shape[0], shape[1], dtype=torch.int32)
+    asm = gemm(a, b, c)
+
+    if dump_generated_mlir:
+        filename = f"wave_gemm_{'x'.join(map(str, shape))}_f8.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    if run_bench and dump_perf is not None:
+        options.benchmark_results_file = os.path.join(
+            dump_perf, "iree_" + request.node.name + ".json"
+        )
+
+    torch_ref = torch.matmul(a.cpu().to(torch.int32), b.cpu().to(torch.int32))
+    assert_close(c.to(torch.int32), torch_ref, atol=0, rtol=0, check_device=False)
+
+
+@require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(

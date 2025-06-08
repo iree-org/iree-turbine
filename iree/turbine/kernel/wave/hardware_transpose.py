@@ -24,7 +24,6 @@ from .utils.general_utils import (
     ceildiv,
     delinearize_index,
     get_hardware_constraint,
-    remove_thread_indexing,
 )
 from .minimize_global_loads import (
     is_transposed_read,
