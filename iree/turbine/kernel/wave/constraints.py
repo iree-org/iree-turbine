@@ -532,6 +532,8 @@ class WorkgroupConstraint(DistributionConstraint):
 
     def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
         bound = None
+        # Work bound computed as `count * tile_size`, where `count` is
+        # `ceiling(dim / tile_size)`. Check if dim perfectly aligned with tile size.
         if subs_idxc(self.work_bound) != subs_idxc(self.dim_bound):
             bound = self.dim_bound
 

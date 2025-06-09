@@ -147,9 +147,13 @@ def _build_mask(
     if is_shared_mem and bounds:
         bounds = remove_global_indexing(bounds, emitter.constraints)
         # Masking against global bounds was already handled when reading from
-        # global mem, but we may still need to handle masking against vector size during shared mem access.
-        # Bound expression for this case will look like `min(global_bound, vector_size)`.
-        # Replace global bound with some known big enough value so it can be simplified to just vector size.
+        # global mem, but we may still need to handle masking against vector
+        # size during shared mem access.
+        # Bound expression for this case will look like
+        # `min(global_bound, vector_size)`.
+        # Replace global bound with `max(tile_size, vector_size)` so the entire
+        # expression `min(max(tile_size, vector_size), vector_size)` can be
+        # simplified to just vector size.
         bounds = {
             k: safe_subs(
                 v, {k: _get_max_tile_size(k, emitter.constraints, vector_shapes)}
