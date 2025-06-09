@@ -67,13 +67,13 @@ class BooConv1d(torch.nn.Module):
             x,
             w,
             bias,
-            self.stride,
-            self.padding,
-            self.dilation,
-            self.groups,
-            input_layout,
-            kernel_layout,
-            output_layout,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+            input_layout=input_layout,
+            kernel_layout=kernel_layout,
+            output_layout=output_layout,
         )
         return result.squeeze(0) if no_batch else result
 
@@ -133,13 +133,13 @@ class BooConv2d(torch.nn.Module):
             x,
             w,
             bias,
-            self.stride,
-            self.padding,
-            self.dilation,
-            self.groups,
-            input_layout,
-            kernel_layout,
-            output_layout,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+            input_layout=input_layout,
+            kernel_layout=kernel_layout,
+            output_layout=output_layout,
         )
         if output_layout == "NHWC":
             result = result.permute([0, 3, 1, 2])
@@ -201,13 +201,13 @@ class BooConv3d(torch.nn.Module):
             x,
             w,
             bias,
-            self.stride,
-            self.padding,
-            self.dilation,
-            self.groups,
-            input_layout,
-            kernel_layout,
-            output_layout,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+            input_layout=input_layout,
+            kernel_layout=kernel_layout,
+            output_layout=output_layout,
         )
         if output_layout == "NDHWC":
             result = result.permute([0, 4, 1, 2, 3])

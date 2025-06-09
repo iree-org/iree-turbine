@@ -399,15 +399,48 @@ class _BooConvolution(torch.autograd.Function):
         )
 
 
-def boo_convolution(x, w, b, *other_args):
+def boo_convolution(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    b: torch.Tensor,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+    input_layout: str,
+    kernel_layout: str,
+    output_layout: str,
+) -> torch.Tensor:
     """Similar to boo_conv, but does not pre-process, nor provide defaults for, arguments like stride, dilation, etc."""
     use_autograd = torch._C.is_grad_enabled() and (
         w.requires_grad or x.requires_grad or (b is not None and b.requires_grad)
     )
     return (
-        _BooConvolution.apply(x, w, b, *other_args)
+        _BooConvolution.apply(
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_layout,
+            kernel_layout,
+            output_layout,
+        )
         if use_autograd
-        else torch.ops.boo.convolution(x, w, b, *other_args)
+        else torch.ops.boo.convolution(
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_layout,
+            kernel_layout,
+            output_layout,
+        )
     )
 
 
