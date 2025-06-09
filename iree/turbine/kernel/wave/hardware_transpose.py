@@ -180,18 +180,42 @@ def mark_hw_transpose(write: Write, new_writes: dict, read: Read, new_reads):
 
     mapping = read.mapping
     if read.mapping is not None:
+        # this is just meant to give contiguous global loads
         src_shape = transpose_last2(read.type.symbolic_shape)
         out_mapping = {
             k: IndexMapping.iterator(i)
-            for i, k in enumerate(read.type.symbolic_shape)
+            for i, k in enumerate(src_shape)
         }
+        # subs = {v: out_mapping[k] for k, v in mapping.output_mapping.items()}
         input_mapping = out_mapping.copy()
+        # input_mapping = {
+        #      k: safe_subs(v, subs, simultaneous=True)
+        #      for k, v in mapping.input_mapping.items()
+        # }
         mapping = IndexMapping(
             num_iterators=len(out_mapping),
             inputs=input_mapping,
             outputs=out_mapping,
             dynamic_val_mappings=mapping.dynamic_val_mappings
         )
+        """
+          (Pdb) mapping
+IndexMapping(iters={$index0: 0, $index1: 1}, input_mapping={K: $index0, N: $index1}), output_mapping={K: $index0, N: $index1}, dynamic_val_mappings=()
+(Pdb) read.mapping
+IndexMapping(iters={$index0: 0, $index1: 1}, input_mapping={N: $index0, K: $index1}), output_mapping={N: $index0, K: $index1}, dynamic_val_mappings=()
+
+otherwise you get 
+
+          %54 = memref.load %reinterpret_cast[%c0] : memref<?xi8, strided<[1], offset: ?>>
+          %55 = memref.load %reinterpret_cast[%c1280] : memref<?xi8, strided<[1], offset: ?>>
+          %56 = memref.load %reinterpret_cast[%c2560] : memref<?xi8, strided<[1], offset: ?>>
+          %57 = memref.load %reinterpret_cast[%c3840] : memref<?xi8, strided<[1], offset: ?>>
+          %58 = memref.load %reinterpret_cast[%c5120] : memref<?xi8, strided<[1], offset: ?>>
+          %59 = memref.load %reinterpret_cast[%c6400] : memref<?xi8, strided<[1], offset: ?>>
+          %60 = memref.load %reinterpret_cast[%c7680] : memref<?xi8, strided<[1], offset: ?>>
+          %61 = memref.load %reinterpret_cast[%c8960] : memref<?xi8, strided<[1], offset: ?>>
+#         """
+        breakpoint()
     with read.graph.inserting_before(read.fx_node):
                 new_read = Read(
                     read.memory,

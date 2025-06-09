@@ -644,7 +644,6 @@ def emit_hardware_transpose_intrinsic(
     packed_result = rocdl_d.ds_read_tr8_b64(i32_vec_type, llvm_ptr)
 
     # bitcast to original 8 bit value
-    # triton does it a little bit different
     vtype = vector_type.element_type
     vec8_v_type = VectorType.get([8], vtype)
     result = vector_d.bitcast(vec8_v_type, packed_result)
