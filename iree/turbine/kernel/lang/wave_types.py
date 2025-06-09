@@ -19,7 +19,7 @@ from .kernel_buffer import (
 from .._support.dtype import DataType
 from .._support.indexing import IndexExpr, IndexSymbol, index_symbol
 
-from sympy import Integer, Symbol
+from sympy import Symbol
 from sympy.core.expr import Expr
 from typing_extensions import Self
 

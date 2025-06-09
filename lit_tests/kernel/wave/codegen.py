@@ -1912,8 +1912,6 @@ def test_binary_lowerings():
         res = res / b_reg
         res = tkw.minimum(a_reg, b_reg)
         res = tkw.atan2(res, a_reg)
-        NEG_ONE = tkl.Register[M, N, tkl.f16](-1.0)
-        res = tkw.atomic_min(res, NEG_ONE)
         tkw.write(res, a, elements_per_thread=4)
 
     binary_lowerings = wave_compile(get_wave_compile_options(), binary_lowerings)
@@ -1925,7 +1923,6 @@ def test_binary_lowerings():
     # CHECK: %[[DIV:.+]] = arith.divf %[[MUL]]
     # CHECK: %[[MINIMUM:.+]] = arith.minimumf
     # CHECK: %[[ATAN2:.+]] = math.atan2 %[[MINIMUM]]
-    # CHECK: %[[ATOMIC_MIN:.+]] = memref.atomic_rmw mins
 
 
 @run_test

@@ -1189,10 +1189,6 @@ class Allocate(CustomOp):
     def type(self) -> "Memory":
         return Memory[(*self.shape, self.address_space, self.dtype)]
 
-    @property
-    def memory_type(self) -> "Memory":
-        return self.address_space
-
 
 @define_op("self_index")
 @dataclass
@@ -1267,7 +1263,6 @@ class AtomicOp(BinaryOpBase, ABC):
     def indexing_dims(self) -> list[IndexSymbol]:
         if self.mapping is not None:
             return list(self.mapping.output_shape)
-        # TODO: This could contain ints.
         return list(self.memory_type.symbolic_shape)
 
     def infer_type(self):

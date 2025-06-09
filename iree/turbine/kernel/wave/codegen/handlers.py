@@ -738,6 +738,10 @@ def handle_atomic_min(
         value_element_type
     ):
         atomic_kind = arith_d.AtomicRMWKind.mins
+    else:
+        raise ValidationError(
+            f"Found unsupported type in atomic min: {value_element_type}"
+        )
     result = memref_d.atomic_rmw(atomic_kind, val, buffer, idx)
     return result
 
