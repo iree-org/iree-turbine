@@ -2393,9 +2393,9 @@ def test_atomic_min():
 
     wave_size = 64
     BLOCK_M = 2
-    BLOCK_N = 64
+    BLOCK_N = 256
     num_waves = 2
-    shape = (2, 64)
+    shape = (2, 256)
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -2409,7 +2409,7 @@ def test_atomic_min():
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-    constraints += [tkw.WaveConstraint(M, sympy.Integer(1))]
+    constraints += [tkw.WaveConstraint(M, 1)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
 
     i = tkw.IndexMapping.iterator(0)
@@ -2428,17 +2428,17 @@ def test_atomic_min():
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
     ):
-        res = tkw.read(a, elements_per_thread=4)
+        res = tkw.read(a)
         shmem = tkw.allocate(
             shape=(M, N),
             distributed_shape=(1, BLOCK_N),
             dtype=tkl.i32,
         )
         inf_reg = tkl.Register[M, N, tkl.i32](1e6)
-        tkw.write(inf_reg, shmem, elements_per_thread=4)
-        res = tkw.atomic_min(res, shmem, elements_per_thread=4, mapping=mapping)
-        res = tkw.read(shmem, elements_per_thread=4, mapping=read_mapping)
-        tkw.write(res, c, elements_per_thread=4)
+        tkw.write(inf_reg, shmem)
+        res = tkw.atomic_min(res, shmem, mapping=mapping)
+        res = tkw.read(shmem, mapping=read_mapping)
+        tkw.write(res, c)
 
     options = WaveCompileOptions(
         subs={
@@ -2457,10 +2457,10 @@ def test_atomic_min():
     print(atomic_min_codegen.asm)
 
     # CHECK-LABEL: test_atomic_min
-    # CHECK-DAG:     #[[map0:.*]] = affine_map<()[s0] -> (s0 * 4 - (s0 floordiv 64) * 192)>
-    # CHECK-DAG:     #[[map1:.*]] = affine_map<()[s0] -> (s0 * 4 - (s0 floordiv 64) * 192 + 1)>
-    # CHECK-DAG:     #[[map2:.*]] = affine_map<()[s0] -> (s0 * 4 - (s0 floordiv 64) * 192 + 2)>
-    # CHECK-DAG:     #[[map3:.*]] = affine_map<()[s0] -> (s0 * 4 - (s0 floordiv 64) * 192 + 3)>
+    # CHECK-DAG:     #[[map0:.*]] = affine_map<()[s0] -> (s0 * 4)>
+    # CHECK-DAG:     #[[map1:.*]] = affine_map<()[s0] -> (s0 * 4 + 1)>
+    # CHECK-DAG:     #[[map2:.*]] = affine_map<()[s0] -> (s0 * 4 + 2)>
+    # CHECK-DAG:     #[[map3:.*]] = affine_map<()[s0] -> (s0 * 4 + 3)>
     # CHECK:         func.func @atomic_min_codegen
     # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
     # CHECK-DAG:        %[[thread_id_x:.*]] = gpu.thread_id  x

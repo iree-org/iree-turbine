@@ -6,6 +6,7 @@
 
 from ...ops.wave_ops import (
     Allocate,
+    AtomicOp,
     BinaryPyOp,
     Broadcast,
     CustomOp,
@@ -755,7 +756,9 @@ def resolve_thread_shapes(trace: CapturedTrace, constraints: list[Constraint]):
             return custom.acc.index
         return custom.index
 
-    for node in trace.walk(lambda x: isinstance(get_custom(x), (Read, Write))):
+    for node in trace.walk(
+        lambda x: isinstance(get_custom(x), (Read, Write, AtomicOp))
+    ):
         custom = get_custom(node)
         if custom.elements_per_thread is None:
             _, size = get_largest_index_and_size(get_index(custom))

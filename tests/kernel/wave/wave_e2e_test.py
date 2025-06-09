@@ -2004,7 +2004,7 @@ def test_atomic_min(shape, use_buffer_ops, request):
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
     ):
-        res = tkw.read(a, elements_per_thread=4)
+        res = tkw.read(a)
         # We allocate a buffer of (1,BLOCK_N) shape to perform reduction across
         # waves. Inputs are distributed with (1,BLOCK_N) shape across each wave
         # and performs atomic min operation on this shared memory space. Mapping
@@ -2016,10 +2016,10 @@ def test_atomic_min(shape, use_buffer_ops, request):
             dtype=tkl.i32,
         )
         inf_reg = tkl.Register[M, N, tkl.i32](1e6)
-        tkw.write(inf_reg, shmem, elements_per_thread=4)
-        res = tkw.atomic_min(res, shmem, elements_per_thread=4, mapping=mapping)
-        res = tkw.read(shmem, elements_per_thread=4, mapping=read_mapping)
-        tkw.write(res, c, elements_per_thread=4)
+        tkw.write(inf_reg, shmem)
+        res = tkw.atomic_min(res, shmem, mapping=mapping)
+        res = tkw.read(shmem, mapping=read_mapping)
+        tkw.write(res, c)
 
     a = device_randint(low=0, high=10, size=shape, dtype=torch.int32)
     b = torch.min(a, dim=0)[0].detach()
