@@ -37,6 +37,7 @@ from ...compiler.vector_codegen import (
     cast_vector,
 )
 
+from ..constraints import Constraint, DistributionConstraint
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
 from ..utils.general_utils import (
@@ -122,6 +123,19 @@ def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
     return get_custom(node).type.symbolic_shape
 
 
+def _get_max_tile_size(
+    dim: IndexSymbol,
+    constraints: list[Constraint],
+    vector_shapes: dict[IndexSymbol, int],
+) -> IndexExpr:
+    ret = sympy.sympify(vector_shapes[dim])
+    for constraint in constraints:
+        if isinstance(constraint, DistributionConstraint) and constraint.dim == dim:
+            ret = sympy.Max(ret, constraint.tile_size)
+
+    return ret
+
+
 def _build_mask(
     emitter: WaveEmitter,
     index: dict[IndexExpr, IndexExpr],
@@ -131,10 +145,19 @@ def _build_mask(
 ) -> Optional[OpResult]:
     bounds = find_index_bounds(emitter.constraints, index, vector_shapes)
     if is_shared_mem and bounds:
-        # For shared mem, we always access within vector_shapes bounds, so we
-        # can trim bounds even further.
         bounds = remove_global_indexing(bounds, emitter.constraints)
-        bounds = {k: safe_subs(v, {k: vector_shapes[k]}) for k, v in bounds.items()}
+        # Masking against global bounds was already handled when reading from
+        # global mem, but we may still need to handle masking against vector size during shared mem access.
+        # Bound expression for this case will look like `min(global_bound, vector_size)`.
+        # Replace global bound with some known big enough value so it can be simplified to just vector size.
+        bounds = {
+            k: safe_subs(
+                v, {k: _get_max_tile_size(k, emitter.constraints, vector_shapes)}
+            )
+            for k, v in bounds.items()
+        }
+        # Shared mem accesses are always access the full vector_shape tile,
+        # so we can remove bounds that are divisible by vector size.
         bounds = {
             k: v
             for k, v in bounds.items()
