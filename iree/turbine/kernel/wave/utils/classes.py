@@ -26,3 +26,7 @@ class ShuffleMode(Enum):
     DOWN = 1
     UP = 2
     IDX = 3
+
+
+class LDSTransposeRead(Enum):
+    tr8_b64 = 0
