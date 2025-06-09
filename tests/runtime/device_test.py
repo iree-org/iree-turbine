@@ -93,7 +93,7 @@ class DeviceTest(unittest.TestCase):
 
 
 # CPU is always available so we can enable this unconditionally.
-class TorchCPUInterop(unittest.TestCase):
+class TorchCPUInteropBasic(unittest.TestCase):
     def testFromTorchDevice(self):
         torch_device = torch.device("cpu")
         device1 = get_device_from_torch(torch_device)
@@ -104,8 +104,9 @@ class TorchCPUInterop(unittest.TestCase):
 
     def testCpuDeviceCacheKey(self):
         d = get_device_from_torch(torch.device("cpu"))
-        self.assertEqual(d.instance_cache_key, "local-task")
-        self.assertEqual(d.type_cache_key, "local-task")
+        compile_flags = ";".join(d.compile_target_flags)
+        self.assertEqual(d.instance_cache_key, "local-task:0:None")
+        self.assertEqual(d.type_cache_key, f"local-task:{compile_flags}")
 
     def testImportExportTorchTensor(self):
         d = get_device_from_torch(torch.device("cpu"))
@@ -113,7 +114,7 @@ class TorchCPUInterop(unittest.TestCase):
         bv = d.import_torch_tensor(cpu_tensor)
         print(bv)
         self.assertEqual(bv.shape, [3])
-        self.assertEqual(bv.element_type, HalElementType.SINT_32)
+        self.assertEqual(bv.element_type, int(HalElementType.SINT_32))
         meta_tensor = cpu_tensor.to(device="meta")
         readback_tensor = d.export_torch_tensor(bv, meta_tensor)
         torch.testing.assert_close(cpu_tensor, readback_tensor)
@@ -121,6 +122,32 @@ class TorchCPUInterop(unittest.TestCase):
     def testCompilerFlags(self):
         d = get_device_from_torch(torch.device("cpu"))
         self.assertIn("--iree-hal-target-backends=llvm-cpu", d.compile_target_flags)
+
+    def testJitStrFormat(self):
+        from iree.turbine.ops import _str_format_test_ops as test_ops
+
+        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu")
+        result = test_ops.test_add(t, t)
+        expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
+        torch.testing.assert_close(result, expected)
+
+    def testJitJinja(self):
+        from iree.turbine.ops import _jinja_test_ops as test_ops
+
+        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu")
+        result = test_ops.test_add(t, t)
+        expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
+        torch.testing.assert_close(result, expected)
+
+    def testJitBF16(self):
+        from iree.turbine.ops import _str_format_test_ops as test_ops
+
+        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu", dtype=torch.bfloat16)
+        result = test_ops.test_add(t, t)
+        expected = torch.tensor(
+            [2.0, 4.0, 6.0, 8.0, 10.0], device="cpu", dtype=torch.bfloat16
+        )
+        torch.testing.assert_close(result.cpu(), expected)
 
 
 # Make CUDA testing conditional.
@@ -145,10 +172,15 @@ class TorchCUDAInterop(unittest.TestCase):
             print("Detected HIP device as CUDA")
             self._is_hip = True
 
-    def testFromTorchDevice(self):
+    def testFromTorchDeviceCacheKeys(self):
         torch_device = torch.device("cuda:0")
-        device = get_device_from_torch(torch_device)
-        print(device.dump_device_info())
+        device1 = get_device_from_torch(torch_device)
+        stream = torch.cuda.Stream(torch_device)
+        with torch.cuda.stream(stream):
+            device2 = get_device_from_torch(torch_device)
+        self.assertEqual(stream.cuda_stream, device2._s.torch_stream)
+        self.assertNotEqual(device2.instance_cache_key, device1.instance_cache_key)
+        self.assertEqual(device2.type_cache_key, device1.type_cache_key)
 
     def testJit(self):
         from iree.turbine.ops import _str_format_test_ops as test_ops
@@ -164,34 +196,6 @@ class TorchCUDAInterop(unittest.TestCase):
         t = torch.tensor(
             [1.0, 2.0, 3.0, 4.0, 5.0], device="cuda:0", dtype=torch.bfloat16
         )
-        result = test_ops.test_add(t, t)
-        expected = torch.tensor(
-            [2.0, 4.0, 6.0, 8.0, 10.0], device="cpu", dtype=torch.bfloat16
-        )
-        torch.testing.assert_close(result.cpu(), expected)
-
-
-class TorchCPUInterop(unittest.TestCase):
-    def testJitStrFormat(self):
-        from iree.turbine.ops import _str_format_test_ops as test_ops
-
-        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu")
-        result = test_ops.test_add(t, t)
-        expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
-        torch.testing.assert_close(result, expected)
-
-    def testJitJinja(self):
-        from iree.turbine.ops import _jinja_test_ops as test_ops
-
-        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu")
-        result = test_ops.test_add(t, t)
-        expected = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], device="cpu")
-        torch.testing.assert_close(result, expected)
-
-    def testJitBF16(self):
-        from iree.turbine.ops import _str_format_test_ops as test_ops
-
-        t = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], device="cpu", dtype=torch.bfloat16)
         result = test_ops.test_add(t, t)
         expected = torch.tensor(
             [2.0, 4.0, 6.0, 8.0, 10.0], device="cpu", dtype=torch.bfloat16
