@@ -5,17 +5,30 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import os
-from typing import Sequence, Tuple
+import functools
+
+from typing import Sequence, Tuple, Any, Iterable
 
 import torch
 
-from ..conv_exports import ConvSignature, get_launchable, DEFAULT_LAYOUTS
+from ..conv_exports import (
+    ConvSignature,
+    get_launchable,
+    DEFAULT_LAYOUTS,
+    ConvLaunchableRuntimeCache,
+)
+
+from .library import define_schema, register_impl, register_meta
 
 __all__ = [
     "boo_conv",
+    "boo_convolution",
+    "make_tuple",
     "enable_backward",
     "disable_backward",
 ]
+
+# Toggle Using Boo Backward Kernels #
 
 BOO_USE_BACKWARD_KERNELS = int(os.getenv("BOO_USE_BACKWARD_KERNELS", "0"))
 
@@ -32,8 +45,72 @@ def disable_backward():
     BOO_USE_BACKWARD_KERNELS = 0
 
 
-@torch.library.custom_op("iree_turbine::boo_convolution", mutates_args=())
-def boo_convolution(
+# Utilities #
+
+
+def make_tuple(a: Iterable | int, size: int) -> Tuple:
+    """Tries to convert `a` into a Tuple of ints."""
+    if isinstance(a, Iterable):
+        result = tuple(a)
+        assert len(result) == size
+        assert isinstance(result[0], int)
+        return result
+    if isinstance(a, int):
+        return (a,) * size
+    raise TypeError(f"Input {a} is expected to be an iterable or int. Got {type(a)}.")
+
+
+@functools.lru_cache(maxsize=None)
+def get_func_name(
+    input_shape: tuple,
+    kernel_shape: tuple,
+    dtype: str,
+    mode: str,
+    bias: bool,
+    stride: tuple,
+    padding: tuple,
+    dilation: tuple,
+    groups: int,
+    input_layout: str,
+    kernel_layout: str,
+    output_layout: str,
+) -> str:
+    num_spatial_dims = len(input_shape) - 2
+    name_items = [
+        "conv",
+        f"{num_spatial_dims}d",
+        str(dtype).removeprefix("torch."),
+        str(mode).lower(),
+    ]
+    if bias and mode == "FORWARD":
+        name_items.append("b")
+    l2s = lambda l: "x".join([str(i) for i in l])
+    name_items.extend(
+        [
+            l2s(input_shape),
+            input_layout.lower(),
+            l2s(kernel_shape),
+            kernel_layout.lower().replace("n", "f"),
+            output_layout.lower().replace("c", "f"),
+            l2s(stride) + "s",
+            l2s(padding) + "p",
+            l2s(dilation) + "d",
+            f"{groups}g",
+        ]
+    )
+    return "_".join(name_items)
+
+
+# Forward Convolution Implementations #
+
+define_schema(
+    "convolution",
+    "(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout) -> Tensor",
+)
+
+
+@register_impl("convolution")
+def _boo_convolution_impl(
     x: torch.Tensor,
     w: torch.Tensor,
     b: None | torch.Tensor,
@@ -45,8 +122,27 @@ def boo_convolution(
     kernel_layout: str,
     output_layout: str,
 ) -> torch.Tensor:
-    x = x.detach()
-    w = w.detach()
+
+    # Unfortunately, pytorch converts the tuple inputs to lists for some reason.
+    # We need to convert them back to tuples.
+    func_name = get_func_name(
+        tuple(x.shape),
+        tuple(w.shape),
+        str(x.dtype),
+        "FORWARD",
+        (b is not None),
+        tuple(stride),
+        tuple(padding),
+        tuple(dilation),
+        groups,
+        input_layout,
+        kernel_layout,
+        output_layout,
+    )
+    args = (x.data, w.data) if b is None else (x.data, w.data, b.data)
+    cache_hit = ConvLaunchableRuntimeCache.get(func_name)
+    if cache_hit:
+        return cache_hit(*args)
 
     sig = ConvSignature(
         input_shape=x.shape,
@@ -67,12 +163,11 @@ def boo_convolution(
 
     # Get a launchable and apply.
     conv = get_launchable(sig)
-    args = (x, w) if b is None else (x, w, b.detach())
     return conv(*args)
 
 
-@boo_convolution.register_fake
-def _(
+@register_meta("convolution")
+def _boo_convolution_meta(
     x: torch.Tensor,
     w: torch.Tensor,
     b: None | torch.Tensor,
@@ -103,12 +198,16 @@ def _(
     return torch.empty(sig.output_shape, dtype=sig.dtype, device=x.device)
 
 
-@torch.library.custom_op(
-    "iree_turbine::boo_convolution_backward",
-    mutates_args=(),
-    schema="(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)",
+# Backward Convolution Implementations #
+
+define_schema(
+    "convolution_backward",
+    "(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)",
 )
-def _boo_convolution_backward(
+
+
+@register_impl("convolution_backward")
+def _boo_convolution_backward_impl(
     x: torch.Tensor,
     w: torch.Tensor,
     grad_output: torch.Tensor,
@@ -137,11 +236,11 @@ def _boo_convolution_backward(
     if mask[0]:
         bwd_sig = ConvSignature.get(x, w, mode="bwd", **kwargs)
         bwd_conv = get_launchable(bwd_sig)
-        input_grad = bwd_conv(grad_output, w)
+        input_grad = bwd_conv(grad_output, w.data)
 
     if mask[1]:
         wrw_conv = get_launchable(ConvSignature.get(x, w, mode="wrw", **kwargs))
-        weight_grad = wrw_conv(grad_output, x)
+        weight_grad = wrw_conv(grad_output, x.data)
 
     if mask[2]:
         # TODO: use iree to perform the reduce sum?
@@ -155,8 +254,8 @@ def _boo_convolution_backward(
     return input_grad, weight_grad, bias_grad
 
 
-@_boo_convolution_backward.register_fake
-def _b(
+@register_meta("convolution_backward")
+def _boo_convolution_backward_meta(
     x: torch.Tensor,
     w: torch.Tensor,
     grad_output: torch.Tensor,
@@ -181,6 +280,7 @@ def _b(
 
 
 def pytorch_convolution_backward(ctx, grad_output):
+    """Fallback implementation for backward."""
     x, w = ctx.saved_tensors
 
     mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
@@ -218,65 +318,133 @@ def pytorch_convolution_backward(ctx, grad_output):
     return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
 
 
-def boo_convolution_backward(ctx, grad_output):
-    if not BOO_USE_BACKWARD_KERNELS:
-        return pytorch_convolution_backward(ctx, grad_output)
+# Autograd Implementation #
 
-    x, w = ctx.saved_tensors
 
-    mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
+class _BooConvolution(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, *args):
+        (
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_layout,
+            kernel_layout,
+            output_layout,
+        ) = args
 
-    input_grad, weight_grad, bias_grad = _boo_convolution_backward(
-        x,
-        w,
-        grad_output,
-        ctx.stride,
-        ctx.padding,
-        ctx.dilation,
-        ctx.groups,
-        ctx.input_layout,
-        ctx.kernel_layout,
-        ctx.output_layout,
-        mask,
+        ctx.save_for_backward(x, w)
+        ctx.stride = stride
+        ctx.padding = padding
+        ctx.dilation = dilation
+        ctx.groups = groups
+        ctx.input_layout = input_layout
+        ctx.kernel_layout = kernel_layout
+        ctx.output_layout = output_layout
+
+        ctx.use_bias = b is not None
+
+        return torch.ops.boo.convolution(
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_layout,
+            kernel_layout,
+            output_layout,
+        )
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        if not BOO_USE_BACKWARD_KERNELS:
+            return pytorch_convolution_backward(ctx, grad_output)
+
+        x, w = ctx.saved_tensors
+
+        mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
+
+        input_grad, weight_grad, bias_grad = torch.ops.boo.convolution_backward(
+            x,
+            w,
+            grad_output,
+            ctx.stride,
+            ctx.padding,
+            ctx.dilation,
+            ctx.groups,
+            ctx.input_layout,
+            ctx.kernel_layout,
+            ctx.output_layout,
+            mask,
+        )
+
+        # return `None` for attribute args
+        return (
+            input_grad,
+            weight_grad,
+            bias_grad,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+
+def boo_convolution(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    b: torch.Tensor,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+    input_layout: str,
+    kernel_layout: str,
+    output_layout: str,
+) -> torch.Tensor:
+    """Similar to boo_conv, but does not pre-process, nor provide defaults for, arguments like stride, dilation, etc."""
+    use_autograd = torch._C.is_grad_enabled() and (
+        w.requires_grad or x.requires_grad or (b is not None and b.requires_grad)
+    )
+    return (
+        _BooConvolution.apply(
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_layout,
+            kernel_layout,
+            output_layout,
+        )
+        if use_autograd
+        else torch.ops.boo.convolution(
+            x,
+            w,
+            b,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_layout,
+            kernel_layout,
+            output_layout,
+        )
     )
 
-    # return `None` for attribute args
-    return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
 
-
-def boo_convolution_context(
-    ctx,
-    inputs,
-    output,
-):
-    (
-        x,
-        w,
-        b,
-        stride,
-        padding,
-        dilation,
-        groups,
-        input_layout,
-        kernel_layout,
-        output_layout,
-    ) = inputs
-
-    ctx.save_for_backward(x.detach(), w.detach())
-    ctx.stride = stride
-    ctx.padding = padding
-    ctx.dilation = dilation
-    ctx.groups = groups
-    ctx.input_layout = input_layout
-    ctx.kernel_layout = kernel_layout
-    ctx.output_layout = output_layout
-
-    ctx.use_bias = b is not None
-
-
-boo_convolution.register_autograd(
-    boo_convolution_backward, setup_context=boo_convolution_context
-)
+# Lazy Autograd Implementation #
 
 
 def boo_conv(
@@ -315,13 +483,6 @@ def boo_conv(
 
     num_spatial_dims = len(weight.shape) - 2
 
-    def listify(value) -> Sequence[int]:
-        if isinstance(value, Sequence):
-            return value
-        if isinstance(value, int):
-            return [value] * num_spatial_dims
-        return list(value)
-
     _infer = lambda layout: shared_layout or layout or DEFAULT_LAYOUTS[num_spatial_dims]
 
     # The decorators torch.amp.custom_fwd/custom_bwd don't seem to work with torch.library.custom_op
@@ -337,9 +498,9 @@ def boo_conv(
         input,
         weight,
         bias,
-        listify(stride),
-        listify(padding),
-        listify(dilation),
+        make_tuple(stride, num_spatial_dims),
+        make_tuple(padding, num_spatial_dims),
+        make_tuple(dilation, num_spatial_dims),
         groups,
         _infer(input_layout),
         _infer(kernel_layout),
