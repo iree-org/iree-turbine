@@ -7,7 +7,7 @@ maturin==1.8.6
 ml_dtypes==0.5.0
 mypy==1.8.0
 nanobind==2.5.0
-numpy
+#numpy
 parameterized==0.9.0
 pytest-xdist==3.5.0
 pytest==8.0.0
@@ -17,9 +17,9 @@ wheel
 
 # It is expected that you have installed a PyTorch version/variant specific
 # to your needs, so we only include a minimum version spec.
-torch>=2.3.0,<2.6.0
-torchaudio
-torchvision
+#torch>=2.3.0,<2.6.0
+#torchaudio
+#torchvision
 
 # Used for managing pre-commit flows.
 pre-commit

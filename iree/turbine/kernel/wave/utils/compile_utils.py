@@ -86,8 +86,8 @@ def canonicalize_module(module: Operation):
                 apply_patterns = transform_d.ApplyPatternsOp(target)
                 with InsertionPoint(apply_patterns.regions[0].blocks[0]):
                     transform_d.apply_patterns_canonicalization()
-                    vt.apply_patterns_vector_sink_ops()
-                    vt.apply_patterns_vector_sink_mem_ops()
+                    # vt.apply_patterns_vector_sink_ops()
+                    # vt.apply_patterns_vector_sink_mem_ops()
                 transform_d.apply_cse(target)
                 loops = structured_transform_ops.structured_match(
                     any_op_t(), target, ops=["scf.for", "scf.while"]

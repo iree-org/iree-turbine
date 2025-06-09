@@ -6,6 +6,7 @@
 from .symbol_utils import IndexExpr, IndexSymbol, subs_idxc
 from ...lang.wave_types import IndexMapping
 import sympy
+from .general_utils import infer_dim
 
 
 def _simplify_sympy_expr(expr: IndexExpr) -> IndexExpr:
@@ -204,7 +205,8 @@ def check_is_mapping_contiguous(
         assert (
             mapping.is_output_identity()
         ), "non-identity output mapping is not supported yet"
-        index_mapping = mapping.map_input_indices(symbolc_shape)
+        symolc_dims = [infer_dim(dim_size) for dim_size in symbolc_shape]
+        index_mapping = mapping.map_input_indices(symolc_dims)
     else:
         assert (
             mapping.is_input_identity()
