@@ -13,6 +13,7 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 from iree.turbine.kernel.wave.utils.compile_utils import (
     set_default_compile_config,
 )
+import sympy
 
 M = tkl.sym.M
 N = tkl.sym.N
@@ -2382,3 +2383,97 @@ def test_scanop_cumsum():
 
     # Dispatch
     # CHECK: flow.dispatch @scanop_cumsum
+
+
+@run_test
+def test_atomic_min():
+    M = tkl.sym.M
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_M = 2
+    BLOCK_N = 256
+    num_waves = 2
+    shape = (2, 256)
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, num_waves, 1),
+            vector_shapes={
+                M: int(BLOCK_M / num_waves),
+                N: BLOCK_N,
+            },
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(M, 1)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={M: sympy.Integer(0), N: j},
+        outputs={M: i, N: j},
+    )
+    read_mapping = tkw.IndexMapping(
+        num_iterators=2, inputs={M: sympy.Integer(0), N: j}, outputs={M: i, N: j}
+    )
+
+    @tkw.wave(constraints)
+    def atomic_min_codegen(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+    ):
+        res = tkw.read(a)
+        shmem = tkw.allocate(
+            shape=(M, N),
+            distributed_shape=(1, BLOCK_N),
+            dtype=tkl.i32,
+        )
+        inf_reg = tkl.Register[M, N, tkl.i32](1e6)
+        tkw.write(inf_reg, shmem)
+        res = tkw.atomic_min(res, shmem, mapping=mapping)
+        res = tkw.read(shmem, mapping=read_mapping)
+        tkw.write(res, c)
+
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            N: shape[1],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        use_buffer_load_ops=False,
+        use_buffer_store_ops=False,
+        compile_to_mlir=True,
+        minimize_shared_allocs=False,
+    )
+
+    atomic_min_codegen = wave_compile(options, atomic_min_codegen)
+    print(atomic_min_codegen.asm)
+
+    # CHECK-LABEL: test_atomic_min
+    # CHECK-DAG:     #[[map0:.*]] = affine_map<()[s0] -> (s0 * 4)>
+    # CHECK-DAG:     #[[map1:.*]] = affine_map<()[s0] -> (s0 * 4 + 1)>
+    # CHECK-DAG:     #[[map2:.*]] = affine_map<()[s0] -> (s0 * 4 + 2)>
+    # CHECK-DAG:     #[[map3:.*]] = affine_map<()[s0] -> (s0 * 4 + 3)>
+    # CHECK:         func.func @atomic_min_codegen
+    # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
+    # CHECK-DAG:        %[[thread_id_x:.*]] = gpu.thread_id  x
+    # CHECK-DAG:        %[[thread_id_y:.*]] = gpu.thread_id  y
+    # CHECK-DAG:        %[[val_0:.+]] = affine.apply #[[map0]]()[%[[thread_id_x]]]
+    # CHECK:            %[[alloc:.*]] = memref.alloc
+    # CHECK:            vector.store %{{.*}}, %[[alloc]][%[[thread_id_y]], %[[val_0]]]
+    # CHECK:            %[[atm_0:.+]] = memref.atomic_rmw mins %{{.*}}, %[[alloc]][%[[C0]], %[[val_0]]]
+    # CHECK-DAG:        %[[val_1:.+]] = affine.apply #[[map1]]()[%[[thread_id_x]]]
+    # CHECK:            %[[atm_1:.+]] = memref.atomic_rmw mins %{{.*}}, %[[alloc]][%[[C0]], %[[val_1]]]
+    # CHECK-DAG:        %[[val_2:.+]] = affine.apply #[[map2]]()[%[[thread_id_x]]]
+    # CHECK:            %[[atm_2:.+]] = memref.atomic_rmw mins %{{.*}}, %[[alloc]][%[[C0]], %[[val_2]]]
+    # CHECK-DAG:        %[[val_3:.+]] = affine.apply #[[map3]]()[%[[thread_id_x]]]
+    # CHECK:            %[[atm_3:.+]] = memref.atomic_rmw mins %{{.*}}, %[[alloc]][%[[C0]], %[[val_3]]]
+    # CHECK:            amdgpu.lds_barrier
+    # CHECK:            vector.load %[[alloc]][%[[C0]], %[[val_0]]]

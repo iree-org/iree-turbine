@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import copy
 import operator
 import sympy
 import math
@@ -38,7 +39,6 @@ from ...compiler.ir import (
 )
 from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
-    _is_index_type,
     _is_integer_like_type,
     _is_signed_or_signless_type,
     get_conversion_op,
@@ -50,6 +50,7 @@ from ...ops.wave_ops import (
     abs,
     allocate,
     apply_expr,
+    atomic_min,
     broadcast,
     cast,
     conditional,
@@ -101,6 +102,8 @@ from ...compiler.vector_codegen import (
 from ...compiler.utils import strides_from_symbolic_shape
 from ..constraints import HardwareConstraint, GenericDot
 from ..utils.classes import ShuffleMode
+from ..utils.general_utils import get_fastest_index
+from ..utils.mapping_utils import transform_index_on_mapping
 from ..utils.symbol_utils import subs_idxc
 from ..compile_options import WaveCompileOptions
 
@@ -410,6 +413,75 @@ def handle_shuffle(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
+def handle_atomic_op(op):
+    def decorator(binary_fn: Callable[[Value, Value], OpResult]):
+        @handle_op(op)
+        def handle_generic_atomic(emitter: WaveEmitter, node: fx.Node):
+            try:
+                lhs, rhs, elements_per_thread, mapping = node.args
+            except ValueError as e:
+                raise ValidationError("Malformed arguments") from e
+            lhs = cast_py_value(emitter, lhs)
+            rhs = cast_py_value(emitter, rhs)
+            lhs_data_type = get_type_or_element_type(lhs.ir_value.type)
+            rhs_data_type = get_type_or_element_type(rhs.ir_value.type)
+
+            if not MemRefType.isinstance(rhs.ir_value.type):
+                op = get_custom(node)
+                raise ValidationError(
+                    f"Expected rhs to be Memref type for\n"
+                    f"{op}\nGot\n"
+                    f"rhs: {rhs.ir_value.type}\n"
+                )
+            if lhs_data_type != rhs_data_type:
+                op = get_custom(node)
+                raise ValidationError(
+                    f"Expected lhs and rhs to have same data type for\n"
+                    f"{op}\nGot\n"
+                    f"lhs: {lhs_data_type} vs rhs: {rhs_data_type}\n"
+                )
+            if _is_float_type(lhs_data_type):
+                # TODO: To support float types, MLIR LLVM dialect needs to be updated with
+                # float types. LLVM already supports fmin and fmax (https://llvm.org/docs/LangRef.html#atomicrmw-instruction)
+                # and thus atomicrmw operation in MLIR dialect needs to target those instructions with "workgroup" scope.
+                raise NotImplementedError(f"Atomic ops don't support float types yet\n")
+
+            lhs = lhs.ir_value
+            rhs = rhs.ir_value
+            lhs_type = lhs.type
+            assert (
+                lhs_type.rank == 0 or lhs_type.rank == 1
+            ), f"expected lhs_type.rank == 1 but got {lhs_type.rank}, {node}"
+
+            start_index = node.index
+            if mapping:
+                symbolic_shape = get_custom(node).type.symbolic_shape
+                start_index = transform_index_on_mapping(
+                    mapping, symbolic_shape, start_index
+                )
+
+            # Get start indices for every element in thread and unroll the op
+            atomic_results = []
+            keys = list(start_index.keys())
+            fastest_dim = get_fastest_index(node.index)
+            for i in range(elements_per_thread):
+                new_index = copy.deepcopy(start_index)
+                key = keys[fastest_dim]
+                new_index[key] += i
+                start_idx = _build_start_indices(emitter, new_index)
+                lhs_val = vector_d.extract(
+                    lhs, static_position=[i], dynamic_position=[]
+                )
+                atomic_results.append(
+                    binary_fn(lhs_val, rhs, start_idx, emitter.options)
+                )
+
+            result = vector_d.from_elements(lhs_type, atomic_results)
+            emitter.bind_node_proxy(node, IRProxyValue(result))
+
+    return decorator
+
+
 ###############################################################################
 # Binary math Ops
 ###############################################################################
@@ -650,6 +722,27 @@ def handle_minimum(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpRes
         raise ValidationError(
             f"Found unhandled operand type for minimum: {element_type}"
         )
+    return result
+
+
+@handle_atomic_op(atomic_min)
+def handle_atomic_min(
+    val: Value, buffer: Value, idx: list[Value], options: WaveCompileOptions
+) -> OpResult:
+    value_element_type = get_type_or_element_type(val.type)
+    atomic_kind = None
+    # Only scalars are supported currently
+    if _is_float_type(value_element_type):
+        atomic_kind = arith_d.AtomicRMWKind.minimumf
+    elif _is_integer_like_type(value_element_type) and _is_signed_or_signless_type(
+        value_element_type
+    ):
+        atomic_kind = arith_d.AtomicRMWKind.mins
+    else:
+        raise ValidationError(
+            f"Found unsupported type in atomic min: {value_element_type}"
+        )
+    result = memref_d.atomic_rmw(atomic_kind, val, buffer, idx)
     return result
 
 
