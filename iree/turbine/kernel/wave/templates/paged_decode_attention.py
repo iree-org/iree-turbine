@@ -78,9 +78,13 @@ def get_paged_decode_attention_kernels(
     PHASE_1_BLOCK_B_WAVES = 1
     PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
     PHASE_1_BLOCK_N = 16
-    B_WAVES = 1 if mha else 4
-    HEAD_BLOCK_SIZE = 16 * B_WAVES
     head_ratio = shape.num_query_heads // shape.num_kv_heads
+    B_SIZE = 16  # TODO: Actual value depends in mma type
+    if mha:
+        B_WAVES = 1
+    else:
+        B_WAVES = max(min(4, head_ratio // B_SIZE), 1)
+    HEAD_BLOCK_SIZE = min(B_SIZE * B_WAVES, head_ratio)
 
     LOG2E = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
