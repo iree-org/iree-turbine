@@ -101,6 +101,14 @@ def meets_hw_transpose_requirements(
     materialized_shape = materialize_shape(
         constraint_tile_size, read.type.symbolic_shape
     )
+    if any(s > 1 for s in materialized_shape[:-2]) or any(
+        s <= 1 for s in materialized_shape[-2:]
+    ):
+        logger.info(
+            f"only last 2 dims transpose is supported, got {materialized_shape}"
+        )
+        return False
+
     if materialized_shape[-2] % 16 != 0 or materialized_shape[-1] % 8 != 0:
         return False
 
@@ -110,6 +118,8 @@ def meets_hw_transpose_requirements(
 
     return True
 
+def transpose_last2(shape: Sequence[IndexSymbol]) -> list[IndexSymbol]:
+    return list(shape[:-2]) + [shape[-1], shape[-2]]
 
 def mark_hardware_transpose_candidates(
     trace: CapturedTrace, constraints: list[Constraint]
@@ -123,6 +133,7 @@ def mark_hardware_transpose_candidates(
 
     rw_mem_seen = set()
     new_writes = defaultdict(list)
+    new_reads = defaultdict(list)
 
     for read in candidates:
         read = get_custom(read)
@@ -134,16 +145,23 @@ def mark_hardware_transpose_candidates(
                 rw_mem = (read.memory, write.memory)
                 if rw_mem not in rw_mem_seen:
                     rw_mem_seen.add(rw_mem)
-                    read.update_arg(
-                        "mapping", None
-                    )  # make loads from global contiguous
-                    mark_hw_transpose(write, new_writes)
+                    mark_hw_transpose(write, new_writes, read, new_reads)
 
+    for old_read, new_read in new_reads.items():
+        new_read_fx_node = new_read[0] 
+
+        for user in list(old_read.users.keys()):
+              custom_user = get_custom(user)
+              if isinstance(custom_user, Write):
+                  # Find which argument index the old read is at
+                  for i, arg in enumerate(user.args):
+                      if arg == old_read:
+                        custom_user.update_arg(i, new_read_fx_node)
     if new_writes:
         update_write_dependencies(new_writes, trace)
 
 
-def mark_hw_transpose(write: Write, new_writes: dict):
+def mark_hw_transpose(write: Write, new_writes: dict, read: Read, new_reads):
     with write.graph.inserting_before(write.fx_node):
         dest = get_custom(write.memory)
         dest.update_arg("hardware_transpose", LDSTransposeRead.tr8_b64)
@@ -159,3 +177,32 @@ def mark_hw_transpose(write: Write, new_writes: dict):
         new_writes[write.memory].append(hw_write)
 
         logger.info(f"Marked hardware transpose write: {hw_write}")
+
+    mapping = read.mapping
+    if read.mapping is not None:
+        src_shape = transpose_last2(read.type.symbolic_shape)
+        out_mapping = {
+            k: IndexMapping.iterator(i)
+            for i, k in enumerate(read.type.symbolic_shape)
+        }
+        input_mapping = out_mapping.copy()
+        mapping = IndexMapping(
+            num_iterators=len(out_mapping),
+            inputs=input_mapping,
+            outputs=out_mapping,
+            dynamic_val_mappings=mapping.dynamic_val_mappings
+        )
+    with read.graph.inserting_before(read.fx_node):
+                new_read = Read(
+                    read.memory,
+                    read.elements_per_thread,
+                    mapping=mapping,
+                    mapping_dynamic_vals=read.mapping_dynamic_vals,
+                ).add_to_graph(read.graph)
+                new_read.index = read.index
+                new_read_custom = get_custom(new_read)
+                new_read_custom.infer_type()
+                if read.mapping_dynamic_vals:
+                    update_read_mapping_dynamic_values(new_read_custom)
+                # breakpoint()
+                new_reads[read.fx_node].append(new_read)

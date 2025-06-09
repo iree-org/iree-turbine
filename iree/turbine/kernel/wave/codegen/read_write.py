@@ -625,7 +625,9 @@ def _create_vec_read_write(
 def emit_hardware_transpose_intrinsic(
     vector_type: VectorType, start_indices, stride, kb_src, kb_ir_type, emitter
 ) -> Value:
+    # get memref as integer basically
     smem_base = memref_d.extract_aligned_pointer_as_index(kb_src)
+    # turn coords to row major order
     partial_offset = arith_d.muli(start_indices[-2], stride)
     smem_offset = arith_d.addi(partial_offset, start_indices[-1])
     final_address = arith_d.addi(smem_base, smem_offset)
@@ -642,11 +644,15 @@ def emit_hardware_transpose_intrinsic(
     packed_result = rocdl_d.ds_read_tr8_b64(i32_vec_type, llvm_ptr)
 
     # bitcast to original 8 bit value
+    # triton does it a little bit different
     vtype = vector_type.element_type
     vec8_v_type = VectorType.get([8], vtype)
     result = vector_d.bitcast(vec8_v_type, packed_result)
+    # breakpoint()
 
     # result = vector_d.from_elements(vector_type, elements)
+    print(f"print final address: {final_address}")
+    print(f"print final address i64: {final_address_i64}")
     print(f"vector_type: {vector_type}")
     print(f"vector_type.shape: {vector_type.shape}")
     print(f"start_indices: {start_indices}")
@@ -684,6 +690,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
+        # start_indices: this thread's start indices in memory access pattern
         mask = _build_mask(
             emitter,
             index,
@@ -696,28 +703,46 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             and memory_node.hardware_transpose == LDSTransposeRead.tr8_b64
             and subs_idxc(elements_per_thread) == 8
         )
+        breakpoint()
         if use_hw_transpose:
-            stride_expr = memory_node.distributed_shape[-1]
-            stride = gen_sympy_index(add_emitter_subs(emitter), stride_expr)
+            # distributed shape is shape in shared mem. last dim is stride
+            stride_expr = memory_node.distributed_shape[-1] # BLOCK_K + 8 
+            stride = gen_sympy_index(add_emitter_subs(emitter), stride_expr) # symbolic -> mlir
+            breakpoint()
+            result = emit_hardware_transpose_intrinsic(
+                vector_type, start_indices, stride, kb_src, kb_ir_type, emitter
+            )
+        else:
+            result = _create_vec_read_write(
+                emitter,
+                input_shape,
+                kb_src,
+                None,
+                vector_type,
+                start_indices,
+                start_indices_wg,
+                start_indices_th,
+                elements_per_thread,
+                get_custom(memory),
+                mask,
+                offsets_vec=None,
+            )
+
             # breakpoint()
-            # result = emit_hardware_transpose_intrinsic(
-            #     vector_type, start_indices, stride, kb_src, kb_ir_type, emitter
-            # )
-            # breakpoint()
-        result = _create_vec_read_write(
-            emitter,
-            input_shape,
-            kb_src,
-            None,
-            vector_type,
-            start_indices,
-            start_indices_wg,
-            start_indices_th,
-            elements_per_thread,
-            get_custom(memory),
-            mask,
-            offsets_vec=None,
-        )
+        # result = _create_vec_read_write(
+        #     emitter,
+        #     input_shape,
+        #     kb_src,
+        #     None,
+        #     vector_type,
+        #     start_indices,
+        #     start_indices_wg,
+        #     start_indices_th,
+        #     elements_per_thread,
+        #     get_custom(memory),
+        #     mask,
+        #     offsets_vec=None,
+        # )
     else:
         dyn_vals = tuple(
             cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
