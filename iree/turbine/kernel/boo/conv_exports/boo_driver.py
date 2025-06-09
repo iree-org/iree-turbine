@@ -1,3 +1,5 @@
+import gc
+import math
 import argparse
 from collections.abc import Callable, Sequence
 import os
@@ -104,16 +106,51 @@ def run(cli_args: Sequence[str]):
     sig = mio.get_signature(args)
     conv = get_launchable(sig)
 
-    conv_args = sig.get_sample_conv_args(
-        seed=10, device="cuda", splat_value=args.splat_input_value
-    )
+    # get the number of available GPU's
+    num_devices = torch.cuda.device_count()
+    iter_per_device = args.iter // num_devices
+    rem_iter = args.iter % num_devices
+
+    # generate sample conv args on each GPU
+    per_device_data = [
+        sig.get_sample_conv_args(
+            seed=10,
+            device=f"cuda:{i}",
+            splat_value=args.splat_input_value,
+        )
+        for i in range(num_devices)
+    ]
+
+    # determine an iter threshold to pause and collect garbage
+    numel = 0
+    if int(sig.mode) == 0:
+        numel = math.prod(sig.output_shape)
+    elif int(sig.mode) == 1:
+        numel = math.prod(sig.input_shape)
+    elif int(sig.mode) == 2:
+        numel = math.prod(sig.kernel_shape)
+    dtype_bytes = int(sig.dtype.itemsize)
+    res_mem_bytes = numel * dtype_bytes
+    # this is for mi300x. Take the 128 GB HBM3 memory and divide by 2.
+    mem_bytes_threshold = 64 * (10**9)
+    iter_thresh = int(mem_bytes_threshold // res_mem_bytes)
 
     result = None
-    for _ in range(args.iter):
-        result = conv(*conv_args)
+    for iter in range(iter_per_device + 1):
+        for device_idx, conv_args in enumerate(per_device_data):
+            if iter == iter_per_device and device_idx >= rem_iter:
+                break
+            result = conv(*conv_args)
+        if (iter + 1) % iter_thresh == 0:
+            print(f"Synchronizing all devices on iter {iter} and collecting garbage.")
+            for i in range(num_devices):
+                torch.cuda.synchronize(torch.device(f"cuda:{i}"))
+            gc.collect()
 
-    torch.set_printoptions(edgeitems=0, threshold=0)
-    print(f">>> {result}")
+    torch.cuda.synchronize()
+    print(
+        f">>> result shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
+    )
 
     return sig.get_func_name()
 
