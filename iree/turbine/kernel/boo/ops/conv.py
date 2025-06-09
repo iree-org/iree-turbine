@@ -48,7 +48,7 @@ def disable_backward():
 # Utilities #
 
 
-def make_tuple(a: Any, size: int) -> Tuple:
+def make_tuple(a: Iterable | int, size: int) -> Tuple:
     """Tries to convert `a` into a Tuple of ints."""
     if isinstance(a, Iterable):
         result = tuple(a)
