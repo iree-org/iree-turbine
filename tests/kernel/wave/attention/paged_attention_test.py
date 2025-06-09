@@ -30,24 +30,24 @@ from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import os
 from torch.testing import assert_close
 from ..common.utils import (
-    require_e2e,
-    require_cdna3,
-    enable_scheduling_barriers,
     dump_generated_mlir,
+    enable_scheduling_barriers,
+    expensive_test_param,
     param_bool,
+    require_cdna3,
+    require_e2e,
 )
 from typing import List, Optional
-
-xfail = lambda *a: pytest.param(*a, marks=pytest.mark.xfail)
 
 # Reference paged attention implementation from vLLM and sglang.
 # (NUM_Q_HEADS, NUM_KV_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
 shapes = [(16, 1, 64, 64, 32, 2, 100)]
+shapes += [(16, 2, 64, 64, 32, 1, 100)]  # (16 // 2) < 16
 shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
 shapes += [(128, 2, 80, 80, 32, 2, 500)]
 shapes += [(128, 2, 512, 512, 32, 32, 500)]
-shapes += [xfail((32, 8, 128, 128, 32, 1319, 1018))]
+shapes += [expensive_test_param((32, 8, 128, 128, 32, 1319, 1018))]
 
 # Test shapes for MHA paged attention
 # (NUM_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
