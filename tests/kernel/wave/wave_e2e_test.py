@@ -1784,14 +1784,7 @@ def test_scalar_cond_copy(shape, request):
 @require_e2e
 @pytest.mark.parametrize(
     "shape",
-    [
-        (1, 27),
-        (1, 64),
-        (51, 64),
-        (128, 64),
-        (1, 256),
-        (1, 512),
-    ],
+    [(1, 27), (1, 64), (51, 64), (128, 64), (1, 256), (1, 512), (64, 500)],
 )
 def test_scanop_cumsum(shape, request):
     run_bench = request.config.getoption("--runperf")
