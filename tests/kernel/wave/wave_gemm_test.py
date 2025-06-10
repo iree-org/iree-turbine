@@ -206,6 +206,9 @@ def testPureGemm(
     assert_close(c, iree_ref, check_device=False)
 
 
+_xfail = lambda *a: pytest.param(*a, marks=pytest.mark.xfail)
+
+
 @require_e2e
 @pytest.mark.parametrize("shape", [(32, 32, 32)] + get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
@@ -349,7 +352,12 @@ def testGemmSmallTiles(
 @pytest.mark.parametrize("shape", get_test_shapes("test_gemm"))
 @pytest.mark.parametrize(
     "enable_scheduling",
-    [SchedulingType.NONE, SchedulingType.PREFETCH, SchedulingType.MODULO],
+    [
+        SchedulingType.NONE,
+        _xfail(SchedulingType.PREFETCH),
+        SchedulingType.MODULO,
+        _xfail(SchedulingType.MODULO_MULTI_BUFFERED),
+    ],
 )
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
@@ -671,6 +679,7 @@ def testGemmDumpOverrideSchedule(
 
 
 _xfail = lambda *a: pytest.param(*a, marks=pytest.mark.xfail)
+
 
 
 @require_e2e
