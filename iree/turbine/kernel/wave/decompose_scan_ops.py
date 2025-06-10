@@ -40,7 +40,7 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
 
 def emit_variable_scan(
     binary_fn: Callable,
-    src: list[list[fx.Node]],
+    scan_src: list[fx.Node],
     graph: fx.Graph,
     elements_per_thread: int,
 ) -> list[list[fx.Node]]:
@@ -69,21 +69,16 @@ def emit_local_inclusive_scan(
     """
     Perform local inclusive scan for `n` elements per thread.
     """
-    result = []
-    for node in scan_src:
-        values = [
-            get_graph_node(Extract(node, [i]), graph)
-            for i in range(elements_per_thread)
-        ]
-        values[0].index = node.index
+    values = [
+        get_graph_node(Extract(scan_src[0], [i]), graph)
+        for i in range(elements_per_thread)
+    ]
+    values[0].index = scan_src[0].index
 
-        for i in range(1, elements_per_thread):
-            values[i] = get_graph_node(binary_fn(values[i], values[i - 1]), graph)
-            values[i].index = node.index
-
-        result.append(values)
-
-    return result
+    for i in range(1, elements_per_thread):
+        values[i] = get_graph_node(binary_fn(values[i], values[i - 1]), graph)
+        values[i].index = scan_src[0].index
+    return values
 
 
 def emit_global_scan(
@@ -267,20 +262,6 @@ def decompose_scan_ops(
             if not isinstance(scan_src, (list, tuple)):
                 scan_src = [scan_src]
 
-            # Local Scan
-            src_fastest_dims = [
-                get_custom(arg).type.symbolic_shape[-1] for arg in scan_src
-            ]
-            if not all_equal(src_fastest_dims):
-                raise NotImplementedError(
-                    "NYI: Expect all reduce_src to have same fastest dim."
-                )
-            if scan_dim is not src_fastest_dims[0]:
-                raise NotImplementedError(
-                    f"Only implemented reduction on fastest dimension. Got {scan_dim} and {src_fastest_dims}."
-                    f"\n{custom}"
-                )
-
             get_thread_shape = lambda index: max(
                 subs_idxc(x.size) for x in index.values()
             )
@@ -307,11 +288,7 @@ def decompose_scan_ops(
                 binary_fn, scan_src, custom.graph, local_scan_sizes[0]
             )
 
-            local_scan = emit_variable_scan(
-                binary_fn, local_scan, custom.graph, local_scan_sizes[0]
-            )
-
-            global_scan = emit_global_scan(
+            result = emit_global_scan(
                 binary_fn,
                 scan_src[0],
                 local_scan,
