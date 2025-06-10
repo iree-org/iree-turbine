@@ -221,6 +221,10 @@ def ceildiv(a: int, b: int) -> int:
     return -(a // -b)
 
 
+def clamp(min_val: int, x: int, max_val: int) -> int:
+    return max(min_val, min(x, max_val))
+
+
 def all_equal(input_list: list[Any]) -> bool:
     if len(input_list) == 0:
         return True
