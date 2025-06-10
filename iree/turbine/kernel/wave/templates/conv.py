@@ -33,7 +33,6 @@ def get_igemm_conv2d(
 ) -> tuple["LaunchableWave", dict[tkl.IndexSymbol, Any]]:
     assert input_dtype == tkl.f16, f"Unsupported input dtype: {input_dtype}"
     assert output_dtype == tkl.f32, f"Unsupported input dtype: {output_dtype}"
-    cf = c
     padding = 0  # TODO: only pad=0 is supported for now
 
     sym = tkl.sym

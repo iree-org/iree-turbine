@@ -151,7 +151,6 @@ def construct_shared_read_mapping(read: Read) -> IndexMapping:
     # Create new identity output mapping.
     mapping = read.mapping
     new_mapping = deepcopy(mapping)
-    dynamic_vals = list(mapping.dynamic_val_indices.keys())
     assert mapping.is_output_identity(), "Output mapping must be an identity mapping."
     dim_to_iter = {
         dim: iter for dim, iter in zip(mapping.output_mapping, mapping.iters)
