@@ -41,4 +41,3 @@ version_local.json
 
 # Output files
 out
-iree/turbine/kernel/wave/scheduling/aplp/
