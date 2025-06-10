@@ -12,7 +12,6 @@ import iree.turbine.kernel.wave.nn as wave_nn
 from ...common.utils import (
     require_e2e,
     require_cdna3,
-    scaled_dot_product_attention_bhsd,
 )
 from iree.turbine.kernel.wave.utils.reference_kernel_utils import (
     scaled_dot_product_attention_bhsd,

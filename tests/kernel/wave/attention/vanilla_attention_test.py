@@ -34,7 +34,6 @@ from ..common.utils import (
     param_bool,
     require_cdna3,
     require_e2e,
-    scaled_dot_product_attention_bhsd,
 )
 from ..common.shapes import get_test_shapes
 from iree.turbine.kernel.wave.templates.vanilla_attention import (
@@ -48,6 +47,7 @@ from iree.turbine.kernel.wave.compile import wave_compile, WaveCompileOptions
 from iree.turbine.kernel.wave.utils.reference_kernel_utils import (
     scaled_dot_product_attention_bhsd,
 )
+
 
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
