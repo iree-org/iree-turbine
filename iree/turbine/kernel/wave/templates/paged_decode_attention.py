@@ -8,7 +8,7 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.constraints import MMAType
-from iree.turbine.kernel.wave.utils.general_utils import torch_dtype_to_wave
+from iree.turbine.kernel.wave.utils.general_utils import clamp, torch_dtype_to_wave
 import sympy
 from enum import Enum
 from collections import namedtuple
