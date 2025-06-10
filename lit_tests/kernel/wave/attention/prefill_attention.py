@@ -52,10 +52,9 @@ def test_prefill_attention():
     # CHECK-COUNT-1:            vector.store
     # CHECK-COUNT-1:            vector.maskedload
     # CHECK-COUNT-1:            vector.store
-    # CHECK-COUNT-1:            vector.maskedload
-    # CHECK-COUNT-1:            vector.store
-    # CHECK-COUNT-64:           memref.load
-    # CHECK-COUNT-16:           vector.load
+    # CHECK-COUNT-8:            vector.maskedload
+    # CHECK-COUNT-2:            vector.store
+    # CHECK-COUNT-32            vector.load
     # CHECK-COUNT-16:           amdgpu.mfma
     # CHECK-COUNT-4:            gpu.shuffle xor {{.*}}
     # CHECK-COUNT-16:           amdgpu.mfma
