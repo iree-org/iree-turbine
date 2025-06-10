@@ -5,6 +5,7 @@ from typing import Any, Callable
 import torch.fx as fx
 
 from iree.turbine.kernel._support.indexing import IndexSymbol
+from iree.turbine.kernel.wave.utils.general_utils import all_equal
 from iree.turbine.kernel.wave.utils.symbol_utils import subs_idxc
 
 from .._support.dtype import i1
@@ -34,7 +35,7 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
 
 def emit_local_inclusive_scan(
     binary_fn: Callable,
-    scan_src: fx.Node,
+    scan_src: list[fx.Node],
     graph: fx.Graph,
     elements_per_thread: int,
 ) -> list[fx.Node]:
@@ -42,13 +43,14 @@ def emit_local_inclusive_scan(
     Perform local inclusive scan for `n` elements per thread.
     """
     values = [
-        get_graph_node(Extract(scan_src, [i]), graph)
+        get_graph_node(Extract(scan_src[0], [i]), graph)
         for i in range(elements_per_thread)
     ]
+    values[0].index = scan_src[0].index
 
     for i in range(1, elements_per_thread):
         values[i] = get_graph_node(binary_fn(values[i], values[i - 1]), graph)
-
+        values[i].index = scan_src[0].index
     return values
 
 
@@ -218,36 +220,43 @@ def decompose_scan_ops(
             if scan_dim is None:
                 raise ValueError("No scan dim specified, please specify a scan dim.")
 
+            if not isinstance(scan_src, (list, tuple)):
+                scan_src = [scan_src]
+
             get_thread_shape = lambda index: max(
                 subs_idxc(x.size) for x in index.values()
             )
 
-            try:
-                op = get_custom(scan_src)
-                thread_shape = get_thread_shape(op.index)
-                local_scan_sizes = thread_shape
-            except Exception as e:
-                index_str = "\n".join(f"{k}: {v}" for k, v in op.index.items())
-                raise RuntimeError(
-                    f"Error in decompose_scan_ops: {scan_src} with index\n"
-                    f"{index_str}\n{scan_src=}\n{scan_acc=}\n{scan_dim=}"
-                ) from e
+            local_scan_sizes = []
+            for arg in scan_src:
+                try:
+                    op = get_custom(arg)
+                    thread_shape = get_thread_shape(op.index)
+                    local_scan_sizes.append(thread_shape)
+                except Exception as e:
+                    index_str = "\n".join(f"{k}: {v}" for k, v in op.index.items())
+                    raise RuntimeError(
+                        f"Error in decompose_scan_ops: {scan_src} with index\n"
+                        f"{index_str}\n{scan_src=}\n{scan_acc=}\n{scan_dim=}"
+                    ) from e
 
-            local_scan = [scan_src]
-
-            if local_scan_sizes > 1:
-                local_scan = emit_local_inclusive_scan(
-                    binary_fn, scan_src, custom.graph, local_scan_sizes
+            if not all_equal(local_scan_sizes):
+                raise NotImplementedError(
+                    "NYI: Expect all reduce_src to have same local reduce size."
                 )
+
+            local_scan = emit_local_inclusive_scan(
+                binary_fn, scan_src, custom.graph, local_scan_sizes[0]
+            )
 
             result = emit_global_scan(
                 binary_fn,
-                scan_src,
+                scan_src[0],
                 local_scan,
                 custom.graph,
                 subgroup_size,
                 hardware_constraint,
-                local_scan_sizes,
+                local_scan_sizes[0],
                 scan_dim,
             )
 
