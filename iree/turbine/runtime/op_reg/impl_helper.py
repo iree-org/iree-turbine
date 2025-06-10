@@ -172,7 +172,6 @@ def call_function(target_function: Operation, *operands: Value) -> Sequence[Valu
         StringAttr(target_function.attributes["sym_name"]).value
     )
     ftype = FunctionType(TypeAttr(target_function.attributes["function_type"]).value)
-
     return Operation.create(
         "util.call",
         results=ftype.results,
