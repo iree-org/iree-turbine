@@ -178,6 +178,9 @@ class StreamExecutable:
                         )
                     )
 
+            def is_scalar_symbol(binding: BindingDesc) -> bool:
+                return binding.symbol_type is not None
+
             # Define the export.
             with InsertionPoint.at_block_begin(self._exe_block):
                 index_type = IndexType.get()
@@ -187,7 +190,7 @@ class StreamExecutable:
                         [
                             index_type
                             for b in dynamic_dim_bindings
-                            + [b for b in scalar_bindings if b.symbol_type is not None]
+                            + [b for b in scalar_bindings if is_scalar_symbol(b)]
                         ]
                     )
                 )
