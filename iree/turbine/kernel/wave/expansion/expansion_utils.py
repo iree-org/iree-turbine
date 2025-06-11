@@ -29,9 +29,13 @@ from ...ops.wave_ops import (
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
 import itertools
 from iree.turbine.kernel._support.dtype import DataType
+from iree.turbine.kernel.wave.utils.general_utils import ceildiv
 from ..utils.graph_utils import (
     get_inputs,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ExpansionMetadata:
@@ -83,16 +87,23 @@ def get_dim_scaling(
                 raise ValueError(
                     "Tile size, wave count and vector size must be statically known"
                 )
+
             if (
                 tile_size % wave_count != 0
                 or (tile_size / wave_count) % vector_size != 0
             ):
-                raise ValueError(
-                    f"Tile size must be divisible by wave count and vector size, got: "
+                logger.info(
+                    f"Tile size is not divisible by wave count and vector size, got: "
                     f"dim={constraint.dim}, "
                     f"tile_size={tile_size}, wave_count={wave_count}, vector_size={vector_size}"
                 )
-            dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
+
+            if tile_size < vector_size and vector_size % tile_size != 0:
+                raise ValueError(
+                    f"Tile size {tile_size} is smaller than vector size {vector_size} and not divisible by it"
+                )
+
+            dim_scaling[constraint.dim] = ceildiv(tile_size, wave_count * vector_size)
 
     if isinstance(node.type, DataType):
         return {}

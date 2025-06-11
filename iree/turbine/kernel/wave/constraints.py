@@ -13,6 +13,8 @@ from sympy import ceiling, Piecewise, floor, Integer
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType
 from ..lang.global_symbols import *
+from .utils.symbol_utils import subs_idxc, get_min_expr
+
 
 """
 Formatting for different target intrinsics:
@@ -164,6 +166,24 @@ class DistributionConstraint(Constraint):
 
         It may be different from the dimension of the tensor if the dimensions is not divisible
         by the tile size.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @property
+    def dim_bound(self) -> IndexExpr:
+        """
+        Returns the dimension bound for the constraint, which is usually an
+        actual dimension of the tensor.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        """
+        Returns the index bound for the constraint, which is usually an
+        actual dimension of the tensor.
+
+        If bounds is not needed (i.e. tile/vector sizes are perfectly aligned to the tensor dimension),
+        return None.
         """
         raise NotImplementedError("Subclasses must implement this method")
 
@@ -506,6 +526,27 @@ class WorkgroupConstraint(DistributionConstraint):
     def work_bound(self) -> IndexExpr:
         return self.count * self.tile_size
 
+    @property
+    def dim_bound(self) -> IndexExpr:
+        return self.dim
+
+    def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        bound = None
+        # Work bound computed as `count * tile_size`, where `count` is
+        # `ceiling(dim / tile_size)`. Check if dim perfectly aligned with tile size.
+        if subs_idxc(self.work_bound) != subs_idxc(self.dim_bound):
+            bound = self.dim_bound
+
+        if (
+            vector_shape is not None
+            and vector_shape > 1
+            and subs_idxc(self.tile_size) % vector_shape != 0
+        ):
+            tile_bound = self.apply().start + self.tile_size
+            bound = get_min_expr(bound, tile_bound)
+
+        return bound
+
 
 def get_grid_shape(wg_constraints: list[WorkgroupConstraint]) -> list[IndexExpr]:
     sorted_constraints = sorted(
@@ -576,9 +617,28 @@ class TilingConstraint(DistributionConstraint):
     def work_bound(self) -> IndexExpr:
         return self.start + self.count * self.tile_size
 
+    @property
+    def dim_bound(self) -> IndexExpr:
+        return self.dim
+
+    def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        bound = None
+        if subs_idxc(self.work_bound) != subs_idxc(self.dim_bound):
+            bound = self.dim_bound
+
+        if (
+            vector_shape is not None
+            and vector_shape > 1
+            and subs_idxc(self.tile_size) % vector_shape != 0
+        ):
+            tile_bound = self.apply().start + self.tile_size
+            bound = get_min_expr(bound, tile_bound)
+
+        return bound
+
 
 @dataclass
-class WaveConstraint(Constraint):
+class WaveConstraint(DistributionConstraint):
     """
     A constraint of the form `tkw.WaveConstraint(K, WAVE_K)` specifies
     that we want distribute the K dimension among multiple waves which
@@ -608,6 +668,7 @@ class WaveConstraint(Constraint):
     dim: IndexExpr
     tile_size: IndexExpr
     wave_id: Optional[IndexExpr | int] = None
+    wg_constraint: Optional[WorkgroupConstraint] = None
 
     def apply(self) -> IndexSequence:
         if self.wave_id is None:
@@ -636,6 +697,20 @@ class WaveConstraint(Constraint):
         assert (
             old_wave_id is None or self.wave_id == old_wave_id
         ), f"Conflicting preset wave_id old: {old_wave_id} new: {self.wave_id}"
+        self.wg_constraint = workgroup_constraint
+
+    def get_index_bound(self, vector_shape: Optional[int]) -> Optional[IndexExpr]:
+        bound = None
+        if (
+            vector_shape is not None
+            and vector_shape > 1
+            and subs_idxc(self.tile_size) % vector_shape != 0
+        ):
+            bound = (
+                self.wg_constraint.apply().start + self.apply().start + self.tile_size
+            )
+
+        return bound
 
 
 def get_constrained_shape(

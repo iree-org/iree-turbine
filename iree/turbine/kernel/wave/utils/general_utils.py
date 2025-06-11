@@ -23,7 +23,7 @@ from ..constraints import (
     TilingConstraint,
     WorkgroupConstraint,
 )
-from .symbol_utils import safe_subs, subs_idxc
+from .symbol_utils import get_min_expr, safe_subs, subs_idxc
 
 
 # TODO: Monkey-patching f16 support, need to fix in iree.
@@ -111,8 +111,8 @@ def get_hardware_vector_map(constraints: list[Constraint]) -> dict[IndexSymbol, 
 
 
 def remove_global_indexing(
-    index: dict[IndexSymbol, IndexSequence], constraints: list[Constraint]
-) -> dict[IndexSymbol, IndexSequence]:
+    index: dict[IndexSymbol, IndexSequence | IndexExpr], constraints: list[Constraint]
+) -> dict[IndexSymbol, IndexSequence | IndexExpr]:
     """
     This function takes the index sequence for a global read and removes all
     workgroup and induction level indexing. This is necessary for writes to shared memory
@@ -126,9 +126,16 @@ def remove_global_indexing(
     for key in new_index:
         for constraint in tiling_constraints:
             new_dim = new_index[key]
-            if sympy.sympify(new_dim.start).has(constraint.induction_var):
+            if new_dim.has(constraint.induction_var):
                 new_dim = new_dim.subs({constraint.induction_var: 0})
-                new_dim.start = new_dim.start - constraint.start
+                if isinstance(new_dim, IndexSequence):
+                    new_dim.start = new_dim.start - constraint.start
+                else:
+                    assert isinstance(
+                        new_dim, sympy.Basic
+                    ), f"new_dim is not a sympy expression: {new_dim}"
+                    new_dim = new_dim - constraint.start
+
                 new_index[key] = new_dim
     return new_index
 
@@ -137,26 +144,18 @@ def is_shared_mem_access(custom: "CustomOp") -> bool:
     return custom.memory_type.address_space == SHARED_ADDRESS_SPACE
 
 
-def align_index_vars(
-    index: dict[IndexSymbol, IndexSequence], constraints: list[Constraint]
-) -> dict[IndexSymbol, IndexSequence]:
-    """
-    This function aligns index vars with Workgroup/Tiling constraints so it never
-    need partial reads/writes.
-    """
-    key_subs = {
-        c.dim: (c.work_bound)
-        for c in constraints
-        if isinstance(c, DistributionConstraint)
-        and subs_idxc(c.dim) != subs_idxc(c.work_bound)
-    }
-    return {safe_subs(key, key_subs): index[key] for key in index}
-
-
 def find_index_bounds(
-    constraints: list[Constraint], index: dict[IndexExpr, IndexExpr]
-) -> Optional[list[IndexExpr]]:
-    bounds = []
+    constraints: list[Constraint],
+    index: dict[IndexExpr, IndexExpr],
+    vector_shapes: Optional[dict[IndexSymbol, int]],
+) -> Optional[dict[IndexExpr, IndexExpr]]:
+    """
+    Find the bounds for the index variables is partial access/masking is needed.
+
+    Returns None if no partial access is needed.
+    """
+    vector_shapes = vector_shapes or {}
+    bounds = {}
     for constraint in constraints:
         if not isinstance(constraint, DistributionConstraint):
             continue
@@ -165,13 +164,11 @@ def find_index_bounds(
         if dim not in index:
             continue
 
-        work_size = constraint.work_bound
-        if subs_idxc(work_size) == subs_idxc(dim):
-            continue
+        bound = constraint.get_index_bound(vector_shapes.get(dim, None))
+        if bound is not None:
+            bounds[dim] = get_min_expr(bounds.get(dim, None), bound)
 
-        bounds.append(dim)
-
-    if len(bounds) == 0:
+    if not bounds:
         return None
 
     return bounds
