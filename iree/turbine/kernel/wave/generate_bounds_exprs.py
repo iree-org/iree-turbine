@@ -10,8 +10,14 @@ from ..ops.wave_ops import Read, Write
 from .wave import CapturedTrace
 from .constraints import Constraint, DistributionConstraint
 from .utils.graph_utils import get_custom
-from .utils.general_utils import find_index_bounds, get_hardware_constraint, is_shared_mem_access, remove_global_indexing
+from .utils.general_utils import (
+    find_index_bounds,
+    get_hardware_constraint,
+    is_shared_mem_access,
+    remove_global_indexing,
+)
 from .utils.symbol_utils import IndexSymbol, IndexExpr, subs_idxc, safe_subs
+
 
 def _get_max_tile_size(
     dim: IndexSymbol,
@@ -24,6 +30,7 @@ def _get_max_tile_size(
             ret = sympy.Max(ret, constraint.tile_size)
 
     return ret
+
 
 def generate_bounds_exprs(trace: CapturedTrace, constraints: list[Constraint]):
     """
@@ -53,9 +60,7 @@ def generate_bounds_exprs(trace: CapturedTrace, constraints: list[Constraint]):
             # expression `min(max(tile_size, vector_size), vector_size)` can be
             # simplified to just vector size.
             bounds = {
-                k: safe_subs(
-                    v, {k: _get_max_tile_size(k, constraints, vector_shapes)}
-                )
+                k: safe_subs(v, {k: _get_max_tile_size(k, constraints, vector_shapes)})
                 for k, v in bounds.items()
             }
             # Shared mem accesses are always access the full vector_shape tile,
@@ -67,6 +72,6 @@ def generate_bounds_exprs(trace: CapturedTrace, constraints: list[Constraint]):
             }
 
         if not bounds:
-          continue
+            continue
 
         node.update_arg("bounds", bounds)
