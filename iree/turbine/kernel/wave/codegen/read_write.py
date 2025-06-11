@@ -37,14 +37,9 @@ from ...compiler.vector_codegen import (
     cast_vector,
 )
 
-from ..constraints import Constraint, DistributionConstraint
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils.general_utils import (
-    find_index_bounds,
-    get_fastest_index,
-    remove_global_indexing,
-)
+from ..utils.general_utils import get_fastest_index
 from ..utils.symbol_utils import safe_subs, subs_idxc
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, IndexSymbol
@@ -123,51 +118,12 @@ def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
     return get_custom(node).type.symbolic_shape
 
 
-def _get_max_tile_size(
-    dim: IndexSymbol,
-    constraints: list[Constraint],
-    vector_shapes: dict[IndexSymbol, int],
-) -> IndexExpr:
-    ret = sympy.sympify(vector_shapes[dim])
-    for constraint in constraints:
-        if isinstance(constraint, DistributionConstraint) and constraint.dim == dim:
-            ret = sympy.Max(ret, constraint.tile_size)
-
-    return ret
-
-
 def _build_mask(
     emitter: WaveEmitter,
     index: dict[IndexExpr, IndexExpr],
     elements_per_thread: int,
-    vector_shapes: dict[IndexSymbol, int],
-    is_shared_mem: bool,
+    bounds: Optional[dict[IndexSymbol, IndexExpr]],
 ) -> Optional[OpResult]:
-    bounds = find_index_bounds(emitter.constraints, index, vector_shapes)
-    if is_shared_mem and bounds:
-        bounds = remove_global_indexing(bounds, emitter.constraints)
-        # Masking against global bounds was already handled when reading from
-        # global mem, but we may still need to handle masking against vector
-        # size during shared mem access.
-        # Bound expression for this case will look like
-        # `min(global_bound, vector_size)`.
-        # Replace global bound with `max(tile_size, vector_size)` so the entire
-        # expression `min(max(tile_size, vector_size), vector_size)` can be
-        # simplified to just vector size.
-        bounds = {
-            k: safe_subs(
-                v, {k: _get_max_tile_size(k, emitter.constraints, vector_shapes)}
-            )
-            for k, v in bounds.items()
-        }
-        # Shared mem accesses are always access the full vector_shape tile,
-        # so we can remove bounds that are divisible by vector size.
-        bounds = {
-            k: v
-            for k, v in bounds.items()
-            if subs_idxc(v % (vector_shapes[k] or 1)) != 0
-        }
-
     if not bounds:
         return None
 
@@ -212,7 +168,7 @@ def _construct_gather_scatter_indices(
     dynamic_vals: tuple[Any, ...],
     is_contiguous: bool,
     memory: CustomOp,
-    vector_shapes: dict[IndexSymbol, int],
+    bounds: Optional[dict[IndexSymbol, IndexExpr]],
 ) -> tuple[list[OpResult], list[OpResult], list[OpResult], OpResult, OpResult]:
     # Apply symbolic_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolic_shape is (N, M), result will
@@ -243,10 +199,7 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
 
-    is_shared_mem = subs_idxc(memory.type.address_space) == SHARED_ADDRESS_SPACE
-    mask = _build_mask(
-        emitter, index, elements_per_thread, vector_shapes, is_shared_mem
-    )
+    mask = _build_mask(emitter, index, elements_per_thread, bounds)
     if mask is None:
         mask_vec_type = VectorType.get(
             [elements_per_thread], IntegerType.get_signless(1)
@@ -669,7 +622,7 @@ def _create_vec_read_write(
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
     try:
-        memory, elements_per_thread, mapping, dyn_vals, _ = node.args
+        memory, elements_per_thread, mapping, dyn_vals, _, bounds = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
@@ -681,28 +634,16 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
-    vector_shapes = (
-        get_custom(node).vector_shapes or emitter.hardware_constraint.vector_shapes
-    )
 
     element_type = kb_ir_type.element_type
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
     elements_per_thread = cast_py_literal(emitter, elements_per_thread)
     if get_custom(node).has_identity_mapping():
-        is_shared_mem = (
-            subs_idxc(get_custom(memory).type.address_space) == SHARED_ADDRESS_SPACE
-        )
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
-        mask = _build_mask(
-            emitter,
-            index,
-            elements_per_thread,
-            vector_shapes,
-            is_shared_mem,
-        )
+        mask = _build_mask(emitter, index, elements_per_thread, bounds)
         result = _create_vec_read_write(
             emitter,
             input_shape,
@@ -737,7 +678,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
             memory=get_custom(memory),
-            vector_shapes=vector_shapes,
+            bounds=bounds,
         )
         result = _create_vec_read_write(
             emitter,
@@ -760,7 +701,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
 @handle_op(write)
 def handle_write(emitter: WaveEmitter, node: fx.Node):
     try:
-        register, memory, elements_per_thread, mapping, dyn_vals = node.args
+        register, memory, elements_per_thread, mapping, dyn_vals, bounds = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
@@ -780,23 +721,15 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         raise ValidationError("codegen expected write to have index attr.")
 
     index = node.index
-    vector_shapes = (
-        get_custom(node).vector_shapes or emitter.hardware_constraint.vector_shapes
-    )
 
     input_shape = _get_symbolic_shape(register)
     output_shape = _get_symbolic_shape(memory)
     elements_per_thread = cast_py_literal(emitter, elements_per_thread)
     if get_custom(node).has_identity_mapping():
-        is_shared_mem = (
-            subs_idxc(get_custom(memory).type.address_space) == SHARED_ADDRESS_SPACE
-        )
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
-        mask = _build_mask(
-            emitter, index, elements_per_thread, vector_shapes, is_shared_mem
-        )
+        mask = _build_mask(emitter, index, elements_per_thread, bounds)
         _create_vec_read_write(
             emitter,
             output_shape,
@@ -835,7 +768,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
             memory=get_custom(memory),
-            vector_shapes=vector_shapes,
+            bounds=bounds,
         )
 
         _create_vec_read_write(

@@ -1407,6 +1407,7 @@ class Read(CustomOp):
     mapping: Optional[IndexMapping] = None
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
     _write_dependency: Optional[list[fx.Node]] = None
+    bounds: Optional[dict[IndexSymbol, IndexExpr]] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
@@ -1718,6 +1719,7 @@ class Write(CustomOp):
     elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
+    bounds: Optional[dict[IndexSymbol, IndexExpr]] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
