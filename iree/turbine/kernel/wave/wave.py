@@ -50,6 +50,7 @@ from .decompose_vmma_ops import decompose_vmma_ops
 from .decompose_scan_ops import decompose_scan_ops
 from .decompose_dot_mma import decompose_dot_mma
 from .expansion.expansion import expand_graph, add_get_results
+from .gather_to_shared import gather_to_shared
 from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
@@ -86,12 +87,6 @@ import torch.fx as fx
 import inspect
 import sympy
 import warnings
-from pathlib import Path
-import sys
-import subprocess
-import os
-import shutil
-import glob
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -537,6 +532,7 @@ class LaunchableWave(Launchable):
             partial(hoist_loop_invariant_ops, trace, self.constraints),
             partial(global_to_shared_gathers, trace, self.constraints),
             partial(minimize_global_loads, trace, self.constraints),
+            partial(gather_to_shared, trace, self.constraints),
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
         ]
 

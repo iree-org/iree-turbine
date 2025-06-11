@@ -9,6 +9,7 @@ from ...lang.global_symbols import *
 import iree.turbine.kernel.lang as tkl
 from ...ops.wave_ops import (
     get_custom,
+    Read,
     Write,
     NestedRegionOp,
     Output,
@@ -438,3 +439,23 @@ def is_barrier_between(src: fx.Node, dst: fx.Node) -> bool:
             return dst_check or root_check
 
         assert False, "Unhandled case when src and dst are in different graphs"
+
+
+def has_write_shared_user(node: Read) -> bool:
+    return any(
+        isinstance(user, Write)
+        and subs_idxc(user.memory_type.address_space) == SHARED_ADDRESS_SPACE
+        for user in node.users
+    )
+
+
+def is_valid_global_read(node: fx.Node) -> bool:
+    """
+    Check if a read node is global and if its user writes to shared memory.
+    """
+    custom = get_custom(node)
+    return (
+        isinstance(custom, Read)
+        and subs_idxc(custom.memory_type.address_space) == GLOBAL_ADDRESS_SPACE
+        and has_write_shared_user(custom)
+    )
