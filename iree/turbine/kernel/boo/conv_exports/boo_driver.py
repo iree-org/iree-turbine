@@ -3,6 +3,7 @@ import math
 import argparse
 from collections.abc import Callable, Sequence
 import os
+import random
 import shlex
 import statistics
 import torch
@@ -30,9 +31,9 @@ command-line arguments are appended to the arguments from the file.
     )
     parser.add_argument(
         "--gpu-id",
-        default=None,
+        default=0,
         type=int,
-        help="Indicate a specific gpu device index to run on. Defaults to using all available devices."
+        help="Indicate a specific gpu device index to run on. Specify '-1' to use all available devices."
         " The index corresponds to a torch.device('cuda:<gpu-id>'). If intending to run on a subset"
         " of available devices, please use the environment variables `CUDA_VISIBLE_DEVICES` or "
         " `ROCR_VISIBLE_DEVICES` instead.",
@@ -92,7 +93,7 @@ command-line arguments are appended to the arguments from the file.
             csv_file.write(f"{min(zones[dispatch_zone_names[0]]) / 1000:.2f}\n")
 
 
-def run(cli_args: Sequence[str], gpu_id: int | None):
+def run(cli_args: Sequence[str], gpu_id: int):
     # In order to be properly traced only the subprocesses should import
     # 'iree.runtime', so all turbine imports need to be kept local.
     from iree.turbine.kernel.boo.conv_exports import (
@@ -116,10 +117,10 @@ def run(cli_args: Sequence[str], gpu_id: int | None):
     conv = get_launchable(sig)
 
     # get the number of available GPU's
-    num_devices = 1 if gpu_id is not None else torch.cuda.device_count()
+    num_devices = 1 if gpu_id != -1 else torch.cuda.device_count()
     devices = (
         [f"cuda:{gpu_id}"]
-        if gpu_id is not None
+        if gpu_id != -1
         else [f"cuda:{i}" for i in range(num_devices)]
     )
     iter_per_device = args.iter // num_devices
@@ -169,6 +170,9 @@ def run(cli_args: Sequence[str], gpu_id: int | None):
     return sig.get_func_name()
 
 
+TRACY_PORT = str(random.randint(40_000, 50_000))
+
+
 def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
     """Profile 'func' under Tracy, and return the GPU zone execution times."""
     from multiprocessing import Process, Queue
@@ -178,11 +182,10 @@ def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
     import sys
     from tempfile import TemporaryDirectory
 
-    tracy_port = "44434"
     with TemporaryDirectory() as temp_dir:
         trace_path = f"{temp_dir}/out.trace"
         with Popen(
-            ["iree-tracy-capture", "-o", trace_path, "-f", "-p", tracy_port],
+            ["iree-tracy-capture", "-o", trace_path, "-f", "-p", TRACY_PORT],
             stdout=subprocess.PIPE,
             stderr=sys.stderr,
             text=True,
@@ -190,7 +193,7 @@ def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
             queue = Queue()
 
             def proc_fn():
-                os.environ["TRACY_PORT"] = tracy_port
+                os.environ["TRACY_PORT"] = TRACY_PORT
                 try:
                     queue.put(func())
                 except Exception as exc:
