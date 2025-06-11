@@ -11,7 +11,7 @@ from ..wave.constraints import (
     TilingConstraint,
 )
 from .._support.tracing import CapturedTrace
-from .._support.indexing import IndexingContext, IndexSequence, IndexSymbol, IndexExpr
+from .._support.indexing import IndexSequence, IndexSymbol, IndexExpr
 from ..ops.wave_ops import Read, Write, get_custom
 from ..lang.global_symbols import *
 from .utils.general_utils import (
@@ -20,6 +20,9 @@ from .utils.general_utils import (
     infer_dim,
     is_shared_read,
     get_fastest_index,
+)
+from .utils.general_utils import (
+    is_valid_global_read,
 )
 from .utils.graph_utils import (
     DCE,
@@ -40,23 +43,6 @@ class SharedReadMetadata:
     index: dict[IndexSymbol, IndexSequence]
     mapping: IndexMapping
     memory_shape: tuple[int | IndexExpr]
-
-
-def has_write_shared_user(node: Read) -> bool:
-    return any(
-        isinstance(user, Write)
-        and subs_idxc(user.memory_type.address_space) == SHARED_ADDRESS_SPACE
-        for user in node.users
-    )
-
-
-def is_valid_global_read(node: fx.Node) -> bool:
-    custom = get_custom(node)
-    return (
-        isinstance(custom, Read)
-        and subs_idxc(custom.memory_type.address_space) == GLOBAL_ADDRESS_SPACE
-        and has_write_shared_user(custom)
-    )
 
 
 def is_transposed_read(custom: Read) -> bool:

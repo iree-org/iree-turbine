@@ -9,6 +9,7 @@ from ...lang.global_symbols import *
 import iree.turbine.kernel.lang as tkl
 from ...ops.wave_ops import (
     get_custom,
+    Read,
     Write,
     NestedRegionOp,
     Output,

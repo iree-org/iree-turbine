@@ -62,6 +62,7 @@ from ...ops.wave_ops import (
     exp2,
     extract,
     extract_slice,
+    gather_to_lds,
     ge,
     get_custom,
     get_result,
@@ -1707,3 +1708,15 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
         [1],
     )
     emitter.bind_node_proxy(node, IRProxyValue(slice))
+
+
+@handle_op(gather_to_lds)
+def handle_gather_to_lds(emitter: WaveEmitter, node: fx.Node):
+    try:
+        src, src_idx, dst, dst_idx, dtype = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+
+    return amdgpu_d.gather_to_lds(
+        transfer_type=dtype, src=src, src_indices=src_idx, dst=dst, dst_indices=dst_idx
+    )
