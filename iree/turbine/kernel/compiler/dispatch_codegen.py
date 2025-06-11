@@ -201,26 +201,25 @@ class StreamExecutable:
 
             arguments = workgroup_builder.entry_block.arguments
 
-            # Map dynamic symbols to block arguments.
-            dynamic_symbols_mapping = {
+            # Map dynamic symbols or bound scalar symbols to block arguments.
+            symbols_mapping = {
                 k.symbol_type: v for k, v in zip(dynamic_dim_bindings, arguments)
             }
 
             with InsertionPoint(workgroup_builder.entry_block):
+                # Populate scalar bindings.
                 for i, s in enumerate(scalar_bindings):
                     if s.symbol_type is None:
                         continue
 
                     offset = len(dynamic_dim_bindings) + i
-                    dynamic_symbols_mapping[s.symbol_type] = arguments[offset]
+                    symbols_mapping[s.symbol_type] = arguments[offset]
 
                 result_type = index_type
                 workgroup_values = []
                 for dim in grid.dims:
                     if isinstance(dim, IndexExpr):
-                        workgroup_values.append(
-                            gen_sympy_index(dynamic_symbols_mapping, dim)
-                        )
+                        workgroup_values.append(gen_sympy_index(symbols_mapping, dim))
                     else:
                         workgroup_values.append(
                             arith_d.constant(
