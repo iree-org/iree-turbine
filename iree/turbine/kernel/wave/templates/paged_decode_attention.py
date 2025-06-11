@@ -83,7 +83,7 @@ def get_paged_decode_attention_kernels(
     if mha:
         B_WAVES = 1
     else:
-        B_WAVES = clamp(1, head_ratio // MMA_VEC_SIZE, 4)
+        B_WAVES = clamp(head_ratio // MMA_VEC_SIZE, 1, 4)
     HEAD_BLOCK_SIZE = min(MMA_VEC_SIZE * B_WAVES, head_ratio)
 
     LOG2E = 1.44269504089

@@ -221,7 +221,7 @@ def ceildiv(a: int, b: int) -> int:
     return -(a // -b)
 
 
-def clamp(min_val: int, x: int, max_val: int) -> int:
+def clamp(x: int, min_val: int, max_val: int) -> int:
     return max(min_val, min(x, max_val))
 
 
