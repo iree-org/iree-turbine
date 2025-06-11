@@ -11,13 +11,18 @@ from .multi_buffering import multi_buffer
 from .modulo_scheduling import ModuloScheduler
 from .prefetch_scheduling import PrefetchScheduler
 from .graph_utils import create_scheduling_edges, Edge
-from .resources import get_available_resources, annotate_resource_usage
+from .resources import (
+    get_available_resources,
+    annotate_resource_usage,
+    get_resource_names,
+)
 from .schedule_enums import SchedulingType
 from ..visualization import visualize_edges, visualize_graph, visualize_schedule
 from .loop_reconstruction import construct_pipelined_loop
 from ..utils.graph_utils import (
     graph_copy,
     erase_graph,
+    update_sort_keys,
 )
 from ..utils.general_utils import (
     get_tiling_constraint,
@@ -27,8 +32,18 @@ from ..utils.general_utils import (
 from ..utils.symbol_utils import (
     subs_idxc,
 )
+from ..utils.print_utils import dump_schedule, load_schedule
+from ...lang.global_symbols import (
+    GLOBAL_MEMORY_UNITS,
+    SHARED_MEMORY_UNITS,
+    MMA_UNITS,
+    VALU_UNITS,
+    SHUFFLE_UNITS,
+)
 import torch.fx as fx
 from ....support.logging import get_logger
+import json
+import os
 
 logger = get_logger("turbine.wave.scheduling.schedule")
 
@@ -48,6 +63,8 @@ def schedule_reduction(
     constraints: list[Constraint],
     use_scheduling_barriers: bool = False,
     scheduling_type: SchedulingType = SchedulingType.NONE,
+    override_schedule_file: str = None,
+    dump_schedule_file: str = None,
 ):
     """
     Clones the reduction graph and does the following:
@@ -57,6 +74,9 @@ def schedule_reduction(
     Does scheduling on the cloned graph and applies the schedule
     to the original graph. Finally, erases the cloned graph.
 
+    Args:
+        override_schedule_file: If provided, load schedule from this file instead of computing it
+        dump_schedule_file: If provided, dump the computed schedule to this file
     """
     if scheduling_type == SchedulingType.NONE:
         return {}
@@ -65,19 +85,48 @@ def schedule_reduction(
     ignore_nodes, iter_args, output = annotate_resource_usage(graph)
     edges = create_scheduling_edges(graph, ignore_nodes, iter_args, output)
 
-    if is_solver_based(scheduling_type):
-        scheduler = ModuloScheduler(graph, edges, get_available_resources())
-    elif scheduling_type == SchedulingType.PREFETCH:
-        scheduler = PrefetchScheduler(graph, edges, get_available_resources())
+    update_sort_keys(trace, graph)
+
+    if override_schedule_file:
+        if not os.path.exists(override_schedule_file):
+            raise ValueError(
+                f"Override schedule file {override_schedule_file} does not exist"
+            )
+        (
+            schedule,
+            initiation_interval,
+            num_stages,
+            _,
+            edges,
+            _,
+            _,
+        ) = load_schedule(override_schedule_file, graph)
+        success = True
     else:
-        raise ValueError("Unknown scheduling type")
+        if is_solver_based(scheduling_type):
+            scheduler = ModuloScheduler(graph, edges, get_available_resources())
+        elif scheduling_type == SchedulingType.PREFETCH:
+            scheduler = PrefetchScheduler(graph, edges, get_available_resources())
+        else:
+            raise ValueError("Unknown scheduling type")
 
-    schedule, success = scheduler.schedule_graph()
-    if not success:
-        raise ValueError("Scheduling failed.")
+        schedule, success = scheduler.schedule_graph()
+        if not success:
+            raise ValueError("Scheduling failed.")
 
-    initiation_interval = scheduler.initiation_interval
-    num_stages = scheduler.num_stages
+        initiation_interval = scheduler.initiation_interval
+        num_stages = scheduler.num_stages
+
+        if dump_schedule_file:
+            dump_schedule(
+                graph,
+                schedule,
+                initiation_interval,
+                num_stages,
+                dump_schedule_file,
+                scheduler.resource_reservations,
+                get_resource_names(),
+            )
 
     visualize = False
     if visualize:
@@ -175,9 +224,15 @@ def schedule_graph(
     constraints: list[Constraint],
     use_scheduling_barriers: bool = False,
     scheduling_type: SchedulingType = SchedulingType.NONE,
+    override_schedule: str = None,
+    dump_schedule: str = None,
 ):
     """
     Given a graph, pipelines the reductions in the graph.
+
+    Args:
+        override_schedule: If provided, load schedule from this file instead of computing it
+        dump_schedule: If provided, dump the computed schedule to this file
     """
     if scheduling_type == SchedulingType.NONE:
         return
@@ -196,4 +251,6 @@ def schedule_graph(
             constraints,
             use_scheduling_barriers,
             scheduling_type,
+            override_schedule,
+            dump_schedule,
         )

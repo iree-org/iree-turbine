@@ -31,6 +31,16 @@ from enum import Enum
 import numpy as np
 
 
+def get_resource_names() -> list[str]:
+    return [
+        str(GLOBAL_MEMORY_UNITS).replace("$", ""),
+        str(SHARED_MEMORY_UNITS).replace("$", ""),
+        str(MMA_UNITS).replace("$", ""),
+        str(VALU_UNITS).replace("$", ""),
+        str(SHUFFLE_UNITS).replace("$", ""),
+    ]
+
+
 # This table contains the number of functional units available for each operation.
 def get_available_resources() -> list[int]:
     resources = [

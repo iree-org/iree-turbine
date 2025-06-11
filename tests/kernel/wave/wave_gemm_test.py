@@ -34,6 +34,7 @@ from .common.utils import (
     param_bool,
 )
 from iree.turbine.kernel.wave.constraints import MMAType, MMAOperand, GenericDot
+from iree.turbine.kernel.wave.templates.gemm import get_gemm_kernel
 import os
 import json
 from torch.testing import assert_close
@@ -615,6 +616,90 @@ def testPingPongGemm(
     iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
     generate_iree_ref("mmt", [a, b], [iree_ref])
     assert_close(c, iree_ref, check_device=False)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", [get_test_shapes("test_gemm")[0]])
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.MODULO])
+@param_bool("dynamic_dims", "dyn")
+@pytest.mark.parametrize("mfma_variant", [MMAType.F32_16x16x16_F16])
+def testGemmDumpOverrideSchedule(
+    shape: tuple[int],
+    enable_scheduling: SchedulingType,
+    dynamic_dims: bool,
+    mfma_variant: MMAType,
+    request,
+):
+    run_bench = request.config.getoption("--runperf")
+    dump_perf = request.config.getoption("--dump-perf-files-path")
+
+    gemm, hyperparams, dynamic_symbols, dynamic_symbols_map = get_gemm_kernel(
+        shape, dynamic_dims, mfma_variant
+    )
+    perf_filename = request.node.name + ".json"
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        run_bench=run_bench,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + perf_filename) if dump_perf else None
+        ),
+        dump_schedule="./schedule.txt",
+    )
+    options = set_default_run_config(options)
+    compiled_gemm = wave_compile(options, gemm)
+
+    a = device_randn(shape[0], shape[2], dtype=torch.float16)
+    b = device_randn(shape[1], shape[2], dtype=torch.float16)
+    c = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    asm = compiled_gemm(a, b, c)
+
+    if dump_generated_mlir:
+        filename = f"wave_gemm_{'x'.join(map(str, shape))}.mlir"
+        with open(filename, "w") as f:
+            f.write(asm)
+
+    if run_bench:
+        if dump_perf is not None:
+            options.benchmark_results_file = os.path.join(
+                dump_perf, "iree_" + perf_filename
+            )
+    iree_ref = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    generate_iree_ref("mmt", [a, b], [iree_ref])
+    assert_close(c, iree_ref, check_device=False)
+
+    # Now reload the schedule and run the kernel again.
+    # The results should be the same.
+    gemm, hyperparams, dynamic_symbols, dynamic_symbols_map = get_gemm_kernel(
+        shape, dynamic_dims, mfma_variant
+    )
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        run_bench=run_bench,
+        schedule=enable_scheduling,
+        use_scheduling_barriers=enable_scheduling_barriers,
+        dynamic_symbols=dynamic_symbols,
+        dynamic_symbols_map=dynamic_symbols_map,
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + perf_filename) if dump_perf else None
+        ),
+        override_schedule="./schedule.txt",
+    )
+    options = set_default_run_config(options)
+    compiled_gemm = wave_compile(options, gemm)
+    c_new = device_zeros(shape[0], shape[1], dtype=torch.float32)
+    asm = compiled_gemm(a, b, c_new)
+    assert_close(c, c_new, check_device=False)
+    assert_close(c_new, iree_ref, check_device=False)
 
 
 _xfail = lambda *a: pytest.param(*a, marks=pytest.mark.xfail)
