@@ -61,7 +61,7 @@ def DCE(trace: CapturedTrace):
 
         if isinstance(custom, Placeholder) and custom.graph == trace.get_root_graph():
             # Do not remove root placeholders as they correspond to kernel
-            # arguments and removind them will change the kernel signature.
+            # arguments and removing them will change the kernel signature.
             return False
 
         if has_nested_writes(node):
