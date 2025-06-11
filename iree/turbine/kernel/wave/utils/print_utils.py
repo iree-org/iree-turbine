@@ -42,9 +42,9 @@ def get_node_type(node: fx.Node) -> str:
 
 
 def _write_metadata_to_file(f, initiation_interval: int, num_stages: int):
-    """Write schedule metadata to a file as comments."""
-    f.write(f"# Initiation Interval: {initiation_interval}\n")
-    f.write(f"# Number of Stages: {num_stages}\n")
+    """Write schedule metadata to a file."""
+    f.write(f"Initiation Interval: {initiation_interval}\n")
+    f.write(f"Number of Stages: {num_stages}\n")
 
 
 def _write_rrt_to_file(
@@ -53,7 +53,7 @@ def _write_rrt_to_file(
     resource_names: list[str],
     initiation_interval: int,
 ):
-    """Write resource reservation table to a file as comments."""
+    """Write resource reservation table to a file."""
     if resource_reservations is None or resource_names is None:
         return
 
@@ -61,7 +61,7 @@ def _write_rrt_to_file(
     f.write("# Each row represents a cycle in the initiation interval\n")
     f.write("# Each column represents a resource type\n")
     f.write("# Format: cycle | resource_usage\n")
-    f.write("#\n")
+    f.write("\n")
 
     # Calculate column widths for RRT
     rrt_col_widths = {
@@ -72,13 +72,13 @@ def _write_rrt_to_file(
     }
 
     # Create a header line with resource names
-    header_parts = [f"# {'Cycle':>{rrt_col_widths['cycle']}}"]
+    header_parts = [f"{'Cycle':>{rrt_col_widths['cycle']}}"]
     for name, width in zip(resource_names, rrt_col_widths["resources"]):
         header_parts.append(f"{name:>{width}}")
     f.write(" | ".join(header_parts) + "\n")
 
     # Write a separator line
-    separator_parts = ["# " + "-" * rrt_col_widths["cycle"]]
+    separator_parts = ["-" * rrt_col_widths["cycle"]]
     separator_parts.extend("-" * width for width in rrt_col_widths["resources"])
     f.write(" | ".join(separator_parts) + "\n")
 
@@ -91,7 +91,7 @@ def _write_rrt_to_file(
                 resource_reservations[cycle], rrt_col_widths["resources"]
             )
         )
-        f.write(f"# {cycle:>{rrt_col_widths['cycle']}d} | {resource_str}\n")
+        f.write(f"{cycle:>{rrt_col_widths['cycle']}d} | {resource_str}\n")
     f.write("\n")
 
 
@@ -110,7 +110,7 @@ def _parse_rrt_from_lines(
             rrt_start_line = i
         elif (
             rrt_start_line != -1
-            and line.startswith("#")
+            and not line.startswith("#")
             and "|" in line
             and not any(c in "-| " for c in line)
         ):
@@ -130,7 +130,7 @@ def _parse_rrt_from_lines(
     # Find the header line with resource names
     header_line = None
     for line in rrt_lines:
-        if line.startswith("#") and "Cycle" in line and "|" in line:
+        if not line.startswith("#") and "Cycle" in line and "|" in line:
             header_line = line
             break
 
@@ -148,11 +148,15 @@ def _parse_rrt_from_lines(
 
     # Parse RRT data lines
     for line in rrt_lines:
-        if line.startswith("#") and "|" in line and not any(c in "-| " for c in line):
+        if (
+            not line.startswith("#")
+            and "|" in line
+            and not any(c in "-| " for c in line)
+        ):
             # Parse cycle and resource values
             parts = [p.strip() for p in line.split("|")]
             if len(parts) == num_resources + 1:  # +1 for cycle column
-                cycle = int(parts[0].strip("#").strip())
+                cycle = int(parts[0].strip())
                 values = [int(v.strip()) for v in parts[1:]]
                 resource_reservations[cycle] = values
 
@@ -167,9 +171,9 @@ def _parse_metadata_from_lines(lines: list[str]) -> Tuple[Optional[int], Optiona
     num_stages = None
 
     for line in lines:
-        if line.startswith("# Initiation Interval:"):
+        if line.startswith("Initiation Interval:"):
             initiation_interval = int(line.split(":")[1].strip())
-        elif line.startswith("# Number of Stages:"):
+        elif line.startswith("Number of Stages:"):
             num_stages = int(line.split(":")[1].strip())
 
     return initiation_interval, num_stages
@@ -294,8 +298,8 @@ def dump_schedule(
     """
     Dumps the schedule to a file in pipe-delimited table format.
     Each row contains: node_name | node_type | node_sort_key | cycle | relative_cycle | stage | user_sort_keys
-    The schedule metadata (II and num_stages) is stored at the top as comments.
-    If provided, the resource reservation table is also stored as comments.
+    The schedule metadata (II and num_stages) is stored at the top.
+    If provided, the resource reservation table is also stored.
     Columns are padded to ensure pipe alignment.
     Rows are sorted by cycle first, then by stage.
     A separator line of dashes is added between different stages.

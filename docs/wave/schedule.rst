@@ -19,8 +19,8 @@ The metadata section appears at the top of the file and contains two required pi
 
 .. code-block:: text
 
-    # Initiation Interval: <II>
-    # Number of Stages: <num_stages>
+    Initiation Interval: <II>
+    Number of Stages: <num_stages>
 
 Where:
 - ``<II>`` is the initiation interval (number of cycles in the repeating pattern)
@@ -37,12 +37,12 @@ The RRT section is optional and provides information about resource usage across
     # Each row represents a cycle in the initiation interval
     # Each column represents a resource type
     # Format: cycle | resource_usage
-    #
-    # Cycle | GLOBAL_MEMORY_UNITS | SHARED_MEMORY_UNITS | MMA_UNITS | VALU_UNITS | SHUFFLE_UNITS
-    # ----- | ------------------- | ------------------- | --------- | ---------- | -------------
-    #     0 |                   2 |                   4 |         4 |          0 |             0
-    #     1 |                   0 |                   4 |         0 |          0 |             0
-    #     2 |                   0 |                   2 |         4 |          0 |             0
+
+    Cycle | GLOBAL_MEMORY_UNITS | SHARED_MEMORY_UNITS | MMA_UNITS | VALU_UNITS | SHUFFLE_UNITS
+    ----- | ------------------- | ------------------- | --------- | ---------- | -------------
+        0 |                   2 |                   4 |         4 |          0 |             0
+        1 |                   0 |                   4 |         0 |          0 |             0
+        2 |                   0 |                   2 |         4 |          0 |             0
 
 The RRT shows how many resources of each type are used in each cycle of the initiation interval. This helps in understanding resource utilization and potential bottlenecks.
 
@@ -66,19 +66,19 @@ Here's a complete example of a schedule file:
 
 .. code-block:: text
 
-    # Initiation Interval: 3
-    # Number of Stages: 3
+    Initiation Interval: 3
+    Number of Stages: 3
 
     # Resource Reservation Table (RRT):
     # Each row represents a cycle in the initiation interval
     # Each column represents a resource type
     # Format: cycle | resource_usage
-    #
-    # Cycle | GLOBAL_MEMORY_UNITS | SHARED_MEMORY_UNITS | MMA_UNITS | VALU_UNITS | SHUFFLE_UNITS
-    # ----- | ------------------- | ------------------- | --------- | ---------- | -------------
-    #     0 |                   2 |                   4 |         4 |          0 |             0
-    #     1 |                   0 |                   4 |         0 |          0 |             0
-    #     2 |                   0 |                   2 |         4 |          0 |             0
+
+    Cycle | GLOBAL_MEMORY_UNITS | SHARED_MEMORY_UNITS | MMA_UNITS | VALU_UNITS | SHUFFLE_UNITS
+    ----- | ------------------- | ------------------- | --------- | ---------- | -------------
+        0 |                   2 |                   4 |         4 |          0 |             0
+        1 |                   0 |                   4 |         0 |          0 |             0
+        2 |                   0 |                   2 |         4 |          0 |             0
 
     Node Name                   | Node Type     | Node Sort Key   | Cycle   | Relative Cycle   | Stage   | User Sort Keys
     --------------------------- | ------------- | --------------- | ------- | ---------------- | ------- | ----------------------------
