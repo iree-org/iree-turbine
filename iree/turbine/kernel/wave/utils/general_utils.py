@@ -111,8 +111,8 @@ def get_hardware_vector_map(constraints: list[Constraint]) -> dict[IndexSymbol, 
 
 
 def remove_global_indexing(
-    index: dict[IndexSymbol, IndexSequence], constraints: list[Constraint]
-) -> dict[IndexSymbol, IndexSequence]:
+    index: dict[IndexSymbol, IndexSequence | IndexExpr], constraints: list[Constraint]
+) -> dict[IndexSymbol, IndexSequence | IndexExpr]:
     """
     This function takes the index sequence for a global read and removes all
     workgroup and induction level indexing. This is necessary for writes to shared memory
@@ -131,6 +131,9 @@ def remove_global_indexing(
                 if isinstance(new_dim, IndexSequence):
                     new_dim.start = new_dim.start - constraint.start
                 else:
+                    assert isinstance(
+                        new_dim, sympy.Basic
+                    ), f"new_dim is not a sympy expression: {new_dim}"
                     new_dim = new_dim - constraint.start
 
                 new_index[key] = new_dim
