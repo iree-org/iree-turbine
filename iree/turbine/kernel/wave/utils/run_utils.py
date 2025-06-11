@@ -44,8 +44,12 @@ def get_device_uuid(device_list: list[str], device_str: str) -> tuple[int, str]:
     return device_str
 
 
-def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, scalar_args, dynamic_dims):
-    linearized_arg_len = len(inputs) + len(outputs) + len(scalar_args) + len(dynamic_dims)
+def _inplace_invoke(
+    vm_context, device, entry_function, inputs, outputs, scalar_args, dynamic_dims
+):
+    linearized_arg_len = (
+        len(inputs) + len(outputs) + len(scalar_args) + len(dynamic_dims)
+    )
     # ret_list is 0 because we modify/write result in place.
     arg_list = rt.VmVariantList(linearized_arg_len)
     ret_list = rt.VmVariantList(0)
