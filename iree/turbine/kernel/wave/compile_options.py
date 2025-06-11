@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 from .scheduling.schedule_enums import SchedulingType
 from .._support.indexing import IndexExpr, IndexSymbol
 from .._support.location_config import LocationCaptureConfig
@@ -70,8 +70,8 @@ class WaveCompileOptions:
     # === Compiler options ===
     minimize_shared_allocs: bool = True
     reorder_allocs: bool = True
-    override_schedule: str = None
-    dump_schedule: str = None
+    override_schedule: Optional[str] = None
+    dump_schedule: Optional[str] = None
 
     # === Print options ===
     print_ir_after: list[str] = field(default_factory=list)
