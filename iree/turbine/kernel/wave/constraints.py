@@ -404,7 +404,6 @@ class HardwareConstraint(Constraint):
         constraint_index: int | MMAOperand,
         mma_type: MMAType,
     ) -> IndexSequence:
-        lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
 

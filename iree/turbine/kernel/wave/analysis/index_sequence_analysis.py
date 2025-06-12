@@ -238,7 +238,6 @@ def set_thread_independent_index(
     if isinstance(custom, (Iterate, Placeholder)) and not isinstance(custom, IterArg):
         return
 
-    hw_cons = get_hardware_constraint(constraints)
     constraints = [
         c
         for c in constraints
@@ -474,7 +473,6 @@ def propagate_indices(
     Propagate the index and vector shapes through the graph
     starting with priveleged nodes (like MMA, Read, Write).
     """
-    reduction = None
     while sources:
         source, source_index, source_vector_shapes = sources.pop(0)
         if source in visited:

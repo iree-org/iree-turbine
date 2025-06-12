@@ -117,8 +117,6 @@ def hoist_loop_invariant_ops(trace: CapturedTrace, constraints: list[Constraint]
                         custom_node, constraints
                     )
                     subgraph = trace.get_subgraph(custom_node.subgraph_name)
-                    # Capture/root variables from outside the loop.
-                    implicit_captures = custom_node.implicit_captures
                     # Captured variables from inside the loop.
                     captured_vars = custom_node.captured_vars(subgraph)
                     hoistable_ops = get_hoistable_ops(
