@@ -24,6 +24,7 @@ from ...ops.wave_ops import (
     Reshape,
     NewRegister,
     ReduceOp,
+    ScanOp,
     MMA,
 )
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
@@ -135,6 +136,14 @@ def get_dim_scaling(
             dim_scaling[reduction_dim] = (
                 idxc.get_static_value(reduction_dim)
                 // node.vector_shapes[reduction_dim]
+            )
+
+    # For scan ops, also include the reduction dimension.
+    if isinstance(node, ScanOp):
+        scan_dim = node.scan_dim
+        if not_computed(scan_dim) and is_static_dim(scan_dim):
+            dim_scaling[scan_dim] = (
+                idxc.get_static_value(scan_dim) // node.vector_shapes[scan_dim]
             )
 
     return dim_scaling
