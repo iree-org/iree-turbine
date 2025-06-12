@@ -61,13 +61,6 @@ TCallable = TypeVar("TCallable", bound=Callable)
 
 
 class KernelRegionGraph(RegionGraph):
-    def __init__(
-        self, *, location_capture_config: Optional[LocationCaptureConfig] = None
-    ):
-        super(KernelRegionGraph, self).__init__(
-            location_capture_config=location_capture_config
-        )
-
     def new_subtracer(
         self,
         region_graph: "RegionGraph",

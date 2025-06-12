@@ -93,7 +93,7 @@ class StackTraceInfo:
 
 def capture_location(
     location_capture_config: Optional[LocationCaptureConfig],
-) -> Optional[Union[FileLineColInfo, StackTraceInfo]]:
+) -> Optional[FileLineColInfo | StackTraceInfo]:
     if (
         not location_capture_config
         or location_capture_config.level == LocationCaptureLevel.NONE

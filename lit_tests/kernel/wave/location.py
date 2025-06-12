@@ -211,7 +211,7 @@ def test_stack_trace_dedup():
     print(test_stack_trace_dedup.asm)
 
     # Ensure that stack trace location is deduplicated to avoid IR size growth.
-    # In particular, check that both the read and athe addition share a common
+    # In particular, check that both the read and the addition share a common
     # parent location, that of the tracer.
     #
     # CHECK-LABEL: @test_stack_trace_dedup

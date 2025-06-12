@@ -449,7 +449,7 @@ class CustomOp(ABC):
     _tracing_function: Optional[Callable[..., Any]] = field(default=None, init=False)
 
     @property
-    def location(self) -> Optional[Union[FileLineColInfo, StackTraceInfo]]:
+    def location(self) -> Optional[FileLineColInfo | StackTraceInfo]:
         return getattr(self.fx_node, "location", None)
 
     @classmethod

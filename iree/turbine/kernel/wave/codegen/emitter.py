@@ -119,7 +119,7 @@ class WaveEmitter:
 
         location = getattr(
             node, "location", None
-        )  # type: Optional[Union[FileLineColInfo, StackTraceInfo]]
+        )  # type: Optional[FileLineColInfo | StackTraceInfo]
         ir_location = location.to_mlir() if location else Location.unknown()
         with ir_location:
             try:
