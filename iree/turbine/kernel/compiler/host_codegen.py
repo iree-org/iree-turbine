@@ -24,8 +24,11 @@ from .ir import (
 )
 
 from .._support.indexing import IndexSymbol
-from .._support.location import FileLineColInfo
+from .._support.location import capture_location
+from .._support.location_config import LocationCaptureConfig
 from .kernel_codegen import BindingDesc
+
+from typing import Optional
 
 
 def memref_to_tensor(memrefs: list[IrType]):
@@ -61,6 +64,8 @@ def isolated_test_call(
     entrypoint: str,
     func_name: str = "isolated_benchmark",
     dynamic_symbols: list[IndexSymbol] = [],
+    *,
+    location_capture_config: Optional[LocationCaptureConfig] = None,
 ):
     with InsertionPoint(mb.body_block), Location.unknown():
         input_types = [b.as_mlir_type() for b in sig.kernel_buffer_bindings] + [
@@ -83,7 +88,8 @@ def isolated_test_call(
 
         ftype = FunctionType.get(input_tensors, output_tensors)
         func_op = func_d.FuncOp(func_name, ftype)
-        actual_loc = FileLineColInfo.capture_current_location().to_mlir()
+        captured_loc = capture_location(location_capture_config)
+        actual_loc = captured_loc.to_mlir() if captured_loc else Location.unknown()
         arg_locs = [
             (Location.name(b.name, actual_loc) if b.name is not None else actual_loc)
             for b in sig.kernel_buffer_bindings

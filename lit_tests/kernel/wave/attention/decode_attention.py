@@ -231,7 +231,7 @@ def test_gqa_flash_decoding():
     phase_0 = wave_compile(options, phase_0)
     print(phase_0.asm)
 
-    # CHECK:                func.func @phase_0
+    # CHECK-LABEL:          func.func @phase_0
     # CHECK:                   scf.for
     # CHECK:                      amdgpu.lds_barrier
     # CHECK-COUNT-16:             vector.maskedload

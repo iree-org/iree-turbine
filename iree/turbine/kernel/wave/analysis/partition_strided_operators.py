@@ -192,6 +192,7 @@ def partition_strided_operators(trace: CapturedTrace, constraints: list[Constrai
                     )
                     for j, dim in enumerate(symbolic_shape)
                 }
+                write.vector_shapes = vector_shapes
                 ops_to_combine.append(write)
 
         # Useful to handle write/read dependency

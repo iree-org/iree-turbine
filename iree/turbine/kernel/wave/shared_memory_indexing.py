@@ -28,16 +28,3 @@ def apply_shared_memory_indexing_corrections(
         return False
 
     trace.walk(is_shared_memory_ops)
-
-
-def align_index_sizes(trace: CapturedTrace, constraints: list[Constraint]):
-    """
-    Adjust ops index sizes to WG/Tile size, so shared mem ops never need to
-    do partial read/writes.
-    """
-
-    def need_align(node: fx.Node):
-        custom = get_custom(node)
-        custom.align_index(constraints)
-
-    trace.walk(need_align)

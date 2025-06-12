@@ -4,6 +4,7 @@ import torch
 import glob
 from copy import copy
 from .._support.indexing import IndexingContext
+from .._support.location_config import LocationCaptureLevel
 from ..compiler import kernel_codegen, host_codegen
 from .compile_options import WaveCompileOptions
 
@@ -140,10 +141,18 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     options.kernel_sig = kernel_sig
 
     host_codegen.isolated_test_call(
-        mb, exe, kernel_sig, entrypoint_name, options.func_name, options.dynamic_symbols
+        mb,
+        exe,
+        kernel_sig,
+        entrypoint_name,
+        options.func_name,
+        options.dynamic_symbols,
+        location_capture_config=options.location_capture_config,
     )
     asm = mb.module_op.get_asm(
-        enable_debug_info=options.debug_info, use_local_scope=options.use_local_scope
+        enable_debug_info=options.location_capture_config.level
+        != LocationCaptureLevel.NONE,
+        use_local_scope=options.use_local_scope,
     )
     if options.print_mlir:
         print(asm)

@@ -11,13 +11,11 @@ from dataclasses import dataclass
 from collections import namedtuple
 import sys
 from ..._support.location import FileLineColInfo
-
 import torch.fx as fx
 
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
-    _is_index_type,
     _is_integer_like_type,
 )
 
@@ -47,13 +45,14 @@ from ...compiler.ir import (
 )
 
 
+from ..utils.general_utils import get_hardware_constraint
 from ...compiler.builder import IRProxyValue
 from ...compiler.kernel_codegen import BoundKernelSignature
 from ..._support.tracing import CapturedTrace
 from ...compiler.base import CodegenError, NDEBUG
 
 from ...lang.wave_types import IndexSymbol
-from ..constraints import Constraint, TilingConstraint
+from ..constraints import Constraint, TilingConstraint, HardwareConstraint
 from ..._support.indexing import IndexingContext, IndexExpr, xor
 from ..compile_options import WaveCompileOptions
 
@@ -118,7 +117,9 @@ class WaveEmitter:
         except KeyError:
             raise CodegenError(f"No handler registered for op {target_op}")
 
-        location = getattr(node, "location", None)  # type: FileLineColInfo
+        location = getattr(
+            node, "location", None
+        )  # type: Optional[FileLineColInfo | StackTraceInfo]
         ir_location = location.to_mlir() if location else Location.unknown()
         with ir_location:
             try:
@@ -159,6 +160,10 @@ class WaveEmitter:
                         induction_vars.append(self.induction_vars[constraint.dim])
 
         return induction_vars, induction_var_syms
+
+    @property
+    def hardware_constraint(self) -> HardwareConstraint:
+        return get_hardware_constraint(self.constraints)
 
 
 def handle_op(op: Callable[..., Any] | list[Callable[..., Any]]):
@@ -580,30 +585,36 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Value], expr: sympy.Expr) -> Val
                     res = arith_d.andi(*_broadcast(res, operand))
                 stack.append(res)
             case sympy.Max():
-                rhs = stack.pop()
-                lhs = stack.pop()
-                _enforce_non_rational(rhs, term)
-                _enforce_non_rational(lhs, term)
-                rhs = _get_ir_value(rhs)
-                lhs = _get_ir_value(lhs)
-                elem_type = get_type_or_element_type(rhs.type)
-                if _is_integer_like_type(elem_type):
-                    res = arith_d.maxsi(*_broadcast(lhs, rhs))
-                else:
-                    res = arith_d.maximumf(*_broadcast(lhs, rhs))
+                count = len(term.args)
+                res = stack.pop()
+                _enforce_non_rational(res, term)
+                res = _get_ir_value(res)
+                elem_type = get_type_or_element_type(res.type)
+                for _ in range(count - 1):
+                    operand = stack.pop()
+                    _enforce_non_rational(operand, term)
+                    operand = _get_ir_value(operand)
+                    if _is_integer_like_type(elem_type):
+                        res = arith_d.maxsi(*_broadcast(res, operand))
+                    else:
+                        res = arith_d.maximumf(*_broadcast(res, operand))
+
                 stack.append(res)
             case sympy.Min():
-                rhs = stack.pop()
-                lhs = stack.pop()
-                _enforce_non_rational(rhs, term)
-                _enforce_non_rational(lhs, term)
-                rhs = _get_ir_value(rhs)
-                lhs = _get_ir_value(lhs)
-                elem_type = get_type_or_element_type(rhs.type)
-                if _is_integer_like_type(elem_type):
-                    res = arith_d.minsi(*_broadcast(lhs, rhs))
-                else:
-                    res = arith_d.minimumf(*_broadcast(lhs, rhs))
+                count = len(term.args)
+                res = stack.pop()
+                _enforce_non_rational(res, term)
+                res = _get_ir_value(res)
+                elem_type = get_type_or_element_type(res.type)
+                for _ in range(count - 1):
+                    operand = stack.pop()
+                    _enforce_non_rational(operand, term)
+                    operand = _get_ir_value(operand)
+                    if _is_integer_like_type(elem_type):
+                        res = arith_d.minsi(*_broadcast(res, operand))
+                    else:
+                        res = arith_d.minimumf(*_broadcast(res, operand))
+
                 stack.append(res)
             case sympy.logic.boolalg.BooleanFalse():
                 res = arith_d.constant(IntegerType.get_signless(1), 0)
