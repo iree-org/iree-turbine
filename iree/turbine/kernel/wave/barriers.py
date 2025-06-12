@@ -6,7 +6,14 @@
 
 from .utils.graph_utils import is_reduction_subgraph, is_barrier_between
 from .._support.tracing import CapturedTrace
-from ..ops.wave_ops import get_custom, Read, SharedMemoryBarrier, Write, NestedRegionOp
+from ..ops.wave_ops import (
+    get_custom,
+    Read,
+    SharedMemoryBarrier,
+    Write,
+    NestedRegionOp,
+    WorkgroupBarrier,
+)
 from ..lang.global_symbols import SHARED_ADDRESS_SPACE
 import torch.fx as fx
 from typing import Optional
@@ -44,7 +51,7 @@ def add_shared_memory_barriers(
             ):
                 # Synchronize after the write to shared memory before we read from it.
                 with graph.inserting_before(node):
-                    SharedMemoryBarrier().add_to_graph(graph)
+                    WorkgroupBarrier().add_to_graph(graph)
             last_node = custom
         if isinstance(custom, NestedRegionOp):
             last_node = add_shared_memory_barriers(

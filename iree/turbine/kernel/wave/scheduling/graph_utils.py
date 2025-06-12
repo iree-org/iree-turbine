@@ -486,10 +486,13 @@ def sort_graph_by_edge_weight(nodes: list[fx.Node], edges: list[Edge]):
             continue
 
         non_solved_counter = 0
-        schedule_weight[node] = sum(
-            [
-                schedule_weight[edge._from] + edge.weight.delay
-                for edge in filter_producer_edge
-            ]
-        )
+        if filter_producer_edge:
+            schedule_weight[node] = max(
+                [
+                    schedule_weight[edge._from] + edge.weight.delay
+                    for edge in filter_producer_edge
+                ]
+            )
+        else:
+            schedule_weight[node] = 0
     return sorted(nodes, key=lambda x: schedule_weight[x])
