@@ -28,7 +28,14 @@ def get_node_type(node: fx.Node) -> str:
     if custom is None:
         return "Unknown"
 
-    # Special handling for Read/Write operations
+    # Special handling for Read/Write operations.
+    # Note: The reason we cannot use custom.memory_type.address_space is because we are printing
+    # a "scheduling copy" of the original fx.graph.  This is not the original fx.graph but only
+    # contains nodes that we are interested in scheduling.
+    #
+    # As a result, this graph contains no placeholders since we don't want to schedule them
+    # and so we can't use custom.memory_type.address_space because the global reads/writes have
+    # no placeholders and custom.memory is None.
     if isinstance(custom, (Read, Write)):
         base_type = "Read" if isinstance(custom, Read) else "Write"
         uses_allocate = custom.memory and isinstance(
@@ -97,34 +104,25 @@ def _write_rrt_to_file(
 
 def _parse_rrt_from_lines(
     lines: list[str], initiation_interval: int
-) -> Tuple[Optional[np.ndarray], Optional[list[str]]]:
+) -> Tuple[Optional[np.ndarray], Optional[list[str]], Optional[int]]:
     """Parse resource reservation table from file lines.
-    Returns a tuple of (resource_reservations, resource_names) or (None, None) if no RRT found.
+    Returns a tuple of (resource_reservations, resource_names, rrt_end_line) or (None, None, None) if no RRT found.
     """
     rrt_start_line = -1
     rrt_end_line = -1
 
     # Find RRT section boundaries
+    comment_and_header_offset = 4 + 2
     for i, line in enumerate(lines):
         if line.startswith("# Resource Reservation Table (RRT):"):
             rrt_start_line = i
-        elif (
-            rrt_start_line != -1
-            and not line.startswith("#")
-            and "|" in line
-            and not any(c in "-| " for c in line)
-        ):
-            # Found a data line in the RRT
-            if rrt_end_line == -1:
-                rrt_end_line = i
-        elif rrt_start_line != -1 and not line.startswith("#"):
-            # End of RRT section
-            if rrt_end_line == -1:
-                rrt_end_line = i - 1
-            break
+            # 4 lines for the comments, 2 lines for the header and separator, and then the RRT data
+            rrt_end_line = (
+                rrt_start_line + comment_and_header_offset + initiation_interval
+            )
 
     if rrt_start_line == -1 or rrt_end_line == -1:
-        return None, None
+        return None, None, None
 
     rrt_lines = lines[rrt_start_line : rrt_end_line + 1]
     # Find the header line with resource names
@@ -135,7 +133,7 @@ def _parse_rrt_from_lines(
             break
 
     if not header_line:
-        return None, None
+        return None, None, None
 
     # Extract resource names from header
     resource_names = [name.strip() for name in header_line.split("|")[1:]]
@@ -147,20 +145,15 @@ def _parse_rrt_from_lines(
     )
 
     # Parse RRT data lines
-    for line in rrt_lines:
-        if (
-            not line.startswith("#")
-            and "|" in line
-            and not any(c in "-| " for c in line)
-        ):
-            # Parse cycle and resource values
-            parts = [p.strip() for p in line.split("|")]
-            if len(parts) == num_resources + 1:  # +1 for cycle column
-                cycle = int(parts[0].strip())
-                values = [int(v.strip()) for v in parts[1:]]
-                resource_reservations[cycle] = values
+    for line in rrt_lines[comment_and_header_offset + 1 :]:
+        # Parse cycle and resource values
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) == num_resources + 1:  # +1 for cycle column
+            cycle = int(parts[0].strip())
+            values = [int(v.strip()) for v in parts[1:]]
+            resource_reservations[cycle] = values
 
-    return resource_reservations, resource_names
+    return resource_reservations, resource_names, rrt_end_line
 
 
 def _parse_metadata_from_lines(lines: list[str]) -> Tuple[Optional[int], Optional[int]]:
@@ -180,7 +173,7 @@ def _parse_metadata_from_lines(lines: list[str]) -> Tuple[Optional[int], Optiona
 
 
 def _calculate_column_widths(
-    schedule_data: list[Tuple[fx.Node, int, int, str, list[str], int]]
+    schedule_data: list[Tuple[fx.Node, int, int, str, list[str], int]],
 ) -> dict[str, int]:
     """Calculate column widths for schedule table based on data."""
     col_widths = {
@@ -384,14 +377,16 @@ def load_schedule(
         raise ValueError("Schedule file missing required metadata (II or num_stages)")
 
     # Get RRT data if present
-    resource_reservations, resource_names = _parse_rrt_from_lines(
+    resource_reservations, resource_names, rrt_end_line = _parse_rrt_from_lines(
         lines, initiation_interval
     )
+
+    assert rrt_end_line is not None, "RRT not found in schedule file"
 
     # Parse schedule data
     data_lines = [
         l
-        for l in lines
+        for l in lines[rrt_end_line + 1 :]
         if l and not l.startswith("#") and "|" in l and not all(c in "-| " for c in l)
     ][
         1:
