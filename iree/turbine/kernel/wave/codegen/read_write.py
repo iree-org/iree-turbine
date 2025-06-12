@@ -421,6 +421,18 @@ def _create_buffer_read_write(
         return None
 
 
+def _cast_buffer_and_encode_stride(ptr, strides):
+    assert len(strides) >= 1
+
+    stride = strides[0]
+    stride = arith_d.index_cast(IntegerType.get_signless(14), stride)
+
+    ptr = amdgpu_d.fat_raw_buffer_cast(
+        ptr, cache_swizzle_stride=stride, bounds_check=False, reset_offset=False
+    )
+    return ptr
+
+
 def _create_vec_read_write(
     emitter: WaveEmitter,
     symbolic_shape: tuple[IndexExpr, ...],
@@ -477,143 +489,73 @@ def _create_vec_read_write(
         if is_read
         else emitter.options.use_buffer_store_ops
     )
-    if buffer_ops_enabled and has_int_strides and use_buffer_ops:
+    if has_int_strides:
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
-        data, offset_th = _linearize_memref(
-            mem, start_indices_wg, start_indices_th, strides
-        )
 
-        if offsets_vec is None:
-            offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
-            vals = [
-                IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)
-            ]
-            offsets_vec = arith_d.constant(
-                offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
-            )
+    if buffer_ops_enabled and has_int_strides and use_buffer_ops:
+        mem = _cast_buffer_and_encode_stride(mem, strides)
 
-        if splatted_masked:
-            # If mask value is same for all vector elements, we can use vector
-            # buffer ops.
-            i32 = IntegerType.get_signless(32)
-            offset_th = arith_d.index_cast(i32, offset_th)
-            oob_idx = _get_max_buffer_size(element_type)
-            oob_idx = arith_d.constant(i32, oob_idx)
-            offset_th = arith_d.select(mask_splat, offset_th, oob_idx)
-
-            if is_read:
-                return _create_buffer_read_write(vector_type, data, offset_th)
-            else:
-                _create_buffer_read_write(vector_type, data, offset_th, value)
-                return
-        else:
-            # If mask value is different for each element, unroll op to
-            # individual values.
-            offset_th = vector_d.splat(offsets_vec.type, offset_th)
-            offsets_vec = arith_d.addi(offsets_vec, offset_th)
-            if mask is not None:
-                i32 = IntegerType.get_signless(32)
-                i32vec = VectorType.get([elements_per_thread], i32)
-                offsets_vec = arith_d.index_cast(i32vec, offsets_vec)
-                oob_idx = _get_max_buffer_size(element_type)
-                oob_idx = arith_d.constant(i32, oob_idx)
-                oob_idx = vector_d.splat(offsets_vec.type, oob_idx)
-                offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
-
-            if is_read:
-                elements = []
-                for i in range(elements_per_thread):
-                    offset = extract(offsets_vec, i)
-
-                    if mask is None:
-                        elem = memref_d.load(element_type, data, indices=[offset])
-                    else:
-                        elem = _create_buffer_read_write(element_type, data, offset)
-
-                    elements.append(elem)
-
-                return vector_d.from_elements(vector_type, elements)
-            else:
-                for i in range(elements_per_thread):
-                    offset = extract(offsets_vec, i)
-
-                    elem = extract(value, i)
-
-                    if mask is None:
-                        memref_d.store(elem, data, indices=[offset])
-                    else:
-                        _create_buffer_read_write(vector_type, data, offset, elem)
-
-                return
-
-    else:
-
-        if offsets_vec is None:
-            if is_read:
-                passthru = vector_d.splat(vector_type, zero)
-                return vector_d.maskedload(
-                    vector_type, mem, start_indices, mask, passthru
-                )
-            else:
-                vector_d.maskedstore(mem, start_indices, mask, value)
-                return
-
-        if mask is None:
-            mask_vec_type = VectorType.get(
-                [elements_per_thread], IntegerType.get_signless(1)
-            )
-            mask = _constant_mask(mask_vec_type)
-
-        # TODO: Need static strides for linearize to work.
-        if has_int_strides:
-            vec1 = VectorType.get([1], element_type)
-            vec1_mask = VectorType.get([1], IntegerType.get_signless(1))
-            strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
-            data, _ = _linearize_memref(
-                mem, start_indices, (0,) * len(start_indices), strides
-            )
-
-            # Unroll gather/scatter into individual masked ops.
-            # Vector canonicalizations will convert them into unmasked later if
-            # mask is constant.
-            if is_read:
-                passthru = vector_d.splat(vec1, zero)
-                elements = []
-                for i in range(elements_per_thread):
-                    mask_elem = extract(mask, i)
-                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
-
-                    offset = extract(offsets_vec, i)
-
-                    elem = vector_d.maskedload(
-                        vec1, data, [offset], mask_elem, passthru
-                    )
-                    elements.append(elem)
-
-                elements = [extract(v, 0) for v in elements]
-                return vector_d.from_elements(vector_type, elements)
-            else:
-                for i in range(elements_per_thread):
-                    mask_elem = extract(mask, i)
-                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
-
-                    offset = extract(offsets_vec, i)
-
-                    elem = extract(value, i)
-                    elem = vector_d.splat(vec1, elem)
-
-                    vector_d.maskedstore(data, [offset], mask_elem, elem)
-
-                return
-
+    if offsets_vec is None:
         if is_read:
             passthru = vector_d.splat(vector_type, zero)
-            return vector_d.gather(
-                vector_type, mem, start_indices, offsets_vec, mask, passthru
-            )
+            return vector_d.maskedload(vector_type, mem, start_indices, mask, passthru)
         else:
-            vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
+            vector_d.maskedstore(mem, start_indices, mask, value)
             return
+
+    if mask is None:
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+        mask = _constant_mask(mask_vec_type)
+
+    # TODO: Need static strides for linearize to work.
+    if has_int_strides:
+        vec1 = VectorType.get([1], element_type)
+        vec1_mask = VectorType.get([1], IntegerType.get_signless(1))
+        data, _ = _linearize_memref(
+            mem, start_indices, (0,) * len(start_indices), strides
+        )
+
+        # Unroll gather/scatter into individual masked ops.
+        # Vector canonicalizations will convert them into unmasked later if
+        # mask is constant.
+        if is_read:
+            passthru = vector_d.splat(vec1, zero)
+            elements = []
+            for i in range(elements_per_thread):
+                mask_elem = extract(mask, i)
+                mask_elem = vector_d.splat(vec1_mask, mask_elem)
+
+                offset = extract(offsets_vec, i)
+
+                elem = vector_d.maskedload(vec1, data, [offset], mask_elem, passthru)
+                elements.append(elem)
+
+            elements = [extract(v, 0) for v in elements]
+            return vector_d.from_elements(vector_type, elements)
+        else:
+            for i in range(elements_per_thread):
+                mask_elem = extract(mask, i)
+                mask_elem = vector_d.splat(vec1_mask, mask_elem)
+
+                offset = extract(offsets_vec, i)
+
+                elem = extract(value, i)
+                elem = vector_d.splat(vec1, elem)
+
+                vector_d.maskedstore(data, [offset], mask_elem, elem)
+
+            return
+
+    if is_read:
+        passthru = vector_d.splat(vector_type, zero)
+        return vector_d.gather(
+            vector_type, mem, start_indices, offsets_vec, mask, passthru
+        )
+    else:
+        vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
+        return
 
 
 @handle_op(read)
