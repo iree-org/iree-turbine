@@ -21,6 +21,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
+from .._support.location_config import LocationCaptureConfig
 from .cache import get_temp_binary_dir
 from ..compiler.ir import Context, Module, Operation
 from .codegen import WaveEmitter
@@ -149,10 +150,14 @@ def wave(constraints: Optional[list[Constraint]] = None):
     return decorator
 
 
-def wave_trace_only(constraints: Optional[list[Constraint]] = None):
+def wave_trace_only(
+    constraints: Optional[list[Constraint]] = None,
+    *,
+    location_capture_config: Optional[LocationCaptureConfig] = None,
+):
     def decorator(f: Callable[..., Any]) -> "Callable[[], CapturedTrace]":
         wave = LaunchableWave(constraints, f.__name__, f)
-        return wave._trace  # type: ignore
+        return lambda: wave._trace(location_capture_config=location_capture_config)  # type: ignore
 
     return decorator
 
@@ -214,8 +219,12 @@ class LaunchableWave(Launchable):
             if isinstance(constraint, SymbolicAlias)
         ]
 
-    def _trace(self) -> CapturedTrace:
-        region_graph = KernelRegionGraph()
+    def _trace(
+        self, *, location_capture_config: Optional[LocationCaptureConfig] = None
+    ) -> CapturedTrace:
+        region_graph = KernelRegionGraph(
+            location_capture_config=location_capture_config
+        )
         with CompiledContext(region_graph, grid_type=self.grid_type) as context:
             # Get all explictly defined custom ops
             custom_ops: dict[str, wave_ops.CustomOp] = {
@@ -514,7 +523,7 @@ class LaunchableWave(Launchable):
         if options.print_trace_begin:
             print(f"\n***Tracing kernel {self._name}***")
 
-        trace = self._trace()
+        trace = self._trace(location_capture_config=options.location_capture_config)
         if (
             "all" in print_ir_after
             or "all" in print_ir_before

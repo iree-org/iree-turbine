@@ -14,12 +14,21 @@ import contextlib
 import torch.fx as fx
 import torch.utils._pytree as pytree
 
+from .location_config import LocationCaptureConfig
+
 
 class RegionGraph:
-    def __init__(self):
+    def __init__(
+        self, *, location_capture_config: Optional[LocationCaptureConfig] = None
+    ):
         self.tracers: List["SubgraphTracer"] = []
         self.subgraphs: Dict[str, fx.Graph] = dict()
         self.inner_freevars: Dict[fx.Graph, List[fx.Proxy]] = dict()
+        self.location_capture_config: LocationCaptureConfig = (
+            location_capture_config
+            if location_capture_config is not None
+            else LocationCaptureConfig()
+        )
 
     @property
     def root_tracer(self) -> "SubgraphTracer":
