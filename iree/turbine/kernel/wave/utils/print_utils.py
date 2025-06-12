@@ -9,17 +9,17 @@ from iree.turbine.kernel.ops.wave_ops import (
     Placeholder,
     get_custom,
     Allocate,
-    IterArg,
     Read,
     Write,
 )
 from ..._support.tracing import CapturedTrace
-from typing import Sequence, Optional, Dict, Tuple
-import timeit
-import json
-import os
+from typing import Sequence, Optional, Dict, Tuple, Callable
 from ..scheduling.graph_utils import Edge, EdgeWeight
 import numpy as np
+import timeit
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_node_type(node: fx.Node) -> str:
@@ -435,7 +435,7 @@ def load_schedule(
     )
 
 
-def print_graph(graph: fx.Graph):
+def print_graph(graph: fx.Graph, printer: Callable = print):
     """
     Pretty-print the graph containing this node.
     """
@@ -446,10 +446,12 @@ def print_graph(graph: fx.Graph):
     )
     graph_str = graph_str.replace("target=iree.turbine.kernel.ops.wave_ops.", "")
     graph_str = graph_str.replace("call_function", "")
-    print(graph_str)
+    printer(graph_str)
 
 
-def print_trace(trace: CapturedTrace, custom_print: bool = True):
+def print_trace(
+    trace: CapturedTrace, custom_print: bool = True, printer: Callable = print
+):
     """
     Prints all subgraphs of a trace starting with the root graph.
     The graphs are printed first in the torch printing format and
@@ -459,15 +461,20 @@ def print_trace(trace: CapturedTrace, custom_print: bool = True):
     for name, subgraph in reversed(list(trace.region_graph.subgraphs.items())):
         if name == trace.root_graph:
             name = f"{name} [root]"
-        print(f"{name}:\n")
-        print_graph(subgraph)
+        printer(f"{name}:\n")
+        print_graph(subgraph, printer)
         if custom_print:
-            print("Custom format:")
+            printer("Custom format:")
             for node in subgraph.nodes:
-                print(get_custom(node))
+                printer(get_custom(node))
 
 
-def print_subgraph(trace: CapturedTrace, subgraph_name: str, custom_print: bool = True):
+def print_subgraph(
+    trace: CapturedTrace,
+    subgraph_name: str,
+    custom_print: bool = True,
+    printer: Callable = print,
+):
     """
     Prints a specific subgraphs of a trace.
     The graphs are printed first in the torch printing format and
@@ -475,10 +482,10 @@ def print_subgraph(trace: CapturedTrace, subgraph_name: str, custom_print: bool 
     """
     for name, subgraph in trace.region_graph.subgraphs.items():
         if name == subgraph_name:
-            print(subgraph)
+            printer(subgraph)
             if custom_print:
                 for node in subgraph.nodes:
-                    print(get_custom(node))
+                    printer(get_custom(node))
 
 
 def try_apply_pass(
@@ -507,8 +514,8 @@ def try_apply_pass(
 
             pass_times[print_name] = end - start
     except Exception:
-        print(f"Error in pass: {pass_name}\n")
-        print_trace(trace)
+        logger.info(f"Error in pass: {pass_name}\n")
+        print_trace(trace, logger.info)
         raise
     if "all" in print_ir_after or pass_name in print_ir_after:
         print(f"***After {pass_name}***\n")
