@@ -88,7 +88,7 @@ def get_mxfp4_gemm(shape):
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         BLOCK_M: 256,
         BLOCK_N: 256,
-        BLOCK_K: 512,
+        BLOCK_K: 256,
         M: shape[0],
         N: shape[1],
         K: shape[2],
@@ -231,7 +231,7 @@ def test_gemm_afp4_wfp4(M: int, N: int, K: int, dtype):
     out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
     triton_out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=dtype)
 
-    # torch_out = run_torch(x, w, x_scales, w_scales, dtype).to(dtype)
+    torch_out = run_torch(x, w, x_scales, w_scales, dtype).to(dtype)
     shape = (M, N, K)
     gemm = get_mxfp4_gemm(shape)
     w_t = w.T.contiguous()

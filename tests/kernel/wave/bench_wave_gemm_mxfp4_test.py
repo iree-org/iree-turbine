@@ -91,7 +91,7 @@ def get_mxfp4_gemm(shape):
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         BLOCK_M: 256,
         BLOCK_N: 256,
-        BLOCK_K: 512,
+        BLOCK_K: 256,
         M: shape[0],
         N: shape[1],
         K: shape[2],
