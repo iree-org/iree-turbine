@@ -36,7 +36,7 @@ command-line arguments are appended to the arguments from the file.
         help="Indicate a specific gpu device index to run on. Specify '-1' to use all available devices."
         " The index corresponds to a torch.device('cuda:<gpu-id>'). If intending to run on a subset"
         " of available devices, please use the environment variables `CUDA_VISIBLE_DEVICES` or "
-        " `ROCR_VISIBLE_DEVICES` instead.",
+        " `ROCR_VISIBLE_DEVICES` along with '--gpu-id=-1'.",
     )
     args, extra_cli_args = parser.parse_known_args()
 
