@@ -292,8 +292,9 @@ def concatenate_outputs(
 ):
     reshape_check = isinstance(new_user, Reshape)
     reduce_check = isinstance(new_user, ReduceOp) and i == 0
-    scan_check = isinstance(new_user, ScanOp) and i == 0
 
+    # why i == 0?
+    scan_check = isinstance(new_user, ScanOp) and i == 0
     if reshape_check or reduce_check or scan_check:
         if metadata.query_index == 0:
             new_node = [new_node.fx_node]

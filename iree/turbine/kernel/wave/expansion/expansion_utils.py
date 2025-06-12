@@ -138,7 +138,7 @@ def get_dim_scaling(
                 // node.vector_shapes[reduction_dim]
             )
 
-    # For scan ops, also include the scan dimension.
+    # For scan ops, also include the reduction dimension.
     if isinstance(node, ScanOp):
         scan_dim = node.scan_dim
         if not_computed(scan_dim) and is_static_dim(scan_dim):
