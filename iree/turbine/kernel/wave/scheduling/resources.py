@@ -58,7 +58,16 @@ class Operation(Enum):
     SHUFFLE = "shuffle"
 
 
-SCHEDULING_NOOPS = (IterArg, Permute, Extract, Broadcast, CastOp, BitcastOp, Reshape, SelfIndex)
+SCHEDULING_NOOPS = (
+    IterArg,
+    Permute,
+    Extract,
+    Broadcast,
+    CastOp,
+    BitcastOp,
+    Reshape,
+    SelfIndex,
+)
 
 # This table contains the cycles required to execute each operation.
 delay_table = {

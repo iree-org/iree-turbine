@@ -6,6 +6,7 @@ import numpy as np
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
+from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
@@ -39,12 +40,12 @@ def get_mxfp4_gemm(shape):
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
-    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
     constraints += [
         tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
+            threads_per_wave=64, waves_per_block=(4, 2, 1), mma_type=mfma_variant
         )
     ]
 
@@ -87,7 +88,7 @@ def get_mxfp4_gemm(shape):
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
         BLOCK_M: 256,
         BLOCK_N: 256,
-        BLOCK_K: 256,
+        BLOCK_K: 512,
         M: shape[0],
         N: shape[1],
         K: shape[2],
@@ -96,8 +97,7 @@ def get_mxfp4_gemm(shape):
     hyperparams.update(get_default_scheduling_params())
 
     options = WaveCompileOptions(
-        subs=hyperparams,
-        canonicalize=True,
+        subs=hyperparams, canonicalize=True, schedule=SchedulingType.PREFETCH
     )
     options = set_default_run_config(options)
     gemm = wave_compile(options, gemm_afp4_wfp4_wave)
@@ -244,7 +244,7 @@ def test_gemm_afp4_wfp4(M: int, N: int, K: int, dtype):
 
 
 if __name__ == "__main__":
-    M, N, K = (8192, 8192, 8192)
+    M, N, K = (32768, 106496, 16384)
     dtype = torch.bfloat16
     x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(M, N, K)
     out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
@@ -253,14 +253,20 @@ if __name__ == "__main__":
     # torch_out = run_torch(x, w, x_scales, w_scales, dtype).to(dtype)
     shape = (M, N, K)
     gemm = get_mxfp4_gemm(shape)
-    # w_t = w.T.contiguous()
-    for i in range(20):
-        # gemm(x, x_scales, w_t, w_scales, out)
-        gemm(x, x_scales, w, w_scales, out)
-    # from aiter.ops.triton.gemm_afp4wfp4 import gemm_afp4wfp4
+    w_t = w.T.contiguous()
+    # for i in range(10):
+    #     gemm(x, x_scales, w_t, w_scales, out)
+    from aiter.ops.triton.gemm_afp4wfp4 import gemm_afp4wfp4
 
-    # gemm_afp4wfp4(x, w, triton_out, x_scales, w_scales, dtype)
-    # torch.testing.assert_close(triton_out, out, check_dtype=False)
+    # breakpoint()
+    ms = triton.testing.do_bench(
+        lambda: gemm(x, x_scales, w_t, w_scales, out),
+        warmup=25,
+        rep=100,
+    )
+    # for i in range(5):
+    #     gemm_afp4wfp4(x, w, triton_out, x_scales, w_scales, dtype)
+    torch.testing.assert_close(triton_out, out, check_dtype=False)
 
 # if __name__ == "__main__":
 #     M, N, K = (1024, 1024, 1024)
