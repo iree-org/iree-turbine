@@ -117,7 +117,9 @@ class WaveEmitter:
         except KeyError:
             raise CodegenError(f"No handler registered for op {target_op}")
 
-        location = getattr(node, "location", None)  # type: FileLineColInfo
+        location = getattr(
+            node, "location", None
+        )  # type: Optional[Union[FileLineColInfo, StackTraceInfo]]
         ir_location = location.to_mlir() if location else Location.unknown()
         with ir_location:
             try:

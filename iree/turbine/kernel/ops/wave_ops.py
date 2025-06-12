@@ -23,7 +23,7 @@ from ..lang.global_symbols import *
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType, i1
 from .._support.regions import RegionGraph
-from .._support.location import FileLineColInfo
+from .._support.location import FileLineColInfo, StackTraceInfo, capture_location
 from .base import OpDispatcher
 import numpy as np
 
@@ -449,7 +449,7 @@ class CustomOp(ABC):
     _tracing_function: Optional[Callable[..., Any]] = field(default=None, init=False)
 
     @property
-    def location(self) -> Optional[FileLineColInfo]:
+    def location(self) -> Optional[Union[FileLineColInfo, StackTraceInfo]]:
         return getattr(self.fx_node, "location", None)
 
     @classmethod
@@ -626,7 +626,7 @@ class CustomOp(ABC):
         node._add_proxy_to_graph(graph)
         node.fx_node.node.tkw_op = cls
         node.fx_node.node.tkw_op_name = cls.tkw_op_name
-        node.fx_node.node.location = FileLineColInfo.capture_current_location()
+        node.fx_node.node.location = capture_location(graph.location_capture_config)
         return node.fx_node
 
     @property

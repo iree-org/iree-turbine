@@ -5,10 +5,11 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from iree.compiler.ir import Location, Context
-from typing import Union
+from typing import Optional, List, Union
 import sys
 import inspect
 from dataclasses import dataclass
+from .location_config import LocationCaptureConfig, LocationCaptureLevel
 
 
 @dataclass
@@ -43,13 +44,64 @@ class FileLineColInfo:
         if not f:
             f = inspect.stack()[-1]
 
+        return FileLineColInfo.from_stack_frame(f)
+
+    @staticmethod
+    def from_stack_frame(frame: inspect.FrameInfo):
         # Column information is only available for Python >= 3.11.
         assert sys.version_info.major == 3, "Unexpected Python version"
         if sys.version_info.minor < 11:
-            return FileLineColInfo(f.filename, f.lineno, 0)
+            return FileLineColInfo(frame.filename, frame.lineno, 0)
 
         return FileLineColInfo(
-            f.filename,
-            (f.positions.lineno, f.positions.end_lineno),
-            (f.positions.col_offset, f.positions.end_col_offset),
+            frame.filename,
+            (frame.positions.lineno, frame.positions.end_lineno),
+            (frame.positions.col_offset, frame.positions.end_col_offset),
         )
+
+
+@dataclass
+class StackTraceInfo:
+    """
+    Locations of an entire stack trace, each with FileLineColInfo.
+    """
+
+    frames: List[FileLineColInfo]
+
+    def to_mlir(self) -> Location:
+        assert Context.current is not None, "Must be called under MLIR context manager."
+        if not self.frames:
+            return Location.unknown()
+        if len(self.frames) == 1:
+            return self.frames[0].to_mlir()
+        return Location.callsite(
+            self.frames[0].to_mlir(), [f.to_mlir() for f in self.frames[1:]]
+        )
+
+    @staticmethod
+    def capture_current_location(*, preserve_system_frames=False) -> "StackTraceInfo":
+        # TODO: we may want to cache location info so we don't keep copying the
+        # top of the stack everywhere. MLIR uniquing takes care of this when we
+        # convert currently.
+        frames = [
+            FileLineColInfo.from_stack_frame(f)
+            for f in inspect.stack()
+            if "iree/turbine/kernel" not in f.filename or preserve_system_frames
+        ]
+        return StackTraceInfo(frames)
+
+
+def capture_location(
+    location_capture_config: Optional[LocationCaptureConfig],
+) -> Optional[Union[FileLineColInfo, StackTraceInfo]]:
+    if (
+        not location_capture_config
+        or location_capture_config.level == LocationCaptureLevel.NONE
+    ):
+        return None
+    if location_capture_config.level == LocationCaptureLevel.FILE_LINE_COL:
+        return FileLineColInfo.capture_current_location()
+    if location_capture_config.level == LocationCaptureLevel.STACK_TRACE:
+        return StackTraceInfo.capture_current_location()
+    if location_capture_config.level == LocationCaptureLevel.STACK_TRACE_WITH_SYSTEM:
+        return StackTraceInfo.capture_current_location(preserve_system_frames=True)
