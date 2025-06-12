@@ -19,6 +19,7 @@ from ...ops.wave_ops import (
     Placeholder,
     Read,
     ReduceOp,
+    ScanOp,
     SetWavePrio,
     SharedMemoryBarrier,
     Iterate,
@@ -286,6 +287,15 @@ def set_node_indices(
                 constraints,
                 trace,
                 reduce_mapping,
+            )
+        ]
+    elif scan_mapping := get_scan_mapping(trace, constraints):
+        graph_passes += [
+            partial(
+                set_thread_dependent_index_from_scan,
+                constraints,
+                trace,
+                scan_mapping,
             )
         ]
     else:
@@ -879,8 +889,96 @@ def get_reduce_mapping(
     return reduce_mapping
 
 
+def get_scan_mapping(
+    trace: CapturedTrace, constraints: list[Constraint]
+) -> dict[ScanOp, dict[IndexSymbol, IndexSequence]]:
+    """
+    Get the mapping of the scan ops to the index sequence.
+
+    Resulting index will have scan dim distributed across wg0 threads and
+    rest of the dims distributed similar to read/write nodes according to the
+    WorkgroupConstraints.
+    """
+    sources = trace.walk(lambda node: isinstance(get_custom(node), ScanOp))
+    hardware_constraint = get_hardware_constraint(constraints)
+    workgroup_constraints = get_workgroup_constraints(constraints)
+
+    scan_mapping = {}
+    for source in sources:
+        custom = get_custom(source)
+        index = {}
+
+        dim = custom.dim
+
+        # Compute the index sequence for the reduction dimension based on the
+        # threads per wave and the vector size.
+        threads_per_wave = hardware_constraint.threads_per_wave
+        vector_size = hardware_constraint.vector_shapes[dim]
+        assert (
+            vector_size % threads_per_wave == 0
+        ), f"Vector size {dim}={vector_size} must be divisible by threads per wave {threads_per_wave}"
+        elements_per_thread = vector_size // threads_per_wave
+        stride = compute_stride(
+            custom.indexing_dims, hardware_constraint.vector_shapes, dim
+        )
+        index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+            dim, 0, elements_per_thread, stride
+        )
+
+        for dim in custom.indexing_dims:
+            elements_per_thread = 1
+            stride = compute_stride(
+                custom.indexing_dims, hardware_constraint.vector_shapes, dim
+            )
+            wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
+            assert (
+                len(wg_constraint) <= 1
+            ), f"Multiple workgroup constraints for dimension {dim}"
+            if wg_constraint:
+                workgroup_dim = wg_constraint[0].workgroup_dim
+            else:
+                continue
+
+            index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+                dim, workgroup_dim, elements_per_thread, stride
+            )
+
+        scan_mapping[custom] = index
+
+    return scan_mapping
+
+
 def populate_reduce_source_indices(
     node: ReduceOp,
+    hardware_constraint: HardwareConstraint,
+    workgroup_constraints: list[WorkgroupConstraint],
+    index: dict[IndexSymbol, IndexSequence],
+):
+    """
+    Populate the source indices for the reduce op.
+    """
+    vector_shapes = hardware_constraint.vector_shapes
+    ret = []
+    if isinstance(node.arg, Sequence):
+        ret += [(get_custom(a), index, vector_shapes) for a in node.arg]
+    else:
+        ret += [(get_custom(node.arg), index, vector_shapes)]
+
+    # Reduce args must contain index for the reduction dimension,
+    # but init and the reduction itself does not.
+    res_index = copy(index)
+    del res_index[node.dim]
+
+    if node.init:
+        ret += [(get_custom(node.init), res_index, vector_shapes)]
+
+    ret += [(node, res_index, vector_shapes)]
+
+    return ret
+
+
+def populate_scan_source_indices(
+    node: ScanOp,
     hardware_constraint: HardwareConstraint,
     workgroup_constraints: list[WorkgroupConstraint],
     index: dict[IndexSymbol, IndexSequence],
@@ -929,6 +1027,36 @@ def set_thread_dependent_index_from_reduce(
         visited.remove(source)
         index = reduce_mapping[source]
         new_sources = populate_reduce_source_indices(
+            source, hardware_constraint, workgroup_constraints, index
+        )
+        visited = propagate_indices(
+            new_sources,
+            visited,
+            symbolic_constraints,
+        )
+
+
+def set_thread_dependent_index_from_scan(
+    constraints: Sequence[Constraint],
+    trace: CapturedTrace,
+    reduce_mapping: dict[ScanOp, dict[IndexSymbol, IndexSequence]],
+):
+    """
+    Set the thread dependent index, rooting on reduce ops.
+    """
+    hardware_constraint = get_hardware_constraint(constraints)
+    sources = trace.walk(lambda node: isinstance(get_custom(node), ScanOp))
+    sources = [get_custom(x) for x in sources]
+    assert sources, "No reduce nodes found in the graph."
+
+    visited = set()
+    workgroup_constraints = get_workgroup_constraints(constraints)
+    symbolic_constraints = [c for c in constraints if isinstance(c, SymbolicAlias)]
+    for source in sources:
+        visited = visited.union(set([x for x in sources]))
+        visited.remove(source)
+        index = reduce_mapping[source]
+        new_sources = populate_scan_source_indices(
             source, hardware_constraint, workgroup_constraints, index
         )
         visited = propagate_indices(
