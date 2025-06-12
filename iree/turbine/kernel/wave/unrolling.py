@@ -57,7 +57,7 @@ def unroll(
         raise ValueError("Unrolling is not supported for iterates with conditions.")
 
     iterate.count = iterate.count // unroll_factor
-    iterate.step = iterate.step * unroll_factor
+    iterate.update_arg("step", iterate.step * unroll_factor)
 
     graph = trace.get_subgraph(iterate.subgraph_name)
 
