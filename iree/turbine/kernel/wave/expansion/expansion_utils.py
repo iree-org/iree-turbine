@@ -98,11 +98,6 @@ def get_dim_scaling(
                     f"tile_size={tile_size}, wave_count={wave_count}, vector_size={vector_size}"
                 )
 
-            if tile_size < vector_size and vector_size % tile_size != 0:
-                raise ValueError(
-                    f"Tile size {tile_size} is smaller than vector size {vector_size} and not divisible by it"
-                )
-
             dim_scaling[constraint.dim] = ceildiv(tile_size, wave_count * vector_size)
 
     if isinstance(node.type, DataType):
