@@ -9,7 +9,7 @@ from sympy.utilities.lambdify import lambdastr
 from itertools import chain
 import iree.turbine.kernel.lang as tkl
 from ..compiler import builder, dispatch_codegen, kernel_codegen
-from ..lang import Grid
+from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Iterate, CustomOp, get_custom, IterArg
