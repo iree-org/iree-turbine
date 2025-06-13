@@ -284,7 +284,7 @@ def testPagedFlashDecoding(
         num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
     output = device_zeros(
-        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=dtype
     )
 
     options = WaveCompileOptions(
@@ -482,7 +482,7 @@ def testPagedFlashDecodingMHA(
         num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
     output = device_zeros(
-        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=dtype
     )
 
     options = WaveCompileOptions(
