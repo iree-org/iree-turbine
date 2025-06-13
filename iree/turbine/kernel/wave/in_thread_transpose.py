@@ -263,6 +263,7 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
                     mapping_dynamic_vals=read.mapping_dynamic_vals,
                 ).add_to_graph(read.graph)
                 new_read.index = read_index
+                new_read.vector_shapes = read.vector_shapes
                 new_read_custom = get_custom(new_read)
                 new_read_custom.infer_type()
                 update_read_mapping_dynamic_values(new_read_custom)
@@ -317,6 +318,7 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
                     mapping_dynamic_vals=write.mapping_dynamic_vals,
                 ).add_to_graph(write.graph)
                 new_write.index = store_index
+                new_write.vector_shapes = write.vector_shapes
                 new_writes[write.memory].append(new_write)
 
         update_write_dependencies(new_writes, trace)
