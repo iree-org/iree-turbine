@@ -35,6 +35,7 @@ def unroll(
 ) -> None:
     """
     Unroll an iterate node in the graph `unroll_factor` times.
+
     This is done by creating `unroll_factor` - 1 copies of the iteration body
     and adjusting the step size and boundaries accordingly. The original output
     node is retained until the unrolling concludes and then deleted.
@@ -90,7 +91,9 @@ def unroll(
     #    of the entire unrolled loop body
     reduction_axis = iterate.axis
     induction_var = IndexSymbol(
-        f"$ARG{reduction_axis.name}", integer=True, nonnegative=True,
+        f"$ARG{reduction_axis.name}",
+        integer=True,
+        nonnegative=True,
     )
     original_body_nodes = list(graph.nodes)
     for unroll_idx in range(0, unroll_factor - 1):
@@ -107,16 +110,18 @@ def unroll(
             if copy.index:
                 updated_index = {}
                 for key, dim in copy.index.items():
-                    updated_index[key] = dim.subs({induction_var : induction_var + unroll_idx + 1})
+                    updated_index[key] = dim.subs(
+                        {induction_var: induction_var + unroll_idx + 1}
+                    )
                 copy.index = updated_index
             value_use_map[original.fx_node] = copy.fx_node
 
             if isinstance(copy, Output):
                 remap_iter_args(iterate.iter_args(graph), copy, value_use_map)
-                # At this point we have two output nodes in the graph. 
+                # At this point we have two output nodes in the graph.
                 # We erase the original output node when unrolling is complete.
                 # Otherwise, we erase the copy.
-                if unroll_idx != unroll_factor-2:
+                if unroll_idx != unroll_factor - 2:
                     get_custom(value_use_map[node]).erase()
                 else:
                     original.erase()
