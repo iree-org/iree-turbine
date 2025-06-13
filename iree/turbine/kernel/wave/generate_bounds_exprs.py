@@ -52,10 +52,9 @@ def generate_bounds_exprs(trace: CapturedTrace, constraints: list[Constraint]):
         if is_shared_mem and bounds:
             bounds = remove_global_indexing(bounds, constraints)
             # Masking against global bounds was already handled when reading from
-            # global mem, but we may still need to handle masking against vector
+            # global mem, but we still need to handle masking against vector
             # size during shared mem access.
-            # Bound expression for this case will look like
-            # `min(global_bound, vector_size)`.
+            # A bound expression for this case is `min(global_bound, vector_size)`.
             # Replace global bound with `max(tile_size, vector_size)` so the entire
             # expression `min(max(tile_size, vector_size), vector_size)` can be
             # simplified to just vector size.
@@ -63,7 +62,7 @@ def generate_bounds_exprs(trace: CapturedTrace, constraints: list[Constraint]):
                 k: safe_subs(v, {k: _get_max_tile_size(k, constraints, vector_shapes)})
                 for k, v in bounds.items()
             }
-            # Shared mem accesses are always access the full vector_shape tile,
+            # Shared mem accesses always access the full vector_shape tile,
             # so we can remove bounds that are divisible by vector size.
             bounds = {
                 k: v
