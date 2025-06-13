@@ -273,6 +273,10 @@ def cast(src: "Register", dtype: DataType) -> "Register":
     ...
 
 
+def bitcast(src: "Register", dtype: DataType) -> "Register":
+    ...
+
+
 def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
     ...
 
@@ -2207,6 +2211,40 @@ class CastOp(CustomOp, ABC):
     def infer_type(self):
         src_shape = get_custom(self.arg).type.symbolic_shape
         self.type = Register[(*src_shape, self.dtype)]
+
+
+@define_op("bitcast")
+@dataclass
+class BitcastOp(CustomOp, ABC):
+    """
+    Represents a bitcast operation.
+    """
+
+    arg: fx.Node
+    dtype: DataType
+
+    @property
+    def scale_factor(self):
+        src_width = self.arg.type.dtype.bitwidth()
+        dst_width = self.dtype.bitwidth()
+        if src_width % dst_width != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if src_width % dst_width == 0."
+            )
+        return int(src_width / dst_width)
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    def infer_type(self):
+        src_shape = get_custom(self.arg).type.symbolic_shape
+        dst_shape = list(src_shape)
+        # TODO: Remove when scaled expanded dim support is added.
+        if self.scale_factor != 1:
+            raise NotImplementedError("Currently only support bitcast of same bitwidth")
+        dst_shape[-1] *= self.scale_factor
+        self.type = Register[(*dst_shape, self.dtype)]
 
 
 @define_op("permute")
