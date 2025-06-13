@@ -281,6 +281,7 @@ def test_aot_wave_integration_to_sharktank():
         ),
     )
     mlir_asm = str(e.mlir_module)
+    e.verify()
     print(mlir_asm)
 
     # CHECK-LABEL:       func.func @main
