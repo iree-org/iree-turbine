@@ -35,6 +35,7 @@ def get_paged_decode_attention_kernels(
     mfma_variant: tuple[MMAType, MMAType],
     num_kv_splits: int,
     input_dtype: torch.dtype = torch.float16,
+    output_dtype: torch.dtype = torch.float16,
     layer_scaling: Optional[float] = None,
     mha: bool = False,
 ):
@@ -42,6 +43,7 @@ def get_paged_decode_attention_kernels(
         assert shape.num_query_heads == shape.num_kv_heads
 
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
+    wave_output_dtype = torch_dtype_to_wave(output_dtype)
 
     # Input sizes
     S = tkl.sym.S  # Num seqs
@@ -353,7 +355,7 @@ def get_paged_decode_attention_kernels(
         logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, wave_output_dtype],
     ):
         req_index = tkw.read(request_indices)
         seq_length = tkw.read(request_indices, mapping=seq_len_mapping)
@@ -385,9 +387,9 @@ def get_paged_decode_attention_kernels(
 
         res_max, res_sum, res_mm = repeat
         res = res_mm / res_sum
-        res_f16 = tkw.cast(res, tkl.f16)
+        res_casted = tkw.cast(res, wave_output_dtype)
         tkw.write(
-            res_f16,
+            res_casted,
             output,
             mapping=mapping,
             elements_per_thread=1,  # TODO: cannot remove this yet as vector shapes are inferred incorrectly
