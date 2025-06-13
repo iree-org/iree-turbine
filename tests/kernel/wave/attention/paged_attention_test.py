@@ -266,6 +266,7 @@ def testPagedFlashDecoding(
         mfma_variant,
         num_kv_splits,
         input_dtype=dtype,
+        output_dtype=dtype,
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
@@ -462,6 +463,7 @@ def testPagedFlashDecodingMHA(
         mfma_variant,
         num_kv_splits,
         input_dtype=dtype,
+        output_dtype=dtype,
         mha=True,
     )
     hyperparams_0.update(get_default_scheduling_params())
