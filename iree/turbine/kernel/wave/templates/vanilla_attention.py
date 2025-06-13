@@ -648,6 +648,7 @@ def get_bhsd_attention_kernel(
     ):
         base_attention_core(q, k, v, c)
 
+    # TODO: fix the signature and add custom mask test for bhsd case
     @tkw.wave(constraints)
     def base_attention_custom_mask(
         q: tkl.Memory[B, M, H, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
