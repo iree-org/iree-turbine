@@ -138,6 +138,7 @@ def testTransposedVAttentionPure(
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn", [False])
+@param_bool("buffer_ops", "buf")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
@@ -151,6 +152,7 @@ def testAttentionPure(
     input_shape: tuple[int],
     enable_scheduling: SchedulingType,
     dynamic_dims: bool,
+    buffer_ops: bool,
     mfma_variant: tuple[MMAType],
     request,
 ):
@@ -191,6 +193,8 @@ def testAttentionPure(
         benchmark_results_file=(
             os.path.join(dump_perf, "tk_" + perf_filename) if dump_perf else None
         ),
+        use_buffer_load_ops=buffer_ops,
+        use_buffer_store_ops=buffer_ops,
     )
 
     options = set_default_run_config(options)
