@@ -22,13 +22,8 @@ def get_dict_with_updated_key(
     """
     Update a key in a dictionary while preserving the original insertion order of values.
 
-    Args:
-        original_dict: The dictionary to update
-        old_key: The key to replace
-        new_key: The new key to use
-
-    Returns:
-        A new dictionary with the updated key and same value order
+    Creates a new dictionary identical to the original except that the specified old key
+    is replaced with the new key. All values and ordering remain unchanged.
     """
     if old_key not in original_dict:
         raise KeyError(f"Old key '{old_key}' not found in dictionary")
