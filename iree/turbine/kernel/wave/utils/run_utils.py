@@ -235,5 +235,6 @@ def set_default_run_config(options: WaveCompileOptions) -> WaveCompileOptions:
     """Return default config for running."""
     options.backend = "rocm"
     options.device = "hip"
-    options.target = get_default_arch()
+    options.target = "gfx950"
+    # options.target = get_default_arch()
     return options
