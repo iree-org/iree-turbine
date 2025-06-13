@@ -97,12 +97,14 @@ def _multi_buffer_memory_location(
         i for i, dim in enumerate(original_buffer.shape) if dim == reduction_axis
     ]
     induction_var = tkl.IndexSymbol(
-        f"$ARG{reduction_axis.name}", integer=True, nonnegative=True
+        f"$ARG{reduction_axis.name}",
+        integer=True,
+        nonnegative=True,
     )
     buffer_selector = induction_var % buffer_count  # 0 to buffer_count-1
-    for stage in stage_mapping.keys():
+    for stage, ops_in_stage in stage_mapping.items():
         offset = 0
-        for op in stage_mapping[stage]:
+        for op in ops_in_stage:
             # Determine buffer offset based on stage
             use_alternate_buffer = stage >= 2 and stage <= 4
 
@@ -129,12 +131,10 @@ def _multi_buffer_memory_location(
                             op.mapping.input_mapping = get_dict_with_updated_key(
                                 input_mapping, dim, dim * buffer_count
                             )
-                            input_mapping = op.mapping.input_mapping
                         if dim in output_mapping:
                             op.mapping.output_mapping = get_dict_with_updated_key(
                                 output_mapping, dim, dim * buffer_count
                             )
-                            output_mapping = op.mapping.output_mapping
 
     # Create new shape with increased non-reduction dimensions
     new_shape = []
