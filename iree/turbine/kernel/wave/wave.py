@@ -59,9 +59,8 @@ from .schedule_reordering import schedule_reordering
 from .memory_analysis.minimize_shared_allocs import minimize_shared_allocs
 from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
-from .shared_memory_indexing import (
-    apply_shared_memory_indexing_corrections,
-)
+from .shared_memory_indexing import apply_shared_memory_indexing_corrections
+from .generate_bounds_exprs import generate_bounds_exprs
 
 # Utils
 from .utils.symbol_utils import subs_idxc, safe_subs
@@ -597,6 +596,7 @@ class LaunchableWave(Launchable):
             ),
             partial(add_shared_memory_barriers, trace),
             partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
+            partial(generate_bounds_exprs, trace, self.constraints),
         ]
 
         pass_times = {}

@@ -77,7 +77,7 @@ def test_trace_py_arithmetic():
     print_trace(trace)
     # CHECK: %a
     # CHECK-NEXT: %read
-    # CHECK-SAME: (%a, None, None, (), None)
+    # CHECK-SAME: (%a, None, None, (), None, None)
     # CHECK-NEXT: %add
     # CHECK-SAME: (%read, %read)
     # CHECK-NEXT: %sub
@@ -85,7 +85,7 @@ def test_trace_py_arithmetic():
     # CHECK-NEXT: %neg
     # CHECK-SAME: (%sub,)
     # CHECK-NEXT: %write
-    # CHECK-SAME: (%neg, %a, 4, None, ())
+    # CHECK-SAME: (%neg, %a, 4, None, (), None)
     # CHECK-NEXT: return None
 
     # CHECK: Custom format:

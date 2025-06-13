@@ -81,13 +81,13 @@ def test_read_write_equal_sizes():
         # CHECK-NEXT: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read
-        # CHECK-SAME: (%a, 4, None, (), None)
+        # CHECK-SAME: (%a, 4, None, (), None, None)
         # CHECK-NEXT: %write_1
-        # CHECK-SAME: (%read, %allocate, 4, None, ())
+        # CHECK-SAME: (%read, %allocate, 4, None, (), None)
         # CHECK-NEXT: %read_1
-        # CHECK-SAME: (%allocate, 4, None, (), [%write_1])
+        # CHECK-SAME: (%allocate, 4, None, (), None, [%write_1])
         # CHECK-NEXT: %write
-        # CHECK-SAME: (%read_1, %c, 4, None, ())
+        # CHECK-SAME: (%read_1, %c, 4, None, (), None)
 
         # CHECK: -----
 
@@ -132,13 +132,13 @@ def test_read_write_equal_sizes_different_address_spaces():
         # CHECK-NEXT: %a
         # CHECK-NEXT: %c
         # CHECK-NEXT: %read
-        # CHECK-SAME: (%a, 4, None, (), None)
+        # CHECK-SAME: (%a, 4, None, (), None, None)
         # CHECK-NEXT: %write_1
-        # CHECK-SAME: (%read, %allocate, 4, None, ())
+        # CHECK-SAME: (%read, %allocate, 4, None, (), None)
         # CHECK-NEXT: %read_1
-        # CHECK-SAME: (%allocate, 4, None, (), [%write_1])
+        # CHECK-SAME: (%allocate, 4, None, (), None, [%write_1])
         # CHECK-NEXT: %write
-        # CHECK-SAME: (%read_1, %c, 4, None, ())
+        # CHECK-SAME: (%read_1, %c, 4, None, (), None)
 
         # CHECK: -----
 
@@ -198,7 +198,7 @@ def test_gemm():
         # CHECK-SAME: ((M, K), (BLOCK_M, BLOCK_K + 4), f16, $SHARED_ADDRESS_SPACE, 4, None, None)
         # CHECK-NEXT: iterate
         # CHECK-NEXT: %write
-        # CHECK-SAME: (%iterate, %c, 4, None, ())
+        # CHECK-SAME: (%iterate, %c, 4, None, (), None)
 
         # iterate subgraph:
         # CHECK: %b
@@ -206,14 +206,14 @@ def test_gemm():
         # CHECK-NEXT: %acc
         # CHECK-NEXT: %read
         # CHECK-NEXT: %write
-        # CHECK-SAME: (%read, %allocate, 4, None, ())
+        # CHECK-SAME: (%read, %allocate, 4, None, (), None)
         # CHECK-NEXT: %read_2
-        # CHECK-SAME: (%allocate, 4, None, (), [%write])
+        # CHECK-SAME: (%allocate, 4, None, (), None, [%write])
         # CHECK-NEXT: %read_1
         # CHECK-NEXT: %write_1
-        # CHECK-SAME: (%read_1, %allocate_1, 4, None, ())
+        # CHECK-SAME: (%read_1, %allocate_1, 4, None, (), None)
         # CHECK-NEXT: %read_3
-        # CHECK-SAME: (%allocate_1, 4, None, (), [%write_1])
+        # CHECK-SAME: (%allocate_1, 4, None, (), None, [%write_1])
         # CHECK-NEXT: %mma
         # CHECK-SAME: (%read_2, %read_3, %acc, None)
 
