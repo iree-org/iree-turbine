@@ -889,7 +889,10 @@ def test_unary_lowerings():
         res = tkw.roundeven(res)
         res = tkw.sin(res)
         res = tkw.cos(res)
+        res = tkw.bitcast(res, tkl.bf16)
         res = tkw.exp(res)
+        res = tkw.bitcast(res, tkl.f16)
+
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_b, b, elements_per_thread=4)
 
@@ -944,8 +947,14 @@ def test_unary_lowerings():
     # Tests cos
     # CHECK: %[[COS:.+]] = math.cos %[[SIN]]
 
+    # Test bitcast to bf16
+    # CHECK: %[[COS_BF16:.+]] = vector.bitcast %[[COS]] : vector<4xf16> to vector<4xbf16>
+
     # Tests exp
-    # CHECK: %[[EXP:.+]] = math.exp %[[COS]]
+    # CHECK: %[[EXP_BF16:.+]] = math.exp %[[COS_BF16]]
+
+    # Test bitcast back to f16
+    # CHECK: %[[EXP:.+]] = vector.bitcast %[[EXP_BF16]] : vector<4xbf16> to vector<4xf16>
 
 
 # Important to check lowering of scheduling/barrier ops.

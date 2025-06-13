@@ -52,6 +52,7 @@ from ...ops.wave_ops import (
     apply_expr,
     atomic_min,
     broadcast,
+    bitcast,
     cast,
     conditional,
     cos,
@@ -1503,6 +1504,33 @@ def handle_cast(emitter: WaveEmitter, node: fx.Node):
         src_elem_type, dst_elem_type, fastmath=get_fast_math_flags(emitter.options)
     )
     casted_vector = conversion_op(dst_vector_type, vector_src)
+    emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
+
+
+@handle_op(bitcast)
+def handle_bitcast(emitter: WaveEmitter, node: fx.Node):
+    try:
+        register, dtype = node.args
+    except ValueError as e:
+        raise ValidationError("Malformed arguments") from e
+    vector_src = cast_vector(emitter, register)
+    src_vector_type = vector_src.type
+    dst_elem_type = IrType.parse(dtype.ir_type_asm())
+    assert src_vector_type.rank == 1
+
+    # Determine shape and type of target bitcast
+    src_width = src_vector_type.element_type.width
+    dst_width = dst_elem_type.width
+    if src_width != dst_width:
+        raise NotImplementedError("Currently only support same bitwidth casting.")
+    scale_factor = src_width / dst_width
+    dst_vector_shape = int(src_vector_type.shape[0] * scale_factor)
+    dst_vector_type = VectorType.get([dst_vector_shape], dst_elem_type)
+
+    if src_vector_type == dst_vector_type:
+        emitter.bind_node_proxy(node, IRProxyValue(vector_src))
+        return
+    casted_vector = vector_d.bitcast(dst_vector_type, vector_src)
     emitter.bind_node_proxy(node, IRProxyValue(casted_vector))
 
 
