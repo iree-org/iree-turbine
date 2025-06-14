@@ -8,7 +8,7 @@
 from sympy.utilities.lambdify import lambdastr
 from itertools import chain
 import iree.turbine.kernel.lang as tkl
-from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
+from ..compiler import builder, dispatch_codegen, kernel_codegen
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
@@ -64,7 +64,6 @@ from .generate_bounds_exprs import generate_bounds_exprs
 
 # Utils
 from .utils.symbol_utils import subs_idxc, safe_subs
-from .utils.classes import KernelLaunchInfo
 from .utils.print_utils import print_trace, try_apply_pass
 from .utils.graph_utils import (
     remove_chained_extractslice,
@@ -85,12 +84,10 @@ import torch.fx as fx
 import inspect
 import sympy
 import warnings
-from pathlib import Path
-import sys
-import subprocess
-import os
-import shutil
-import glob
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -435,9 +432,9 @@ class LaunchableWave(Launchable):
         try:
             emitter.emit(trace.get_root_graph())
         except:
-            print("Error in emitter")
+            logger.info("Error in emitter")
             asm = mb.module_op.get_asm()
-            print(asm)
+            logger.info(asm)
             raise
         emitter.finish()
 
