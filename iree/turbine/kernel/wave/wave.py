@@ -560,14 +560,6 @@ class LaunchableWave(Launchable):
         ]
 
         # Schedule the reduction ops.
-        # Scheduling should always be used with use_scheduling_barriers=True,
-        # as this is the only way we can ensure that LLVM enforces our desired schedule.
-        # However, due a bug in LLVM, you will need to patch your local LLVM repo
-        # with the following commit: https://github.com/kerbowa/llvm-project/commit/ee52732cddae42deed2e3387a83b20ec05860b4e
-        # Specifically:
-        # git fetch https://github.com/kerbowa/llvm-project.git ee52732cddae42deed2e3387a83b20ec05860b4e
-        # git cherry-pick ee52732cddae42deed2e3387a83b20ec05860b4e
-        # [Manually resolve conflicts consistent with the PR]
         scheduling_type = options.schedule
         use_scheduling_barriers = options.use_scheduling_barriers
         graph_passes.append(
@@ -577,6 +569,8 @@ class LaunchableWave(Launchable):
                 self.constraints,
                 use_scheduling_barriers,
                 scheduling_type,
+                options.override_schedule,
+                options.dump_schedule,
             )
         )
         graph_passes.append(
