@@ -377,7 +377,9 @@ def handle_mma(emitter: WaveEmitter, node: fx.Node):
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
-def emit_mfma_scaled(m: int, n: int, k: int, acc: Value, values: list[Value], scales: list[Value]) -> Value:
+def emit_mfma_scaled(
+    m: int, n: int, k: int, acc: Value, values: list[Value], scales: list[Value]
+) -> Value:
     m = get_constant_attr(m, IntegerType.get_signless(32))
     n = get_constant_attr(n, IntegerType.get_signless(32))
     k = get_constant_attr(k, IntegerType.get_signless(32))
@@ -397,6 +399,7 @@ def emit_mfma_scaled(m: int, n: int, k: int, acc: Value, values: list[Value], sc
         scales_idx_b=idx_b,
     )
     return result
+
 
 @handle_op(scaled_mma)
 def handle_scaled_mma(emitter: WaveEmitter, node: fx.Node):

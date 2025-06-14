@@ -236,7 +236,9 @@ class HardwareConstraint(Constraint):
             case _:
                 raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
 
-    def mma_matrix_shapes(self, mma_type: Optional[MMAType | ScaledMMAType]) -> tuple[int]:
+    def mma_matrix_shapes(
+        self, mma_type: Optional[MMAType | ScaledMMAType]
+    ) -> tuple[int]:
         # TODO: Eventually the shapes and indices should be provided by a tool
         if mma_type == None:
             mma_type = self.mma_type
@@ -363,12 +365,13 @@ class HardwareConstraint(Constraint):
             case ScaledMMAType.F32_16x16x128_F8F6F4:
                 offset = [
                     Piecewise(
-                        (lane % 16, ~MMA_ACC), (4 * floor(lane / 16) + (GPR_NUM % 4), MMA_ACC)
+                        (lane % 16, ~MMA_ACC),
+                        (4 * floor(lane / 16) + (GPR_NUM % 4), MMA_ACC),
                     ),  # M
                     lane % 16,  # N
                     Piecewise(
                         (32 * floor(lane / 16), ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                        (floor(lane / 16), MMA_LHS_SCALE | MMA_RHS_SCALE)
+                        (floor(lane / 16), MMA_LHS_SCALE | MMA_RHS_SCALE),
                     ),  # K
                 ]
             case ScaledMMAType.F32_32x32x64_F8F6F4:
@@ -383,9 +386,10 @@ class HardwareConstraint(Constraint):
                         ),
                     ),  # M
                     lane % 32,  # N
-                    Piecewise((32 * floor(lane / 32), ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                              (floor(lane / 32), MMA_LHS_SCALE | MMA_RHS_SCALE),
-                        ), # K
+                    Piecewise(
+                        (32 * floor(lane / 32), ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
+                        (floor(lane / 32), MMA_LHS_SCALE | MMA_RHS_SCALE),
+                    ),  # K
                 ]
             case _:
                 raise ValueError("Unsupported MMA type")
@@ -511,8 +515,10 @@ class HardwareConstraint(Constraint):
                 size = [
                     Piecewise((1, ~MMA_ACC), (4, MMA_ACC)),  # M
                     1,  # N
-                    Piecewise((32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                              (1, MMA_LHS_SCALE | MMA_RHS_SCALE)),  # K
+                    Piecewise(
+                        (32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
+                        (1, MMA_LHS_SCALE | MMA_RHS_SCALE),
+                    ),  # K
                 ]
                 stride = [
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
@@ -523,8 +529,10 @@ class HardwareConstraint(Constraint):
                 size = [
                     Piecewise((1, ~MMA_ACC), (16, MMA_ACC)),  # M
                     1,  # N
-                    Piecewise((32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
-                              (1, MMA_LHS_SCALE | MMA_RHS_SCALE)),  # K
+                    Piecewise(
+                        (32, ~(MMA_LHS_SCALE | MMA_RHS_SCALE)),
+                        (1, MMA_LHS_SCALE | MMA_RHS_SCALE),
+                    ),  # K
                 ]
                 stride = [
                     Piecewise((1, ~MMA_ACC), (32, MMA_ACC)),  # M
