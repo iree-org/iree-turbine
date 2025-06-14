@@ -3,6 +3,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from .general_utils import infer_dim
 from .symbol_utils import IndexExpr, IndexSymbol, subs_idxc
 from ...lang.wave_types import IndexMapping
 from ..._support.indexing import IndexingContext
@@ -205,7 +206,8 @@ def check_is_mapping_contiguous(
         assert (
             mapping.is_output_identity()
         ), "non-identity output mapping is not supported yet"
-        index_mapping = mapping.map_input_indices(symbolic_shape)
+        symbolic_dims = [infer_dim(dim_size) for dim_size in symbolic_shape]
+        index_mapping = mapping.map_input_indices(symbolic_dims)
     else:
         assert (
             mapping.is_input_identity()

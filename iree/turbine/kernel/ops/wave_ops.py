@@ -1360,8 +1360,11 @@ class MMA(CustomOp):
     def operand_index(
         self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
     ) -> dict[IndexSymbol, IndexSequence]:
+        from ..wave.utils.general_utils import infer_dim
+
         indices: dict[IndexSymbol, IndexSequence] = {}
-        for dim in shape:
+        for dim_expr in shape:
+            dim = infer_dim(dim_expr)
             indices[dim] = self.index[dim].subs(operand_map)
         return indices
 
@@ -1415,14 +1418,21 @@ class Read(CustomOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        from ..wave.utils.general_utils import infer_dim
+
         if self.mapping is not None:
             return list(self.mapping.output_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
         dtype = self.memory_type.dtype
-        self.type = Register[(*self.indexing_dims, dtype)]
+        shape = list(self.memory_type.symbolic_shape)
+        if self.mapping is not None:
+            shape = self.indexing_dims
+        self.type = Register[(*shape, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -1727,15 +1737,24 @@ class Write(CustomOp):
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        from ..wave.utils.general_utils import infer_dim
+
         if self.mapping is not None:
             return list(self.mapping.input_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
+        from ..wave.utils.general_utils import infer_dim
+
         address_space = self.memory_type.address_space
         dtype = self.memory_type.dtype
-        self.type = Memory[(*self.indexing_dims, address_space, dtype)]
+        shape = list(self.memory_type.symbolic_shape)
+        if self.mapping is not None:
+            shape = self.indexing_dims
+        self.type = Memory[(*shape, address_space, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -2242,11 +2261,45 @@ class BitcastOp(CustomOp, ABC):
     def infer_type(self):
         src_shape = get_custom(self.arg).type.symbolic_shape
         dst_shape = list(src_shape)
-        # TODO: Remove when scaled expanded dim support is added.
-        if self.scale_factor != 1:
-            raise NotImplementedError("Currently only support bitcast of same bitwidth")
         dst_shape[-1] *= self.scale_factor
         self.type = Register[(*dst_shape, self.dtype)]
+
+    def get_derived_indices(
+        self,
+    ) -> list[tuple[dict[IndexSymbol, IndexSequence], fx.Node]]:
+        return [(self.fx_node, self.index)]
+
+    def transform_index_backwards(
+        self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
+    ) -> dict[IndexSymbol, IndexSequence]:
+        """
+        Transform the index of the node when propagating index backwards, i.e.
+        from node to its arguments.
+        """
+        src_width = self.arg.type.dtype.bitwidth()
+        dst_width = self.type.dtype.bitwidth()
+        if src_width == dst_width:
+            return index
+        if src_width % dst_width != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if src_width % dst_width == 0."
+            )
+        scale_factor = int(src_width / dst_width)
+        dims = [(ind, val) for ind, val in index.items()]
+        fastest_dim, fastest_index = copy.deepcopy(
+            sorted(dims, key=lambda x: x[1].size)[-1]
+        )
+        if fastest_index.size % scale_factor != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if fastest dim % scale factor == 0."
+            )
+        updated_numel = int(fastest_index.size / scale_factor)
+        fastest_index.start = fastest_index.start.subs(
+            {fastest_index.size: updated_numel}
+        )
+        fastest_index.size = updated_numel
+        index[fastest_dim] = fastest_index
+        return index
 
 
 @define_op("permute")

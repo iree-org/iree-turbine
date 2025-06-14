@@ -39,7 +39,7 @@ from ...compiler.vector_codegen import (
 
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils.general_utils import get_fastest_index
+from ..utils.general_utils import get_fastest_index, infer_dim
 from ..utils.symbol_utils import safe_subs, subs_idxc
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, IndexSymbol
@@ -177,7 +177,8 @@ def _construct_gather_scatter_indices(
         assert (
             mapping.is_output_identity()
         ), "non-identity output mapping is not supported yet"
-        index_mapping = mapping.map_input_indices(symbolic_shape)
+        symbolic_dims = [infer_dim(dim_size) for dim_size in symbolic_shape]
+        index_mapping = mapping.map_input_indices(symbolic_dims)
     else:
         assert (
             mapping.is_input_identity()

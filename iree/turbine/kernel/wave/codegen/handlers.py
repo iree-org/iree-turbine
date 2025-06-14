@@ -1518,11 +1518,10 @@ def handle_bitcast(emitter: WaveEmitter, node: fx.Node):
     dst_elem_type = IrType.parse(dtype.ir_type_asm())
     assert src_vector_type.rank == 1
 
-    # Determine shape and type of target bitcast
+    # Determine shape and type of target bit cast
     src_width = src_vector_type.element_type.width
     dst_width = dst_elem_type.width
-    if src_width != dst_width:
-        raise NotImplementedError("Currently only support same bitwidth casting.")
+    assert src_width % dst_width == 0 or dst_width % src_width == 0
     scale_factor = src_width / dst_width
     dst_vector_shape = int(src_vector_type.shape[0] * scale_factor)
     dst_vector_type = VectorType.get([dst_vector_shape], dst_elem_type)
