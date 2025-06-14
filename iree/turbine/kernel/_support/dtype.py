@@ -70,6 +70,8 @@ class DataType:
             return 1
         if self._name == "index":
             return 64
+        if "f4" in self._name:
+            return 4
         if "f8" in self._name:
             return 8
         if "bf16" in self._name:

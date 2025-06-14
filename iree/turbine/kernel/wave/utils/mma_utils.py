@@ -133,9 +133,7 @@ def get_mma_dimensional_mapping(
             k: hardware_constraint.mma_matrix_shapes(custom.mma_type)[2],
         }
         if isinstance(custom, ScaledMMA):
-            custom.vector_shapes[k_scale] = hardware_constraint.mma_matrix_shapes(
-                custom.mma_type
-            )[2] // hardware_constraint.scaled_mma_scale_factor(custom.mma_type)
+            mapping[custom][k_scale] = MMAOperand.K
 
         if hardware_constraint.vector_shapes:
             custom.vector_shapes.update(hardware_constraint.vector_shapes)

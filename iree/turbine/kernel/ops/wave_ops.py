@@ -1463,8 +1463,11 @@ class ScaledMMA(CustomOp):
     def operand_index(
         self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
     ) -> dict[IndexSymbol, IndexSequence]:
+        from ..wave.utils.general_utils import infer_dim
+
         indices: dict[IndexSymbol, IndexSequence] = {}
-        for dim in shape:
+        for dim_expr in shape:
+            dim = infer_dim(dim_expr)
             indices[dim] = self.index[dim].subs(operand_map)
         return indices
 
