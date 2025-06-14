@@ -170,7 +170,9 @@ def identify_optimizable_loads(
             continue
 
         expanded_dynamic_vals = None
-        memory_load_elems_per_thread = load_elems_per_thread
+        memory_load_elems_per_thread = min(
+            load_elems_per_thread, materialized_shape[-1]
+        )
         memory_max_elements_per_load = max_elements_per_load
         if len(custom.mapping_dynamic_vals) > 0 and not allow_dynamic_transposed:
             expanded_dynamic_vals = set(

@@ -637,7 +637,7 @@ def get_last(node_list: fx.graph._node_list) -> fx.Node:  # type: ignore
 def fixup_mma_nodes(trace: CapturedTrace, expansion_context: ExpansionContext):
     # Chain MMA connections
     for current, last in expansion_context.mma_connections:
-        current.update_arg(2, last)
+        current.update_arg("acc", last)
     # Use the last MMA node instead of the first one.
     for first, second, exclude in expansion_context.mma_nodes:
         first.replace_all_uses_with_except(second, [exclude])
