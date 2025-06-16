@@ -44,7 +44,8 @@ def get_mma_dimensional_mapping(
     trace: CapturedTrace,
     hardware_constraint: HardwareConstraint,
 ) -> tuple[
-    dict[MMA | ScaledMMA, dict[IndexSymbol, int]], dict[MMA | ScaledMMA, dict[IndexSymbol, list[fx.Node]]]
+    dict[MMA | ScaledMMA, dict[IndexSymbol, int]],
+    dict[MMA | ScaledMMA, dict[IndexSymbol, list[fx.Node]]],
 ]:
     """
     Given a trace, determine the MMA dimensional mapping for all the
@@ -55,6 +56,7 @@ def get_mma_dimensional_mapping(
     V to the MMA K dimension (2). We maintain this map per mma node and
     also update the vector_shapes of the mma node based on this information.
     """
+
     def is_mma(node):
         return isinstance(get_custom(node), (MMA, ScaledMMA))
 
@@ -97,9 +99,9 @@ def get_mma_dimensional_mapping(
             lhs_scale_shape = custom.lhs_scale_type.symbolic_shape
             rhs_scale_shape = custom.rhs_scale_type.symbolic_shape
             try:
-                scale_reduction_dim_candidates = (set(lhs_scale_shape) & set(rhs_scale_shape)) - set(
-                    acc_shape
-                )
+                scale_reduction_dim_candidates = (
+                    set(lhs_scale_shape) & set(rhs_scale_shape)
+                ) - set(acc_shape)
                 if len(scale_reduction_dim_candidates) > 1:
                     # Indicates we have batch dimensions as well.
                     # Eliminate these using the vector shapes.
@@ -132,7 +134,8 @@ def get_mma_dimensional_mapping(
         }
         if isinstance(custom, ScaledMMA):
             custom.vector_shapes[k_scale] = hardware_constraint.mma_matrix_shapes(
-                custom.mma_type)[2] // hardware_constraint.scaled_mma_scale_factor(custom.mma_type)
+                custom.mma_type
+            )[2] // hardware_constraint.scaled_mma_scale_factor(custom.mma_type)
 
         if hardware_constraint.vector_shapes:
             custom.vector_shapes.update(hardware_constraint.vector_shapes)
@@ -150,7 +153,9 @@ def get_mma_dimensional_mapping(
     # in the backward slice of the lhs and rhs upto a previous mma (if one exists).
     # So we check for the previous node of the first operator in the slice to see
     # if it is an MMA and if so check if a reshape is required.
-    def add_reshape_if_needed(mma: MMA | ScaledMMA, prev_mma: MMA | ScaledMMA, arg_index: int):
+    def add_reshape_if_needed(
+        mma: MMA | ScaledMMA, prev_mma: MMA | ScaledMMA, arg_index: int
+    ):
         with mma.graph.inserting_before(mma.fx_node):
             arg = mma.lhs if arg_index == 0 else mma.rhs
             arg = get_custom(arg)

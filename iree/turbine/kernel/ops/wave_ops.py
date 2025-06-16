@@ -119,9 +119,13 @@ def mma(lhs: "Register", rhs: "Register", acc: "Register") -> "Register":
     ...
 
 
-def scaled_mma(lhs: "Register", lhs_scale: "Register",
-               rhs: "Register", rhs_scale: "Register",
-               acc: "Register") -> "Register":
+def scaled_mma(
+    lhs: "Register",
+    lhs_scale: "Register",
+    rhs: "Register",
+    rhs_scale: "Register",
+    acc: "Register",
+) -> "Register":
     ...
 
 
@@ -1410,6 +1414,7 @@ class MMA(CustomOp):
     def reduction_dim(self, value: IndexSymbol):
         self.fx_node.reduction_dim = value
 
+
 @define_op("scaled_mma")
 @dataclass
 class ScaledMMA(CustomOp):
@@ -1465,27 +1470,57 @@ class ScaledMMA(CustomOp):
 
     @property
     def lhs_index(self) -> dict[IndexSymbol, IndexSequence]:
-        operand_map = {MMA_LHS: 1, MMA_RHS: 0, MMA_ACC: 0, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0}
+        operand_map = {
+            MMA_LHS: 1,
+            MMA_RHS: 0,
+            MMA_ACC: 0,
+            MMA_LHS_SCALE: 0,
+            MMA_RHS_SCALE: 0,
+        }
         return self.operand_index(operand_map, self.lhs_type.symbolic_shape)
-    
+
     @property
     def lhs_scale_index(self) -> dict[IndexSymbol, IndexSequence]:
-        operand_map = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 0, MMA_LHS_SCALE: 1, MMA_RHS_SCALE: 0}
+        operand_map = {
+            MMA_LHS: 0,
+            MMA_RHS: 0,
+            MMA_ACC: 0,
+            MMA_LHS_SCALE: 1,
+            MMA_RHS_SCALE: 0,
+        }
         return self.operand_index(operand_map, self.lhs_scale_type.symbolic_shape)
 
     @property
     def rhs_index(self) -> dict[IndexSymbol, IndexSequence]:
-        operand_map = {MMA_LHS: 0, MMA_RHS: 1, MMA_ACC: 0, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0}
+        operand_map = {
+            MMA_LHS: 0,
+            MMA_RHS: 1,
+            MMA_ACC: 0,
+            MMA_LHS_SCALE: 0,
+            MMA_RHS_SCALE: 0,
+        }
         return self.operand_index(operand_map, self.rhs_type.symbolic_shape)
-    
+
     @property
     def rhs_scale_index(self) -> dict[IndexSymbol, IndexSequence]:
-        operand_map = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 0, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 1}
+        operand_map = {
+            MMA_LHS: 0,
+            MMA_RHS: 0,
+            MMA_ACC: 0,
+            MMA_LHS_SCALE: 0,
+            MMA_RHS_SCALE: 1,
+        }
         return self.operand_index(operand_map, self.rhs_scale_type.symbolic_shape)
 
     @property
     def acc_index(self) -> dict[IndexSymbol, IndexSequence]:
-        operand_map = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0}
+        operand_map = {
+            MMA_LHS: 0,
+            MMA_RHS: 0,
+            MMA_ACC: 1,
+            MMA_LHS_SCALE: 0,
+            MMA_RHS_SCALE: 0,
+        }
         if self.acc_type is None:
             return None
         return self.operand_index(operand_map, self.acc_type.symbolic_shape)
@@ -1516,6 +1551,7 @@ class ScaledMMA(CustomOp):
     @reduction_dim.setter
     def reduction_dim(self, value: IndexSymbol):
         self.fx_node.reduction_dim = value
+
 
 @define_op("read")
 @dataclass
