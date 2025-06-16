@@ -267,6 +267,7 @@ def testPagedFlashDecoding(
         mfma_variant,
         num_kv_splits,
         input_dtype=dtype,
+        output_dtype=dtype,
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
@@ -284,7 +285,7 @@ def testPagedFlashDecoding(
         num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
     output = device_zeros(
-        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=dtype
     )
 
     options = WaveCompileOptions(
@@ -463,6 +464,7 @@ def testPagedFlashDecodingMHA(
         mfma_variant,
         num_kv_splits,
         input_dtype=dtype,
+        output_dtype=dtype,
         mha=True,
     )
     hyperparams_0.update(get_default_scheduling_params())
@@ -481,7 +483,7 @@ def testPagedFlashDecodingMHA(
         num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
     output = device_zeros(
-        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=dtype
     )
 
     options = WaveCompileOptions(
