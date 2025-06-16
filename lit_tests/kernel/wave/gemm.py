@@ -482,11 +482,12 @@ def test_packed_gemm():
     # Lastly, we need to check that indeed we have half the shapes (<2xi32>) before bitcasting to f16 (<4xf16>).
     # %[[IV_K:.+]] = affine.apply #[[MAP_IV_K]]()[%[[IV]], %[[TID_X]]]
 
+    # CHECK-LABEL:    test_packed_gemm
     # CHECK-DAG:      #[[MAP_IV_K:.+]] = affine_map<()[s0, s1] -> (s0 * 8 + ((s1 mod 64) floordiv 16) * 2)>
-    # CHECK-LABEL:    func.func @packed_gemm
-    # CHECK:            %[[C1:.+]] = arith.constant 1 : index
-    # CHECK:            %[[C4:.+]] = arith.constant 4 : index
-    # CHECK:            %[[C0:.+]] = arith.constant 0 : index
+    # CHECK:          func.func @packed_gemm
+    # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
+    # CHECK-DAG:        %[[C4:.+]] = arith.constant 4 : index
+    # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
     # CHECK:            %[[TID_X:.+]] = gpu.thread_id  x
     # CHECK-COUNT-1:    %[[ALLOC:.+]] = memref.alloc()
     # CHECK:            %[[RHS_SHARED:.+]] = memref.view %[[ALLOC]][%c0][] : memref<2560xi8, #gpu.address_space<workgroup>> to memref<32x10xi32, #gpu.address_space<workgroup>>

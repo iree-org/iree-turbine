@@ -182,7 +182,7 @@ def resolve_scaled_indices(trace):
                 if source.index[dim].size != 1:
                     assert (
                         source.index[dim].size % scale_factor == 0,
-                        "Size needs to be divisible by scale.",
+                        f"Size({source.index[dim].size}) needs to be divisible by scale ({scale_factor}).",
                     )
                 assert (
                     source.vector_shapes[dim] % scale_factor == 0,
