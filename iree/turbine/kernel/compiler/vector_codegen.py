@@ -880,8 +880,7 @@ def cast_vector(
         return vector_d.splat(vector_type, value)
 
 
-def cast_scalar(
-    emitter: ThreadEmitter, value):
+def cast_scalar(emitter: ThreadEmitter, value):
     proxy_value = cast_py_value(emitter, value)
     value = proxy_value.ir_value
 
