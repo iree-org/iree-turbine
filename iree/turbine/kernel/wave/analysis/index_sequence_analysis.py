@@ -484,7 +484,7 @@ def propagate_indices(
     Propagate the index and vector shapes through the graph
     starting with priveleged nodes (like MMA, Read, Write).
     """
-    reduction = None
+    reduction = None  ## remove this unused var
     while sources:
         source, source_index, source_vector_shapes = sources.pop(0)
         if source in visited:
@@ -506,6 +506,8 @@ def propagate_indices(
             sources = add_nodes_to_sources(
                 source,
                 func,
+                # {M: 0 : 1 : 128,
+                # N: (Mod($T0, 64))*Max(1, ceiling(N/64)) : Max(1, ceiling(N/64)) : 1}
                 source_index,
                 source_vector_shapes,
                 sources,
@@ -674,14 +676,17 @@ def get_scan_mapping(
             vector_size % threads_per_wave == 0
         ), f"Vector size {dim}={vector_size} must be divisible by threads per wave {threads_per_wave}"
         elements_per_thread = vector_size // threads_per_wave
+
         stride = compute_stride(
             custom.indexing_dims, hardware_constraint.vector_shapes, dim
         )
+        # why is WG dim hardcoded?
         index[dim] = hardware_constraint.apply_read_write_thread_mapping(
             dim, 0, elements_per_thread, stride
         )
 
-        for dim in custom.indexing_dims:
+        # will indexing dims be all dims except scan/reduce dim? Here it is M.
+        for dim in [custom.indexing_dims]:
             elements_per_thread = 1
             stride = compute_stride(
                 custom.indexing_dims, hardware_constraint.vector_shapes, dim
@@ -700,7 +705,7 @@ def get_scan_mapping(
             )
 
         scan_mapping[custom] = index
-
+    # scan_mapping index: node: cumsum; {N: 2*(Mod($T0, 64)) : 2 : 1}}
     return scan_mapping
 
 
@@ -749,7 +754,7 @@ def populate_scan_source_indices(
     else:
         ret += [(get_custom(node.arg), index, vector_shapes)]
 
-    # Reduce args must contain index for the reduction dimension,
+    # Scan args must contain index for the scan dimension,
     # but init and the reduction itself does not.
     res_index = copy(index)
     del res_index[node.dim]
@@ -795,7 +800,7 @@ def set_thread_dependent_index_from_reduce(
 def set_thread_dependent_index_from_scan(
     constraints: Sequence[Constraint],
     trace: CapturedTrace,
-    reduce_mapping: dict[ScanOp, dict[IndexSymbol, IndexSequence]],
+    scan_mapping: dict[ScanOp, dict[IndexSymbol, IndexSequence]],
 ):
     """
     Set the thread dependent index, rooting on reduce ops.
@@ -803,7 +808,7 @@ def set_thread_dependent_index_from_scan(
     hardware_constraint = get_hardware_constraint(constraints)
     sources = trace.walk(lambda node: isinstance(get_custom(node), ScanOp))
     sources = [get_custom(x) for x in sources]
-    assert sources, "No reduce nodes found in the graph."
+    assert sources, "No scan nodes found in the graph."
 
     visited = set()
     workgroup_constraints = get_workgroup_constraints(constraints)
@@ -811,7 +816,7 @@ def set_thread_dependent_index_from_scan(
     for source in sources:
         visited = visited.union(set([x for x in sources]))
         visited.remove(source)
-        index = reduce_mapping[source]
+        index = scan_mapping[source]
         new_sources = populate_scan_source_indices(
             source, hardware_constraint, workgroup_constraints, index
         )
