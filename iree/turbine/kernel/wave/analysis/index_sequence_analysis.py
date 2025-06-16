@@ -173,12 +173,11 @@ def resolve_scaled_indices(trace):
     """
     sources = trace.walk(lambda node: has_scaled_indices(node))
     for source in sources:
-        for dim in source.type.symbolic_shape:
-            if not is_scaled_dim(dim):
+        for dim_expr in source.type.symbolic_shape:
+            if not is_scaled_dim(dim_expr):
                 continue
-            dim, scale_type, scale_factor = get_scale_from_dim(dim)
+            dim, scale_type, scale_factor = get_scale_from_dim(dim_expr)
             if scale_type == ScalingType.DIVIDE:
-                source.index[dim].start = source.index[dim].start / scale_factor
                 if source.index[dim].size != 1:
                     assert (
                         source.index[dim].size % scale_factor == 0,
@@ -188,7 +187,10 @@ def resolve_scaled_indices(trace):
                     source.vector_shapes[dim] % scale_factor == 0,
                     "Expected vector_shape to be divisble by scale.",
                 )
-                source.index[dim].size = max(source.index[dim].size // scale_factor, 1)
+                source.index[dim].start = dim_expr.subs({dim: source.index[dim].start})
+                source.index[dim].size = int(
+                    dim_expr.subs({dim: source.index[dim].size})
+                )
                 source.vector_shapes[dim] = source.vector_shapes[dim] // scale_factor
                 custom = get_custom(source)
                 if isinstance(custom, (Read, Write)):
