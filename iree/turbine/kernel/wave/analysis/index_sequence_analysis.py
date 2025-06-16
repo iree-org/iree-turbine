@@ -178,20 +178,22 @@ def resolve_scaled_indices(trace):
                 continue
             dim, scale_type, scale_factor = get_scale_from_dim(dim_expr)
             if scale_type == ScalingType.DIVIDE:
-                if source.index[dim].size != 1:
-                    assert (
-                        source.index[dim].size % scale_factor == 0,
-                        f"Size({source.index[dim].size}) needs to be divisible by scale ({scale_factor}).",
-                    )
+                # Index can be shared between multiple users, so we copy before modifying.
+                dim_index = deepcopy(source.index[dim])
+                assert (
+                    dim_index.size % scale_factor == 0,
+                    f"Size({dim_index.size}) needs to be divisible by scale ({scale_factor}).",
+                )
                 assert (
                     source.vector_shapes[dim] % scale_factor == 0,
                     "Expected vector_shape to be divisble by scale.",
                 )
-                source.index[dim].start = dim_expr.subs({dim: source.index[dim].start})
-                source.index[dim].size = int(
-                    dim_expr.subs({dim: source.index[dim].size})
+                dim_index.start = dim_expr.subs({dim: dim_index.start})
+                dim_index.size = int(dim_expr.subs({dim: dim_index.size}))
+                source.index[dim] = dim_index
+                source.vector_shapes[dim] = int(
+                    dim_expr.subs({dim: source.vector_shapes[dim]})
                 )
-                source.vector_shapes[dim] = source.vector_shapes[dim] // scale_factor
                 custom = get_custom(source)
                 if isinstance(custom, (Read, Write)):
                     assert (
