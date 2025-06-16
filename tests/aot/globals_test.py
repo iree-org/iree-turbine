@@ -435,7 +435,7 @@ class SimpleCache(torch.nn.Module):
         assert input_pos.shape[0] == values.shape[0]
 
         # Writing the values to the buffer at the specified positions
-        cache = torch.ops.aten.index_put_(self.cache, [input_pos], values)
+        cache = torch.ops.aten.index_put(self.cache, [input_pos], values)
 
         return cache
 
@@ -450,7 +450,7 @@ class ReadWriteReadCache(torch.nn.Module):
         assert input_pos.shape[0] == values.shape[0]
         cache_value_0 = self.cache[2].clone()
         # Writing the values to the buffer at the specified positions
-        cache = torch.ops.aten.index_put_(self.cache, [input_pos], values)
+        cache = torch.ops.aten.index_put(self.cache, [input_pos], values)
         cache_value_1 = cache[2].clone()
         return cache, cache_value_0, cache_value_1
 
@@ -467,7 +467,7 @@ class BufferTest(unittest.TestCase):
         exported_programm = export(exported_fx_graph)
         module_str = str(exported_programm.mlir_module)
         self.assertIn(
-            "util.global private mutable @__auto.constant_10_torch.float32",
+            'torch_tensor_10_torch.float32: "0x0400000000000000000000000000000000000000000000000000000000000000000000000000000000000000"',
             module_str,
         )
 
@@ -482,7 +482,7 @@ class BufferTest(unittest.TestCase):
         exported_programm = export(exported_fx_graph)
         module_str = str(exported_programm.mlir_module)
         self.assertIn(
-            "util.global private mutable @__auto.constant_10_torch.float32",
+            'torch_tensor_10_torch.float32: "0x0400000000000000000000000000000000000000000000000000000000000000000000000000000000000000"',
             module_str,
         )
 
