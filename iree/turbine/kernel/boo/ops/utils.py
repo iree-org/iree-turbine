@@ -16,10 +16,10 @@ __all__ = [
     "enable_backward",
     "disable_backward",
     "make_tuple",
-    "CL_LAYOUT",
-    "CL_MEM",
-    "CL_CONTIGUOUS_PERM",
-    "CONTIGUOUS_CL_PERM",
+    "CHANNELS_LAST_LAYOUTS",
+    "CHANNELS_LAST_MEMORY_FORMAT",
+    "CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION",
+    "CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION",
     "get_func_name",
 ]
 
@@ -59,10 +59,18 @@ def make_tuple(a: Iterable | int, size: int) -> Tuple:
     raise TypeError(f"Input {a} is expected to be an iterable or int. Got {type(a)}.")
 
 
-CL_LAYOUT = {1: "NHC", 2: "NHWC", 3: "NDHWC"}
-CL_MEM = {2: torch.channels_last, 3: torch.channels_last_3d}
-CL_CONTIGUOUS_PERM = {1: [0, 2, 1], 2: [0, 2, 3, 1], 3: [0, 2, 3, 4, 1]}
-CONTIGUOUS_CL_PERM = {1: [0, 2, 1], 2: [0, 3, 1, 2], 3: [0, 4, 1, 2, 3]}
+CHANNELS_LAST_LAYOUTS = {1: "NHC", 2: "NHWC", 3: "NDHWC"}
+CHANNELS_LAST_MEMORY_FORMAT = {2: torch.channels_last, 3: torch.channels_last_3d}
+CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION = {
+    1: [0, 2, 1],
+    2: [0, 2, 3, 1],
+    3: [0, 2, 3, 4, 1],
+}
+CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION = {
+    1: [0, 2, 1],
+    2: [0, 3, 1, 2],
+    3: [0, 4, 1, 2, 3],
+}
 
 
 @functools.lru_cache(maxsize=None)
@@ -89,17 +97,17 @@ def get_func_name(
     ]
     if bias and mode == "FORWARD":
         name_items.append("b")
-    l2s = lambda l: "x".join([str(i) for i in l])
+    to_shape_string = lambda l: "x".join([str(i) for i in l])
     name_items.extend(
         [
-            l2s(input_shape),
+            to_shape_string(input_shape),
             input_layout.lower(),
-            l2s(kernel_shape),
+            to_shape_string(kernel_shape),
             kernel_layout.lower().replace("n", "f"),
             output_layout.lower().replace("c", "f"),
-            l2s(stride) + "s",
-            l2s(padding) + "p",
-            l2s(dilation) + "d",
+            to_shape_string(stride) + "s",
+            to_shape_string(padding) + "p",
+            to_shape_string(dilation) + "d",
             f"{groups}g",
         ]
     )

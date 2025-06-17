@@ -11,8 +11,9 @@ import torch
 from ..conv_exports import (
     ConvSignature,
     get_launchable,
-    DEFAULT_LAYOUTS,
     ConvLaunchableRuntimeCache,
+    DEFAULT_LAYOUTS,
+    Permutation,
 )
 
 from .library import define_schema, register_impl, register_meta
@@ -207,15 +208,20 @@ def pytorch_layout_customizable_convolution_backward(ctx, grad_output):
     mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
 
     # return to NCHW if necessary
-    rank = len(x.shape)
-    perm = [0] + [rank - 1] + list(range(1, rank - 1))
-    inv_perm = [0] + list(range(2, rank)) + [1]
-    if ctx.input_layout.endswith("C"):
-        x = x.permute(perm)
-    if ctx.kernel_layout.endswith("C"):
-        w = w.permute(perm)
-    if ctx.output_layout.endswith("C"):
-        grad_output = grad_output.permute(perm)
+    num_spatial_dims = len(x.shape) - 2
+    default_layout = DEFAULT_LAYOUTS[num_spatial_dims]
+    input_perm = None
+    kernel_perm = None
+    output_perm = None
+    if ctx.input_layout != default_layout:
+        input_perm = Permutation.get(ctx.input_layout, default_layout)
+        x = input_perm(x)
+    if ctx.kernel_layout != default_layout:
+        kernel_perm = Permutation.get(ctx.kernel_layout, default_layout)
+        w = kernel_perm(w)
+    if ctx.output_layout != default_layout:
+        output_perm = Permutation.get(ctx.output_layout, default_layout)
+        grad_output = output_perm(grad_output)
 
     input_grad, weight_grad, bias_grad = torch.ops.aten.convolution_backward(
         grad_output,
@@ -231,10 +237,10 @@ def pytorch_layout_customizable_convolution_backward(ctx, grad_output):
         mask,
     )
 
-    if ctx.input_layout.endswith("C") and mask[0]:
-        input_grad = input_grad.permute(inv_perm)
-    if ctx.kernel_layout.endswith("C") and mask[1]:
-        weight_grad = weight_grad.permute(inv_perm)
+    if input_perm is not None and mask[0]:
+        input_grad = input_perm.inv()(input_grad)
+    if kernel_perm is not None and mask[1]:
+        weight_grad = kernel_perm.inv()(weight_grad)
     # return `None` for attribute args
     return input_grad, weight_grad, bias_grad, None, None, None, None, None, None, None
 

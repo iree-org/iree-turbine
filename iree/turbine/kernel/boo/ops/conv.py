@@ -47,17 +47,18 @@ def _boo_convolution_impl(
 
     num_spatial_dims = len(x.shape) - 2
 
-    mem_format = CL_MEM[num_spatial_dims]
+    mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_spatial_dims)
     default_layout = DEFAULT_LAYOUTS[num_spatial_dims]
-    cl_layout = CL_LAYOUT[num_spatial_dims]
-    cl_contig_perm = CL_CONTIGUOUS_PERM[num_spatial_dims]
-    contig_cl_perm = CONTIGUOUS_CL_PERM[num_spatial_dims]
+    cl_layout = CHANNELS_LAST_LAYOUTS[num_spatial_dims]
+    cl_contig_perm = CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION[num_spatial_dims]
+    contig_cl_perm = CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION[num_spatial_dims]
 
-    x_cl = x.is_contiguous(memory_format=mem_format)
-    w_cl = w.is_contiguous(memory_format=mem_format)
+    x_cl = False if mem_format is None else x.is_contiguous(memory_format=mem_format)
+    w_cl = False if mem_format is None else w.is_contiguous(memory_format=mem_format)
 
     input_layout = cl_layout if x_cl else default_layout
     kernel_layout = cl_layout if w_cl else default_layout
+    # Match output layout to weight layout to propagate channels_last format.
     output_layout = cl_layout if w_cl else default_layout
 
     x = x if not x_cl else x.permute(cl_contig_perm)
@@ -131,10 +132,12 @@ def _boo_convolution_meta(
         mode="fwd",
     )
     num_spatial_dims = len(x.shape) - 2
+    cl_memory_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_spatial_dims)
     memory_format = (
-        CL_MEM[num_spatial_dims]
-        if w.is_contiguous(memory_format=CL_MEM[num_spatial_dims])
-        else torch.contiguous
+        cl_memory_format
+        if cl_memory_format is not None
+        and w.is_contiguous(memory_format=cl_memory_format)
+        else torch.contiguous_format
     )
     return torch.empty(
         sig.output_shape, dtype=sig.dtype, device=x.device, memory_format=memory_format
@@ -162,15 +165,19 @@ def _boo_convolution_backward_impl(
 ) -> Tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
 
     num_spatial_dims = len(x.shape) - 2
-    mem_format = CL_MEM[num_spatial_dims]
+    mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_spatial_dims)
     default_layout = DEFAULT_LAYOUTS[num_spatial_dims]
-    cl_layout = CL_LAYOUT[num_spatial_dims]
-    cl_contig_perm = CL_CONTIGUOUS_PERM[num_spatial_dims]
-    contig_cl_perm = CONTIGUOUS_CL_PERM[num_spatial_dims]
+    cl_layout = CHANNELS_LAST_LAYOUTS[num_spatial_dims]
+    cl_contig_perm = CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION[num_spatial_dims]
+    contig_cl_perm = CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION[num_spatial_dims]
 
-    x_cl = x.is_contiguous(memory_format=mem_format)
-    w_cl = w.is_contiguous(memory_format=mem_format)
-    o_cl = grad_output.is_contiguous(memory_format=mem_format)
+    x_cl = False if mem_format is None else x.is_contiguous(memory_format=mem_format)
+    w_cl = False if mem_format is None else w.is_contiguous(memory_format=mem_format)
+    o_cl = (
+        False
+        if mem_format is None
+        else grad_output.is_contiguous(memory_format=mem_format)
+    )
 
     input_layout = cl_layout if x_cl else default_layout
     kernel_layout = cl_layout if w_cl else default_layout
@@ -446,11 +453,8 @@ def boo_conv(
     """
 
     num_spatial_dims = len(weight.shape) - 2
-    no_layouts = (
-        shared_layout is None
-        and input_layout is None
-        and kernel_layout is None
-        and output_layout is None
+    no_layouts = all(
+        [x is None for x in [shared_layout, input_layout, kernel_layout, output_layout]]
     )
 
     # The decorators torch.amp.custom_fwd/custom_bwd don't seem to work with torch.library.custom_op
