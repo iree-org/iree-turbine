@@ -3,6 +3,82 @@ module attributes {iree_codegen.tuning_spec_with_default_entrypoint, transform.w
     transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
     transform.yield
   }
+  transform.named_sequence @match_conv_2d_bfloat16_forward_16x96x64x48_nhwc_48x5x5x48_fhwc_nhwf_1x1s_8x8p_4x4d_1g$async_dispatch_0_conv_16x96x64x48x5x5x48_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
+    %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
+    ^bb0(%arg1: tensor<16x112x80x48xbf16>, %arg2: tensor<48x5x5x48xbf16>, %arg3: tensor<16x96x64x48xf32>):
+      %1 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1 + d4 * 4, d2 + d5 * 4, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d3, d4, d5, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d3)>], iterator_types = ["parallel", "parallel", "parallel", "parallel", "reduction", "reduction", "reduction"]} ins(%arg1, %arg2 : tensor<16x112x80x48xbf16>, tensor<48x5x5x48xbf16>) outs(%arg3 : tensor<16x96x64x48xf32>) {
+      ^bb0(%in: bf16, %in_0: bf16, %out: f32):
+        %2 = arith.extf %in : bf16 to f32
+        %3 = arith.extf %in_0 : bf16 to f32
+        %4 = arith.mulf %2, %3 : f32
+        %5 = arith.addf %out, %4 : f32
+        linalg.yield %5 : f32
+      } -> tensor<16x96x64x48xf32>
+    } : (!transform.any_op) -> (!transform.any_value, !transform.any_value)
+    %0 = transform.param.constant #iree_codegen.compilation_info<lowering_config = #iree_gpu.lowering_config<{mma_kind = #iree_gpu.mma_layout<MFMA_F32_32x32x8_BF16>, padding = [2, 1, 32, 64, 48], promote_operands = [0, 1, 2], reduction = [0, 0, 0, 0, 6], subgroup = [2, 1, 1, 1, 0], subgroup_m_count = 1 : i64, subgroup_n_count = 2 : i64, workgroup = [2, 1, 32, 64, 0]}>, translation_info = <pipeline = LLVMGPUTileAndFuse workgroup_size = [128, 1, 1] subgroup_size = 64, {gpu_pipeline_options = #iree_gpu.pipeline_options<prefetch_shared_memory = true, use_igemm_convolution = true>, llvm_func_attrs = {"amdgpu-waves-per-eu" = "2"}}>> -> !transform.any_param
+    transform.yield %arg0, %0 : !transform.any_op, !transform.any_param
+  }
+  transform.named_sequence @module8217364180546317732_apply_op_config(%arg0: !transform.any_op {transform.readonly}, %arg1: !transform.any_param {transform.readonly}) {
+    transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
+    transform.yield
+  }
+  transform.named_sequence @match_conv_3d_bfloat16_forward_16x4x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x4x48x32x3x96x3x3x96_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
+    %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
+    ^bb0(%arg1: tensor<16x4x50x34x3x96xbf16>, %arg2: tensor<3x96x3x3x96xbf16>, %arg3: tensor<16x4x48x32x3x96xf32>):
+      %1 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2 + d6, d3 + d7, d4, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d4, d5, d6, d7, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d5)>], iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel", "parallel", "reduction", "reduction", "reduction"]} ins(%arg1, %arg2 : tensor<16x4x50x34x3x96xbf16>, tensor<3x96x3x3x96xbf16>) outs(%arg3 : tensor<16x4x48x32x3x96xf32>) {
+      ^bb0(%in: bf16, %in_0: bf16, %out: f32):
+        %2 = arith.extf %in : bf16 to f32
+        %3 = arith.extf %in_0 : bf16 to f32
+        %4 = arith.mulf %2, %3 : f32
+        %5 = arith.addf %out, %4 : f32
+        linalg.yield %5 : f32
+      } -> tensor<16x4x48x32x3x96xf32>
+    } : (!transform.any_op) -> (!transform.any_value, !transform.any_value)
+    %0 = transform.param.constant #iree_codegen.compilation_info<lowering_config = #iree_gpu.lowering_config<{mma_kind = #iree_gpu.mma_layout<MFMA_F32_32x32x8_BF16>, promote_operands = [0, 1], reduction = [0, 0, 0, 0, 0, 0, 4], subgroup = [1, 1, 2, 1, 1, 3, 0], subgroup_m_count = 2 : i64, subgroup_n_count = 1 : i64, workgroup = [1, 1, 4, 32, 1, 96, 0]}>, translation_info = <pipeline = LLVMGPUTileAndFuse workgroup_size = [128, 1, 1] subgroup_size = 64, {gpu_pipeline_options = #iree_gpu.pipeline_options<prefetch_shared_memory = true, use_igemm_convolution = true>, llvm_func_attrs = {"amdgpu-waves-per-eu" = "2"}}>> -> !transform.any_param
+    transform.yield %arg0, %0 : !transform.any_op, !transform.any_param
+  }
+  transform.named_sequence @"module-7231516013642892839_apply_op_config"(%arg0: !transform.any_op {transform.readonly}, %arg1: !transform.any_param {transform.readonly}) {
+    transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
+    transform.yield
+  }
+  transform.named_sequence @match_conv_2d_bfloat16_forward_16x48x32x576_nhwc_576x3x3x576_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x576x3x3x576_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
+    %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
+    ^bb0(%arg1: tensor<16x50x34x576xbf16>, %arg2: tensor<576x3x3x576xbf16>, %arg3: tensor<16x48x32x576xf32>):
+      %1 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1 + d4, d2 + d5, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d3, d4, d5, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d3)>], iterator_types = ["parallel", "parallel", "parallel", "parallel", "reduction", "reduction", "reduction"]} ins(%arg1, %arg2 : tensor<16x50x34x576xbf16>, tensor<576x3x3x576xbf16>) outs(%arg3 : tensor<16x48x32x576xf32>) {
+      ^bb0(%in: bf16, %in_0: bf16, %out: f32):
+        %2 = arith.extf %in : bf16 to f32
+        %3 = arith.extf %in_0 : bf16 to f32
+        %4 = arith.mulf %2, %3 : f32
+        %5 = arith.addf %out, %4 : f32
+        linalg.yield %5 : f32
+      } -> tensor<16x48x32x576xf32>
+    } : (!transform.any_op) -> (!transform.any_value, !transform.any_value)
+    %0 = transform.param.constant #iree_codegen.compilation_info<lowering_config = #iree_gpu.lowering_config<{mma_kind = #iree_gpu.mma_layout<MFMA_F32_16x16x16_BF16>, promote_operands = [0, 1], reduction = [0, 0, 0, 0, 4], subgroup = [2, 1, 1, 4, 0], subgroup_m_count = 4 : i64, subgroup_n_count = 1 : i64, workgroup = [2, 4, 16, 64, 0]}>, translation_info = <pipeline = LLVMGPUTileAndFuse workgroup_size = [256, 1, 1] subgroup_size = 64, {gpu_pipeline_options = #iree_gpu.pipeline_options<prefetch_shared_memory = true, use_igemm_convolution = true>, llvm_func_attrs = {"amdgpu-waves-per-eu" = "2"}}>> -> !transform.any_param
+    transform.yield %arg0, %0 : !transform.any_op, !transform.any_param
+  }
+  transform.named_sequence @"module-600079368148743774_apply_op_config"(%arg0: !transform.any_op {transform.readonly}, %arg1: !transform.any_param {transform.readonly}) {
+    transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
+    transform.yield
+  }
+  transform.named_sequence @match_conv_3d_bfloat16_forward_16x8x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x8x48x32x3x96x3x3x96_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
+    %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
+    ^bb0(%arg1: tensor<16x8x50x34x3x96xbf16>, %arg2: tensor<3x96x3x3x96xbf16>, %arg3: tensor<16x8x48x32x3x96xf32>):
+      %1 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2 + d6, d3 + d7, d4, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d4, d5, d6, d7, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d5)>], iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel", "parallel", "reduction", "reduction", "reduction"]} ins(%arg1, %arg2 : tensor<16x8x50x34x3x96xbf16>, tensor<3x96x3x3x96xbf16>) outs(%arg3 : tensor<16x8x48x32x3x96xf32>) {
+      ^bb0(%in: bf16, %in_0: bf16, %out: f32):
+        %2 = arith.extf %in : bf16 to f32
+        %3 = arith.extf %in_0 : bf16 to f32
+        %4 = arith.mulf %2, %3 : f32
+        %5 = arith.addf %out, %4 : f32
+        linalg.yield %5 : f32
+      } -> tensor<16x8x48x32x3x96xf32>
+    } : (!transform.any_op) -> (!transform.any_value, !transform.any_value)
+    %0 = transform.param.constant #iree_codegen.compilation_info<lowering_config = #iree_gpu.lowering_config<{mma_kind = #iree_gpu.mma_layout<MFMA_F32_32x32x8_BF16>, promote_operands = [0, 1], reduction = [0, 0, 0, 0, 0, 0, 4], subgroup = [1, 1, 2, 1, 1, 3, 0], subgroup_m_count = 2 : i64, subgroup_n_count = 1 : i64, workgroup = [2, 1, 2, 32, 1, 96, 0]}>, translation_info = <pipeline = LLVMGPUTileAndFuse workgroup_size = [128, 1, 1] subgroup_size = 64, {gpu_pipeline_options = #iree_gpu.pipeline_options<prefetch_shared_memory = true, use_igemm_convolution = true>, llvm_func_attrs = {"amdgpu-waves-per-eu" = "2"}}>> -> !transform.any_param
+    transform.yield %arg0, %0 : !transform.any_op, !transform.any_param
+  }
+  transform.named_sequence @module5474958393042687818_apply_op_config(%arg0: !transform.any_op {transform.readonly}, %arg1: !transform.any_param {transform.readonly}) {
+    transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
+    transform.yield
+  }
   transform.named_sequence @match_conv_2d_bfloat16_forward_16x48x32x768_nhwc_2048x3x3x768_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x2048x3x3x768_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
     %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
     ^bb0(%arg1: tensor<16x50x34x768xbf16>, %arg2: tensor<2048x3x3x768xbf16>, %arg3: tensor<16x48x32x2048xf32>):
@@ -98,7 +174,7 @@ module attributes {iree_codegen.tuning_spec_with_default_entrypoint, transform.w
     transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
     transform.yield
   }
-  transform.named_sequence @match_conv_3d_bfloat16_forward_16x4x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x4x48x32x3x96x3x3x96_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
+  transform.named_sequence @"module-7231516013642892839_match_conv_3d_bfloat16_forward_16x4x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x4x48x32x3x96x3x3x96_bf16xbf16xf32"(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
     %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
     ^bb0(%arg1: tensor<16x4x50x34x3x96xbf16>, %arg2: tensor<3x96x3x3x96xbf16>, %arg3: tensor<16x4x48x32x3x96xf32>):
       %1 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2 + d6, d3 + d7, d4, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d4, d5, d6, d7, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d5)>], iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel", "parallel", "reduction", "reduction", "reduction"]} ins(%arg1, %arg2 : tensor<16x4x50x34x3x96xbf16>, tensor<3x96x3x3x96xbf16>) outs(%arg3 : tensor<16x4x48x32x3x96xf32>) {
@@ -231,7 +307,7 @@ module attributes {iree_codegen.tuning_spec_with_default_entrypoint, transform.w
     transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
     transform.yield
   }
-  transform.named_sequence @match_conv_2d_bfloat16_forward_16x48x32x576_nhwc_576x3x3x576_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x576x3x3x576_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
+  transform.named_sequence @"module-600079368148743774_match_conv_2d_bfloat16_forward_16x48x32x576_nhwc_576x3x3x576_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x576x3x3x576_bf16xbf16xf32"(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
     %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
     ^bb0(%arg1: tensor<16x50x34x576xbf16>, %arg2: tensor<576x3x3x576xbf16>, %arg3: tensor<16x48x32x576xf32>):
       %1 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1 + d4, d2 + d5, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d3, d4, d5, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d3)>], iterator_types = ["parallel", "parallel", "parallel", "parallel", "reduction", "reduction", "reduction"]} ins(%arg1, %arg2 : tensor<16x50x34x576xbf16>, tensor<576x3x3x576xbf16>) outs(%arg3 : tensor<16x48x32x576xf32>) {
@@ -269,7 +345,7 @@ module attributes {iree_codegen.tuning_spec_with_default_entrypoint, transform.w
     transform.annotate %arg0 "compilation_info" = %arg1 : !transform.any_op, !transform.any_param
     transform.yield
   }
-  transform.named_sequence @match_conv_3d_bfloat16_forward_16x8x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x8x48x32x3x96x3x3x96_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
+  transform.named_sequence @module5474958393042687818_match_conv_3d_bfloat16_forward_16x8x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x8x48x32x3x96x3x3x96_bf16xbf16xf32(%arg0: !transform.any_op {transform.readonly}) -> (!transform.any_op, !transform.any_param) {
     %inputs, %outputs = transform.iree.match.cast_compatible_dag_from_root %arg0 {
     ^bb0(%arg1: tensor<16x8x50x34x3x96xbf16>, %arg2: tensor<3x96x3x3x96xbf16>, %arg3: tensor<16x8x48x32x3x96xf32>):
       %1 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2 + d6, d3 + d7, d4, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d4, d5, d6, d7, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d5)>], iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel", "parallel", "reduction", "reduction", "reduction"]} ins(%arg1, %arg2 : tensor<16x8x50x34x3x96xbf16>, tensor<3x96x3x3x96xbf16>) outs(%arg3 : tensor<16x8x48x32x3x96xf32>) {
@@ -902,21 +978,25 @@ module attributes {iree_codegen.tuning_spec_with_default_entrypoint, transform.w
   }
   transform.named_sequence @__kernel_config(%arg0: !transform.any_op {transform.consumed}) -> !transform.any_op attributes {iree_codegen.tuning_spec_entrypoint} {
     %updated_root = transform.foreach_match in %arg0
-        @match_conv_2d_bfloat16_forward_16x48x32x768_nhwc_2048x3x3x768_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x2048x3x3x768_bf16xbf16xf32 -> @apply_op_config,
+        @match_conv_2d_bfloat16_forward_16x96x64x48_nhwc_48x5x5x48_fhwc_nhwf_1x1s_8x8p_4x4d_1g$async_dispatch_0_conv_16x96x64x48x5x5x48_bf16xbf16xf32 -> @apply_op_config,
+        @match_conv_3d_bfloat16_forward_16x4x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x4x48x32x3x96x3x3x96_bf16xbf16xf32 -> @module8217364180546317732_apply_op_config,
+        @match_conv_2d_bfloat16_forward_16x48x32x576_nhwc_576x3x3x576_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x576x3x3x576_bf16xbf16xf32 -> @"module-7231516013642892839_apply_op_config",
+        @match_conv_3d_bfloat16_forward_16x8x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x8x48x32x3x96x3x3x96_bf16xbf16xf32 -> @"module-600079368148743774_apply_op_config",
+        @match_conv_2d_bfloat16_forward_16x48x32x768_nhwc_2048x3x3x768_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x2048x3x3x768_bf16xbf16xf32 -> @module5474958393042687818_apply_op_config,
         @match_conv_2d_bfloat16_forward_16x225x225x5_nhwc_64x3x3x5_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x225x225x64x3x3x5_bf16xbf16xf32 -> @module5323941338930156317_apply_op_config,
         @match_conv_2d_bfloat16_forward_16x450x450x4_nhwc_16x2x2x4_fhwc_nhwf_2x2s_0x0p_1x1d_1g$async_dispatch_0_conv_16x225x225x16x2x2x4_bf16xbf16xf32 -> @module3722509921005650223_apply_op_config,
         @match_conv_2d_bfloat16_forward_16x48x32x288_nhwc_288x3x3x288_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x288x3x3x288_bf16xbf16xf32 -> @"module-1533715500776691106_apply_op_config",
         @match_conv_3d_bfloat16_forward_16x8x48x32x288_ndhwc_288x3x1x1x96_fdhwc_ndhwf_1x1x1s_1x0x0p_1x1x1d_3g$async_dispatch_0_conv_16x8x48x32x3x96x3x96_bf16xbf16xf32 -> @module6062066210147745018_apply_op_config,
-        @match_conv_3d_bfloat16_forward_16x4x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x4x48x32x3x96x3x3x96_bf16xbf16xf32 -> @"module-3450955575697555435_apply_op_config",
+        @"module-7231516013642892839_match_conv_3d_bfloat16_forward_16x4x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x4x48x32x3x96x3x3x96_bf16xbf16xf32" -> @"module-3450955575697555435_apply_op_config",
         @match_conv_2d_bfloat16_forward_16x24x16x194_nhwc_192x3x3x194_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x24x16x192x3x3x194_bf16xbf16xf32 -> @"module-910285257701496141_apply_op_config",
         @match_conv_2d_bfloat16_forward_128x24x48x384_nhwc_512x1x1x384_fhwc_nhwf_1x1s_0x0p_1x1d_1g$async_dispatch_0_matmul_like_147456x512x384_bf16xbf16xf32 -> @module1822260543730176874_apply_op_config,
         @match_conv_2d_bfloat16_forward_128x24x48x384_nhwc_384x3x1x128_fhwc_nhwf_1x1s_1x0p_1x1d_3g$async_dispatch_0_conv_128x24x48x3x128x3x128_bf16xbf16xf32 -> @module4417864338230514718_apply_op_config,
         @"module-910285257701496141_match_conv_3d_bfloat16_forward_16x4x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x4x48x32x3x96x3x3x96_bf16xbf16xf32" -> @"module-7187755733578605766_apply_op_config",
         @match_conv_2d_bfloat16_forward_16x192x128x40_nhwc_40x3x3x40_fhwc_nhwf_2x2s_1x1p_1x1d_1g$async_dispatch_0_conv_16x96x64x40x3x3x40_bf16xbf16xf32 -> @"module-8559782395194194502_apply_op_config",
         @match_conv_2d_bfloat16_forward_16x225x225x13_nhwc_64x3x3x13_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x225x225x64x3x3x13_bf16xbf16xf32 -> @module8396357738012441017_apply_op_config,
-        @match_conv_2d_bfloat16_forward_16x48x32x576_nhwc_576x3x3x576_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x576x3x3x576_bf16xbf16xf32 -> @module4366488234334222087_apply_op_config,
+        @"module-600079368148743774_match_conv_2d_bfloat16_forward_16x48x32x576_nhwc_576x3x3x576_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x48x32x576x3x3x576_bf16xbf16xf32" -> @module4366488234334222087_apply_op_config,
         @match_conv_2d_bfloat16_forward_128x24x48x384_nhwc_384x1x1x384_fhwc_nhwf_1x1s_0x0p_1x1d_1g$async_dispatch_0_matmul_like_147456x384x384_bf16xbf16xf32 -> @module8964594717352044226_apply_op_config,
-        @match_conv_3d_bfloat16_forward_16x8x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x8x48x32x3x96x3x3x96_bf16xbf16xf32 -> @module8519386444695609821_apply_op_config,
+        @module5474958393042687818_match_conv_3d_bfloat16_forward_16x8x48x32x288_ndhwc_288x1x3x3x96_fdhwc_ndhwf_1x1x1s_0x1x1p_1x1x1d_3g$async_dispatch_0_conv_16x8x48x32x3x96x3x3x96_bf16xbf16xf32 -> @module8519386444695609821_apply_op_config,
         @match_conv_2d_bfloat16_forward_16x192x128x49_nhwc_32x3x3x49_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x192x128x32x3x3x49_bf16xbf16xf32 -> @"module-5179686767262727279_apply_op_config",
         @match_conv_2d_bfloat16_forward_16x48x32x2048_nhwc_2048x3x1x2048_fhwc_nhwf_3x1s_1x0p_1x1d_1g$async_dispatch_0_conv_16x16x32x2048x3x2048_bf16xbf16xf32 -> @module7576885387364708732_apply_op_config,
         @module4366488234334222087_match_conv_2d_bfloat16_forward_16x225x225x13_nhwc_64x3x3x13_fhwc_nhwf_1x1s_1x1p_1x1d_1g$async_dispatch_0_conv_16x225x225x64x3x3x13_bf16xbf16xf32 -> @"module-6934705754568264372_apply_op_config",
