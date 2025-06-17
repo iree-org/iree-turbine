@@ -24,6 +24,12 @@ require_cdna3 = pytest.mark.skipif(
         get_default_arch()
     ),
 )
+require_cdna4 = pytest.mark.skipif(
+    "gfx95" not in get_default_arch(),
+    reason="Default architecture is not CDNA4, default architecture is '{}'".format(
+        get_default_arch()
+    ),
+)
 # Whether to dump the generated MLIR module.
 dump_generated_mlir = int(os.environ.get("WAVE_DUMP_MLIR", 0))
 # Whether to use scheduling group barriers (needs LLVM fix).
