@@ -667,8 +667,9 @@ def construct_pipelined_loop(
         visualize,
     )
 
-    # Remove the unpipelined reduction.
+    # Remove the unpipelined reduction and the corresponding subgraph
     reduction.graph.erase_node(reduction.fx_node)
+    del trace.region_graph.subgraphs[reduction.subgraph_name]
 
     if visualize:
         visualize_graph(pipelined_reduction.graph, "pipelined.png")
