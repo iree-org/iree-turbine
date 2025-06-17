@@ -1,11 +1,10 @@
 import torch
-import triton
 import pytest
-import numpy as np
 
 import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
+from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
@@ -17,17 +16,17 @@ from iree.turbine.kernel.wave.constraints import (
     ScaledMMAType,
 )
 
+from .common.utils import require_e2e, require_cdna4
+
 # Note this is specified by the HW and cannot be changed.
 SCALE_GROUP_SIZE = 32
 
 
-def get_mxfp4_gemm(shape):
-    mfma_variant = ScaledMMAType.F32_16x16x128_F8F6F4
+def get_mxfp4_gemm(shape, mfma_variant: ScaledMMAType):
     # Input sizes
     M = tkl.sym.M
     N = tkl.sym.N
     K = tkl.sym.K
-    K_SCALE = tkl.sym.K_SCALE
     # Workgroup tile sizes
     BLOCK_M = tkl.sym.BLOCK_M
     BLOCK_N = tkl.sym.BLOCK_N
@@ -81,7 +80,6 @@ def get_mxfp4_gemm(shape):
         M: shape[0],
         N: shape[1],
         K: shape[2],
-        K_SCALE: shape[2] // 32,
     }
     hyperparams.update(get_default_scheduling_params())
 
@@ -118,7 +116,6 @@ def generate_gemm_afp4wfp4_inputs(M, N, K):
 
 
 def get_x_vals():
-
     x_vals = [(1024 * v, 1024 * v, 1024 * v) for v in range(1, 9)]
     x_vals += [(4864, 4096, 8192), (9728, 8192, 65536), (4864, 8192, 4160)]
     x_vals += [
@@ -204,22 +201,200 @@ def run_torch(x, w, x_scales, w_scales, dtype):
     return torch.mm(x_f32, w_f32).to(dtype)
 
 
+@require_e2e
+@require_cdna4
 @pytest.mark.parametrize("M, N, K", [(1024, 1024, 1024), (8192, 8192, 8192)])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        ScaledMMAType.F32_16x16x128_F8F6F4,
+        ScaledMMAType.F32_32x32x64_F8F6F4,
+    ],
+)
 def test_gemm_afp4_wfp4(M: int, N: int, K: int, dtype):
     x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(M, N, K)
     out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
-    triton_out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=dtype)
 
     torch_out = run_torch(x, w, x_scales, w_scales, dtype).to(dtype)
     shape = (M, N, K)
     gemm = get_mxfp4_gemm(shape)
     w_t = w.T.contiguous()
     gemm(x, x_scales, w_t, w_scales, out)
-    # from aiter.ops.triton.gemm_afp4wfp4 import gemm_afp4wfp4
 
-    # gemm_afp4wfp4(x, w, triton_out, x_scales, w_scales, dtype)
     torch.testing.assert_close(torch_out, out, check_dtype=False)
+
+
+@require_e2e
+@require_cdna4
+@pytest.mark.parametrize("shape", [(1024, 1024, 1024), (8192, 8192, 8192)])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        ScaledMMAType.F32_16x16x128_F8F6F4,
+        ScaledMMAType.F32_32x32x64_F8F6F4,
+    ],
+)
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.PREFETCH]
+)
+def testScaledGemmMXFP4(
+    shape: tuple[int],
+    mfma_variant: ScaledMMAType,
+    enable_scheduling: SchedulingType,
+):
+    # Input sizes
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K / 2, ADDRESS_SPACE, tkl.i8],
+        a_scale: tkl.Memory[M, K / 32, ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[N, K / 2, ADDRESS_SPACE, tkl.i8],
+        b_scale: tkl.Memory[N, K / 32, ADDRESS_SPACE, tkl.i8],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            a_reg = tkw.bitcast(a_reg, tkl.f4e2m1fn)
+            a_scale_reg = tkw.read(a_scale)
+            a_scale_reg = tkw.bitcast(a_scale_reg, tkl.f8e8m0fnu)
+            b_reg = tkw.read(b)
+            b_reg = tkw.bitcast(b_reg, tkl.f4e2m1fn)
+            b_scale_reg = tkw.read(b_scale)
+            b_scale_reg = tkw.bitcast(b_scale_reg, tkl.f8e8m0fnu)
+            acc = tkw.scaled_mma(a_reg, a_scale_reg, b_reg, b_scale_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        BLOCK_M: 32,
+        BLOCK_N: 32,
+        BLOCK_K: 256,
+        M: shape[0],
+        N: shape[1],
+        K: shape[2],
+    }
+    hyperparams.update(get_default_scheduling_params())
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        schedule=enable_scheduling,
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm)
+    return gemm
+
+
+@require_e2e
+@require_cdna4
+@pytest.mark.parametrize("shape", [(1024, 1024, 1024), (8192, 8192, 8192)])
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        ScaledMMAType.F32_16x16x128_F8F6F4,
+        ScaledMMAType.F32_32x32x64_F8F6F4,
+    ],
+)
+@pytest.mark.parametrize(
+    "enable_scheduling", [SchedulingType.NONE, SchedulingType.PREFETCH]
+)
+def testScaledGemmMXFP8(
+    shape: tuple[int],
+    mfma_variant: ScaledMMAType,
+    enable_scheduling: SchedulingType,
+):
+    # Input sizes
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f8e5m2],
+        a_scale: tkl.Memory[M, K / 32, ADDRESS_SPACE, tkl.f8e8m0fnu],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f8e5m2],
+        b_scale: tkl.Memory[N, K / 32, ADDRESS_SPACE, tkl.f8e8m0fnu],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            a_scale_reg = tkw.read(a_scale)
+            b_reg = tkw.read(b)
+            b_scale_reg = tkw.read(b_scale)
+            acc = tkw.scaled_mma(a_reg, a_scale_reg, b_reg, b_scale_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        BLOCK_M: 32,
+        BLOCK_N: 32,
+        BLOCK_K: 256,
+        M: shape[0],
+        N: shape[1],
+        K: shape[2],
+    }
+    hyperparams.update(get_default_scheduling_params())
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        schedule=enable_scheduling,
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm)
+    return gemm
 
 
 # if __name__ == "__main__":
