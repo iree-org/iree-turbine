@@ -292,11 +292,8 @@ def select(cond: "Register", if_true: "Register", if_false: "Register") -> "Regi
 
 
 def gather_to_lds(
-    src: "Memory",
-    src_idx: dict[IndexSymbol, IndexSequence],
-    dst: "Memory",
-    dst_idx: dict[IndexSymbol, IndexSequence],
-    dtype: DataType,
+    src: fx.Node,
+    dst: fx.Node,
 ):
     ...
 
@@ -2349,12 +2346,9 @@ class Reshape(CustomOp, ABC):
 class GatherToLDS(CustomOp):
     """
     Represents an instruction that performs direct load from global
-    to lds. Source memory points to the global memory to load from
-    and the destination points to shared memory.
+    to lds. Source node points to the global memory to load from
+    and the destination node points to shared memory.
     """
 
-    src: Memory
-    src_idx: dict[IndexSymbol, IndexSequence]
-    dst: Memory
-    dst_idx: dict[IndexSymbol, IndexSequence]
-    dtype: DataType
+    src: fx.Node
+    dst: fx.Node
