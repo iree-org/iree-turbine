@@ -1713,10 +1713,71 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
 @handle_op(gather_to_lds)
 def handle_gather_to_lds(emitter: WaveEmitter, node: fx.Node):
     try:
-        src, src_idx, dst, dst_idx, dtype = node.args
+        read_node, write_node = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
+    read_custom, write_custom = get_custom(read_node), get_custom(write_node)
+    src = read_custom.memory
+    dst = write_custom.memory
+    dtype = read_custom.type.dtype
+
+    element_type = IrType.parse(dtype.ir_type_asm())
+
+    src = cast_py_value(emitter, src)
+    dst = cast_py_value(emitter, dst)
+    src_data_type = get_type_or_element_type(src.ir_value.type)
+    dst_data_type = get_type_or_element_type(dst.ir_value.type)
+
+    if not (
+        MemRefType.isinstance(src.ir_value.type)
+        and MemRefType.isinstance(dst.ir_value.type)
+    ):
+        op = get_custom(node)
+        raise ValidationError(
+            f"Expected src and dst to be of Memref type for\n"
+            f"{op}\nGot\n"
+            f"src: {src.ir_value.type}\n"
+            f"dst: {dst.ir_value.type}\n"
+        )
+
+    if src_data_type != dst_data_type:
+        op = get_custom(node)
+        raise ValidationError(
+            f"Expected src and dst to have same data type for\n"
+            f"{op}\nGot\n"
+            f"src: {src_data_type} vs dst: {dst_data_type}\n"
+        )
+
+    src_index_transformed = transform_index_on_mapping(
+        read_custom.mapping, read_custom.type.symbolic_shape, read_custom.index
+    )
+    dst_index_transformed = transform_index_on_mapping(
+        write_custom.mapping, write_custom.type.symbolic_shape, write_custom.index
+    )
+    elements_per_thread = read_custom.elements_per_thread
+
+    src_keys = list(src_index_transformed.keys())
+    src_fastest_dim = get_fastest_index(read_custom.index)
+    dst_keys = list(dst_index_transformed.keys())
+    dst_fastest_dim = get_fastest_index(write_custom.index)
+    src_idx, dst_idx = [], []
+    for i in range(elements_per_thread):
+        new_src_index = copy.deepcopy(src_index_transformed)
+        src_key = src_keys[src_fastest_dim]
+        new_src_index[src_key] += i
+        src_index_transformed = _build_start_indices(emitter, new_src_index)
+        new_dst_index = copy.deepcopy(dst_index_transformed)
+        dst_key = dst_keys[dst_fastest_dim]
+        new_dst_index[dst_key] += i
+        dst_index_transformed = _build_start_indices(emitter, new_dst_index)
+        src_idx.append(src_index_transformed)
+        dst_idx.append(dst_index_transformed)
+
     return amdgpu_d.gather_to_lds(
-        transfer_type=dtype, src=src, src_indices=src_idx, dst=dst, dst_indices=dst_idx
+        transfer_type=element_type,
+        src=src,
+        src_indices=src_idx,
+        dst=dst,
+        dst_indices=dst_idx,
     )
