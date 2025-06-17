@@ -6,8 +6,6 @@
 
 import pytest
 import torch
-import math
-import iree.turbine.kernel as tk
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
@@ -18,6 +16,7 @@ from iree.turbine.kernel.wave.utils.run_utils import (
 from iree.turbine.kernel.wave.utils.torch_utils import (
     device_arange,
     device_full,
+    device_randint,
     device_randn,
     device_zeros,
 )
@@ -31,22 +30,25 @@ from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 import os
 from torch.testing import assert_close
 from ..common.utils import (
-    require_e2e,
-    require_cdna3,
-    enable_scheduling_barriers,
     dump_generated_mlir,
+    enable_scheduling_barriers,
+    expensive_test_param,
     param_bool,
+    require_cdna3,
+    require_e2e,
 )
-from ..common.shapes import get_test_shapes
 from typing import List, Optional
 
 # Reference paged attention implementation from vLLM and sglang.
 # (NUM_Q_HEADS, NUM_KV_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
 shapes = [(16, 1, 64, 64, 32, 2, 100)]
+shapes += [(6, 1, 128, 128, 32, 1, 100)]
+shapes += [(16, 2, 64, 64, 32, 1, 100)]  # (16 // 2) < 16
 shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
 shapes += [(128, 2, 80, 80, 32, 2, 500)]
 shapes += [(128, 2, 512, 512, 32, 32, 500)]
+shapes += [expensive_test_param((32, 8, 128, 128, 32, 1319, 1018))]
 
 # Test shapes for MHA paged attention
 # (NUM_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
@@ -61,7 +63,7 @@ def ref_paged_attn(
     key_cache: torch.Tensor,
     value_cache: torch.Tensor,
     query_lens: List[int],
-    kv_lens: List[int],
+    request_indices: List[int],
     block_tables: torch.Tensor,
     scale: float,
     causal: Optional[bool] = False,
@@ -76,11 +78,12 @@ def ref_paged_attn(
     start_idx = 0
     for i in range(num_seqs):
         query_len = query_lens[i]
-        kv_len = kv_lens[i]
+        kv_start_idx = request_indices[i]
+        kv_len = request_indices[i + 1] - kv_start_idx
         q = query[start_idx : start_idx + query_len]
         q *= scale
 
-        block_indices = block_tables[i, :kv_len]
+        block_indices = block_tables[kv_start_idx : kv_start_idx + kv_len]
 
         k = key_cache[block_indices].view(-1, num_kv_heads, head_size)
         v = value_cache[block_indices].view(-1, num_kv_heads, head_size)
@@ -128,12 +131,16 @@ def create_inputs(
     value_cache = device_randn(
         num_seqs * kv_lens, num_kv_heads, head_size_kv, dtype=dtype
     )
-    block_table = device_arange(num_seqs * kv_lens, dtype=torch.int32).reshape(
-        num_seqs, kv_lens
-    )
+    block_table = device_arange(num_seqs * kv_lens, dtype=torch.int32)
     kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
     request_indices = device_zeros(num_seqs + 1, dtype=torch.int32)
     request_indices[1 : num_seqs + 1] = torch.cumsum(kv_lens_tensor, dim=0)
+    d = kv_lens // 10
+    if d > 0:
+        request_indices[1:num_seqs] += device_randint(
+            -d, d, (num_seqs - 1,), dtype=torch.int32
+        )
+        kv_lens_tensor = request_indices[1:] - request_indices[:-1]
     return (
         query,
         key_cache,
@@ -154,7 +161,7 @@ def create_mha_inputs(
     query = device_randn(num_seqs, num_heads, head_size, dtype=dtype)
     key_cache = device_randn(num_seqs, kv_lens, num_heads, head_size, dtype=dtype)
     value_cache = device_randn(num_seqs, kv_lens, num_heads, head_size, dtype=dtype)
-    block_table = device_arange(num_seqs, kv_lens, dtype=torch.int32)
+    block_table = device_arange(num_seqs * kv_lens, dtype=torch.int32)
     kv_lens_tensor = device_full((num_seqs,), kv_lens, dtype=torch.int32)
     request_indices = device_zeros(num_seqs + 1, dtype=torch.int32)
     request_indices[1 : num_seqs + 1] = torch.cumsum(kv_lens_tensor, dim=0)
@@ -246,6 +253,7 @@ def testPagedFlashDecoding(
     value_cache_4d = value_cache.view(
         shape.num_seqs, -1, shape.num_kv_heads, shape.head_size_kv
     )
+    logit_cap = 30.0
 
     # Run the wave kernel.
     (
@@ -260,6 +268,8 @@ def testPagedFlashDecoding(
         mfma_variant,
         num_kv_splits,
         input_dtype=dtype,
+        output_dtype=dtype,
+        logit_cap=logit_cap,
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
@@ -277,7 +287,7 @@ def testPagedFlashDecoding(
         num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
     output = device_zeros(
-        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=dtype
     )
 
     options = WaveCompileOptions(
@@ -306,7 +316,7 @@ def testPagedFlashDecoding(
         key_cache_4d,
         value_cache_4d,
         request_indices,
-        torch.flatten(block_table),
+        block_table,
         phase_0_output,
         phase_0_output_max,
     )
@@ -348,12 +358,12 @@ def testPagedFlashDecoding(
             key_cache=key_cache,
             value_cache=value_cache,
             query_lens=torch.ones(shape.num_seqs, dtype=torch.int32),
-            kv_lens=kv_lens_tensor,
+            request_indices=request_indices,
             block_tables=block_table,
             scale=scale,
             causal=False,
             sliding_window=None,
-            soft_cap=None,
+            soft_cap=logit_cap,
         )
     else:
         ref_vllm_output = torch.load(os.path.join(artifact_directory, "output.pt"))
@@ -456,6 +466,7 @@ def testPagedFlashDecodingMHA(
         mfma_variant,
         num_kv_splits,
         input_dtype=dtype,
+        output_dtype=dtype,
         mha=True,
     )
     hyperparams_0.update(get_default_scheduling_params())
@@ -474,7 +485,7 @@ def testPagedFlashDecodingMHA(
         num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
     output = device_zeros(
-        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=dtype
     )
 
     options = WaveCompileOptions(
@@ -502,7 +513,7 @@ def testPagedFlashDecodingMHA(
         key_cache_4d,
         value_cache_4d,
         request_indices,
-        torch.flatten(block_table),
+        block_table,
         phase_0_output,
         phase_0_output_max,
     )
@@ -543,7 +554,7 @@ def testPagedFlashDecodingMHA(
             key_cache=key_cache,
             value_cache=value_cache,
             query_lens=torch.ones(shape.num_seqs, dtype=torch.int32),
-            kv_lens=kv_lens_tensor,
+            request_indices=request_indices,
             block_tables=block_table,
             scale=scale,
             causal=False,

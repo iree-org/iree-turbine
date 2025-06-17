@@ -35,6 +35,7 @@ from ..lang.wave_types import IndexMapping
 from ..ops.wave_ops import CustomOp
 
 from .regions import RegionGraph, SubgraphTracer
+from .location_config import LocationCaptureConfig
 
 from .. import ops
 from ..ops.base import (

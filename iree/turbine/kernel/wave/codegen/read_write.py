@@ -28,6 +28,7 @@ from ...compiler.ir import (
     vector_d,
 )
 
+from ...compiler.base import ValidationError
 from ...compiler.utils import strides_from_symbolic_shape
 from ...compiler.builder import IRProxyValue
 from ...compiler.vector_codegen import (
@@ -38,13 +39,10 @@ from ...compiler.vector_codegen import (
 
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils.general_utils import (
-    find_index_bounds,
-    get_fastest_index,
-)
+from ..utils.general_utils import get_fastest_index, infer_dim
 from ..utils.symbol_utils import safe_subs, subs_idxc
 
-from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence
+from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, IndexSymbol
 from ...lang.global_symbols import *
 from ...lang.wave_types import IndexMapping
 
@@ -121,10 +119,12 @@ def _get_symbolic_shape(node: fx.Node) -> tuple[IndexExpr]:
 
 
 def _build_mask(
-    emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
+    emitter: WaveEmitter,
+    index: dict[IndexExpr, IndexExpr],
+    elements_per_thread: int,
+    bounds: Optional[dict[IndexSymbol, IndexExpr]],
 ) -> Optional[OpResult]:
-    bounds = find_index_bounds(emitter.constraints, index)
-    if bounds is None:
+    if not bounds:
         return None
 
     idxc = IndexingContext.current()
@@ -135,7 +135,8 @@ def _build_mask(
     new_index[last_dim] = new_index[last_dim] + idxc.iota(elements_per_thread)
 
     mask_expr = functools.reduce(
-        lambda a, b: sympy.And(a, b), (new_index[dim] < dim for dim in bounds)
+        lambda a, b: sympy.And(a, b),
+        (new_index[dim] < bound for dim, bound in bounds.items()),
     )
     mask = gen_sympy_index(add_emitter_subs(emitter), mask_expr)
 
@@ -167,6 +168,7 @@ def _construct_gather_scatter_indices(
     dynamic_vals: tuple[Any, ...],
     is_contiguous: bool,
     memory: CustomOp,
+    bounds: Optional[dict[IndexSymbol, IndexExpr]],
 ) -> tuple[list[OpResult], list[OpResult], list[OpResult], OpResult, OpResult]:
     # Apply symbolic_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolic_shape is (N, M), result will
@@ -175,7 +177,8 @@ def _construct_gather_scatter_indices(
         assert (
             mapping.is_output_identity()
         ), "non-identity output mapping is not supported yet"
-        index_mapping = mapping.map_input_indices(symbolic_shape)
+        symbolic_dims = [infer_dim(dim_size) for dim_size in symbolic_shape]
+        index_mapping = mapping.map_input_indices(symbolic_dims)
     else:
         assert (
             mapping.is_input_identity()
@@ -197,7 +200,7 @@ def _construct_gather_scatter_indices(
     # expanded index.
     result_index = {key: m.subs(subs) for key, m in zip(symbolic_shape, index_mapping)}
 
-    mask = _build_mask(emitter, index, elements_per_thread)
+    mask = _build_mask(emitter, index, elements_per_thread, bounds)
     if mask is None:
         mask_vec_type = VectorType.get(
             [elements_per_thread], IntegerType.get_signless(1)
@@ -620,7 +623,7 @@ def _create_vec_read_write(
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
     try:
-        memory, elements_per_thread, mapping, dyn_vals, _ = node.args
+        memory, elements_per_thread, mapping, dyn_vals, bounds, _ = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
@@ -641,11 +644,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
-        mask = _build_mask(
-            emitter,
-            index,
-            elements_per_thread,
-        )
+        mask = _build_mask(emitter, index, elements_per_thread, bounds)
         result = _create_vec_read_write(
             emitter,
             input_shape,
@@ -680,6 +679,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
             memory=get_custom(memory),
+            bounds=bounds,
         )
         result = _create_vec_read_write(
             emitter,
@@ -702,7 +702,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
 @handle_op(write)
 def handle_write(emitter: WaveEmitter, node: fx.Node):
     try:
-        register, memory, elements_per_thread, mapping, dyn_vals = node.args
+        register, memory, elements_per_thread, mapping, dyn_vals, bounds = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
@@ -730,7 +730,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
-        mask = _build_mask(emitter, index, elements_per_thread)
+        mask = _build_mask(emitter, index, elements_per_thread, bounds)
         _create_vec_read_write(
             emitter,
             output_shape,
@@ -769,6 +769,7 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             dynamic_vals=dyn_vals,
             is_contiguous=get_custom(node).is_contiguous_vec(),
             memory=get_custom(memory),
+            bounds=bounds,
         )
 
         _create_vec_read_write(

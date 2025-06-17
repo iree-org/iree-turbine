@@ -23,7 +23,7 @@ from ..lang.global_symbols import *
 from .._support.indexing import IndexExpr, IndexSymbol, IndexSequence
 from .._support.dtype import DataType, i1
 from .._support.regions import RegionGraph
-from .._support.location import FileLineColInfo
+from .._support.location import FileLineColInfo, StackTraceInfo, capture_location
 from .base import OpDispatcher
 import numpy as np
 
@@ -273,6 +273,10 @@ def cast(src: "Register", dtype: DataType) -> "Register":
     ...
 
 
+def bitcast(src: "Register", dtype: DataType) -> "Register":
+    ...
+
+
 def permute(src: "Register", target_shape: Sequence[IndexExpr]) -> "Register":
     ...
 
@@ -449,7 +453,7 @@ class CustomOp(ABC):
     _tracing_function: Optional[Callable[..., Any]] = field(default=None, init=False)
 
     @property
-    def location(self) -> Optional[FileLineColInfo]:
+    def location(self) -> Optional[FileLineColInfo | StackTraceInfo]:
         return getattr(self.fx_node, "location", None)
 
     @classmethod
@@ -626,7 +630,7 @@ class CustomOp(ABC):
         node._add_proxy_to_graph(graph)
         node.fx_node.node.tkw_op = cls
         node.fx_node.node.tkw_op_name = cls.tkw_op_name
-        node.fx_node.node.location = FileLineColInfo.capture_current_location()
+        node.fx_node.node.location = capture_location(graph.location_capture_config)
         return node.fx_node
 
     @property
@@ -785,17 +789,6 @@ class CustomOp(ABC):
         """
         Infer the type of this operator using the types
         of its arguments.
-        """
-        pass
-
-    def align_index(self, constraints: list["Constraint"]) -> None:
-        """
-        Align index to WG/Tile sizes.
-
-        Some ops require their index sizes to be aligned to workgroup/tile sizes.
-        They should do it in this method.
-
-        Default implementation does nothing.
         """
         pass
 
@@ -1367,8 +1360,11 @@ class MMA(CustomOp):
     def operand_index(
         self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
     ) -> dict[IndexSymbol, IndexSequence]:
+        from ..wave.utils.general_utils import infer_dim
+
         indices: dict[IndexSymbol, IndexSequence] = {}
-        for dim in shape:
+        for dim_expr in shape:
+            dim = infer_dim(dim_expr)
             indices[dim] = self.index[dim].subs(operand_map)
         return indices
 
@@ -1399,12 +1395,6 @@ class MMA(CustomOp):
         custom_str += f" type({self.fx_node.type})"
         return custom_str
 
-    def align_index(self, constraints: list["Constraint"]) -> None:
-        # Local import to break circular dep.
-        from ..wave.utils.general_utils import align_index_vars
-
-        self.index = align_index_vars(self.index, constraints)
-
     @property
     def reduction_dim(self) -> IndexSymbol:
         if hasattr(self.fx_node, "reduction_dim"):
@@ -1423,18 +1413,30 @@ class Read(CustomOp):
     elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
+    bounds: Optional[dict[IndexSymbol, IndexExpr]] = None
     _write_dependency: Optional[list[fx.Node]] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        from ..wave.utils.general_utils import infer_dim
+
         if self.mapping is not None:
             return list(self.mapping.output_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
+        from ..wave.utils.general_utils import infer_dim
+
         dtype = self.memory_type.dtype
-        self.type = Register[(*self.indexing_dims, dtype)]
+        memory_shape = list(self.memory_type.symbolic_shape)
+        dim_to_shape = {infer_dim(expr): expr for expr in memory_shape}
+        # Sub in dim's value from memory's type into indexing dim who contains the
+        # correct order/mapping/tensor dims for dst type.
+        shape = [dim_to_shape.get(dim, dim) for dim in self.indexing_dims]
+        self.type = Register[(*shape, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -1447,13 +1449,6 @@ class Read(CustomOp):
     @write_dependency.setter
     def write_dependency(self, value: fx.Node):
         self.update_arg(len(self.fx_node.args) - 1, value)
-
-    def align_index(self, constraints: list["Constraint"]) -> None:
-        # Local import to break circular dep.
-        from ..wave.utils.general_utils import align_index_vars, is_shared_mem_access
-
-        if is_shared_mem_access(self):
-            self.index = align_index_vars(self.index, constraints)
 
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
@@ -1742,18 +1737,30 @@ class Write(CustomOp):
     elements_per_thread: Optional[Any] = None
     mapping: Optional[IndexMapping] = None
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
+    bounds: Optional[dict[IndexSymbol, IndexExpr]] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
+        from ..wave.utils.general_utils import infer_dim
+
         if self.mapping is not None:
             return list(self.mapping.input_shape)
         # TODO: This could contain ints.
-        return list(self.memory_type.symbolic_shape)
+        shape = list(self.memory_type.symbolic_shape)
+        dims = [infer_dim(expr) for expr in shape]
+        return dims
 
     def infer_type(self):
+        from ..wave.utils.general_utils import infer_dim
+
         address_space = self.memory_type.address_space
         dtype = self.memory_type.dtype
-        self.type = Memory[(*self.indexing_dims, address_space, dtype)]
+        memory_shape = list(self.memory_type.symbolic_shape)
+        dim_to_shape = {infer_dim(expr): expr for expr in memory_shape}
+        # Sub in dim's value from memory's type into indexing dim who contains the
+        # correct order/mapping/tensor dims for dst type.
+        shape = [dim_to_shape.get(dim, dim) for dim in self.indexing_dims]
+        self.type = Memory[(*shape, address_space, dtype)]
 
     @property
     def memory_type(self) -> "Memory":
@@ -1767,13 +1774,6 @@ class Write(CustomOp):
     def register_index(self) -> dict[IndexSymbol, IndexSequence]:
         custom = get_custom(self.register_)
         return custom.index
-
-    def align_index(self, constraints: list["Constraint"]) -> None:
-        # Local import to break circular dep.
-        from ..wave.utils.general_utils import align_index_vars, is_shared_mem_access
-
-        if is_shared_mem_access(self):
-            self.index = align_index_vars(self.index, constraints)
 
     def transform_index_backwards(
         self, index: dict[IndexSymbol, IndexSequence], arg: fx.Node
@@ -2238,6 +2238,37 @@ class CastOp(CustomOp, ABC):
     def infer_type(self):
         src_shape = get_custom(self.arg).type.symbolic_shape
         self.type = Register[(*src_shape, self.dtype)]
+
+
+@define_op("bitcast")
+@dataclass
+class BitcastOp(CustomOp, ABC):
+    """
+    Represents a bitcast operation.
+    """
+
+    arg: fx.Node
+    dtype: DataType
+
+    @property
+    def scale_factor(self):
+        src_width = self.arg.type.dtype.bitwidth()
+        dst_width = self.dtype.bitwidth()
+        if src_width % dst_width != 0:
+            raise NotImplementedError(
+                "Currently only support bitcast if src_width % dst_width == 0."
+            )
+        return int(src_width / dst_width)
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        return get_custom(self.arg).indexing_dims
+
+    def infer_type(self):
+        src_shape = get_custom(self.arg).type.symbolic_shape
+        dst_shape = list(src_shape)
+        dst_shape[-1] *= self.scale_factor
+        self.type = Register[(*dst_shape, self.dtype)]
 
 
 @define_op("permute")

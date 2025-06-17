@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Optional, Type, TypeVar, Union
+from typing import Any, ClassVar, Optional, Type, TypeVar, Union, TypeAlias
 
 from abc import ABC
 from dataclasses import dataclass
@@ -39,8 +39,8 @@ SubtypeT = TypeVar("SubtypeT")
 # These are just light-weight helpers around sympy symbols and expressions.
 ###############################################################################
 
-IndexSymbol = sympy.Symbol
-IndexExpr = sympy.Expr
+IndexSymbol: TypeAlias = sympy.Symbol
+IndexExpr: TypeAlias = sympy.Expr
 
 
 def index_symbol(name: str) -> IndexSymbol:
@@ -440,6 +440,13 @@ class IndexSequence:
         if isinstance(value, (sympy.Basic, IndexSequence)):
             return value.subs(map)  # type: ignore
         return value
+
+    def has(self, symbol: IndexSymbol) -> bool:
+        return (
+            sympy.sympify(self.start).has(symbol)
+            or sympy.sympify(self.size).has(symbol)
+            or sympy.sympify(self.stride).has(symbol)
+        )
 
     def subs(self, map: dict[IndexExpr, IndexExpr]):
         start = self._subs(self.start, map)

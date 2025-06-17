@@ -125,6 +125,79 @@ def test_gemm():
 
 
 @run_test
+def test_gemm_small_tile_size():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 64,
+            N: 128,
+            K: 64,
+            BLOCK_M: 8,
+            BLOCK_N: 8,
+            BLOCK_K: 8,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    gemm = wave_compile(options, gemm)
+    print(gemm.asm)
+
+    # CHECK-LABEL:    test_gemm_small_tile_size
+    # CHECK:          func.func @gemm
+    # CHECK-SAME:     (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding)
+    # CHECK:            %[[ALLOC:.*]] = memref.alloc()
+    # CHECK-DAG:        %[[VIEW0:.*]] = memref.view %[[ALLOC]]
+    # CHECK-DAG:        %[[VIEW1:.*]] = memref.view %[[ALLOC]]
+    # CHECK-DAG:        %[[A:.*]] = stream.binding.subspan %[[ARG0]]
+    # CHECK-DAG:        %[[B:.*]] = stream.binding.subspan %[[ARG1]]
+    # CHECK:            scf.for
+    # For tile sizes smaller than vector size, check we are using masked load/stores to shared memory
+    # CHECK:              vector.maskedload %[[A]]
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK:              vector.maskedstore %[[VIEW1]]
+    # CHECK:              vector.maskedload %[[B]]
+    # CHECK:              vector.maskedstore %[[VIEW0]]
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK:              vector.maskedload %[[VIEW0]]
+    # CHECK:              vector.maskedload %[[VIEW1]]
+    # CHECK:              amdgpu.mfma
+    # CHECK:            %[[C:.*]] = stream.binding.subspan %[[ARG2]]
+    # CHECK-COUNT-4:    vector.maskedstore %[[C]]
+
+
+@run_test
 def test_gemm_dot():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -336,6 +409,101 @@ def test_cdna3_int_gemm():
     # CHECK:                %[[LHS:.+]] = vector.load %[[ALLOC_1]]{{.*}} : memref<32x40xi8, #gpu.address_space<workgroup>>, vector<8xi8>
     # CHECK:                %[[MMA:.+]] = amdgpu.mfma %[[LHS]] * %[[RHS]] + %[[ACC]]  {blocks = 1 : i32, k = 32 : i32, m = 16 : i32, n = 16 : i32} blgp =  none : vector<8xi8>, vector<8xi8>, vector<4xi32>
     # CHECK:                scf.yield %[[MMA]] : vector<4xi32>
+
+
+@run_test
+def test_packed_gemm():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def packed_gemm(
+        a: tkl.Memory[M, K / 2, ADDRESS_SPACE, tkl.i32],
+        b: tkl.Memory[N, K / 2, ADDRESS_SPACE, tkl.i32],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)  # [M, K/2, tkl.i32]
+            a_reg = tkw.bitcast(a_reg, tkl.f16)  # [M, K, tkl.f16]
+            b_reg = tkw.read(b)  # [M, K/2, tkl.i32]
+            b_reg = tkw.bitcast(b_reg, tkl.f16)  # [N, K, tkl.f16]
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 64,
+            N: 128,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 32,
+            BLOCK_K: 16,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    packed_gemm = wave_compile(options, packed_gemm)
+    print(packed_gemm.asm)
+
+    # This test is important to test "scaled" dimension in the field of index propagation, expansion and shapes.
+    # In this test we have halved the K dim to K/2 as we packed f16 to i32. This means before bitcasting,
+    # we will have 1/2 the number of elements.
+    #
+    # Hence we need to check that we are indexing correctly specifically of lhs and rhs in the Iterate.
+    # This means mapping/indexing of K-dim needs to be halved then original F16 variant:
+    # Original: (s0 * 16 + ((s1 mod 64) floordiv 16) * 4)
+    # Packed:   (s0 * 8 + ((s1 mod 64) floordiv 16) * 2)
+    #
+    # Moreover, we need to that the allocated shared memory in i32 indeed has half the
+    # size if it was f16, modulo padding.
+    #
+    # Then, we'd need to ensure that loop bound and step stays as 0->4 (K/BLOCK_K = 64 / 16) with step 1,
+    # as if we are iterating on the original K dim. This is because we are handling the "scaled" K dim
+    # in the index (by scaling/halving it's index), hence no need to modify loop bound or steps.
+    #
+    # Lastly, we need to check that indeed we have half the shapes (<2xi32>) before bitcasting to f16 (<4xf16>).
+    # %[[IV_K:.+]] = affine.apply #[[MAP_IV_K]]()[%[[IV]], %[[TID_X]]]
+
+    # CHECK-LABEL:    test_packed_gemm
+    # CHECK-DAG:      #[[MAP_IV_K:.+]] = affine_map<()[s0, s1] -> (s0 * 8 + ((s1 mod 64) floordiv 16) * 2)>
+    # CHECK:          func.func @packed_gemm
+    # CHECK-DAG:        %[[C1:.+]] = arith.constant 1 : index
+    # CHECK-DAG:        %[[C4:.+]] = arith.constant 4 : index
+    # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
+    # CHECK:            %[[TID_X:.+]] = gpu.thread_id  x
+    # CHECK-COUNT-1:    %[[ALLOC:.+]] = memref.alloc()
+    # CHECK:            %[[RHS_SHARED:.+]] = memref.view %[[ALLOC]][%c0][] : memref<2560xi8, #gpu.address_space<workgroup>> to memref<32x10xi32, #gpu.address_space<workgroup>>
+    # CHECK:            %[[LHS_SHARED:.+]] = memref.view %[[ALLOC]][%c1280][] : memref<2560xi8, #gpu.address_space<workgroup>> to memref<32x10xi32, #gpu.address_space<workgroup>>
+    # CHECK:            scf.for %[[IV:.+]] = %[[C0]] to %[[C4]] step %[[C1]]
+    # CHECK:              %[[IV_K:.+]] = affine.apply #[[MAP_IV_K]]()[%[[IV]], %[[TID_X]]]
+    # CHECK:              %[[LHS_REG:.+]] = vector.load %{{.*}}[%{{.*}}, %[[IV_K]]] : memref<64x32xi32, strided<[32, 1], offset: ?>>, vector<2xi32>
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK:              vector.store %[[LHS_REG]], %[[LHS_SHARED]]
+    # CHECK:              %[[RHS_REG:.+]] = vector.load  %{{.*}}[%{{.*}}, %[[IV_K]]] : memref<128x32xi32, strided<[32, 1], offset: ?>>, vector<2xi32>
+    # CHECK:              vector.store %[[RHS_REG]], %[[RHS_SHARED]]
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK-COUNT-2:      vector.load {{.*}} : {{.*}}, vector<2xi32>
+    # CHECK-COUNT-2:      vector.bitcast %{{.*}} : vector<2xi32> to vector<4xf16>
+    # CHECK:              amdgpu.mfma
+    # CHECK-COUNT-4:    vector.store
 
 
 @run_test

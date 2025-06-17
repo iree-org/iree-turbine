@@ -8,6 +8,10 @@ from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
 from iree.turbine.kernel.wave.utils.general_utils import (
     run_test,
 )
+from iree.turbine.kernel._support.location_config import (
+    LocationCaptureConfig,
+    LocationCaptureLevel,
+)
 
 M = tkl.sym.M
 N = tkl.sym.N
@@ -30,7 +34,7 @@ def _make_constraints() -> list[tkw.Constraint]:
 
 
 def _make_options(
-    *, debug_info: bool, use_local_scope: bool = False
+    *, loc_level: LocationCaptureLevel, use_local_scope: bool = False
 ) -> WaveCompileOptions:
     subs = {
         M: 16,
@@ -42,7 +46,7 @@ def _make_options(
     options = WaveCompileOptions(
         subs=subs,
         compile_to_mlir=True,
-        debug_info=debug_info,
+        location_capture_config=LocationCaptureConfig(loc_level),
         use_local_scope=use_local_scope,
     )
     return options
@@ -51,7 +55,9 @@ def _make_options(
 @run_test
 def test_location_local_scope():
     constraints = _make_constraints()
-    options = _make_options(debug_info=True, use_local_scope=True)
+    options = _make_options(
+        loc_level=LocationCaptureLevel.FILE_LINE_COL, use_local_scope=True
+    )
 
     @tkw.wave(constraints)
     def add_loc_local_scope(
@@ -74,7 +80,9 @@ def test_location_local_scope():
 @run_test
 def test_location_global_scope():
     constraints = _make_constraints()
-    options = _make_options(debug_info=True, use_local_scope=False)
+    options = _make_options(
+        loc_level=LocationCaptureLevel.FILE_LINE_COL, use_local_scope=False
+    )
 
     @tkw.wave(constraints)
     def add_loc_global_scope(
@@ -101,7 +109,7 @@ def test_location_global_scope():
 @run_test
 def test_no_location():
     constraints = _make_constraints()
-    options = _make_options(debug_info=False)
+    options = _make_options(loc_level=LocationCaptureLevel.NONE)
 
     @tkw.wave(constraints)
     def add_no_loc_info(
@@ -116,3 +124,100 @@ def test_no_location():
 
     # CHECK-LABEL: @add_no_loc
     # CHECK-NOT: loc(
+
+
+@run_test
+def test_stack_trace():
+    constraints = _make_constraints()
+    options = _make_options(
+        loc_level=LocationCaptureLevel.STACK_TRACE, use_local_scope=True
+    )
+
+    @tkw.wave(constraints)
+    def add_stack_trace(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=16)
+        res = a_reg + a_reg
+
+    add_stack_trace = wave_compile(options, add_stack_trace)
+    print(add_stack_trace.asm)
+
+    # A relatively high-level check for stack trace. Verify that it is represented
+    # as callsite locations and that we see not only this file, but also torch fx.
+    # But not the "system frames" from iree/turbine/kernel.
+    #
+    # CHECK-LABEL: @add_stack_trace
+    # CHECK:       arith.addf
+    # CHECK-SAME:  loc(
+    # CHECK-SAME:    callsite(
+    # CHECK-SAME:      location.py
+    # CHECK-SAME:      at callsite(
+    # CHECK-SAME:        torch/fx
+    # CHECK-NOT:     iree/turbine/kernel
+    # CHECK:       return
+
+
+@run_test
+def test_stack_trace_with_system():
+    constraints = _make_constraints()
+    options = _make_options(
+        loc_level=LocationCaptureLevel.STACK_TRACE_WITH_SYSTEM, use_local_scope=True
+    )
+
+    @tkw.wave(constraints)
+    def add_stack_trace_with_system(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=16)
+        res = a_reg + a_reg
+
+    add_stack_trace_with_system = wave_compile(options, add_stack_trace_with_system)
+    print(add_stack_trace_with_system.asm)
+
+    # A relatively high-level check for stack trace. Verify that it is represented
+    # as callsite locations and that we see not only this file, but also torch fx
+    # and "system frames" from iree/turbine/kernel.
+    #
+    # CHECK-LABEL: @add_stack_trace_with_system
+    # CHECK:       arith.addf
+    # CHECK-SAME:  loc(
+    # CHECK-SAME:    callsite(
+    # CHECK-SAME:      location.py
+    # CHECK-SAME:      at callsite(
+    # CHECK-SAME:        torch/fx
+    # CHECK-SAME:     iree/turbine/kernel
+    # CHECK:       return
+
+
+@run_test
+def test_stack_trace_dedup():
+    constraints = _make_constraints()
+    options = _make_options(
+        loc_level=LocationCaptureLevel.STACK_TRACE, use_local_scope=False
+    )
+
+    @tkw.wave(constraints)
+    def test_stack_trace_dedup(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=16)
+        res = a_reg + a_reg
+
+    test_stack_trace_dedup = wave_compile(options, test_stack_trace_dedup)
+    print(test_stack_trace_dedup.asm)
+
+    # Ensure that stack trace location is deduplicated to avoid IR size growth.
+    # In particular, check that both the read and the addition share a common
+    # parent location, that of the tracer.
+    #
+    # CHECK-LABEL: @test_stack_trace_dedup
+    # CHECK:       vector.load
+    # CHECK-SAME:  loc(#[[loc_load:.+]])
+    # CHECK:       arith.addf
+    # CHECK-SAME:  loc(#[[loc_addf:.+]])
+    # CHECK:       #[[loc_load]] = loc(callsite(#{{.*}} at #[[loc_parent:.+]])
+    # CHECK:       #[[loc_addf]] = loc(callsite(#{{.*}} at #[[loc_parent]])

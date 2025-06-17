@@ -12,6 +12,8 @@ from ...compiler.ir import (
     transform_d,
     UnitAttr,
     Value,
+    Module,
+    StringAttr,
 )
 from iree.compiler.dialects.transform import vector as vt
 from iree.compiler.dialects.transform import (
@@ -22,6 +24,7 @@ from iree.compiler.dialects import (
     _structured_transform_ops_gen as structured_transform_ops,
 )
 from ..compile_options import WaveCompileOptions
+from typing import Dict, Optional, List
 
 
 def compile_to_vmfb(
@@ -107,3 +110,38 @@ def set_default_compile_config(options: WaveCompileOptions) -> WaveCompileOption
     options.device = "hip"
     options.target = "gfx942"
     return options
+
+
+def get_wave_module_body_asm(module: Module) -> str:
+    """
+    Concatenates the MLIR of all operations within the
+    body region of the top-level wave_compile() module and modifies the
+    visibility of the top-level public FuncOp generated in wave_compile()
+    to private, so that it gets removed when inlined.
+    """
+    block = module.operation.regions[0].blocks[0]
+    ops_asm = []
+    for op in block.operations:
+        if op.operation.name == "func.func":
+            op.attributes["sym_visibility"] = StringAttr.get("private")
+        ops_asm.append(op.get_asm())
+
+    return "\n".join(ops_asm)
+
+
+def get_kernel_name(
+    prefix: str,
+    dims: Dict[str, Optional[int]],
+    dtypes: Dict[str, str],
+    tensor_dim_orders: Dict[str, List[str]],
+) -> str:
+    parts = [prefix]
+
+    for tensor_name, dtype in dtypes.items():
+        dim_order = tensor_dim_orders[tensor_name]
+        if not dim_order:
+            raise ValueError(f"No dimension order found for tensor '{tensor_name}'")
+        shape_parts = [f"{dim}_{dims[dim]}" for dim in dim_order if dim in dims]
+        parts.append("_".join(shape_parts + [dtype]))
+
+    return "_".join(parts)

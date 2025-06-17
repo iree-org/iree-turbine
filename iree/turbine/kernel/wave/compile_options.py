@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 from .scheduling.schedule_enums import SchedulingType
 from .._support.indexing import IndexExpr, IndexSymbol
+from .._support.location_config import LocationCaptureConfig
 from .utils.classes import KernelLaunchInfo
 from ..compiler.kernel_codegen import KernelBufferUsage
 
@@ -53,7 +54,9 @@ class WaveCompileOptions:
     dump_binaries: str = None
     dump_intermediates: str = False
     compile_to_mlir: bool = False
-    debug_info: bool = False
+    location_capture_config: LocationCaptureConfig = field(
+        default_factory=LocationCaptureConfig
+    )
     use_local_scope: bool = False
 
     # === Performance options ===
@@ -67,6 +70,8 @@ class WaveCompileOptions:
     # === Compiler options ===
     minimize_shared_allocs: bool = True
     reorder_allocs: bool = True
+    override_schedule: Optional[str] = None
+    dump_schedule: Optional[str] = None
 
     # === Print options ===
     print_ir_after: list[str] = field(default_factory=list)

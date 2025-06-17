@@ -8,7 +8,7 @@
 from sympy.utilities.lambdify import lambdastr
 from itertools import chain
 import iree.turbine.kernel.lang as tkl
-from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
+from ..compiler import builder, dispatch_codegen, kernel_codegen
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
@@ -21,6 +21,7 @@ from .._support.tracing import (
     KernelRegionGraph,
     Launchable,
 )
+from .._support.location_config import LocationCaptureConfig
 from .cache import get_temp_binary_dir
 from ..compiler.ir import Context, Module, Operation
 from .codegen import WaveEmitter
@@ -58,14 +59,11 @@ from .schedule_reordering import schedule_reordering
 from .memory_analysis.minimize_shared_allocs import minimize_shared_allocs
 from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
-from .shared_memory_indexing import (
-    apply_shared_memory_indexing_corrections,
-    align_index_sizes,
-)
+from .shared_memory_indexing import apply_shared_memory_indexing_corrections
+from .generate_bounds_exprs import generate_bounds_exprs
 
 # Utils
 from .utils.symbol_utils import subs_idxc, safe_subs
-from .utils.classes import KernelLaunchInfo
 from .utils.print_utils import print_trace, try_apply_pass
 from .utils.graph_utils import (
     remove_chained_extractslice,
@@ -86,12 +84,10 @@ import torch.fx as fx
 import inspect
 import sympy
 import warnings
-from pathlib import Path
-import sys
-import subprocess
-import os
-import shutil
-import glob
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -150,10 +146,14 @@ def wave(constraints: Optional[list[Constraint]] = None):
     return decorator
 
 
-def wave_trace_only(constraints: Optional[list[Constraint]] = None):
+def wave_trace_only(
+    constraints: Optional[list[Constraint]] = None,
+    *,
+    location_capture_config: Optional[LocationCaptureConfig] = None,
+):
     def decorator(f: Callable[..., Any]) -> "Callable[[], CapturedTrace]":
         wave = LaunchableWave(constraints, f.__name__, f)
-        return wave._trace  # type: ignore
+        return lambda: wave._trace(location_capture_config=location_capture_config)  # type: ignore
 
     return decorator
 
@@ -215,8 +215,12 @@ class LaunchableWave(Launchable):
             if isinstance(constraint, SymbolicAlias)
         ]
 
-    def _trace(self) -> CapturedTrace:
-        region_graph = KernelRegionGraph()
+    def _trace(
+        self, *, location_capture_config: Optional[LocationCaptureConfig] = None
+    ) -> CapturedTrace:
+        region_graph = KernelRegionGraph(
+            location_capture_config=location_capture_config
+        )
         with CompiledContext(region_graph, grid_type=self.grid_type) as context:
             # Get all explictly defined custom ops
             custom_ops: dict[str, wave_ops.CustomOp] = {
@@ -428,9 +432,9 @@ class LaunchableWave(Launchable):
         try:
             emitter.emit(trace.get_root_graph())
         except:
-            print("Error in emitter")
+            logger.info("Error in emitter")
             asm = mb.module_op.get_asm()
-            print(asm)
+            logger.info(asm)
             raise
         emitter.finish()
 
@@ -515,7 +519,7 @@ class LaunchableWave(Launchable):
         if options.print_trace_begin:
             print(f"\n***Tracing kernel {self._name}***")
 
-        trace = self._trace()
+        trace = self._trace(location_capture_config=options.location_capture_config)
         if (
             "all" in print_ir_after
             or "all" in print_ir_before
@@ -553,14 +557,6 @@ class LaunchableWave(Launchable):
         ]
 
         # Schedule the reduction ops.
-        # Scheduling should always be used with use_scheduling_barriers=True,
-        # as this is the only way we can ensure that LLVM enforces our desired schedule.
-        # However, due a bug in LLVM, you will need to patch your local LLVM repo
-        # with the following commit: https://github.com/kerbowa/llvm-project/commit/ee52732cddae42deed2e3387a83b20ec05860b4e
-        # Specifically:
-        # git fetch https://github.com/kerbowa/llvm-project.git ee52732cddae42deed2e3387a83b20ec05860b4e
-        # git cherry-pick ee52732cddae42deed2e3387a83b20ec05860b4e
-        # [Manually resolve conflicts consistent with the PR]
         scheduling_type = options.schedule
         use_scheduling_barriers = options.use_scheduling_barriers
         graph_passes.append(
@@ -570,6 +566,8 @@ class LaunchableWave(Launchable):
                 self.constraints,
                 use_scheduling_barriers,
                 scheduling_type,
+                options.override_schedule,
+                options.dump_schedule,
             )
         )
         graph_passes.append(
@@ -587,12 +585,9 @@ class LaunchableWave(Launchable):
                 trace,
                 options.minimize_shared_allocs,
             ),
-            # Align sizes to WG/Tile sizes
-            # This pass changes indexing keys, which can interfere with other passes,
-            # so it should be called close to the end of pipeline.
-            partial(align_index_sizes, trace, self.constraints),
             partial(add_shared_memory_barriers, trace),
             partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
+            partial(generate_bounds_exprs, trace, self.constraints),
         ]
 
         pass_times = {}

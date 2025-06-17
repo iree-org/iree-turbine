@@ -29,9 +29,14 @@ from ...ops.wave_ops import (
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
 import itertools
 from iree.turbine.kernel._support.dtype import DataType
+from iree.turbine.kernel.wave.utils.general_utils import ceildiv
+from ..utils.general_utils import infer_dim
 from ..utils.graph_utils import (
     get_inputs,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ExpansionMetadata:
@@ -64,10 +69,24 @@ def get_dim_scaling(
         raise ValueError("Exactly one hardware constraint must be provided")
 
     idxc = IndexingContext.current()
+    dim_to_shape = {
+        infer_dim(size_expr): size_expr for size_expr in node.type.symbolic_shape
+    }
     for constraint in constraints:
         if isinstance(constraint, (WorkgroupConstraint, TilingConstraint)):
             hw_cons = hardware_constraints[0]
             tile_size = idxc.get_static_value(constraint.tile_size)
+            # Update tile size, if dim is not a pure dim expr. (e.g K/2)
+            if (
+                constraint.dim in dim_to_shape
+                and constraint.dim != dim_to_shape[constraint.dim]
+            ):
+                # Sub in tile size into shape:
+                # (e.g, shape = K/32, constraint_tile = BLOCK_K -> tile_size = BLOCK_K/32)
+                tile_size = dim_to_shape[constraint.dim].subs(
+                    constraint.dim, constraint.tile_size
+                )
+                tile_size = idxc.get_static_value(tile_size)
             if constraint.dim not in node.vector_shapes:
                 continue
             vector_size = node.vector_shapes[constraint.dim]
@@ -83,16 +102,18 @@ def get_dim_scaling(
                 raise ValueError(
                     "Tile size, wave count and vector size must be statically known"
                 )
+
             if (
                 tile_size % wave_count != 0
                 or (tile_size / wave_count) % vector_size != 0
             ):
-                raise ValueError(
-                    f"Tile size must be divisible by wave count and vector size, got: "
+                logger.info(
+                    f"Tile size is not divisible by wave count and vector size, got: "
                     f"dim={constraint.dim}, "
                     f"tile_size={tile_size}, wave_count={wave_count}, vector_size={vector_size}"
                 )
-            dim_scaling[constraint.dim] = tile_size // wave_count // vector_size
+
+            dim_scaling[constraint.dim] = ceildiv(tile_size, wave_count * vector_size)
 
     if isinstance(node.type, DataType):
         return {}
