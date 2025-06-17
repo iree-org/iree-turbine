@@ -214,19 +214,24 @@ class BooConv2dLaunchingTest(unittest.TestCase):
                 requires_grad=True,
             ).to(memory_format=torch.channels_last)
             y = model(x)
+            y.retain_grad()
+            assert y.is_contiguous(memory_format=torch.channels_last)
             loss = y.sum()
             loss.backward()
+            # By doing permute calls within the custom op body (instead of outside), the grad_output
+            # at the end of the graph (dloss/dy) is actually contiguous rather than in torch.channels_last.
+            # It is likely better to let IREE handle the transpose if necessary than to force the layout.
             func_names = [i.name for i in cache_dir.glob("*")]
             self.assertIn(
                 "conv_2d_float32_forward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
             self.assertIn(
-                "conv_2d_float32_input_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                "conv_2d_float32_weight_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
             self.assertIn(
-                "conv_2d_float32_weight_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                "conv_2d_float32_input_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
 
@@ -264,7 +269,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
                 func_names,
             )
             self.assertIn(
-                "conv_2d_float32_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                "conv_2d_float32_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
             self.assertIn(
@@ -272,7 +277,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
                 func_names,
             )
             self.assertIn(
-                "conv_2d_float32_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                "conv_2d_float32_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
 
@@ -311,7 +316,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
                 func_names,
             )
             self.assertIn(
-                "conv_2d_bfloat16_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                "conv_2d_bfloat16_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
             self.assertIn(
@@ -319,7 +324,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
                 func_names,
             )
             self.assertIn(
-                "conv_2d_bfloat16_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
+                "conv_2d_bfloat16_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
 

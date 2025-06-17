@@ -41,7 +41,7 @@ def testBackwardCachePytorch(x_grad, w_grad):
         w = torch.ones(
             [1, 1, 2, 2], dtype=torch.float32, device=device, requires_grad=w_grad
         )
-        y = boo_conv(x, w)
+        y = boo_conv(x, w, shared_layout="NCHW")
 
         context = (
             contextlib.nullcontext()
@@ -82,7 +82,7 @@ def testBackwardCacheBoo(x_grad, w_grad):
         w = torch.ones(
             [1, 1, 2, 2], dtype=torch.float32, device=device, requires_grad=w_grad
         )
-        y = boo_conv(x, w)
+        y = boo_conv(x, w, shared_layout="NCHW")
 
         context = (
             contextlib.nullcontext()
@@ -171,7 +171,7 @@ class BooConvTest(unittest.TestCase):
             set_boo_cache(Path(td))
 
             with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-                y = boo_conv(x, w)
+                y = boo_conv(x, w, shared_layout="NCHW")
                 loss = y.sum()
 
             loss.backward()
@@ -205,7 +205,7 @@ class BooConvTest(unittest.TestCase):
             set_boo_cache(Path(td_0))
 
             with torch.amp.autocast(device_type="cpu", dtype=torch.bfloat16):
-                y = boo_conv(x, w)
+                y = boo_conv(x, w, shared_layout="NCHW")
                 loss = y.sum()
 
             loss.backward()
@@ -247,7 +247,7 @@ class BooConvTest(unittest.TestCase):
                 [1, 1, 4, 4], dtype=torch.float32, device=device, requires_grad=True
             )
             with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-                y = boo_conv(x, w)
+                y = boo_conv(x, w, shared_layout="NCHW")
                 loss = y.sum()
 
             loss.backward()

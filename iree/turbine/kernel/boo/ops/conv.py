@@ -4,10 +4,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import os
-import functools
 
-from typing import Sequence, Tuple, Any, Iterable
+from typing import Sequence, Tuple
 
 import torch
 
@@ -20,92 +18,13 @@ from ..conv_exports import (
 
 from .library import define_schema, register_impl, register_meta
 
+from .utils import *
+from .layout_customizable_conv import boo_layout_customizable_convolution
+
 __all__ = [
     "boo_conv",
     "boo_convolution",
-    "make_tuple",
-    "enable_backward",
-    "disable_backward",
 ]
-
-# Toggle Using Boo Backward Kernels #
-
-BOO_USE_BACKWARD_KERNELS = int(os.getenv("BOO_USE_BACKWARD_KERNELS", "0"))
-
-
-def enable_backward():
-    """Allows toggling on Boo backward convolution kernels from python."""
-    global BOO_USE_BACKWARD_KERNELS
-    BOO_USE_BACKWARD_KERNELS = 1
-
-
-def disable_backward():
-    """Allows toggling off Boo backward convolution kernels from python."""
-    global BOO_USE_BACKWARD_KERNELS
-    BOO_USE_BACKWARD_KERNELS = 0
-
-
-# Utilities #
-
-
-def make_tuple(a: Iterable | int, size: int) -> Tuple:
-    """Tries to convert `a` into a Tuple of ints."""
-    if isinstance(a, Iterable):
-        result = tuple(a)
-        assert len(result) == size
-        assert isinstance(result[0], int)
-        return result
-    if isinstance(a, int):
-        return (a,) * size
-    raise TypeError(f"Input {a} is expected to be an iterable or int. Got {type(a)}.")
-
-
-CL_LAYOUT = {1: "NHC", 2: "NHWC", 3: "NDHWC"}
-CL_MEM = {2: torch.channels_last, 3: torch.channels_last_3d}
-CL_CONTIGUOUS_PERM = {1: [0, 2, 1], 2: [0, 2, 3, 1], 3: [0, 2, 3, 4, 1]}
-CONTIGUOUS_CL_PERM = {1: [0, 2, 1], 2: [0, 3, 1, 2], 3: [0, 4, 1, 2, 3]}
-
-
-@functools.lru_cache(maxsize=None)
-def get_func_name(
-    input_shape: tuple,
-    kernel_shape: tuple,
-    dtype: str,
-    mode: str,
-    bias: bool,
-    stride: tuple,
-    padding: tuple,
-    dilation: tuple,
-    groups: int,
-    input_layout: str,
-    kernel_layout: str,
-    output_layout: str,
-) -> str:
-    num_spatial_dims = len(input_shape) - 2
-    name_items = [
-        "conv",
-        f"{num_spatial_dims}d",
-        str(dtype).removeprefix("torch."),
-        str(mode).lower(),
-    ]
-    if bias and mode == "FORWARD":
-        name_items.append("b")
-    l2s = lambda l: "x".join([str(i) for i in l])
-    name_items.extend(
-        [
-            l2s(input_shape),
-            input_layout.lower(),
-            l2s(kernel_shape),
-            kernel_layout.lower().replace("n", "f"),
-            output_layout.lower().replace("c", "f"),
-            l2s(stride) + "s",
-            l2s(padding) + "p",
-            l2s(dilation) + "d",
-            f"{groups}g",
-        ]
-    )
-    return "_".join(name_items)
-
 
 # Forward Convolution Implementations #
 
@@ -377,7 +296,7 @@ class _BooConvolution(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        if not BOO_USE_BACKWARD_KERNELS:
+        if not is_boo_backward_enabled():
             return pytorch_convolution_backward(ctx, grad_output)
 
         x, w = ctx.saved_tensors
@@ -486,4 +405,85 @@ def boo_conv(
         make_tuple(padding, num_spatial_dims),
         make_tuple(dilation, num_spatial_dims),
         groups,
+    )
+
+
+# Lazy Autograd Implementation #
+
+
+def boo_conv(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None = None,
+    *,
+    stride: int | Sequence[int] = 1,
+    padding: int | Sequence[int] = 0,
+    dilation: int | Sequence[int] = 1,
+    groups: int = 1,
+    shared_layout: str | None = None,
+    input_layout: str | None = None,
+    kernel_layout: str | None = None,
+    output_layout: str | None = None,
+):
+    """
+    Applies a differentiable forward convolution kernel.
+
+    kwargs can include any of the following usual convolution options:
+
+        stride         : int or int[]
+        padding        : int or int[]
+        dilation       : int or int[]
+        groups         : int
+
+    Users can also specify alternative layouts for each convolution:
+
+        shared_layout  : str
+        input_layout   : str
+        kernel_layout  : str
+        output_layout  : str
+
+    These layouts should be permutations of "NCH", "NCHW", or "NCDHW".
+    """
+
+    num_spatial_dims = len(weight.shape) - 2
+    no_layouts = (
+        shared_layout is None
+        and input_layout is None
+        and kernel_layout is None
+        and output_layout is None
+    )
+
+    # The decorators torch.amp.custom_fwd/custom_bwd don't seem to work with torch.library.custom_op
+    # For now, this is a quick hack to manually do the casting outside our custom op.
+    device_type = input.device.type
+    if torch.is_autocast_enabled(device_type):
+        dtype = torch.get_autocast_dtype(device_type)
+        input = input.to(dtype=dtype)
+        weight = weight.to(dtype=dtype)
+        bias = bias if bias is None else bias.to(dtype=dtype)
+
+    if no_layouts:
+        return boo_convolution(
+            input,
+            weight,
+            bias,
+            make_tuple(stride, num_spatial_dims),
+            make_tuple(padding, num_spatial_dims),
+            make_tuple(dilation, num_spatial_dims),
+            groups,
+        )
+
+    _infer = lambda layout: shared_layout or layout or DEFAULT_LAYOUTS[num_spatial_dims]
+
+    return boo_layout_customizable_convolution(
+        input,
+        weight,
+        bias,
+        make_tuple(stride, num_spatial_dims),
+        make_tuple(padding, num_spatial_dims),
+        make_tuple(dilation, num_spatial_dims),
+        groups,
+        _infer(input_layout),
+        _infer(kernel_layout),
+        _infer(output_layout),
     )
