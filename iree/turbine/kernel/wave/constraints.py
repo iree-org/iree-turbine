@@ -404,7 +404,6 @@ class HardwareConstraint(Constraint):
         constraint_index: int | MMAOperand,
         mma_type: MMAType,
     ) -> IndexSequence:
-        lane = self.linearized_thread_id % self.threads_per_wave
         if mma_type == None:
             mma_type = self.mma_type
 
@@ -748,16 +747,20 @@ def get_constrained_shape(
             constraint
             for constraint in constraints
             if isinstance(constraint, (WorkgroupConstraint, TilingConstraint))
-            and dim == constraint.dim
+            and dim.has(constraint.dim)
         ]
         if not dim_constraints:
             continue
         if all_same_type(dim_constraints, WorkgroupConstraint) or all_same_type(
             dim_constraints, TilingConstraint
         ):
-            constrained_shape[i] = dim_constraints[0].tile_size
+            constrained_shape[i] = constrained_shape[i].subs(
+                dim_constraints[0].dim, dim_constraints[0].tile_size
+            )
             continue
         constrained_shape[i] = [
-            x.tile_size for x in dim_constraints if isinstance(x, TilingConstraint)
+            constrained_shape[i].subs(x.dim, x.tile_size)
+            for x in dim_constraints
+            if isinstance(x, TilingConstraint)
         ][0]
     return tuple(constrained_shape)
