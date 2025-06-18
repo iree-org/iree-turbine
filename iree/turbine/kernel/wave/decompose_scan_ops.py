@@ -195,6 +195,7 @@ def emit_global_scan(
         )
 
         # Update the prefix sum for each locally scanned element based on the updated offset
+        # dummy_local_scan = [[local_scan[0][0], local_scan[1][0]], [local_scan[0][1], local_scan[1][1]]]
         for idx, loc_scan in enumerate(local_scan):
             final_scalars = []
             for lane_elem in loc_scan:
