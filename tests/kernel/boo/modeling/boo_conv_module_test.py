@@ -269,7 +269,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
                 func_names,
             )
             self.assertIn(
-                "conv_2d_float32_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
+                "conv_2d_float32_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
             self.assertIn(
@@ -277,7 +277,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
                 func_names,
             )
             self.assertIn(
-                "conv_2d_float32_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
+                "conv_2d_float32_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
 
@@ -316,7 +316,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
                 func_names,
             )
             self.assertIn(
-                "conv_2d_bfloat16_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
+                "conv_2d_bfloat16_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
             self.assertIn(
@@ -324,7 +324,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
                 func_names,
             )
             self.assertIn(
-                "conv_2d_bfloat16_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g",
+                "conv_2d_bfloat16_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g",
                 func_names,
             )
 
