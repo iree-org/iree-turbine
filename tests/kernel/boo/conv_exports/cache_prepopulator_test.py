@@ -2,8 +2,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from iree.turbine.kernel.boo.conv_exports.launch import clear_cache_dir
-from iree.turbine.kernel.boo.runtime import set_cache_dir
+from iree.turbine.kernel.boo.runtime import set_cache_dir, clear_cache
 from iree.turbine.support.logging import runtime_logger as logger
 
 
@@ -44,7 +43,7 @@ class CachePopulatorTest(unittest.TestCase):
                 count = len([f for f in sub_dir.glob("*.vmfb")])
                 self.assertGreater(count, 0, "Expected at least one vmfb.")
 
-            clear_cache_dir()
+            clear_cache()
             self.assertFalse(cache_dir.is_dir(), f"Expected cache dir to be cleared.")
 
 

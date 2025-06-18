@@ -9,17 +9,14 @@ from ....runtime import Launchable
 from ..runtime import (
     LaunchableRuntimeCache,
     get_module_asm,
-    clear_cache,
 )
 from ..runtime import get_launchable as generic_get_launchable
 
 __all__ = [
-    "clear_cache_dir",
     "ConvLaunchableRuntimeCache",
     "get_launchable",
 ]
 
-clear_cache_dir = clear_cache
 ConvLaunchableRuntimeCache = LaunchableRuntimeCache
 
 
