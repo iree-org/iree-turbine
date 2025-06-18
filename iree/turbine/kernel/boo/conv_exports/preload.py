@@ -12,9 +12,9 @@ from iree.turbine.kernel.boo.conv_exports.conv import (
 )
 from iree.turbine.kernel.boo.conv_exports.utils import load_commands
 from iree.turbine.kernel.boo.conv_exports.launch import (
-    BOO_TUNING_SPEC_PATH,
     _get_module_asm,
 )
+from iree.turbine.kernel.boo.runtime import BOO_TUNING_SPEC_PATH
 from iree.turbine.kernel.boo.runtime import out_of_process_compile, set_cache_dir
 from iree.turbine.kernel.boo.conv_exports.miopen_parser import command_to_signature
 from iree.turbine.runtime.device import get_device_from_torch

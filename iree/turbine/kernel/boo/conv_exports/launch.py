@@ -21,7 +21,6 @@ from ..runtime import (
     get_module_asm,
     is_cache_enabled,
     clear_cache,
-    BOO_TUNING_SPEC_PATH,
 )
 from ..runtime import get_launchable as generic_get_launchable
 
