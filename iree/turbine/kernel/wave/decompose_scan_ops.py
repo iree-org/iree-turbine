@@ -1,10 +1,11 @@
 import math
 from operator import ge
-from typing import Any, Callable
+from typing import Callable
 
 import torch.fx as fx
 
 from iree.turbine.kernel._support.indexing import IndexSymbol
+from iree.turbine.kernel.wave.utils.general_utils import all_equal
 from iree.turbine.kernel.wave.utils.symbol_utils import subs_idxc
 
 from .._support.dtype import i1
@@ -34,34 +35,61 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
 
 def emit_local_inclusive_scan(
     binary_fn: Callable,
-    scan_src: fx.Node,
+    scan_src: list[fx.Node],
     graph: fx.Graph,
     elements_per_thread: int,
-) -> list[fx.Node]:
+) -> list[list[fx.Node]]:
     """
     Perform local inclusive scan for `n` elements per thread.
     """
-    values = [
-        get_graph_node(Extract(scan_src, [i]), graph)
-        for i in range(elements_per_thread)
-    ]
+    result = []
+    for node in scan_src:
+        values = [
+            get_graph_node(Extract(node, [i]), graph)
+            for i in range(elements_per_thread)
+        ]
+        values[0].index = node.index
 
-    for i in range(1, elements_per_thread):
-        values[i] = get_graph_node(binary_fn(values[i], values[i - 1]), graph)
+        for i in range(1, elements_per_thread):
+            values[i] = get_graph_node(binary_fn(values[i], values[i - 1]), graph)
+            values[i].index = node.index
 
-    return values
+        result.append(values)
+    return result
+
+
+def emit_variable_scan(
+    binary_fn: Callable,
+    src: list[list[fx.Node]],
+    graph: fx.Graph,
+    elements_per_thread: int,
+) -> list[list[fx.Node]]:
+    result: list[list[fx.Node]] = []
+    result.append(src[0])
+
+    for scan_src_idx in range(1, len(src)):
+        prev_thread_last_val = result[scan_src_idx - 1][-1]
+        temp: list[fx.Node] = []
+        for i in range(elements_per_thread):
+            cur_val = src[scan_src_idx][i]
+            offset_val = get_graph_node(binary_fn(prev_thread_last_val, cur_val), graph)
+            offset_val.index = get_custom(src[scan_src_idx][i]).index
+            temp.append(offset_val)
+        result.append(temp)
+
+    return result
 
 
 def emit_global_scan(
     binary_fn: Callable,  # Supports only Add for now.
     src: fx.Node,
-    local_scan: list[fx.Node],
+    local_scan: list[list[fx.Node]],
     graph: fx.Graph,
     subgroup_size: int,
     hardware_constraint: HardwareConstraint,
     local_scan_size: int,
     scan_dim: IndexSymbol,
-) -> fx.Node:
+) -> list[fx.Node]:
     """
     Emit an intra-warp inclusive scan using butterfly pattern scan and masking.
     In this algorithm, we are using two-pass approach.
@@ -76,15 +104,12 @@ def emit_global_scan(
         hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
     )
 
-    scanop_result = local_scan[-1]
-    last_local_scan_node = get_custom(local_scan[-1])
+    scanop_result = local_scan[-1][-1]
+    last_local_scan_node = get_custom(local_scan[-1][-1])
 
-    # When we have more than one element per thread, the index will be used of the
-    # non-scan dim in MxN. Otherwise, there  will be a shape mismatch while lowering.
-    if local_scan_size > 1:
-        target_shape = list(src.type.symbolic_shape)
-        target_shape.pop(target_shape.index(scan_dim))
-        scanop_result.index = {target_shape[0]: get_custom(src).index[target_shape[0]]}
+    target_shape = list(src.type.symbolic_shape)
+    target_shape.pop(target_shape.index(scan_dim))
+    scanop_result.index = {target_shape[0]: get_custom(src).index[target_shape[0]]}
 
     num_steps = int(math.log2(float(subgroup_size)))
     for idx in range(num_steps):
@@ -123,6 +148,7 @@ def emit_global_scan(
 
         # perform binary scan op
         scanop_result = get_graph_node(binary_fn(scanop_result, masked), graph)
+        final_scanop_result = [scanop_result]
 
     if local_scan_size > 1:
         # Phase 2 to calculate exclusive offset from previous lane id.
@@ -158,24 +184,30 @@ def emit_global_scan(
             graph,
         )
 
-        final_scalars = []
         # Update the prefix sum for each locally scanned element based on the updated offset
-        for lane_elem in local_scan:
-            summed = get_graph_node(binary_fn(lane_elem, excl_offset), graph)
-            summed.index = get_custom(src).index
-            final_scalars.append(summed)
+        final_scanop_result = []
+        for loc_scan in local_scan:
+            custom = get_custom(loc_scan[0])
 
-        # pack the output in the expected order
-        scanop_result = Reshape(
-            args=final_scalars,
-            target_vector_shape={scan_dim: local_scan_size},
-        ).add_to_graph(graph)
+            final_scalars = [
+                get_graph_node(binary_fn(lane_elem, excl_offset), graph)
+                for lane_elem in loc_scan
+            ]
 
-        scanop_result.index = get_custom(src).index
-        scanop_result.expanded_dims = get_custom(src).expanded_dims
-        scanop_result.vector_shapes = get_custom(src).vector_shapes
+            # pack the output in the expected order
+            scanop_result = Reshape(
+                args=final_scalars,
+                target_vector_shape={scan_dim: local_scan_size},
+            ).add_to_graph(graph)
 
-    return scanop_result
+            # assign attributes
+            scanop_result.index = custom.index
+            scanop_result.expanded_dims = custom.expanded_dims
+            scanop_result.vector_shapes = custom.vector_shapes
+
+            final_scanop_result.append(scanop_result)
+
+    return final_scanop_result
 
 
 def decompose_scan_ops(
@@ -201,6 +233,7 @@ def decompose_scan_ops(
     hardware_constraint = next(
         c for c in constraints if isinstance(c, HardwareConstraint)
     )
+
     subgroup_size = hardware_constraint.threads_per_wave
 
     for node in scan_nodes:
@@ -210,47 +243,77 @@ def decompose_scan_ops(
 
         with custom.graph.inserting_before(custom.fx_node):
             scan_src, scan_acc, scan_dim = node.args
-            assert isinstance(
-                scan_src, fx.Node
-            ), f"Scan src is not fx.Node: {type(scan_src)}"
             binary_fn = Add
 
             if scan_dim is None:
                 raise ValueError("No scan dim specified, please specify a scan dim.")
 
+            if not isinstance(scan_src, (list, tuple)):
+                scan_src = [scan_src]
+
+            # sanity checks and check for the fastest dim
+            src_fastest_dims = [
+                get_custom(arg).type.symbolic_shape[-1] for arg in scan_src
+            ]
+            if not all_equal(src_fastest_dims):
+                raise NotImplementedError(
+                    "NYI: Expect all reduce_src to have same fastest dim."
+                )
+            if scan_dim is not src_fastest_dims[0]:
+                raise NotImplementedError(
+                    f"Only implemented reduction on fastest dimension. Got {scan_dim} and {src_fastest_dims}."
+                    f"\n{custom}"
+                )
+
             get_thread_shape = lambda index: max(
                 subs_idxc(x.size) for x in index.values()
             )
 
-            try:
-                op = get_custom(scan_src)
-                thread_shape = get_thread_shape(op.index)
-                local_scan_sizes = thread_shape
-            except Exception as e:
-                index_str = "\n".join(f"{k}: {v}" for k, v in op.index.items())
-                raise RuntimeError(
-                    f"Error in decompose_scan_ops: {scan_src} with index\n"
-                    f"{index_str}\n{scan_src=}\n{scan_acc=}\n{scan_dim=}"
-                ) from e
+            local_scan_sizes = []
+            for arg in scan_src:
+                try:
+                    op = get_custom(arg)
+                    thread_shape = get_thread_shape(op.index)
+                    local_scan_sizes.append(thread_shape)
+                except Exception as e:
+                    index_str = "\n".join(f"{k}: {v}" for k, v in op.index.items())
+                    raise RuntimeError(
+                        f"Error in decompose_scan_ops: {scan_src} with index\n"
+                        f"{index_str}\n{scan_src=}\n{scan_acc=}\n{scan_dim=}"
+                    ) from e
 
-            local_scan = [scan_src]
-
-            if local_scan_sizes > 1:
-                local_scan = emit_local_inclusive_scan(
-                    binary_fn, scan_src, custom.graph, local_scan_sizes
+            if not all_equal(local_scan_sizes):
+                raise NotImplementedError(
+                    "NYI: Expect all reduce_src to have same local reduce size."
                 )
 
-            result = emit_global_scan(
+            # Phase 1: Local scan
+            local_scan = emit_local_inclusive_scan(
+                binary_fn, scan_src, custom.graph, local_scan_sizes[0]
+            )
+
+            # Phase 2: Src wide local scan
+            local_scan = emit_variable_scan(
+                binary_fn, local_scan, custom.graph, local_scan_sizes[0]
+            )
+
+            global_scan = emit_global_scan(
                 binary_fn,
-                scan_src,
+                scan_src[0],
                 local_scan,
                 custom.graph,
                 subgroup_size,
                 hardware_constraint,
-                local_scan_sizes,
+                local_scan_sizes[0],
                 scan_dim,
             )
 
-            custom.replace_all_uses_with(result)
+            # Update the users based on the global scan `reshape` results.
+            users = [
+                (user, user.fx_node.args.index(custom.fx_node)) for user in custom.users
+            ]
+
+            for user, arg_index in users:
+                user.update_arg(arg_index, global_scan[user.expanded_dims[scan_dim]])
 
     DCE(trace)
