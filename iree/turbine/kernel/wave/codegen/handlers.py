@@ -1713,16 +1713,21 @@ def handle_reshape(emitter: WaveEmitter, node: fx.Node):
 @handle_op(gather_to_lds)
 def handle_gather_to_lds(emitter: WaveEmitter, node: fx.Node):
     try:
-        read_node, write_node = node.args
+        (
+            src,
+            src_idx,
+            src_type,
+            dst,
+            dst_idx,
+            dst_type,
+            src_mapping,
+            dst_mapping,
+            elements_per_thread,
+        ) = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    read_custom, write_custom = get_custom(read_node), get_custom(write_node)
-    src = read_custom.memory
-    dst = write_custom.memory
-    dtype = read_custom.type.dtype
-
-    element_type = IrType.parse(dtype.ir_type_asm())
+    element_type = IrType.parse(src_type.dtype.ir_type_asm())
 
     src = cast_py_value(emitter, src)
     dst = cast_py_value(emitter, dst)
@@ -1750,17 +1755,16 @@ def handle_gather_to_lds(emitter: WaveEmitter, node: fx.Node):
         )
 
     src_index_transformed = transform_index_on_mapping(
-        read_custom.mapping, read_custom.type.symbolic_shape, read_custom.index
+        src_mapping, src_type.symbolic_shape, src_idx
     )
     dst_index_transformed = transform_index_on_mapping(
-        write_custom.mapping, write_custom.type.symbolic_shape, write_custom.index
+        dst_mapping, dst_type.symbolic_shape, dst_idx
     )
-    elements_per_thread = read_custom.elements_per_thread
 
     src_keys = list(src_index_transformed.keys())
-    src_fastest_dim = get_fastest_index(read_custom.index)
+    src_fastest_dim = get_fastest_index(src_idx)
     dst_keys = list(dst_index_transformed.keys())
-    dst_fastest_dim = get_fastest_index(write_custom.index)
+    dst_fastest_dim = get_fastest_index(dst_idx)
     src_idx, dst_idx = [], []
     for i in range(elements_per_thread):
         new_src_index = copy.deepcopy(src_index_transformed)
