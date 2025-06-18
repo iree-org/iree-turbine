@@ -18,8 +18,6 @@ from ....runtime import Launchable
 from ....support.logging import runtime_logger as logger
 from ..runtime import (
     LaunchableRuntimeCache,
-    out_of_process_compile,
-    user_flags_jit_callback,
     set_cache_dir,
     get_module_asm,
     is_cache_enabled,
@@ -38,8 +36,6 @@ __all__ = [
 
 set_boo_cache = set_cache_dir
 clear_cache_dir = clear_cache
-_out_of_process_compile = out_of_process_compile
-_user_flags_jit_callback = user_flags_jit_callback
 ConvLaunchableRuntimeCache = LaunchableRuntimeCache
 
 

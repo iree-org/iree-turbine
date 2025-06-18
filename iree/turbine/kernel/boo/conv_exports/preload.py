@@ -15,9 +15,8 @@ from iree.turbine.kernel.boo.conv_exports.launch import (
     BOO_TUNING_SPEC_PATH,
     _get_module_asm,
     set_boo_cache,
-    _out_of_process_compile,
-    get_launchable,
 )
+from iree.turbine.kernel.boo.runtime import out_of_process_compile
 from iree.turbine.kernel.boo.conv_exports.miopen_parser import command_to_signature
 from iree.turbine.runtime.device import get_device_from_torch
 from iree.turbine.support.ir_imports import MLIRError
@@ -135,7 +134,7 @@ class CachePopulator:
             if succeeded
         ]
 
-        name_and_compile_status = pool.starmap(_out_of_process_compile, items)
+        name_and_compile_status = pool.starmap(out_of_process_compile, items)
 
         pool.close()
 
