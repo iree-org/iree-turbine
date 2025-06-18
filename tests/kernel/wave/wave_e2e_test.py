@@ -1781,6 +1781,7 @@ def test_scalar_cond_copy(shape, request):
         (128, 64),
         (1, 256),
         (1, 512),
+        (64, 500),
     ],
 )
 def test_scanop_cumsum(shape, request):
@@ -1808,17 +1809,17 @@ def test_scanop_cumsum(shape, request):
 
     @tkw.wave(constraints)
     def test(
-        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.i32],
     ):
         lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         res = tkw.cumsum(lhs, dim=N)
         tkw.write(res, c)
 
     torch.manual_seed(1)
-    input = device_zeros(shape, dtype=torch.float16) + 1
-    output = device_zeros(shape, dtype=torch.float16)
-    torch_ref = torch.cumsum((input), dim=-1)
+    input = device_randint(low=1, high=5, size=shape, dtype=torch.int32)
+    output = device_zeros(shape, dtype=torch.int32)
+    torch_ref = torch.cumsum((input), dim=-1, dtype=torch.int32)
     options = WaveCompileOptions(
         subs={
             M: shape[0],

@@ -18,6 +18,7 @@ from ...ops.wave_ops import (
     Placeholder,
     Read,
     ReduceOp,
+    ScanOp,
     SetWavePrio,
     SharedMemoryBarrier,
     Iterate,
@@ -674,9 +675,9 @@ def get_reduce_mapping(
     trace: CapturedTrace, constraints: list[Constraint]
 ) -> dict[ReduceOp, dict[IndexSymbol, IndexSequence]]:
     """
-    Get the mapping of the reduce ops to the index sequence.
+    Get the mapping of the reduce/Scan ops to the index sequence.
 
-    Resulting index will have reduction dim distributed across wg0 threads and
+    Resulting index will have reduction/scan dim distributed across wg0 threads and
     rest of the dims distributed similar to read/write nodes according to the
     WorkgroupConstraints.
 
@@ -694,7 +695,7 @@ def get_reduce_mapping(
     ```
 
     """
-    sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
+    sources = trace.walk(lambda node: isinstance(get_custom(node), (ReduceOp, ScanOp)))
     hardware_constraint = get_hardware_constraint(constraints)
     workgroup_constraints = get_workgroup_constraints(constraints)
 
@@ -750,7 +751,7 @@ def populate_reduce_source_indices(
     index: dict[IndexSymbol, IndexSequence],
 ):
     """
-    Populate the source indices for the reduce op.
+    Populate the source indices for the reduce/scan op.
     """
     vector_shapes = hardware_constraint.vector_shapes
     ret = []
@@ -775,15 +776,15 @@ def populate_reduce_source_indices(
 def set_thread_dependent_index_from_reduce(
     constraints: Sequence[Constraint],
     trace: CapturedTrace,
-    reduce_mapping: dict[ReduceOp, dict[IndexSymbol, IndexSequence]],
+    reduce_mapping: dict[ReduceOp | ScanOp, dict[IndexSymbol, IndexSequence]],
 ):
     """
-    Set the thread dependent index, rooting on reduce ops.
+    Set the thread dependent index, rooting on reduce/scan ops.
     """
     hardware_constraint = get_hardware_constraint(constraints)
-    sources = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
+    sources = trace.walk(lambda node: isinstance(get_custom(node), (ReduceOp, ScanOp)))
     sources = [get_custom(x) for x in sources]
-    assert sources, "No reduce nodes found in the graph."
+    assert sources, "No reduce or scan nodes found in the graph."
 
     visited = set()
     workgroup_constraints = get_workgroup_constraints(constraints)
