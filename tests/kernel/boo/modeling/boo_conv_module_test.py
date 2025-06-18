@@ -20,8 +20,10 @@ from iree.turbine.kernel.boo.modeling import (
     replace_convs_with_boo,
 )
 from iree.turbine.kernel.boo.conv_exports import (
-    set_boo_cache,
     ConvLaunchableRuntimeCache,
+)
+from iree.turbine.kernel.boo.runtime import (
+    set_cache_dir,
 )
 
 
@@ -130,7 +132,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
     def testBasic(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
-            set_boo_cache(cache_dir)
+            set_cache_dir(cache_dir)
             x = torch.ones([10, 2, 16, 16], device=self.device, dtype=torch.float32)
             _ = self.model0(x)
             self.assertIn(
@@ -141,7 +143,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
     def testNoBatch(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
-            set_boo_cache(cache_dir)
+            set_cache_dir(cache_dir)
             x = torch.ones([2, 16, 16], device=self.device, dtype=torch.float32)
             _ = self.model0(x)
             self.assertIn(
@@ -152,7 +154,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
     def testReplacement(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
-            set_boo_cache(cache_dir)
+            set_cache_dir(cache_dir)
             x = torch.ones([10, 3, 16, 16], device=self.device, dtype=torch.float32)
             model2 = replace_conv2d_with_boo_conv(self.model1)
             _ = model2(x)
@@ -169,7 +171,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
     def testChannelsLast(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
-            set_boo_cache(cache_dir)
+            set_cache_dir(cache_dir)
             x = torch.ones([10, 2, 16, 16], device=self.device, dtype=torch.float32).to(
                 memory_format=torch.channels_last
             )
@@ -184,7 +186,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
     def testReplacementChannelsLast(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
-            set_boo_cache(cache_dir)
+            set_cache_dir(cache_dir)
             x = torch.ones([10, 3, 16, 16], device=self.device, dtype=torch.float32).to(
                 memory_format=torch.channels_last
             )
@@ -205,7 +207,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
     def testBackward(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
-            set_boo_cache(cache_dir)
+            set_cache_dir(cache_dir)
             model = self.model0.to(memory_format=torch.channels_last).train()
             x = torch.ones(
                 [10, 2, 16, 16],
@@ -238,7 +240,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
     def testCompileWithBackwardF32(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
-            set_boo_cache(cache_dir)
+            set_cache_dir(cache_dir)
             x = torch.ones(
                 [10, 3, 16, 16],
                 device=self.device,
@@ -285,7 +287,7 @@ class BooConv2dLaunchingTest(unittest.TestCase):
     def testCompileWithBackwardAMPGPU(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
-            set_boo_cache(cache_dir)
+            set_cache_dir(cache_dir)
             x = torch.ones(
                 [10, 3, 16, 16],
                 device=self.device,

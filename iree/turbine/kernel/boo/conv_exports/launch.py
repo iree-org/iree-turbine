@@ -18,7 +18,6 @@ from ....runtime import Launchable
 from ....support.logging import runtime_logger as logger
 from ..runtime import (
     LaunchableRuntimeCache,
-    set_cache_dir,
     get_module_asm,
     is_cache_enabled,
     clear_cache,
@@ -31,10 +30,8 @@ __all__ = [
     "clear_cache_dir",
     "ConvLaunchableRuntimeCache",
     "get_launchable",
-    "set_boo_cache",
 ]
 
-set_boo_cache = set_cache_dir
 clear_cache_dir = clear_cache
 ConvLaunchableRuntimeCache = LaunchableRuntimeCache
 
