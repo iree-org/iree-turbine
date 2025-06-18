@@ -19,11 +19,9 @@ from iree.turbine.kernel.boo.modeling import (
     replace_conv2d_with_boo_conv,
     replace_convs_with_boo,
 )
-from iree.turbine.kernel.boo.conv_exports import (
-    ConvLaunchableRuntimeCache,
-)
 from iree.turbine.kernel.boo.runtime import (
     set_cache_dir,
+    LaunchableRuntimeCache,
 )
 
 
@@ -36,7 +34,7 @@ def use_backward():
 
 class BooConvReplacementTest(unittest.TestCase):
     def setUp(self):
-        ConvLaunchableRuntimeCache.set_cache_limit(0)
+        LaunchableRuntimeCache.set_cache_limit(0)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         class M(torch.nn.Module):
@@ -108,7 +106,7 @@ class BooConvModuleTest(unittest.TestCase):
 @pytest.mark.usefixtures("use_backward")
 class BooConv2dLaunchingTest(unittest.TestCase):
     def setUp(self):
-        ConvLaunchableRuntimeCache.set_cache_limit(0)
+        LaunchableRuntimeCache.set_cache_limit(0)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model0 = BooConv2d(
             in_channels=2, out_channels=3, kernel_size=2, bias=False

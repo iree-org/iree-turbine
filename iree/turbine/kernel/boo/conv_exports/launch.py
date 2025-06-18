@@ -6,18 +6,12 @@
 
 from .conv import ConvSignature
 from ....runtime import Launchable
-from ..runtime import (
-    LaunchableRuntimeCache,
-    get_module_asm,
-)
+from ..runtime import get_module_asm
 from ..runtime import get_launchable as generic_get_launchable
 
 __all__ = [
-    "ConvLaunchableRuntimeCache",
     "get_launchable",
 ]
-
-ConvLaunchableRuntimeCache = LaunchableRuntimeCache
 
 
 def _get_module_asm(
