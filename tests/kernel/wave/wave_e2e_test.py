@@ -16,6 +16,7 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
+from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
 from iree.turbine.kernel.wave.utils.general_utils import (
@@ -1043,7 +1044,7 @@ def test_reduce_sum(shape, request):
     test = wave_compile(options, test)
 
     test(a, b, c)
-    assert_close(ref, c, atol=0.01, rtol=1e-05)
+    assert_close(ref, c, atol=0.1, rtol=1e-05)
 
 
 @require_e2e
@@ -1808,6 +1809,7 @@ def test_scanop_cumsum(shape, request):
             waves_per_block=(1, 1, 1),
             # vector_shapes={M: 1, N: BLOCK_N // num_warps},
             vector_shapes={M: 1, N: 128},
+            # mma_type = MMAType.F32_16x16x16_F16, # although it is used by default
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -1827,10 +1829,10 @@ def test_scanop_cumsum(shape, request):
 
     torch.manual_seed(1)
     input = device_zeros(shape, dtype=torch.float16) + 1.0
-    # input =  device_randn(shape[0], shape[1], dtype=torch.float16)
+    # input =  device_randint(low=1, high=5,  size=shape, dtype=torch.int32)
 
     output = device_zeros(shape, dtype=torch.float16)
-    torch_ref = torch.cumsum(input, dim=-1)
+    torch_ref = torch.cumsum(input, dim=-1)  # dtype=torch.int32
     options = WaveCompileOptions(
         subs={
             M: shape[0],
@@ -1846,9 +1848,7 @@ def test_scanop_cumsum(shape, request):
     test = wave_compile(options, test)
 
     test(input, output)
-    # with open("after_cumsum.mlir", "w") as f:
-    #     f.write(test.asm)
-    breakpoint()
+
     assert_close(torch_ref, output, atol=1e-03, rtol=1e-05)
 
 

@@ -445,6 +445,21 @@ class HardwareConstraint(Constraint):
             thread_id * elements_per_thread, elements_per_thread, stride
         )
 
+    # WIP
+    def apply_scan_read_write_thread_mapping(
+        self,
+        dim: IndexSymbol,
+        workgroup_dim: int,
+        elements_per_thread: int | IndexSymbol,
+        stride: int,
+    ) -> IndexSequence:
+        thread_id = self.get_thread_id_from_workgroup_dim(workgroup_dim)
+        threads_per_dim = self.threads_per_wave if workgroup_dim == 0 else 1
+        thread_id = thread_id % threads_per_dim
+        return IndexSequence(
+            thread_id * elements_per_thread, elements_per_thread, stride
+        )
+
     def apply_mma_mapping(
         self,
         dim: IndexSymbol,

@@ -926,27 +926,28 @@ def get_scan_mapping(
             custom.indexing_dims, hardware_constraint.vector_shapes, dim
         )
         # why is WG dim hardcoded?
-        index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+        index[dim] = hardware_constraint.apply_scan_read_write_thread_mapping(
             dim, 0, elements_per_thread, stride
         )
 
         # will indexing dims be all dims except scan/reduce dim? Here it is M.
-        for dim in [custom.indexing_dims]:
+        for curr_dim in custom.indexing_dims:
             elements_per_thread = 1
             stride = compute_stride(
-                custom.indexing_dims, hardware_constraint.vector_shapes, dim
+                custom.indexing_dims, hardware_constraint.vector_shapes, curr_dim
             )
-            wg_constraint = [x for x in workgroup_constraints if x.dim == dim]
+            wg_constraint = [x for x in workgroup_constraints if x.dim == curr_dim]
             assert (
                 len(wg_constraint) <= 1
             ), f"Multiple workgroup constraints for dimension {dim}"
+
             if wg_constraint:
                 workgroup_dim = wg_constraint[0].workgroup_dim
             else:
                 continue
 
-            index[dim] = hardware_constraint.apply_read_write_thread_mapping(
-                dim, workgroup_dim, elements_per_thread, stride
+            index[curr_dim] = hardware_constraint.apply_scan_read_write_thread_mapping(
+                curr_dim, workgroup_dim, elements_per_thread, stride
             )
 
         scan_mapping[custom] = index
