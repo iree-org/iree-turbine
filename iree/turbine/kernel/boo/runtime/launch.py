@@ -40,8 +40,9 @@ BOO_TUNING_SPEC_PATH = os.environ.get(
 
 def get_module_asm(
     module_factory: Callable[[], torch.nn.Module],
-    example_args: Iterable[Any],
+    arg_factory: Callable[[], Iterable],
     func_name: str = "main",
+    force_single_dispatch: bool = False,
 ) -> str:
     cache_dir = set_cache_dir() / func_name
     mlir_path = cache_dir / f"{func_name}.mlir"
@@ -52,7 +53,7 @@ def get_module_asm(
 
     e = export(
         module_factory(),
-        args=tuple(example_args),
+        args=tuple(arg_factory()),
         function_name=func_name,
     )
 
@@ -60,20 +61,21 @@ def get_module_asm(
 
     mod = e.mlir_module
 
-    ctx = mod.context
-    func_op = mod.regions[0].blocks[0].operations[0]
-    try:
-        with ctx:
-            pipeline_attr = Attribute.parse(
-                '#util.preprocessing_pipeline<"iree-preprocessing-make-single-dispatch">'
+    if force_single_dispatch:
+        ctx = mod.context
+        func_op = mod.regions[0].blocks[0].operations[0]
+        try:
+            with ctx:
+                pipeline_attr = Attribute.parse(
+                    '#util.preprocessing_pipeline<"iree-preprocessing-make-single-dispatch">'
+                )
+                func_op.attributes["preprocessing_pipeline"] = pipeline_attr
+        except MLIRError:
+            warnings.warn(
+                f"Failed to attach #util.preprocessing_pipeline attr to func op. Please try using a newer version of IREE."
             )
-            func_op.attributes["preprocessing_pipeline"] = pipeline_attr
-    except MLIRError as e:
-        warnings.warn(
-            f"Failed to attach #util.preprocessing_pipeline attr to func op. Please try using a newer version of IREE."
-        )
 
-    module_asm = str(e.mlir_module)
+    module_asm = str(mod)
 
     if is_cache_enabled():
         logger.debug("Saving newly generated mlir file to %s", str(mlir_path))
@@ -172,10 +174,11 @@ def user_flags_jit_callback(func_name: str, extra_flags, source: str):
 
 def get_launchable(
     module_factory: torch.nn.Module | Callable[[], torch.nn.Module],
-    example_args: Iterable[Any],
+    arg_factory: Iterable | Callable[[], Iterable],
     func_name="main",
     *,
     cache_only=False,
+    force_single_dispatch=False,
 ) -> Launchable:
     session_cache_key = func_name + cache_only * "_no_jit"
     launch = LaunchableRuntimeCache.get(session_cache_key)
@@ -184,6 +187,9 @@ def get_launchable(
     module = module_factory
     if isinstance(module, torch.nn.Module):
         module_factory = lambda: module
+    args = arg_factory
+    if isinstance(args, Iterable):
+        arg_factory = lambda: args
     cache_dir = set_cache_dir() / func_name if is_cache_enabled() else None
     if cache_only:
         launch = Launchable.from_file_cache_only(
@@ -192,7 +198,9 @@ def get_launchable(
             entry_point=f"{func_name}$async",
         )
     elif BOO_TUNING_SPEC_PATH != "":
-        module_asm = get_module_asm(module_factory, example_args, func_name)
+        module_asm = get_module_asm(
+            module_factory, arg_factory, func_name, force_single_dispatch
+        )
         launch = Launchable.from_vm_module(
             user_flags_jit_callback(
                 func_name,
@@ -205,7 +213,9 @@ def get_launchable(
             entry_point=f"{func_name}$async",
         )
     else:
-        module_asm = get_module_asm(module_factory, example_args, func_name)
+        module_asm = get_module_asm(
+            module_factory, arg_factory, func_name, force_single_dispatch
+        )
         launch = Launchable.jit_compile(
             module_asm,
             parameter_providers=(),
