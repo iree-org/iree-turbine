@@ -6,7 +6,7 @@
 
 from ..._support.tracing import CapturedTrace
 from ..._support.dtype import DataType
-from typing import Sequence, Type, Any
+from typing import Sequence, Any
 from ..constraints import (
     Constraint,
 )
@@ -20,12 +20,12 @@ from ...ops.wave_ops import (
     Iterate,
     ReduceOp,
     IterArg,
+    Read,
     Reshape,
     GetResult,
     MMA,
+    ScanOp,
     SetSymbol,
-    ApplyExpr,
-    Broadcast,
 )
 from ..._support.indexing import IndexingContext, IndexSymbol
 import itertools
@@ -291,7 +291,8 @@ def concatenate_outputs(
 ):
     reshape_check = isinstance(new_user, Reshape)
     reduce_check = isinstance(new_user, ReduceOp) and i == 0
-    if reshape_check or reduce_check:
+    scan_check = isinstance(new_user, ScanOp) and i == 0
+    if reshape_check or reduce_check or scan_check:
         if metadata.query_index == 0:
             new_node = [new_node.fx_node]
         else:
@@ -326,7 +327,7 @@ def update_users(
         user = get_custom(user)
         dim_query = metadata.dim_query
         # For reshapes and reduces, multiple users can share the same source.
-        if isinstance(user, (Reshape, ReduceOp)):
+        if isinstance(user, (Reshape, ReduceOp, ScanOp)):
             if not metadata.source_dim_query:
                 continue
             dim_query = metadata.source_dim_query
@@ -408,6 +409,19 @@ def add_get_results(trace: CapturedTrace):
             reduction.replace_all_uses_with_except(get_result, [get_result])
 
 
+# Helper function
+def get_dim_queries_from_op(op, op_dim, metadata, dim_scaling):
+    try:
+        # Expand reduction to dim scaling amount. When output is scalar, op can only
+        # be expanded once/count=1, and dim_scaling is null.
+        count = 1 if isinstance(op.type, DataType) else dim_scaling[op_dim]
+    except KeyError:
+        raise RuntimeError(
+            f"Dimension {op_dim} is not in {dim_scaling} for {type(op).__name__} {op}"
+        )
+    return [{**metadata.dim_query, op_dim: i} for i in range(count)]
+
+
 def populate_inputs(
     node: CustomOp,
     inputs: list[fx.Node],
@@ -419,35 +433,25 @@ def populate_inputs(
     expandable_args = filter_expandable_args([get_custom(x) for x in inputs])
     new_nodes_to_expand = []
 
-    if isinstance(node, (Reshape, ReduceOp)):
+    if isinstance(node, (Reshape, ReduceOp, ScanOp)):
         match node:
             case Reshape():
                 dim_queries = get_reshape_dim_queries(
                     node, metadata, dim_scaling, new_nodes_to_expand
                 )
             case ReduceOp():
-                try:
-                    # Expand reduction to dim scaling amount. When output is scalar, op can only
-                    # be expanded once/count=1, and dim_scaling is null.
-                    reduction_count = (
-                        1
-                        if isinstance(node.type, DataType)
-                        else dim_scaling[node.reduction_dim]
-                    )
-                except KeyError as e:
-                    raise RuntimeError(
-                        f"Reduction dimension {node.reduction_dim} is not in {dim_scaling} for ReduceOp {node}"
-                    )
-                dim_queries = []
-                for i in range(reduction_count):
-                    dim_query = deepcopy(metadata.dim_query)
-                    dim_query[node.reduction_dim] = i
-                    dim_queries.append(dim_query)
+                dim_queries = get_dim_queries_from_op(
+                    node, node.reduction_dim, metadata, dim_scaling
+                )
+            case ScanOp():
+                dim_queries = get_dim_queries_from_op(
+                    node, node.scan_dim, metadata, dim_scaling
+                )
 
         count = 0
         for i, arg in enumerate(expandable_args):
-            # For the init arg of the reduce op, if it exists, we expand only once.
-            if isinstance(node, ReduceOp) and node.init and arg == node.init:
+            # For the init arg of the reduce/scan op, if it exists, we expand only once.
+            if isinstance(node, (ReduceOp, ScanOp)) and node.init and arg == node.init:
                 nodes_to_expand.append((arg, metadata))
                 continue
             for j, query in enumerate(dim_queries):
