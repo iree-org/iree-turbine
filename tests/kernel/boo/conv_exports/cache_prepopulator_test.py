@@ -12,13 +12,6 @@ class CachePopulatorTest(unittest.TestCase):
             cache_dir = Path(td)
             set_boo_cache(cache_dir=cache_dir)
 
-            from iree.turbine.kernel.boo.conv_exports.launch import CACHE_BASE_DIR
-
-            self.assertTrue(
-                CACHE_BASE_DIR == cache_dir,
-                f"Mismatch in cache dirs. Set {cache_dir=} but got {CACHE_BASE_DIR=}.",
-            )
-
             from iree.turbine.kernel.boo.conv_exports import CachePopulator
 
             commands = [
@@ -38,7 +31,7 @@ class CachePopulatorTest(unittest.TestCase):
 
             for sig in pop.signatures:
                 name = sig.get_func_name()
-                sub_dir = CACHE_BASE_DIR / name
+                sub_dir = set_boo_cache() / name
                 self.assertTrue(
                     sub_dir.is_dir(),
                     f"CachePopulator must generate sub directory {sub_dir}.",
