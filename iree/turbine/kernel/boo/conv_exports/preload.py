@@ -12,12 +12,10 @@ from iree.turbine.kernel.boo.conv_exports.conv import (
 )
 from iree.turbine.kernel.boo.conv_exports.utils import load_commands
 from iree.turbine.kernel.boo.conv_exports.launch import (
-    BOO_TUNING_SPEC_PATH,
     _get_module_asm,
-    set_boo_cache,
-    _out_of_process_compile,
-    get_launchable,
 )
+from iree.turbine.kernel.boo.runtime import BOO_TUNING_SPEC_PATH
+from iree.turbine.kernel.boo.runtime import out_of_process_compile, set_cache_dir
 from iree.turbine.kernel.boo.conv_exports.miopen_parser import command_to_signature
 from iree.turbine.runtime.device import get_device_from_torch
 from iree.turbine.support.ir_imports import MLIRError
@@ -55,7 +53,7 @@ class CachePopulator:
         allow_download: bool = False,
         extra_compile_flags: Sequence[str] = (),
     ):
-        self.cache_dir = set_boo_cache(cache_dir)
+        self.cache_dir = set_cache_dir(cache_dir)
         self.torch_devices = devices or _get_unique_torch_device_list()
         self.torch_devices = [torch.device(d) for d in self.torch_devices if d != ""]
         self.signatures = list(signatures)
@@ -135,7 +133,7 @@ class CachePopulator:
             if succeeded
         ]
 
-        name_and_compile_status = pool.starmap(_out_of_process_compile, items)
+        name_and_compile_status = pool.starmap(out_of_process_compile, items)
 
         pool.close()
 
@@ -212,7 +210,7 @@ def _mlir_import(sig_storage: ConvSignatureStorage) -> Tuple[str, bool]:
 
 def cl_main(args, extra_flags: List[str]):
     if args.cache_dir:
-        set_boo_cache(args.cache_dir)
+        set_cache_dir(args.cache_dir)
     devices = (
         [args.device] if args.device is not None else _get_unique_torch_device_list()
     )

@@ -11,10 +11,11 @@ import torch
 from ..conv_exports import (
     ConvSignature,
     get_launchable,
-    ConvLaunchableRuntimeCache,
     DEFAULT_LAYOUTS,
     Permutation,
 )
+
+from ..runtime import LaunchableRuntimeCache
 
 from .library import define_schema, register_impl, register_meta
 from .utils import *
@@ -62,7 +63,7 @@ def _boo_layout_customizable_convolution_impl(
         output_layout,
     )
     args = (x.data, w.data) if b is None else (x.data, w.data, b.data)
-    cache_hit = ConvLaunchableRuntimeCache.get(func_name)
+    cache_hit = LaunchableRuntimeCache.get(func_name)
     if cache_hit:
         return cache_hit(*args)
 

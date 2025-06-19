@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from iree.turbine.kernel.boo.conv_exports.launch import set_boo_cache, clear_cache_dir
+from iree.turbine.kernel.boo.runtime import set_cache_dir, clear_cache
 from iree.turbine.support.logging import runtime_logger as logger
 
 
@@ -10,14 +10,7 @@ class CachePopulatorTest(unittest.TestCase):
     def testPopulator(self):
         with TemporaryDirectory() as td:
             cache_dir = Path(td)
-            set_boo_cache(cache_dir=cache_dir)
-
-            from iree.turbine.kernel.boo.conv_exports.launch import CACHE_BASE_DIR
-
-            self.assertTrue(
-                CACHE_BASE_DIR == cache_dir,
-                f"Mismatch in cache dirs. Set {cache_dir=} but got {CACHE_BASE_DIR=}.",
-            )
+            set_cache_dir(cache_dir=cache_dir)
 
             from iree.turbine.kernel.boo.conv_exports import CachePopulator
 
@@ -38,7 +31,7 @@ class CachePopulatorTest(unittest.TestCase):
 
             for sig in pop.signatures:
                 name = sig.get_func_name()
-                sub_dir = CACHE_BASE_DIR / name
+                sub_dir = set_cache_dir() / name
                 self.assertTrue(
                     sub_dir.is_dir(),
                     f"CachePopulator must generate sub directory {sub_dir}.",
@@ -50,7 +43,7 @@ class CachePopulatorTest(unittest.TestCase):
                 count = len([f for f in sub_dir.glob("*.vmfb")])
                 self.assertGreater(count, 0, "Expected at least one vmfb.")
 
-            clear_cache_dir()
+            clear_cache()
             self.assertFalse(cache_dir.is_dir(), f"Expected cache dir to be cleared.")
 
 
