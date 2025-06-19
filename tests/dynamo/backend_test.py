@@ -52,7 +52,9 @@ def test_generic_backend_inference_only(device: torch.device):
         pytest.param(
             torch.device("cuda"),
             marks=(
-                pytest.mark.xfail(reason="Forward numerics failure requires triage."),
+                pytest.mark.xfail(
+                    reason="Forward numerics failure. Remove when issue #954 is resolved."
+                ),
                 pytest.mark.skipif(
                     not torch.cuda.is_available(), reason="requires cuda"
                 ),
@@ -127,6 +129,6 @@ def test_generic_backend_backward(device: torch.device):
         err = abs_err(tensor, expected_value)
         success = compare(err, expected_value)
         if not success:
-            message += f"Failed numerics for {label}: {err=}.\n"
+            message += f"Failed numerics for {label}: {err=}\n"
 
     assert message == "", message
