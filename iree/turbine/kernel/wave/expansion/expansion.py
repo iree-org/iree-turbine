@@ -14,6 +14,7 @@ from ...ops.wave_ops import (
     Allocate,
     CustomOp,
     Conditional,
+    Read,
     get_custom,
     Output,
     Write,
@@ -23,6 +24,7 @@ from ...ops.wave_ops import (
     Reshape,
     GetResult,
     MMA,
+    ScanOp,
     SetSymbol,
     ApplyExpr,
     Broadcast,
@@ -291,7 +293,9 @@ def concatenate_outputs(
 ):
     reshape_check = isinstance(new_user, Reshape)
     reduce_check = isinstance(new_user, ReduceOp) and i == 0
-    if reshape_check or reduce_check:
+    scan_check = isinstance(new_user, ScanOp) and i == 0
+
+    if reshape_check or reduce_check or scan_check:
         if metadata.query_index == 0:
             new_node = [new_node.fx_node]
         else:
@@ -326,7 +330,7 @@ def update_users(
         user = get_custom(user)
         dim_query = metadata.dim_query
         # For reshapes and reduces, multiple users can share the same source.
-        if isinstance(user, (Reshape, ReduceOp)):
+        if isinstance(user, (Reshape, ReduceOp, ScanOp)):
             if not metadata.source_dim_query:
                 continue
             dim_query = metadata.source_dim_query
@@ -419,7 +423,7 @@ def populate_inputs(
     expandable_args = filter_expandable_args([get_custom(x) for x in inputs])
     new_nodes_to_expand = []
 
-    if isinstance(node, (Reshape, ReduceOp)):
+    if isinstance(node, (Reshape, ReduceOp, ScanOp)):
         match node:
             case Reshape():
                 dim_queries = get_reshape_dim_queries(
@@ -443,11 +447,30 @@ def populate_inputs(
                     dim_query = deepcopy(metadata.dim_query)
                     dim_query[node.reduction_dim] = i
                     dim_queries.append(dim_query)
+            case ScanOp():
+                try:
+                    scan_count = (
+                        1
+                        if isinstance(node.type, DataType)
+                        else dim_scaling[node.scan_dim]
+                    )
+                except KeyError as e:
+                    raise RuntimeError(
+                        f"Reduction dimension {node.scan_dim} is not in {dim_scaling} for ScanOp {node}"
+                    )
+                dim_queries = []
+                for i in range(scan_count):
+                    dim_query = deepcopy(metadata.dim_query)
+                    dim_query[node.scan_dim] = i
+                    dim_queries.append(dim_query)
 
         count = 0
         for i, arg in enumerate(expandable_args):
             # For the init arg of the reduce op, if it exists, we expand only once.
             if isinstance(node, ReduceOp) and node.init and arg == node.init:
+                nodes_to_expand.append((arg, metadata))
+                continue
+            if isinstance(node, ScanOp) and node.init and arg == node.init:
                 nodes_to_expand.append((arg, metadata))
                 continue
             for j, query in enumerate(dim_queries):
@@ -763,6 +786,16 @@ def expand_graph(
     The expansion does a DFS starting at the leaf nodes and expanding them
     to the root of the graph.
     """
+    bef_reads = [
+        read
+        for read in trace.region_graph.subgraphs["region_0"].nodes
+        if isinstance(get_custom(read), Read)
+    ]
+    bef_writes = [
+        write
+        for write in trace.region_graph.subgraphs["region_0"].nodes
+        if isinstance(get_custom(write), Write)
+    ]
 
     leaf_ops = [get_custom(node) for node in reversed(trace.walk(is_leaf_node))]
     if not leaf_ops:
@@ -789,3 +822,14 @@ def expand_graph(
     remove_original_nodes(leaf_ops)
     remove_unused_registers(trace)
     remove_unused_iter_args(trace)
+
+    aft_reads = [
+        read
+        for read in trace.region_graph.subgraphs["region_0"].nodes
+        if isinstance(get_custom(read), Read)
+    ]
+    aft_writes = [
+        write
+        for write in trace.region_graph.subgraphs["region_0"].nodes
+        if isinstance(get_custom(write), Write)
+    ]
