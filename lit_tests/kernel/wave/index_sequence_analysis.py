@@ -131,67 +131,67 @@ def test_gemm():
         # CHECK-NEXT: extract_slice
         # CHECK-SAME: (%get_result_M:0_N:0_K:0, [0], [1], [1])
         # CHECK-NEXT: %write_5
-        # CHECK-SAME: (%extract_slice, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_1
         # CHECK-SAME: (%get_result_M:0_N:0_K:0, [1], [1], [1])
         # CHECK-NEXT: %write_6
-        # CHECK-SAME: (%extract_slice_1, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_1, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_2
         # CHECK-SAME: (%get_result_M:0_N:0_K:0, [2], [1], [1])
         # CHECK-NEXT: %write_7
-        # CHECK-SAME: (%extract_slice_2, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_2, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_3
         # CHECK-SAME: (%get_result_M:0_N:0_K:0, [3], [1], [1])
         # CHECK-NEXT: %write_8
-        # CHECK-SAME: (%extract_slice_3, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_3, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_4
         # CHECK-SAME: (%get_result_M:0_N:1_K:0, [0], [1], [1])
         # CHECK-NEXT: %write_9
-        # CHECK-SAME: (%extract_slice_4, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_4, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_5
         # CHECK-SAME: (%get_result_M:0_N:1_K:0, [1], [1], [1])
         # CHECK-NEXT: %write_10
-        # CHECK-SAME: (%extract_slice_5, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_5, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_6
         # CHECK-SAME: (%get_result_M:0_N:1_K:0, [2], [1], [1])
         # CHECK-NEXT: %write_11
-        # CHECK-SAME: (%extract_slice_6, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_6, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_7
         # CHECK-SAME: (%get_result_M:0_N:1_K:0, [3], [1], [1])
         # CHECK-NEXT: %write_12
-        # CHECK-SAME: (%extract_slice_7, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_7, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_8
         # CHECK-SAME: (%get_result_M:1_N:0_K:0, [0], [1], [1])
         # CHECK-NEXT: %write_13
-        # CHECK-SAME: (%extract_slice_8, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_8, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_9
         # CHECK-SAME: (%get_result_M:1_N:0_K:0, [1], [1], [1])
         # CHECK-NEXT: %write_14
-        # CHECK-SAME: (%extract_slice_9, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_9, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_10
         # CHECK-SAME: (%get_result_M:1_N:0_K:0, [2], [1], [1])
         # CHECK-NEXT: %write_15
-        # CHECK-SAME: (%extract_slice_10, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_10, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_11
         # CHECK-SAME: (%get_result_M:1_N:0_K:0, [3], [1], [1])
         # CHECK-NEXT: %write_16
-        # CHECK-SAME: (%extract_slice_11, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_11, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_12
         # CHECK-SAME: (%get_result_M:1_N:1_K:0, [0], [1], [1])
         # CHECK-NEXT: %write_17
-        # CHECK-SAME: (%extract_slice_12, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_12, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_13
         # CHECK-SAME: (%get_result_M:1_N:1_K:0, [1], [1], [1])
         # CHECK-NEXT: %write_18
-        # CHECK-SAME: (%extract_slice_13, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_13, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_14
         # CHECK-SAME: (%get_result_M:1_N:1_K:0, [2], [1], [1])
         # CHECK-NEXT: %write_19
-        # CHECK-SAME: (%extract_slice_14, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_14, %c, 1, None, (), None)
         # CHECK-NEXT: extract_slice_15
         # CHECK-SAME: (%get_result_M:1_N:1_K:0, [3], [1], [1])
         # CHECK-NEXT: %write_20
-        # CHECK-SAME: (%extract_slice_15, %c, 1, None, ())
+        # CHECK-SAME: (%extract_slice_15, %c, 1, None, (), None)
         # CHECK-NEXT: return None
 
         # CHECK: Custom format:
@@ -270,21 +270,21 @@ def test_gemm():
         # CHECK-NEXT: %acc_M:1_N:0_K:0
         # CHECK-NEXT: %acc_M:1_N:1_K:0
         # CHECK-NEXT: %read_37
-        # CHECK-SAME: (%a, 8, None, (), None)
+        # CHECK-SAME: (%a, 8, None, (), None, None)
         # CHECK-NEXT: %write_18
-        # CHECK-SAME: (%read_37, %allocate, 8, None, ())
+        # CHECK-SAME: (%read_37, %allocate, 8, None, (), None)
         # CHECK-NEXT: %read_38
-        # CHECK-SAME: (%a, 8, None, (), None)
+        # CHECK-SAME: (%a, 8, None, (), None, None)
         # CHECK-NEXT: %write_19
-        # CHECK-SAME: (%read_38, %allocate, 8, None, ())
+        # CHECK-SAME: (%read_38, %allocate, 8, None, (), None)
         # CHECK-NEXT: %read_39
-        # CHECK-SAME: (%b, 8, None, (), None)
+        # CHECK-SAME: (%b, 8, None, (), None, None)
         # CHECK-NEXT: %write_20
-        # CHECK-SAME: (%read_39, %allocate_1, 8, None, ())
+        # CHECK-SAME: (%read_39, %allocate_1, 8, None, (), None)
         # CHECK-NEXT: %read_40
-        # CHECK-SAME: (%b, 8, None, (), None)
+        # CHECK-SAME: (%b, 8, None, (), None, None)
         # CHECK-NEXT: %write_21
-        # CHECK-SAME: (%read_40, %allocate_1, 8, None, ())
+        # CHECK-SAME: (%read_40, %allocate_1, 8, None, (), None)
         # CHECK-NEXT: %read_4_shared_M:0_N:0_K:0
         # CHECK-NEXT: %read_4_shared_M:0_N:0_K:1
         # CHECK-NEXT: %read_4_shared_M:0_N:0_K:2

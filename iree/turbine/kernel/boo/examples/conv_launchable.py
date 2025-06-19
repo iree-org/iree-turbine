@@ -2,8 +2,8 @@ import torch
 from iree.turbine.kernel.boo.conv_exports import (
     ConvSignature,
     get_launchable,
-    clear_cache_dir,
 )
+from iree.turbine.kernel.boo.runtime import clear_cache as clear_cache_dir
 from time import time
 from iree.turbine.support.logging import runtime_logger as logger
 

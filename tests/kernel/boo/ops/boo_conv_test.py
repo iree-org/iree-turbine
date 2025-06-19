@@ -13,10 +13,7 @@ from pathlib import Path
 
 import torch
 
-from iree.turbine.kernel.boo.conv_exports.launch import (
-    set_boo_cache,
-    ConvLaunchableRuntimeCache,
-)
+from iree.turbine.kernel.boo.runtime import set_cache_dir, LaunchableRuntimeCache
 from iree.turbine.kernel.boo.ops import boo_conv, enable_backward, disable_backward
 
 
@@ -31,9 +28,9 @@ def use_backward():
     ("x_grad", "w_grad"), ((False, False), (True, False), (False, True), (True, True))
 )
 def testBackwardCachePytorch(x_grad, w_grad):
-    ConvLaunchableRuntimeCache.set_cache_limit(0)
+    LaunchableRuntimeCache.set_cache_limit(0)
     with tempfile.TemporaryDirectory() as td:
-        set_boo_cache(Path(td))
+        set_cache_dir(Path(td))
         device = "cuda:0" if torch.cuda.is_available() else None
         x = torch.ones(
             [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=x_grad
@@ -41,7 +38,7 @@ def testBackwardCachePytorch(x_grad, w_grad):
         w = torch.ones(
             [1, 1, 2, 2], dtype=torch.float32, device=device, requires_grad=w_grad
         )
-        y = boo_conv(x, w)
+        y = boo_conv(x, w, shared_layout="NCHW")
 
         context = (
             contextlib.nullcontext()
@@ -72,9 +69,9 @@ def testBackwardCachePytorch(x_grad, w_grad):
     ("x_grad", "w_grad"), ((False, False), (True, False), (False, True), (True, True))
 )
 def testBackwardCacheBoo(x_grad, w_grad):
-    ConvLaunchableRuntimeCache.set_cache_limit(0)
+    LaunchableRuntimeCache.set_cache_limit(0)
     with tempfile.TemporaryDirectory() as td:
-        set_boo_cache(Path(td))
+        set_cache_dir(Path(td))
         device = "cuda:0" if torch.cuda.is_available() else None
         x = torch.ones(
             [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=x_grad
@@ -82,7 +79,7 @@ def testBackwardCacheBoo(x_grad, w_grad):
         w = torch.ones(
             [1, 1, 2, 2], dtype=torch.float32, device=device, requires_grad=w_grad
         )
-        y = boo_conv(x, w)
+        y = boo_conv(x, w, shared_layout="NCHW")
 
         context = (
             contextlib.nullcontext()
@@ -115,11 +112,11 @@ def testBackwardCacheBoo(x_grad, w_grad):
 @pytest.mark.usefixtures("use_backward")
 class BooConvTest(unittest.TestCase):
     def setUp(self):
-        ConvLaunchableRuntimeCache.set_cache_limit(0)
+        LaunchableRuntimeCache.set_cache_limit(0)
 
     def testBooConvNonDefault(self):
         with tempfile.TemporaryDirectory() as td:
-            set_boo_cache(Path(td))
+            set_cache_dir(Path(td))
             device = "cuda:0" if torch.cuda.is_available() else None
             x = torch.ones([2, 16, 16, 3], dtype=torch.float32, device=device)
             w = torch.ones([4, 2, 2, 3], dtype=torch.float32, device=device)
@@ -133,7 +130,7 @@ class BooConvTest(unittest.TestCase):
 
     def testBooConvBackwardDefault(self):
         with tempfile.TemporaryDirectory() as td:
-            set_boo_cache(Path(td))
+            set_cache_dir(Path(td))
             device = "cuda:0" if torch.cuda.is_available() else None
             x = torch.ones(
                 [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=True
@@ -145,7 +142,7 @@ class BooConvTest(unittest.TestCase):
 
     def testBooConvBackwardsWithBias(self):
         with tempfile.TemporaryDirectory() as td:
-            set_boo_cache(Path(td))
+            set_cache_dir(Path(td))
             device = "cuda:0" if torch.cuda.is_available() else None
             x = torch.ones(
                 [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=True
@@ -168,10 +165,10 @@ class BooConvTest(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as td:
-            set_boo_cache(Path(td))
+            set_cache_dir(Path(td))
 
             with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-                y = boo_conv(x, w)
+                y = boo_conv(x, w, shared_layout="NCHW")
                 loss = y.sum()
 
             loss.backward()
@@ -202,10 +199,10 @@ class BooConvTest(unittest.TestCase):
             self.assertEqual(w.dtype, torch.float32)
 
         with tempfile.TemporaryDirectory() as td_0:
-            set_boo_cache(Path(td_0))
+            set_cache_dir(Path(td_0))
 
             with torch.amp.autocast(device_type="cpu", dtype=torch.bfloat16):
-                y = boo_conv(x, w)
+                y = boo_conv(x, w, shared_layout="NCHW")
                 loss = y.sum()
 
             loss.backward()
@@ -238,7 +235,7 @@ class BooConvTest(unittest.TestCase):
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU to test.")
     def testBooConvBackwardsAmpContextCUDA(self):
         with tempfile.TemporaryDirectory() as td:
-            set_boo_cache(Path(td))
+            set_cache_dir(Path(td))
             device = "cuda:0"
             x = torch.ones(
                 [1, 1, 32, 32], dtype=torch.float32, device=device, requires_grad=True
@@ -247,7 +244,7 @@ class BooConvTest(unittest.TestCase):
                 [1, 1, 4, 4], dtype=torch.float32, device=device, requires_grad=True
             )
             with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-                y = boo_conv(x, w)
+                y = boo_conv(x, w, shared_layout="NCHW")
                 loss = y.sum()
 
             loss.backward()

@@ -48,9 +48,6 @@ class BooConv1d(torch.nn.Module):
             self.register_parameter("bias", None)
 
     def forward(self, x):
-        input_layout = "NCH"
-        kernel_layout = "NCH"
-        output_layout = "NCH"
         no_batch = len(x.shape) == 2
         if no_batch:
             x = x.unsqueeze(0)
@@ -71,9 +68,6 @@ class BooConv1d(torch.nn.Module):
             padding=self.padding,
             dilation=self.dilation,
             groups=self.groups,
-            input_layout=input_layout,
-            kernel_layout=kernel_layout,
-            output_layout=output_layout,
         )
         return result.squeeze(0) if no_batch else result
 
@@ -108,20 +102,10 @@ class BooConv2d(torch.nn.Module):
             self.register_parameter("bias", None)
 
     def forward(self, x):
-        input_layout = "NCHW"
-        kernel_layout = "NCHW"
-        output_layout = "NCHW"
         no_batch = len(x.shape) == 3
         if no_batch:
             x = x.unsqueeze(0)
-        if x.is_contiguous(memory_format=torch.channels_last):
-            x = x.permute([0, 2, 3, 1])
-            input_layout = "NHWC"
         w = self.weight
-        if w.is_contiguous(memory_format=torch.channels_last):
-            w = w.permute([0, 2, 3, 1])
-            kernel_layout = "NHWC"
-            output_layout = "NHWC"
         bias = self.bias
         device_type = x.device.type
         if torch.is_autocast_enabled(device_type):
@@ -137,12 +121,7 @@ class BooConv2d(torch.nn.Module):
             padding=self.padding,
             dilation=self.dilation,
             groups=self.groups,
-            input_layout=input_layout,
-            kernel_layout=kernel_layout,
-            output_layout=output_layout,
         )
-        if output_layout == "NHWC":
-            result = result.permute([0, 3, 1, 2])
         return result.squeeze(0) if no_batch else result
 
 
@@ -176,20 +155,10 @@ class BooConv3d(torch.nn.Module):
             self.register_parameter("bias", None)
 
     def forward(self, x):
-        input_layout = "NCDHW"
-        kernel_layout = "NCDHW"
-        output_layout = "NCDHW"
         no_batch = len(x.shape) == 4
         if no_batch:
             x = x.unsqueeze(0)
-        if x.is_contiguous(memory_format=torch.channels_last_3d):
-            x = x.permute([0, 2, 3, 4, 1])
-            input_layout = "NDHWC"
         w = self.weight
-        if w.is_contiguous(memory_format=torch.channels_last_3d):
-            w = w.permute([0, 2, 3, 4, 1])
-            kernel_layout = "NDHWC"
-            output_layout = "NDHWC"
         bias = self.bias
         device_type = x.device.type
         if torch.is_autocast_enabled(device_type):
@@ -205,12 +174,7 @@ class BooConv3d(torch.nn.Module):
             padding=self.padding,
             dilation=self.dilation,
             groups=self.groups,
-            input_layout=input_layout,
-            kernel_layout=kernel_layout,
-            output_layout=output_layout,
         )
-        if output_layout == "NDHWC":
-            result = result.permute([0, 4, 1, 2, 3])
         return result.squeeze(0) if no_batch else result
 
 

@@ -17,6 +17,7 @@ from ..lang.global_symbols import *
 from .utils.general_utils import (
     delinearize_index,
     ceildiv,
+    infer_dim,
     is_shared_read,
     get_fastest_index,
 )
@@ -98,9 +99,12 @@ def materialize_shape(
     constraint_tile_size: dict[IndexSymbol, int], symbolic_shape: list[IndexSymbol]
 ) -> list[int]:
     materialized_shape = []
-    for dim in symbolic_shape:
+    for dim_expr in symbolic_shape:
+        dim = infer_dim(dim_expr)
         if dim in constraint_tile_size:
-            materialized_shape.append(subs_idxc(constraint_tile_size[dim]))
+            materialized_shape.append(
+                subs_idxc(dim_expr.subs(dim, constraint_tile_size[dim]))
+            )
         else:
             materialized_shape.append(subs_idxc(dim))
     return materialized_shape

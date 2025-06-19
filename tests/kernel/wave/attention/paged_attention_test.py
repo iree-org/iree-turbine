@@ -42,6 +42,7 @@ from typing import List, Optional
 # Reference paged attention implementation from vLLM and sglang.
 # (NUM_Q_HEADS, NUM_KV_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
 shapes = [(16, 1, 64, 64, 32, 2, 100)]
+shapes += [(6, 1, 128, 128, 32, 1, 100)]
 shapes += [(16, 2, 64, 64, 32, 1, 100)]  # (16 // 2) < 16
 shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
@@ -252,6 +253,7 @@ def testPagedFlashDecoding(
     value_cache_4d = value_cache.view(
         shape.num_seqs, -1, shape.num_kv_heads, shape.head_size_kv
     )
+    logit_cap = 30.0
 
     # Run the wave kernel.
     (
@@ -266,6 +268,8 @@ def testPagedFlashDecoding(
         mfma_variant,
         num_kv_splits,
         input_dtype=dtype,
+        output_dtype=dtype,
+        logit_cap=logit_cap,
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
@@ -283,7 +287,7 @@ def testPagedFlashDecoding(
         num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
     output = device_zeros(
-        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=dtype
     )
 
     options = WaveCompileOptions(
@@ -359,7 +363,7 @@ def testPagedFlashDecoding(
             scale=scale,
             causal=False,
             sliding_window=None,
-            soft_cap=None,
+            soft_cap=logit_cap,
         )
     else:
         ref_vllm_output = torch.load(os.path.join(artifact_directory, "output.pt"))
@@ -462,6 +466,7 @@ def testPagedFlashDecodingMHA(
         mfma_variant,
         num_kv_splits,
         input_dtype=dtype,
+        output_dtype=dtype,
         mha=True,
     )
     hyperparams_0.update(get_default_scheduling_params())
@@ -480,7 +485,7 @@ def testPagedFlashDecodingMHA(
         num_kv_splits, shape.num_seqs, shape.num_query_heads, dtype=torch.float32
     )
     output = device_zeros(
-        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=torch.float16
+        shape.num_seqs, shape.num_query_heads, shape.head_size_kv, dtype=dtype
     )
 
     options = WaveCompileOptions(

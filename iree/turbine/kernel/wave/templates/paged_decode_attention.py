@@ -35,13 +35,16 @@ def get_paged_decode_attention_kernels(
     mfma_variant: tuple[MMAType, MMAType],
     num_kv_splits: int,
     input_dtype: torch.dtype = torch.float16,
+    output_dtype: torch.dtype = torch.float16,
     layer_scaling: Optional[float] = None,
     mha: bool = False,
+    logit_cap: float = 0.0,
 ):
     if mha:
         assert shape.num_query_heads == shape.num_kv_heads
 
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
+    wave_output_dtype = torch_dtype_to_wave(output_dtype)
 
     # Input sizes
     S = tkl.sym.S  # Num seqs
@@ -87,6 +90,7 @@ def get_paged_decode_attention_kernels(
     HEAD_BLOCK_SIZE = min(MMA_VEC_SIZE * B_WAVES, head_ratio)
 
     LOG2E = 1.44269504089
+    logit_cap *= LOG2E
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
     layer_scaling = (layer_scaling or dk_sqrt) * LOG2E
 
@@ -262,6 +266,8 @@ def get_paged_decode_attention_kernels(
         # =========================================================================
 
         layer_scale_reg = tkl.Register[S, B, K2_ITER, tkl.f32](layer_scaling)
+        if logit_cap > 0:
+            logit_cap_reg = tkl.Register[S, B, K2_ITER, tkl.f32](logit_cap)
 
         init_max = tkl.Register[S, B, tkl.f32](-1e6)
         init_sum = tkl.Register[S, B, tkl.f32](0.0)
@@ -314,6 +320,9 @@ def get_paged_decode_attention_kernels(
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[S, B, K2_ITER])
             x_j = x_j * layer_scale_reg
+            if logit_cap > 0:
+                logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
+                x_j = logit_cap_reg * tkw.tanh_approx(x_j * logit_cap_reg_inv)
             k2_index = tkw.self_index(K2_ITER, tkl.i32)
             mask = tkw.apply_expr(
                 k2_index, lambda x: x < (SPLIT_OFF + SPLIT_LEN + KV_START_IDX)
@@ -353,7 +362,7 @@ def get_paged_decode_attention_kernels(
         logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
+        output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, wave_output_dtype],
     ):
         req_index = tkw.read(request_indices)
         seq_length = tkw.read(request_indices, mapping=seq_len_mapping)
@@ -385,9 +394,9 @@ def get_paged_decode_attention_kernels(
 
         res_max, res_sum, res_mm = repeat
         res = res_mm / res_sum
-        res_f16 = tkw.cast(res, tkl.f16)
+        res_casted = tkw.cast(res, wave_output_dtype)
         tkw.write(
-            res_f16,
+            res_casted,
             output,
             mapping=mapping,
             elements_per_thread=1,  # TODO: cannot remove this yet as vector shapes are inferred incorrectly

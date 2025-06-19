@@ -133,13 +133,13 @@ def test_gemm():
         # CHECK-NEXT: %get_result_M:1_N:1_K:0
         # CHECK-SAME: (%iterate, 3)
         # CHECK-NEXT: %write_M:0_N:0_K:0
-        # CHECK-SAME: (%get_result_M:0_N:0_K:0, %c, 4, None, ())
+        # CHECK-SAME: (%get_result_M:0_N:0_K:0, %c, 4, None, (), None)
         # CHECK-NEXT: %write_M:0_N:1_K:0
-        # CHECK-SAME: (%get_result_M:0_N:1_K:0, %c, 4, None, ())
+        # CHECK-SAME: (%get_result_M:0_N:1_K:0, %c, 4, None, (), None)
         # CHECK-NEXT: %write_M:1_N:0_K:0
-        # CHECK-SAME: (%get_result_M:1_N:0_K:0, %c, 4, None, ())
+        # CHECK-SAME: (%get_result_M:1_N:0_K:0, %c, 4, None, (), None)
         # CHECK-NEXT: %write_M:1_N:1_K:0
-        # CHECK-SAME: (%get_result_M:1_N:1_K:0, %c, 4, None, ())
+        # CHECK-SAME: (%get_result_M:1_N:1_K:0, %c, 4, None, (), None)
         # CHECK-NEXT: return None
 
         # CHECK: Custom format:
@@ -178,22 +178,22 @@ def test_gemm():
         # CHECK-NEXT: %acc_M:1_N:0_K:0
         # CHECK-NEXT: %acc_M:1_N:1_K:0
         # CHECK-NEXT: %read_37
-        # CHECK-SAME: (%a, 8, None, (), None)
+        # CHECK-SAME: (%a, 8, None, (), None, None)
         # CHECK: %shared_memory_barrier_1
         # CHECK-NEXT: %write_18
-        # CHECK-SAME: (%read_37, %allocate, 8, None, ())
+        # CHECK-SAME: (%read_37, %allocate, 8, None, (), None)
         # CHECK-NEXT: %read_38
-        # CHECK-SAME: (%a, 8, None, (), None)
+        # CHECK-SAME: (%a, 8, None, (), None, None)
         # CHECK-NEXT: %write_19
-        # CHECK-SAME: (%read_38, %allocate, 8, None, ())
+        # CHECK-SAME: (%read_38, %allocate, 8, None, (), None)
         # CHECK-NEXT: %read_39
-        # CHECK-SAME: (%b, 8, None, (), None)
+        # CHECK-SAME: (%b, 8, None, (), None, None)
         # CHECK-NEXT: %write_20
-        # CHECK-SAME: (%read_39, %allocate_1, 8, None, ())
+        # CHECK-SAME: (%read_39, %allocate_1, 8, None, (), None)
         # CHECK-NEXT: %read_40
-        # CHECK-SAME: (%b, 8, None, (), None)
+        # CHECK-SAME: (%b, 8, None, (), None, None)
         # CHECK-NEXT: %write_21
-        # CHECK-SAME: (%read_40, %allocate_1, 8, None, ())
+        # CHECK-SAME: (%read_40, %allocate_1, 8, None, (), None)
         # CHECK-NEXT: %shared_memory_barrier
         # CHECK-NEXT: %read_4_shared_M:0_N:0_K:0
         # CHECK-NEXT: %read_4_shared_M:0_N:0_K:1

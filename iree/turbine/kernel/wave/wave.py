@@ -8,7 +8,7 @@
 from sympy.utilities.lambdify import lambdastr
 from itertools import chain
 import iree.turbine.kernel.lang as tkl
-from ..compiler import builder, dispatch_codegen, kernel_codegen, host_codegen
+from ..compiler import builder, dispatch_codegen, kernel_codegen
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
@@ -59,13 +59,11 @@ from .schedule_reordering import schedule_reordering
 from .memory_analysis.minimize_shared_allocs import minimize_shared_allocs
 from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
-from .shared_memory_indexing import (
-    apply_shared_memory_indexing_corrections,
-)
+from .shared_memory_indexing import apply_shared_memory_indexing_corrections
+from .generate_bounds_exprs import generate_bounds_exprs
 
 # Utils
 from .utils.symbol_utils import subs_idxc, safe_subs
-from .utils.classes import KernelLaunchInfo
 from .utils.print_utils import print_trace, try_apply_pass
 from .utils.graph_utils import (
     remove_chained_extractslice,
@@ -86,12 +84,10 @@ import torch.fx as fx
 import inspect
 import sympy
 import warnings
-from pathlib import Path
-import sys
-import subprocess
-import os
-import shutil
-import glob
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 __all__ = ["wave", "wave_trace_only"]
 
@@ -436,9 +432,9 @@ class LaunchableWave(Launchable):
         try:
             emitter.emit(trace.get_root_graph())
         except:
-            print("Error in emitter")
+            logger.info("Error in emitter")
             asm = mb.module_op.get_asm()
-            print(asm)
+            logger.info(asm)
             raise
         emitter.finish()
 
@@ -561,14 +557,6 @@ class LaunchableWave(Launchable):
         ]
 
         # Schedule the reduction ops.
-        # Scheduling should always be used with use_scheduling_barriers=True,
-        # as this is the only way we can ensure that LLVM enforces our desired schedule.
-        # However, due a bug in LLVM, you will need to patch your local LLVM repo
-        # with the following commit: https://github.com/kerbowa/llvm-project/commit/ee52732cddae42deed2e3387a83b20ec05860b4e
-        # Specifically:
-        # git fetch https://github.com/kerbowa/llvm-project.git ee52732cddae42deed2e3387a83b20ec05860b4e
-        # git cherry-pick ee52732cddae42deed2e3387a83b20ec05860b4e
-        # [Manually resolve conflicts consistent with the PR]
         scheduling_type = options.schedule
         use_scheduling_barriers = options.use_scheduling_barriers
         graph_passes.append(
@@ -578,6 +566,8 @@ class LaunchableWave(Launchable):
                 self.constraints,
                 use_scheduling_barriers,
                 scheduling_type,
+                options.override_schedule,
+                options.dump_schedule,
             )
         )
         graph_passes.append(
@@ -597,6 +587,7 @@ class LaunchableWave(Launchable):
             ),
             partial(add_shared_memory_barriers, trace),
             partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
+            partial(generate_bounds_exprs, trace, self.constraints),
         ]
 
         pass_times = {}
