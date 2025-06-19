@@ -4,7 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from iree.turbine.aot import export as turbine_export
 from ..passes import turbine_cpu_pass_pipeline
 from ...transforms.general.custom_op_expansion import ExpandCustomOpsPass
 from iree.turbine.runtime.launch import Launchable
@@ -14,13 +13,8 @@ import torch
 from torch._dynamo.backends.common import aot_autograd
 from functorch.compile import make_boxed_func
 from iree.turbine.support.ir_imports import (
-    Context,
-    Location,
-    Module,
-    StringAttr,
     PassManager,
 )
-from iree.turbine.aot.support.ir_utils import ModuleBuilder, ModuleBuilderOptions
 from iree.compiler.extras.fx_importer import (
     FxImporter,
 )
@@ -28,15 +22,16 @@ from iree.compiler.extras.fx_importer import (
 
 def _backend(gm: torch.fx.GraphModule, example_inputs):
     """Generic backend which creates and preloads a launchable."""
-    # export to mlir
+    # Export the graph module to mlir.
     gm = turbine_cpu_pass_pipeline(gm, example_inputs)
+    logger.debug("Traced Graph Module:\n%s", str(gm))
     fx_importer = FxImporter()
+    # TODO: figure out how to create a backend based on a dynamo `ExportedProgram`.
     fx_importer.import_graph_module(gm)
     module_op = fx_importer.module_op
     logger.debug("Successfully imported gm to mlir:\n%s", module_op)
     expansion_pass = ExpandCustomOpsPass(module_op)
     expansion_pass.run()
-    logger.debug("Successfully expanded custom ops:\n%s", module_op)
 
     with module_op.context:
         pm = PassManager.parse("builtin.module(torch-to-iree)")
@@ -62,7 +57,7 @@ def _backend(gm: torch.fx.GraphModule, example_inputs):
                         f"{tensor_device} vs {device}"
                     )
 
-    # couldn't infer device from sample args, so return the base launchable
+    # If we can't infer the device from sample args, return the base launchable.
     if device is not None:
         launch.preload(device=device)
 
