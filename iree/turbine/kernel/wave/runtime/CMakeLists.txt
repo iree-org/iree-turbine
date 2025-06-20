@@ -3,16 +3,10 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-cmake_minimum_required(VERSION 3.15...3.27)
+cmake_minimum_required(VERSION 3.19...3.27)
 project(wave_runtime)
 
-if (CMAKE_VERSION VERSION_LESS 3.18)
-  set(DEV_MODULE Development)
-else()
-  set(DEV_MODULE Development.Module)
-endif()
-
-find_package(Python 3.10 COMPONENTS Interpreter ${DEV_MODULE} REQUIRED)
+find_package(Python 3.10 COMPONENTS Interpreter Development.Module REQUIRED)
 
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
