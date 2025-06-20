@@ -217,7 +217,7 @@ class SimpleBuffers(nn.Module):
         self.register_buffer("buf", torch.randn(1))
 
     def forward(self, x: torch.Tensor):
-        sumx = (x).sum()
+        sumx = (x).sum(dim=0, keepdim=True)
         output = x * self.buf
         self.buf.copy_(sumx)
         return output
