@@ -11,11 +11,13 @@ from ...ops.wave_ops import (
     CustomOp,
     Reshape,
     MMA,
+    ScaledMMA,
     get_custom,
 )
 from ..constraints import (
     HardwareConstraint,
     MMAType,
+    ScaledMMAType,
     MMAOperand,
 )
 import torch.fx as fx
@@ -42,7 +44,8 @@ def get_mma_dimensional_mapping(
     trace: CapturedTrace,
     hardware_constraint: HardwareConstraint,
 ) -> tuple[
-    dict[MMA, dict[IndexSymbol, int]], dict[MMA, dict[IndexSymbol, list[fx.Node]]]
+    dict[MMA | ScaledMMA, dict[IndexSymbol, int]],
+    dict[MMA | ScaledMMA, dict[IndexSymbol, list[fx.Node]]],
 ]:
     """
     Given a trace, determine the MMA dimensional mapping for all the
@@ -55,12 +58,13 @@ def get_mma_dimensional_mapping(
     """
 
     def is_mma(node):
-        return isinstance(get_custom(node), MMA)
+        return isinstance(get_custom(node), (MMA, ScaledMMA))
 
     mapping: dict[MMA, dict[IndexSymbol, int]] = {}
+
     mma_nodes = trace.walk(is_mma)
     for node in mma_nodes:
-        custom: MMA = get_custom(node)
+        custom: MMA | ScaledMMA = get_custom(node)
         m, n = custom.acc_type.symbolic_shape[-2:]
         lhs_shape = custom.lhs_type.symbolic_shape
         rhs_shape = custom.rhs_type.symbolic_shape
@@ -81,6 +85,7 @@ def get_mma_dimensional_mapping(
                 ), f"Expected 1 reduction dimension, got {reduction_dim_candidates}"
 
             k = reduction_dim_candidates.pop()
+
         except KeyError as e:
             raise RuntimeError(
                 f"{node}: Invalid MMA shapes\n{lhs_shape=}\n{rhs_shape=}\n{acc_shape=}\n{m=}, {n=}\n{custom}"
@@ -89,6 +94,33 @@ def get_mma_dimensional_mapping(
             raise RuntimeError(
                 f"{node}: Invalid MMA shapes\n{lhs_shape=}\n{rhs_shape=}\n{acc_shape=}\n{m=}, {n=}, {k=}\n{custom}"
             )
+
+        if isinstance(custom, ScaledMMA):
+            lhs_scale_shape = custom.lhs_scale_type.symbolic_shape
+            rhs_scale_shape = custom.rhs_scale_type.symbolic_shape
+            try:
+                scale_reduction_dim_candidates = (
+                    set(lhs_scale_shape) & set(rhs_scale_shape)
+                ) - set(acc_shape)
+                if len(scale_reduction_dim_candidates) > 1:
+                    # Indicates we have batch dimensions as well.
+                    # Eliminate these using the vector shapes.
+                    for dim, value in hardware_constraint.vector_shapes.items():
+                        if dim in scale_reduction_dim_candidates and value == 0:
+                            scale_reduction_dim_candidates.remove(dim)
+                    assert (
+                        len(scale_reduction_dim_candidates) == 1
+                    ), f"Expected 1 reduction dimension, got {scale_reduction_dim_candidates}"
+
+                k_scale = scale_reduction_dim_candidates.pop()
+            except KeyError as e:
+                raise RuntimeError(
+                    f"{node}: Invalid Scaled MMA shapes\n{lhs_scale_shape=}\n{rhs_scale_shape=}\n{acc_shape=}\n{m=}, {n=}\n{custom}"
+                )
+            if m not in lhs_scale_shape or n not in rhs_scale_shape:
+                raise RuntimeError(
+                    f"{node}: Invalid Scaled MMA shapes\n{lhs_scale_shape=}\n{rhs_scale_shape=}\n{acc_shape=}\n{m=}, {n=}, {k=}\n{custom}"
+                )
 
         if custom not in mapping:
             mapping[custom] = {}
@@ -100,6 +132,9 @@ def get_mma_dimensional_mapping(
             n: hardware_constraint.mma_matrix_shapes(custom.mma_type)[1],
             k: hardware_constraint.mma_matrix_shapes(custom.mma_type)[2],
         }
+        if isinstance(custom, ScaledMMA):
+            mapping[custom][k_scale] = MMAOperand.K
+
         if hardware_constraint.vector_shapes:
             custom.vector_shapes.update(hardware_constraint.vector_shapes)
         custom.reduction_dim = k
@@ -116,7 +151,9 @@ def get_mma_dimensional_mapping(
     # in the backward slice of the lhs and rhs upto a previous mma (if one exists).
     # So we check for the previous node of the first operator in the slice to see
     # if it is an MMA and if so check if a reshape is required.
-    def add_reshape_if_needed(mma: MMA, prev_mma: MMA, arg_index: int):
+    def add_reshape_if_needed(
+        mma: MMA | ScaledMMA, prev_mma: MMA | ScaledMMA, arg_index: int
+    ):
         with mma.graph.inserting_before(mma.fx_node):
             arg = mma.lhs if arg_index == 0 else mma.rhs
             arg = get_custom(arg)
@@ -128,7 +165,7 @@ def get_mma_dimensional_mapping(
                 custom_reshape.vector_shapes = mma.vector_shapes
                 mma.update_arg(arg_index, reshape)
 
-    def find_mma_in_slice(node: CustomOp) -> Optional[MMA]:
+    def find_mma_in_slice(node: CustomOp) -> Optional[MMA | ScaledMMA]:
         """
         Find the closest mma by iterating through the backward slice of a node
         in reverse.
@@ -154,7 +191,7 @@ def get_mma_dimensional_mapping(
     return mapping
 
 
-def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
+def get_mfma_load_elems_per_thread(mfma_variant: MMAType | ScaledMMAType) -> int:
     match mfma_variant:
         case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
             return 4
@@ -174,9 +211,13 @@ def get_mfma_load_elems_per_thread(mfma_variant: MMAType) -> int:
             | MMAType.I32_32x32x16_I8
         ):
             return 8
+        case ScaledMMAType.F32_16x16x128_F8F6F4:
+            return 32
+        case ScaledMMAType.F32_32x32x64_F8F6F4:
+            return 32
 
 
-def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
+def get_mfma_store_elems_per_thread(mfma_variant: MMAType | ScaledMMAType) -> int:
     match mfma_variant:
         case MMAType.F32_16x16x16_F16 | MMAType.I32_16x16x16_I8:
             return 4
@@ -196,6 +237,10 @@ def get_mfma_store_elems_per_thread(mfma_variant: MMAType) -> int:
             | MMAType.I32_32x32x16_I8
         ):
             return 16
+        case ScaledMMAType.F32_16x16x128_F8F6F4:
+            return 32
+        case ScaledMMAType.F32_32x32x64_F8F6F4:
+            return 32
 
 
 def simplify_index(index: IndexExpr) -> IndexExpr:
