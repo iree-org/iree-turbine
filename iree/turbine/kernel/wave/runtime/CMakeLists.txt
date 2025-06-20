@@ -22,13 +22,15 @@ endif()
 # Detect the installed nanobind package and import it into CMake
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
+  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT
+  COMMAND_ERROR_IS_FATAL ANY)
 find_package(nanobind CONFIG REQUIRED)
 
 # Link against torch, using the libraries and include dirs in site-packages.
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -c "import torch; print(torch.__path__[0])"
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_PATH)
+  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_PATH
+  COMMAND_ERROR_IS_FATAL ANY)
 
 # Add all directories in /opt/rocm/lib/cmake to CMAKE_PREFIX_PATH
 file(GLOB subdirectories "/opt/rocm/lib/cmake/*")
@@ -43,7 +45,8 @@ link_directories(${torch_PATH}/lib)
 
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))"
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_cxx_abi)
+  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_cxx_abi
+  COMMAND_ERROR_IS_FATAL ANY)
 set(TORCH_CXX_FLAGS -D_GLIBCXX_USE_CXX11_ABI=${torch_cxx_abi})
 
 find_package(hip REQUIRED)
