@@ -88,7 +88,7 @@ static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
         HIP_LAUNCH_PARAM_END};
 
     HIP_CHECK_RETURN(hipModuleLaunchKernel(function, info.gridX, info.gridY, info.gridZ,
-                                           info.blockX, info.blockY, info.blockZ, info.sharedMemoryBytes,
+                                           info.blockX, info.blockY, info.blockZ, 0,
                                            stream, nullptr, (void **)&hipLaunchParams));
 
     return hipSuccess;
