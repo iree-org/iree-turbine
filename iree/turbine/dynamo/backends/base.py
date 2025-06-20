@@ -61,7 +61,7 @@ def _backend(gm: torch.fx.GraphModule, example_inputs):
     if device is not None:
         launch.preload(device=device)
 
-    call_func = lambda *args: launch(*args)
+    call_func = lambda *args: launch(*[arg.data for arg in args])
     return make_boxed_func(call_func)
 
 
