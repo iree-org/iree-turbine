@@ -27,8 +27,7 @@ class GeneralAPI(unittest.TestCase):
 
 class CompiledModuleAPI(unittest.TestCase):
     def testBasic(self):
-        class BasicModule(CompiledModule):
-            ...
+        class BasicModule(CompiledModule): ...
 
         inst = BasicModule(context=Context())
         module_str = str(CompiledModule.get_mlir_module(inst))
@@ -36,8 +35,7 @@ class CompiledModuleAPI(unittest.TestCase):
         self.assertIn("module @basic", module_str)
 
     def testExplicitName(self):
-        class BasicModule(CompiledModule, export_name="explicit"):
-            ...
+        class BasicModule(CompiledModule, export_name="explicit"): ...
 
         inst = BasicModule(context=Context())
         module_str = str(CompiledModule.get_mlir_module(inst))
@@ -64,8 +62,7 @@ class CompiledModuleAPI(unittest.TestCase):
 
     def testExportedProc(self):
         class ExportedProcModule(CompiledModule):
-            def foobar(self):
-                ...
+            def foobar(self): ...
 
         inst = ExportedProcModule(context=Context())
         module_str = str(CompiledModule.get_mlir_module(inst))
@@ -120,8 +117,7 @@ class ExportAPI(unittest.TestCase):
         )
 
     def testCompiledModuleExportedProgram(self):
-        class BasicModule(CompiledModule):
-            ...
+        class BasicModule(CompiledModule): ...
 
         exported = export(BasicModule)
         module_str = str(exported.mlir_module)
@@ -129,8 +125,7 @@ class ExportAPI(unittest.TestCase):
         self.assertIn("module @basic", module_str)
 
     def testUnsupportedExportedProgram(self):
-        class UnsupportedExportType:
-            ...
+        class UnsupportedExportType: ...
 
         with self.assertRaises(TypeError):
             export(UnsupportedExportType)

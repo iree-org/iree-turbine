@@ -96,8 +96,8 @@ def testBackwardCacheBoo(x_grad, w_grad):
             in items
         )
 
-        _validate = (
-            lambda name, expected: (name in items) if expected else (name not in items)
+        _validate = lambda name, expected: (
+            (name in items) if expected else (name not in items)
         )
         assert _validate(
             "conv_2d_float32_weight_backward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g",

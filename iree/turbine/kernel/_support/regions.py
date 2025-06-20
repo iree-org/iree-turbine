@@ -49,8 +49,7 @@ class RegionGraph:
 
     def new_subtracer(
         self, region_graph: "RegionGraph", parent: Optional["SubgraphTracer"] = None
-    ) -> "SubgraphTracer":
-        ...
+    ) -> "SubgraphTracer": ...
 
     ### ========================================================================
     ### Subgraph Tracing
