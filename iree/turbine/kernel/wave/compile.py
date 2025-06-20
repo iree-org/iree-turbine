@@ -1,4 +1,5 @@
 from typing import Any, Optional
+import subprocess
 
 import torch
 import glob
@@ -79,6 +80,90 @@ class WaveKernel:
         return self.asm
 
 
+from ..compiler.ir import (
+    stream_d,
+    gpu_d,
+    Operation,
+    InsertionPoint,
+    Context,
+    Location,
+    WalkResult,
+    Module,
+    FunctionType,
+    BlockArgument,
+    TypeAttr,
+)
+
+
+def _deerie(module):
+    module = Module.parse(module.operation.get_asm(), context=module.context)
+
+    def find_single_nested(name, parent):
+        captured = None
+        for op in parent.regions[0].blocks[0].operations:
+            # Dynamic typing is hard: must to op.operaiton.name in case some specific class has .name that has a different meaning.
+            if op.operation.name == name:
+                if captured:
+                    raise RuntimeError(f"more than one '{name}' operation found")
+                captured = op
+        if not captured:
+            raise RuntimeError(f"no {name} operation found")
+        return captured
+
+    executable = find_single_nested("stream.executable", module.operation)
+    local_module = find_single_nested("builtin.module", executable)
+    func = find_single_nested("func.func", local_module)
+
+    # TODO: add launch bounds
+
+    to_delete = []  # type: list[Operation]
+    subspans = []  # type: list[stream_d.BindingSubspanOp]
+
+    def replace_ids_and_collect_subspans(op: Operation):
+        if isinstance(op.opview, stream_d.DispatchWorkgroupIDOp):
+            dispatch = op.opview  # type: stream_d.DispatchWorkgroupIDOp
+            match dispatch.dimension.value:
+                case 0:
+                    dimension = gpu_d.Dimension.x
+                case 1:
+                    dimension = gpu_d.Dimension.y
+                case 2:
+                    dimension = gpu_d.Dimension.z
+            with InsertionPoint(op):
+                block_id = gpu_d.BlockIdOp(dimension, loc=op.location)
+            op.result.replace_all_uses_with(block_id.result)
+            to_delete.append(op)
+            return WalkResult.ADVANCE
+
+        if isinstance(op.opview, stream_d.BindingSubspanOp):
+            subspan = op.opview  # type: stream_d.BindingSubspanOp
+            subspans.append(subspan)
+
+        return WalkResult.ADVANCE
+
+    func.walk(replace_ids_and_collect_subspans)
+    old_func_type = func.attributes["function_type"].value
+    func_input_types = old_func_type.inputs
+    for subspan in subspans:
+        subspan.binding.set_type(subspan.result.type)
+        func_input_types[
+            BlockArgument(subspan.binding).arg_number
+        ] = subspan.result.type
+        subspan.result.replace_all_uses_except(subspan.binding, subspan.operation)
+        to_delete.append(subspan)
+    func.attributes["function_type"] = TypeAttr.get(
+        FunctionType.get(
+            func_input_types, old_func_type.results, context=old_func_type.context
+        ),
+        context=old_func_type.context,
+    )
+
+    for op in to_delete:
+        op.erase()
+
+    return local_module.get_asm(binary=False, print_generic_op_form=True)
+
+
 def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveKernel:
     """
     Compiles the wave kernel to an executable.
@@ -156,6 +241,27 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     )
     if options.print_mlir:
         print(asm)
+
+    if options.use_water_leak_check:
+        print()
+        try:
+            from water_mlir import binaries as water_bin
+        except ImportError as err:
+            raise RuntimeError("optional water_mlir module not installed") from err
+        binary = water_bin.find_binary("water-opt")
+        generic_mlir = _deerie(mb.module_op)
+        result = subprocess.run(
+            [
+                binary,
+                "-allow-unregistered-dialect",
+                "--pass-pipeline=builtin.module(water-assert-in-bounds{include-vector-load-store=1 create-speculative-funcs=1})",
+            ],
+            input=generic_mlir,
+            capture_output=True,
+            text=True,
+        )
+        print(str(result.stdout))
+        print(str(result.stderr))
 
     if options.override_mlir:
         asm = options.override_mlir
