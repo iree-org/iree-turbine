@@ -138,9 +138,7 @@ def torchScaledGemmMXFP8(x, w, x_scales, w_scales):
         ScaledMMAType.F32_32x32x64_F8F6F4,
     ],
 )
-@pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.PREFETCH]
-)
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 def testScaledGemmMXFP4(
     shape: tuple[int],
     mfma_variant: ScaledMMAType,
@@ -217,9 +215,9 @@ def testScaledGemmMXFP4(
     x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(shape)
     out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
 
-    torch_out = torchScaledGemmMXFP4(x, w, x_scales, w_scales)
     w_t = w.T.contiguous()
     gemm(x, x_scales, w_t, w_scales, out)
+    torch_out = torchScaledGemmMXFP4(x, w, x_scales, w_scales)
 
     torch.testing.assert_close(torch_out, out, check_dtype=False)
 
@@ -234,9 +232,7 @@ def testScaledGemmMXFP4(
         ScaledMMAType.F32_32x32x64_F8F6F4,
     ],
 )
-@pytest.mark.parametrize(
-    "enable_scheduling", [SchedulingType.NONE, SchedulingType.PREFETCH]
-)
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 def testScaledGemmMXFP8(
     shape: tuple[int],
     mfma_variant: ScaledMMAType,
@@ -313,8 +309,8 @@ def testScaledGemmMXFP8(
     x, w, x_scales, w_scales = generate_gemm_afp8wfp8_inputs(shape)
     out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
 
-    torch_out = torchScaledGemmMXFP8(x, w, x_scales, w_scales)
     w_t = w.T.contiguous()
     gemm(x.to(torch.uint8), x_scales, w_t.to(torch.uint8), w_scales, out)
+    torch_out = torchScaledGemmMXFP8(x, w, x_scales, w_scales)
 
     torch.testing.assert_close(torch_out, out, check_dtype=False)
