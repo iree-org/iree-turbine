@@ -340,9 +340,7 @@ def _parse_sort_key(sort_key_str: str) -> tuple:
     return tuple(int(x.strip()) for x in inner.split(",") if x.strip())
 
 
-def load_schedule(
-    load_file: str, graph: fx.Graph
-) -> Tuple[
+def load_schedule(load_file: str, graph: fx.Graph) -> Tuple[
     Dict[fx.Node, int],
     int,
     int,

@@ -26,8 +26,7 @@ DataType = dtype.DataType
 DefaultDataType = dtype.f32
 
 
-class NotSetType:
-    ...
+class NotSetType: ...
 
 
 NotSet = NotSetType()
@@ -421,8 +420,7 @@ class SymIndex(metaclass=_SymIndexMeta, assumption=None):
 
 
 def backed_sym_index_type(assumption: IndexRelation) -> Type[SymIndex]:
-    class BackedSymIndex(SymIndex, assumption=assumption):
-        ...
+    class BackedSymIndex(SymIndex, assumption=assumption): ...
 
     return BackedSymIndex
 

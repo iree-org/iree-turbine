@@ -5,8 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 
-class GeneralError(Exception):
-    ...
+class GeneralError(Exception): ...
 
 
 class MismatchedDeviceSetClearError(AssertionError):
@@ -35,8 +34,7 @@ class UnsupportedTypeError(Exception):
         super().__init__(f"Python type {t} is not supported for {usage}")
 
 
-class ApiSequencingError(Exception):
-    ...
+class ApiSequencingError(Exception): ...
 
 
 class UnknownDTypeError(ValueError):

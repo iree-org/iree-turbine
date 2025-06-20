@@ -25,8 +25,7 @@ def kernel_buffer_load(
     kernel_buffer,
     multi_index: Tuple["Index", ...],
     shape: Tuple[int, ...],
-) -> "Vector":
-    ...
+) -> "Vector": ...
 
 
 @define_op
@@ -34,5 +33,4 @@ def kernel_buffer_store(
     kernel_buffer,
     multi_index: Tuple["Index", ...],
     item: "Vector",
-) -> None:
-    ...
+) -> None: ...

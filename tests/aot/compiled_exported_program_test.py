@@ -21,8 +21,7 @@ from iree.turbine.aot.builtins import *
 class TorchExportTests(unittest.TestCase):
     def testImportPhases(self):
         class MyModule(torch.nn.Module):
-            def forward(self):
-                ...
+            def forward(self): ...
 
         fxb = FxProgramsBuilder(MyModule())
 
@@ -55,8 +54,7 @@ class TorchExportTests(unittest.TestCase):
 
     def testMultiPublic(self):
         class MyModule(torch.nn.Module):
-            def forward(self):
-                ...
+            def forward(self): ...
 
         fxb = FxProgramsBuilder(MyModule())
 

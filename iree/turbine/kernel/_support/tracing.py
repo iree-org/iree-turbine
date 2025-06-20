@@ -438,14 +438,11 @@ class Launchable(ABC):
         return launch_context.launch(self, args, kwargs)
 
     @abstractmethod
-    def eager_execute(self, args, kwargs):
-        ...
+    def eager_execute(self, args, kwargs): ...
 
-    def aot_execute(self, args, kwargs):
-        ...
+    def aot_execute(self, args, kwargs): ...
 
-    def test_execute(self, args, kwargs):
-        ...
+    def test_execute(self, args, kwargs): ...
 
 
 class LaunchContext(ABC):
@@ -487,8 +484,7 @@ class LaunchContext(ABC):
         context.pop(LaunchContext, self)
 
     @abstractmethod
-    def launch(self, launchable: Launchable, args, kwargs):
-        ...
+    def launch(self, launchable: Launchable, args, kwargs): ...
 
 
 class DebugLaunchContext(LaunchContext):

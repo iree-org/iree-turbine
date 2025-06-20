@@ -20,6 +20,7 @@ class KernelLaunchInfo:
 # Wave Ops related Utils
 ############################################
 
+
 # GPU shuffle modes
 class ShuffleMode(Enum):
     XOR = 0

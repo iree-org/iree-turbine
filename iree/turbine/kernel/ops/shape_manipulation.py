@@ -16,17 +16,14 @@ __all__ = [
 
 
 @define_op
-def vector_broadcast(v: "Vector", leading_sizes: Tuple[int]) -> "Vector":
-    ...
+def vector_broadcast(v: "Vector", leading_sizes: Tuple[int]) -> "Vector": ...
 
 
 @define_op
 def vector_broadcast_in_dim(
     v: "Vector", shape: Tuple[int], broadcast_dimensions: Tuple[int]
-) -> "Vector":
-    ...
+) -> "Vector": ...
 
 
 @define_op
-def vector_transpose(v: "Vector", permutation: Tuple[int]) -> "Vector":
-    ...
+def vector_transpose(v: "Vector", permutation: Tuple[int]) -> "Vector": ...
