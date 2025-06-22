@@ -40,7 +40,6 @@ from ...compiler.ir import (
     arith_d,
     func_d,
     gpu_d,
-    stream_d,
     vector_d,
 )
 

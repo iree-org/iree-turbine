@@ -1776,7 +1776,7 @@ def test_broadcast_batched_gemm_with_vmma():
     # CHECK:          func.func @broadcast_batched_gemm_with_vmma
     # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding, %[[ARG1:[a-zA-Z0-9_]+]]: !stream.binding,
     # CHECK-SAME:       %[[ARG2:[a-zA-Z0-9_]+]]: !stream.binding) attributes {translation_info = #[[TRANSLATION:.+]]} {
-    # CHECK:            %[[WG_ID2:.+]] = stream.dispatch.workgroup.id[2] : index
+    # CHECK:            %[[WG_ID2:.+]] = gpu.block_id z
     # CHECK:            %[[RHS_GLOBAL:.+]] = stream.binding.subspan %[[ARG1]]
     # CHECK:            %[[LHS_GLOBAL:.+]] = stream.binding.subspan %[[ARG0]]
     # CHECK:            %[[HKV_IDX:.+]] = affine.apply #[[MAP]]()[%[[WG_ID2]]]
@@ -1849,7 +1849,7 @@ def test_batched_gemm_with_permute():
     # Verify that the batch dimension `B = WG` is in it's correct location after
     # the permtue, ie: `[M, B, N]` instead of `[B, M, N]`.
     # CHECK-LABEL:    func.func @batched_gemm_with_permute
-    # CHECK: %[[WG:.*]] = stream.dispatch.workgroup.id[2] : index
+    # CHECK: %[[WG:.*]] = gpu.block_id z
     # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
     # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
     # CHECK: vector.store %{{.*}}, %{{.*}}[%{{.*}}, %[[WG]], %{{.*}}]
