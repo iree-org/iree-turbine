@@ -73,7 +73,7 @@ def test_mma():
     # CHECK-DAG:        #[[MAP3:.*]] = affine_map<()[s0, s1] -> (s0 * 32 + (s1 floordiv 64) * 16 + ((s1 mod 64) floordiv 16) * 4 + 3)>
     # CHECK:          func.func @mma
     # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<4xf32>
-    # CHECK-DAG:        %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
+    # CHECK-DAG:        %[[workgroup_id_0:.*]] = gpu.block_id x
     # CHECK-DAG:        %[[thread_id_x:.*]] = gpu.thread_id  x
 
     # CHECK-DAG:        %[[BASE_ALLOC:.+]] = memref.alloc() : memref<2560xi8, #gpu.address_space<workgroup>>
@@ -171,7 +171,7 @@ def test_mma_32x32x8():
     # CHECK-DAG:        #[[MAP14:.*]] = affine_map<()[s0, s1] -> (s0 * 64 + (s1 floordiv 64) * 32 + ((s1 mod 64) floordiv 32) * 4 + 26)>
     # CHECK-DAG:        #[[MAP15:.*]] = affine_map<()[s0, s1] -> (s0 * 64 + (s1 floordiv 64) * 32 + ((s1 mod 64) floordiv 32) * 4 + 27)>
     # CHECK:          func.func @mma_32x32x8
-    # CHECK-DAG:        %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
+    # CHECK-DAG:        %[[workgroup_id_0:.*]] = gpu.block_id x
     # CHECK-DAG:        %[[thread_id_x:.*]] = gpu.thread_id  x
 
     # CHECK-DAG:        %[[CST:.+]] = arith.constant dense<0.000000e+00> : vector<16xf32>
