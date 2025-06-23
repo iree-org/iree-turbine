@@ -169,14 +169,14 @@ class StreamExecutable:
                         translation_config = DictAttr.get(
                             {"llvm_func_attrs": llvm_func_attrs}
                         )
-                    def_func_op.attributes[
-                        "translation_info"
-                    ] = iree_codegen_d.TranslationInfoAttr.get(
-                        pipeline_attr,
-                        None,
-                        workgroup_size,
-                        subgroup_size,
-                        configuration=translation_config,
+                    def_func_op.attributes["translation_info"] = (
+                        iree_codegen_d.TranslationInfoAttr.get(
+                            pipeline_attr,
+                            None,
+                            workgroup_size,
+                            subgroup_size,
+                            configuration=translation_config,
+                        )
                     )
 
             # Define the export.

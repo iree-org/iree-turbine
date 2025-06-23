@@ -9,6 +9,7 @@ import pytest
 import torch
 from iree.turbine.kernel.boo.conv_exports.conv import Mode, ConvSignature
 
+
 # Note: Singleton parameters are intentionally included for ease of adding additional configurations to test
 @pytest.mark.parametrize("dtype", [torch.float32])
 @pytest.mark.parametrize("N", [3])

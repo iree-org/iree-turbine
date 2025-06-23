@@ -41,7 +41,8 @@ class DeviceStreamTest(unittest.TestCase):
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires gpu.")
     def testEagerCustomOpMultiStream(self):
         """This test uses a CustomOp to validate multi-stream invocations and Device-Host copy.
-        Heavier computations are used to ensure that GPU synchronization isn't trivialized by CPU overhead."""
+        Heavier computations are used to ensure that GPU synchronization isn't trivialized by CPU overhead.
+        """
 
         torch_device = torch.device("cuda:0")
         input0 = torch.ones(
