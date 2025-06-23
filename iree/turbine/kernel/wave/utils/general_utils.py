@@ -141,7 +141,7 @@ def remove_global_indexing(
 
 
 def remove_thread_indexing(
-    index: dict[IndexSymbol, IndexSequence]
+    index: dict[IndexSymbol, IndexSequence],
 ) -> dict[IndexSymbol, IndexSequence]:
     """
     This function takes the index sequence for a global read and removes all
