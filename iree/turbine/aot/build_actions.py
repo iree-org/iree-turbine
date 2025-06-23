@@ -85,12 +85,10 @@ class ReturnMarshaller(ABC):
         name: str,
         action: "TurbineBuilderAction",
         return_arity: int,
-    ):
-        ...
+    ): ...
 
     @abstractmethod
-    def save_remote_result(self, result, path: Path):
-        ...
+    def save_remote_result(self, result, path: Path): ...
 
 
 class ExportOutputReturnMarshaller(ReturnMarshaller):

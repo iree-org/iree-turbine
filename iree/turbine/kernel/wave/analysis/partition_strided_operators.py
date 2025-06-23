@@ -299,9 +299,9 @@ def partition_ops_with_gpr_offsets(trace: CapturedTrace, constraints: list[Const
                         else simplified_index[gpr_offset_dim].stride
                     ),
                 )
-                updated_index_with_gpr_offset[
-                    gpr_offset_dim
-                ] = updated_dim_with_gpr_offset
+                updated_index_with_gpr_offset[gpr_offset_dim] = (
+                    updated_dim_with_gpr_offset
+                )
 
                 if hasattr(custom, "mapping_dynamic_vals"):
                     # If we are partitioning read/write ops, dynamic_vals can be

@@ -142,7 +142,10 @@ class GlobalsDef:
                 continue
             elif isinstance(value, AbstractTensor):
                 global_type = value.get_ir_type(module_builder)
-                (actual_symbol_name, global_op,) = module_builder.create_typed_global(
+                (
+                    actual_symbol_name,
+                    global_op,
+                ) = module_builder.create_typed_global(
                     f"_{fq_name}",
                     global_type,
                     attrs=self._attrs,
@@ -161,7 +164,10 @@ class GlobalsDef:
                 continue
             elif isinstance(value, AbstractScalar):
                 global_type = value.get_ir_type(module_builder)
-                (actual_symbol_name, global_op,) = module_builder.create_typed_global(
+                (
+                    actual_symbol_name,
+                    global_op,
+                ) = module_builder.create_typed_global(
                     f"_{fq_name}",
                     global_type,
                     attrs=self._attrs,
