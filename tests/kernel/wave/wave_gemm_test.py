@@ -678,9 +678,6 @@ def testGemmDumpOverrideSchedule(
     assert_close(c_new, iree_ref, check_device=False)
 
 
-_xfail = lambda *a: pytest.param(*a, marks=pytest.mark.xfail)
-
-
 @require_e2e
 @pytest.mark.parametrize("shape", [(64, 64, 64)])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
