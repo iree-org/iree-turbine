@@ -79,5 +79,5 @@ def gather_to_shared(trace: CapturedTrace, constraints: list[Constraint]):
                         elements_per_thread,
                     ).add_to_graph(write_custom.graph)
                 )
-
-    # DCE(trace)
+                write_custom.erase()
+        read_custom.erase()

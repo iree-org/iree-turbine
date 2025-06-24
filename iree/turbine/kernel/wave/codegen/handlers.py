@@ -1754,6 +1754,9 @@ def handle_gather_to_lds(emitter: WaveEmitter, node: fx.Node):
             f"src: {src_data_type} vs dst: {dst_data_type}\n"
         )
 
+    src = src.ir_value
+    dst = dst.ir_value
+
     src_index_transformed, dst_index_transformed = src_idx, dst_idx
     if src_mapping:
         src_index_transformed = transform_index_on_mapping(
@@ -1763,28 +1766,25 @@ def handle_gather_to_lds(emitter: WaveEmitter, node: fx.Node):
         dst_index_transformed = transform_index_on_mapping(
             dst_mapping, dst_type.symbolic_shape, dst_idx
         )
-
     src_keys = list(src_index_transformed.keys())
     src_fastest_dim = get_fastest_index(src_idx)
     dst_keys = list(dst_index_transformed.keys())
     dst_fastest_dim = get_fastest_index(dst_idx)
-    src_idx, dst_idx = [], []
     for i in range(elements_per_thread):
         new_src_index = copy.deepcopy(src_index_transformed)
         src_key = src_keys[src_fastest_dim]
         new_src_index[src_key].start += i
-        src_index_transformed = _build_start_indices(emitter, new_src_index)
+        src_index_transformed_ = _build_start_indices(emitter, new_src_index)
         new_dst_index = copy.deepcopy(dst_index_transformed)
         dst_key = dst_keys[dst_fastest_dim]
         new_dst_index[dst_key].start += i
-        dst_index_transformed = _build_start_indices(emitter, new_dst_index)
-        src_idx.append(src_index_transformed)
-        dst_idx.append(dst_index_transformed)
+        dst_index_transformed_ = _build_start_indices(emitter, new_dst_index)
+        amdgpu_d.gather_to_lds(
+            src=src,
+            src_indices=src_index_transformed_,
+            dst=dst,
+            dst_indices=dst_index_transformed_,
+            transfer_type=element_type,
+        )
 
-    return amdgpu_d.gather_to_lds(
-        src=src,
-        src_indices=src_idx,
-        dst=dst,
-        dst_indices=dst_idx,
-        transfer_type=element_type,
-    )
+    amdgpu_d.lds_barrier()
