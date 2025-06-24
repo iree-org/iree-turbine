@@ -175,6 +175,9 @@ def minimum(lhs: "Register", rhs: "Register") -> "Register": ...
 def atan2(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
+def cbrt(src: "Register") -> "Register": ...
+
+
 def atomic_min(
     lhs: "Register",
     rhs: "Memory",
@@ -875,6 +878,7 @@ class ComparisonPyOp(BinaryOpBase, ABC):
 @define_interface_op("tanh")
 @define_interface_op("tanh_approx")
 @define_interface_op("cos")
+@define_interface_op("cbrt")
 @define_py_op(operator.neg)
 @define_py_op(operator.invert)
 @dataclass
