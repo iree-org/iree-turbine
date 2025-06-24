@@ -173,6 +173,9 @@ def atan2(lhs: "Register", rhs: "Register") -> "Register": ...
 
 def cbrt(src: "Register") -> "Register": ...
 
+def cbrt(src: "Register") -> "Register": ...
+
+
 def atomic_min(
     lhs: "Register",
     rhs: "Memory",

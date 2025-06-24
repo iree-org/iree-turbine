@@ -1069,6 +1069,16 @@ def handle_cbrt(source: Value, options: WaveCompileOptions) -> OpResult:
     return res
 
 
+@handle_unary_op(cbrt)
+def handle_cbrt(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        res = math_d.cbrt(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for cbrt: {element_type}")
+    return res
+
+
 ###############################################################################
 # Control Flow ops
 ###############################################################################
