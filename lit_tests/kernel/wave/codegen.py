@@ -894,6 +894,7 @@ def test_unary_lowerings():
         res = tkw.exp(res)
         res = tkw.bitcast(res, tkl.f16)
         res = tkw.sqrt(res)
+        res = tkw.log10(res)
 
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_b, b, elements_per_thread=4)
@@ -962,6 +963,9 @@ def test_unary_lowerings():
 
     # Test sqrt
     # CHECK: %[[SQRT:.+]] = math.sqrt %[[EXP]]
+
+    # Tests log10
+    # CHECK: %[[LOG10:.+]] = math.log10 %[[SQRT]] : vector<4xf16>
 
 
 # Important to check lowering of scheduling/barrier ops.
