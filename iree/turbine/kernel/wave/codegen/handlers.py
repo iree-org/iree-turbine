@@ -1066,7 +1066,9 @@ def handle_cbrt(source: Value, options: WaveCompileOptions) -> OpResult:
     if _is_float_type(element_type):
         res = math_d.cbrt(source)
     else:
-        raise ValidationError(f"Found unhandled operand type for cbrt: {element_type}")
+        raise ValidationError(
+            f"Found unhandled operand type for cbrt (cube root): {element_type}"
+        )
     return res
 
 
