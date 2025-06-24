@@ -23,7 +23,8 @@ import torch
 def test_generic_backend_inference_only(device: torch.device):
     """When setup for backward, the forward function returns partial results to be cached for the backward pass.
     It's possible that returning intermediate results could cause some issues in the compiler.
-    We make this test inference-only to compare against the results of the inference + bwd test below."""
+    We make this test inference-only to compare against the results of the inference + bwd test below.
+    """
 
     @torch.compile(backend="iree_turbine")
     def conv_relu_mul(x, y, z, w):
@@ -52,9 +53,7 @@ def test_generic_backend_inference_only(device: torch.device):
         pytest.param(
             torch.device("cuda"),
             marks=(
-                pytest.mark.xfail(
-                    reason="Forward numerics failure. Remove when issue #954 is resolved."
-                ),
+                pytest.mark.xfail(reason="y.grad numerics failure. Needs triage."),
                 pytest.mark.skipif(
                     not torch.cuda.is_available(), reason="requires cuda"
                 ),

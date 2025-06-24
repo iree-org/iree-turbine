@@ -26,18 +26,11 @@ def _backend(gm: torch.fx.GraphModule, example_inputs):
     gm = turbine_cpu_pass_pipeline(gm, example_inputs)
     logger.debug("Traced Graph Module:\n%s", str(gm))
     fx_importer = FxImporter()
-    # TODO: figure out how to create a backend based on a dynamo `ExportedProgram`.
     fx_importer.import_graph_module(gm)
     module_op = fx_importer.module_op
     logger.debug("Successfully imported gm to mlir:\n%s", module_op)
     expansion_pass = ExpandCustomOpsPass(module_op)
     expansion_pass.run()
-
-    with module_op.context:
-        pm = PassManager.parse("builtin.module(torch-to-iree)")
-        pm.run(module_op)
-
-    logger.debug("Successfully lowered to iree-input:\n%s", module_op)
 
     # create a Launchable from the MLIR source
     launch = Launchable.jit_compile(str(module_op))

@@ -15,6 +15,8 @@ from ..executor import (
     SpecializedExecutable,
 )
 
+from warnings import warn
+
 from iree.compiler.api import (
     Invocation,
     Session,
@@ -50,6 +52,10 @@ def _base_backend(gm: torch.fx.GraphModule, example_inputs):
     #     input.
     #  3. Run IREE's main compiler.
     #  4. Output to an mmap buffer.
+    warn(
+        "Using torch.compile with `backend='turbine_cpu'` is deprecated."
+        " Consider using `backend='iree_turbine'` instead."
+    )
     session = Session()
     session.set_flags(*DEFAULT_COMPILER_FLAGS)
     session.set_flags("--iree-hal-target-backends=llvm-cpu")
