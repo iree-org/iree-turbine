@@ -256,6 +256,16 @@ def select(
 ) -> "Register": ...
 
 
+def scatter_max(
+    register_src: "Register",
+    register_idx: "Register",
+    dim: IndexExpr,
+    memory: "Memory",
+    mapping: IndexMapping,
+    elements_per_thread: Optional[int] = 1,
+) -> "Register": ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -2321,3 +2331,53 @@ class Reshape(CustomOp, ABC):
 
     def infer_type(self):
         self.type = get_custom(_to_sequence(self.args)[0]).type
+
+
+@define_op("scatter_max")
+@dataclass
+class ScatterMax(CustomOp):
+    """
+    Scatter_max operation performs element-wise maximum reduction from a source register into shared memory (LDS)
+    at a location determined by the index register along a specified dimension.
+
+    Limitations:
+    - Only intra-workgroup scattering is supported (i.e., within shared memory / LDS), assuming a single wave.
+    - Multi-wave execution is not guaranteed to be safe: synchronization issues may occur when threads write to the same index. Further investigation is needed.
+    - The operation supports multiple elements per thread, assuming the non-scatter dimension is large enough (i.e., > elements_per_thread).
+    """
+
+    register_src: fx.Node
+    register_idx: fx.Node
+    dim: IndexExpr
+    memory: fx.Node
+    mapping: IndexMapping
+    elements_per_thread: Optional[int] = 1
+    bounds: Optional[dict[IndexSymbol, IndexExpr]] = None
+
+    @property
+    def indexing_dims(self) -> list[IndexSymbol]:
+        if self.mapping is not None:
+            return list(self.mapping.input_shape)
+        return list(self.memory_type.symbolic_shape)
+
+    def infer_type(self):
+        address_space = self.memory_type.address_space
+        dtype = self.memory_type.dtype
+        self.type = Memory[(*self.indexing_dims, address_space, dtype)]
+
+    @property
+    def memory_type(self) -> "Memory":
+        return get_custom(self.memory).type
+
+    @property
+    def register_type(self) -> "Register":
+        return get_custom(self.register_src).type
+
+    @property
+    def register_index(self) -> dict[IndexSymbol, IndexSequence]:
+        custom = get_custom(self.register_src)
+        return custom.index
+
+    @property
+    def has_side_effects(self) -> bool:
+        return True
