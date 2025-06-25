@@ -155,7 +155,7 @@ jobs:
           cd cmake_build
           export CC=clang
           export CXX=clang++
-          cmake ${GITHUB_WORKSPACE}                                            \
+          cmake ${GITHUB_WORKSPACE}/water                                      \
             -GNinja                                                            \
             -DCMAKE_BUILD_TYPE=Release                                         \
             -DLLVM_DIR=${LLVM_DIR}/lib/cmake/llvm                              \
