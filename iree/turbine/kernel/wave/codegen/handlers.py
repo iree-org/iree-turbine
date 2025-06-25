@@ -89,6 +89,7 @@ from ...ops.wave_ops import (
     set_symbol,
     shared_memory_barrier,
     shuffle,
+    sqrt,
     tanh,
     tanh_approx,
     workgroup_barrier,
@@ -826,6 +827,14 @@ def handle_exp2(source: Value, options: WaveCompileOptions) -> OpResult:
     else:
         raise ValidationError(f"Found unhandled operand type for exp2: {element_type}")
     return result
+
+
+@handle_unary_op(sqrt)
+def handle_sqrt(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        return math_d.sqrt(source)
+    raise ValidationError(f"Found unhandled operand type for sqrt: {element_type}")
 
 
 @handle_unary_op(log2)
