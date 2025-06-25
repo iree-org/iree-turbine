@@ -22,7 +22,148 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
   cancel-in-progress: true
 
+env:
+  LLVM_SHA_FILE: llvm-sha.txt
+  LLVM_CACHE_NUMBER: 1  # Increase to reset cache
+
 jobs:
+  build_llvm_linux:
+    name: Builds Linux LLVM/MLIR
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash -el {0}
+    timeout-minutes: 420
+    steps:
+      - name: Checkout Water
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: git@github.com:ftynse/water.git
+          ref: main
+          path: water
+          fetch-depth: 0
+
+      - name: Setup Cache Vars
+        run: |
+          echo 'LLVM_SHA<<EOF' >> $GITHUB_ENV
+          cat $GITHUB_WORKSPACE/water/$LLVM_SHA_FILE >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Setup env
+        run: |
+          sudo apt update
+          sudo apt install -y ninja-build cmake clang lld
+          pip install lit
+
+      - name: Cache LLVM-MLIR
+        id: cache-llvm-mlir
+        uses: actions/cache@v3
+        with:
+          path: |
+            $GITHUB_WORKSPACE/llvm-mlir/_mlir_install/**
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_CACHE_NUMBER }}-${{ env.LLVM_SHA }}
+
+      - name: Checkout LLVM
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: git@github.com:llvm/llvm-project.git
+          ref: ${{ env.LLVM_SHA }}
+          path: llvm-mlir/llvm
+          fetch-depth: 0
+
+      - name: Build LLVM-MLIR
+        if: steps.cache-llvm-mlir.outputs.cache-hit != 'true'
+        shell: bash -l {0}
+        timeout-minutes: 420
+        run: |
+          pushd $GITHUB_WORKSPACE/llvm-mlir
+          echo "INFO: Need to rebuild LLVM-MLIR. Previous installation for MLIR not found"
+          np=`nproc`
+          echo "INFO: nproc $np"
+          mkdir _build
+          cd _build
+          export CC=clang
+          export CXX=clang++
+          cmake ../llvm                                                        \
+            -GNinja                                                            \
+            -DCMAKE_BUILD_TYPE=Release                                         \
+            -DLLVM_ENABLE_PROJECTS="mlir"                                      \
+            -DLLVM_ENABLE_ASSERTIONS=ON                                        \
+            -DLLVM_INSTALL_UTILS=ON                                            \
+            -DLLVM_TARGETS_TO_BUILD="X86;AMDGPU"                               \
+            -DLLVM_ENABLE_BINDINGS=OFF                                         \
+            -DLLVM_ENABLE_ZSTD=OFF                                             \
+            -DMLIR_INCLUDE_TESTS=OFF                                           \
+            -DLLVM_USE_LINKER=lld                                              \
+            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-headers;llvm-libraries;cmake-exports;FileCheck;count;not;mlir-headers;mlir-libraries;mlir-cmake-exports;mlir-tblgen;" \
+            -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/llvm-mlir/_mlir_install
+          ninja install-distribution-stripped
+          cp bin/FileCheck $GITHUB_WORKSPACE/llvm-mlir/_mlir_install/bin/
+          cp bin/count $GITHUB_WORKSPACE/llvm-mlir/_mlir_install/bin/
+          cp bin/not $GITHUB_WORKSPACE/llvm-mlir/_mlir_install/bin/
+          popd
+
+
+  build_water_linux:
+    name: "Build Water"
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash -el {0}
+    timeout-minutes: 420
+    needs: build_llvm_linux
+
+    steps:
+      - name: Checkout Water
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: git@github.com:ftynse/water.git
+          ref: main
+          path: water
+          fetch-depth: 0
+
+      - name: Setup Cache Vars
+        run: |
+          echo 'LLVM_SHA<<EOF' >> $GITHUB_ENV
+          cat $GITHUB_WORKSPACE/water/$LLVM_SHA_FILE >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Setup env
+        run: |
+          sudo apt update
+          sudo apt install -y ninja-build cmake clang lld
+          pip install lit
+
+      - name: Cache LLLVM-MLIR
+        id: cache-llvm-mlir
+        uses: actions/cache@v3
+        with:
+          path: |
+            $GITHUB_WORKSPACE/llvm-mlir/_mlir_install/**
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_CACHE_NUMBER }}-${{ env.LLVM_SHA }}
+
+
+      - name: Build water
+        run: |
+          export EXTERNAL_LIT=${GITHUB_WORKSPACE}/water/scripts/runlit.py
+          export LLVM_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install
+          mkdir -p cmake_build
+          cd cmake_build
+          export CC=clang
+          export CXX=clang++
+          cmake ${GITHUB_WORKSPACE}                                            \
+            -GNinja                                                            \
+            -DCMAKE_BUILD_TYPE=Release                                         \
+            -DLLVM_DIR=${LLVM_DIR}/lib/cmake/llvm                              \
+            -DMLIR_DIR=${LLVM_DIR}/lib/cmake/mlir                              \
+            -DLLVM_EXTERNAL_LIT=${EXTERNAL_LIT}
+          cmake --build .
+
+      - name: Test water
+        run: |
+          cd cmake_build
+          cmake --build . --target check-water
+
   test:
     name: "Unit Tests and Type Checking"
     strategy:
@@ -31,11 +172,62 @@ jobs:
         version: [3.11]
         os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
+    needs: build_llvm_linux
     if: github.event.pull_request.draft == false
     env:
       VENV_DIR: ${{ github.workspace }}/.turbine-venv
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Checkout Water
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: git@github.com:ftynse/water.git
+          ref: main
+          path: water
+          fetch-depth: 0
+
+      - name: Setup Cache Vars
+        run: |
+          echo 'LLVM_SHA<<EOF' >> $GITHUB_ENV
+          cat $GITHUB_WORKSPACE/water/$LLVM_SHA_FILE >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Setup env
+        run: |
+          sudo apt update
+          sudo apt install -y ninja-build cmake clang lld
+          pip install lit
+
+      - name: Cache LLLVM-MLIR
+        id: cache-llvm-mlir
+        uses: actions/cache@v3
+        with:
+          path: |
+            $GITHUB_WORKSPACE/llvm-mlir/_mlir_install/**
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_CACHE_NUMBER }}-${{ env.LLVM_SHA }}
+
+
+      - name: Build water
+        run: |
+          export EXTERNAL_LIT=${GITHUB_WORKSPACE}/water/scripts/runlit.py
+          export LLVM_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install
+          mkdir -p cmake_build
+          cd cmake_build
+          export CC=clang
+          export CXX=clang++
+          cmake ${GITHUB_WORKSPACE}                                            \
+            -GNinja                                                            \
+            -DCMAKE_BUILD_TYPE=Release                                         \
+            -DLLVM_DIR=${LLVM_DIR}/lib/cmake/llvm                              \
+            -DMLIR_DIR=${LLVM_DIR}/lib/cmake/mlir                              \
+            -DLLVM_EXTERNAL_LIT=${EXTERNAL_LIT}
+          cmake --build .
+
+      - name: Test water
+        run: |
+          cd cmake_build
+          cmake --build . --target check-water
 
       - name: "Setting up Python"
         id: setup_python
