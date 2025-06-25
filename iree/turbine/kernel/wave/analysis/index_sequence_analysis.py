@@ -131,7 +131,9 @@ def has_scaled_indices(node: fx.Node):
     node_type = node.type
     if not node_type:
         return False
-    shape = node_type.symbolic_shape
+    shape = getattr(node_type, "symbolic_shape", None)
+    if shape is None:
+        return False
     # Skip for cases where it is a single symbol or number.
     if all(not is_scaled_dim(dim) for dim in shape):
         return False
