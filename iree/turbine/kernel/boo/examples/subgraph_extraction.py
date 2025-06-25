@@ -7,6 +7,7 @@
 import torch
 from iree.turbine.kernel.boo.fusion import (
     extract_fusion_subgraph_modules,
+    replace_subgraphs,
     FusionSchema,
     OpFusionSpec,
 )
@@ -69,9 +70,29 @@ def main():
 
     subgraphs, _ = extract_fusion_subgraph_modules(gm, schema)
     subgraph_ops = []
+    subgraph_repl = []
     for sg in subgraphs:
         sg.print_readable()
-        subgraph_ops.append(get_custom_graph_op(sg))
+        custom_op = get_custom_graph_op(sg)
+        subgraph_ops.append(custom_op)
+
+        fake_args = tuple(
+            [n.meta.get("val") for n in sg.graph.nodes if n.op == "placeholder"]
+        )
+
+        class FakeMod(torch.nn.Module):
+            def forward(self, *args):
+                return custom_op(*args)
+
+        e = torch.export.export(FakeMod(), args=fake_args)
+        subgraph_repl.append(e.graph_module)
+
+    new_gm = replace_subgraphs(gm, subgraphs, subgraph_repl)
+
+    new_gm.print_readable()
+
+    # print(new_gm(*sample_inputs))
+    # print(gm(*sample_inputs))
 
 
 if __name__ == "__main__":

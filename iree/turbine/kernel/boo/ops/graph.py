@@ -41,7 +41,7 @@ def get_io_from_gm(gm):
             inputs.append(node.target)
         if node.op == "output":
             meta_outputs.extend(
-                [val.meta.get("tensor_meta", "ERROR") for val in node.all_input_nodes]
+                [val.meta.get("tensor_meta", None) for val in node.all_input_nodes]
             )
     return inputs, meta_outputs
 
@@ -86,16 +86,24 @@ def get_custom_graph_op(gm: GraphModule) -> Callable[[Any], Any]:
 
     @register_impl(op_name)
     def _(*args):
-        l = get_launchable(gm, arg_factory, op_name)
-        return l(*args)
+        l = get_launchable(gm, arg_factory=arg_factory, func_name=op_name)
+        return l(*[arg.data for arg in args])
 
     @register_meta(op_name)
     def _meta(*args):
+        if len(outputs) == 1:
+            return torch.empty_strided(
+                list(outputs[0].shape),
+                stride=outputs[0].stride,
+                dtype=outputs[0].dtype,
+                device="meta",
+                requires_grad=outputs[0].requires_grad,
+            )
         return tuple(
             (
                 torch.empty_strided(
                     list(o.shape),
-                    o.stride,
+                    stride=o.stride,
                     dtype=o.dtype,
                     device="meta",
                     requires_grad=o.requires_grad,
@@ -104,7 +112,10 @@ def get_custom_graph_op(gm: GraphModule) -> Callable[[Any], Any]:
             )
         )
 
-    return torch.ops.boo.__getattr__(op_name)
+    def _f(*args):
+        return getattr(torch.ops.boo, op_name)(*args)
+
+    return _f
 
 
 def make_autograd_function(

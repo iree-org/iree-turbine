@@ -8,6 +8,7 @@ from copy import deepcopy
 from typing import Sequence, Set, List, Dict, Tuple
 
 import torch
+from torch.fx.subgraph_rewriter import replace_pattern
 from torch.fx.graph import Graph
 from torch.fx.graph_module import GraphModule
 from torch.fx.node import Node
@@ -108,3 +109,11 @@ def extract_fusion_subgraph_modules(
         subgraphs.append(GraphModule(src_gm, subgraph))
 
     return subgraphs, subgraph_projections
+
+
+def replace_subgraphs(src_gm, external_subgraphs, replacements):
+    """Makes a copy of src_gm and replaces instances of each subgraph with their corresponding replacement graph."""
+    ret_gm = deepcopy(src_gm)
+    for sg, replacement in zip(external_subgraphs, replacements):
+        _ = replace_pattern(ret_gm, sg, replacement)
+    return ret_gm
