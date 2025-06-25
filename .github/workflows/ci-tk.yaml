@@ -25,6 +25,7 @@ concurrency:
 env:
   LLVM_SHA_FILE: llvm-sha.txt
   LLVM_CACHE_NUMBER: 1  # Increase to reset cache
+  WATER_REF: main
 
 jobs:
   build_llvm_linux:
@@ -39,7 +40,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ftynse/water
-          ref: main
+          ref: ${{ env.WATER_REF }}
           path: water
           fetch-depth: 0
 
@@ -69,7 +70,7 @@ jobs:
         with:
           repository: llvm/llvm-project
           ref: ${{ env.LLVM_SHA }}
-          path: llvm-mlir/llvm
+          path: llvm-mlir/llvm-project
           fetch-depth: 0
 
       - name: Build LLVM-MLIR
@@ -84,7 +85,7 @@ jobs:
           cd _build
           export CC=clang
           export CXX=clang++
-          cmake ../llvm                                                        \
+          cmake ../llvm-project/llvm                                           \
             -GNinja                                                            \
             -DCMAKE_BUILD_TYPE=Release                                         \
             -DLLVM_ENABLE_PROJECTS="mlir"                                      \
@@ -123,7 +124,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ftynse/water
-          ref: main
+          ref: ${{ env.WATER_REF }}
           path: water
           fetch-depth: 0
 
