@@ -29,7 +29,7 @@ env:
 jobs:
   build_llvm_linux:
     name: Builds Linux LLVM/MLIR
-    runs-on: ubuntu-22.04
+    runs-on: linux-mi300-1gpu-ossci-iree-org # temp
     defaults:
       run:
         shell: bash -el {0}
@@ -40,7 +40,7 @@ jobs:
         with:
           repository: ftynse/water
           ref: main
-          path: water
+          path: ${GITHUB_WORKSPACE}/water
           fetch-depth: 0
 
       - name: Setup Cache Vars
@@ -69,7 +69,7 @@ jobs:
         with:
           repository: llvm/llvm-project
           ref: ${{ env.LLVM_SHA }}
-          path: llvm-mlir/llvm
+          path: ${GITHUB_WORKSPACE}/llvm-mlir/llvm
           fetch-depth: 0
 
       - name: Build LLVM-MLIR
@@ -95,7 +95,7 @@ jobs:
             -DLLVM_ENABLE_ZSTD=OFF                                             \
             -DMLIR_INCLUDE_TESTS=OFF                                           \
             -DLLVM_USE_LINKER=lld                                              \
-            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-headers;llvm-libraries;cmake-exports;FileCheck;count;not;mlir-headers;mlir-libraries;mlir-cmake-exports;mlir-tblgen;" \
+            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-headers;llvm-libraries;cmake-exports;FileCheck;count;not;mlir-headers;mlir-libraries;mlir-cmake-exports;mlir-tblgen" \
             -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install
           ninja install-distribution-stripped
           cp bin/FileCheck ${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install/bin/
@@ -124,7 +124,7 @@ jobs:
         with:
           repository: ftynse/water
           ref: main
-          path: water
+          path: ${GITHUB_WORKSPACE}/water
           fetch-depth: 0
 
       - name: Setup Cache Vars
