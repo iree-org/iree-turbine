@@ -11,6 +11,8 @@ from iree.turbine.kernel.boo.fusion import (
     OpFusionSpec,
 )
 
+from iree.turbine.kernel.boo.ops import get_custom_graph_op
+
 
 class SampleModel(torch.nn.Module):
     def __init__(self, pixel_width: int = 256, pixel_height: int = 256):
@@ -46,7 +48,7 @@ def main():
 
     B = 4
 
-    sample_inputs = (torch.randn([B, 3, 256, 256], device="device"),)
+    sample_inputs = (torch.randn([B, 3, 256, 256], device=device),)
 
     exported_program = torch.export.export(m, args=sample_inputs)
 
@@ -66,9 +68,10 @@ def main():
     }
 
     subgraphs, _ = extract_fusion_subgraph_modules(gm, schema)
-
+    subgraph_ops = []
     for sg in subgraphs:
         sg.print_readable()
+        subgraph_ops.append(get_custom_graph_op(sg))
 
 
 if __name__ == "__main__":
