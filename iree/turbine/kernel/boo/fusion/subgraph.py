@@ -113,7 +113,6 @@ def extract_fusion_subgraph_modules(
 
 def replace_subgraphs(src_gm, external_subgraphs, replacements):
     """Makes a copy of src_gm and replaces instances of each subgraph with their corresponding replacement graph."""
-    ret_gm = deepcopy(src_gm)
     for sg, replacement in zip(external_subgraphs, replacements):
-        _ = replace_pattern(ret_gm, sg, replacement)
-    return ret_gm
+        _ = replace_pattern(src_gm, sg, replacement)
+    return src_gm

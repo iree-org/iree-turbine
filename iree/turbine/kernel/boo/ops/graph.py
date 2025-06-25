@@ -10,7 +10,7 @@ from typing import Any, Callable, Tuple
 import torch
 from torch.fx.graph_module import GraphModule
 
-# from torch._functorch.aot_autograd import
+from torch._functorch.aot_autograd import aot_export_joint_simple
 from torch._functorch.partitioners import default_partition
 from torch.autograd import Function
 
@@ -68,6 +68,26 @@ def mlir_from_gm(gm: GraphModule) -> Any:
     return imp.module_op
 
 
+def tensor_type_str(t: torch.Tensor | None) -> str:
+    if t is None:
+        return ""
+    shape = t.shape
+    dtype = str(t.dtype).removeprefix("torch.")
+    shape_str = "x".join([str(dim) for dim in shape])
+    return shape_str + f"x{dtype}"
+
+
+def get_name(base_name, *args):
+    name = base_name
+    for idx, arg in enumerate(args):
+        if arg is not None and not isinstance(arg, torch.Tensor):
+            raise TypeError(
+                f"Expected all function arguments to be (optional) tensors. Got {type(arg)} at position {idx}."
+            )
+        name += f"_{tensor_type_str(arg)}"
+    return name
+
+
 def get_custom_graph_op(gm: GraphModule) -> Callable[[Any], Any]:
     """Converts a graph module into a custom operator."""
     inputs, outputs = get_io_from_gm(gm)
@@ -80,37 +100,42 @@ def get_custom_graph_op(gm: GraphModule) -> Callable[[Any], Any]:
     define_schema(op_name, schema)
 
     # module_op = mlir_from_gm(gm)
-    arg_factory = lambda: tuple(
-        [n.meta.get("val") for n in gm.graph.nodes if n.op == "placeholder"]
-    )
+    # arg_factory = lambda: tuple(
+    #     [n.meta.get("val") for n in gm.graph.nodes if n.op == "placeholder"]
+    # )
 
     @register_impl(op_name)
     def _(*args):
-        l = get_launchable(gm, arg_factory=arg_factory, func_name=op_name)
+        spec_name = get_name(op_name, *args)
+        l = get_launchable(gm, arg_factory=args, func_name=spec_name)
         return l(*[arg.data for arg in args])
 
     @register_meta(op_name)
     def _meta(*args):
+        outputs = gm.forward(*args)
         if len(outputs) == 1:
-            return torch.empty_strided(
-                list(outputs[0].shape),
-                stride=outputs[0].stride,
-                dtype=outputs[0].dtype,
-                device="meta",
-                requires_grad=outputs[0].requires_grad,
-            )
-        return tuple(
-            (
-                torch.empty_strided(
-                    list(o.shape),
-                    stride=o.stride,
-                    dtype=o.dtype,
-                    device="meta",
-                    requires_grad=o.requires_grad,
-                )
-                for o in outputs
-            )
-        )
+            return outputs[0]
+        return outputs
+        # if len(outputs) == 1:
+        #     return torch.empty_strided(
+        #         list(outputs[0].shape),
+        #         stride=outputs[0].stride,
+        #         dtype=outputs[0].dtype,
+        #         device="meta",
+        #         requires_grad=outputs[0].requires_grad,
+        #     )
+        # return tuple(
+        #     (
+        #         torch.empty_strided(
+        #             list(o.shape),
+        #             stride=o.stride,
+        #             dtype=o.dtype,
+        #             device="meta",
+        #             requires_grad=o.requires_grad,
+        #         )
+        #         for o in outputs
+        #     )
+        # )
 
     def _f(*args):
         return getattr(torch.ops.boo, op_name)(*args)

@@ -11,6 +11,7 @@ from iree.turbine.kernel.boo.fusion import (
     FusionSchema,
     OpFusionSpec,
 )
+from torch._functorch.aot_autograd import aot_export_joint_simple
 
 from iree.turbine.kernel.boo.ops import get_custom_graph_op
 
@@ -24,7 +25,6 @@ class SampleModel(torch.nn.Module):
         )
         self.layer1 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=16, out_channels=3, kernel_size=1),
-            torch.nn.ReLU(),
         )
         # spatial output shape of layer 0 = output shape layer 1 = (h - 1) - (k - 1) + 1 = h - 2
         self.layer2 = torch.nn.Sequential(
@@ -72,13 +72,20 @@ def main():
     subgraph_ops = []
     subgraph_repl = []
     for sg in subgraphs:
-        sg.print_readable()
-        custom_op = get_custom_graph_op(sg)
-        subgraph_ops.append(custom_op)
-
         fake_args = tuple(
             [n.meta.get("val") for n in sg.graph.nodes if n.op == "placeholder"]
         )
+        sg.print_readable()
+        # joint_sg = aot_export_joint_simple(sg.forward, args=fake_args, trace_joint=True)
+        # joint_sg.print_readable()
+        # fake_args_joint = tuple(
+        # [n.meta.get("val") for n in joint_sg.graph.nodes if n.op == "placeholder"]
+        # )
+        # outputs = [n.all_input_nodes for n in joint_sg.graph.nodes if n.op == "output"][0]
+        # custom_op = make_autograd_function(joint_sg, fake_args_joint, num_fwd_outputs=len(outputs))
+        # subgraph_ops.append(custom_op)
+        custom_op = get_custom_graph_op(sg)
+        subgraph_ops.append(custom_op)
 
         class FakeMod(torch.nn.Module):
             def forward(self, *args):
@@ -87,12 +94,11 @@ def main():
         e = torch.export.export(FakeMod(), args=fake_args)
         subgraph_repl.append(e.graph_module)
 
-    new_gm = replace_subgraphs(gm, subgraphs, subgraph_repl)
+    _ = replace_subgraphs(gm, subgraphs, subgraph_repl)
 
-    new_gm.print_readable()
+    print(exported_program)
 
-    # print(new_gm(*sample_inputs))
-    # print(gm(*sample_inputs))
+    print(exported_program.module()(*sample_inputs))
 
 
 if __name__ == "__main__":
