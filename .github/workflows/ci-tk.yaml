@@ -58,7 +58,6 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y ninja-build cmake clang lld
-          pip install lit
 
       - name: Cache LLVM-MLIR
         id: cache-llvm-mlir
@@ -144,7 +143,6 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y ninja-build cmake clang lld
-          pip install lit
 
       - name: Cache LLLVM-MLIR
         id: cache-llvm-mlir
@@ -153,19 +151,6 @@ jobs:
         with:
           path: llvm-mlir/_mlir_install/**
           key: ${{ runner.os }}-build-llvm-${{ env.LLVM_CACHE_NUMBER }}-${{ env.LLVM_SHA }}
-
-
-      - name: Build water
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
-        run: |
-          cd ${GITHUB_WORKSPACE}/water/build_tools
-          WATER_MLIR_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install python -m pip wheel .
-
-      - name: Install water
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
-        run: |
-          cd ${GITHUB_WORKSPACE}/water/build_tools
-          pip install --force-reinstall *.whl
 
       - name: "Setting up Python"
         id: setup_python
@@ -179,6 +164,18 @@ jobs:
           source ${VENV_DIR}/bin/activate
           echo VIRTUAL_ENV=$VIRTUAL_ENV >> "$GITHUB_ENV"
           echo "$VENV_DIR/bin" >> "$GITHUB_PATH"
+
+      - name: Build water
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          cd ${GITHUB_WORKSPACE}/water/build_tools
+          WATER_MLIR_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install python -m pip wheel .
+
+      - name: Install water
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          cd ${GITHUB_WORKSPACE}/water/build_tools
+          pip install --force-reinstall *.whl
 
       - name: "Setting up Rust"
         uses: actions-rust-lang/setup-rust-toolchain@v1
