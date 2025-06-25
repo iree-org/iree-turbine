@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
+        os: [linux-mi300-1gpu-ossci-iree-org]
     runs-on: ${{matrix.os}}
     defaults:
       run:
@@ -114,7 +114,7 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [linux-mi300-1gpu-ossci-iree-org]
+        os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
     needs: build_llvm_linux
     if: github.event.pull_request.draft == false
