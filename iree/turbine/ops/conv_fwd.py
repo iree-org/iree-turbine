@@ -130,9 +130,9 @@ class conv_2d_nhwc_fhwc(CustomOp):
         # It may be advantageous to eventually allow passing these as string attributes.
         kwargs["conv_op"] = "linalg.conv_2d_nhwc_fhwc"
         kwargs["accum_dtype"] = "f32"
-        kwargs[
-            "result_asm_type"
-        ] = f"tensor<{'x'.join('?' if d is None else str(d) for d in res_desc.spec_dims)}x{kwargs['accum_dtype']}>"
+        kwargs["result_asm_type"] = (
+            f"tensor<{'x'.join('?' if d is None else str(d) for d in res_desc.spec_dims)}x{kwargs['accum_dtype']}>"
+        )
 
         func_op = _templates.inline_template_function(
             kb,
@@ -341,9 +341,9 @@ class generic_conv(CustomOp):
         # Currently, the accumulator type is hardcoded.
         # It may be advantageous to eventually allow passing this as a string attribute.
         kwargs["accum_dtype"] = "f32"
-        kwargs[
-            "result_asm_type"
-        ] = f"tensor<{'x'.join('?' if d is None else str(d) for d in res_desc.spec_dims)}x{kwargs['accum_dtype']}>"
+        kwargs["result_asm_type"] = (
+            f"tensor<{'x'.join('?' if d is None else str(d) for d in res_desc.spec_dims)}x{kwargs['accum_dtype']}>"
+        )
 
         kwargs["X_dtype"] = str(RankedTensorType(x_ir_type).element_type)
         kwargs["W_dtype"] = str(RankedTensorType(w_ir_type).element_type)

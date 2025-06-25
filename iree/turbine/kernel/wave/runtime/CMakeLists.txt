@@ -47,7 +47,7 @@ execute_process(
 set(TORCH_CXX_FLAGS -D_GLIBCXX_USE_CXX11_ABI=${torch_cxx_abi})
 
 find_package(hip REQUIRED)
-add_definitions(-D__HIP_PLATFORM_AMD__)
+add_definitions(-D__HIP_PLATFORM_AMD__ -DUSE_ROCM)
 
 # Build the core parts of nanobind once
 nanobind_build_library(nanobind SHARED)

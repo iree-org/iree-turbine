@@ -154,9 +154,9 @@ class ParameterArchiveEntry:
         Raises a ValueError on unsupported entries.
         """
         if self.raw.is_file:
-            wrapper = np.array(self.raw.file_view, copy=False)
+            wrapper = np.asarray(self.raw.file_view)
         elif self.raw.is_splat:
-            wrapper = np.array(self.raw.splat_pattern, copy=True)
+            wrapper = np.array(self.raw.splat_pattern)
         else:
             raise ValueError(f"Unsupported ParameterIndexEntry: {self.raw}")
 

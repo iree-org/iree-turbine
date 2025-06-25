@@ -40,7 +40,6 @@ from ...compiler.ir import (
     arith_d,
     func_d,
     gpu_d,
-    stream_d,
     vector_d,
 )
 
@@ -75,9 +74,9 @@ class WaveEmitter:
 
     def emit_program_invariants(self):
         self.workgroup_ids = [
-            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 0)),
-            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 1)),
-            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 2)),
+            gpu_d.block_id(gpu_d.Dimension.x),
+            gpu_d.block_id(gpu_d.Dimension.y),
+            gpu_d.block_id(gpu_d.Dimension.z),
         ]
         self.thread_ids = [
             gpu_d.thread_id(gpu_d.Dimension.x),

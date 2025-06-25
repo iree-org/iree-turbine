@@ -79,9 +79,9 @@ def test_read():
     # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0, s1, s2, s3, s4, s5] -> (s0 mod s1 + ((s2 * s3) floordiv s4) * s5)>
     # CHECK:          func.func @read
     # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
-    # CHECK:            %[[WORKGROUP_ID_0:.+]] = stream.dispatch.workgroup.id[0] : index
-    # CHECK:            %[[WORKGROUP_ID_1:.+]] = stream.dispatch.workgroup.id[1] : index
-    # CHECK:            %[[WORKGROUP_ID_2:.+]] = stream.dispatch.workgroup.id[2] : index
+    # CHECK:            %[[WORKGROUP_ID_0:.+]] = gpu.block_id x
+    # CHECK:            %[[WORKGROUP_ID_1:.+]] = gpu.block_id y
+    # CHECK:            %[[WORKGROUP_ID_2:.+]] = gpu.block_id z
     # CHECK-DAG:        %[[THREAD_ID_X:.+]] = gpu.thread_id  x
     # CHECK-DAG:        %[[THREAD_ID_Y:.+]] = gpu.thread_id  y
     # CHECK-DAG:        %[[THREAD_ID_Z:.+]] = gpu.thread_id  z
@@ -573,7 +573,7 @@ def test_read_write_dynamic_mapping_chain():
     # CHECK:          func.func @read_write_dynamic_mapping_chain
     # CHECK-SAME:     (%[[ARG0:.*]]: !stream.binding, %[[ARG1:.*]]: !stream.binding, %[[ARG2:.*]]: !stream.binding, %[[ARG3:.*]]: !stream.binding)
     # CHECK-DAG:      %[[C0:.*]] = arith.constant 0 : index
-    # CHECK:          %[[WORKGROUP_ID_1:.*]] = stream.dispatch.workgroup.id[1] : index
+    # CHECK:          %[[WORKGROUP_ID_1:.*]] = gpu.block_id y
     # CHECK:          %[[THREAD_ID_X:.*]] = gpu.thread_id  x
     # CHECK:          %[[D0:.*]] = stream.binding.subspan %[[ARG1]][%[[C0]]] : !stream.binding -> memref<16x2xi32, strided<[2, 1], offset: ?>>
     # CHECK:          %[[D1:.*]] = affine.apply #[[map0]]()[%[[THREAD_ID_X]]]
@@ -793,8 +793,8 @@ def test_dynamic_copy():
     # CHECK-DAG:        %[[CST:.*]] = arith.constant dense<0.000000e+00> : vector<16xf16>
     # CHECK-DAG:        %[[CST_0:.*]] = arith.constant dense<[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]> : vector<16xindex>
     # CHECK-DAG:        %[[C0:.*]] = arith.constant 0 : index
-    # CHECK:            %[[WORKGROUP_ID_0:.*]] = stream.dispatch.workgroup.id[0] : index
-    # CHECK:            %[[WORKGROUP_ID_1:.*]] = stream.dispatch.workgroup.id[1] : index
+    # CHECK:            %[[WORKGROUP_ID_0:.*]] = gpu.block_id x
+    # CHECK:            %[[WORKGROUP_ID_1:.*]] = gpu.block_id y
     # CHECK:            %[[THREAD_ID_X:.*]] = gpu.thread_id  x
     # CHECK:            %[[D0:.*]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<?x?xf16, strided<[?, 1], offset: ?>>{%[[ARG1]], %[[ARG2]]}
     # CHECK:            %[[D1:.*]] = affine.apply #[[map1]]()[%[[THREAD_ID_X]], %[[WORKGROUP_ID_0]]]
@@ -889,6 +889,7 @@ def test_unary_lowerings():
         res = tkw.roundeven(res)
         res = tkw.sin(res)
         res = tkw.cos(res)
+        res = tkw.cbrt(res)
         res = tkw.bitcast(res, tkl.bf16)
         res = tkw.exp(res)
         res = tkw.bitcast(res, tkl.f16)
@@ -946,12 +947,14 @@ def test_unary_lowerings():
     # CHECK: %[[SIN:.+]] = math.sin %[[ROUNDEVEN]]
     # Tests cos
     # CHECK: %[[COS:.+]] = math.cos %[[SIN]]
+    # Tests cbrt
+    # CHECK: %[[CBRT:.+]] = math.cbrt %[[COS]]
 
     # Test bitcast to bf16
-    # CHECK: %[[COS_BF16:.+]] = vector.bitcast %[[COS]] : vector<4xf16> to vector<4xbf16>
+    # CHECK: %[[CBRT_BF16:.+]] = vector.bitcast %[[CBRT]] : vector<4xf16> to vector<4xbf16>
 
     # Tests exp
-    # CHECK: %[[EXP_BF16:.+]] = math.exp %[[COS_BF16]]
+    # CHECK: %[[EXP_BF16:.+]] = math.exp %[[CBRT_BF16]]
 
     # Test bitcast back to f16
     # CHECK: %[[EXP:.+]] = vector.bitcast %[[EXP_BF16]] : vector<4xbf16> to vector<4xf16>
@@ -1796,7 +1799,7 @@ def test_explicit_broadcast():
     # CHECK:       func.func @explicit_broadcast
     # CHECK-SAME: (%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
     # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
-    # CHECK: %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
+    # CHECK: %[[workgroup_id_1:.*]] = gpu.block_id y
     # CHECK: %[[thread_id_x:.*]] = gpu.thread_id  x
 
     # Slicing LHS
@@ -1871,7 +1874,7 @@ def test_broadcast_add():
     # CHECK: func.func @broadcast_add
     # CHECK-SAME: (%[[ARG0:.+]]: !stream.binding, %[[ARG1:.+]]: !stream.binding, %{{.+}}: !stream.binding)
     # CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
-    # CHECK: %[[workgroup_id_1:.*]] = stream.dispatch.workgroup.id[1] : index
+    # CHECK: %[[workgroup_id_1:.*]] = gpu.block_id y
     # CHECK: %[[thread_id_x:.*]] = gpu.thread_id  x
 
     # Slicing LHS
