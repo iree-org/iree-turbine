@@ -12,9 +12,6 @@ from iree.turbine.support.logging import aot_logger as logger
 import torch
 from torch._dynamo.backends.common import aot_autograd
 from functorch.compile import make_boxed_func
-from iree.turbine.support.ir_imports import (
-    PassManager,
-)
 from iree.compiler.extras.fx_importer import (
     FxImporter,
 )
@@ -50,11 +47,24 @@ def _backend(gm: torch.fx.GraphModule, example_inputs):
                         f"{tensor_device} vs {device}"
                     )
 
-    # If we can't infer the device from sample args, return the base launchable.
-    if device is not None:
-        launch.preload(device=device)
+    # If there are no tensor inputs, try to get a device from node metadata.
+    if device is None:
+        for node in gm.graph.nodes:
+            maybe_tensor = node.meta.get("val")
+            device = (
+                device
+                if not isinstance(maybe_tensor, torch.Tensor)
+                else maybe_tensor.device
+            )
+            if device is not None:
+                break
 
-    call_func = lambda *args: launch(*[arg.data for arg in args])
+    if device is None:
+        raise RuntimeError("Could not infer a device for `iree_turbine` backend.")
+
+    launch.preload(device=device)
+
+    call_func = lambda *args: launch(*[arg.data for arg in args], device=device)
     return make_boxed_func(call_func)
 
 
