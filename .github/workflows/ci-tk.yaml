@@ -22,7 +22,91 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
   cancel-in-progress: true
 
+env:
+  LLVM_SHA_FILE: llvm-sha.txt
+  LLVM_CACHE_NUMBER: 1  # Increase to reset cache
+  WATER_REF: main
+
 jobs:
+  build_llvm_linux:
+    name: Builds Linux LLVM/MLIR
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux-mi300-1gpu-ossci-iree-org]
+    runs-on: ${{matrix.os}}
+    defaults:
+      run:
+        shell: bash -el {0}
+    timeout-minutes: 420
+    steps:
+      - name: Checkout Water
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ftynse/water
+          ref: ${{ env.WATER_REF }}
+          path: water
+          fetch-depth: 0
+
+      - name: Setup Cache Vars
+        run: |
+          echo 'LLVM_SHA<<EOF' >> $GITHUB_ENV
+          cat ${GITHUB_WORKSPACE}/water/$LLVM_SHA_FILE >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Setup env
+        run: |
+          sudo apt update
+          sudo apt install -y ninja-build cmake clang lld
+
+      - name: Cache LLVM-MLIR
+        id: cache-llvm-mlir
+        uses: actions/cache@v3
+        with:
+          path: llvm-mlir/_mlir_install/**
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_CACHE_NUMBER }}-${{ env.LLVM_SHA }}
+
+      - name: Checkout LLVM
+        if: steps.cache-llvm-mlir.outputs.cache-hit != 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: llvm/llvm-project
+          ref: ${{ env.LLVM_SHA }}
+          path: llvm-mlir/llvm-project
+          fetch-depth: 0
+
+      - name: Build LLVM-MLIR
+        if: steps.cache-llvm-mlir.outputs.cache-hit != 'true'
+        timeout-minutes: 420
+        run: |
+          pushd ${GITHUB_WORKSPACE}/llvm-mlir
+          echo "INFO: Need to rebuild LLVM-MLIR. Previous installation for MLIR not found"
+          np=`nproc`
+          echo "INFO: nproc $np"
+          mkdir _build
+          cd _build
+          export CC=clang
+          export CXX=clang++
+          cmake ../llvm-project/llvm                                           \
+            -GNinja                                                            \
+            -DCMAKE_BUILD_TYPE=Release                                         \
+            -DLLVM_ENABLE_PROJECTS="mlir"                                      \
+            -DLLVM_ENABLE_ASSERTIONS=ON                                        \
+            -DLLVM_INSTALL_UTILS=ON                                            \
+            -DLLVM_TARGETS_TO_BUILD="X86;AMDGPU"                               \
+            -DLLVM_ENABLE_BINDINGS=OFF                                         \
+            -DLLVM_ENABLE_ZSTD=OFF                                             \
+            -DMLIR_INCLUDE_TESTS=OFF                                           \
+            -DLLVM_USE_LINKER=lld                                              \
+            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-headers;llvm-libraries;cmake-exports;FileCheck;count;not;mlir-headers;mlir-libraries;mlir-cmake-exports;mlir-tblgen" \
+            -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install
+          ninja install-distribution-stripped
+          cp bin/FileCheck ${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install/bin/
+          cp bin/count ${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install/bin/
+          cp bin/not ${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install/bin/
+          popd
+
+
   test:
     name: "Unit Tests and Type Checking"
     strategy:
@@ -32,11 +116,42 @@ jobs:
         os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
     timeout-minutes: 60
+    needs: build_llvm_linux
     if: github.event.pull_request.draft == false
     env:
       VENV_DIR: ${{ github.workspace }}/.turbine-venv
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Checkout Water
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        with:
+          repository: ftynse/water
+          ref: ${{ env.WATER_REF }}
+          path: water
+          fetch-depth: 0
+
+      - name: Setup Cache Vars
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          echo 'LLVM_SHA<<EOF' >> $GITHUB_ENV
+          cat ${GITHUB_WORKSPACE}/water/$LLVM_SHA_FILE >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Setup env
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          sudo apt update
+          sudo apt install -y ninja-build cmake clang lld
+
+      - name: Cache LLLVM-MLIR
+        id: cache-llvm-mlir
+        uses: actions/cache@v3
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        with:
+          path: llvm-mlir/_mlir_install/**
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_CACHE_NUMBER }}-${{ env.LLVM_SHA }}
 
       - name: "Setting up Python"
         id: setup_python
@@ -50,6 +165,18 @@ jobs:
           source ${VENV_DIR}/bin/activate
           echo VIRTUAL_ENV=$VIRTUAL_ENV >> "$GITHUB_ENV"
           echo "$VENV_DIR/bin" >> "$GITHUB_PATH"
+
+      - name: Build water
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          cd ${GITHUB_WORKSPACE}/water/build_tools
+          WATER_MLIR_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install/lib/cmake/mlir python -m pip wheel .
+
+      - name: Install water
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          cd ${GITHUB_WORKSPACE}/water/build_tools
+          pip install --force-reinstall *.whl
 
       - name: "Setting up Rust"
         uses: actions-rust-lang/setup-rust-toolchain@v1
