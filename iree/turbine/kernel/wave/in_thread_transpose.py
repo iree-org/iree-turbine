@@ -121,17 +121,18 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
     """
     logger.info("in_thread_transpose")
     candidates = trace.walk(is_transpose_read)
-    for candidate in candidates:
-        logger.info(candidate, candidate.index)
 
-    mem_to_read_write = defaultdict(list)
+    # Map expanded read-write pairs to their original read-write pair.
+    id_to_read_write = defaultdict(list)
     for read in candidates:
         read = get_custom(read)
         for write in read.users:
             if not isinstance(write, Write):
                 continue
 
-            mem_to_read_write[(read.memory, write.memory)].append((read, write))
+            id_to_read_write[(read.pre_expansion_id, write.pre_expansion_id)].append(
+                (read, write)
+            )
 
     constraint_tile_size = {
         c.dim: c.tile_size
@@ -144,7 +145,7 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
         hardware_constraint.waves_per_block
     )
 
-    for reads_writes in mem_to_read_write.values():
+    for reads_writes in id_to_read_write.values():
         read, write = reads_writes[0]
         logger.info(f"processing read={read}, write={write}")
 
