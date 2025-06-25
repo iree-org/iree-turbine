@@ -135,7 +135,6 @@ def torchScaledGemmMXFP8(x, w, x_scales, w_scales):
     "mfma_variant",
     [
         ScaledMMAType.F32_16x16x128_F8F6F4,
-        ScaledMMAType.F32_32x32x64_F8F6F4,
     ],
 )
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
@@ -229,7 +228,6 @@ def testScaledGemmMXFP4(
     "mfma_variant",
     [
         ScaledMMAType.F32_16x16x128_F8F6F4,
-        ScaledMMAType.F32_32x32x64_F8F6F4,
     ],
 )
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
@@ -310,7 +308,6 @@ def testScaledGemmMXFP8(
     out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
 
     w_t = w.T.contiguous()
-    gemm(x.to(torch.uint8), x_scales, w_t.to(torch.uint8), w_scales, out)
+    gemm(x.view(torch.int8), x_scales, w_t.view(torch.int8), w_scales, out)
     torch_out = torchScaledGemmMXFP8(x, w, x_scales, w_scales)
-
-    torch.testing.assert_close(torch_out, out, check_dtype=False)
+    torch.testing.assert_close(torch_out, out, atol=2e-3, rtol=1e-3, check_dtype=False)

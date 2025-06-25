@@ -32,6 +32,7 @@ MMA_RHS = index_symbol("$MMA_RHS")
 MMA_ACC = index_symbol("$MMA_ACC")
 MMA_LHS_SCALE = index_symbol("$MMA_LHS_SCALE")
 MMA_RHS_SCALE = index_symbol("$MMA_RHS_SCALE")
+MMA_SCALE_FP4 = index_symbol("$MMA_SCALE_FP4")
 GPR_NUM = index_symbol("$GPR_NUM")
 
 # Scheduling symbols.

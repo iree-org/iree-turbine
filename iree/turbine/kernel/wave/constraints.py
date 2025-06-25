@@ -368,7 +368,18 @@ class HardwareConstraint(Constraint):
                         (lane % 16, ~MMA_ACC), (4 * floor(lane / 16), MMA_ACC)
                     ),  # M
                     lane % 16,  # N
-                    32 * floor(lane / 16),  # K
+                    Piecewise(
+                        (
+                            64 * floor(GPR_NUM / 16)
+                            + 16 * floor(lane / 16)
+                            + (GPR_NUM % 16),
+                            ~(MMA_LHS_SCALE | MMA_RHS_SCALE | MMA_SCALE_FP4),
+                        ),
+                        (
+                            32 * floor(lane / 16),
+                            (MMA_LHS_SCALE | MMA_RHS_SCALE | MMA_SCALE_FP4),
+                        ),
+                    ),  # K
                 ]
             case ScaledMMAType.F32_32x32x64_F8F6F4:
                 offset = [

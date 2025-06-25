@@ -63,6 +63,7 @@ from iree.turbine.kernel._support.dtype import DataType
 import sympy
 import torch.fx as fx
 from typing import Sequence, Callable, Optional
+import iree.turbine.kernel.lang as tkl
 
 logger = get_logger("turbine.wave.index_sequence_analysis")
 
@@ -452,11 +453,21 @@ def populate_scaled_mma_source_indices(
             dim, dim_index, node.mma_type
         )
     node.index = combine_indices(node.index, index)
+    lhs_dtype = node.lhs.type.dtype
+    rhs_dtype = node.rhs.type.dtype
+    is_fp4 = lhs_dtype == rhs_dtype and lhs_dtype == tkl.f4e2m1fn
     lhs_tuple = (
         get_custom(node.lhs),
         specialize_index(
             index,
-            {MMA_LHS: 1, MMA_RHS: 0, MMA_ACC: 0, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0},
+            {
+                MMA_LHS: 1,
+                MMA_RHS: 0,
+                MMA_ACC: 0,
+                MMA_LHS_SCALE: 0,
+                MMA_RHS_SCALE: 0,
+                MMA_SCALE_FP4: is_fp4,
+            },
         ),
         node.vector_shapes,
     )
@@ -464,7 +475,14 @@ def populate_scaled_mma_source_indices(
         get_custom(node.lhs_scale),
         specialize_index(
             index,
-            {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 0, MMA_LHS_SCALE: 1, MMA_RHS_SCALE: 0},
+            {
+                MMA_LHS: 0,
+                MMA_RHS: 0,
+                MMA_ACC: 0,
+                MMA_LHS_SCALE: 1,
+                MMA_RHS_SCALE: 0,
+                MMA_SCALE_FP4: is_fp4,
+            },
         ),
         node.vector_shapes,
     )
@@ -472,7 +490,14 @@ def populate_scaled_mma_source_indices(
         get_custom(node.rhs),
         specialize_index(
             index,
-            {MMA_LHS: 0, MMA_RHS: 1, MMA_ACC: 0, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0},
+            {
+                MMA_LHS: 0,
+                MMA_RHS: 1,
+                MMA_ACC: 0,
+                MMA_LHS_SCALE: 0,
+                MMA_RHS_SCALE: 0,
+                MMA_SCALE_FP4: is_fp4,
+            },
         ),
         node.vector_shapes,
     )
@@ -480,7 +505,14 @@ def populate_scaled_mma_source_indices(
         get_custom(node.rhs_scale),
         specialize_index(
             index,
-            {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 0, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 1},
+            {
+                MMA_LHS: 0,
+                MMA_RHS: 0,
+                MMA_ACC: 0,
+                MMA_LHS_SCALE: 0,
+                MMA_RHS_SCALE: 1,
+                MMA_SCALE_FP4: is_fp4,
+            },
         ),
         node.vector_shapes,
     )
@@ -488,7 +520,14 @@ def populate_scaled_mma_source_indices(
         get_custom(node.acc),
         specialize_index(
             index,
-            {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0},
+            {
+                MMA_LHS: 0,
+                MMA_RHS: 0,
+                MMA_ACC: 1,
+                MMA_LHS_SCALE: 0,
+                MMA_RHS_SCALE: 0,
+                MMA_SCALE_FP4: is_fp4,
+            },
         ),
         node.vector_shapes,
     )
@@ -496,7 +535,14 @@ def populate_scaled_mma_source_indices(
         node,
         specialize_index(
             index,
-            {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1, MMA_LHS_SCALE: 0, MMA_RHS_SCALE: 0},
+            {
+                MMA_LHS: 0,
+                MMA_RHS: 0,
+                MMA_ACC: 1,
+                MMA_LHS_SCALE: 0,
+                MMA_RHS_SCALE: 0,
+                MMA_SCALE_FP4: is_fp4,
+            },
         ),
         node.vector_shapes,
     )
