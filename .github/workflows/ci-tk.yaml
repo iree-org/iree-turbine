@@ -169,7 +169,7 @@ jobs:
         if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
         run: |
           cd ${GITHUB_WORKSPACE}/water/build_tools
-          WATER_MLIR_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install python -m pip wheel .
+          WATER_MLIR_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install/lib/cmake/mlir python -m pip wheel .
 
       - name: Install water
         if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
