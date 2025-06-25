@@ -1,3 +1,4 @@
+#ifndef WAVE_RUNTIME_DISABLED
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_vector.h>
 #include <nanobind/stl/string.h>
@@ -129,3 +130,35 @@ NB_MODULE(wave_runtime, m)
     m.def("launch", &launch);
     m.def("load_binary", &load_binary);
 }
+
+#else
+// When WAVE_RUNTIME_DISABLED is defined, provide minimal stubs
+#include <vector>
+#include <string>
+#include <cstdint>
+
+struct KernelLaunchInfo
+{
+    uintptr_t function;
+    int sharedMemoryBytes;
+    int gridX, gridY, gridZ;
+    int blockX, blockY, blockZ;
+};
+
+using Int64Vector = std::vector<uint64_t>;
+using Int32Vector = std::vector<uint32_t>;
+
+static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
+    const Int64Vector &dynamicDims, void* scalarArgs)
+{
+    // Runtime is disabled, do nothing
+    return 0;
+}
+
+static void* load_binary(const std::string &path, const std::string &func_name)
+{
+    // Runtime is disabled, return nullptr
+    return nullptr;
+}
+
+#endif
