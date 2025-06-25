@@ -158,25 +158,14 @@ jobs:
       - name: Build water
         if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
         run: |
-          export EXTERNAL_LIT=${GITHUB_WORKSPACE}/water/scripts/runlit.py
-          export LLVM_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install
-          mkdir -p cmake_build
-          cd cmake_build
-          export CC=clang
-          export CXX=clang++
-          cmake ${GITHUB_WORKSPACE}/water                                      \
-            -GNinja                                                            \
-            -DCMAKE_BUILD_TYPE=Release                                         \
-            -DLLVM_DIR=${LLVM_DIR}/lib/cmake/llvm                              \
-            -DMLIR_DIR=${LLVM_DIR}/lib/cmake/mlir                              \
-            -DLLVM_EXTERNAL_LIT=${EXTERNAL_LIT}
-          cmake --build .
+          cd ${GITHUB_WORKSPACE}/water/build_tools
+          WATER_MLIR_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install python -m pip wheel .
 
-      - name: Test water
+      - name: Install water
         if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
         run: |
-          cd cmake_build
-          cmake --build . --target check-water
+          cd ${GITHUB_WORKSPACE}/water/build_tools
+          pip install --force-reinstall *.whl
 
       - name: "Setting up Python"
         id: setup_python
