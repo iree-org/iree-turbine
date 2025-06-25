@@ -30,7 +30,11 @@ env:
 jobs:
   build_llvm_linux:
     name: Builds Linux LLVM/MLIR
-    runs-on: linux-mi300-1gpu-ossci-iree-org # temp
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
+    runs-on: ${{matrix.os}}
     defaults:
       run:
         shell: bash -el {0}
