@@ -159,11 +159,11 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
 
         element_type = read.type.dtype
 
-        load_elems_per_thread = hardware_constraint.max_elems_per_load(element_type)
-        max_elements_per_load = total_number_of_threads * load_elems_per_thread
+        store_elems_per_thread = hardware_constraint.max_elems_per_load(element_type)
+        max_elements_per_store = total_number_of_threads * store_elems_per_thread
         logger.info(
-            f"load_elems_per_thread={load_elems_per_thread}, "
-            f"max_elements_per_load={max_elements_per_load}"
+            f"store_elems_per_thread={store_elems_per_thread}, "
+            f"max_elements_per_store={max_elements_per_store}"
         )
 
         dst_symbolic_shape = read.type.symbolic_shape
@@ -187,41 +187,46 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
             f"total_elements={total_number_of_elements}"
         )
 
-        expected_number_of_loads = ceildiv(
-            total_number_of_elements, max_elements_per_load
+        expected_number_of_stores = ceildiv(
+            total_number_of_elements, max_elements_per_store
         )
-        actual_number_of_loads = len(reads_writes)
+        actual_number_of_stores = len(reads_writes)
         logger.info(
-            f"expected_number_of_loads={expected_number_of_loads}, actual_number_of_loads={actual_number_of_loads}"
+            f"expected_number_of_stores={expected_number_of_stores}, actual_number_of_stores={actual_number_of_stores}"
         )
-        if expected_number_of_loads <= 1:
+        if expected_number_of_stores <= 1:
             continue
 
-        if materialized_shape[-2] % expected_number_of_loads != 0:
+        if materialized_shape[-2] % expected_number_of_stores != 0:
             continue
 
         linear_id = hardware_constraint.linearized_thread_id
         global_index = remove_thread_indexing(read.index)
         logger.info(
-            f"global_index={global_index}, load_elems_per_thread={load_elems_per_thread}"
+            f"global_index={global_index}, store_elems_per_thread={store_elems_per_thread}"
         )
 
         new_reads = []
 
+        # elems_per_thread/expected_number are transposed.
+        load_elems_per_thread, expected_number_of_loads = (
+            expected_number_of_stores,
+            store_elems_per_thread,
+        )
         load_shape = get_tiled_shape(
             materialize_shape(constraint_tile_size, src_symbolic_shape),
-            expected_number_of_loads,
             load_elems_per_thread,
+            expected_number_of_loads,
         )
         logger.info(f"load_shape={load_shape}")
 
         # Construct new reads.
-        for i in range(load_elems_per_thread):
+        for i in range(expected_number_of_loads):
             read_index = get_tiled_index(
                 linear_id,
                 load_shape,
-                expected_number_of_loads,
                 load_elems_per_thread,
+                expected_number_of_loads,
                 i,
                 transpose=False,
             )
@@ -233,7 +238,7 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
                 global_index,
                 read_index,
                 src_symbolic_shape[-1],
-                expected_number_of_loads,
+                load_elems_per_thread,
             )
             logger.info(f"read_index={read_index}")
             mapping = read.mapping
@@ -259,7 +264,7 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
             with read.graph.inserting_before(read.fx_node):
                 new_read = Read(
                     read.memory,
-                    expected_number_of_loads,
+                    load_elems_per_thread,
                     mapping=mapping,
                     mapping_dynamic_vals=read.mapping_dynamic_vals,
                 ).add_to_graph(read.graph)
@@ -274,28 +279,30 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
         repacked = []
 
         store_shape = get_tiled_shape(
-            materialized_shape, load_elems_per_thread, expected_number_of_loads
+            materialized_shape, store_elems_per_thread, expected_number_of_stores
         )
         logger.info(f"store_shape={store_shape}")
 
         # Construct transpose.
-        for i in range(expected_number_of_loads):
+        for i in range(expected_number_of_stores):
             with write.graph.inserting_before(write.fx_node):
                 values = []
-                for j in range(load_elems_per_thread):
+                for j in range(store_elems_per_thread):
                     value = Extract(new_reads[j], [i]).add_to_graph(write.graph)
                     values.append(value)
 
-                value = Reshape(values, load_elems_per_thread).add_to_graph(write.graph)
+                value = Reshape(values, store_elems_per_thread).add_to_graph(
+                    write.graph
+                )
                 repacked.append(value)
 
         # Construct new writes.
-        for i in range(expected_number_of_loads):
+        for i in range(expected_number_of_stores):
             store_index = get_tiled_index(
                 linear_id,
                 store_shape,
-                load_elems_per_thread,
-                expected_number_of_loads,
+                store_elems_per_thread,
+                expected_number_of_stores,
                 i,
                 transpose=True,
             )
@@ -304,7 +311,10 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
                 for k, v in zip(dst_symbolic_shape, store_index)
             }
             store_index = combine_index(
-                global_index, store_index, dst_symbolic_shape[-1], load_elems_per_thread
+                global_index,
+                store_index,
+                dst_symbolic_shape[-1],
+                store_elems_per_thread,
             )
             logger.info(f"store_index={store_index}")
             with write.graph.inserting_before(write.fx_node):
@@ -314,7 +324,7 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
                 new_write = Write(
                     value,
                     write.memory,
-                    load_elems_per_thread,
+                    store_elems_per_thread,
                     mapping=write.mapping,
                     mapping_dynamic_vals=write.mapping_dynamic_vals,
                 ).add_to_graph(write.graph)
