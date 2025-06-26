@@ -75,6 +75,7 @@ from ...ops.wave_ops import (
     atan2,
     mma,
     permute,
+    powf,
     reciprocal,
     register,
     scalar,
@@ -581,6 +582,16 @@ def handle_mul(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
         result = arith_d.muli(lhs, rhs)
     else:
         raise ValidationError(f"Found unhandled operand type for mul: {element_type}")
+    return result
+
+
+@handle_binary_op(powf)
+def handle_powf(lhs: Value, rhs: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(lhs.type)
+    if _is_float_type(element_type):
+        result = math_d.powf(lhs, rhs, fastmath=get_fast_math_flags(options))
+    else:
+        raise ValidationError(f"Found unhandled operand type for powf: {element_type}")
     return result
 
 
