@@ -25,7 +25,7 @@ concurrency:
 env:
   LLVM_SHA_FILE: llvm-sha.txt
   LLVM_CACHE_NUMBER: 1  # Increase to reset cache
-  WATER_REF: main
+  WATER_REF: 1a84aa14ee74d5015ceb41bed438de4389f59b83
 
 jobs:
   build_llvm_linux:
