@@ -230,7 +230,7 @@ class HardwareConstraint(Constraint):
 
     def mma_matrix_shapes(self, mma_type: Optional[MMAType]) -> tuple[int]:
         # TODO: Eventually the shapes and indices should be provided by a tool
-        if mma_type == None:
+        if mma_type is None:
             mma_type = self.mma_type
 
         match mma_type:
@@ -260,7 +260,7 @@ class HardwareConstraint(Constraint):
 
     def mma_index_offset(self, mma_type: Optional[MMAType]):
         lane = self.linearized_thread_id % self.threads_per_wave
-        if mma_type == None:
+        if mma_type is None:
             mma_type = self.mma_type
 
         match mma_type:
@@ -404,7 +404,7 @@ class HardwareConstraint(Constraint):
         constraint_index: int | MMAOperand,
         mma_type: MMAType,
     ) -> IndexSequence:
-        if mma_type == None:
+        if mma_type is None:
             mma_type = self.mma_type
 
         offset = self.mma_index_offset(mma_type)

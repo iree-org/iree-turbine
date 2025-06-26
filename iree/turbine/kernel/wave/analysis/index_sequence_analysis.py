@@ -131,7 +131,9 @@ def has_scaled_indices(node: fx.Node):
     node_type = node.type
     if not node_type:
         return False
-    shape = node_type.symbolic_shape
+    shape = getattr(node_type, "symbolic_shape", None)
+    if shape is None:
+        return False
     # Skip for cases where it is a single symbol or number.
     if all(not is_scaled_dim(dim) for dim in shape):
         return False
@@ -181,13 +183,11 @@ def resolve_scaled_indices(trace):
                 # Index can be shared between multiple users, so we copy before modifying.
                 dim_index = deepcopy(source.index[dim])
                 assert (
-                    dim_index.size % scale_factor == 0,
-                    f"Size({dim_index.size}) needs to be divisible by scale ({scale_factor}).",
-                )
+                    dim_index.size % scale_factor == 0
+                ), f"Size({dim_index.size}) needs to be divisible by scale ({scale_factor})."
                 assert (
-                    source.vector_shapes[dim] % scale_factor == 0,
-                    "Expected vector_shape to be divisble by scale.",
-                )
+                    source.vector_shapes[dim] % scale_factor == 0
+                ), "Expected vector_shape to be divisble by scale."
                 dim_index.start = dim_expr.subs({dim: dim_index.start})
                 dim_index.size = int(dim_expr.subs({dim: dim_index.size}))
                 source.index[dim] = dim_index
@@ -197,9 +197,8 @@ def resolve_scaled_indices(trace):
                 custom = get_custom(source)
                 if isinstance(custom, (Read, Write)):
                     assert (
-                        custom.elements_per_thread % scale_factor == 0,
-                        "elem per thread needs to be divisble by scale.",
-                    )
+                        custom.elements_per_thread % scale_factor == 0
+                    ), "elem per thread needs to be divisble by scale."
                     scaled_elem_per_thread = int(
                         custom.elements_per_thread / scale_factor
                     )

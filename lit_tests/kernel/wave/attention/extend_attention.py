@@ -173,7 +173,7 @@ def test_causal_extend_attention():
     # CHECK-LABEL:       test_causal_extend_attention
     # CHECK-DAG:            #[[map32:.*]] = affine_map<()[s0] -> (s0 * 64 + 64)>
     # CHECK-LABEL:       func.func @extend_attention
-    # CHECK-DAG:            %[[workgroup_id_0:.*]] = stream.dispatch.workgroup.id[0] : index
+    # CHECK-DAG:            %[[workgroup_id_0:.*]] = gpu.block_id x
     # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
     # CHECK-DAG:            %[[C4352:.*]] = arith.constant 4352 : index
     # CHECK-DAG:            %[[C0:.*]] = arith.constant 0 : index

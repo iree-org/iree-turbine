@@ -40,14 +40,13 @@ from ...compiler.ir import (
     arith_d,
     func_d,
     gpu_d,
-    stream_d,
     vector_d,
 )
 
 
 from ..utils.general_utils import get_hardware_constraint
 from ...compiler.builder import IRProxyValue
-from ...compiler.kernel_codegen import BoundKernelSignature
+from ...compiler.kernel_codegen import BoundKernelSignature, BindingType
 from ..._support.tracing import CapturedTrace
 from ...compiler.base import CodegenError, NDEBUG
 
@@ -75,9 +74,9 @@ class WaveEmitter:
 
     def emit_program_invariants(self):
         self.workgroup_ids = [
-            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 0)),
-            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 1)),
-            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 2)),
+            gpu_d.block_id(gpu_d.Dimension.x),
+            gpu_d.block_id(gpu_d.Dimension.y),
+            gpu_d.block_id(gpu_d.Dimension.z),
         ]
         self.thread_ids = [
             gpu_d.thread_id(gpu_d.Dimension.x),
@@ -86,10 +85,12 @@ class WaveEmitter:
         ]
         self.induction_vars: dict[IndexSymbol, Value] = {}
         self.dynamic_dims: dict[IndexSymbol, Value] = {}
-        symbol_iterator = iter(self.dynamic_symbols)
-        for arg in self.root_sig.entry_block.arguments:
-            if arg.type == IndexType.get():
-                self.dynamic_dims[next(symbol_iterator)] = arg
+
+        for bind, arg in zip(
+            self.root_sig.sig.bindings, self.root_sig.entry_block.arguments
+        ):
+            if bind.binding_type == BindingType.SYMBOL_VALUE:
+                self.dynamic_dims[bind.symbol_type] = arg
 
     def emit(self, graph: Optional[fx.Graph] = None):
         with self.ip, Location.unknown():

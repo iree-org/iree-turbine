@@ -54,6 +54,7 @@ from ...ops.wave_ops import (
     broadcast,
     bitcast,
     cast,
+    cbrt,
     conditional,
     cos,
     eq,
@@ -88,6 +89,7 @@ from ...ops.wave_ops import (
     set_symbol,
     shared_memory_barrier,
     shuffle,
+    sqrt,
     tanh,
     tanh_approx,
     workgroup_barrier,
@@ -827,6 +829,14 @@ def handle_exp2(source: Value, options: WaveCompileOptions) -> OpResult:
     return result
 
 
+@handle_unary_op(sqrt)
+def handle_sqrt(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        return math_d.sqrt(source)
+    raise ValidationError(f"Found unhandled operand type for sqrt: {element_type}")
+
+
 @handle_unary_op(log2)
 def handle_log2(source: Value, options: WaveCompileOptions) -> OpResult:
     element_type = get_type_or_element_type(source.type)
@@ -1056,6 +1066,18 @@ def handle_cos(source: Value, options: WaveCompileOptions) -> OpResult:
         res = math_d.cos(source)
     else:
         raise ValidationError(f"Found unhandled operand type for cos: {element_type}")
+    return res
+
+
+@handle_unary_op(cbrt)
+def handle_cbrt(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        res = math_d.cbrt(source)
+    else:
+        raise ValidationError(
+            f"Found unhandled operand type for cbrt (cube root): {element_type}"
+        )
     return res
 
 
