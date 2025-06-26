@@ -20,7 +20,7 @@ import torch
         ),
     ],
 )
-def test_generic_backend_inference_only(device: torch.device):
+def test_generic_backend_inference_only_conv(device: torch.device):
     """When setup for backward, the forward function returns partial results to be cached for the backward pass.
     It's possible that returning intermediate results could cause some issues in the compiler.
     We make this test inference-only to compare against the results of the inference + bwd test below."""
@@ -43,6 +43,39 @@ def test_generic_backend_inference_only(device: torch.device):
     max_err = max(max_err, torch.max(torch.abs(output[:, 1, :, :])).item())
     # Note: rel error is not super useful to check for forward since:
     assert max_err <= atol, f"Forward numerics failure: {max_err=} for {atol=}."
+
+
+class LinearNet(torch.nn.Module):
+    def __init__(self, in_feat: int = 3, out_feat: int = 2):
+        super().__init__()
+        self.fc = torch.nn.Linear(in_feat, out_feat)
+
+    def forward(self, x):
+        return self.fc(x)
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        torch.device("cpu"),
+        pytest.param(
+            torch.device("cuda"),
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="requires cuda"
+            ),
+        ),
+    ],
+)
+def test_generic_backend_inference_only_linear(device: torch.device):
+    """Simple inference test for linear layer."""
+    model = LinearNet()
+    compiled_model = torch.compile(model, backend="iree_turbine")
+
+    x = torch.randn(8, 3)
+    y_eager = model(x)
+    y_comp = compiled_model(x)
+
+    assert torch.allclose(y_eager, y_comp, atol=1e-6)
 
 
 @pytest.mark.parametrize(
