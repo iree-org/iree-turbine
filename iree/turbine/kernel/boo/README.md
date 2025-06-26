@@ -10,6 +10,10 @@ There are a few environment variables that control BOO behavior:
 - `BOO_CACHE_DIR=<path to cache dir>`: where to store kernel artifacts (default = `~/.cache/turbine_kernels/boo/`).
 - `BOO_USE_BACKWARD_KERNELS=<0 or 1>`: whether to use our backward kernels (default = 0).
 
+And several other variables are useful for debugging:
+
+- `TURBINE_LOG_LEVEL=DEBUG`: enable debug output from Turbine.
+
 ## Usage:
 
 ### Launch a single convolution:
