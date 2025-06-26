@@ -154,10 +154,8 @@ def compile_standalone_kernel(
         func.attributes["preprocessing_pipeline"] = pipeline_attr
 
     kb.module_op.verify()
-    # DO NOT SUBMIT: https://github.com/iree-org/iree/issues/17132
-    enable_debug_info = False
     module_asm = kb.module_op.get_asm(
-        binary=True, enable_debug_info=enable_debug_info, print_generic_op_form=False
+        binary=True, enable_debug_info=True, print_generic_op_form=False
     )
     generation_time = default_timer() - start
 
