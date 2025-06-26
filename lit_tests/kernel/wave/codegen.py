@@ -166,8 +166,7 @@ def test_read_mapped_buffer():
     print(read_mapped_buffer.asm)
 
     # CHECK-LABEL:    func.func @read_mapped_buffer
-    # CHECK-COUNT-1:    memref.reinterpret_cast
-    # CHECK-COUNT-16:   amdgpu.raw_buffer_load
+    # CHECK-COUNT-1:    amdgpu.fat_raw_buffer_cast [[VAL0:%[0-9a-zA-Z_]+]] cacheSwizzleStride([[VAL3:%[0-9a-zA-Z_]+]])
 
 
 @run_test

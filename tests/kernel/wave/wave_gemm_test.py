@@ -188,6 +188,8 @@ def testPureGemm(
         dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
+        use_buffer_load_ops=True,
+        use_buffer_store_ops=True,
         benchmark_results_file=(
             os.path.join(dump_perf, "tk_" + perf_filename) if dump_perf else None
         ),
