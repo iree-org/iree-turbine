@@ -114,8 +114,7 @@ def scaled_mma(
     rhs: "Register",
     rhs_scale: "Register",
     acc: "Register",
-) -> "Register":
-    ...
+) -> "Register": ...
 
 
 def write(
