@@ -33,7 +33,28 @@ def get_name(f, *args):
     return name
 
 
-def kernel(fn: Callable | torch.nn.Module) -> Callable:
+def kernel(fn: Callable) -> Callable:
+    """Decorator to convert a dynamo exportable function into a launchable."""
+
+    class FakeMod(torch.nn.Module):
+        def forward(self, *args):
+            return fn(*args)
+
+    def wrapped(*args):
+        func_name = get_name(fn, *args)
+        launch = get_launchable(
+            lambda: FakeMod(),
+            args,
+            func_name=func_name,
+            cache_only=False,
+            force_single_dispatch=False,
+        )
+        return launch(*[arg.data for arg in args])
+
+    return wrapped
+
+
+def autograd_kernel(fn: Callable) -> Callable:
     """Decorator to convert a dynamo exportable function into a launchable."""
 
     class FakeMod(torch.nn.Module):

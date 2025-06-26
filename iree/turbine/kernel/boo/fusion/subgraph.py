@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from copy import deepcopy
-from typing import Sequence, Set, List, Dict, Tuple
+from typing import Any, Callable, Sequence, Set, List, Dict, Tuple
 
 import torch
 from torch.fx.subgraph_rewriter import replace_pattern
@@ -13,7 +13,20 @@ from torch.fx.graph import Graph
 from torch.fx.graph_module import GraphModule
 from torch.fx.node import Node
 
-from .schema import FusionSchema, OpFusionSpec
+from .schema import FusionSchema, OpFusionSpec, Target
+
+
+def fused_subgraph(
+    root, target: Target, input_nodes: Sequence[Node], num_outputs: int
+) -> GraphModule:
+    g = Graph()
+    new_inputs = tuple([g.placeholder(n.name) for n in input_nodes])
+    fused_node = g.call_function(target, new_inputs)
+    outputs = []
+    for i in range(num_outputs):
+        outputs.append(g.call_method("__getitem__", args=(fused_node, i)))
+    g.output(result=tuple(outputs))
+    return GraphModule(root, g)
 
 
 def extract_fusion_subgraph_modules(

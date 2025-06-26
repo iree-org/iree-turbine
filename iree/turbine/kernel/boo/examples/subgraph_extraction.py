@@ -6,18 +6,25 @@
 
 import torch
 from iree.turbine.kernel.boo.fusion import (
+    fused_subgraph,
     extract_fusion_subgraph_modules,
     replace_subgraphs,
     FusionSchema,
     OpFusionSpec,
 )
-from torch._functorch.aot_autograd import aot_export_joint_simple
+from torch._functorch.aot_autograd import (
+    aot_export_joint_simple,
+    _aot_export_function,
+    aot_module,
+    aot_export_module,
+)
+from torch.fx._symbolic_trace import symbolic_trace
 
-from iree.turbine.kernel.boo.ops import get_custom_graph_op
+from iree.turbine.kernel.boo.ops import get_custom_graph_op, make_autograd_function
 
 
 class SampleModel(torch.nn.Module):
-    def __init__(self, pixel_width: int = 256, pixel_height: int = 256):
+    def __init__(self, pixel_width: int = 32, pixel_height: int = 32):
         super().__init__()
         self.layer0 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
@@ -49,7 +56,7 @@ def main():
 
     B = 4
 
-    sample_inputs = (torch.randn([B, 3, 256, 256], device=device),)
+    sample_inputs = (torch.randn([B, 3, 32, 32], device=device),)
 
     exported_program = torch.export.export(m, args=sample_inputs)
 
@@ -72,33 +79,57 @@ def main():
     subgraph_ops = []
     subgraph_repl = []
     for sg in subgraphs:
+        print("printing subgraph:")
+        sg.print_readable()
+        print("getting fake args from sg:")
         fake_args = tuple(
             [n.meta.get("val") for n in sg.graph.nodes if n.op == "placeholder"]
         )
-        sg.print_readable()
         # joint_sg = aot_export_joint_simple(sg.forward, args=fake_args, trace_joint=True)
-        # joint_sg.print_readable()
-        # fake_args_joint = tuple(
-        # [n.meta.get("val") for n in joint_sg.graph.nodes if n.op == "placeholder"]
-        # )
-        # outputs = [n.all_input_nodes for n in joint_sg.graph.nodes if n.op == "output"][0]
-        # custom_op = make_autograd_function(joint_sg, fake_args_joint, num_fwd_outputs=len(outputs))
-        # subgraph_ops.append(custom_op)
-        custom_op = get_custom_graph_op(sg)
+        print("running _aot_export_function:")
+        joint_sg, metadata, in_spec, out_spec = _aot_export_function(
+            sg.forward,
+            fake_args,
+            decompositions=None,
+        )
+        # in_spec, _kw_in_spec = in_spec.children_specs
+        print("printing joint subgraph:")
+        joint_sg.print_readable()
+        fake_args_joint = tuple(
+            [n.meta.get("val") for n in joint_sg.graph.nodes if n.op == "placeholder"]
+        )
+        print(f"{fake_args_joint = }")
+        custom_op = make_autograd_function(
+            joint_sg, fake_args_joint, num_fwd_outputs=metadata.num_forward_returns
+        )
         subgraph_ops.append(custom_op)
+        # # custom_op = get_custom_graph_op(sg)
+        # # subgraph_ops.append(custom_op)
 
-        class FakeMod(torch.nn.Module):
-            def forward(self, *args):
-                return custom_op(*args)
+        # print("making fake module")
+        # class FakeMod(torch.nn.Module):
+        #     def forward(self, *args):
+        #         return custom_op(*args)
 
-        e = torch.export.export(FakeMod(), args=fake_args)
-        subgraph_repl.append(e.graph_module)
+        # print("exporting fake module")
+        # e = torch.export.export(FakeMod(), args=fake_args)
+        single_node_graph = fused_subgraph(
+            sg,
+            custom_op,
+            (n for n in sg.graph.nodes if n.op == "placeholder"),
+            num_outputs=metadata.num_forward_returns,
+        )
+        single_node_graph.print_readable()
+        subgraph_repl.append(single_node_graph)
 
     _ = replace_subgraphs(gm, subgraphs, subgraph_repl)
 
     print(exported_program)
 
-    print(exported_program.module()(*sample_inputs))
+    converted_module = exported_program.module()
+
+    sample_output = converted_module(*sample_inputs)
+    sample_output.sum().backward()
 
 
 if __name__ == "__main__":

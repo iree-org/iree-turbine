@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from hashlib import sha1
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Tuple, Sequence
 
 import torch
 from torch.fx.graph_module import GraphModule
@@ -24,7 +24,7 @@ from ....dynamo.passes import turbine_cpu_pass_pipeline
 from ....transforms.general.custom_op_expansion import ExpandCustomOpsPass
 
 __all__ = [
-    "mlir_from_gm",
+    # "mlir_from_gm",
     "get_io_from_gm",
     "get_schema",
     "get_custom_graph_op",
@@ -40,32 +40,38 @@ def get_io_from_gm(gm):
         if node.op == "placeholder":
             inputs.append(node.target)
         if node.op == "output":
+            print(f"{node.args=}")
             meta_outputs.extend(
-                [val.meta.get("tensor_meta", None) for val in node.all_input_nodes]
+                [
+                    val.meta.get("tensor_meta", None) if val is not None else None
+                    for val in node.args[0]
+                ]
             )
     return inputs, meta_outputs
 
 
 def get_schema(inputs, outputs):
     """Generate a schema from the result of `get_io_from_gm."""
+
+    ret_ty = "Tensor?" if any([o is None for o in outputs]) else "Tensor"
     schema = "("
     schema += ", ".join([f"Tensor {inp}" for inp in inputs])
     schema += ") -> ("
-    schema += ", ".join(["Tensor" for out in outputs])
+    schema += ", ".join([ret_ty for out in outputs])
     schema += ")"
     return schema
 
 
-def mlir_from_gm(gm: GraphModule) -> Any:
-    sample_args = tuple(
-        [n.meta.get("val") for n in gm.graph.nodes if n.op == "placeholder"]
-    )
-    gm = turbine_cpu_pass_pipeline(gm, sample_args)
-    imp = FxImporter()
-    imp.import_graph_module(gm)
-    exp_ops = ExpandCustomOpsPass(imp.module_op)
-    exp_ops.run()
-    return imp.module_op
+# def mlir_from_gm(gm: GraphModule) -> Any:
+#     sample_args = tuple(
+#         [n.meta.get("val") for n in gm.graph.nodes if n.op == "placeholder"]
+#     )
+#     gm = turbine_cpu_pass_pipeline(gm, sample_args)
+#     imp = FxImporter()
+#     imp.import_graph_module(gm)
+#     exp_ops = ExpandCustomOpsPass(imp.module_op)
+#     exp_ops.run()
+#     return imp.module_op
 
 
 def tensor_type_str(t: torch.Tensor | None) -> str:
@@ -91,24 +97,38 @@ def get_name(base_name, *args):
 def get_custom_graph_op(gm: GraphModule) -> Callable[[Any], Any]:
     """Converts a graph module into a custom operator."""
     inputs, outputs = get_io_from_gm(gm)
+    # TODO: handle this better
+    is_none_output = maybe_trim_none_outputs(gm)
+    has_a_none_output = any(is_none_output)
 
     hash = sha1(str(gm).encode(), usedforsecurity=False).hexdigest()
 
     schema = get_schema(inputs, outputs)
     op_name = f"fused_op_{hash}"
+    print(f"{op_name}::{schema}")
 
     define_schema(op_name, schema)
-
-    # module_op = mlir_from_gm(gm)
-    # arg_factory = lambda: tuple(
-    #     [n.meta.get("val") for n in gm.graph.nodes if n.op == "placeholder"]
-    # )
 
     @register_impl(op_name)
     def _(*args):
         spec_name = get_name(op_name, *args)
         l = get_launchable(gm, arg_factory=args, func_name=spec_name)
-        return l(*[arg.data for arg in args])
+        results = l(*[arg.data for arg in args])
+        if not has_a_none_output:
+            return results
+        # Handle this better.
+        if isinstance(results, torch.Tensor):
+            results = [results]
+        all_results = []
+        i = 0
+        for is_none in is_none_output:
+            if is_none:
+                all_results.append(None)
+            else:
+                all_results.append(results[i])
+                i += 1
+        # It is probably safe to assume all_results has more than one value.
+        return tuple(all_results) if i > 1 else all_results[0]
 
     @register_meta(op_name)
     def _meta(*args):
@@ -116,51 +136,58 @@ def get_custom_graph_op(gm: GraphModule) -> Callable[[Any], Any]:
         if len(outputs) == 1:
             return outputs[0]
         return outputs
-        # if len(outputs) == 1:
-        #     return torch.empty_strided(
-        #         list(outputs[0].shape),
-        #         stride=outputs[0].stride,
-        #         dtype=outputs[0].dtype,
-        #         device="meta",
-        #         requires_grad=outputs[0].requires_grad,
-        #     )
-        # return tuple(
-        #     (
-        #         torch.empty_strided(
-        #             list(o.shape),
-        #             stride=o.stride,
-        #             dtype=o.dtype,
-        #             device="meta",
-        #             requires_grad=o.requires_grad,
-        #         )
-        #         for o in outputs
-        #     )
-        # )
+
+    custom_library_op = getattr(torch.ops.boo, op_name)
 
     def _f(*args):
-        return getattr(torch.ops.boo, op_name)(*args)
+        return custom_library_op(*args)
 
     return _f
+
+
+def maybe_trim_none_outputs(gm: GraphModule) -> Sequence[bool]:
+    none_output = []
+    for n in gm.graph.nodes:
+        if n.op == "output":
+            trunc_returns = []
+            for ret in n.args[0]:
+                if ret is None:
+                    none_output.append(True)
+                    continue
+                trunc_returns.append(ret)
+                none_output.append(False)
+            new_args = (tuple(trunc_returns),) + n.args[1:]
+            n.args = new_args
+        gm.graph.lint()
+        gm.recompile()
+    return none_output
 
 
 def make_autograd_function(
     joint_gm: torch.fx.GraphModule, sample_args, num_fwd_outputs
 ):
     """From a joint forward/backward graph module, creates an autograd function for calling iree custom graph ops for forward and backward."""
+    print("Partitioning subgraph")
     fwd_g, bwd_g = default_partition(
         joint_module=joint_gm,
         _joint_inputs=sample_args,
         num_fwd_outputs=num_fwd_outputs,
     )
+    fwd_g.print_readable()
+    bwd_g.print_readable()
+    bwd_g.print_readable()
+
     fwd_launch = get_custom_graph_op(fwd_g)
     bwd_launch = (
         get_custom_graph_op(bwd_g) if is_boo_backward_enabled() else bwd_g.forward
     )
 
+    print("defining autograd function")
+
     class _MyOpSample(Function):
         @staticmethod
         def forward(ctx, *args):
-            all_outputs = fwd_launch(*[arg for arg in args])
+            all_outputs = fwd_launch(*args)
             fwd_outputs = all_outputs[:num_fwd_outputs]
             stash_outputs = all_outputs[num_fwd_outputs:]
             ctx.save_for_backward(*stash_outputs)
@@ -172,4 +199,7 @@ def make_autograd_function(
             all_outputs = bwd_launch(*stashed_tensors, *grad_outputs)
             return all_outputs
 
-    return _MyOpSample.apply
+    def _f(*args):
+        return _MyOpSample.apply(*args)
+
+    return _f
