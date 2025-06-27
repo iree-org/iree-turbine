@@ -113,8 +113,7 @@ jobs:
       - name: Run expensive e2e tests on AMD GPU
         if: "(contains(toJSON(matrix.os), 'amdgpu') || contains(toJSON(matrix.os), 'mi300')) && (github.event_name != 'pull_request') && !cancelled()"
         run: |
-          export PYTEST_TIMEOUT=600
-          WAVE_CACHE_ON=0 pytest -n 4 --capture=tee-sys -vv --run-e2e --run-expensive-tests --durations=100 ./tests/kernel/wave/
+          WAVE_CACHE_ON=0 pytest -n 4 --timeout=600 --capture=tee-sys -vv --run-e2e --run-expensive-tests --durations=100 ./tests/kernel/wave/
 
       - name: Run LIT tests
         if: ${{ !cancelled() }}
