@@ -209,9 +209,9 @@ def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
             try:
                 # Tracy will never exit if it fails to connect, so kill the process after some time.
                 out, err = tracy.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as e:
                 tracy.kill()
-                out, err = tracy.communicate()
+                raise ValueError("Tracy failed to connect.") from e
         if tracy.returncode:
             raise ValueError(f"Tracy failed:\n{out}\n{err}")
 
