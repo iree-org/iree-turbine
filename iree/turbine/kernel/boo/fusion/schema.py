@@ -19,3 +19,7 @@ class OpFusionSpec:
 
 
 FusionSchema = Dict[Target, OpFusionSpec]
+
+DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {}
+
+PRE_FUSION_DECOMPOSITIONS = {}
