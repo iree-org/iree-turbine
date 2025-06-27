@@ -149,9 +149,8 @@ def _deiree(module: Module) -> str:
     func_input_types = old_func_type.inputs
     for subspan in subspans:
         subspan.binding.set_type(subspan.result.type)
-        func_input_types[
-            BlockArgument(subspan.binding).arg_number
-        ] = subspan.result.type
+        arg_number = BlockArgument(subspan.binding).arg_number
+        func_input_types[arg_number] = subspan.result.type
         subspan.result.replace_all_uses_except(subspan.binding, subspan.operation)
         to_delete.append(subspan)
 
@@ -191,7 +190,7 @@ def water_leak_in_bounds_check(module: Module):
     ]
 
     def make_linear_pass_pipeline(
-        pipeline: Sequence[tuple[str, dict[str, Any]] | str]
+        pipeline: Sequence[tuple[str, dict[str, Any]] | str],
     ) -> str:
         def make_pass_arguments(name: str, args: dict[str, Any]) -> str:
             return (
