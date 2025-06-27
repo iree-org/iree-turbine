@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import os
 import pytest
 
 
@@ -84,6 +85,12 @@ def _set_default_device(config):
     general_utils.DEFAULT_GPU_DEVICE = device_id
 
 
+def _disable_cache(config):
+    import iree.turbine.kernel.wave.cache as cache
+
+    cache.WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 0))
+
+
 def _set_cache_dir(config):
     """
     Sets the unique cache directory for the current worker to avoid race conditions.
@@ -104,6 +111,7 @@ def _has_marker(item, marker):
 
 def pytest_collection_modifyitems(config, items):
     _set_default_device(config)
+    _disable_cache(config)
     _set_cache_dir(config)
     run_e2e = config.getoption("--run-e2e")
     run_expensive = config.getoption("--run-expensive-tests")
