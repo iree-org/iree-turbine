@@ -14,6 +14,7 @@ from ...ops.wave_ops import (
     Allocate,
     CustomOp,
     Conditional,
+    Read,
     get_custom,
     Output,
     Write,
@@ -292,6 +293,7 @@ def concatenate_outputs(
 ):
     reshape_check = isinstance(new_user, Reshape)
     reduce_check = isinstance(new_user, ReduceOp) and i == 0
+
     if reshape_check or reduce_check:
         if metadata.query_index == 0:
             new_node = [new_node.fx_node]
@@ -764,6 +766,16 @@ def expand_graph(
     The expansion does a DFS starting at the leaf nodes and expanding them
     to the root of the graph.
     """
+    bef_reads = [
+        read
+        for read in trace.region_graph.subgraphs["region_0"].nodes
+        if isinstance(get_custom(read), Read)
+    ]
+    bef_writes = [
+        write
+        for write in trace.region_graph.subgraphs["region_0"].nodes
+        if isinstance(get_custom(write), Write)
+    ]
 
     leaf_ops = [get_custom(node) for node in reversed(trace.walk(is_leaf_node))]
     if not leaf_ops:
@@ -790,3 +802,14 @@ def expand_graph(
     remove_original_nodes(leaf_ops)
     remove_unused_registers(trace)
     remove_unused_iter_args(trace)
+
+    aft_reads = [
+        read
+        for read in trace.region_graph.subgraphs["region_0"].nodes
+        if isinstance(get_custom(read), Read)
+    ]
+    aft_writes = [
+        write
+        for write in trace.region_graph.subgraphs["region_0"].nodes
+        if isinstance(get_custom(write), Write)
+    ]

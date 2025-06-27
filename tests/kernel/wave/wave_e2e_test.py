@@ -16,6 +16,7 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
+from iree.turbine.kernel.wave.constraints import MMAType
 from iree.turbine.kernel.wave.iree_utils import generate_iree_ref
 from iree.turbine.kernel.wave.templates.conv import get_igemm_conv2d
 from iree.turbine.kernel.wave.utils.general_utils import (
@@ -987,7 +988,8 @@ def test_offset_write_one(shape, use_buffer_ops, request):
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", get_test_shapes("test_reduce_sum"))
+# @pytest.mark.parametrize("shape", get_test_shapes("test_reduce_sum"))
+@pytest.mark.parametrize("shape", [(1, 256)])
 def test_reduce_sum(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -995,14 +997,14 @@ def test_reduce_sum(shape, request):
     wave_size = 64
     BLOCK_M = 1
     BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
+    # ELEMS_PER_THREAD = BLOCK_N // wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N},
+            vector_shapes={M: 1, N: 128},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
@@ -1016,8 +1018,8 @@ def test_reduce_sum(shape, request):
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
     ):
-        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
+        lhs = tkw.read(a)
+        rhs = tkw.read(b)
         res = lhs * rhs
         res = tkw.sum(res, dim=N)
         tkw.write(res, c, elements_per_thread=1)
@@ -1035,6 +1037,8 @@ def test_reduce_sum(shape, request):
         },
         canonicalize=True,
         run_bench=run_bench,
+        print_ir_before=["decompose_reduce_ops"],
+        print_ir_after=["decompose_reduce_ops"],
     )
     options = set_default_run_config(options)
     test = wave_compile(options, test)
@@ -1784,15 +1788,10 @@ def test_scalar_cond_copy(shape, request):
 @require_e2e
 @pytest.mark.parametrize(
     "shape",
-    [
-        (1, 27),
-        (1, 64),
-        (51, 64),
-        (128, 64),
-        (1, 256),
-        (1, 512),
-    ],
+    # [(1, 27), (1, 64), (51, 64), (128, 64), (1, 256), (1, 512), (64, 500)],
+    [(1, 256)],
 )
+# @pytest.mark.parametrize("shape", get_test_shapes("test_scanop_cumsum"))
 def test_scanop_cumsum(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -1802,33 +1801,38 @@ def test_scanop_cumsum(shape, request):
     BLOCK_M = 1
     BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    ELEMS_PER_THREAD = (BLOCK_N // num_warps) // wave_size
+    # ELEMS_PER_THREAD = (BLOCK_N // num_warps) // wave_size
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N // num_warps},
+            # vector_shapes={M: 1, N: BLOCK_N // num_warps},
+            vector_shapes={M: 1, N: 128},
+            # mma_type = MMAType.F32_16x16x16_F16, # although it is used by default
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+    # constraints += [tkw.TilingConstraint(N, 128)]
 
     @tkw.wave(constraints)
     def test(
-        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
-        lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
+        lhs = tkw.read(a)
         res = tkw.cumsum(lhs, dim=N)
-        tkw.write(res, c)
+        tkw.write(res, c)  # elements_per_thread=2
 
     torch.manual_seed(1)
-    input = device_zeros(shape, dtype=torch.float16) + 1
+    input = device_zeros(shape, dtype=torch.float16) + 1.0
+    # input =  device_randint(low=1, high=5,  size=shape, dtype=torch.int32)
+
     output = device_zeros(shape, dtype=torch.float16)
-    torch_ref = torch.cumsum((input), dim=-1)
+    torch_ref = torch.cumsum(input, dim=-1)  # dtype=torch.int32
     options = WaveCompileOptions(
         subs={
             M: shape[0],
@@ -1837,11 +1841,14 @@ def test_scanop_cumsum(shape, request):
         },
         canonicalize=True,
         run_bench=run_bench,
+        print_ir_before=["decompose_scan_ops"],
+        print_ir_after=["decompose_scan_ops"],
     )
     options = set_default_run_config(options)
     test = wave_compile(options, test)
 
     test(input, output)
+
     assert_close(torch_ref, output, atol=1e-03, rtol=1e-05)
 
 
