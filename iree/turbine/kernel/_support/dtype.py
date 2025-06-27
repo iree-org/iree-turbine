@@ -14,6 +14,9 @@ __all__ = [
     "f8E5M2FNUZ",
     "f8E4M3FN",
     "f8E4M3FNUZ",
+    "f8E8M0FNU",
+    "f6E2M3FN",
+    "f4E2M1FN",
     "index",
 ]
 
@@ -27,6 +30,9 @@ _FLOAT_TYPES = [
     "f8E5M2FNUZ",
     "f8E4M3FN",
     "f8E4M3FNUZ",
+    "f8E8M0FNU",
+    "f6E2M3FN",
+    "f4E2M1FN",
 ]
 _INDEX_TYPES = ["index"]
 
@@ -64,6 +70,8 @@ class DataType:
             return 1
         if self._name == "index":
             return 64
+        if "f4" in self._name:
+            return 4
         if "f8" in self._name:
             return 8
         if "bf16" in self._name:
@@ -106,4 +114,7 @@ f8e5m2 = DataType("f8E5M2")
 f8e5m2fnuz = DataType("f8E5M2FNUZ")
 f8e4m3fn = DataType("f8E4M3FN")
 f8e4m3fnuz = DataType("f8E4M3FNUZ")
+f8e8m0fnu = DataType("f8E8M0FNU")
+f6e2m3fn = DataType("f6E2M3FN")
+f4e2m1fn = DataType("f4E2M1FN")
 index = DataType("index")

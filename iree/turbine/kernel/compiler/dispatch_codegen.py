@@ -30,8 +30,8 @@ from .ir import (
     Value,
     arith_d,
     func_d,
-    stream_d,
     iree_codegen_d,
+    stream_d,
 )
 
 from .kernel_codegen import (
@@ -140,7 +140,6 @@ class StreamExecutable:
 
         with self._loc:
             binding_type = IrType.parse("!stream.binding")
-            index_type = IndexType.get()
 
             # Define the dispatch function.
             def abi_type(binding: BindingDesc):
@@ -179,11 +178,21 @@ class StreamExecutable:
                         )
                     )
 
+            def is_scalar_symbol(binding: BindingDesc) -> bool:
+                return binding.symbol_type is not None
+
             # Define the export.
             with InsertionPoint.at_block_begin(self._exe_block):
+                index_type = IndexType.get()
                 export_op = stream_d.ExecutableExportOp(name, name)
                 export_block = export_op.workgroup_count.blocks.append(
-                    *([b.as_mlir_type() for b in dynamic_dim_bindings])
+                    *(
+                        [
+                            index_type
+                            for b in dynamic_dim_bindings
+                            + [b for b in scalar_bindings if is_scalar_symbol(b)]
+                        ]
+                    )
                 )
 
             workgroup_builder = WorkgroupBuilder(
@@ -193,22 +202,27 @@ class StreamExecutable:
             # TODO: Support passing workload to the dispatch function.
             from ..wave.codegen import gen_sympy_index
 
-            # Map dynamic symbols to block arguments.
-            dynamic_symbols_mapping = {
-                k: v
-                for k, v in zip(
-                    dynamic_symbols, workgroup_builder.entry_block.arguments
-                )
+            arguments = workgroup_builder.entry_block.arguments
+
+            # Map dynamic symbols or bound scalar symbols to block arguments.
+            symbols_mapping = {
+                k.symbol_type: v for k, v in zip(dynamic_dim_bindings, arguments)
             }
 
             with InsertionPoint(workgroup_builder.entry_block):
-                result_type = IndexType.get()
+                # Populate scalar bindings.
+                for i, s in enumerate(scalar_bindings):
+                    if s.symbol_type is None:
+                        continue
+
+                    offset = len(dynamic_dim_bindings) + i
+                    symbols_mapping[s.symbol_type] = arguments[offset]
+
+                result_type = index_type
                 workgroup_values = []
                 for dim in grid.dims:
                     if isinstance(dim, IndexExpr):
-                        workgroup_values.append(
-                            gen_sympy_index(dynamic_symbols_mapping, dim)
-                        )
+                        workgroup_values.append(gen_sympy_index(symbols_mapping, dim))
                     else:
                         workgroup_values.append(
                             arith_d.constant(

@@ -23,6 +23,7 @@ from ...ops.wave_ops import (
     Reshape,
     GetResult,
     MMA,
+    ScaledMMA,
     SetSymbol,
     ApplyExpr,
     Broadcast,
@@ -463,7 +464,7 @@ def populate_inputs(
 
     for arg in expandable_args:
         match arg:
-            case MMA():
+            case MMA() | ScaledMMA():
                 reduction_count = get_mma_reduction_count(arg, dim_scaling)
                 for i in range(reduction_count):
                     mma_metadata = deepcopy(metadata)
@@ -498,7 +499,7 @@ def store_fixup_data(
     for the fixup phase.
     """
     match node:
-        case MMA():
+        case MMA() | ScaledMMA():
             try:
                 if expanded_dims[node.reduction_dim] == 0:
                     return
@@ -636,7 +637,7 @@ def get_last(node_list: fx.graph._node_list) -> fx.Node:  # type: ignore
 def fixup_mma_nodes(trace: CapturedTrace, expansion_context: ExpansionContext):
     # Chain MMA connections
     for current, last in expansion_context.mma_connections:
-        current.update_arg(2, last)
+        current.update_arg("acc", last)
     # Use the last MMA node instead of the first one.
     for first, second, exclude in expansion_context.mma_nodes:
         first.replace_all_uses_with_except(second, [exclude])

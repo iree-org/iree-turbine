@@ -31,7 +31,7 @@ from ..lang.grid import Grid
 from ..lang.types import (
     Index,
 )
-from ..lang.wave_types import IndexMapping
+from ..lang.wave_types import IndexMapping, SymbolBind
 from ..ops.wave_ops import CustomOp
 
 from .regions import RegionGraph, SubgraphTracer
@@ -44,6 +44,8 @@ from ..ops.base import (
 
 from . import context
 from .dtype import DataType
+
+import inspect
 
 try:
     from typing import assert_type
@@ -61,12 +63,22 @@ TCallable = TypeVar("TCallable", bound=Callable)
 
 
 class KernelRegionGraph(RegionGraph):
+    func: Optional[Callable] = None
+
+    def __init__(
+        self,
+        location_capture_config: Optional[LocationCaptureConfig] = None,
+        func: Optional[Callable] = None,
+    ):
+        super().__init__(location_capture_config=location_capture_config)
+        self.func = func
+
     def new_subtracer(
         self,
         region_graph: "RegionGraph",
         parent: Optional["SubgraphTracer"] = None,
     ) -> "KernelTracer":
-        return KernelTracer(region_graph, parent=parent)
+        return KernelTracer(region_graph, parent=parent, func=self.func)
 
 
 ###############################################################################
@@ -99,6 +111,18 @@ class KernelBufferProxy(fx.Proxy):
 class KernelTracer(SubgraphTracer):
     """Custom Tracer for generating a trace of a kernel computation."""
 
+    arg_names: list[str] = []
+
+    def __init__(
+        self,
+        region_graph: RegionGraph,
+        parent: Optional["SubgraphTracer"] = None,
+        func: Optional[Callable] = None,
+    ):
+        super().__init__(region_graph, parent)
+        if func is not None:
+            self.arg_names = inspect.getfullargspec(func).args
+
     # Property to keep track of current number of arguments.
     current_arg_id = 0
 
@@ -110,6 +134,15 @@ class KernelTracer(SubgraphTracer):
             if isinstance(t, DataType) and node.op == "placeholder":
                 node.meta["arg_id"] = self.current_arg_id
                 node.meta["dtype"] = t
+                node.meta["symbolic_type"] = []
+                self.current_arg_id += 1
+            elif issubclass(t, SymbolBind):
+                assert (
+                    node.op == "placeholder"
+                ), "SymbolBind must be a placeholder, got {node.op}"
+                node.meta["arg_id"] = self.current_arg_id
+                node.meta["symbol_name"] = self.arg_names[self.current_arg_id]
+                node.meta["dtype"] = t.dtype
                 node.meta["symbolic_type"] = []
                 self.current_arg_id += 1
             elif isinstance(t, KernelBufferMeta):
