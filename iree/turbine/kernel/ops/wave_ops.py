@@ -185,6 +185,9 @@ def minimum(lhs: "Register", rhs: "Register") -> "Register": ...
 def atan2(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
+def powf(lhs: "Register", rhs: "Register") -> "Register": ...
+
+
 def cbrt(src: "Register") -> "Register": ...
 
 
@@ -849,6 +852,7 @@ class BinaryOpBase(CustomOp, ABC):
 @define_interface_op("maximum")
 @define_interface_op("minimum")
 @define_interface_op("atan2")
+@define_interface_op("powf")
 @dataclass
 class BinaryPyOp(BinaryOpBase, ABC):
     def infer_type(self):
