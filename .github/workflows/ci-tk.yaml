@@ -139,6 +139,10 @@ jobs:
           cat ${GITHUB_WORKSPACE}/water/$LLVM_SHA_FILE >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
 
+          echo 'WAVE_TEST_WATER<<EOF' >> $GITHUB_ENV
+          echo '1' >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
       - name: Setup env
         if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
         run: |

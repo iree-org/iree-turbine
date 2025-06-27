@@ -1,3 +1,4 @@
+# REQUIRES: water
 # RUN: python %s 2>&1 | FileCheck %s
 
 import pytest
