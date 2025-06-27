@@ -6,9 +6,11 @@
 
 import torch
 
-from typing import Callable
+from typing import Any, Callable
 
 __all__ = [
+    "is_op_defined",
+    "get_library_op",
     "define_schema",
     "register_impl",
     "register_meta",
@@ -18,6 +20,14 @@ BOO_LIBRARY = torch.library.Library("boo", "DEF")
 
 
 # Library Helpers #
+
+
+def is_op_defined(name: str) -> bool:
+    return hasattr(torch.ops.boo, name)
+
+
+def get_library_op(name: str) -> Any:
+    return getattr(torch.ops.boo, name)
 
 
 def define_schema(name: str, schema: str):
