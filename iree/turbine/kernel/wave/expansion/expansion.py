@@ -25,6 +25,7 @@ from ...ops.wave_ops import (
     MMA,
     ScaledMMA,
     SetSymbol,
+    ScatterMax,
     ApplyExpr,
     Broadcast,
 )
@@ -751,6 +752,7 @@ def is_leaf_node(node):
         isinstance(custom, Write)
         or (isinstance(custom, GetResult) and not custom.users)
         or isinstance(custom, SetSymbol)
+        or isinstance(custom, ScatterMax)
     )
 
 

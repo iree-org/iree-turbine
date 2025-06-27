@@ -30,6 +30,7 @@ from iree.turbine.kernel.wave.utils.torch_utils import (
     device_full,
     device_randint,
     device_randn,
+    device_arange,
     device_randperm,
     device_zeros,
     to_default_device,
@@ -2053,3 +2054,107 @@ def test_atomic_min(shape, use_buffer_ops, request):
     test(a, c)
     assert_close(c[0, :], b)
     assert_close(c[1, :], b)
+
+
+@require_e2e
+@pytest.mark.parametrize(
+    "shape, elems_per_thread",
+    [
+        ((3840, 1), 1),
+        ((64, 64), 1),
+        ((64, 64), 2),
+        ((64, 64), 4),
+    ],
+)
+def test_scatter_max(shape, elems_per_thread, request):
+    run_bench = request.config.getoption("--runperf")
+    M = tkl.sym.M
+    N = tkl.sym.N
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    LOAD_ELEMS_PER_THREAD = tkl.sym.LOAD_ELEMS_PER_THREAD
+    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    m_size, n_size = shape
+
+    constraints = [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 64, N: elems_per_thread},
+        ),
+        tkw.WorkgroupConstraint(M, BLOCK_M, 0),
+        tkw.WorkgroupConstraint(N, BLOCK_N, 1),
+        tkw.WaveConstraint(M, BLOCK_M / 1),
+        tkw.WaveConstraint(N, BLOCK_N),
+    ]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    mapping1 = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={M: i, N: j},
+        outputs={M: i, N: j},
+    )
+
+    @tkw.wave(constraints)
+    def read_kernel(
+        a: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        index: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        lds: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        b: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        index_reg = tkw.read(index, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+        a_reg = tkw.read(a, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+        tkw.scatter_max(
+            a_reg,
+            index_reg,
+            dim=0,
+            memory=lds,
+            mapping=mapping1,
+            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+        )
+        lds_reg = tkw.read(
+            lds, elements_per_thread=LOAD_ELEMS_PER_THREAD, mapping=mapping1
+        )
+        tkw.write(lds_reg, b, elements_per_thread=STORE_ELEMS_PER_THREAD)
+
+    options = WaveCompileOptions(
+        subs={
+            M: m_size,
+            N: n_size,
+            BLOCK_M: m_size,
+            BLOCK_N: n_size,
+            LOAD_ELEMS_PER_THREAD: elems_per_thread,
+            STORE_ELEMS_PER_THREAD: elems_per_thread,
+            ADDRESS_SPACE: tkl.AddressSpace.SHARED_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+    )
+    options = set_default_run_config(options)
+    read_fn = wave_compile(options, read_kernel)
+
+    input = (
+        device_arange(m_size * n_size, dtype=torch.float32)
+        .reshape(m_size, n_size)
+        .contiguous()
+    )
+    index = device_randint(0, m_size, (m_size, n_size), dtype=torch.int32).contiguous()
+    lds = device_zeros((m_size, n_size), dtype=torch.float32).contiguous()
+    output = device_zeros((m_size, n_size), dtype=torch.float32).contiguous()
+
+    read_fn(input, index, lds, output)
+
+    def scatter_max_baseline(input, index):
+        input = input.to(dtype=torch.float32).contiguous()
+        index = index.to(dtype=torch.int64).contiguous()
+        baseline_output = device_zeros(input.shape, dtype=torch.float32)
+        baseline_output.scatter_reduce_(
+            dim=0, index=index, src=input, reduce="amax", include_self=False
+        )
+        return baseline_output
+
+    torch_output = scatter_max_baseline(input, index)
+    assert_close(output, torch_output)
