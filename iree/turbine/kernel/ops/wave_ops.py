@@ -8,6 +8,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    List,
     Optional,
     Sequence,
     Type,
@@ -496,7 +497,7 @@ class CustomOp(ABC):
             kwargs={},
         )
 
-    def update_arg(self, idx_or_name: int | str, value: CustomOp | fx.Node):
+    def update_arg(self, idx_or_name: int | str | fx.Node, value: CustomOp | fx.Node):
         """
         Update the value of an argument in the node while keeping the
         underlying fx.Node consistent.
@@ -507,6 +508,8 @@ class CustomOp(ABC):
             if idx_or_name not in field_names:
                 raise ValueError(f"Field {idx_or_name} not found")
             idx = field_names.index(idx_or_name)
+        elif isinstance(idx_or_name, fx.Node):
+            idx = self.fx_node.args.index(idx_or_name)
         else:
             idx = idx_or_name
         if isinstance(value, CustomOp):
