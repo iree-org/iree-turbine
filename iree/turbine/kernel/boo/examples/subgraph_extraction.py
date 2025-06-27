@@ -48,14 +48,6 @@ def main():
 
     sample_inputs = (torch.randn([B, 3, 32, 32], device=device),)
 
-    # sample_output = m(*sample_inputs)
-    # sample_output.sum().backward()
-    # for name, param in m.named_parameters():
-    #     print(f'parameter {name}:\n{param.data = }\n{param.grad = }')
-
-    # import sys
-    # sys.exit(0)
-
     schema: FusionSchema = {
         torch.ops.aten.conv2d.default: OpFusionSpec(
             recursive=True, producers=(), consumers=(torch.ops.aten.relu.default,)
@@ -71,8 +63,8 @@ def main():
 
     sample_output = converted_module(*sample_inputs)
     sample_output.sum().backward()
-    for name, param in m.named_parameters():
-        print(f"parameter {name}:\n{param.data = }\n{param.grad = }")
+    # for name, param in m.named_parameters():
+    #     print(f"parameter {name}:\n{param.data = }\n{param.grad = }")
 
 
 if __name__ == "__main__":

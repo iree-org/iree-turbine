@@ -102,6 +102,15 @@ def extract_fusion_subgraph_modules(
                     continue
                 subgraph_input = subgraph.placeholder(name=producer.name)
                 subgraph_input.meta = producer.meta
+                tensor_meta = producer.meta.get("tensor_meta")
+                tensor_val = producer.meta.get("val")
+                # Workaround to indicate that intermediate inputs require gradient calculation
+                if (
+                    tensor_meta is not None
+                    and isinstance(tensor_val, torch.Tensor)
+                    and tensor_meta.requires_grad
+                ):
+                    tensor_val.requires_grad = True
                 subgraph_projection[producer] = subgraph_input
                 subgraph_inclusion[subgraph_input] = producer
             # Copy over the current node to the detached subgraph, updating args based on corresponding elements of the detached subgraph.
