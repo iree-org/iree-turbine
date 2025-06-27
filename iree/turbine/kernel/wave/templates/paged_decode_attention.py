@@ -30,6 +30,24 @@ paged_decode_attention_shape = namedtuple(
 )
 
 
+def get_paged_decode_intermediate_arrays_shapes(
+    shape: paged_decode_attention_shape,
+    num_kv_splits: int,
+) -> tuple[tuple[int], tuple[int]]:
+    phase_0_output_shape = (
+        num_kv_splits,
+        shape.num_seqs,
+        shape.head_size_kv,
+        shape.num_query_heads,
+    )
+    phase_0_output_max_shape = (
+        num_kv_splits,
+        shape.num_seqs,
+        shape.num_query_heads,
+    )
+    return (phase_0_output_shape, phase_0_output_max_shape)
+
+
 def get_paged_decode_attention_kernels(
     shape: paged_decode_attention_shape,
     mfma_variant: tuple[MMAType, MMAType],
