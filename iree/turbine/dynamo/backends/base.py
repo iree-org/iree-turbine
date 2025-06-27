@@ -29,9 +29,6 @@ def _backend(gm: torch.fx.GraphModule, example_inputs):
     expansion_pass = ExpandCustomOpsPass(module_op)
     expansion_pass.run()
 
-    # create a Launchable from the MLIR source
-    launch = Launchable.jit_compile(str(module_op))
-
     # determine a device to preload (compile) for
     device = None
     # Scan args for tensors and infer device.
@@ -61,6 +58,12 @@ def _backend(gm: torch.fx.GraphModule, example_inputs):
 
     if device is None:
         raise RuntimeError("Could not infer a device for `iree_turbine` backend.")
+
+    # Temporary workaround for issue #984. Remove the workaround once resolved.
+    entry_point = "main" if len(example_inputs) == 0 else "main$async"
+
+    # Create a Launchable from the MLIR source.
+    launch = Launchable.jit_compile(str(module_op), entry_point=entry_point)
 
     launch.preload(device=device)
 

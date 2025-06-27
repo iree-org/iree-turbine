@@ -53,7 +53,6 @@ def test_generic_backend_inference_only(device: torch.device):
         pytest.param(
             torch.device("cuda"),
             marks=(
-                pytest.mark.xfail(reason="y.grad numerics failure. Needs triage."),
                 pytest.mark.skipif(
                     not torch.cuda.is_available(), reason="requires cuda"
                 ),
