@@ -40,8 +40,8 @@ def get_paged_decode_intermediate_arrays_shapes(
     phase_0_output_shape = (
         num_kv_splits,
         shape.num_seqs,
-        shape.head_size_kv,
         shape.num_query_heads,
+        shape.head_size_kv,
     )
     phase_0_output_max_shape = (
         num_kv_splits,
@@ -280,6 +280,18 @@ def get_paged_decode_attention_kernels(
         dynamic_val_mappings={K2: l},
     )
 
+    logits_out_mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={U: i, S: j, N: k, B: l},
+        outputs={U: i, S: j, N: k, B: l},
+    )
+
+    logits_in_mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={U: i, S: j, N: k, B: l},
+        outputs={U: i, S: j, N: k, B: l},
+    )
+
     # The kv-cache layout here is (SEQ, HEADS, HEAD_DIM).
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
@@ -288,7 +300,7 @@ def get_paged_decode_attention_kernels(
         v: tkl.Memory[N_KV, BH, N, ADDRESS_SPACE, wave_input_dtype],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         kv_indices: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        output: tkl.Memory[U, S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         # =========================================================================
@@ -392,11 +404,12 @@ def get_paged_decode_attention_kernels(
             res_max_log_sum = res_max + tkw.log2(res_sum)
 
             tkw.write(res_max_log_sum, output_max)
-            tkw.write(res, output)
+            res = tkw.broadcast(res, target_shape=[U, S, N, B])
+            tkw.write(res, output, mapping=logits_out_mapping)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(
-        logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        logits: tkl.Memory[U, S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, wave_output_dtype],
@@ -419,7 +432,7 @@ def get_paged_decode_attention_kernels(
         ):
             # TODO: U iterator has tile size 1 and is always smaller than U,
             # so force the non-masked ops here by setting bounds to empty.
-            x_j = tkw.read(logits, bounds={})
+            x_j = tkw.read(logits, bounds={}, mapping=logits_in_mapping)
             xm_j = tkw.read(logits_max, bounds={})
             m_j = tkw.maximum(xm_j, partial_max)
             old_scale = tkw.exp2(partial_max - m_j)
