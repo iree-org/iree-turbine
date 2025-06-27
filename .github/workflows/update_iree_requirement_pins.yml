@@ -28,7 +28,6 @@ jobs:
   check-for-existing-branch:
     if: ${{ github.repository_owner == 'iree-org' || github.event_name != 'schedule' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
     outputs:
       branch-exists: ${{ steps.check-exists.outputs.branch-exists }}
 
@@ -46,7 +45,6 @@ jobs:
   update-iree:
     needs: check-for-existing-branch
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
     if: ${{ needs.check-for-existing-branch.outputs.branch-exists == 0 }}
 
     steps:
