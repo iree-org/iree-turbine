@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple, Callable, NamedTuple
+from typing import Dict, List, Optional, Tuple, Callable, TypeAlias
 import numpy as np
 import torch
 import torch.fx as fx
@@ -6,9 +6,9 @@ from .resources import get_available_resources
 from .graph_utils import Edge
 from ...ops.wave_ops import get_custom, IterArg
 
-Schedule = Dict[fx.Node, int]
-RawEdgesList = Optional[List[Edge]]
-NodeRRTGetter = Callable[[fx.Node], np.ndarray]
+Schedule: TypeAlias = Dict[fx.Node, int]
+RawEdgesList: TypeAlias = Optional[List[Edge]]
+NodeRRTGetter: TypeAlias = Callable[[fx.Node], np.ndarray]
 
 
 class ResourceUsageTracker:
@@ -81,6 +81,10 @@ class ScheduleDependencyGraph:
         self.edges = edges
         self._adj = self._build_adjacency_list(edges, is_successors=True)
         self._pred_adj = self._build_adjacency_list(edges, is_successors=False)
+        # Create a set of edge tuples for O(1) lookup
+        self._edge_set = set()
+        if edges:
+            self._edge_set = {(edge._from, edge._to) for edge in edges}
 
     def _build_adjacency_list(
         self, edges_input: RawEdgesList, is_successors: bool
@@ -102,11 +106,7 @@ class ScheduleDependencyGraph:
         return self._pred_adj.get(node, [])
 
     def has_edge(self, pred: fx.Node, succ: fx.Node) -> bool:
-        return (
-            any(edge._from == pred and edge._to == succ for edge in self.edges)
-            if self.edges
-            else False
-        )
+        return (pred, succ) in self._edge_set
 
 
 class ScheduleConstraintRepairer:
@@ -217,7 +217,9 @@ class ScheduleConstraintRepairer:
             if not schedule_modified:
                 break
 
-        return True, repaired_schedule
+        # Validate that the final schedule actually satisfies all constraints
+        valid = self.validate_dependencies(repaired_schedule)
+        return valid, repaired_schedule
 
     def _try_move_node(
         self,
@@ -260,22 +262,18 @@ class ScheduleConstraintRepairer:
         original_cycle = schedule[node]
         resource_tracker.remove_node(node, original_cycle, node_rrt_getter)
 
-        if forward:
-            for try_cycle in range(target_cycle, target_cycle + self.T):
-                if self._is_valid_move(
-                    node, try_cycle, schedule, resource_tracker, node_rrt_getter
-                ):
-                    schedule[node] = try_cycle
-                    resource_tracker.add_node(node, try_cycle, node_rrt_getter)
-                    return True
-        else:
-            for try_cycle in range(target_cycle, target_cycle - self.T, -1):
-                if self._is_valid_move(
-                    node, try_cycle, schedule, resource_tracker, node_rrt_getter
-                ):
-                    schedule[node] = try_cycle
-                    resource_tracker.add_node(node, try_cycle, node_rrt_getter)
-                    return True
+        # Determine range parameters based on direction
+        start_cycle = target_cycle
+        end_cycle = target_cycle + self.T if forward else target_cycle - self.T
+        step = 1 if forward else -1
+
+        for try_cycle in range(start_cycle, end_cycle, step):
+            if self._is_valid_move(
+                node, try_cycle, schedule, resource_tracker, node_rrt_getter
+            ):
+                schedule[node] = try_cycle
+                resource_tracker.add_node(node, try_cycle, node_rrt_getter)
+                return True
 
         schedule[node] = original_cycle
         resource_tracker.add_node(node, original_cycle, node_rrt_getter)
