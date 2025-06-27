@@ -4,7 +4,10 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import contextlib
 import torch
+from torch.profiler import profile, ProfilerActivity, record_function
+from functools import partial
 
 from iree.turbine.kernel.boo.fusion import (
     fusion_transform,
@@ -39,7 +42,21 @@ class SampleModel(torch.nn.Module):
         return x2
 
 
-def main():
+def main(print_parameters: bool, trace_path: str):
+    def dump_profile(profiler: profile):
+        profiler.export_chrome_trace(trace_path)
+
+    def profiler_ctx(enabled: bool = False):
+        if not enabled:
+            return contextlib.nullcontext()
+        return profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+            on_trace_ready=partial(dump_profile),
+        )
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     m = SampleModel().to(device=device)
@@ -48,6 +65,7 @@ def main():
 
     sample_inputs = (torch.randn([B, 3, 32, 32], device=device),)
 
+    # TODO: identify a default FusionSchema to use
     schema: FusionSchema = {
         torch.ops.aten.conv2d.default: OpFusionSpec(
             recursive=True, producers=(), consumers=(torch.ops.aten.relu.default,)
@@ -61,11 +79,26 @@ def main():
 
     converted_module = fusion_transform(m, sample_inputs, fusion_schema=schema)
 
+    # warmup
     sample_output = converted_module(*sample_inputs)
     sample_output.sum().backward()
-    # for name, param in m.named_parameters():
-    #     print(f"parameter {name}:\n{param.data = }\n{param.grad = }")
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    with profiler_ctx(trace_path != ""):
+        sample_output = converted_module(*sample_inputs)
+        sample_output.sum().backward()
+
+    if print_parameters:
+        for name, param in m.named_parameters():
+            print(f"parameter {name}:\n{param.data = }\n{param.grad = }")
+
+    # opt_conv = torch.compile(converted_module)
+
+    # output = opt_conv(*sample_inputs)
+    # output.sum().backward()
 
 
 if __name__ == "__main__":
-    main()
+    main(False, "")
