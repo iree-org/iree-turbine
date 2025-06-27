@@ -105,7 +105,7 @@ def emit_global_scan(
     )
 
     scanop_result = local_scan[-1][-1]
-    last_local_scan_node = get_custom(local_scan[-1][-1])
+    last_local_scan_node = get_custom(scanop_result)
 
     target_shape = list(src.type.symbolic_shape)
     target_shape.pop(target_shape.index(scan_dim))
@@ -309,11 +309,9 @@ def decompose_scan_ops(
             )
 
             # Update the users based on the global scan `reshape` results.
-            users = [
-                (user, user.fx_node.args.index(custom.fx_node)) for user in custom.users
-            ]
-
-            for user, arg_index in users:
-                user.update_arg(arg_index, global_scan[user.expanded_dims[scan_dim]])
+            for user in custom.users:
+                user.update_arg(
+                    custom.fx_node, global_scan[user.expanded_dims[scan_dim]]
+                )
 
     DCE(trace)
