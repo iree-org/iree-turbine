@@ -1,4 +1,3 @@
-#ifndef WAVE_RUNTIME_DISABLED
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_vector.h>
 #include <nanobind/stl/string.h>
@@ -47,7 +46,7 @@ using Int64Vector = std::vector<uint64_t>;
 using Int32Vector = std::vector<uint32_t>;
 
 static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
-    const Int64Vector &dynamicDims, nb::list scalarArgs)
+                  const Int64Vector &dynamicDims, nb::list scalarArgs)
 {
     hipStream_t stream = at::hip::getCurrentHIPStream();
     hipFunction_t function = reinterpret_cast<hipFunction_t>(info.function);
@@ -61,22 +60,27 @@ static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
 
     uint8_t kernelArguments[kernArgSize];
     uint64_t *ptr = (uint64_t *)kernelArguments;
-    for (auto val : tensors) *ptr++ = val;
+    for (auto val : tensors)
+        *ptr++ = val;
 
-    uint32_t* ptr2 = (uint32_t *)ptr;
+    uint32_t *ptr2 = (uint32_t *)ptr;
     // ToDo: we would like to use bit_cast in the follow-up PR.
-    for (auto arg : scalarArgs){
-        if (nb::isinstance<nb::int_>(arg)){
+    for (auto arg : scalarArgs)
+    {
+        if (nb::isinstance<nb::int_>(arg))
+        {
             *ptr2++ = static_cast<uint32_t>(nb::cast<uint32_t>(arg));
         }
-        else if (nb::isinstance<nb::float_>(scalarArgs[0])){
+        else if (nb::isinstance<nb::float_>(scalarArgs[0]))
+        {
             float val = nb::cast<float>(arg);
             std::memcpy(ptr2++, &val, sizeof(float));
         }
     }
 
     uint32_t *ptr3 = (uint32_t *)ptr2;
-    for (auto dim : dynamicDims) {
+    for (auto dim : dynamicDims)
+    {
         *ptr3++ = static_cast<uint32_t>(dim);
         *ptr3++ = static_cast<uint32_t>(dim >> 32);
     }
@@ -98,7 +102,8 @@ static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
 static void unload_binary(void *ptr) noexcept
 {
     auto module = reinterpret_cast<hipModule_t>(ptr);
-    if (auto e = hipModuleUnload(module)) {
+    if (auto e = hipModuleUnload(module))
+    {
         nb::print(nb::str("Failed to unload module: ") + nb::str(hipGetErrorString(e)));
     }
 }
@@ -130,35 +135,3 @@ NB_MODULE(wave_runtime, m)
     m.def("launch", &launch);
     m.def("load_binary", &load_binary);
 }
-
-#else
-// When WAVE_RUNTIME_DISABLED is defined, provide minimal stubs
-#include <vector>
-#include <string>
-#include <cstdint>
-
-struct KernelLaunchInfo
-{
-    uintptr_t function;
-    int sharedMemoryBytes;
-    int gridX, gridY, gridZ;
-    int blockX, blockY, blockZ;
-};
-
-using Int64Vector = std::vector<uint64_t>;
-using Int32Vector = std::vector<uint32_t>;
-
-static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
-    const Int64Vector &dynamicDims, void* scalarArgs)
-{
-    // Runtime is disabled, do nothing
-    return 0;
-}
-
-static void* load_binary(const std::string &path, const std::string &func_name)
-{
-    // Runtime is disabled, return nullptr
-    return nullptr;
-}
-
-#endif

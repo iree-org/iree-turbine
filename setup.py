@@ -1,7 +1,7 @@
 # Copyright 2023 Advanced Micro Devices, Inc.
 # Copyright 2024 The IREE Authors
 #
-# Licensed under the Apache License 2.0 with LLVM Exceptions.
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
@@ -56,24 +56,24 @@ def get_version_spec(dep: str, requirement_pins: dict):
     return ""
 
 
-def find_cmake_executable():
-    """Find the best available cmake executable."""
-    # Try to find system cmake
-    system_cmake = shutil.which(
-        "cmake", path="/usr/bin:/usr/local/bin:/opt/homebrew/bin"
-    )
-    if system_cmake:
-        print(f"Found system cmake at: {system_cmake}")
-        return system_cmake
+def check_nanobind_available():
+    """Check if nanobind is available in the current Python environment."""
+    try:
+        import nanobind
 
-    # Fallback to PATH cmake
-    cmake_path = shutil.which("cmake")
-    if cmake_path:
-        print(f"Found cmake in PATH at: {cmake_path}")
-        return cmake_path
+        return True
+    except ImportError:
+        return False
 
-    print("Warning: cmake not found in PATH")
-    return "cmake"
+
+def check_torch_cuda_available():
+    """Check if PyTorch has CUDA support."""
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
 
 
 def setup_cmake_environment():
@@ -98,12 +98,24 @@ class CMakeBuild(build_ext):
     def run(self):
         for ext in self.extensions:
             self.build_cmake(ext)
-        # Verify that extensions were built
-        self.verify_extensions()
 
     def build_cmake(self, ext):
+        # Check dependencies before attempting CMake build
+        nanobind_available = check_nanobind_available()
+        torch_cuda_available = check_torch_cuda_available()
+
+        if not nanobind_available:
+            print("Warning: nanobind not found. Wave runtime will be disabled.")
+            print("To enable wave runtime, install nanobind: pip install nanobind")
+
+        if not torch_cuda_available:
+            print(
+                "Warning: PyTorch CUDA support not available. Wave runtime will be disabled."
+            )
+            print("To enable wave runtime, install PyTorch with CUDA support.")
+
         # Ensure CMake is available
-        cmake_cmd = find_cmake_executable()
+        cmake_cmd = "cmake"
 
         try:
             subprocess.check_output([cmake_cmd, "--version"])
@@ -131,12 +143,14 @@ class CMakeBuild(build_ext):
         # Setup CMake environment
         python_executable, cmake_env, cmake_args = setup_cmake_environment()
 
-        # Configure CMake
+        # Configure CMake with dependency flags
         cmake_args.extend(
             [
                 f"-DPython_EXECUTABLE={python_executable}",
                 f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}{os.sep}",
                 f"-DCMAKE_BUILD_TYPE={'Debug' if self.debug else 'Release'}",
+                f"-DNANOBIND_AVAILABLE={'ON' if nanobind_available else 'OFF'}",
+                f"-DTORCH_CUDA_AVAILABLE={'ON' if torch_cuda_available else 'OFF'}",
             ]
         )
 
@@ -149,46 +163,6 @@ class CMakeBuild(build_ext):
 
         # Build CMake project
         subprocess.check_call([cmake_cmd, "--build", "."], cwd=build_dir)
-
-        # Copy the built extension to the source directory for packaging
-        self.copy_extension_to_source(ext, extdir)
-
-    def copy_extension_to_source(self, ext, extdir):
-        """Copy built extension to source directory for packaging."""
-        # Find the built extension file
-        ext_name = ext.name
-        source_dir = ext.sourcedir
-
-        # Look for the built extension in the build directory
-        for file in os.listdir(extdir):
-            if file.startswith(ext_name) and file.endswith(
-                (".so", ".dll", ".dylib", ".pyd")
-            ):
-                source_file = os.path.join(extdir, file)
-                target_file = os.path.join(source_dir, file)
-                print(f"Copying {source_file} to {target_file}")
-                shutil.copy2(source_file, target_file)
-                break
-
-    def verify_extensions(self):
-        """Verify that all extensions were built successfully."""
-        for ext in self.extensions:
-            source_dir = ext.sourcedir
-            ext_name = ext.name
-
-            # Check if extension exists in source directory
-            found = False
-            for file in os.listdir(source_dir):
-                if file.startswith(ext_name) and file.endswith(
-                    (".so", ".dll", ".dylib", ".pyd")
-                ):
-                    print(f"Extension {ext_name} built successfully: {file}")
-                    found = True
-                    break
-
-            if not found:
-                print(f"Warning: Extension {ext_name} not found in {source_dir}")
-                print(f"This may cause issues when packaging for PyPI")
 
 
 # Override build command so that we can build into _python_build
@@ -204,14 +178,10 @@ class BuildCommand(distutils.command.build.build):
 def get_extension_files():
     """Get list of compiled extension files to include in the package."""
     extension_files = []
-
-    # Add wave runtime extension
-    if os.path.exists("iree/turbine/kernel/wave/runtime"):
-        # Look for compiled extensions in the wave runtime directory
-        wave_runtime_dir = "iree/turbine/kernel/wave/runtime"
-        for file in os.listdir(wave_runtime_dir):
-            if file.endswith((".so", ".dll", ".dylib", ".pyd")):
-                extension_files.append(f"{wave_runtime_dir}/{file}")
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    for file in os.listdir(current_dir):
+        if file.endswith((".so", ".dll", ".dylib", ".pyd")):
+            extension_files.append(file)
 
     return extension_files
 

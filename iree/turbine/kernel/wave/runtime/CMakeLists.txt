@@ -13,46 +13,51 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-# Initialize the flag to false
-set(WAVE_RUNTIME_DISABLED FALSE)
+# Check if dependencies are available (passed from setup.py)
+if (NOT DEFINED NANOBIND_AVAILABLE)
+  set(NANOBIND_AVAILABLE OFF)
+endif()
 
-# Detect the installed nanobind package and import it into CMake
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT
-  RESULT_VARIABLE nanobind_RESULT)
+if (NOT DEFINED TORCH_CUDA_AVAILABLE)
+  set(TORCH_CUDA_AVAILABLE OFF)
+endif()
 
-# Set the flag based on whether nanobind was found
-if (nanobind_RESULT)
-  set(WAVE_RUNTIME_DISABLED TRUE)
-  message(STATUS "nanobind not found. Disabling wave runtime functionality.")
-else()
+# Determine if wave runtime should be enabled
+set(WAVE_RUNTIME_ENABLED TRUE)
+
+if (NOT NANOBIND_AVAILABLE)
+  set(WAVE_RUNTIME_ENABLED FALSE)
+  message(STATUS "nanobind not available. Disabling wave runtime functionality.")
+endif()
+
+if (NOT TORCH_CUDA_AVAILABLE)
+  set(WAVE_RUNTIME_ENABLED FALSE)
+  message(STATUS "PyTorch CUDA support not available. Disabling wave runtime functionality.")
+endif()
+
+if (NOT WAVE_RUNTIME_ENABLED)
+  message(STATUS "Wave runtime is disabled. Skipping build.")
+  return()
+endif()
+
+# Only proceed with nanobind setup if it's available
+if (NANOBIND_AVAILABLE)
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT
+    COMMAND_ERROR_IS_FATAL ANY)
   find_package(nanobind CONFIG REQUIRED)
 endif()
 
-# Check if PyTorch is CPU-only
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -c "import torch; print(torch.cuda.is_available())"
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_cuda_available
-  RESULT_VARIABLE torch_cuda_check_result)
-
-if (torch_cuda_check_result)
-  message(STATUS "Failed to check PyTorch CUDA availability. Assuming CPU-only and disabling wave runtime.")
-  set(WAVE_RUNTIME_DISABLED TRUE)
-elseif (torch_cuda_available STREQUAL "False")
-  message(STATUS "PyTorch is CPU only. Disabling wave runtime functionality.")
-  set(WAVE_RUNTIME_DISABLED TRUE)
-endif()
-
-# Create the library target (common for both enabled and disabled modes)
 add_library(wave_runtime MODULE runtime.cpp)
 
-# Only proceed with PyTorch setup and build if runtime is not disabled
-if(NOT WAVE_RUNTIME_DISABLED)
+# Only proceed with PyTorch setup and build if runtime is enabled
+if(WAVE_RUNTIME_ENABLED)
   # Link against torch, using the libraries and include dirs in site-packages.
   execute_process(
     COMMAND "${Python_EXECUTABLE}" -c "import torch; print(torch.__path__[0])"
-    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_PATH)
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_PATH
+    COMMAND_ERROR_IS_FATAL ANY)
 
   # Add all directories in /opt/rocm/lib/cmake to CMAKE_PREFIX_PATH
   file(GLOB subdirectories "/opt/rocm/lib/cmake/*")
@@ -67,7 +72,8 @@ if(NOT WAVE_RUNTIME_DISABLED)
 
   execute_process(
     COMMAND "${Python_EXECUTABLE}" -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))"
-    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_cxx_abi)
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_cxx_abi
+    COMMAND_ERROR_IS_FATAL ANY)
   set(TORCH_CXX_FLAGS -D_GLIBCXX_USE_CXX11_ABI=${torch_cxx_abi})
 
   find_package(hip REQUIRED)
@@ -104,10 +110,7 @@ if(NOT WAVE_RUNTIME_DISABLED)
 
   # .. set important linker flags
   nanobind_link_options(wave_runtime)
-else()
-  # Add compile definition for runtime disabled flag
-  target_compile_definitions(wave_runtime PRIVATE WAVE_RUNTIME_DISABLED=1)
+
 endif()
 
-# Install the target (common for both modes)
 install(TARGETS wave_runtime DESTINATION ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
