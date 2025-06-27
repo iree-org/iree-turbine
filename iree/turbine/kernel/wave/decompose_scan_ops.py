@@ -40,7 +40,7 @@ def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
 
 def emit_variable_scan(
     binary_fn: Callable,
-    scan_src: list[fx.Node],
+    src: list[fx.Node],
     graph: fx.Graph,
     elements_per_thread: int,
 ) -> list[list[fx.Node]]:
