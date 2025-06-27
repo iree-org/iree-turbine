@@ -25,6 +25,7 @@ from ...ops.wave_ops import (
     NewRegister,
     ReduceOp,
     MMA,
+    ScanOp,
 )
 from ...lang.global_symbols import SHARED_ADDRESS_SPACE
 import itertools
@@ -50,6 +51,12 @@ class ExpansionMetadata:
 
     def __str__(self):
         return str(self.__dict__)
+
+
+def update_dim_scaling(node, dim_attr, dim_scaling, idxc, is_static_dim, not_computed):
+    dim = getattr(node, dim_attr)
+    if not_computed(dim) and is_static_dim(dim):
+        dim_scaling[dim] = idxc.get_static_value(dim) // node.vector_shapes[dim]
 
 
 def get_dim_scaling(
@@ -130,12 +137,13 @@ def get_dim_scaling(
 
     # For reduce ops, also include the reduction dimension.
     if isinstance(node, ReduceOp):
-        reduction_dim = node.reduction_dim
-        if not_computed(reduction_dim) and is_static_dim(reduction_dim):
-            dim_scaling[reduction_dim] = (
-                idxc.get_static_value(reduction_dim)
-                // node.vector_shapes[reduction_dim]
-            )
+        update_dim_scaling(
+            node, "reduction_dim", dim_scaling, idxc, is_static_dim, not_computed
+        )
+    elif isinstance(node, ScanOp):
+        update_dim_scaling(
+            node, "scan_dim", dim_scaling, idxc, is_static_dim, not_computed
+        )
 
     return dim_scaling
 
