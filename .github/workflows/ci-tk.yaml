@@ -51,6 +51,11 @@ jobs:
           echo VIRTUAL_ENV=$VIRTUAL_ENV >> "$GITHUB_ENV"
           echo "$VENV_DIR/bin" >> "$GITHUB_PATH"
 
+      - name: Setup links for cmake
+        run: |
+          ln -s ${Python_ROOT_DIR}/include/python${{matrix.version}} ${Python_ROOT_DIR}/include/x86_64-linux-gnu
+          echo CMAKE_PREFIX_PATH=${Python_ROOT_DIR} >> "$GITHUB_ENV"
+
       - name: "Setting up Rust"
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -78,8 +83,8 @@ jobs:
           # wheels saves multiple minutes and a lot of bandwidth on runner setup.
           pip install --no-compile -r pytorch-rocm-requirements.txt
           pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
-          pip install -r requirements.txt -e .
-          pip install -r requirements-wave-runtime.txt -e .
+          pip install -r requirements.txt
+          pip install -e . --no-build-isolation
 
       - name: Install pip deps (mi250)
         if: "(contains(toJSON(matrix.os), 'amdgpu') && !contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
