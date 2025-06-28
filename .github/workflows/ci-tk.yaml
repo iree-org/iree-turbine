@@ -22,7 +22,90 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
   cancel-in-progress: true
 
+env:
+  LLVM_SHA_FILE: llvm-sha.txt
+  LLVM_CACHE_NUMBER: 1  # Increase to reset cache
+
+  # Git ref from https://github.com/ftynse/water to checkout
+  WATER_REF: 1a84aa14ee74d5015ceb41bed438de4389f59b83
+
 jobs:
+  # Water uses its own LLVM version independent of the one used by IREE and
+  # potentially can have different compilation flags/enabled features.
+  # We build and cache it here to avoid rebuilding it for every PR.
+  # Water links LLVM statically, so it won't conflict with IREE's one.
+  build_llvm_linux:
+    name: Builds Linux LLVM/MLIR
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [linux-mi300-1gpu-ossci-iree-org]
+    runs-on: ${{matrix.runs-on}}
+    timeout-minutes: 240 # Building LLVM can take multiple hours on public GH runners
+    steps:
+      - name: Checkout Water
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ftynse/water
+          ref: ${{ env.WATER_REF }}
+          path: water
+          fetch-depth: 0
+
+      - name: Setup Cache Vars
+        run: |
+          echo "LLVM_SHA=$(cat $GITHUB_WORKSPACE/water/$LLVM_SHA_FILE)" >> $GITHUB_ENV
+
+      - name: Cache LLVM-MLIR
+        id: cache-llvm-mlir
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: llvm-mlir/_mlir_install/**
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_CACHE_NUMBER }}-${{ env.LLVM_SHA }}
+
+      - name: Setup env
+        if: steps.cache-llvm-mlir.outputs.cache-hit != 'true'
+        run: |
+          sudo apt update
+          sudo apt install -y ninja-build cmake clang lld
+
+
+      - name: Checkout LLVM
+        if: steps.cache-llvm-mlir.outputs.cache-hit != 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: llvm/llvm-project
+          ref: ${{ env.LLVM_SHA }}
+          path: llvm-mlir/llvm-project
+          fetch-depth: 0
+
+      - name: Build LLVM-MLIR
+        if: steps.cache-llvm-mlir.outputs.cache-hit != 'true'
+        run: |
+          pushd ${GITHUB_WORKSPACE}/llvm-mlir
+          echo "INFO: Need to rebuild LLVM-MLIR. Previous installation for MLIR not found"
+          np=`nproc`
+          echo "INFO: nproc $np"
+          mkdir _build
+          cd _build
+          export CC=clang
+          export CXX=clang++
+          cmake ../llvm-project/llvm                                           \
+            -GNinja                                                            \
+            -DCMAKE_BUILD_TYPE=Release                                         \
+            -DLLVM_ENABLE_PROJECTS="mlir"                                      \
+            -DLLVM_ENABLE_ASSERTIONS=ON                                        \
+            -DLLVM_INSTALL_UTILS=ON                                            \
+            -DLLVM_TARGETS_TO_BUILD="X86;AMDGPU"                               \
+            -DLLVM_ENABLE_BINDINGS=OFF                                         \
+            -DLLVM_ENABLE_ZSTD=OFF                                             \
+            -DMLIR_INCLUDE_TESTS=OFF                                           \
+            -DLLVM_USE_LINKER=lld                                              \
+            -DLLVM_DISTRIBUTION_COMPONENTS="llvm-headers;llvm-libraries;cmake-exports;FileCheck;count;not;mlir-headers;mlir-libraries;mlir-cmake-exports;mlir-tblgen" \
+            -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install
+          ninja install-distribution-stripped
+          popd
+
+
   test:
     name: "Unit Tests and Type Checking"
     strategy:
@@ -32,11 +115,41 @@ jobs:
         os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
     timeout-minutes: 60
+    needs: build_llvm_linux
     if: github.event.pull_request.draft == false
     env:
       VENV_DIR: ${{ github.workspace }}/.turbine-venv
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Checkout Water
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        with:
+          repository: ftynse/water
+          ref: ${{ env.WATER_REF }}
+          path: water
+          fetch-depth: 0
+
+      - name: Setup Cache Vars
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          echo "LLVM_SHA=$(cat $GITHUB_WORKSPACE/water/$LLVM_SHA_FILE)" >> $GITHUB_ENV
+          echo "WAVE_TEST_WATER=1" >> $GITHUB_ENV
+
+      - name: Setup env
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          sudo apt update
+          sudo apt install -y ninja-build cmake clang lld
+
+      - name: Cache LLLVM-MLIR
+        id: cache-llvm-mlir
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        with:
+          path: llvm-mlir/_mlir_install/**
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_CACHE_NUMBER }}-${{ env.LLVM_SHA }}
 
       - name: "Setting up Python"
         id: setup_python
@@ -50,6 +163,18 @@ jobs:
           source ${VENV_DIR}/bin/activate
           echo VIRTUAL_ENV=$VIRTUAL_ENV >> "$GITHUB_ENV"
           echo "$VENV_DIR/bin" >> "$GITHUB_PATH"
+
+      - name: Build water
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          cd ${GITHUB_WORKSPACE}/water/build_tools/wheel
+          WATER_MLIR_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install/lib/cmake/mlir python -m pip wheel .
+
+      - name: Install water
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        run: |
+          cd ${GITHUB_WORKSPACE}/water/build_tools/wheel
+          pip install --force-reinstall *.whl
 
       - name: "Setting up Rust"
         uses: actions-rust-lang/setup-rust-toolchain@v1

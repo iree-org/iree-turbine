@@ -9,6 +9,7 @@ from iree.compiler.ir import (
     RankedTensorType,
     ArrayAttr,
     Block,
+    BlockArgument,
     Context,
     DictAttr,
     DenseElementsAttr,
@@ -30,9 +31,11 @@ from iree.compiler.ir import (
     StringAttr,
     SymbolTable,
     Type as IrType,
+    TypeAttr,
     UnitAttr,
     Value,
     VectorType,
+    WalkResult,
 )
 
 from iree.compiler.dialects import (

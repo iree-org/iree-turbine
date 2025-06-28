@@ -58,6 +58,7 @@ class WaveCompileOptions:
         default_factory=LocationCaptureConfig
     )
     use_local_scope: bool = False
+    use_water_leak_check: bool = False
 
     # === Performance options ===
     denorm_fp_math_f32: str = None
