@@ -70,7 +70,7 @@ def get_paged_decode_attention_kernels(
     N = tkl.sym.N
     K1 = tkl.sym.K1
     N_KV = tkl.sym.N_KV
-    K2_ITER = tkl.sym.K2_ITER
+    K2 = tkl.sym.K2
     SEQ_LEN = tkl.sym.SEQ_LEN
     KV_START_IDX = tkl.sym.KV_START_IDX
     SPLIT_OFF = tkl.sym.SPLIT_OFF
@@ -122,7 +122,7 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
         constraints += [
             tkw.TilingConstraint(
-                K2_ITER,
+                K2,
                 BLOCK_K2,
                 iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2),
                 start=SPLIT_OFF + KV_START_IDX,
@@ -169,7 +169,7 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
         constraints += [
             tkw.TilingConstraint(
-                K2_ITER,
+                K2,
                 BLOCK_K2,
                 iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2),
                 start=SPLIT_OFF + KV_START_IDX,
@@ -249,16 +249,16 @@ def get_paged_decode_attention_kernels(
     k_mapping = tkw.IndexMapping(
         num_iterators=4,
         inputs={N_KV: d0, BH: j, K1: l},
-        outputs={S: i, BH: j, K2_ITER: k, K1: l},
-        dynamic_val_mappings={K2_ITER: k},
+        outputs={S: i, BH: j, K2: k, K1: l},
+        dynamic_val_mappings={K2: k},
     )
 
     # Returns the value for the given token index.
     v_mapping = tkw.IndexMapping(
         num_iterators=4,
         inputs={N_KV: d0, BH: j, N: k},
-        outputs={S: i, BH: j, N: k, K2_ITER: l},
-        dynamic_val_mappings={K2_ITER: l},
+        outputs={S: i, BH: j, N: k, K2: l},
+        dynamic_val_mappings={K2: l},
     )
 
     # The kv-cache layout here is (SEQ, HEADS, HEAD_DIM).
@@ -268,7 +268,7 @@ def get_paged_decode_attention_kernels(
         k: tkl.Memory[N_KV, BH, K1, ADDRESS_SPACE, wave_input_dtype],
         v: tkl.Memory[N_KV, BH, N, ADDRESS_SPACE, wave_input_dtype],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        kv_indices: tkl.Memory[K2_ITER, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        kv_indices: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
@@ -283,22 +283,22 @@ def get_paged_decode_attention_kernels(
         # Output has shape [NUM_KV_SPLITS, NUM_SEQS, NUM_HEADS, HEAD_DIM]
         # =========================================================================
 
-        layer_scale_reg = tkl.Register[S, B, K2_ITER, tkl.f32](layer_scaling)
+        layer_scale_reg = tkl.Register[S, B, K2, tkl.f32](layer_scaling)
         if logit_cap > 0:
-            logit_cap_reg = tkl.Register[S, B, K2_ITER, tkl.f32](logit_cap)
+            logit_cap_reg = tkl.Register[S, B, K2, tkl.f32](logit_cap)
 
         init_max = tkl.Register[S, B, tkl.f32](-1e6)
         init_sum = tkl.Register[S, B, tkl.f32](0.0)
         new_acc = tkl.Register[S, N, B, tkl.f32](0.0)
 
-        zero = tkl.Register[B, K2_ITER, tkl.f32](0.0)
-        neg_infinity = tkl.Register[B, K2_ITER, tkl.f32](-1e6)
+        zero = tkl.Register[B, K2, tkl.f32](0.0)
+        neg_infinity = tkl.Register[B, K2, tkl.f32](-1e6)
 
         # The request index is used to load the appropriate entries from the block table.
         req_index = tkw.read(request_indices)
         # The sequence length is used to control the bounds of the loop over K2.
         seq_length = tkw.read(request_indices, mapping=seq_len_mapping)
-        tkw.set_symbol(K2_ITER, seq_length)
+        tkw.set_symbol(K2, seq_length)
         seq_length = seq_length - req_index
         tkw.set_symbol(KV_START_IDX, req_index)
         tkw.set_symbol(SEQ_LEN, seq_length)
@@ -320,7 +320,7 @@ def get_paged_decode_attention_kernels(
         )
         tkw.set_symbol(SPLIT_LEN, seq_length_per_split)
 
-        @tkw.iterate(K2_ITER, init_args=[init_max, init_sum, new_acc])
+        @tkw.iterate(K2, init_args=[init_max, init_sum, new_acc])
         def loop(
             partial_max: tkl.Register[S, B, tkl.f32],
             partial_sum: tkl.Register[S, B, tkl.f32],
@@ -334,26 +334,26 @@ def get_paged_decode_attention_kernels(
                 mapping=k_mapping,
                 mapping_dynamic_vals=(block_indices_k,),
             )  # [S, BH, K2, K1] MxK
-            imm_reg = tkl.Register[S, K2_ITER, B, tkl.f32](0.0)
+            imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
-            x_j = tkw.permute(inner_acc, target_shape=[S, B, K2_ITER])
+            x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
             x_j = x_j * layer_scale_reg
             if logit_cap > 0:
                 logit_cap_reg_inv = tkw.reciprocal(logit_cap_reg)
                 x_j = logit_cap_reg * tkw.tanh_approx(x_j * logit_cap_reg_inv)
-            k2_index = tkw.self_index(K2_ITER, tkl.i32)
+            k2_index = tkw.self_index(K2, tkl.i32)
             mask = tkw.apply_expr(
                 k2_index, lambda x: x < (SPLIT_OFF + SPLIT_LEN + KV_START_IDX)
             )
-            mask = tkw.broadcast(mask, target_shape=[B, K2_ITER])
+            mask = tkw.broadcast(mask, target_shape=[B, K2])
             mask = tkw.cast(mask, tkw.i1)
             bias = tkw.select(mask, zero, neg_infinity)
             x_j = x_j + bias
-            m_j = tkw.max(x_j, partial_max, dim=K2_ITER)
+            m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
-            d_j = tkw.sum(e_delta, e_init, dim=K2_ITER)
+            d_j = tkw.sum(e_delta, e_init, dim=K2)
             imm_f16 = tkw.cast(e_delta, wave_input_dtype)  # [S, B, K2] NxK
             v_reg = tkw.read(
                 v,
@@ -449,9 +449,9 @@ def get_paged_decode_attention_kernels(
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
-    dynamic_symbols = [K2_ITER, N_KV, S]
+    dynamic_symbols = [K2, N_KV, S]
     dynamic_symbols_map = {
-        K2_ITER: shape.kv_lens,
+        K2: shape.kv_lens,
         N_KV: shape.kv_lens * shape.num_seqs,
         S: shape.num_seqs,
     }
