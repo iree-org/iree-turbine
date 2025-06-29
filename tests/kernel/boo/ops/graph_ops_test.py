@@ -1,0 +1,96 @@
+# Copyright 2025 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+import unittest
+import tempfile
+
+from pathlib import Path
+
+import torch
+from torch._functorch.aot_autograd import aot_export_joint_simple
+
+from iree.turbine.kernel.boo.ops import get_custom_graph_op, get_autograd_function
+from iree.turbine.kernel.boo.runtime import set_cache_dir
+
+
+class SampleModule(torch.nn.Module):
+    def __init__(self, in_features: int, out_features: int):
+        super().__init__()
+        self.linear = torch.nn.Linear(
+            in_features=in_features, out_features=out_features
+        )
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(self.linear(x))
+
+
+class GraphOpsTest(unittest.TestCase):
+    def testForwardOnlyOp(self):
+        with tempfile.TemporaryDirectory() as td:
+            set_cache_dir(Path(td))
+
+            m = SampleModule(16, 32)
+            x = torch.ones([3, 3, 16, 16])
+
+            # Export a graph.
+            exported = torch.export.export(m, args=(x,))
+            gm = exported.graph_module
+
+            # Get a graph op (note, model params are pytree flattened as args).
+            graph_op = get_custom_graph_op(gm)
+
+            # Apply created graph op on various shaped inputs.
+            y = graph_op(m.linear.weight, m.linear.bias, x)
+            assert list(y.shape) == [3, 3, 16, 32]
+            new_x = torch.ones([4, 3, 32, 16])
+            new_y = graph_op(m.linear.weight, m.linear.bias, new_x)
+            assert list(new_y.shape) == [4, 3, 32, 32]
+
+            # Verify caching.
+            op_name = graph_op._qualified_op_name.split("::")[-1]
+            cache_subdir_names = [p.name for p in Path(td).glob("*/")]
+            expected_dir_name_0 = (
+                op_name + "_32x16xfloat32_32xfloat32_3x3x16x16xfloat32"
+            )
+            expected_dir_name_1 = (
+                op_name + "_32x16xfloat32_32xfloat32_4x3x32x16xfloat32"
+            )
+            assert expected_dir_name_0 in cache_subdir_names
+            assert expected_dir_name_1 in cache_subdir_names
+
+    def testAutogradOp(self):
+        with tempfile.TemporaryDirectory() as td:
+            set_cache_dir(Path(td))
+            m = SampleModule(16, 32)
+            x = torch.ones([3, 3, 16, 16])
+
+            # Export a graph.
+            exported = torch.export.export(m, args=(x,))
+            gm = exported.graph_module
+
+            # Get a joint graph (exploiting the fact that gm.forward has flattened args).
+            sample_args = (m.linear.weight, m.linear.bias, x)
+            joint_gm = aot_export_joint_simple(
+                gm.forward, sample_args, trace_joint=True
+            )
+
+            # Get an autograd custom op from the joint graph module.
+            autograd_f = get_autograd_function(joint_gm, None, 1)
+
+            y = autograd_f(*sample_args)
+
+            assert m.linear.weight.grad is None
+            assert m.linear.bias.grad is None
+
+            y[0].sum().backward()
+
+            assert m.linear.weight.grad.shape == m.linear.weight.shape
+            assert m.linear.bias.grad.shape == m.linear.bias.shape
+
+
+if __name__ == "__main__":
+    unittest.main()
