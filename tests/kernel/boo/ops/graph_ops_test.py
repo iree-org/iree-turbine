@@ -13,7 +13,7 @@ import torch
 from torch._functorch.aot_autograd import aot_export_joint_simple
 
 from iree.turbine.kernel.boo.ops import get_custom_graph_op, get_autograd_function
-from iree.turbine.kernel.boo.runtime import set_cache_dir
+from iree.turbine.kernel.boo.runtime import set_cache_dir, LaunchableRuntimeCache
 
 
 class SampleModule(torch.nn.Module):
@@ -29,6 +29,10 @@ class SampleModule(torch.nn.Module):
 
 
 class GraphOpsTest(unittest.TestCase):
+    def setUp(self):
+        LaunchableRuntimeCache.clear()
+        LaunchableRuntimeCache.set_cache_limit(0)
+
     def testForwardOnlyOp(self):
         with tempfile.TemporaryDirectory() as td:
             set_cache_dir(Path(td))
