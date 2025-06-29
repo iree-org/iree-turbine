@@ -58,7 +58,7 @@ def eager_dispatch(ksel: KernelSelection):
     """Main entry-point for handling dispatch of a selected kernel via a generator."""
     # Scan arg descs and decide on a compute device.
     # For now, we compute on the first device that we support.
-    # This is very simplisitic and will need to be extended for multi-device, etc.
+    # This is very simplistic and will need to be extended for multi-device, etc.
     device: Optional[Device] = None
     torch_device: Optional[torch.device] = None
     for arg_desc in ksel.arg_descs:

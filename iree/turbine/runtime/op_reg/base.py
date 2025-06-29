@@ -260,6 +260,13 @@ class KernelSelection(ABC):
     has not yet been generated, but we have selected a generation
     strategy based on a concrete signature.
 
+    KernelSelection implements a strategy pattern for reading concrete values
+    from inputs to match the kernel's expected signature. This enables the same
+    Python-based MLIR generation logic to work with KernelSelection instances
+    created from different contexts:
+        - Eager execution (reads directly from PyTorch tensors/values)
+        - AOT compilation (converts MLIR types back to PyTorch tensors first)
+
     This mechanism also serves as the means for servicing `meta`
     registrations because it implicitly computes everything needed
     (i.e. shapes, etc).
