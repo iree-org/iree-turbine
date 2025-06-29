@@ -34,6 +34,7 @@ def use_backward():
 
 class BooConvReplacementTest(unittest.TestCase):
     def setUp(self):
+        LaunchableRuntimeCache.clear()
         LaunchableRuntimeCache.set_cache_limit(0)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -106,6 +107,7 @@ class BooConvModuleTest(unittest.TestCase):
 @pytest.mark.usefixtures("use_backward")
 class BooConv2dLaunchingTest(unittest.TestCase):
     def setUp(self):
+        LaunchableRuntimeCache.clear()
         LaunchableRuntimeCache.set_cache_limit(0)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model0 = BooConv2d(

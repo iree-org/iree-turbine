@@ -4,8 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from .conv import *
-from .layout_customizable_conv import *
-from .library import *
-from .utils import *
-from .graph import *
+from .apply import *
+from .auto import *
+from .schema import *
+from .subgraph import *
