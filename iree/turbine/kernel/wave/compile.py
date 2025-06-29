@@ -77,6 +77,11 @@ class WaveKernel:
             if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                 kernel_outputs.append(arg)
 
+        dynamic_symbols = []
+        for sym in self.options.dynamic_symbols:
+            arg, dim = self.symbols_args_map[sym]
+            dynamic_symbols.append(args[arg].shape[dim])
+
         invoke_vmfb(
             self.executable,
             self.options,
@@ -84,6 +89,7 @@ class WaveKernel:
             kernel_outputs,
             scalar_args,
             self.bound_scalar_symbols,
+            dynamic_symbols,
             self.gpu_func,
         )
         return self.asm
