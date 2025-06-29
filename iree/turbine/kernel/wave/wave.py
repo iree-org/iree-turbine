@@ -84,7 +84,7 @@ import torch.fx as fx
 import inspect
 import sympy
 import warnings
-from ..lang import SymbolBind
+from ..lang import SymbolBind, Memory
 import logging
 
 logger = logging.getLogger(__name__)
@@ -163,6 +163,10 @@ def _is_symbol_bind(a: Any) -> bool:
     return inspect.isclass(a) and issubclass(a, SymbolBind)
 
 
+def _is_memory_arg(a: Any) -> bool:
+    return inspect.isclass(a) and issubclass(a, Memory)
+
+
 class LaunchableWave(Launchable):
     def __init__(
         self,
@@ -189,6 +193,18 @@ class LaunchableWave(Launchable):
             for i, (name, arg) in enumerate(hints.items())
             if _is_symbol_bind(arg)
         }
+
+        symbols_args_map = {}
+        for i, arg in enumerate(hints.values()):
+            if not _is_memory_arg(arg):
+                continue
+
+            for j, symbol in enumerate(arg.symbolic_shape):
+                if symbol in symbols_args_map:
+                    continue
+
+                symbols_args_map[symbol] = (i, j)
+        self.symbols_args_map = symbols_args_map
 
     @property
     def workgroup_constraints(self) -> list[WorkgroupConstraint]:
