@@ -69,7 +69,7 @@ def get_paged_decode_attention_kernels(
     B = tkl.sym.B
     N = tkl.sym.N
     K1 = tkl.sym.K1
-    K2 = tkl.sym.K2
+    N_KV = tkl.sym.N_KV
     K2_ITER = tkl.sym.K2_ITER
     SEQ_LEN = tkl.sym.SEQ_LEN
     KV_START_IDX = tkl.sym.KV_START_IDX
@@ -248,7 +248,7 @@ def get_paged_decode_attention_kernels(
     # Returns the key for the given token index.
     k_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K2, BH: j, K2_ITER: d0 % K2, K1: l},
+        inputs={N_KV: d0, BH: j, K1: l},
         outputs={S: i, BH: j, K2_ITER: k, K1: l},
         dynamic_val_mappings={K2_ITER: k},
     )
@@ -256,7 +256,7 @@ def get_paged_decode_attention_kernels(
     # Returns the value for the given token index.
     v_mapping = tkw.IndexMapping(
         num_iterators=4,
-        inputs={S: d0 // K2, BH: j, N: k, K2_ITER: d0 % K2},
+        inputs={N_KV: d0, BH: j, N: k},
         outputs={S: i, BH: j, N: k, K2_ITER: l},
         dynamic_val_mappings={K2_ITER: l},
     )
@@ -265,8 +265,8 @@ def get_paged_decode_attention_kernels(
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
         q: tkl.Memory[S, B, K1, GLOBAL_ADDRESS_SPACE, wave_input_dtype],
-        k: tkl.Memory[S, K2_ITER, BH, K1, ADDRESS_SPACE, wave_input_dtype],
-        v: tkl.Memory[S, K2_ITER, BH, N, ADDRESS_SPACE, wave_input_dtype],
+        k: tkl.Memory[N_KV, BH, K1, ADDRESS_SPACE, wave_input_dtype],
+        v: tkl.Memory[N_KV, BH, N, ADDRESS_SPACE, wave_input_dtype],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         kv_indices: tkl.Memory[K2_ITER, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
@@ -449,10 +449,10 @@ def get_paged_decode_attention_kernels(
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
-    dynamic_symbols = [K2_ITER, K2, S]
+    dynamic_symbols = [K2_ITER, N_KV, S]
     dynamic_symbols_map = {
         K2_ITER: shape.kv_lens,
-        K2: shape.kv_lens,
+        N_KV: shape.kv_lens * shape.num_seqs,
         S: shape.num_seqs,
     }
 
