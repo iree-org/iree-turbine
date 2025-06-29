@@ -8,19 +8,18 @@ from typing import Tuple
 
 import torch
 from torch.fx.graph_module import GraphModule
-from torch._functorch.aot_autograd import _aot_export_function
 from .schema import FusionSchema, DEFAULT_SUPPORTED_BOO_FUSIONS
-from .subgraph import extract_fusion_subgraph_modules, fused_subgraph, replace_subgraphs
-from ..ops.graph import get_autograd_function
+from .subgraph import (
+    extract_fusion_subgraph_modules,
+    replace_subgraphs,
+    get_subgraph_replacement,
+    _log_graph_module,
+)
 from ....support.logging import aot_logger as logger
 
 __all__ = [
     "fusion_transform",
 ]
-
-
-def _log_graph_module(label: str, gm: GraphModule):
-    logger.debug("%s:\n%s", label, gm.print_readable(print_output=False))
 
 
 def fusion_transform(
@@ -48,34 +47,7 @@ def fusion_transform(
     subgraphs, _ = extract_fusion_subgraph_modules(gm, fusion_schema)
     subgraph_repl = []
     for sg in subgraphs:
-        _log_graph_module("Extracted SubGraph Module", sg)
-        fake_args = tuple(
-            [n.meta.get("val") for n in sg.graph.nodes if n.op == "placeholder"]
-        )
-        joint_sg, metadata, in_spec, out_spec = _aot_export_function(
-            sg.forward,
-            fake_args,
-            decompositions=None,
-        )
-        # TODO: do some minimal validation on the results of the above function.
-        # in_spec, _kw_in_spec = in_spec.children_specs
-        _log_graph_module("AOT Joint FWD/BWD Subgraph Module", joint_sg)
-        fake_args_joint = tuple(
-            [n.meta.get("val") for n in joint_sg.graph.nodes if n.op == "placeholder"]
-        )
-
-        custom_op = get_autograd_function(
-            joint_sg, fake_args_joint, num_fwd_outputs=metadata.num_forward_returns
-        )
-
-        single_node_graph = fused_subgraph(
-            sg,
-            custom_op,
-            (n for n in sg.graph.nodes if n.op == "placeholder"),
-            num_outputs=metadata.num_forward_returns,
-        )
-        _log_graph_module("Replacement Subgraph", single_node_graph)
-        subgraph_repl.append(single_node_graph)
+        subgraph_repl.append(get_subgraph_replacement(sg))
 
     _ = replace_subgraphs(gm, subgraphs, subgraph_repl)
 

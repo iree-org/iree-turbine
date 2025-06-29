@@ -4,24 +4,65 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from copy import deepcopy
-from typing import Any, Callable, Sequence, Set, List, Dict, Tuple
+from typing import Sequence, Set, List, Dict, Tuple
 
 import torch
 from torch.fx.subgraph_rewriter import replace_pattern
 from torch.fx.graph import Graph
 from torch.fx.graph_module import GraphModule
 from torch.fx.node import Node
+from torch._functorch.aot_autograd import _aot_export_function
 
 from .schema import FusionSchema, OpFusionSpec, Target
+from ..ops.graph import get_autograd_function
+from ....support.logging import aot_logger as logger
+
+
+def _log_graph_module(label: str, gm: GraphModule):
+    logger.debug("%s:\n%s", label, gm.print_readable(print_output=False))
+
+
+def get_subgraph_replacement(subgraph: GraphModule):
+    _log_graph_module("Extracted SubGraph Module", subgraph)
+    fake_args = tuple(
+        [n.meta.get("val") for n in subgraph.graph.nodes if n.op == "placeholder"]
+    )
+    joint_sg, metadata, in_spec, out_spec = _aot_export_function(
+        subgraph.forward,
+        fake_args,
+        decompositions=None,
+    )
+    # TODO: do some minimal validation on the results of the above function.
+    # in_spec, _kw_in_spec = in_spec.children_specs
+    _log_graph_module("AOT Joint FWD/BWD Subgraph Module", joint_sg)
+    fake_args_joint = tuple(
+        [n.meta.get("val") for n in joint_sg.graph.nodes if n.op == "placeholder"]
+    )
+
+    custom_op = get_autograd_function(
+        joint_sg, fake_args_joint, num_fwd_outputs=metadata.num_forward_returns
+    )
+
+    single_node_graph = fused_subgraph(
+        subgraph,
+        custom_op,
+        (n for n in subgraph.graph.nodes if n.op == "placeholder"),
+        num_outputs=metadata.num_forward_returns,
+    )
+    _log_graph_module("Replacement Subgraph", single_node_graph)
+    return single_node_graph
 
 
 def fused_subgraph(
     root, target: Target, input_nodes: Sequence[Node], num_outputs: int
 ) -> GraphModule:
     g = Graph()
-    new_inputs = tuple([g.placeholder(n.name) for n in input_nodes])
-    fused_node = g.call_function(target, new_inputs)
+    new_inputs = []
+    for n in input_nodes:
+        new_node = g.placeholder(n.name)
+        new_node.meta = n.meta
+        new_inputs.append(new_node)
+    fused_node = g.call_function(target, tuple(new_inputs))
     outputs = []
     for i in range(num_outputs):
         outputs.append(g.call_method("__getitem__", args=(fused_node, i)))

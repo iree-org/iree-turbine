@@ -28,7 +28,7 @@ class SampleModule(torch.nn.Module):
 
 
 class SubgraphReplacementTest(unittest.TestCase):
-    def testWholeModuleReplacement(self):
+    def testReplacementWithPytorchBackward(self):
         with tempfile.TemporaryDirectory() as td:
             set_cache_dir(Path(td))
             m = SampleModule(in_features=16, out_features=32)
@@ -56,6 +56,11 @@ class SubgraphReplacementTest(unittest.TestCase):
 
             self.assertIsNotNone(fused_m.linear.weight.grad)
             self.assertIsNotNone(fused_m.linear.bias.grad)
+
+            x2 = torch.ones([3, 3, 32, 16])
+
+            with self.assertRaises(RuntimeError):
+                y2 = fused_m(x2)
 
 
 if __name__ == "__main__":
