@@ -167,7 +167,6 @@ The `-t 1` option to collect timing is implemented by launching the kernel in a 
 
 #### pip installed `iree-base-runtime`:
 
-- set `IREE_PY_RUNTIME=tracy` in your environment.
 - build `tracy-csvexport` and add it to your `PATH`:
 
 ```

@@ -1,12 +1,15 @@
-import gc
-import math
+# Copyright 2025 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 import argparse
-from collections.abc import Callable, Sequence
 import os
 import random
 import shlex
 import statistics
-import torch
+import copy
 
 
 def main():
@@ -56,14 +59,18 @@ command-line arguments are appended to the arguments from the file.
     for file_args in mio_file_args:
         driver_args = file_args + extra_cli_args
         timing_args, runner_args = runner_parser.parse_known_args(driver_args)
-        func = lambda: run(runner_args, args.gpu_id)
         csv_file.write(shlex.join(driver_args) + ",")
         if not timing_args.time:
-            func()
-            continue
+            # IMPORTANT: this import must remain here because otherwise it loads
+            # IREE runtime (transitively when loading packages through
+            # iree.turbine.kernel) that would clash with Tracy options that are
+            # needed when running with a timing flag enabled.
+            import iree.turbine.kernel.boo.conv_exports.runner as runner
 
+            runner.run(runner_args, args.gpu_id)
+            continue
         try:
-            zones, func_name = trace_gpu(func)
+            zones, func_name = trace_gpu(runner_args, args.gpu_id)
         except Exception as exc:
             print(f">>> ERROR: {exc}")
             csv_file.write("N.A.\n")
@@ -93,87 +100,10 @@ command-line arguments are appended to the arguments from the file.
             csv_file.write(f"{min(zones[dispatch_zone_names[0]]) / 1000:.2f}\n")
 
 
-def run(cli_args: Sequence[str], gpu_id: int):
-    # In order to be properly traced only the subprocesses should import
-    # 'iree.runtime', so all turbine imports need to be kept local.
-    from iree.turbine.kernel.boo.conv_exports import (
-        miopen_parser as mio,
-        get_launchable,
-    )
-
-    print(shlex.join(cli_args))
-    parser = mio.get_miopen_parser()
-    parser.add_argument(
-        "--iter", type=int, help="Number of iterations to run", default=100
-    )
-    parser.add_argument(
-        "--splat-input-value",
-        default=None,
-        type=int,
-        help="use a splat value for inputs (defaults to random values)",
-    )
-    args = parser.parse_args(cli_args)
-    sig = mio.get_signature(args)
-    conv = get_launchable(sig)
-
-    # get the number of available GPU's
-    num_devices = 1 if gpu_id != -1 else torch.cuda.device_count()
-    devices = (
-        [f"cuda:{gpu_id}"]
-        if gpu_id != -1
-        else [f"cuda:{i}" for i in range(num_devices)]
-    )
-    iter_per_device = args.iter // num_devices
-    rem_iter = args.iter % num_devices
-
-    # generate sample conv args on each GPU
-    per_device_data = [
-        sig.get_sample_conv_args(
-            seed=10,
-            device=device,
-            splat_value=args.splat_input_value,
-        )
-        for device in devices
-    ]
-
-    # determine an iter threshold to pause and collect garbage
-    numel = 0
-    if int(sig.mode) == 0:
-        numel = math.prod(sig.output_shape)
-    elif int(sig.mode) == 1:
-        numel = math.prod(sig.input_shape)
-    elif int(sig.mode) == 2:
-        numel = math.prod(sig.kernel_shape)
-    dtype_bytes = int(sig.dtype.itemsize)
-    res_mem_bytes = numel * dtype_bytes
-    # This is a rough threshold: Mi300x 192 GB memory divided by 2.
-    mem_bytes_threshold = 96 * (10**9)
-    iter_thresh = int(mem_bytes_threshold // res_mem_bytes)
-
-    result = None
-    for iter in range(iter_per_device + 1):
-        for device_idx, conv_args in enumerate(per_device_data):
-            if iter == iter_per_device and device_idx >= rem_iter:
-                break
-            result = conv(*conv_args)
-        if (iter + 1) % iter_thresh == 0:
-            print(f"Synchronizing all devices on iter {iter} and collecting garbage.")
-            for i in range(num_devices):
-                torch.cuda.synchronize(torch.device(f"cuda:{i}"))
-            gc.collect()
-
-    torch.cuda.synchronize()
-    print(
-        f">>> result shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
-    )
-
-    return sig.get_func_name()
-
-
 TRACY_PORT = str(random.randint(40_000, 50_000))
 
 
-def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
+def trace_gpu(runner_args: str, gpu_id: int) -> tuple[dict[str, list[int]], str]:
     """Profile 'func' under Tracy, and return the GPU zone execution times."""
     from multiprocessing import Process, Queue
     import os
@@ -190,22 +120,18 @@ def trace_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
             stderr=sys.stderr,
             text=True,
         ) as tracy:
-            queue = Queue()
-
-            def proc_fn():
-                os.environ["TRACY_PORT"] = TRACY_PORT
-                try:
-                    queue.put(func())
-                except Exception as exc:
-                    queue.put(str(exc))
-                    raise
-
-            process = Process(target=proc_fn)
-            process.start()
-            process.join()
-            result = queue.get_nowait()
-            if process.exitcode != 0:
-                raise ValueError(result)
+            environ = copy.deepcopy(os.environ)
+            environ["IREE_PY_RUNTIME"] = "tracy"
+            environ["TRACY_PORT"] = TRACY_PORT
+            process = subprocess.run(
+                ["python", "runner.py", str(gpu_id)] + runner_args,
+                env=environ,
+                capture_output=True,
+                text=True,
+            )
+            if process.returncode:
+                raise RuntimeError(process.stderr)
+            result = process.stdout.strip()
             try:
                 # Tracy will never exit if it fails to connect, so kill the process after some time.
                 out, err = tracy.communicate(timeout=5)
