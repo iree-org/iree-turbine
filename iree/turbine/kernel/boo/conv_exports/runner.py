@@ -16,10 +16,6 @@ from iree.turbine.kernel.boo.conv_exports import (
 
 
 def run(cli_args: Sequence[str], gpu_id: int):
-    # In order to be properly traced only the subprocesses should import
-    # 'iree.runtime', so all turbine imports need to be kept local.
-
-    # print(shlex.join(cli_args))
     parser = mio.get_miopen_parser()
     parser.add_argument(
         "--iter", type=int, help="Number of iterations to run", default=100

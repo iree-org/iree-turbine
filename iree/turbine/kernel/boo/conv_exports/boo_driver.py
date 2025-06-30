@@ -69,6 +69,10 @@ command-line arguments are appended to the arguments from the file.
 
             runner.run(runner_args, args.gpu_id)
             continue
+
+        # Print proof of life.
+        print(" ".join(runner_args))
+
         try:
             zones, func_name = trace_gpu(runner_args, args.gpu_id)
         except Exception as exc:
