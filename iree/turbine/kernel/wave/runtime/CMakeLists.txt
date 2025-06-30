@@ -13,72 +13,104 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-# Detect the installed nanobind package and import it into CMake
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT
-  COMMAND_ERROR_IS_FATAL ANY)
-find_package(nanobind CONFIG REQUIRED)
+# Check if dependencies are available (passed from setup.py)
+if (NOT DEFINED NANOBIND_AVAILABLE)
+  set(NANOBIND_AVAILABLE OFF)
+endif()
 
-# Link against torch, using the libraries and include dirs in site-packages.
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -c "import torch; print(torch.__path__[0])"
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_PATH
-  COMMAND_ERROR_IS_FATAL ANY)
+if (NOT DEFINED TORCH_CUDA_AVAILABLE)
+  set(TORCH_CUDA_AVAILABLE OFF)
+endif()
 
-# Add all directories in /opt/rocm/lib/cmake to CMAKE_PREFIX_PATH
-file(GLOB subdirectories "/opt/rocm/lib/cmake/*")
-foreach(subdir ${subdirectories})
-  if(IS_DIRECTORY ${subdir})
-    list(APPEND CMAKE_PREFIX_PATH "${subdir}")
-  endif()
-endforeach()
+# Determine if wave runtime should be enabled
+set(WAVE_RUNTIME_ENABLED TRUE)
 
-include_directories(${torch_PATH}/include ${torch_PATH}/include/torch/csrc/api/include/)
-link_directories(${torch_PATH}/lib)
+if (NOT NANOBIND_AVAILABLE)
+  set(WAVE_RUNTIME_ENABLED FALSE)
+  message(STATUS "nanobind not available. Disabling wave runtime functionality.")
+endif()
 
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))"
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_cxx_abi
-  COMMAND_ERROR_IS_FATAL ANY)
-set(TORCH_CXX_FLAGS -D_GLIBCXX_USE_CXX11_ABI=${torch_cxx_abi})
+if (NOT TORCH_CUDA_AVAILABLE)
+  set(WAVE_RUNTIME_ENABLED FALSE)
+  message(STATUS "PyTorch CUDA support not available. Disabling wave runtime functionality.")
+endif()
 
-find_package(hip REQUIRED)
-add_definitions(-D__HIP_PLATFORM_AMD__ -DUSE_ROCM)
+if (NOT WAVE_RUNTIME_ENABLED)
+  message(STATUS "Wave runtime is disabled. Skipping build.")
+  return()
+endif()
 
-# Build the core parts of nanobind once
-nanobind_build_library(nanobind SHARED)
+# Only proceed with nanobind setup if it's available
+if (NANOBIND_AVAILABLE)
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT
+    COMMAND_ERROR_IS_FATAL ANY)
+  find_package(nanobind CONFIG REQUIRED)
+endif()
 
-# Compile an extension library
 add_library(wave_runtime MODULE runtime.cpp)
 
-# .. and link it against the nanobind parts
-set(TORCH_LIBRARIES ${torch_PATH}/lib/libtorch.so ${torch_PATH}/lib/libc10.so)
-target_link_libraries(wave_runtime PRIVATE nanobind hip::host ${TORCH_LIBRARIES})
-set_target_properties(wave_runtime PROPERTIES LINK_WHAT_YOU_USE TRUE)
+# Only proceed with PyTorch setup and build if runtime is enabled
+if(WAVE_RUNTIME_ENABLED)
+  # Link against torch, using the libraries and include dirs in site-packages.
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -c "import torch; print(torch.__path__[0])"
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_PATH
+    COMMAND_ERROR_IS_FATAL ANY)
 
-# .. enable size optimizations
-nanobind_opt_size(wave_runtime)
+  # Add all directories in /opt/rocm/lib/cmake to CMAKE_PREFIX_PATH
+  file(GLOB subdirectories "/opt/rocm/lib/cmake/*")
+  foreach(subdir ${subdirectories})
+    if(IS_DIRECTORY ${subdir})
+      list(APPEND CMAKE_PREFIX_PATH "${subdir}")
+    endif()
+  endforeach()
 
-# .. enable link time optimization
-nanobind_lto(wave_runtime)
+  include_directories(${torch_PATH}/include ${torch_PATH}/include/torch/csrc/api/include/)
+  link_directories(${torch_PATH}/lib)
 
-# .. set the default symbol visibility to 'hidden'
-nanobind_set_visibility(wave_runtime)
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))"
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_cxx_abi
+    COMMAND_ERROR_IS_FATAL ANY)
+  set(TORCH_CXX_FLAGS -D_GLIBCXX_USE_CXX11_ABI=${torch_cxx_abi})
 
-# .. strip unneeded symbols and debug info from the binary (only active in release builds)
-nanobind_strip(wave_runtime)
+  find_package(hip REQUIRED)
+  add_definitions(-D__HIP_PLATFORM_AMD__ -DUSE_ROCM)
 
-# .. disable the stack protector
-nanobind_disable_stack_protector(wave_runtime)
+  # Build the core parts of nanobind once
+  nanobind_build_library(nanobind SHARED)
 
-# .. set the Python extension suffix
-nanobind_extension(wave_runtime)
+  # .. and link it against the nanobind parts
+  set(TORCH_LIBRARIES ${torch_PATH}/lib/libtorch.so ${torch_PATH}/lib/libc10.so)
+  target_link_libraries(wave_runtime PRIVATE nanobind hip::host ${TORCH_LIBRARIES})
+  set_target_properties(wave_runtime PROPERTIES LINK_WHAT_YOU_USE TRUE)
 
-# .. set important compilation flags
-nanobind_compile_options(wave_runtime PRIVATE ${TORCH_CXX_FLAGS})
+  # .. enable size optimizations
+  nanobind_opt_size(wave_runtime)
 
-# .. set important linker flags
-nanobind_link_options(wave_runtime)
+  # .. enable link time optimization
+  nanobind_lto(wave_runtime)
+
+  # .. set the default symbol visibility to 'hidden'
+  nanobind_set_visibility(wave_runtime)
+
+  # .. strip unneeded symbols and debug info from the binary (only active in release builds)
+  nanobind_strip(wave_runtime)
+
+  # .. disable the stack protector
+  nanobind_disable_stack_protector(wave_runtime)
+
+  # .. set the Python extension suffix
+  nanobind_extension(wave_runtime)
+
+  # .. set important compilation flags
+  nanobind_compile_options(wave_runtime PRIVATE ${TORCH_CXX_FLAGS})
+
+  # .. set important linker flags
+  nanobind_link_options(wave_runtime)
+
+endif()
 
 install(TARGETS wave_runtime DESTINATION ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
