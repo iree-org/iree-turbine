@@ -39,6 +39,7 @@ jobs:
             runs-on: linux-mi300-1gpu-ossci-iree-org
             pytorch_requirements: "pytorch-rocm-requirements.txt"
     runs-on: ${{matrix.runs-on}}
+    timeout-minutes: 60
     env:
       VENV_DIR: ${{ github.workspace }}/.turbine-venv
     steps:

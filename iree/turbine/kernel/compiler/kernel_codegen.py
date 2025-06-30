@@ -27,6 +27,7 @@ from iree.turbine.kernel._support.dtype import DataType
 from .._support.indexing import (
     IndexingContext,
     IndexSymbol,
+    index_symbol,
 )
 
 from ..lang.kernel_buffer import (
@@ -34,7 +35,7 @@ from ..lang.kernel_buffer import (
     KernelBufferUsage,
     is_kernel_buffer_meta_derived,
 )
-from ..lang.wave_types import Memory
+from ..lang.wave_types import Memory, SymbolBind
 from ..lang.grid import Grid
 from ..ops.wave_ops import get_custom, Placeholder, NestedRegionOp, Read, Write
 
@@ -49,11 +50,9 @@ from .builder import (
 from .ir import (
     Block,
     FunctionType,
-    F32Type,
     IndexType,
     InsertionPoint,
     IrType,
-    IntegerType,
     Location,
     Operation,
     Value,
@@ -160,12 +159,8 @@ class BindingDesc:
             return IndexType.get()
         elif binding_type == BindingType.SYMBOL_VALUE:
             return IndexType.get()
-        elif (
-            binding_type == BindingType.SCALAR_VALUE and self.scalar_type.is_float_asm()
-        ):
-            return F32Type.get()
-        elif binding_type == BindingType.SCALAR_VALUE and self.scalar_type.is_int_asm():
-            return IntegerType.get_signless(32)
+        elif binding_type == BindingType.SCALAR_VALUE:
+            return IrType.parse(self.scalar_type.ir_type_asm())
         else:
             raise AssertionError("Unhandled switch BindingType")
 
@@ -261,6 +256,17 @@ class KernelSignature:
                         BindingType.SCALAR_VALUE,
                         name=node.target,
                         scalar_type=t,
+                    )
+                )
+            elif issubclass(t, SymbolBind):
+                sym = index_symbol(node.meta["symbol_name"])
+                self.bindings.append(
+                    BindingDesc(
+                        ("node", node),
+                        BindingType.SCALAR_VALUE,
+                        name=node.target,
+                        symbol_type=sym,
+                        scalar_type=t.dtype,
                     )
                 )
             elif issubclass(t, IndexSymbol):

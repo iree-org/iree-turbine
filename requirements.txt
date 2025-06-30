@@ -10,6 +10,7 @@ nanobind==2.5.0
 numpy
 parameterized==0.9.0
 pytest-xdist==3.5.0
+pytest-timeout==2.4.0
 pytest==8.0.0
 setuptools
 typing_extensions

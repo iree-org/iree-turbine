@@ -361,11 +361,19 @@ def get_scheduling_weight(node: fx.Node) -> EdgeWeight:
                 weight = EdgeWeight(0, delay_table[Operation.WRITE_GLOBAL])
             else:
                 weight = EdgeWeight(0, delay_table[Operation.WRITE_SHARED])
-        case MMA():
+        case MMA() | ScaledMMA():
             weight = EdgeWeight(0, delay_table[Operation.MMA])
         case IterArg():
             weight = EdgeWeight(1, 0)
-        case CastOp() | Extract() | Permute() | Broadcast() | Reshape() | SelfIndex():
+        case (
+            CastOp()
+            | BitcastOp()
+            | Extract()
+            | Permute()
+            | Broadcast()
+            | Reshape()
+            | SelfIndex()
+        ):
             weight = EdgeWeight(0, delay_table[Operation.NOOP])
         case ApplyExpr() | UnaryPyOp() | BinaryOpBase() | SelectOp():
             weight = EdgeWeight(0, delay_table[Operation.VALU])

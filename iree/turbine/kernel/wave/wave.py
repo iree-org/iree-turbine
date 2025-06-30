@@ -13,7 +13,7 @@ from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
 from ..ops.wave_ops import Iterate, CustomOp, get_custom, IterArg
-from .._support.indexing import IndexingContext, IndexExpr
+from .._support.indexing import IndexingContext, IndexExpr, index_symbol
 from .symbolic_constraints import SymbolicAlias
 from .._support.tracing import (
     CapturedTrace,
@@ -79,11 +79,12 @@ from .utils.general_utils import (
 )
 
 # Others
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence, get_type_hints
 import torch.fx as fx
 import inspect
 import sympy
 import warnings
+from ..lang import SymbolBind
 import logging
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,10 @@ def wave_trace_only(
     return decorator
 
 
+def _is_symbol_bind(a: Any) -> bool:
+    return inspect.isclass(a) and issubclass(a, SymbolBind)
+
+
 class LaunchableWave(Launchable):
     def __init__(
         self,
@@ -174,6 +179,16 @@ class LaunchableWave(Launchable):
         self._sig = inspect.signature(eager_function)
 
         self.grid_type = Grid[tuple(get_grid_shape(self.workgroup_constraints))]
+
+        # TODO: needed for the wave_runtime grid calculations, we should really
+        # just generate host wrapper suitable for wave_runtime instead of doing
+        # it in python (and it will be faster as well).
+        hints = get_type_hints(eager_function)
+        self.bound_scalar_symbols = {
+            index_symbol(name): i
+            for i, (name, arg) in enumerate(hints.items())
+            if _is_symbol_bind(arg)
+        }
 
     @property
     def workgroup_constraints(self) -> list[WorkgroupConstraint]:
@@ -219,7 +234,7 @@ class LaunchableWave(Launchable):
         self, *, location_capture_config: Optional[LocationCaptureConfig] = None
     ) -> CapturedTrace:
         region_graph = KernelRegionGraph(
-            location_capture_config=location_capture_config
+            location_capture_config=location_capture_config, func=self._f
         )
         with CompiledContext(region_graph, grid_type=self.grid_type) as context:
             # Get all explictly defined custom ops
@@ -616,11 +631,14 @@ class LaunchableWave(Launchable):
         # Add grid and block dims to kernel launch info.
         # Convert the grid into a lambda that we can use to compute the grid dimension.
         hw_constraint = get_hardware_constraint(self.constraints)
+        grid_symbols = list(self.bound_scalar_symbols.keys()) + list(
+            options.dynamic_symbols_map.keys()
+        )
         options.kernel_launch_info.grid = sympy.lambdify(
-            [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
+            [grid_symbols], self.grid_type.dims
         )
         options.kernel_launch_info.grid_str = lambdastr(
-            [list(options.dynamic_symbols_map.keys())], self.grid_type.dims
+            [grid_symbols], self.grid_type.dims
         )
         options.kernel_launch_info.blocks = [
             int(x) for x in hw_constraint.threads_per_block
