@@ -272,7 +272,7 @@ def scatter_add(
     dim: IndexExpr,
     memory: "Memory",
     mapping: IndexMapping,
-    elements_per_thread: Optional[IndexExpr | int] = None,
+    elements_per_thread: Optional[int] = 1,
 ) -> "Register": ...
 
 
@@ -2490,8 +2490,13 @@ class Reshape(CustomOp, ABC):
 @dataclass
 class ScatterAdd(CustomOp):
     """
-    Scatter_add performs element-wise accumulation from a source register into shared memory (LDS)
-    at a location determined by the index register along a specified dimension.
+    ScatterAdd performs element-wise accumulation from a source register into shared memory (LDS),
+    at locations determined by the index register along a specified dimension.
+
+    Limitations:
+    - Only intra-workgroup scattering is supported (i.e., within shared memory / LDS), assuming a single wave.
+    - Multi-wave execution is not guaranteed to be safe: synchronization issues may occur when threads write to the same index. Further investigation is needed.
+    - The operation supports multiple elements per thread, assuming the non-scatter dimension is large enough (i.e., > elements_per_thread).
     """
 
     register_src: fx.Node
@@ -2499,14 +2504,13 @@ class ScatterAdd(CustomOp):
     dim: IndexExpr
     memory: fx.Node
     mapping: IndexMapping
-    elements_per_thread: Optional[int] = None
+    elements_per_thread: Optional[int] = 1
     bounds: Optional[dict[IndexSymbol, IndexExpr]] = None
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
         if self.mapping is not None:
             return list(self.mapping.input_shape)
-        # TODO: This could contain ints.
         return list(self.memory_type.symbolic_shape)
 
     def infer_type(self):

@@ -816,10 +816,6 @@ def _handle_scatter_op(
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    for constraint in emitter.constraints:
-        if isinstance(constraint, HardwareConstraint):
-            node.vector_shapes = constraint.vector_shapes
-
     output_shape = _get_symbolic_shape(memory)
     elements_per_thread = int(cast_py_literal(emitter, elements_per_thread))
     cast_vector(emitter, register_idx, element_type=IndexType.get())
@@ -873,6 +869,7 @@ def _handle_scatter_op(
             other_dims = [d for d in range(len(indices)) if d != dim]
             if other_dims:
                 # Heuristic: offset the innermost (fastest varying) dimension
+                # TODO: Ideally emit a vectorized atomic op instead of 4 scalar atomics that store to consecutive locations
                 fast_dim = other_dims[-1]
                 indices[fast_dim] = arith_d.addi(
                     indices[fast_dim], arith_d.constant(IndexType.get(), i)
