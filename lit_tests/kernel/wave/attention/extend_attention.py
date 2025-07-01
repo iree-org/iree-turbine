@@ -67,7 +67,7 @@ def test_extend_attention():
     # This part ensure correctness of WG distribution for extend attention.
     # CHECK-LABEL: test_extend_attention
     # CHECK-DAG:            #[[map0:.*]] = affine_map<()[s0] -> (s0 ceildiv 64)>
-    # CHECK-DAG:            #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16)>
+    # CHECK-DAG:            #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16 - 16)>
     # CHECK:              stream.executable.export public @extend_attention workgroups(%[[ARG0:.+]]: index, %[[ARG1:.+]]: index, %[[ARG2:.+]]: index, %[[ARG3:.+]]: index)
     # CHECK-DAG:            %[[C1:.*]] = arith.constant 1 : index
     # CHECK:                %[[NQ_GRID:.+]] = affine.apply #[[map0]]()[%[[ARG3]]]
