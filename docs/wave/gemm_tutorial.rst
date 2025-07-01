@@ -43,7 +43,6 @@ First, we need to import the necessary modules and define our symbolic dimension
 
     # Define the address space for our memory
     ADDRESS_SPACE = sym.ADDRESS_SPACE
-    GLOBAL_ADDRESS_SPACE = sym.GLOBAL_ADDRESS_SPACE
 
 Now, let's define our GEMM kernel with appropriate constraints:
 
