@@ -68,6 +68,9 @@ def fused_subgraph(
         new_inputs.append(new_node)
     fused_node = g.call_function(target, tuple(new_inputs))
     outputs = []
+    if num_outputs == 1:
+        g.output(result=fused_node)
+        return GraphModule(root, g)
     for i in range(num_outputs):
         outputs.append(g.call_method("__getitem__", args=(fused_node, i)))
     g.output(result=tuple(outputs))

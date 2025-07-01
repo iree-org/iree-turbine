@@ -81,7 +81,7 @@ def get_mlir_module(gm: GraphModule) -> Any:
 
 def get_custom_graph_op(
     gm: GraphModule, *, force_single_dispatch: bool = False
-) -> Callable[[Any], Any]:
+) -> torch._ops.OpOverloadPacket:
     """Converts a graph module into a custom operator."""
     hash = sha1(str(gm).encode(), usedforsecurity=False).hexdigest()
     op_name = f"fused_op_{hash}"
@@ -185,10 +185,12 @@ def get_autograd_function(
         else bwd_g.forward
     )
 
-    class _MyOpSample(Function):
+    class _GeneratedGraphOp(Function):
         @staticmethod
         def forward(ctx, *args):
             all_outputs = fwd_launch(*args)
+            if num_fwd_outputs == 1 and isinstance(all_outputs, torch.Tensor):
+                return all_outputs
             fwd_outputs = all_outputs[:num_fwd_outputs]
             stash_outputs = all_outputs[num_fwd_outputs:]
             ctx.save_for_backward(*stash_outputs)
@@ -201,6 +203,8 @@ def get_autograd_function(
             return all_outputs
 
     def _f(*args):
-        return _MyOpSample.apply(*args)
+        return _GeneratedGraphOp.apply(*args)
+
+    _f.__name__ = f"generated_autograd_{fwd_launch._qualified_op_name}"
 
     return _f
