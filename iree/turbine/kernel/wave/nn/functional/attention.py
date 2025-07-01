@@ -37,7 +37,6 @@ def get_wave_kernel(
         vanilla_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_vanilla_attention_kernel(
         shape,
         mfma_variant,
@@ -58,7 +57,6 @@ def get_wave_kernel(
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
     )
@@ -110,12 +108,6 @@ def wave_sdpa(
         is_v_transposed=is_v_transposed,
         sliding_window_size=sliding_window_size,
     )
-    vanilla_attention.options.dynamic_symbols_map = {
-        tkl.sym.B: flattend_batch_size,
-        tkl.sym.M: shape.query_seq_len,
-        tkl.sym.N: shape.head_size_kv,
-        tkl.sym.K2: shape.kv_seq_len,
-    }
 
     _ = vanilla_attention(
         query.view(flat_q_shape),

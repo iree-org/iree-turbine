@@ -88,11 +88,7 @@ def get_gemm_kernel(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[K] = hyperparams[K]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(K)
@@ -100,4 +96,4 @@ def get_gemm_kernel(
         del hyperparams[N]
         del hyperparams[K]
 
-    return gemm, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return gemm, hyperparams, dynamic_symbols

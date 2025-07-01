@@ -41,7 +41,6 @@ def test_extend_attention():
         extend_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
@@ -60,7 +59,6 @@ def test_extend_attention():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
     )
     extend_attention = wave_compile(options, extend_attention)
@@ -143,7 +141,6 @@ def test_causal_extend_attention():
         extend_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
@@ -164,7 +161,6 @@ def test_causal_extend_attention():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
     )
     extend_attention = wave_compile(options, extend_attention)
@@ -289,7 +285,6 @@ def test_causal_extend_attention_32x32x8():
         extend_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
@@ -311,7 +306,6 @@ def test_causal_extend_attention_32x32x8():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
         minimize_shared_allocs=True,
     )
@@ -424,7 +418,6 @@ def test_extend_attention_custom_mask():
         extend_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
@@ -444,7 +437,6 @@ def test_extend_attention_custom_mask():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
         minimize_shared_allocs=True,
     )

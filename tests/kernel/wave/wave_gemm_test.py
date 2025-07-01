@@ -165,11 +165,7 @@ def testPureGemm(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[K] = hyperparams[K]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(K)
@@ -185,7 +181,6 @@ def testPureGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -311,11 +306,7 @@ def testGemmSmallTiles(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[K] = hyperparams[K]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(K)
@@ -331,7 +322,6 @@ def testGemmSmallTiles(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -449,11 +439,7 @@ def testNonTransposeGemm(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[K] = hyperparams[K]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(K)
@@ -469,7 +455,6 @@ def testNonTransposeGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -588,7 +573,6 @@ def testPingPongGemm(
         schedule=SchedulingType.PREFETCH,
         use_scheduling_barriers=False,
         dynamic_symbols=[],
-        dynamic_symbols_map={},
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -633,7 +617,7 @@ def testGemmDumpOverrideSchedule(
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
 
-    gemm, hyperparams, dynamic_symbols, dynamic_symbols_map = get_gemm_kernel(
+    gemm, hyperparams, dynamic_symbols = get_gemm_kernel(
         shape, dynamic_dims, mfma_variant
     )
     perf_filename = request.node.name + ".json"
@@ -644,7 +628,6 @@ def testGemmDumpOverrideSchedule(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -676,7 +659,7 @@ def testGemmDumpOverrideSchedule(
 
     # Now reload the schedule and run the kernel again.
     # The results should be the same.
-    gemm, hyperparams, dynamic_symbols, dynamic_symbols_map = get_gemm_kernel(
+    gemm, hyperparams, dynamic_symbols = get_gemm_kernel(
         shape, dynamic_dims, mfma_variant
     )
     options = WaveCompileOptions(
@@ -686,7 +669,6 @@ def testGemmDumpOverrideSchedule(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -800,11 +782,7 @@ def testGemmDot(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[K] = hyperparams[K]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(K)
@@ -820,7 +798,6 @@ def testGemmDot(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -945,11 +922,7 @@ def testVMFMAGemm(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[K] = hyperparams[K]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(K)
@@ -964,7 +937,6 @@ def testVMFMAGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -1089,11 +1061,7 @@ def testCDNA2IntGemm(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[K] = hyperparams[K]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(K)
@@ -1108,7 +1076,6 @@ def testCDNA2IntGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -1454,11 +1421,7 @@ def testPackedGemm(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[K] = hyperparams[K]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(K)
@@ -1474,7 +1437,6 @@ def testPackedGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -1602,11 +1564,7 @@ def testPackedNonTransposeGemm(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[K] = hyperparams[K]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(K)
@@ -1622,7 +1580,6 @@ def testPackedNonTransposeGemm(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(

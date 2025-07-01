@@ -621,10 +621,8 @@ def test_set_symbol(shape, request):
     )
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
 
     dynamic_symbols.append(S)
-    dynamic_symbols_map[S] = 0
 
     @tkw.wave(constraints)
     def test(
@@ -652,7 +650,6 @@ def test_set_symbol(shape, request):
         canonicalize=True,
         run_bench=run_bench,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
     )
     options = set_default_run_config(options)
     test = wave_compile(options, test)
@@ -704,10 +701,8 @@ def test_apply_expr(shape, request):
     )
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
 
     dynamic_symbols.append(S)
-    dynamic_symbols_map[S] = 0
 
     @tkw.wave(constraints)
     def test(
@@ -736,7 +731,6 @@ def test_apply_expr(shape, request):
         canonicalize=True,
         run_bench=run_bench,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
     )
     options = set_default_run_config(options)
     test = wave_compile(options, test)

@@ -384,7 +384,6 @@ def testExtendAttention(
         extend_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
@@ -412,7 +411,6 @@ def testExtendAttention(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         use_buffer_load_ops=use_buffer_ops,
         use_buffer_store_ops=use_buffer_ops,
         benchmark_batch_size=1000,
@@ -543,7 +541,6 @@ def testExtendRpeAttention(
         extend_attention_rpe,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_rpe_kernel(
         shape,
         mfma_variant,
@@ -571,7 +568,6 @@ def testExtendRpeAttention(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         benchmark_batch_size=1000,
         benchmark_repetitions=3,
         benchmark_results_file=(

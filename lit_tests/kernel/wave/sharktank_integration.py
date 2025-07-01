@@ -153,7 +153,6 @@ class WaveBhsdFlashAttentionSharktankOp(CustomOp):
             base_attention_func,
             hyperparams,
             dynamic_symbols,
-            dynamic_symbols_map,
         ) = get_bhsd_attention_kernel(
             shape,
             mfma_variant,
@@ -166,7 +165,6 @@ class WaveBhsdFlashAttentionSharktankOp(CustomOp):
             subs=hyperparams,
             schedule=SchedulingType.NONE,
             dynamic_symbols=dynamic_symbols,
-            dynamic_symbols_map=dynamic_symbols_map,
             waves_per_eu=2,
             denorm_fp_math_f32="preserve-sign",
             func_name=wave_kernel_name,

@@ -129,7 +129,7 @@ def test_alibi_attention(
     assert shape.num_query_heads % shape.num_kv_heads == 0
 
     (query, key, value) = create_inputs(shape, dtype)
-    alibi_attention, hyperparams, _, _ = get_alibi_attention_kernel(
+    alibi_attention, hyperparams, _ = get_alibi_attention_kernel(
         shape, mfma_variant, dynamic_dims=False
     )
     output_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size_kv)

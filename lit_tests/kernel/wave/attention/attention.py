@@ -269,11 +269,6 @@ def test_dynamic_attention_32x32x8():
     }
 
     # Set up dynamic parameters
-    dynamic_symbols_map = {}
-    dynamic_symbols_map[B] = shape[0]
-    dynamic_symbols_map[M] = shape[1]
-    dynamic_symbols_map[N] = shape[2]
-    dynamic_symbols_map[K2] = shape[4]
     dynamic_symbols = [M, N, B, K2]
 
     options = WaveCompileOptions(
@@ -282,7 +277,6 @@ def test_dynamic_attention_32x32x8():
         run_bench=False,
         schedule=SchedulingType.NONE,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         use_scheduling_barriers=False,
         compile_to_mlir=True,
     )
@@ -321,7 +315,7 @@ def test_attention():
         kv_seq_len=256,
     )
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
-    base_attention, hyperparams, _, _ = get_vanilla_attention_kernel(
+    base_attention, hyperparams, _ = get_vanilla_attention_kernel(
         shape, mfma_variant, False
     )
 
@@ -360,7 +354,7 @@ def test_attention_causal():
         kv_seq_len=256,
     )
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
-    base_attention, hyperparams, _, _ = get_vanilla_attention_kernel(
+    base_attention, hyperparams, _ = get_vanilla_attention_kernel(
         shape, mfma_variant, False, is_causal=True
     )
 
@@ -400,7 +394,7 @@ def test_attention_bshd():
         kv_seq_len=256,
     )
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
-    base_attention, hyperparams, _, _ = get_bshd_attention_kernel(
+    base_attention, hyperparams, _ = get_bshd_attention_kernel(
         shape,
         mfma_variant,
         dynamic_dims=False,
@@ -444,7 +438,7 @@ def test_attention_sliding_window():
         kv_seq_len=256,
     )
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
-    base_attention, hyperparams, _, _ = get_vanilla_attention_kernel(
+    base_attention, hyperparams, _ = get_vanilla_attention_kernel(
         shape, mfma_variant, False, is_causal=True, sliding_window_size=1024
     )
 

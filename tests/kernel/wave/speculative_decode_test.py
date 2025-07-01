@@ -31,7 +31,7 @@ torch.manual_seed(0)
 def get_wave_speculative_decoding_kernel(
     batch_size, num_draft_tokens, vocab_size, seq_len
 ):
-    speculative_decoding, symbols, _, _ = get_speculative_decoding_kernel(
+    speculative_decoding, symbols, _ = get_speculative_decoding_kernel(
         batch_size,
         num_draft_tokens,
         vocab_size,
@@ -63,7 +63,7 @@ def get_wave_speculative_sampling_kernel(
     vocab_size,
     seq_len,
 ):
-    speculative_sampling, symbols, _, _ = get_speculative_sampling_kernel(
+    speculative_sampling, symbols, _ = get_speculative_sampling_kernel(
         batch_size,
         num_speculative_tokens,
         threshold_acc,

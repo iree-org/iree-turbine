@@ -64,7 +64,6 @@ def testCausalGQABSHDAttention(
         base_attention_func,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_gqa_bshd_attention_kernel(
         shape, mfma_variant, is_causal=True, sliding_window_size=sliding_window
     )
@@ -83,7 +82,6 @@ def testCausalGQABSHDAttention(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
@@ -161,7 +159,6 @@ def testCausalGQABSHDAttentionF8(
         base_attention_func,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_gqa_bshd_attention_kernel(
         shape,
         mfma_variant,
@@ -188,7 +185,6 @@ def testCausalGQABSHDAttentionF8(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",

@@ -231,6 +231,5 @@ def get_gqa_bshd_attention_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
 
-    return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return base_attention, hyperparams, dynamic_symbols

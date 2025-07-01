@@ -166,7 +166,6 @@ def get_quant_linear_kernel(
         subs=hyperparams,
         canonicalize=True,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map={},
     )
     options = set_default_run_config(options)
     gemm_kernel = gemm
@@ -272,10 +271,6 @@ class WaveQuantLinear(nn.Module):
         output = torch.empty(
             output_shape, dtype=self.weight.dtype, device=self.weight.device
         )
-        self.kernel.options.dynamic_symbols_map = {
-            tkl.sym.B: flat_batch,
-            tkl.sym.M: input_len,
-        }
         if self.bias is None:
             self.kernel(
                 input.view(flat_batch, input_len, input.shape[-1]), self.weight, output

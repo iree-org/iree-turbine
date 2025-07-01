@@ -32,7 +32,6 @@ def construct_inputs(
     tempfiles = []
     inputs = []
     all_inputs = kernel_inputs + kernel_outputs
-    all_inputs += options.dynamic_symbols_map.values()
     if bench_with_constant_weights:
         for inp in all_inputs:
             if isinstance(inp, torch.Tensor):

@@ -368,10 +368,4 @@ def get_extend_attention_rpe_kernel(
     }
 
     dynamic_symbols = [N_Q, N_KV, S]
-    dynamic_symbols_map = {
-        N_Q: q_shape[0],
-        N_KV: k_shape[0],
-        S: shape.num_seqs,
-    }
-
-    return extend_attention_rpe, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return extend_attention_rpe, hyperparams, dynamic_symbols
