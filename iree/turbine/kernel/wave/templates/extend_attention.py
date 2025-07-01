@@ -104,6 +104,9 @@ def get_extend_attention_kernel(
     constraints += [tkw.WorkgroupConstraint(D_KV, BLOCK_D_KV, 1)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 2)]
     constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 2, primary=False)]
+
+    # We need to set the number of workgroups to S - 1 because S is inferred
+    # from the qo_indptr.shape[0] which is in fact `num_seqs + 1`.
     constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3, iters=S - 1)]
     constraints += [tkw.TilingConstraint(N_KV, BLOCK_N_KV)]
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / M_WAVES)]
