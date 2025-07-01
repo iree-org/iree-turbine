@@ -4,8 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Tuple
-
 import torch
 from torch.fx.graph_module import GraphModule
 from .schema import FusionSchema, DEFAULT_SUPPORTED_BOO_FUSIONS
@@ -24,7 +22,7 @@ __all__ = [
 
 def fusion_transform(
     module: torch.nn.Module,
-    args: Tuple[torch.Tensor],
+    args: tuple[torch.Tensor, ...],
     *,
     fusion_schema: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS,
 ) -> torch.nn.Module:
@@ -49,7 +47,7 @@ def fusion_transform(
     for sg in subgraphs:
         subgraph_repl.append(get_subgraph_replacement(sg))
 
-    _ = replace_subgraphs(gm, subgraphs, subgraph_repl)
+    replace_subgraphs(gm, subgraphs, subgraph_repl)
 
     # TODO: update any metadata which may have been modified by the replacement.
 

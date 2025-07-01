@@ -8,8 +8,6 @@ from dataclasses import dataclass
 from typing import Dict, Sequence
 from torch.fx.node import Target
 
-# import torch
-
 
 @dataclass
 class OpFusionSpec:
@@ -20,6 +18,8 @@ class OpFusionSpec:
 
 FusionSchema = Dict[Target, OpFusionSpec]
 
+# TODO: identify advantageous fusions.
 DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {}
 
+# TODO: set up custom implementation replacements.
 PRE_FUSION_DECOMPOSITIONS = {}

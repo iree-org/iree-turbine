@@ -6,7 +6,7 @@
 
 import contextlib
 import torch
-from torch.profiler import profile, ProfilerActivity, record_function
+from torch.profiler import profile, ProfilerActivity
 from functools import partial
 
 from iree.turbine.kernel.boo.fusion import (
@@ -46,7 +46,7 @@ def main(print_parameters: bool, trace_path: str):
     def dump_profile(profiler: profile):
         profiler.export_chrome_trace(trace_path)
 
-    def profiler_ctx(enabled: bool = False):
+    def profiler_ctx(enabled: bool = False) -> profile:
         if not enabled:
             return contextlib.nullcontext()
         return profile(

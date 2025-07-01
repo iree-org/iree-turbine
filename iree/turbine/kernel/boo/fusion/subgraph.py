@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Sequence, Set, List, Dict, Tuple
+from typing import Sequence, Set, List, Dict
 
 import torch
 from torch.fx.subgraph_rewriter import replace_pattern
@@ -22,7 +22,7 @@ def _log_graph_module(label: str, gm: GraphModule):
     logger.debug("%s:\n%s", label, gm.print_readable(print_output=False))
 
 
-def get_subgraph_replacement(subgraph: GraphModule):
+def get_subgraph_replacement(subgraph: GraphModule) -> GraphModule:
     _log_graph_module("Extracted SubGraph Module", subgraph)
     fake_args = tuple(
         [n.meta.get("val") for n in subgraph.graph.nodes if n.op == "placeholder"]
@@ -79,7 +79,7 @@ def fused_subgraph(
 
 def extract_fusion_subgraph_modules(
     src_gm: GraphModule, fusion_schema: FusionSchema
-) -> Tuple[Sequence[GraphModule], Sequence[Dict[Node, Node]]]:
+) -> tuple[Sequence[GraphModule], Sequence[Dict[Node, Node]]]:
     """Traverses src_gm nodes in order. When a node matches a root op in the fusion_schema,
     A new subgraph is created with the root op in addition to any adjacent nodes matching the schema.
 
@@ -181,8 +181,11 @@ def extract_fusion_subgraph_modules(
     return subgraphs, subgraph_projections
 
 
-def replace_subgraphs(src_gm, external_subgraphs, replacements):
-    """Makes a copy of src_gm and replaces instances of each subgraph with their corresponding replacement graph."""
+def replace_subgraphs(
+    src_gm: GraphModule,
+    external_subgraphs: Sequence[GraphModule],
+    replacements: Sequence[GraphModule],
+):
+    """Replaces instances of each subgraph in src_gm with their corresponding replacement graph."""
     for sg, replacement in zip(external_subgraphs, replacements):
         _ = replace_pattern(src_gm, sg, replacement)
-    return src_gm

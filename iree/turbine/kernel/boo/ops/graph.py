@@ -5,12 +5,13 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from hashlib import sha1
-from typing import Any, Callable, Tuple, Sequence
+from typing import Any, Sequence, Callable
 
 import torch
 from torch.fx.graph_module import GraphModule
+from torch.fx.node import Target
+from torch.fx.passes.shape_prop import TensorMetadata
 
-from torch._functorch.aot_autograd import aot_export_joint_simple
 from torch._functorch.partitioners import default_partition
 from torch.autograd import Function
 
@@ -19,10 +20,10 @@ from iree.compiler.extras.fx_importer import FxImporter
 from .library import *
 from .utils import is_boo_backward_enabled, get_arg_spec_name
 from ..runtime import get_launchable
-from ....runtime.launch import Launchable
 from ....dynamo.passes import turbine_cpu_pass_pipeline
 from ....transforms.general.custom_op_expansion import ExpandCustomOpsPass
 from ....support.logging import aot_logger as logger
+from ....support.ir_imports import Operation
 
 __all__ = [
     "get_io_from_gm",
@@ -34,7 +35,9 @@ __all__ = [
 ]
 
 
-def get_io_from_gm(gm):
+def get_io_from_gm(
+    gm: GraphModule,
+) -> tuple[Sequence[Target], Sequence[TensorMetadata | None]]:
     """Returns input nodes and output TensorMetadata from the graph module."""
 
     inputs = []
@@ -52,7 +55,9 @@ def get_io_from_gm(gm):
     return inputs, meta_outputs
 
 
-def get_schema(inputs, outputs):
+def get_schema(
+    inputs: Sequence[Target], outputs: Sequence[TensorMetadata | None]
+) -> str:
     """Generate a schema from the result of `get_io_from_gm`."""
 
     ret_ty = "Tensor?" if any([o is None for o in outputs]) else "Tensor"
@@ -64,7 +69,7 @@ def get_schema(inputs, outputs):
     return schema
 
 
-def get_mlir_module(gm: GraphModule) -> Any:
+def get_mlir_module(gm: GraphModule) -> Operation:
     """Generates torch-mlir IR from a graph module."""
     sample_args = tuple(
         [n.meta.get("val") for n in gm.graph.nodes if n.op == "placeholder"]
@@ -158,11 +163,11 @@ def maybe_trim_none_outputs(gm: GraphModule) -> Sequence[bool]:
 
 def get_autograd_function(
     joint_gm: torch.fx.GraphModule,
-    sample_args: None | Tuple[torch.Tensor],
+    sample_args: None | tuple[torch.Tensor, ...],
     num_fwd_outputs: int,
     *,
     force_single_dispatch: bool = False,
-):
+) -> Callable:
     """From a joint forward/backward graph module, creates an autograd function for calling iree custom graph ops for forward and backward."""
     fwd_g, bwd_g = default_partition(
         joint_module=joint_gm,
@@ -205,6 +210,7 @@ def get_autograd_function(
     def _f(*args):
         return _GeneratedGraphOp.apply(*args)
 
+    # Hacky function rename to make the replacement graph more descriptive.
     _f.__name__ = f"generated_autograd_{fwd_launch._qualified_op_name}"
 
     return _f
