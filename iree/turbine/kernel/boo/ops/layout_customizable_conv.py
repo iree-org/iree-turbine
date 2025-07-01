@@ -10,10 +10,10 @@ import torch
 
 from ..conv_exports import (
     ConvSignature,
-    get_launchable,
     DEFAULT_LAYOUTS,
     Permutation,
 )
+from ..driver.launch import get_launchable
 
 from ..runtime import LaunchableRuntimeCache
 
