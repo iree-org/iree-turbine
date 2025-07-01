@@ -121,6 +121,9 @@ class ExpandCustomOpsPass(Pass):
 
 
 class AOTKernelSelection(KernelSelection):
+    """Kernel selection  specialized for AOT compilation where PyTorch graph has
+    already been exported to MLIR."""
+
     __slots__ = [
         "operands",
         "results",
