@@ -559,8 +559,8 @@ class LaunchableWave(Launchable):
             partial(hoist_loop_invariant_ops, trace, self.constraints),
             partial(global_to_shared_gathers, trace, self.constraints),
             partial(minimize_global_loads, trace, self.constraints),
-            partial(gather_to_shared, trace, self.constraints),
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
+            partial(gather_to_shared, trace, self.constraints),
         ]
 
         # Partition strided operators.
