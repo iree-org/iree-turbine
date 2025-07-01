@@ -194,6 +194,8 @@ class LaunchableWave(Launchable):
             if _is_symbol_bind(arg)
         }
 
+        # Build a mapping between symbol and tensor arg (index, dim) so we can
+        # use it to extract dynamic symbols from the tensor args.
         symbols_args_map = {}
         for i, arg in enumerate(hints.values()):
             if not _is_memory_arg(arg):
