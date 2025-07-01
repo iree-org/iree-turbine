@@ -79,8 +79,8 @@ class WaveKernel:
 
         dynamic_symbols = []
         for sym in self.options.dynamic_symbols:
-            arg, dim = self.symbols_args_map[sym]
-            dynamic_symbols.append(args[arg].shape[dim])
+            arg_idx, dim = self.symbols_args_map[sym]
+            dynamic_symbols.append(args[arg_idx].shape[dim])
 
         invoke_vmfb(
             self.executable,

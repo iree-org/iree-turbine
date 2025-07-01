@@ -197,15 +197,15 @@ class LaunchableWave(Launchable):
         # Build a mapping between symbol and tensor arg (index, dim) so we can
         # use it to extract dynamic symbols from the tensor args.
         symbols_args_map = {}
-        for i, arg in enumerate(hints.values()):
+        for arg_idx, arg in enumerate(hints.values()):
             if not _is_memory_arg(arg):
                 continue
 
-            for j, symbol in enumerate(arg.symbolic_shape):
+            for dim, symbol in enumerate(arg.symbolic_shape):
                 if symbol in symbols_args_map:
                     continue
 
-                symbols_args_map[symbol] = (i, j)
+                symbols_args_map[symbol] = (arg_idx, dim)
         self.symbols_args_map = symbols_args_map
 
     @property
