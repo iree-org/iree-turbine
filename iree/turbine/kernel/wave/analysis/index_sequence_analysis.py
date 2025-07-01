@@ -31,6 +31,7 @@ from ..constraints import (
     HardwareConstraint,
     TilingConstraint,
     WorkgroupConstraint,
+    ReorderingConstraint,
 )
 from ..assumptions import Assumption
 from ..symbolic_constraints import SymbolicAlias
@@ -355,7 +356,9 @@ def set_thread_independent_index(
     constraints = [
         c
         for c in constraints
-        if not isinstance(c, (HardwareConstraint, Assumption, SymbolicAlias))
+        if not isinstance(
+            c, (HardwareConstraint, ReorderingConstraint, Assumption, SymbolicAlias)
+        )
     ]
 
     index = {}
