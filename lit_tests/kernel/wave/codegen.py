@@ -79,12 +79,12 @@ def test_read():
     # CHECK-DAG:        #[[MAP0:.*]] = affine_map<()[s0, s1, s2, s3, s4, s5] -> (s0 mod s1 + ((s2 * s3) floordiv s4) * s5)>
     # CHECK:          func.func @read
     # CHECK-SAME:       (%[[ARG0:[a-zA-Z0-9_]+]]: !stream.binding)
-    # CHECK:            %[[WORKGROUP_ID_0:.+]] = gpu.block_id x
-    # CHECK:            %[[WORKGROUP_ID_1:.+]] = gpu.block_id y
-    # CHECK:            %[[WORKGROUP_ID_2:.+]] = gpu.block_id z
-    # CHECK-DAG:        %[[THREAD_ID_X:.+]] = gpu.thread_id  x
-    # CHECK-DAG:        %[[THREAD_ID_Y:.+]] = gpu.thread_id  y
-    # CHECK-DAG:        %[[THREAD_ID_Z:.+]] = gpu.thread_id  z
+    # CHECK:            %[[WORKGROUP_ID_0:.+]] = gpu.block_id x upper_bound 1
+    # CHECK:            %[[WORKGROUP_ID_1:.+]] = gpu.block_id y upper_bound 1
+    # CHECK:            %[[WORKGROUP_ID_2:.+]] = gpu.block_id z upper_bound 1
+    # CHECK-DAG:        %[[THREAD_ID_X:.+]] = gpu.thread_id  x upper_bound 64
+    # CHECK-DAG:        %[[THREAD_ID_Y:.+]] = gpu.thread_id  y upper_bound 1
+    # CHECK-DAG:        %[[THREAD_ID_Z:.+]] = gpu.thread_id  z upper_bound 1
     # CHECK-DAG:        %[[C0:.+]] = arith.constant 0 : index
     # CHECK:            %[[D0:.+]] = stream.binding.subspan %[[ARG0]][%[[C0]]] : !stream.binding -> memref<16x16xf16,
     # CHECK-SAME:         strided<[16, 1], offset: ?>>
