@@ -42,8 +42,8 @@ First, we need to import the necessary modules and define our symbolic dimension
     BLOCK_K = sym.BLOCK_K
 
     # Define the address space for our memory
-    ADDRESS_SPACE = sym.ADDRESS_SPACE
-    GLOBAL_ADDRESS_SPACE = sym.GLOBAL_ADDRESS_SPACE
+    SYM_ADDRESS = sym.ADDRESS_SPACE
+    SYM_GLOBAL = sym.GLOBAL_ADDRESS_SPACE
 
 Now, let's define our GEMM kernel with appropriate constraints:
 
@@ -111,7 +111,8 @@ Let's create a test function to verify our GEMM implementation:
 
         # Set hyperparameters for compilation
         hyperparams = {
-            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            SYM_ADDRESS: SHARED_ADDRESS_SPACE,
+            SYM_GLOBAL: GLOBAL_ADDRESS_SPACE,
             BLOCK_M: 64,
             BLOCK_N: 64,
             BLOCK_K: 32,
