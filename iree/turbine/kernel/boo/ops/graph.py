@@ -79,18 +79,22 @@ def get_mlir_module(gm: GraphModule) -> Any:
     return imp.module_op
 
 
-def get_custom_graph_op(gm: GraphModule) -> Callable[[Any], Any]:
+def get_custom_graph_op(
+    gm: GraphModule, *, force_single_dispatch: bool = False
+) -> Callable[[Any], Any]:
     """Converts a graph module into a custom operator."""
     hash = sha1(str(gm).encode(), usedforsecurity=False).hexdigest()
     op_name = f"fused_op_{hash}"
 
     if not hasattr(torch.ops.boo, op_name):
-        define_custom_graph_op(gm, op_name)
+        define_custom_graph_op(gm, op_name, force_single_dispatch=force_single_dispatch)
 
     return get_library_op(op_name)
 
 
-def define_custom_graph_op(gm: GraphModule, op_name: str):
+def define_custom_graph_op(
+    gm: GraphModule, op_name: str, *, force_single_dispatch: bool = False
+):
     """Defines a custom op from the graph module with given op_name in the boo library."""
     inputs, outputs = get_io_from_gm(gm)
     # TODO: handle this better
@@ -102,7 +106,12 @@ def define_custom_graph_op(gm: GraphModule, op_name: str):
     @register_impl(op_name)
     def _(*args):
         spec_name = get_arg_spec_name(op_name, *args)
-        l = get_launchable(gm, arg_factory=args, func_name=spec_name)
+        l = get_launchable(
+            gm,
+            arg_factory=args,
+            func_name=spec_name,
+            force_single_dispatch=force_single_dispatch,
+        )
         results = l(*[arg.data for arg in args])
         if not has_a_none_output:
             return results
@@ -147,7 +156,13 @@ def maybe_trim_none_outputs(gm: GraphModule) -> Sequence[bool]:
     return none_output
 
 
-def get_autograd_function(joint_gm: torch.fx.GraphModule, sample_args, num_fwd_outputs):
+def get_autograd_function(
+    joint_gm: torch.fx.GraphModule,
+    sample_args: None | Tuple[torch.Tensor],
+    num_fwd_outputs: int,
+    *,
+    force_single_dispatch: bool = False,
+):
     """From a joint forward/backward graph module, creates an autograd function for calling iree custom graph ops for forward and backward."""
     fwd_g, bwd_g = default_partition(
         joint_module=joint_gm,
@@ -160,9 +175,14 @@ def get_autograd_function(joint_gm: torch.fx.GraphModule, sample_args, num_fwd_o
         str(bwd_g.print_readable(print_output=False)),
     )
 
-    fwd_launch = get_custom_graph_op(fwd_g)
+    fwd_launch = get_custom_graph_op(fwd_g, force_single_dispatch=force_single_dispatch)
+    # We should handle backward custom graph ops slightly differently.
+    # An option could be using the fusion schema to determine which backward ops to hand off to IREE.
+    # With the current approach, it doesn't make sense to force the backward into a single dispatch.
     bwd_launch = (
-        get_custom_graph_op(bwd_g) if is_boo_backward_enabled() else bwd_g.forward
+        get_custom_graph_op(bwd_g, force_single_dispatch=False)
+        if is_boo_backward_enabled()
+        else bwd_g.forward
     )
 
     class _MyOpSample(Function):

@@ -35,12 +35,16 @@ def get_subgraph_replacement(subgraph: GraphModule):
     # TODO: do some minimal validation on the results of the above function.
     # in_spec, _kw_in_spec = in_spec.children_specs
     _log_graph_module("AOT Joint FWD/BWD Subgraph Module", joint_sg)
+
     fake_args_joint = tuple(
         [n.meta.get("val") for n in joint_sg.graph.nodes if n.op == "placeholder"]
     )
 
     custom_op = get_autograd_function(
-        joint_sg, fake_args_joint, num_fwd_outputs=metadata.num_forward_returns
+        joint_sg,
+        fake_args_joint,
+        num_fwd_outputs=metadata.num_forward_returns,
+        force_single_dispatch=False,
     )
 
     single_node_graph = fused_subgraph(
