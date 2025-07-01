@@ -65,9 +65,10 @@ def main(print_parameters: bool, trace_path: str):
 
     sample_inputs = (torch.randn([B, 3, 32, 32], device=device),)
 
-    # TODO: identify a default FusionSchema to use
-    # This schema indicates that we are always offloading `convolution` and `addmm` ops to IREE.
+    # TODO: identify a default FusionSchema to use.
+    # This schema indicates that we are always offloading `conv2d` and `linear` ops to IREE.
     # If any convolution is followed by a relu, it will be fused into the IREE's convolution kernel.
+    # If any linear is preceeded or followed by view ops, those will be fused into the linear op.
     schema: FusionSchema = {
         torch.ops.aten.conv2d.default: OpFusionSpec(
             recursive=True, producers=(), consumers=(torch.ops.aten.relu.default,)
