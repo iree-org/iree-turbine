@@ -76,7 +76,7 @@ class trace_tensor(CustomOp):
 # with the name "__device.{moniker}" is provided in some fashion (spec file,
 # command line flags, etc).
 #
-# Within a graph, transfering tensors to a device causes partitioning and
+# Within a graph, transferring tensors to a device causes partitioning and
 # optimization of placement of consuming compute operations. Under the covers,
 # this maps to:
 #   flow.tensor.transfer %t to #hal.device.promise<@moniker>

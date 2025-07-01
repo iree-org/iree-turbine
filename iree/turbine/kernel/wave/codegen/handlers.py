@@ -68,6 +68,7 @@ from ...ops.wave_ops import (
     gt,
     iterate,
     le,
+    log10,
     log2,
     lt,
     maximum,
@@ -906,7 +907,17 @@ def handle_log2(source: Value, options: WaveCompileOptions) -> OpResult:
     if _is_float_type(element_type):
         result = math_d.log2(source)
     else:
-        raise ValidationError(f"Found unhandled operand type for exp2: {element_type}")
+        raise ValidationError(f"Found unhandled operand type for log2: {element_type}")
+    return result
+
+
+@handle_unary_op(log10)
+def handle_log10(source: Value, options: WaveCompileOptions) -> OpResult:
+    element_type = get_type_or_element_type(source.type)
+    if _is_float_type(element_type):
+        result = math_d.log10(source)
+    else:
+        raise ValidationError(f"Found unhandled operand type for log10: {element_type}")
     return result
 
 
