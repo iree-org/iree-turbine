@@ -650,7 +650,7 @@ class LaunchableWave(Launchable):
         # Convert the grid into a lambda that we can use to compute the grid dimension.
         hw_constraint = get_hardware_constraint(self.constraints)
         grid_symbols = list(self.bound_scalar_symbols.keys()) + list(
-            options.dynamic_symbols_map.keys()
+            options.dynamic_symbols
         )
         options.kernel_launch_info.grid = sympy.lambdify(
             [grid_symbols], self.grid_type.dims
