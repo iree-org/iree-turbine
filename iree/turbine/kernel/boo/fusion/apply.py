@@ -40,11 +40,6 @@ def fusion_transform(
 
     exported_program = torch.export.export(module, args=args)
 
-    # Apply default decompositions to reduce number of ops we need to match on.
-    # This produces a graph with only core aten ops.
-    # https://pytorch.org/docs/stable/torch.compiler_ir.html
-    exported_program = exported_program.run_decompositions()
-
     gm: GraphModule = exported_program.graph_module
 
     _log_graph_module("Source Graph Module", gm)

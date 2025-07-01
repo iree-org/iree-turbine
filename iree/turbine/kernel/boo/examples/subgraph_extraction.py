@@ -69,10 +69,14 @@ def main(print_parameters: bool, trace_path: str):
     # This schema indicates that we are always offloading `convolution` and `addmm` ops to IREE.
     # If any convolution is followed by a relu, it will be fused into the IREE's convolution kernel.
     schema: FusionSchema = {
-        torch.ops.aten.convolution.default: OpFusionSpec(
+        torch.ops.aten.conv2d.default: OpFusionSpec(
             recursive=True, producers=(), consumers=(torch.ops.aten.relu.default,)
         ),
-        torch.ops.aten.addmm.default: OpFusionSpec(),
+        torch.ops.aten.linear.default: OpFusionSpec(
+            recursive=True,
+            producers=(torch.ops.aten.view.default,),
+            consumers=(torch.ops.aten.view.default,),
+        ),
     }
 
     converted_module = fusion_transform(m, sample_inputs, fusion_schema=schema)
