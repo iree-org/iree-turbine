@@ -67,14 +67,10 @@ def main(print_parameters: bool, trace_path: str):
 
     # TODO: identify a default FusionSchema to use
     schema: FusionSchema = {
-        torch.ops.aten.conv2d.default: OpFusionSpec(
+        torch.ops.aten.convolution.default: OpFusionSpec(
             recursive=True, producers=(), consumers=(torch.ops.aten.relu.default,)
         ),
-        torch.ops.aten.linear.default: OpFusionSpec(
-            recursive=True,
-            producers=(torch.ops.aten.view.default,),
-            consumers=(torch.ops.aten.view.default,),
-        ),
+        torch.ops.aten.addmm.default: OpFusionSpec(),
     }
 
     converted_module = fusion_transform(m, sample_inputs, fusion_schema=schema)
