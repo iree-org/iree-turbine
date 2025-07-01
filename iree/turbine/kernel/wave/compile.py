@@ -7,6 +7,7 @@ from .._support.indexing import IndexingContext
 from .._support.location_config import LocationCaptureLevel
 from ..compiler import kernel_codegen, host_codegen
 from .compile_options import WaveCompileOptions
+from .water import water_leak_in_bounds_check
 
 from .cache import (
     get_cache_base_dir,
@@ -167,6 +168,9 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     )
     if options.print_mlir:
         print(asm)
+
+    if options.use_water_leak_check:
+        water_leak_in_bounds_check(mb.module_op)
 
     if options.override_mlir:
         asm = options.override_mlir

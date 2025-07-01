@@ -37,6 +37,9 @@ config.substitutions.extend(
     ]
 )
 
+if int(os.environ.get("WAVE_TEST_WATER", 0)):
+    config.available_features.add("water")
+
 # Find a suitable filecheck.
 filecheck_exe = None
 if filecheck_exe is None:
