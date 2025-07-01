@@ -28,8 +28,10 @@ def main():
     parser = argparse.ArgumentParser(
         usage="%(prog)s [-h] [... MIOpenDriver command ...] [--commands-file COMMANDS_FILE]",
         description="""
-Run a convolution with the IREE runtime. Command line arguments mirror the
+Run a kernel with the IREE runtime. Command line arguments mirror the
 arguments to MIOpenDriver.
+
+Currently supports convolution and layernorm.
 
 If COMMANDS_FILE is specified, driver commands are read from the file. Each
 line is treated as a separate invocation of the driver, and any additional
@@ -115,10 +117,16 @@ def run(cli_args: Sequence[str], gpu_id: int):
     from iree.turbine.kernel.boo.exports.parser import OpCLIParser
 
     def dispatch(cli_args: Sequence[str]) -> type[OpCLIParser]:
-        if any(map(lambda x: "conv" in x, cli_args)):
+        if any("conv" in x for x in cli_args):
             from iree.turbine.kernel.boo.conv_exports.miopen_parser import ConvParser
 
             return ConvParser
+        if any("layernorm" in x for x in cli_args):
+            from iree.turbine.kernel.boo.layer_norm_exports.miopen_parser import (
+                LayerNormParser,
+            )
+
+            return LayerNormParser
         raise ValueError("unsupported operation kind in " + shlex.join(cli_args))
 
     from iree.turbine.kernel.boo.driver.launch import get_launchable
