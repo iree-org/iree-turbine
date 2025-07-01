@@ -167,7 +167,10 @@ The `-t 1` option to collect timing is implemented by launching the kernel in a 
 
 #### pip installed `iree-base-runtime`:
 
+- set `BOO_FORCE_TRACY_RUNTIME` in your environment to ensure `tracy` is used for GPU kernels; **NOTE** that setting this flag will cause _module import failures_ for IREE runtimes not built for distribution with PIP.
 - build `tracy-csvexport` and add it to your `PATH`:
+
+You can also set `IREE_PY_RUNTIME=tracy` directly, which will enable tracing of both the kernels and the surrounding machinery.
 
 ```
 git clone https://github.com/wolfpld/tracy.git

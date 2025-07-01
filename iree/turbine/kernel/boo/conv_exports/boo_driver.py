@@ -125,7 +125,8 @@ def trace_gpu(runner_args: str, gpu_id: int) -> tuple[dict[str, list[int]], str]
             text=True,
         ) as tracy:
             environ = copy.deepcopy(os.environ)
-            environ["IREE_PY_RUNTIME"] = "tracy"
+            if "BOO_FORCE_TRACY_RUNTIME" in os.environ:
+                environ["IREE_PY_RUNTIME"] = "tracy"
             environ["TRACY_PORT"] = TRACY_PORT
             process = subprocess.run(
                 ["python", "runner.py", str(gpu_id)] + runner_args,
