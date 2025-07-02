@@ -44,6 +44,46 @@ def get_module_asm(
     func_name: str = "main",
     force_single_dispatch: bool = False,
 ) -> str:
+    """Create MLIR assembly str from input torch.nn.Module.
+
+    Roughly speaking, for an input torch.nn.Module with a CustomOp,
+    `get_module_asm` goes through the following transformation steps:
+        1. Export torch.nn.Module to an fx graph
+            class GraphModule(torch.nn.Module):
+                def forward
+                    my_op: "f32[128, 24, 48, 384]" = torch.ops.turbine.something ...
+                    return (my_op,)
+        2. Convert fx graph to MLIR
+            @something(%arg0: !torch.vtensor<[...],bf16>) -> !torch.vtensor<[...],bf16> {
+                %0 = torch.operator "torch.turbine.something"(...
+                return %0 : !torch.vtensor<[...],bf16>
+            }
+        3. Custom op expansion
+            @something(%arg0: !torch.vtensor<[...],bf16>) -> !torch.vtensor<[...],bf16> {
+                %0 = torch_c.to_builtin_tensor %arg0 ...
+                %1 = util.call @something_impl(%0) ...
+                %2 = torch_c.from_builtin_tensor %1 ...
+                return %2 : !torch.vtensor<[...],bf16>
+            }
+            util.func private @something_impl(%arg0: tensor<...>) -> tensor<...> {
+                ...
+                util.return ...
+            }
+        4. Lower to IREE
+            - `torch-to-iree` pass converts torch dialect to IREE input dialects.
+
+    Args:
+        module_factory: torch.nn.Module to lower
+        arg_factory: Either an iterable of arguments or a callable that returns
+            an iterable of arguments. These are the example inputs used for
+            exporting the module.
+        func_name: Name of the exported function.
+        force_single_dispatch: If True, wraps output in an attribute instructing
+            IREE to attempt to produce a single dispatch.
+
+    Returns:
+        module_asm: MLIR asm representation of the input torch.nn.Module
+    """
     cache_dir = set_cache_dir() / func_name
     mlir_path = cache_dir / f"{func_name}.mlir"
 
