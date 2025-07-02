@@ -1,3 +1,9 @@
+# Copyright 2025 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 import csv
 import json
 
@@ -7,12 +13,12 @@ from typing import Dict, Union, Sequence
 import torch
 
 from iree.turbine.kernel.boo.conv_exports import (
-    get_launchable,
     ConvSignature,
     Mode,
-    command_to_signature,
 )
+from iree.turbine.kernel.boo.conv_exports.miopen_parser import ConvParser
 from iree.turbine.kernel.boo.conv_exports.utils import load_commands
+from iree.turbine.kernel.boo.driver.launch import get_launchable
 
 
 def compare(y: torch.Tensor, y_ref: torch.Tensor) -> Dict[str, Union[bool, float]]:
@@ -32,19 +38,19 @@ def _run(commands: Sequence[str], allow_jit_compile: bool):
     cuda = torch.device("cuda:0")
     cpu = torch.device("cpu")
     for c in commands:
-        sig = command_to_signature(c)
+        sig = ConvParser.command_to_signature(c)
         print(c)
         is_fwd = sig.mode == Mode.parse("fwd")
         # get reference fwd nn module and sample args
         if is_fwd:
             m = sig.get_nn_module(use_custom=False)
-            x, w = sig.get_sample_conv_args(device=cuda, seed=4)
+            x, w = sig.get_sample_args(device=cuda, seed=4)
         else:
             kwargs = sig._signature._asdict()
             kwargs.pop("num_spatial_dims")
             kwargs["mode"] = "fwd"
             fwd_sig = ConvSignature(**kwargs)
-            x, w = fwd_sig.get_sample_conv_args(device=cuda, seed=4)
+            x, w = fwd_sig.get_sample_args(device=cuda, seed=4)
             m = fwd_sig.get_nn_module(use_custom=False)
         # get a launchable
         try:
