@@ -210,8 +210,8 @@ def testPagedFlashDecoding(
         head_size_kv=shape[3],
         block_size=shape[4],
         num_seqs=shape[5],
-        kv_lens=shape[6],
     )
+    kv_lens = shape[6]
     assert shape.num_query_heads % shape.num_kv_heads == 0
     scale = shape.head_size**-0.5
 
@@ -226,7 +226,7 @@ def testPagedFlashDecoding(
             kv_lens_tensor,
         ) = create_inputs(
             shape.num_seqs,
-            shape.kv_lens,
+            kv_lens,
             shape.num_query_heads,
             shape.num_kv_heads,
             shape.head_size,
@@ -397,8 +397,8 @@ def testPagedFlashDecodingMHA(
         head_size_kv=shape[2],
         block_size=shape[3],
         num_seqs=shape[4],
-        kv_lens=shape[5],
     )
+    kv_lens = shape[5]
     assert shape.num_query_heads % shape.num_kv_heads == 0
     scale = shape.head_size**-0.5
 
@@ -413,7 +413,7 @@ def testPagedFlashDecodingMHA(
             kv_lens_tensor,
         ) = create_inputs(
             shape.num_seqs,
-            shape.kv_lens,
+            kv_lens,
             shape.num_query_heads,
             shape.num_kv_heads,
             shape.head_size,
