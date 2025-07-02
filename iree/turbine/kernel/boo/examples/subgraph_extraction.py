@@ -35,7 +35,7 @@ class SampleModel(torch.nn.Module):
             torch.nn.Unflatten(dim=-1, unflattened_size=[pixel_width, pixel_height]),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x0 = self.layer0(x)
         x1 = self.layer1(x0)
         x2 = self.layer2(x1)

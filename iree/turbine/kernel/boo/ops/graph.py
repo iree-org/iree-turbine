@@ -37,7 +37,7 @@ __all__ = [
 
 def get_io_from_gm(
     gm: GraphModule,
-) -> tuple[Sequence[Target], Sequence[TensorMetadata | None]]:
+) -> tuple[list[Target], list[TensorMetadata | None]]:
     """Returns input nodes and output TensorMetadata from the graph module."""
 
     inputs = []
@@ -143,22 +143,27 @@ def define_custom_graph_op(
         return outputs
 
 
-def maybe_trim_none_outputs(gm: GraphModule) -> Sequence[bool]:
+def maybe_trim_none_outputs(gm: GraphModule) -> list[bool]:
     """Removes None outputs from graph. The ith return indicates whether output[i] was None."""
-    none_output = []
-    for n in gm.graph.nodes:
-        if n.op == "output":
-            trunc_returns = []
-            for ret in n.args[0]:
-                if ret is None:
-                    none_output.append(True)
-                    continue
-                trunc_returns.append(ret)
-                none_output.append(False)
-            new_args = (tuple(trunc_returns),) + n.args[1:]
-            n.args = new_args
-        gm.graph.lint()
-        gm.recompile()
+
+    output_nodes = [n for n in gm.graph.nodes if n.op == "output"]
+
+    assert (
+        len(output_nodes) == 1
+    ), f"Expected single output node for graph module:\n{gm.print_readable(print_output=False)}\nFound {output_nodes = }."
+
+    n = output_nodes[0]
+    trunc_returns = [ret for ret in n.args[0] if ret is not None]
+    none_output = [ret is None for ret in n.args[0]]
+
+    if not any(none_output):
+        return none_output
+
+    new_args = (tuple(trunc_returns),) + n.args[1:]
+    n.args = new_args
+
+    gm.graph.lint()
+    gm.recompile()
     return none_output
 
 

@@ -81,7 +81,7 @@ def fused_subgraph(
 
 def extract_fusion_subgraph_modules(
     src_gm: GraphModule, fusion_schema: FusionSchema
-) -> tuple[Sequence[GraphModule], Sequence[Dict[Node, Node]]]:
+) -> tuple[list[GraphModule], list[Dict[Node, Node]]]:
     """Traverses src_gm nodes in order. When a node matches a root op in the fusion_schema,
     A new subgraph is created with the root op in addition to any adjacent nodes matching the schema.
 
