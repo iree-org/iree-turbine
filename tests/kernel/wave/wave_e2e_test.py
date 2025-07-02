@@ -1478,9 +1478,22 @@ _layouts = [
 @pytest.mark.parametrize("n, h, w, c, hf, wf, nf, stride", _igemm_cases)
 @pytest.mark.parametrize("mem_space", _mem_spaces)
 @pytest.mark.parametrize("layout", _layouts)
+@pytest.mark.parametrize("optimization_level", [False, True])
 @param_bool("use_buffer_ops", "buf_ops")
 def test_igemm_conv(
-    n, h, w, c, hf, wf, nf, stride, mem_space, layout, use_buffer_ops, request
+    n,
+    h,
+    w,
+    c,
+    hf,
+    wf,
+    nf,
+    stride,
+    mem_space,
+    layout,
+    optimization_level,
+    use_buffer_ops,
+    request,
 ):
     cf = c
     padding = 0  # TODO: only pad=0 is supported for now
@@ -1534,6 +1547,7 @@ def test_igemm_conv(
             os.path.join(dump_perf, "tk_" + perf_filename) if dump_perf else None
         ),
         dump_intermediates="./inter",
+        optimization_level=optimization_level,
     )
     options = set_default_run_config(options)
     conv = wave_compile(options, conv)
