@@ -677,17 +677,17 @@ def get_bhsd_attention_kernel(
     dynamic_symbols = []
     dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
         dynamic_symbols_map[B] = hyperparams[B]
+        dynamic_symbols_map[H] = hyperparams[H]
+        dynamic_symbols_map[M] = hyperparams[M]
         dynamic_symbols_map[K2] = hyperparams[K2]
-        dynamic_symbols.append(M)
-        dynamic_symbols.append(N)
         dynamic_symbols.append(B)
+        dynamic_symbols.append(H)
+        dynamic_symbols.append(M)
         dynamic_symbols.append(K2)
-        del hyperparams[M]
-        del hyperparams[N]
         del hyperparams[B]
+        del hyperparams[H]
+        del hyperparams[M]
         del hyperparams[K2]
 
     if is_custom_mask:

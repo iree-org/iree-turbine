@@ -427,7 +427,7 @@ def testAttentionBSHD(
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("bhsd_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
-@param_bool("dynamic_dims", "dyn", [False])
+@param_bool("dynamic_dims", "dyn", [False, True])
 @pytest.mark.parametrize(
     "mfma_variant",
     [
