@@ -108,11 +108,14 @@ def extract_fusion_subgraph_modules(
 
         # Walk producers from root and include them in the subgraph
         worklist = [root]
+        visited_nodes: set = {root}
         while len(worklist) > 0:
             # We are treating worklist as a FIFO queue (pop from front).
             # This results in a breadth-first traversal of producers.
             curr_node = worklist.pop(0)
             for producer in curr_node.all_input_nodes:
+                if producer in visited_nodes:
+                    continue
                 if producer.op != "call_function":
                     continue
                 if producer.target not in node_spec.producers:
@@ -121,25 +124,33 @@ def extract_fusion_subgraph_modules(
                     continue
                 # Insert producers at the front, since we want to preserve at least some weak ordering of nodes.
                 # Is it possible for this to generate an invalid ordering? (Maybe it's better to just sort node_list after).
+                visited_nodes.add(producer)
                 node_list.insert(0, producer)
                 if node_spec.recursive:
                     worklist.append(producer)
 
         # Walk consumers from root and include them in the subgraph
         worklist = [root]
+        visited_nodes: set = {root}
         while len(worklist) > 0:
             curr_node = worklist.pop(0)
             for consumer in curr_node.users:
+                if consumer in visited_nodes:
+                    continue
                 if consumer.op != "call_function":
                     continue
                 if consumer.target not in node_spec.consumers:
                     continue
                 if consumer in used_nodes:
                     continue
+                visited_nodes.add(consumer)
                 node_list.append(consumer)
                 if node_spec.recursive:
                     worklist.append(consumer)
 
+        logger.debug("pre-sort node_list: %s", str(node_list))
+        node_list = sorted(node_list)
+        logger.debug("post-sort node_list: %s", str(node_list))
         # Create a detached subgraph
         subgraph = Graph()
         output_nodes = []
@@ -148,7 +159,7 @@ def extract_fusion_subgraph_modules(
         for node in node_list:
             # Iterate over producers in src graph and make placeholders in detached subgraph if necessary.
             for producer in node.all_input_nodes:
-                if producer in node_list:
+                if producer in node_list or producer in subgraph_projection.keys():
                     continue
                 subgraph_input = subgraph.placeholder(name=producer.name)
                 subgraph_input.meta = producer.meta
@@ -167,7 +178,7 @@ def extract_fusion_subgraph_modules(
             new_node = subgraph.node_copy(node, arg_transform=subgraph_projection.get)
             subgraph_projection[node] = new_node
             subgraph_inclusion[new_node] = node
-            # Any nodes in the subgraph which have users outside the subgraph should return.
+            # Any nodes in the subgraph which have users outside the subgraph should be returned.
             if len(set(node.users.keys()).difference(node_list)) > 0:
                 output_nodes.append(new_node)
 
