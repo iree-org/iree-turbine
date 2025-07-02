@@ -128,7 +128,6 @@ def benchmark_module(
     options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
-    dynamic_symbols: list[int],
     flatbuffer: bytes,
     entry_function: str,
     timeout=None,
@@ -143,9 +142,7 @@ def benchmark_module(
     for k in kwargs:
         v = kwargs[k]
         args.append(f"--{k}={v}")
-    inputs, tempfiles = construct_inputs(
-        options, kernel_inputs, kernel_outputs, dynamic_symbols
-    )
+    inputs, tempfiles = construct_inputs(options, kernel_inputs, kernel_outputs)
     args += inputs
     args.append("--module=-")
     args.append(f"--device={options.device}")
