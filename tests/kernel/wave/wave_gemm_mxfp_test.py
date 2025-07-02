@@ -8,6 +8,12 @@ from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
+from iree.turbine.kernel.wave.utils.torch_utils import (
+    device_randn,
+    device_randint,
+    device_tensor,
+    device_zeros,
+)
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
@@ -26,20 +32,16 @@ def generate_gemm_afp4wfp4_inputs(shape):
     M, N, K = shape
     torch.manual_seed(5)
     # 34 is two packed e2m1 values 0010 which is 1.0.
-    x_low = torch.randint(0, 16, (M, K // 2), dtype=torch.uint8, device="cuda")
-    x_high = torch.randint(0, 16, (M, K // 2), dtype=torch.uint8, device="cuda")
+    x_low = device_randint(0, 16, (M, K // 2), dtype=torch.uint8)
+    x_high = device_randint(0, 16, (M, K // 2), dtype=torch.uint8)
     x = x_low | x_high << 4
-    w_low = torch.randint(0, 16, (N, K // 2), dtype=torch.uint8, device="cuda")
-    w_high = torch.randint(0, 16, (N, K // 2), dtype=torch.uint8, device="cuda")
+    w_low = device_randint(0, 16, (N, K // 2), dtype=torch.uint8)
+    w_high = device_randint(0, 16, (N, K // 2), dtype=torch.uint8)
     w = w_low | w_high << 4
     w = w.T
     # Scale of 1.0 in e8m0, bias 127.
-    x_scales = torch.randint(
-        124, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8, device="cuda"
-    )
-    w_scales = torch.randint(
-        124, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8, device="cuda"
-    )
+    x_scales = device_randint(124, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8)
+    w_scales = device_randint(124, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8)
     x_scales = x_scales.T.contiguous()
     w_scales = w_scales.T.contiguous()
 
@@ -50,16 +52,12 @@ def generate_gemm_afp8wfp8_inputs(shape):
     M, N, K = shape
     torch.manual_seed(5)
     # 34 is two packed e2m1 values 0010 which is 1.0.
-    x = torch.randn((M, K), dtype=torch.float32, device="cuda").to(torch.float8_e5m2)
-    w = torch.randn((N, K), dtype=torch.float32, device="cuda").to(torch.float8_e5m2)
+    x = device_randn((M, K), dtype=torch.float32).to(torch.float8_e5m2)
+    w = device_randn((N, K), dtype=torch.float32).to(torch.float8_e5m2)
     w = w.T
     # Scale of 1.0 in e8m0, bias 127.
-    x_scales = torch.randint(
-        124, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8, device="cuda"
-    )
-    w_scales = torch.randint(
-        124, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8, device="cuda"
-    )
+    x_scales = device_randint(124, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8)
+    w_scales = device_randint(124, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8)
     x_scales = x_scales.T
     w_scales = w_scales.T
 
@@ -89,7 +87,7 @@ def mxfp4_to_f32(x):
         -4.0,
         -6.0,
     ]
-    mxfp4_in_f32 = torch.tensor(mxfp4_list, dtype=torch.float32, device="cuda")
+    mxfp4_in_f32 = device_tensor(mxfp4_list, dtype=torch.float32)
     return mxfp4_in_f32[x.long()]
 
 
@@ -212,7 +210,7 @@ def testScaledGemmMXFP4(
     gemm = wave_compile(options, gemm)
 
     x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(shape)
-    out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
+    out = device_zeros(x.shape[0], w.shape[1], dtype=torch.float32)
 
     w_t = w.T.contiguous()
     gemm(x, x_scales, w_t, w_scales, out)
@@ -332,9 +330,8 @@ def testScaledBatchedGemmMXFP4(
     x_scales = flat_x_scales.view(batch, shape[0], shape[2] // 32)
     w_t = w_t.view(shape[1], shape[2] // 2)
     w_scales = w_scales.view(shape[1], shape[2] // 32)
-    out = torch.zeros(batch, shape[0], shape[1], device=x.device, dtype=torch.float32)
+    out = device_zeros(batch, shape[0], shape[1], dtype=torch.float32)
 
-    torch.cuda.synchronize()
     batched_gemm(x, x_scales, w_t, w_scales, out)
     torch_flat_out = torchScaledGemmMXFP4(flat_x, w, flat_x_scales, w_scales)
     torch_out = torch_flat_out.view(batch, shape[0], shape[1])
@@ -425,7 +422,7 @@ def testScaledGemmMXFP8(
     gemm = wave_compile(options, gemm)
 
     x, w, x_scales, w_scales = generate_gemm_afp8wfp8_inputs(shape)
-    out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
+    out = device_zeros(x.shape[0], w.shape[1], dtype=torch.float32)
 
     w_t = w.T.contiguous()
     gemm(x.view(torch.int8), x_scales, w_t.view(torch.int8), w_scales, out)
