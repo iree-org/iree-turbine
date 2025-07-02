@@ -31,7 +31,7 @@ def main():
 Run a kernel with the IREE runtime. Command line arguments mirror the
 arguments to MIOpenDriver.
 
-Currently supports convolution and layernorm.
+Currently supports convolution, layernorm, and matrix multiply.
 
 If COMMANDS_FILE is specified, driver commands are read from the file. Each
 line is treated as a separate invocation of the driver, and any additional
@@ -127,6 +127,12 @@ def run(cli_args: Sequence[str], gpu_id: int):
             )
 
             return LayerNormParser
+        if any("gemm" in x for x in cli_args):
+            from iree.turbine.kernel.boo.gemm_exports.miopen_parser import (
+                GEMMParser,
+            )
+
+            return GEMMParser
         raise ValueError("unsupported operation kind in " + shlex.join(cli_args))
 
     from iree.turbine.kernel.boo.driver.launch import get_launchable
