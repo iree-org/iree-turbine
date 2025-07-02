@@ -32,7 +32,6 @@ def test_paged_flash_decoding():
         head_size_kv=32,
         block_size=64,
         num_seqs=8,
-        kv_lens=100,
     )
     num_kv_splits = 8
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16, tkw.MMAType.F32_16x16x16_F16)

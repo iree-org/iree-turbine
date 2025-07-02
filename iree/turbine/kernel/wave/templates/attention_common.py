@@ -33,8 +33,6 @@ class AttentionShape:
     # Decode specific
     block_size: Optional[int] = None
     # -----------------------
-    # Extend specific
-    flattened_mask_len: Optional[int] = None
 
     def __iter__(self):
         for field in fields(AttentionShape):

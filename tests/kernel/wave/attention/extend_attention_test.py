@@ -370,7 +370,6 @@ def testExtendAttention(
         _,
     ) = create_inputs(shape, dtype)
     shape = replace(shape, max_seq_len=max_len_extend)
-    shape = replace(shape, flattened_mask_len=custom_mask.shape[0])
     if mfma_variant[0] == MMAType.F32_16x16x16_F16:
         num_waves = 4
     if mfma_variant[1] == MMAType.F32_32x32x8_F16:

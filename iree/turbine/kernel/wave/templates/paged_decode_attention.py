@@ -25,7 +25,6 @@ paged_decode_attention_shape = namedtuple(
         "head_size_kv",
         "block_size",
         "num_seqs",
-        "kv_lens",
     ],
 )
 
