@@ -124,8 +124,8 @@ def run(cli_args: Sequence[str], gpu_id: int):
     from iree.turbine.kernel.boo.driver.launch import get_launchable
 
     print(shlex.join(cli_args))
-    parser_class = dispatch(cli_args)
-    parser = parser_class.get_miopen_parser()
+    parser_cls = dispatch(cli_args)
+    parser = parser_cls.get_miopen_parser()
     parser.add_argument(
         "--iter", type=int, help="Number of iterations to run", default=100
     )
@@ -136,7 +136,7 @@ def run(cli_args: Sequence[str], gpu_id: int):
         help="use a splat value for inputs (defaults to random values)",
     )
     args = parser.parse_args(cli_args)
-    sig = parser_class.get_signature(args)
+    sig = parser_cls.get_signature(args)
     launchable = get_launchable(sig)
 
     # get the number of available GPU's

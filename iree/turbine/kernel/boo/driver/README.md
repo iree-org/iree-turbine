@@ -32,7 +32,7 @@ convbfp16 -n 128 -c 35 -H 48 -W 32 -k 35 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1
 ...
 ```
 
-The `-t 1` option to collect timing is implemented by launching the kernel in a subprocess, which is then traced using `tracy`. Note: you can output `min_time (us)` to a csv file with `--csv=results.csv`.
+The `--time 1` (or `-t 1` for short) option to collect timing is implemented by launching the kernel in a subprocess, which is then traced using `tracy`. Note: you can output `min_time (us)` to a csv file with `--csv=results.csv`.
 
 ### Requirements for collecting timing info:
 
