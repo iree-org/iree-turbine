@@ -39,35 +39,6 @@ Optimize shared -> reg for transpose using lds.tr{n} intrinsics
 TODO: extend support for more variants
 """
 
-def combine_index(
-    index1: dict[IndexSymbol, IndexSequence],
-    index2: dict[IndexSymbol, IndexSequence],
-    fastest_dim: IndexSymbol,
-    fastest_dim_vec_size: int,
-) -> dict[IndexSymbol, IndexSequence]:
-    """
-    This function takes two index sequences and combines them.
-    """
-    assert len(index1) == len(index2)
-    return {
-        key: IndexSequence(
-            index1[key].start + index2[key].start,
-            fastest_dim_vec_size if key == fastest_dim else 1,
-            1,
-        )
-        for key in index2
-    }
-
-def remove_thread_indexing(
-    index: dict[IndexSymbol, IndexSequence]
-) -> dict[IndexSymbol, IndexSequence]:
-    """
-    This function takes the index sequence for a global read and removes all
-    thread level indexing.
-    """
-    subs = {t: 0 for t in [THREAD_0, THREAD_1, THREAD_2, GPR_NUM]}
-    return {key: safe_subs(index[key], subs) for key in index}
-
 def is_transpose_read(node: fx.Node) -> bool:
     read = get_custom(node)
     if not isinstance(read, Read):
@@ -101,7 +72,6 @@ def feeds_mma_instruction(write: Write) -> bool:
 def meets_hw_transpose_requirements(
     read: Read, write: Write, constraints: list[Constraint]
 ):
-    # breakpoint()
     if not get_default_arch() == "gfx950":
         return False
 
