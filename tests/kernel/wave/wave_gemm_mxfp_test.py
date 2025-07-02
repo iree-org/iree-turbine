@@ -313,14 +313,9 @@ def testScaledBatchedGemmMXFP4(
         canonicalize=True,
         schedule=enable_scheduling,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map={},
     )
     options = set_default_run_config(options)
     batched_gemm = wave_compile(options, batched_gemm)
-    batched_gemm.options.dynamic_symbols_map = {
-        tkl.sym.B: batch,
-        tkl.sym.M: shape[0],
-    }
 
     linearized_shape = (batch * shape[0], shape[1], shape[2])
     flat_x, w, flat_x_scales, w_scales = generate_gemm_afp4wfp4_inputs(linearized_shape)
