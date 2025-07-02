@@ -203,6 +203,7 @@ def testPagedFlashDecoding(
     request,
 ):
     torch.manual_seed(0)
+    kv_lens = shape[6]
     shape = paged_decode_attention_shape(
         num_query_heads=shape[0],
         num_kv_heads=shape[1],
@@ -211,7 +212,6 @@ def testPagedFlashDecoding(
         block_size=shape[4],
         num_seqs=shape[5],
     )
-    kv_lens = shape[6]
     assert shape.num_query_heads % shape.num_kv_heads == 0
     scale = shape.head_size**-0.5
 
@@ -390,6 +390,7 @@ def testPagedFlashDecodingMHA(
     request,
 ):
     torch.manual_seed(0)
+    kv_lens = shape[5]
     shape = paged_decode_attention_shape(
         num_query_heads=shape[0],
         num_kv_heads=shape[0],
@@ -398,7 +399,6 @@ def testPagedFlashDecodingMHA(
         block_size=shape[3],
         num_seqs=shape[4],
     )
-    kv_lens = shape[5]
     assert shape.num_query_heads % shape.num_kv_heads == 0
     scale = shape.head_size**-0.5
 
