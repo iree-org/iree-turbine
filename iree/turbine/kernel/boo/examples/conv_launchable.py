@@ -29,7 +29,7 @@ def main(clear_cache: bool):
     seed = 1
     for torch_device in devices:
         # get some random sample args on a specific device
-        args = sig.get_sample_conv_args(seed=seed, device=torch_device)
+        args = sig.get_sample_args(seed=seed, device=torch_device)
         seed += 1
 
         # Call the launchable (log the time). If we have a vmfb file in the cache, this should just load it.
@@ -39,7 +39,7 @@ def main(clear_cache: bool):
         logger.debug("first launchable call time : %fms", run_time)
 
         # get some new inputs on the same device
-        args = sig.get_sample_conv_args(seed=seed, device=torch_device)
+        args = sig.get_sample_args(seed=seed, device=torch_device)
         seed += 1
 
         # run a second time. This should launch from the cached (VmContext, VmFunction) used in the first call.

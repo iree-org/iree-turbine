@@ -1,5 +1,9 @@
-import os
-import sys
+# Copyright 2025 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Dict, List, Tuple, Sequence, Union
@@ -10,13 +14,11 @@ from iree.turbine.kernel.boo.conv_exports.conv import (
     ConvSignature,
     ConvSignatureStorage,
 )
+from iree.turbine.kernel.boo.conv_exports.miopen_parser import ConvParser
 from iree.turbine.kernel.boo.conv_exports.utils import load_commands
-from iree.turbine.kernel.boo.conv_exports.launch import (
-    _get_module_asm,
-)
+from iree.turbine.kernel.boo.driver.launch import get_module_asm
 from iree.turbine.kernel.boo.runtime import BOO_TUNING_SPEC_PATH
 from iree.turbine.kernel.boo.runtime import out_of_process_compile, set_cache_dir
-from iree.turbine.kernel.boo.conv_exports.miopen_parser import command_to_signature
 from iree.turbine.runtime.device import get_device_from_torch
 from iree.turbine.support.ir_imports import MLIRError
 from iree.turbine.support.logging import runtime_logger as logger
@@ -73,7 +75,7 @@ class CachePopulator:
             self.commands += load_commands(self.commands_file)
             self.commands_file = None
         if len(self.commands) > 0:
-            new_signatures = [command_to_signature(c) for c in self.commands]
+            new_signatures = [ConvParser.command_to_signature(c) for c in self.commands]
             self.signatures = list(self.signatures) + list(new_signatures)
             self.commands = None
         # de-duplicate signatures
@@ -174,7 +176,7 @@ def mlir_import(sig: ConvSignature) -> Tuple[str, bool]:
     func_name = sig.get_func_name()
     success = False
     try:
-        _get_module_asm(sig, func_name)
+        get_module_asm(sig, func_name)
         success = True
     except MLIRError as e:
         logger.debug(

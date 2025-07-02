@@ -44,7 +44,7 @@ def test_conv_impl(
         "groups": groups,
     }
     fwd_sig = ConvSignature(**kwargs)
-    x, w = fwd_sig.get_sample_conv_args(seed=1)
+    x, w = fwd_sig.get_sample_args(seed=1)
     x = x.to(device="cpu")
     w = w.to(device="cpu")
     x.requires_grad_(True)
@@ -88,7 +88,7 @@ def test_conv_custom_impl(dtype):
     )
     default_mod = sig.get_nn_module()
     custom_mod = sig.get_nn_module(use_custom=True)
-    args = sig.get_sample_conv_args(seed=10)
+    args = sig.get_sample_args(seed=10)
     y_ref = default_mod(*args)
     y = custom_mod(*args)
     assert torch.allclose(y, y_ref, rtol=1e-4, atol=1e-4)

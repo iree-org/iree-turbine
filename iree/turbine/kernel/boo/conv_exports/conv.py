@@ -13,10 +13,12 @@ from typing import (
 )
 
 from enum import IntEnum
+import math
 
 import torch
 
 from .utils import Permutation
+from ..exports.signature import OpSignature
 from ....ops.conv_fwd import conv_2d_nhwc_fhwc, generic_conv
 from ....ops.insert_slice import insert_slice
 
@@ -81,7 +83,7 @@ class ConvSignatureStorage(NamedTuple):
     mode: Mode
 
 
-class ConvSignature:
+class ConvSignature(OpSignature):
     """
     Wraps ConvSignatureStorage with some additional helper methods and easier instantiation.
 
@@ -252,7 +254,7 @@ class ConvSignature:
         ]
         return {name: self._asdict()[name] for name in conv_extra_args}
 
-    def get_sample_conv_args(
+    def get_sample_args(
         self,
         *,
         device: str | torch.device | None = None,
@@ -330,6 +332,17 @@ class ConvSignature:
                 else ConvForward(self)
             )
         raise ValueError(f"signature has unexpected mode: {self.mode}")
+
+    def get_output_size(self) -> int:
+        numel = 0
+        if int(self.mode) == 0:
+            numel = math.prod(self.output_shape)
+        elif int(self.mode) == 1:
+            numel = math.prod(self.input_shape)
+        elif int(self.mode) == 2:
+            numel = math.prod(self.kernel_shape)
+        dtype_bytes = int(self.dtype.itemsize)
+        return numel * dtype_bytes
 
 
 class ConvForward(torch.nn.Module):
