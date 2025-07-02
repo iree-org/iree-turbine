@@ -166,12 +166,7 @@ def get_t5_rpe_attention_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[B] = hyperparams[B]
-        dynamic_symbols_map[K2] = hyperparams[K2]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(B)
@@ -181,4 +176,4 @@ def get_t5_rpe_attention_kernel(
         del hyperparams[B]
         del hyperparams[K2]
 
-    return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return base_attention, hyperparams, dynamic_symbols

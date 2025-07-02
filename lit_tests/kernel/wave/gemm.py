@@ -1182,7 +1182,6 @@ def test_dynamic_gemm_pipelined():
         schedule=SchedulingType.MODULO,
         use_scheduling_barriers=True,
         dynamic_symbols=(M, N, K),
-        dynamic_symbols_map={M: 64, N: 128, K: 256},
         compile_to_mlir=True,
     )
     dynamic_gemm_pipelined = wave_compile(options, dynamic_gemm_pipelined)

@@ -145,12 +145,6 @@ def test_dynamic_attention_pipelined():
         schedule=SchedulingType.MODULO,
         use_scheduling_barriers=False,
         dynamic_symbols=(B, M, N, K2),
-        dynamic_symbols_map={
-            B: shape[0],
-            M: shape[1],
-            N: shape[2],
-            K2: shape[4],
-        },
         compile_to_mlir=True,
     )
     dynamic_attention_pipelined = wave_compile(options, dynamic_attention_pipelined)

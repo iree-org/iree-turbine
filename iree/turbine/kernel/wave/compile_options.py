@@ -19,7 +19,6 @@ class WaveCompileOptions:
 
     # === Symbol mappings ===
     subs: dict[str | IndexSymbol, Any] = field(default_factory=list)
-    dynamic_symbols_map: dict[str, IndexExpr] = field(default_factory=dict)
     dynamic_symbols: list[str] = field(default_factory=list)
 
     # === Scheduling options ===

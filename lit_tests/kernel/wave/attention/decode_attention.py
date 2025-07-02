@@ -35,21 +35,14 @@ def test_paged_flash_decoding():
         kv_lens=100,
     )
     num_kv_splits = 8
-    k_shape = (shape.num_seqs, shape.kv_lens, shape.num_kv_heads, shape.head_size)
-    v_shape = (shape.num_seqs, shape.kv_lens, shape.num_kv_heads, shape.head_size_kv)
-    q_shape = (shape.num_seqs, shape.num_query_heads, shape.head_size)
-    o_shape = (shape.num_seqs, shape.num_query_heads, shape.head_size_kv)
-    logits_shape = (num_kv_splits, shape.num_seqs, shape.head_size_kv, shape.kv_lens)
-    logits_max_shape = (num_kv_splits, shape.num_seqs, shape.head_size_kv)
-    block_table_shape = (shape.num_seqs, shape.kv_lens)
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16, tkw.MMAType.F32_16x16x16_F16)
     (
         phase_0,
         phase_1,
         hyperparams_0,
         hyperparams_1,
-        dynamic_symbols,
-        dynamic_symbols_map,
+        dynamic_symbols_0,
+        dynamic_symbols_1,
     ) = get_paged_decode_attention_kernels(
         shape,
         mfma_variant,
@@ -62,8 +55,7 @@ def test_paged_flash_decoding():
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-        dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
+        dynamic_symbols=dynamic_symbols_0,
         compile_to_mlir=True,
     )
     phase_0 = wave_compile(options, phase_0)
@@ -95,8 +87,7 @@ def test_paged_flash_decoding():
         run_bench=False,
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
-        dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
+        dynamic_symbols=dynamic_symbols_1,
         compile_to_mlir=True,
     )
     phase_1 = wave_compile(options, phase_1)
@@ -130,9 +121,8 @@ def test_flash_decoding():
         hyperparams_0,
         hyperparams_1,
         dynamic_symbols_0,
-        dynamic_symbols_map_0,
         dynamic_symbols_1,
-        dynamic_symbols_map_1,
+        U,
     ) = get_decode_attention_kernels(shape, mfma_variant, use_dynamic_dims)
 
     options = WaveCompileOptions(
@@ -142,7 +132,6 @@ def test_flash_decoding():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols_0,
-        dynamic_symbols_map=dynamic_symbols_map_0,
         compile_to_mlir=True,
     )
     phase_0 = wave_compile(options, phase_0)
@@ -172,7 +161,6 @@ def test_flash_decoding():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols_1,
-        dynamic_symbols_map=dynamic_symbols_map_1,
         compile_to_mlir=True,
     )
     phase_1 = wave_compile(compile_options, phase_1)

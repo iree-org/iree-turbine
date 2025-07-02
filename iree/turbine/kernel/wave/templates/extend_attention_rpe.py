@@ -85,7 +85,7 @@ def get_extend_attention_rpe_kernel(
     constraints += [tkw.WorkgroupConstraint(D_KV, BLOCK_D_KV, 1)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 2)]
     constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 2, primary=False)]
-    constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3)]
+    constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3, iters=S - 1)]
     constraints += [tkw.TilingConstraint(N_KV, BLOCK_N_KV)]
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / M_WAVES)]
     constraints += [tkw.WaveConstraint(D_KV, BLOCK_D_KV / N_WAVES)]
@@ -368,10 +368,4 @@ def get_extend_attention_rpe_kernel(
     }
 
     dynamic_symbols = [N_Q, N_KV, S]
-    dynamic_symbols_map = {
-        N_Q: q_shape[0],
-        N_KV: k_shape[0],
-        S: shape.num_seqs,
-    }
-
-    return extend_attention_rpe, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return extend_attention_rpe, hyperparams, dynamic_symbols

@@ -215,12 +215,7 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[N_Q] = hyperparams[N_Q]
-        dynamic_symbols_map[D_KV] = hyperparams[D_KV]
-        dynamic_symbols_map[B] = hyperparams[B]
-        dynamic_symbols_map[N_KV] = hyperparams[N_KV]
         dynamic_symbols.append(N_Q)
         dynamic_symbols.append(D_KV)
         dynamic_symbols.append(B)
@@ -230,4 +225,4 @@ def get_brevitas_pertensor_fp8_attention_kernel(
         del hyperparams[B]
         del hyperparams[N_KV]
 
-    return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return base_attention, hyperparams, dynamic_symbols

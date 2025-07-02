@@ -43,7 +43,6 @@ def get_wave_kernel(
         quantized_attention,
         hyperparams,
         _,
-        _,
     ) = get_brevitas_pertensor_fp8_attention_kernel(
         shape,
         mfma_variant,
@@ -65,7 +64,6 @@ def get_wave_kernel(
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map={},
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
     )
@@ -122,11 +120,6 @@ def wave_sdpa_fp8(
         quant_dtype=quant_dtype,
         is_causal=is_causal,
     )
-    quantized_attention.options.dynamic_symbols_map = {
-        tkl.sym.B: flattend_batch_size,
-        tkl.sym.N_Q: query_shape[-2],
-        tkl.sym.N_KV: key_shape[-2],
-    }
     _ = quantized_attention(
         query.view(flat_q_shape),
         key.view(flat_kv_shape),

@@ -75,7 +75,6 @@ def testAttentionPure(
         base_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_brevitas_pertensor_fp8_attention_kernel(
         shape, mfma_variant, q_scale=q_scale, k_scale=k_scale, v_scale=v_scale
     )
@@ -91,7 +90,6 @@ def testAttentionPure(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",

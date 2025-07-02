@@ -26,7 +26,7 @@ def test_fp8_pertensor_attention():
         kv_seq_len=256,
     )
     mfma_variant = (tkw.MMAType.F32_16x16x32_F8, tkw.MMAType.F32_16x16x32_K4_F8)
-    base_attention, hyperparams, _, _ = get_brevitas_pertensor_fp8_attention_kernel(
+    base_attention, hyperparams, _ = get_brevitas_pertensor_fp8_attention_kernel(
         shape,
         mfma_variant,
     )

@@ -102,6 +102,7 @@ def invoke_vmfb(
     kernel_outputs: list[torch.Tensor],
     scalar_args: list[int | float] = [],
     bound_scalar_symbols: dict[IndexSymbol, int] = {},
+    dynamic_symbols: list[int] = [],
     gpu_func: Optional[Any] = None,
 ):
     if options.wave_runtime:
@@ -111,6 +112,7 @@ def invoke_vmfb(
             kernel_outputs,
             scalar_args,
             bound_scalar_symbols,
+            dynamic_symbols,
             gpu_func,
         )
         return
@@ -162,7 +164,7 @@ def invoke_vmfb(
         kernel_inputs,
         kernel_outputs,
         scalar_args,
-        options.dynamic_symbols_map.values(),
+        dynamic_symbols,
     )
 
     if options.run_bench:
@@ -183,6 +185,7 @@ def invoke_with_wave_runtime(
     kernel_outputs: list[torch.Tensor],
     scalar_args: list[int | float],
     bound_scalar_symbols: dict[IndexSymbol, int],
+    dynamic_symbols: list[int],
     gpu_func: Any,
 ):
     """
@@ -193,7 +196,7 @@ def invoke_with_wave_runtime(
     num_inputs = len(kernel_inputs)
     dynamic_dims = tuple(
         scalar_args[v - num_inputs] for v in bound_scalar_symbols.values()
-    ) + tuple(options.dynamic_symbols_map.values())
+    ) + tuple(dynamic_symbols)
     # Update the grid size as this may vary depending
     # on the dynamic symbols.
     grid = compute_grid(dynamic_dims, options.kernel_launch_info.grid)

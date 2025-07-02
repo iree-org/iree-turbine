@@ -37,7 +37,6 @@ def get_speculative_decoding_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
 
     constraints = [tkw.WorkgroupConstraint(VOCAB_SIZE, BLOCK_VOCAB_SIZE, 0)]
     constraints += [tkw.WorkgroupConstraint(BATCH_SIZE, BLOCK_BATCH_SIZE, 1)]
@@ -140,7 +139,7 @@ def get_speculative_decoding_kernel(
         min_valid_token_idx = tkw.min(valid_lane_token_idx, dim=VOCAB_SIZE)
         tkw.write(min_valid_token_idx, predicts, mapping=output_mapping)
 
-    return tree_speculative_sampling, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return tree_speculative_sampling, hyperparams, dynamic_symbols
 
 
 def get_speculative_sampling_kernel(
@@ -177,7 +176,6 @@ def get_speculative_sampling_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -543,4 +541,4 @@ def get_speculative_sampling_kernel(
         tkw.write(cur_prob_offset, cur_prob_offset_vec, elements_per_thread=1)
         tkw.write(num_accepted_tokens, accept_token_num, elements_per_thread=1)
 
-    return speculative_sampling, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return speculative_sampling, hyperparams, dynamic_symbols

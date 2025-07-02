@@ -125,7 +125,7 @@ def test_t5_rpe_attention(
     assert shape.num_query_heads % shape.num_kv_heads == 0
 
     (query, key, value) = create_inputs(shape, dtype)
-    t5_rpe_attention, hyperparams, _, _ = get_t5_rpe_attention_kernel(
+    t5_rpe_attention, hyperparams, _ = get_t5_rpe_attention_kernel(
         shape,
         mfma_variant,
         dynamic_dims=False,

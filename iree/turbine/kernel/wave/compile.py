@@ -33,6 +33,7 @@ class WaveKernel:
         asm: str,
         gpu_binary_path: Optional[str],
         bound_scalar_symbols: dict[IndexSymbol, int],
+        symbols_args_map: dict[IndexSymbol, tuple[int, int]],
     ):
         self.options = options
         self.executable = executable
@@ -46,6 +47,7 @@ class WaveKernel:
         else:
             self.gpu_func = None
         self.bound_scalar_symbols = bound_scalar_symbols
+        self.symbols_args_map = symbols_args_map
 
     def __call__(self, *args, **kwargs):
         return self.invoke(*args, **kwargs)
@@ -75,6 +77,11 @@ class WaveKernel:
             if usage == kernel_codegen.KernelBufferUsage.OUTPUT:
                 kernel_outputs.append(arg)
 
+        dynamic_symbols = []
+        for sym in self.options.dynamic_symbols:
+            arg_idx, dim = self.symbols_args_map[sym]
+            dynamic_symbols.append(args[arg_idx].shape[dim])
+
         invoke_vmfb(
             self.executable,
             self.options,
@@ -82,6 +89,7 @@ class WaveKernel:
             kernel_outputs,
             scalar_args,
             self.bound_scalar_symbols,
+            dynamic_symbols,
             self.gpu_func,
         )
         return self.asm
@@ -106,6 +114,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
             return glob.glob(str(get_temp_binary_dir() / "*.hsaco"))[0]
 
     bound_scalar_symbols = kernel.bound_scalar_symbols
+    symbols_args_map = kernel.symbols_args_map
     if is_cache_enabled():
         cache_manager = get_cache_manager()
         options.kernel_hash = cache_manager.get_hash(
@@ -125,6 +134,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
                 cached_kernel.asm,
                 binary_path,
                 bound_scalar_symbols,
+                symbols_args_map,
             )
 
     # Create an indexing context and populate substitutions.
@@ -176,7 +186,9 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         asm = options.override_mlir
 
     if options.compile_to_mlir:
-        return WaveKernel(options, None, asm, None, bound_scalar_symbols)
+        return WaveKernel(
+            options, None, asm, None, bound_scalar_symbols, symbols_args_map
+        )
 
     compiled_wave_vmfb = compile_to_vmfb(asm, options)
     if options.create_vmfb_file:
@@ -201,5 +213,10 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         binary_path = get_binary_path()
 
     return WaveKernel(
-        options, compiled_wave_vmfb, asm, binary_path, bound_scalar_symbols
+        options,
+        compiled_wave_vmfb,
+        asm,
+        binary_path,
+        bound_scalar_symbols,
+        symbols_args_map,
     )

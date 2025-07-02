@@ -84,7 +84,7 @@ import torch.fx as fx
 import inspect
 import sympy
 import warnings
-from ..lang import SymbolBind
+from ..lang import SymbolBind, Memory
 import logging
 
 logger = logging.getLogger(__name__)
@@ -163,6 +163,10 @@ def _is_symbol_bind(a: Any) -> bool:
     return inspect.isclass(a) and issubclass(a, SymbolBind)
 
 
+def _is_memory_arg(a: Any) -> bool:
+    return inspect.isclass(a) and issubclass(a, Memory)
+
+
 class LaunchableWave(Launchable):
     def __init__(
         self,
@@ -189,6 +193,20 @@ class LaunchableWave(Launchable):
             for i, (name, arg) in enumerate(hints.items())
             if _is_symbol_bind(arg)
         }
+
+        # Build a mapping between symbol and tensor arg (index, dim) so we can
+        # use it to extract dynamic symbols from the tensor args.
+        symbols_args_map = {}
+        for arg_idx, arg in enumerate(hints.values()):
+            if not _is_memory_arg(arg):
+                continue
+
+            for dim, symbol in enumerate(arg.symbolic_shape):
+                if symbol in symbols_args_map:
+                    continue
+
+                symbols_args_map[symbol] = (arg_idx, dim)
+        self.symbols_args_map = symbols_args_map
 
     @property
     def workgroup_constraints(self) -> list[WorkgroupConstraint]:
@@ -634,7 +652,7 @@ class LaunchableWave(Launchable):
         # Convert the grid into a lambda that we can use to compute the grid dimension.
         hw_constraint = get_hardware_constraint(self.constraints)
         grid_symbols = list(self.bound_scalar_symbols.keys()) + list(
-            options.dynamic_symbols_map.keys()
+            options.dynamic_symbols
         )
         options.kernel_launch_info.grid = sympy.lambdify(
             [grid_symbols], self.grid_type.dims

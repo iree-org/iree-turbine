@@ -293,7 +293,6 @@ def testDifferentDynamicSameBlock(tmp_path):
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = [M, N, B, K2]
-    dynamic_sym_shape0 = {M: shape_0[1], N: shape_0[2], B: shape_0[0], K2: shape_0[4]}
 
     cache_manager = get_cache_manager()
 
@@ -303,7 +302,6 @@ def testDifferentDynamicSameBlock(tmp_path):
         canonicalize=True,
         run_bench=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_sym_shape0,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
     )
@@ -339,13 +337,11 @@ def testDifferentDynamicSameBlock(tmp_path):
     # Despite having different problem size, since we use exact same
     # block size we should be able to use cache.
     shape_1 = (2, 128, 64, 64, 128)
-    dynamic_sym_shape1 = {M: shape_1[1], N: shape_1[2], B: shape_1[0], K2: shape_1[4]}
     options = WaveCompileOptions(
         subs=copy.deepcopy(hyperparams),
         canonicalize=True,
         run_bench=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_sym_shape1,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
     )
@@ -523,7 +519,6 @@ def testSameConfigDifferentFreeVar(tmp_path):
         base_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_vanilla_attention_kernel(
         shape, mfma_variant, dynamic_dims, is_v_transposed=True
     )
@@ -537,7 +532,6 @@ def testSameConfigDifferentFreeVar(tmp_path):
         subs=hyperparams,
         canonicalize=True,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
     )
@@ -562,7 +556,6 @@ def testSameConfigDifferentFreeVar(tmp_path):
         causal_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_vanilla_attention_kernel(
         shape, mfma_variant, dynamic_dims, is_causal=True, is_v_transposed=True
     )
@@ -571,7 +564,6 @@ def testSameConfigDifferentFreeVar(tmp_path):
         subs=hyperparams,
         canonicalize=True,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
     )

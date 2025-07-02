@@ -41,7 +41,6 @@ def test_extend_attention():
         extend_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
@@ -60,7 +59,6 @@ def test_extend_attention():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
     )
     extend_attention = wave_compile(options, extend_attention)
@@ -69,7 +67,7 @@ def test_extend_attention():
     # This part ensure correctness of WG distribution for extend attention.
     # CHECK-LABEL: test_extend_attention
     # CHECK-DAG:            #[[map0:.*]] = affine_map<()[s0] -> (s0 ceildiv 64)>
-    # CHECK-DAG:            #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16)>
+    # CHECK-DAG:            #[[map1:.*]] = affine_map<()[s0] -> (s0 * 16 - 16)>
     # CHECK:              stream.executable.export public @extend_attention workgroups(%[[ARG0:.+]]: index, %[[ARG1:.+]]: index, %[[ARG2:.+]]: index, %[[ARG3:.+]]: index)
     # CHECK-DAG:            %[[C1:.*]] = arith.constant 1 : index
     # CHECK:                %[[NQ_GRID:.+]] = affine.apply #[[map0]]()[%[[ARG3]]]
@@ -143,7 +141,6 @@ def test_causal_extend_attention():
         extend_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
@@ -164,7 +161,6 @@ def test_causal_extend_attention():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
     )
     extend_attention = wave_compile(options, extend_attention)
@@ -289,7 +285,6 @@ def test_causal_extend_attention_32x32x8():
         extend_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
@@ -311,7 +306,6 @@ def test_causal_extend_attention_32x32x8():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
         minimize_shared_allocs=True,
     )
@@ -424,7 +418,6 @@ def test_extend_attention_custom_mask():
         extend_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_extend_attention_kernel(
         shape,
         mfma_variant,
@@ -444,7 +437,6 @@ def test_extend_attention_custom_mask():
         schedule=SchedulingType.NONE,
         use_scheduling_barriers=False,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         compile_to_mlir=True,
         minimize_shared_allocs=True,
     )

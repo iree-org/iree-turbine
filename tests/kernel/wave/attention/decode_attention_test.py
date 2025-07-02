@@ -68,20 +68,14 @@ def testFlashDecoding(
         hyperparams_0,
         hyperparams_1,
         dynamic_symbols_0,
-        dynamic_symbols_map_0,
         dynamic_symbols_1,
-        dynamic_symbols_map_1,
+        U,
     ) = get_decode_attention_kernels(shape, mfma_variant, dynamic_dims)
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
 
     torch.manual_seed(0)
     B, M, N, K1, K2 = shape
-    sym_U = index_symbol("U")
-    if sym_U in hyperparams_0:
-        U = hyperparams_0[sym_U]
-    else:
-        U = dynamic_symbols_map_0[sym_U]
     q = device_randn(B, M, K1, dtype=torch.float16)
     k = device_randn(B, K2, K1, dtype=torch.float16)
     v = device_randn(B, K2, N, dtype=torch.float16)
@@ -98,7 +92,6 @@ def testFlashDecoding(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols_0,
-        dynamic_symbols_map=dynamic_symbols_map_0,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(
@@ -126,7 +119,6 @@ def testFlashDecoding(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols_1,
-        dynamic_symbols_map=dynamic_symbols_map_1,
         benchmark_batch_size=10,
         benchmark_repetitions=3,
         benchmark_results_file=(

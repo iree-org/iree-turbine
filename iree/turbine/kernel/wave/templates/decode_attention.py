@@ -194,24 +194,21 @@ def get_decode_attention_kernels(
         K1: shape[3],
         K2: shape[4],
     }
-    symbols_0[U] = math.ceil(symbols_0[K2] / (symbols_0[BLOCK_K2] / K_WAVES))
+    u_ret = math.ceil(symbols_0[K2] / (symbols_0[BLOCK_K2] / K_WAVES))
+    symbols_0[U] = u_ret
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_M] = PHASE_1_BLOCK_M
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
 
     dynamic_symbols_0 = []
     dynamic_symbols_1 = []
-    dynamic_symbols_map_0 = {}
-    dynamic_symbols_map_1 = {}
     if use_dynamic_dims:
         dynamic_symbols_0 = [B, M, N, K2, U]
         for symbol in dynamic_symbols_0:
-            dynamic_symbols_map_0[symbol] = symbols_0[symbol]
             del symbols_0[symbol]
             if symbol in symbols_1:
                 del symbols_1[symbol]
         dynamic_symbols_1 = [x for x in dynamic_symbols_0 if x != K2]
-        dynamic_symbols_map_1 = {x: dynamic_symbols_map_0[x] for x in dynamic_symbols_1}
 
     return (
         phase_0,
@@ -219,7 +216,6 @@ def get_decode_attention_kernels(
         symbols_0,
         symbols_1,
         dynamic_symbols_0,
-        dynamic_symbols_map_0,
         dynamic_symbols_1,
-        dynamic_symbols_map_1,
+        u_ret,
     )

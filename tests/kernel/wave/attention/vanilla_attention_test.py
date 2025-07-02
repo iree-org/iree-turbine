@@ -86,7 +86,6 @@ def testTransposedVAttentionPure(
         base_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_vanilla_attention_kernel(
         shape, mfma_variant, dynamic_dims, is_v_transposed=True
     )
@@ -102,7 +101,6 @@ def testTransposedVAttentionPure(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
@@ -168,7 +166,6 @@ def testAttentionPure(
         base_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_vanilla_attention_kernel(shape, mfma_variant, dynamic_dims)
     q_shape = (shape.num_query_heads, shape.query_seq_len, shape.head_size)
     k_shape = (shape.num_kv_heads, shape.kv_seq_len, shape.head_size)
@@ -182,7 +179,6 @@ def testAttentionPure(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
@@ -248,7 +244,6 @@ def testAttentionCausal(
         base_attention,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_vanilla_attention_kernel(
         shape,
         mfma_variant,
@@ -269,7 +264,6 @@ def testAttentionCausal(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
@@ -351,7 +345,6 @@ def testAttentionBSHD(
         base_attention_func,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_bshd_attention_kernel(
         shape,
         mfma_variant,
@@ -369,7 +362,6 @@ def testAttentionBSHD(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
@@ -464,7 +456,6 @@ def testAttentionBHSDCausal(
         base_attention_func,
         hyperparams,
         dynamic_symbols,
-        dynamic_symbols_map,
     ) = get_bhsd_attention_kernel(
         shape,
         mfma_variant,
@@ -496,7 +487,6 @@ def testAttentionBHSDCausal(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
     )
@@ -683,12 +673,7 @@ def testAttentionBias(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[B] = hyperparams[B]
-        dynamic_symbols_map[K2] = hyperparams[K2]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(B)
@@ -703,7 +688,6 @@ def testAttentionBias(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
@@ -885,12 +869,7 @@ def testAttentionSoftCap(
     hyperparams.update(get_default_scheduling_params())
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[B] = hyperparams[B]
-        dynamic_symbols_map[K2] = hyperparams[K2]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(B)
@@ -905,7 +884,6 @@ def testAttentionSoftCap(
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
-        dynamic_symbols_map=dynamic_symbols_map,
         run_bench=run_bench,
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
@@ -1081,7 +1059,6 @@ def testAttentionF8(
         use_scheduling_barriers=enable_scheduling_barriers,
         run_bench=run_bench,
         dynamic_symbols=[],
-        dynamic_symbols_map={},
         waves_per_eu=2,
         denorm_fp_math_f32="preserve-sign",
         benchmark_batch_size=10,

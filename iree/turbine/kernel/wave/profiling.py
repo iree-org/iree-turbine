@@ -27,12 +27,12 @@ def construct_inputs(
     options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
+    dynamic_symbols: list[int],
 ) -> tuple[list[str], list[tempfile.NamedTemporaryFile]]:
     bench_with_constant_weights = options.bench_with_constant_weights
     tempfiles = []
     inputs = []
-    all_inputs = kernel_inputs + kernel_outputs
-    all_inputs += options.dynamic_symbols_map.values()
+    all_inputs = kernel_inputs + kernel_outputs + dynamic_symbols
     if bench_with_constant_weights:
         for inp in all_inputs:
             if isinstance(inp, torch.Tensor):
@@ -128,6 +128,7 @@ def benchmark_module(
     options: WaveCompileOptions,
     kernel_inputs: list[torch.Tensor],
     kernel_outputs: list[torch.Tensor],
+    dynamic_symbols: list[int],
     flatbuffer: bytes,
     entry_function: str,
     timeout=None,
@@ -142,7 +143,9 @@ def benchmark_module(
     for k in kwargs:
         v = kwargs[k]
         args.append(f"--{k}={v}")
-    inputs, tempfiles = construct_inputs(options, kernel_inputs, kernel_outputs)
+    inputs, tempfiles = construct_inputs(
+        options, kernel_inputs, kernel_outputs, dynamic_symbols
+    )
     args += inputs
     args.append("--module=-")
     args.append(f"--device={options.device}")

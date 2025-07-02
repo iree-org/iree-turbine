@@ -177,12 +177,7 @@ def get_vanilla_attention_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[B] = hyperparams[B]
-        dynamic_symbols_map[K2] = hyperparams[K2]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(B)
@@ -195,7 +190,7 @@ def get_vanilla_attention_kernel(
     if is_v_transposed:
         base_attention = base_attention_transposed_v
 
-    return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return base_attention, hyperparams, dynamic_symbols
 
 
 def get_bshd_attention_kernel(
@@ -427,12 +422,7 @@ def get_bshd_attention_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[N] = hyperparams[N]
-        dynamic_symbols_map[B] = hyperparams[B]
-        dynamic_symbols_map[K2] = hyperparams[K2]
         dynamic_symbols.append(M)
         dynamic_symbols.append(N)
         dynamic_symbols.append(B)
@@ -447,9 +437,8 @@ def get_bshd_attention_kernel(
             base_attention_custom_mask,
             hyperparams,
             dynamic_symbols,
-            dynamic_symbols_map,
         )
-    return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return base_attention, hyperparams, dynamic_symbols
 
 
 def get_bhsd_attention_kernel(
@@ -675,12 +664,7 @@ def get_bhsd_attention_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
     if dynamic_dims:
-        dynamic_symbols_map[B] = hyperparams[B]
-        dynamic_symbols_map[H] = hyperparams[H]
-        dynamic_symbols_map[M] = hyperparams[M]
-        dynamic_symbols_map[K2] = hyperparams[K2]
         dynamic_symbols.append(B)
         dynamic_symbols.append(H)
         dynamic_symbols.append(M)
@@ -695,6 +679,5 @@ def get_bhsd_attention_kernel(
             base_attention_custom_mask,
             hyperparams,
             dynamic_symbols,
-            dynamic_symbols_map,
         )
-    return base_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return base_attention, hyperparams, dynamic_symbols

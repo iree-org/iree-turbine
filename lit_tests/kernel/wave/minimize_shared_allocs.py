@@ -25,7 +25,7 @@ def test_attention():
         kv_seq_len=256,
     )
     mfma_variant = (tkw.MMAType.F32_16x16x16_F16,) * 2
-    base_attention, hyperparams, _, _ = get_vanilla_attention_kernel(
+    base_attention, hyperparams, _ = get_vanilla_attention_kernel(
         shape, mfma_variant, False
     )
 
