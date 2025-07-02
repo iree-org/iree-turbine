@@ -47,6 +47,10 @@ def device_randperm(*args, **kwargs):
     return to_default_device(torch.randperm(*args, **kwargs))
 
 
+def device_tensor(*args, **kwargs):
+    return to_default_device(torch.tensor(*args, **kwargs))
+
+
 def device_zeros(*args, **kwargs):
     return to_default_device(torch.zeros(*args, **kwargs))
 

@@ -8,6 +8,12 @@ from iree.turbine.kernel.wave.scheduling.schedule_enums import SchedulingType
 from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
+from iree.turbine.kernel.wave.utils.torch_utils import (
+    device_randn,
+    device_randint,
+    device_tensor,
+    device_zeros,
+)
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
@@ -26,22 +32,18 @@ def generate_gemm_afp4wfp4_inputs(shape):
     M, N, K = shape
     torch.manual_seed(5)
     # 34 is two packed e2m1 values 0010 which is 1.0.
-    x_low = torch.randint(0, 16, (M, K // 2), dtype=torch.uint8, device="cuda")
-    x_high = torch.randint(0, 16, (M, K // 2), dtype=torch.uint8, device="cuda")
+    x_low = device_randint(0, 16, (M, K // 2), dtype=torch.uint8)
+    x_high = device_randint(0, 16, (M, K // 2), dtype=torch.uint8)
     x = x_low | x_high << 4
-    w_low = torch.randint(0, 16, (N, K // 2), dtype=torch.uint8, device="cuda")
-    w_high = torch.randint(0, 16, (N, K // 2), dtype=torch.uint8, device="cuda")
+    w_low = device_randint(0, 16, (N, K // 2), dtype=torch.uint8)
+    w_high = device_randint(0, 16, (N, K // 2), dtype=torch.uint8)
     w = w_low | w_high << 4
     w = w.T
     # Scale of 1.0 in e8m0, bias 127.
-    x_scales = torch.randint(
-        124, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8, device="cuda"
-    )
-    w_scales = torch.randint(
-        124, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8, device="cuda"
-    )
-    x_scales = x_scales.T
-    w_scales = w_scales.T
+    x_scales = device_randint(124, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8)
+    w_scales = device_randint(124, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8)
+    x_scales = x_scales.T.contiguous()
+    w_scales = w_scales.T.contiguous()
 
     return x, w, x_scales, w_scales
 
@@ -50,16 +52,12 @@ def generate_gemm_afp8wfp8_inputs(shape):
     M, N, K = shape
     torch.manual_seed(5)
     # 34 is two packed e2m1 values 0010 which is 1.0.
-    x = torch.randn((M, K), dtype=torch.float32, device="cuda").to(torch.float8_e5m2)
-    w = torch.randn((N, K), dtype=torch.float32, device="cuda").to(torch.float8_e5m2)
+    x = device_randn((M, K), dtype=torch.float32).to(torch.float8_e5m2)
+    w = device_randn((N, K), dtype=torch.float32).to(torch.float8_e5m2)
     w = w.T
     # Scale of 1.0 in e8m0, bias 127.
-    x_scales = torch.randint(
-        124, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8, device="cuda"
-    )
-    w_scales = torch.randint(
-        124, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8, device="cuda"
-    )
+    x_scales = device_randint(124, 128, (K // SCALE_GROUP_SIZE, M), dtype=torch.uint8)
+    w_scales = device_randint(124, 128, (K // SCALE_GROUP_SIZE, N), dtype=torch.uint8)
     x_scales = x_scales.T
     w_scales = w_scales.T
 
@@ -89,7 +87,7 @@ def mxfp4_to_f32(x):
         -4.0,
         -6.0,
     ]
-    mxfp4_in_f32 = torch.tensor(mxfp4_list, dtype=torch.float32, device="cuda")
+    mxfp4_in_f32 = device_tensor(mxfp4_list, dtype=torch.float32)
     return mxfp4_in_f32[x.long()]
 
 
@@ -212,13 +210,127 @@ def testScaledGemmMXFP4(
     gemm = wave_compile(options, gemm)
 
     x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(shape)
-    out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
+    out = device_zeros(x.shape[0], w.shape[1], dtype=torch.float32)
 
     w_t = w.T.contiguous()
     gemm(x, x_scales, w_t, w_scales, out)
     torch_out = torchScaledGemmMXFP4(x, w, x_scales, w_scales)
 
     torch.testing.assert_close(torch_out, out, check_dtype=False)
+
+
+# BMK @ NK -> BMN represents Linear Layer style BMM.
+@require_e2e
+@require_cdna4
+@pytest.mark.parametrize("batch", [4, 8])
+@pytest.mark.parametrize(
+    "shape", [(1024, 1024, 1024), (8192, 8192, 8192), (16384, 16384, 16384)]
+)
+@pytest.mark.parametrize(
+    "mfma_variant",
+    [
+        ScaledMMAType.F32_16x16x128_F8F6F4,
+    ],
+)
+@pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+def testScaledBatchedGemmMXFP4(
+    batch: int,
+    shape: tuple[int],
+    mfma_variant: ScaledMMAType,
+    enable_scheduling: SchedulingType,
+):
+    # Input sizes
+    B = tkl.sym.B
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    # Workgroup tile sizes
+    BLOCK_B = tkl.sym.BLOCK_B
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(4, 2, 1),
+            mma_type=mfma_variant,
+            vector_shapes={B: 0},
+        )
+    ]
+
+    @tkw.wave(constraints)
+    def batched_gemm(
+        a: tkl.Memory[B, M, K / 2, ADDRESS_SPACE, tkl.i8],
+        a_scale: tkl.Memory[B, M, K / 32, ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[N, K / 2, ADDRESS_SPACE, tkl.i8],
+        b_scale: tkl.Memory[N, K / 32, ADDRESS_SPACE, tkl.i8],
+        c: tkl.Memory[B, M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+    ):
+        c_reg = tkl.Register[B, M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(
+            acc: tkl.Register[B, M, N, tkl.f32],
+        ) -> tkl.Register[B, M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            a_reg = tkw.bitcast(a_reg, tkl.f4e2m1fn)
+            a_scale_reg = tkw.read(a_scale)
+            a_scale_reg = tkw.bitcast(a_scale_reg, tkl.f8e8m0fnu)
+            b_reg = tkw.read(b)
+            b_reg = tkw.bitcast(b_reg, tkl.f4e2m1fn)
+            b_scale_reg = tkw.read(b_scale)
+            b_scale_reg = tkw.bitcast(b_scale_reg, tkl.f8e8m0fnu)
+            acc = tkw.scaled_mma(a_reg, a_scale_reg, b_reg, b_scale_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        BLOCK_B: 1,
+        BLOCK_M: 256,
+        BLOCK_N: 128,
+        BLOCK_K: 256,
+        N: shape[1],
+        K: shape[2],
+    }
+    hyperparams.update(get_default_scheduling_params())
+
+    dynamic_symbols = [B, M]
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        schedule=enable_scheduling,
+        dynamic_symbols=dynamic_symbols,
+    )
+    options = set_default_run_config(options)
+    batched_gemm = wave_compile(options, batched_gemm)
+
+    linearized_shape = (batch * shape[0], shape[1], shape[2])
+    flat_x, w, flat_x_scales, w_scales = generate_gemm_afp4wfp4_inputs(linearized_shape)
+    w_t = w.T.contiguous()
+
+    x = flat_x.view(batch, shape[0], shape[2] // 2)
+    x_scales = flat_x_scales.view(batch, shape[0], shape[2] // 32)
+    w_t = w_t.view(shape[1], shape[2] // 2)
+    w_scales = w_scales.view(shape[1], shape[2] // 32)
+    out = device_zeros(batch, shape[0], shape[1], dtype=torch.float32)
+
+    batched_gemm(x, x_scales, w_t, w_scales, out)
+    torch_flat_out = torchScaledGemmMXFP4(flat_x, w, flat_x_scales, w_scales)
+    torch_out = torch_flat_out.view(batch, shape[0], shape[1])
+    torch.testing.assert_close(torch_out, out)
 
 
 @require_e2e
@@ -305,7 +417,7 @@ def testScaledGemmMXFP8(
     gemm = wave_compile(options, gemm)
 
     x, w, x_scales, w_scales = generate_gemm_afp8wfp8_inputs(shape)
-    out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
+    out = device_zeros(x.shape[0], w.shape[1], dtype=torch.float32)
 
     w_t = w.T.contiguous()
     gemm(x.view(torch.int8), x_scales, w_t.view(torch.int8), w_scales, out)
