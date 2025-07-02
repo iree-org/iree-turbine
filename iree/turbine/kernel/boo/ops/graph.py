@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from hashlib import sha1
-from typing import Any, Sequence, Callable
+from typing import Sequence, Callable
 
 import torch
 from torch.fx.graph_module import GraphModule
@@ -120,9 +120,10 @@ def define_custom_graph_op(
         results = l(*[arg.data for arg in args])
         if not has_a_none_output:
             return results
-        # Handle this better.
+        # We have at least one None output that needs to be included.
         if isinstance(results, torch.Tensor):
             results = [results]
+        # Handle this better.
         all_results = []
         i = 0
         for is_none in is_none_output:
@@ -194,12 +195,12 @@ def get_autograd_function(
         @staticmethod
         def forward(ctx, *args):
             all_outputs = fwd_launch(*args)
-            if num_fwd_outputs == 1 and isinstance(all_outputs, torch.Tensor):
-                return all_outputs
+            if isinstance(all_outputs, torch.Tensor):
+                all_outputs = (all_outputs,)
             fwd_outputs = all_outputs[:num_fwd_outputs]
             stash_outputs = all_outputs[num_fwd_outputs:]
             ctx.save_for_backward(*stash_outputs)
-            return fwd_outputs
+            return fwd_outputs[0] if num_fwd_outputs == 1 else fwd_outputs
 
         @staticmethod
         def backward(ctx, *grad_outputs):
