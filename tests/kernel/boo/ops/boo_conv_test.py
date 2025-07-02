@@ -64,9 +64,25 @@ def testBackwardCachePytorch(x_grad, w_grad):
         )
 
 
+def _marked_xfail(*args):
+    return pytest.param(
+        *args,
+        marks=pytest.mark.xfail(
+            condition=not torch.cuda.is_available(),
+            reason="CPU backward compile failure. Remove when #998 is resolved.",
+        ),
+    )
+
+
 @pytest.mark.usefixtures("use_backward")
 @pytest.mark.parametrize(
-    ("x_grad", "w_grad"), ((False, False), (True, False), (False, True), (True, True))
+    ("x_grad", "w_grad"),
+    (
+        (False, False),
+        _marked_xfail(True, False),
+        (False, True),
+        _marked_xfail(True, True),
+    ),
 )
 def testBackwardCacheBoo(x_grad, w_grad):
     LaunchableRuntimeCache.set_cache_limit(0)
@@ -128,6 +144,10 @@ class BooConvTest(unittest.TestCase):
                 msg=f"Expected output to be close to splat 12.0 tensor. Got {y}",
             )
 
+    @pytest.mark.xfail(
+        condition=not torch.cuda.is_available(),
+        reason="CPU backward compile failure. Remove when #998 is resolved.",
+    )
     def testBooConvBackwardDefault(self):
         with tempfile.TemporaryDirectory() as td:
             set_cache_dir(Path(td))
@@ -140,6 +160,10 @@ class BooConvTest(unittest.TestCase):
             )
             torch.autograd.gradcheck(boo_conv, (x, w), atol=1e-5, eps=1e-3)
 
+    @pytest.mark.xfail(
+        condition=not torch.cuda.is_available(),
+        reason="CPU backward compile failure. Remove when #998 is resolved.",
+    )
     def testBooConvBackwardsWithBias(self):
         with tempfile.TemporaryDirectory() as td:
             set_cache_dir(Path(td))
@@ -153,6 +177,9 @@ class BooConvTest(unittest.TestCase):
             b = torch.ones([1], dtype=torch.float32, device=device, requires_grad=True)
             torch.autograd.gradcheck(boo_conv, (x, w, b), atol=1e-5, eps=1e-3)
 
+    @pytest.mark.xfail(
+        reason="CPU backward compile failure. Remove when #998 is resolved."
+    )
     def testBooConvBackwardsAmpContextCPU(self):
         """We expect this to not perform autocasting."""
 
