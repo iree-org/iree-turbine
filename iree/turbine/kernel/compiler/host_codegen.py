@@ -24,6 +24,7 @@ from .ir import (
     arith_d,
     flow_d,
     func_d,
+    tensor_d,
 )
 
 from .._support.indexing import IndexSymbol
@@ -89,12 +90,15 @@ def isolated_test_call(
         ]
         input_tensors = memref_to_tensor(input_types)
         argument_dims = get_dynamic_dims(sig.kernel_buffer_bindings, dynamic_symbols)
-        # Adding unique dynamic dims as inputs.
-        input_tensors += [IndexType.get() for _ in list(dict.fromkeys(argument_dims))]
-        # Add additional dynamic symbols as inputs.
-        input_tensors += [
-            IndexType.get() for _ in set(dynamic_symbols).difference(argument_dims)
-        ]
+
+        arg_dim_mapping: dict[IndexSymbol, tuple[int, int]] = {}
+        for arg_idx, b in enumerate(sig.kernel_buffer_bindings):
+            shape = b.kernel_buffer_type.symbolic_shape
+            for dim_idx, dim_symbol in enumerate(shape):
+                if dim_symbol in arg_dim_mapping:
+                    continue
+
+                arg_dim_mapping[dim_symbol] = (arg_idx, dim_idx)
 
         output_types = [b.as_mlir_type() for b in sig.kernel_buffer_output_bindings]
         output_tensors = memref_to_tensor(output_types)
@@ -109,10 +113,9 @@ def isolated_test_call(
         scalar_bindings = sig.scalar_bindings
         arg_locs = [
             (Location.name(b.name, actual_loc) if b.name is not None else actual_loc)
-            for b in sig.kernel_buffer_bindings
-            + scalar_bindings
-            + sig.dynamic_dim_bindings
+            for b in sig.kernel_buffer_bindings + scalar_bindings
         ]
+
         entry_block = func_op.add_entry_block(arg_locs)
         scalars_offset = len(sig.kernel_buffer_bindings)
         scalars_count = len(scalar_bindings)
@@ -127,8 +130,12 @@ def isolated_test_call(
                 )
                 if b.symbol_type is not None
             ]
-            dynamic_args = [to_index(v) for v in arguments[dynamic_offset:]]
-            dynamic_argument_map = {k: v for k, v in zip(dynamic_symbols, dynamic_args)}
+
+            dynamic_argument_map: dict[IndexSymbol, Value] = {}
+            for symbol in dynamic_symbols:
+                arg_idx, dim_idx = arg_dim_mapping[symbol]
+                idx = arith_d.constant(IndexType.get(), dim_idx)
+                dynamic_argument_map[symbol] = tensor_d.dim(arguments[arg_idx], idx)
 
             assert isinstance(entry_block, Block)
             # Create a flow.dispatch op to the kernel
