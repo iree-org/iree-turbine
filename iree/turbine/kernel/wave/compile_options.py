@@ -58,6 +58,7 @@ class WaveCompileOptions:
     )
     use_local_scope: bool = False
     use_water_leak_check: bool = False
+    optimization_level: int = 2
 
     # === Performance options ===
     denorm_fp_math_f32: str = None
