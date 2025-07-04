@@ -7,6 +7,13 @@
 import pytest
 
 
+@pytest.fixture(scope="function", autouse=True)
+def seed_torch():
+    import torch
+
+    torch.manual_seed(0)
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--run-e2e", action="store_true", default=False, help="run e2e tests"
