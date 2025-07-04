@@ -30,7 +30,7 @@ def apply_padding(
     is inefficient in terms of memory usage. A more sophisticated approach
     would involve swizzling of the shared memory access patterns.
     """
-    padding = 64 // dtype.bitwidth()
+    padding = 0 // dtype.bitwidth()
     return padding, tuple(
         value + padding if i == len(shape) - 1 else value
         for i, value in enumerate(shape)
