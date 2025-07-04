@@ -21,6 +21,7 @@ __all__ = [
     "CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION",
     "CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION",
     "get_func_name",
+    "get_arg_spec_name",
 ]
 
 # Toggle Using Boo Backward Kernels #
@@ -112,3 +113,23 @@ def get_func_name(
         ]
     )
     return "_".join(name_items)
+
+
+def _tensor_type_str(t: torch.Tensor | None) -> str:
+    if t is None:
+        return ""
+    shape = t.shape
+    dtype = str(t.dtype).removeprefix("torch.")
+    shape_str = "x".join([str(dim) for dim in shape])
+    return shape_str + f"x{dtype}"
+
+
+def get_arg_spec_name(base_name, *args):
+    name = base_name
+    for idx, arg in enumerate(args):
+        if arg is not None and not isinstance(arg, torch.Tensor):
+            raise TypeError(
+                f"Expected all function arguments to be (optional) tensors. Got {type(arg)} at position {idx}."
+            )
+        name += f"_{_tensor_type_str(arg)}"
+    return name
