@@ -25,6 +25,7 @@ from ...ops.wave_ops import (
     Write,
     WorkgroupBarrier,
     get_custom,
+    SelfIndex,
 )
 from ..constraints import (
     Constraint,
@@ -250,6 +251,13 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
         ), f"Vector shapes not set for node {custom.fx_node}: {custom}"
 
 
+def has_selfindex_node(trace: CapturedTrace) -> bool:
+    """
+    Checks if the trace contains a SelfIndex node.
+    """
+    return any(isinstance(get_custom(node), SelfIndex) for node in trace.walk())
+
+
 def set_node_indices(
     trace: CapturedTrace,
     constraints: list[Constraint],
@@ -278,6 +286,11 @@ def set_node_indices(
             partial(
                 set_thread_dependent_index_from_mma, constraints, mma_mapping, trace
             )
+        ]
+    elif self_index_nodes := has_selfindex_node(trace):
+        # If there is a SelfIndex Node, then we set the index based on the hardware constraints.
+        graph_passes += [
+            partial(set_thread_dependent_index_from_read_write, constraints, trace)
         ]
     elif reduce_mapping := get_reduce_mapping(trace, constraints):
         graph_passes += [
@@ -317,7 +330,8 @@ def compute_stride(
         if dim == target_dim:
             break
         assert dim in vector_shapes, f"Dimension {dim} not found in vector shapes"
-        stride *= vector_shapes[dim]
+        # Sanity Check to ensure that the stride is never less than 1.
+        stride *= max(1, vector_shapes[dim])
 
     try:
         stride = int(stride)
