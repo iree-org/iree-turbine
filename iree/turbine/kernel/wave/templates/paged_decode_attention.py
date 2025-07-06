@@ -217,7 +217,11 @@ def get_paged_decode_attention_kernels(
         vector_shapes = {
             S: 0,
             B: BLOCK_B // PHASE_1_BLOCK_B_WAVES,
-            N: BLOCK_N // PHASE_1_BLOCK_N_WAVES,
+            N: (
+                1
+                if phase_1_distribute_query_heads
+                else BLOCK_N // PHASE_1_BLOCK_N_WAVES
+            ),
             U: 1,
         }
         constraints += [
