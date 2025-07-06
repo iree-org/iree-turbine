@@ -8,7 +8,11 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.constraints import MMAType
-from iree.turbine.kernel.wave.utils.general_utils import clamp, torch_dtype_to_wave
+from iree.turbine.kernel.wave.utils.general_utils import (
+    ceildiv,
+    clamp,
+    torch_dtype_to_wave,
+)
 import sympy
 from enum import Enum
 from collections import namedtuple
@@ -98,6 +102,7 @@ def get_paged_decode_attention_kernels(
     PHASE_1_BLOCK_B_WAVES = 1
     PHASE_1_BLOCK_B = 1 * PHASE_1_BLOCK_B_WAVES
     PHASE_1_BLOCK_N = 64
+    PHASE_1_BLOCK_N_WAVES = ceildiv(shape.head_size_kv, PHASE_1_BLOCK_N)
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     MMA_VEC_SIZE = 16  # TODO: Actual value depends in mma type
     if mha:
@@ -199,9 +204,10 @@ def get_paged_decode_attention_kernels(
         vector_shapes = {
             S: 0,
             B: BLOCK_B // PHASE_1_BLOCK_B_WAVES,
-            N: BLOCK_N,
+            N: BLOCK_N // PHASE_1_BLOCK_N_WAVES,
             U: 1,
         }
+
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
