@@ -93,7 +93,7 @@ def test_paged_flash_decoding():
     print(phase_1.asm)
 
     # CHECK-LABEL:       func.func @phase_1
-    # CHECK:               memref.load
+    # CHECK-COUNT-2:       memref.load
     # CHECK:               scf.for
     # CHECK-COUNT-2:           vector.maskedload
     # CHECK-COUNT-1:           arith.maximumf
@@ -106,7 +106,7 @@ def test_paged_flash_decoding():
     # CHECK-COUNT-2:           arith.mulf
     # CHECK-COUNT-1:           arith.addf
     # CHECK-COUNT-1:      arith.divf
-    # CHECK-COUNT-1:      vector.store
+    # CHECK-COUNT-1:      vector.maskedstore
 
 
 @run_test
