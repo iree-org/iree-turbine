@@ -99,10 +99,17 @@ def get_paged_decode_attention_kernels(
         PHASE_1 = (1,)
 
     THREADS_PER_WAVE = 64
+
     PHASE_1_BLOCK_B_WAVES = 1
-    PHASE_1_BLOCK_B = 1 * PHASE_1_BLOCK_B_WAVES
-    PHASE_1_BLOCK_N_WAVES = ceildiv(shape.head_size_kv, 64)
-    PHASE_1_BLOCK_N = 64 * PHASE_1_BLOCK_N_WAVES
+    phase_1_distribute_query_heads = shape.num_query_heads > 64
+    if phase_1_distribute_query_heads:
+        PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
+        PHASE_1_BLOCK_N_WAVES = 1
+        PHASE_1_BLOCK_N = 16
+    else:
+        PHASE_1_BLOCK_B = 1 * PHASE_1_BLOCK_B_WAVES
+        PHASE_1_BLOCK_N_WAVES = ceildiv(shape.head_size_kv, 64)
+        PHASE_1_BLOCK_N = 64 * PHASE_1_BLOCK_N_WAVES
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     MMA_VEC_SIZE = 16  # TODO: Actual value depends in mma type
     if mha:
@@ -195,9 +202,15 @@ def get_paged_decode_attention_kernels(
         return constraints
 
     def phase_1_constraints() -> list[tkw.Constraint]:
-        constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
+        constraints: list[tkw.Constraint] = []
+        if phase_1_distribute_query_heads:
+            constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 0)]
+            constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+        else:
+            constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
+            constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+
         constraints += [tkw.WaveConstraint(B, BLOCK_B // PHASE_1_BLOCK_B_WAVES)]
-        constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
         constraints += [tkw.WaveConstraint(N, BLOCK_N // PHASE_1_BLOCK_N_WAVES)]
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
         constraints += [tkw.TilingConstraint(U, BLOCK_U, iters=SPLITS_ACTIVE)]
@@ -207,7 +220,6 @@ def get_paged_decode_attention_kernels(
             N: BLOCK_N // PHASE_1_BLOCK_N_WAVES,
             U: 1,
         }
-
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
