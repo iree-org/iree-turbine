@@ -96,8 +96,8 @@ def get_paged_decode_attention_kernels(
 
     THREADS_PER_WAVE = 64
     PHASE_1_BLOCK_B_WAVES = 1
-    PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
-    PHASE_1_BLOCK_N = 16
+    PHASE_1_BLOCK_B = 1 * PHASE_1_BLOCK_B_WAVES
+    PHASE_1_BLOCK_N = 64
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     MMA_VEC_SIZE = 16  # TODO: Actual value depends in mma type
     if mha:
@@ -190,16 +190,16 @@ def get_paged_decode_attention_kernels(
         return constraints
 
     def phase_1_constraints() -> list[tkw.Constraint]:
-        constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(B, BLOCK_B, 0)]
+        constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
         constraints += [tkw.WaveConstraint(B, BLOCK_B // PHASE_1_BLOCK_B_WAVES)]
-        constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+        constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
         constraints += [tkw.WaveConstraint(N, BLOCK_N)]
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
         constraints += [tkw.TilingConstraint(U, BLOCK_U, iters=SPLITS_ACTIVE)]
         vector_shapes = {
             S: 0,
             B: BLOCK_B // PHASE_1_BLOCK_B_WAVES,
-            N: 1,
+            N: BLOCK_N,
             U: 1,
         }
         constraints += [
