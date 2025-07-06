@@ -198,7 +198,7 @@ def get_paged_decode_attention_kernels(
         constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
         constraints += [tkw.WaveConstraint(B, BLOCK_B // PHASE_1_BLOCK_B_WAVES)]
         constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
-        constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+        constraints += [tkw.WaveConstraint(N, BLOCK_N // PHASE_1_BLOCK_N_WAVES)]
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
         constraints += [tkw.TilingConstraint(U, BLOCK_U, iters=SPLITS_ACTIVE)]
         vector_shapes = {
