@@ -14,6 +14,7 @@ import csv
 
 from iree.turbine.kernel.boo.exports.parser import OpCLIParser
 from iree.turbine.kernel.boo.driver.launch import get_launchable
+from iree.turbine.kernel.boo.driver.utils import load_commands
 
 
 # TODO: it would be better not to have string-based dictionaries flying around...
@@ -136,8 +137,9 @@ def _run(
         # matrix here with significantly more complexity.
         main_result_ref_gpu = results_ref_gpu[sig.main_result_index]
         main_result_ref_gpu.retain_grad()
-        # TODO: this loss function looks like it can easily explode given
-        # that values are not normalized.
+        # TODO: this loss function looks like it can easily explode given that
+        # values are not normalized. Consider launching the backward kernel
+        # directly instead, e.g., torch.ops.aten.convolution_backward (#1021).
         loss = torch.sum((main_result_ref_gpu * main_result_ref_gpu) / 2)
         loss.backward()
 
@@ -171,24 +173,6 @@ def _run(
     return results
 
 
-# TODO: consider extracting kind from the parser class instead of passing a string
-def _load_commands(commands_file: str, *, kind: str) -> list[str]:
-    """Loads commands of a given kind from a text file."""
-    # try an absolute path
-    path = Path(commands_file)
-    # if the path doesn't point anywhere, try relative to cwd and this file.
-    if not path.is_file():
-        path = Path.cwd() / commands_file
-    if not path.is_file():
-        path = Path(__file__) / commands_file
-    if not path.is_file():
-        raise ValueError(
-            f"'commands-file' specification, '{commands_file}', cannot be found."
-        )
-    commands = [c for c in path.read_text().splitlines() if c.startswith(kind)]
-    return commands
-
-
 def _get_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
@@ -217,7 +201,7 @@ def run_numerics(parser_cls: type[OpCLIParser], *, use_custom: bool):
     CLI arguments parseable by the given parser class."""
     parser = _get_arg_parser()
     args = parser.parse_args()
-    commands = _load_commands(args.commands_file, kind=parser_cls.get_op_name())
+    commands = load_commands(args.commands_file, parser_cls)
     results = _run(
         commands,
         parser_cls,
