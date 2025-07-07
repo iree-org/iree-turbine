@@ -17,6 +17,10 @@ __all__ = [
 
 
 class ConvParser(OpCLIParser):
+    @classmethod
+    def get_op_name(self) -> str:
+        return "conv"
+
     def get_signature(args):
         layouts = {
             "input_layout": args.in_layout,
