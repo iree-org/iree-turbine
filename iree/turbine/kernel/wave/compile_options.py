@@ -65,6 +65,7 @@ class WaveCompileOptions:
     wave_runtime: str = None
     use_buffer_load_ops: bool = False
     use_buffer_store_ops: bool = False
+    use_stride_cache_swizzle: bool = False
     use_fast_math: bool = False
 
     # === Compiler options ===

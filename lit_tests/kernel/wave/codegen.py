@@ -166,8 +166,11 @@ def test_read_mapped_buffer():
     print(read_mapped_buffer.asm)
 
     # CHECK-LABEL:    func.func @read_mapped_buffer
-    # CHECK-COUNT-1:    memref.reinterpret_cast
-    # CHECK-COUNT-16:   amdgpu.raw_buffer_load
+    # CHECK: %[[BUF:.*]] = amdgpu.fat_raw_buffer_cast
+    # CHECK: %[[COND:.*]] = arith.select {{%[0-9a-zA-Z_]+}}, {{%[0-9a-zA-Z_]+}}, {{%[0-9a-zA-Z_]+}} : index
+    # CHECK: %[[RES:.*]] = vector.load %[[BUF]][%[[COND]]] : memref<?xf16, strided<[1], offset: ?>, #amdgpu.address_space<fat_raw_buffer>>, vector<1xf16>
+    # CHECK: %[[EXTRACT:.*]] = vector.extract %[[RES]][0] : f16 from vector<1xf16>
+    # CHECK: %[[FROM:.*]] = vector.from_elements %[[EXTRACT]]
 
 
 @run_test

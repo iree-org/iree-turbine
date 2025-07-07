@@ -402,26 +402,72 @@ def _get_splat_input(src: Optional[Value]) -> Optional[Value]:
     return None
 
 
-def _create_buffer_read_write(
-    elem_type: IrType, ptr: Value, offset: Value, value: Optional[Value] = None
-) -> Optional[Value]:
-    # Buffer ops doesn't support 1-element vectors, convert to scalar.
-    is_1elem = isinstance(elem_type, VectorType) and elem_type.shape == [1]
-    if value is None:
-        load_type = elem_type
-        if is_1elem:
-            load_type = elem_type.element_type
+def _valid_bytes_buffer(elem_type: IrType) -> int:
+    """
+    Make valid bytes to be the address of the last byte of the second to last element that can fit in a 32 bit offset to memory address
+    """
+    ans = (1 << 31) - 1 - (elem_type.width // 8)
 
-        res = amdgpu_d.raw_buffer_load(load_type, ptr, indices=[offset])
-        if is_1elem:
-            res = vector_d.splat(elem_type, res)
+    assert isinstance(ans, int)
+    return ans
 
-        return res
+
+def _get_out_of_bounds_index(element_type: IrType) -> int:
+    """
+    returns the first index that's out of bounds of a buffer based on the element type and maximum bytes
+    """
+    element_width_in_bytes = element_type.width // 8
+    oob_index_value = (
+        _valid_bytes_buffer(element_type) + element_width_in_bytes
+    ) // element_width_in_bytes
+    assert (oob_index_value * element_width_in_bytes) > _valid_bytes_buffer(
+        element_type
+    )
+    assert (oob_index_value * element_width_in_bytes) < (1 << 31)
+    return oob_index_value
+
+
+def _cast_buffer_and_encode_stride(
+    ptr: Value, strides: tuple[Value], elem_type: IrType, emitter: WaveEmitter
+) -> Value:
+    uint32 = IntegerType.get_signless(32)
+    uint14 = IntegerType.get_signless(14)
+
+    valid_bytes = _valid_bytes_buffer(
+        elem_type
+    )  # max bytes that are in range to be addressed from a buffer
+    valid_bytes_constant = get_constant_attr(valid_bytes, uint32)
+    valid_bytes_constant = arith_d.constant(uint32, valid_bytes_constant)
+    stride_larger_than_8192 = False
+
+    if emitter.options.use_stride_cache_swizzle:
+        assert len(strides) >= 1
+        stride = strides[0]
+        stride_int = stride.owner.attributes["value"].value
+        if stride_int > 8192:
+            stride_larger_than_8192 = True
+            stride = None
+        else:
+            stride = arith_d.index_cast(uint14, stride)
+
+    if not stride_larger_than_8192 and emitter.options.use_stride_cache_swizzle:
+        ptr = amdgpu_d.fat_raw_buffer_cast(
+            ptr,
+            cache_swizzle_stride=stride,
+            bounds_check=True,
+            reset_offset=False,
+            valid_bytes=valid_bytes_constant,
+        )
+
     else:
-        if is_1elem:
-            value = vector_d.extract(value, static_position=[0], dynamic_position=[])
-        amdgpu_d.raw_buffer_store(value, ptr, indices=[offset])
-        return None
+        ptr = amdgpu_d.fat_raw_buffer_cast(
+            ptr,
+            bounds_check=True,
+            reset_offset=False,
+            valid_bytes=valid_bytes_constant,
+        )
+
+    return ptr
 
 
 def _create_vec_read_write(
@@ -438,185 +484,236 @@ def _create_vec_read_write(
     mask: Optional[Value],
     offsets_vec: Optional[Value],
 ) -> Optional[Value]:
+
     is_read = value is None
-    if mask is None and offsets_vec is None:
-        if is_read:
-            return vector_d.load(vector_type, mem, start_indices)
-        else:
-            vector_d.store(value, mem, start_indices)
-            return
-
-    mask_splat = _get_splat_input(mask)
-    splatted_masked = offsets_vec is None and mask_splat is not None
-
-    # Only use buffer ops if it's gather/scatter or splated masked op on global mem.
-    use_buffer_ops = (
-        offsets_vec is not None or splatted_masked
-    ) and mem.type.memory_space is None
-
-    if vector_type is None:
-        vector_type = value.type
-
-    element_type = vector_type.element_type
-
-    if is_read:
-        zero = get_constant_attr(0, element_type)
-        zero = arith_d.constant(element_type, zero)
-
-    if memory.type.address_space == SHARED_ADDRESS_SPACE:
-        symbolic_shape = memory.distributed_shape
-    strides = strides_from_symbolic_shape(
-        IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
-    )
+    uint32 = IntegerType.get_signless(32)
 
     def extract(vec, ind):
         return vector_d.extract(vec, static_position=[ind], dynamic_position=[])
 
-    # TODO: If strides cannot be converted into integers, means they are dynamic
-    # and linearize breaks, need to investigate later.
-    has_int_strides = all(isinstance(s, int) for s in strides)
+    if memory.type.address_space == SHARED_ADDRESS_SPACE and hasattr(
+        memory, "distributed_shape"
+    ):
+        symbolic_shape = memory.distributed_shape
+
+    # only use buffer ops on global memory
+    use_buffer_ops = mem.type.memory_space is None
+
     buffer_ops_enabled = (
         emitter.options.use_buffer_load_ops
         if is_read
         else emitter.options.use_buffer_store_ops
     )
-    if buffer_ops_enabled and has_int_strides and use_buffer_ops:
+
+    strides = strides_from_symbolic_shape(
+        IndexingContext.current(), symbolic_shape, allow_mixed_shapes=True
+    )
+    has_int_strides = all(isinstance(s, int) for s in strides)
+
+    if has_int_strides:
         strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
-        data, offset_th = _linearize_memref(
-            mem, start_indices_wg, start_indices_th, strides
+
+    buffer_ops_enabled = buffer_ops_enabled and use_buffer_ops and has_int_strides
+    no_masked_load_store_ops = buffer_ops_enabled
+
+    mask_splat = _get_splat_input(mask)
+    splatted_mask = offsets_vec is None and mask_splat is not None
+
+    if vector_type is None:
+        vector_type = value.type
+
+    element_type = vector_type.element_type
+    if mask is None and offsets_vec is None:
+
+        offset_th = None
+        if buffer_ops_enabled:
+            # TODO: If strides cannot be converted into integers, means they are dynamic
+            # and linearize breaks, need to investigate later.
+            mem, offset_th = _linearize_memref(
+                mem, start_indices_wg, start_indices_th, strides
+            )
+            mem = _cast_buffer_and_encode_stride(mem, strides, element_type, emitter)
+
+        indices = [offset_th] if buffer_ops_enabled else start_indices
+        if is_read:
+            return vector_d.load(vector_type, mem, indices)
+        else:
+            vector_d.store(value, mem, indices)
+            return
+
+    zero = get_constant_attr(0, element_type)
+    zero = arith_d.constant(element_type, zero)
+
+    if mask is None:
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+        mask = _constant_mask(mask_vec_type)
+
+    if offsets_vec is None:
+        # make offsets 0, 1, 2 ...
+        offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
+        vals = [IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)]
+
+        offsets_vec = arith_d.constant(
+            offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
         )
 
-        if offsets_vec is None:
-            offsets_vec_type = VectorType.get(vector_type.shape, IndexType.get())
-            vals = [
-                IntegerAttr.get(IndexType.get(), v) for v in range(elements_per_thread)
-            ]
-            offsets_vec = arith_d.constant(
-                offsets_vec_type, DenseElementsAttr.get(vals, offsets_vec_type)
+        if buffer_ops_enabled:
+            mem, offset_th = _linearize_memref(
+                mem, start_indices_wg, start_indices_th, strides
+            )
+            mem = _cast_buffer_and_encode_stride(mem, strides, element_type, emitter)
+
+        indices = [offset_th] if buffer_ops_enabled else start_indices
+
+        if no_masked_load_store_ops:
+            # find the index at which memory out of bounds of buffer
+            oob_index_value = _get_out_of_bounds_index(element_type)
+            oob_index = arith_d.constant(IndexType.get(), oob_index_value)
+
+            oob_index = vector_d.splat(
+                VectorType.get(vector_type.shape, IndexType.get()), oob_index
             )
 
-        if splatted_masked:
-            # If mask value is same for all vector elements, we can use vector
-            # buffer ops.
-            i32 = IntegerType.get_signless(32)
-            offset_th = arith_d.index_cast(i32, offset_th)
-            oob_idx = _get_max_buffer_size(element_type)
-            oob_idx = arith_d.constant(i32, oob_idx)
-            offset_th = arith_d.select(mask_splat, offset_th, oob_idx)
+            offset_th = vector_d.splat(
+                VectorType.get(vector_type.shape, IndexType.get()), offset_th
+            )
 
-            if is_read:
-                return _create_buffer_read_write(vector_type, data, offset_th)
-            else:
-                _create_buffer_read_write(vector_type, data, offset_th, value)
-                return
-        else:
-            # If mask value is different for each element, unroll op to
-            # individual values.
-            offset_th = vector_d.splat(offsets_vec.type, offset_th)
+            uint32_vec_type = VectorType.get([elements_per_thread], uint32)
+            indexvec_type = VectorType.get([elements_per_thread], IndexType.get())
+
+            offsets_vec = arith_d.index_cast(uint32_vec_type, offsets_vec)
+            offset_th = arith_d.index_cast(uint32_vec_type, offset_th)
+
+            # add the thread offset and the vec offsets
             offsets_vec = arith_d.addi(offsets_vec, offset_th)
-            if mask is not None:
-                i32 = IntegerType.get_signless(32)
-                i32vec = VectorType.get([elements_per_thread], i32)
-                offsets_vec = arith_d.index_cast(i32vec, offsets_vec)
-                oob_idx = _get_max_buffer_size(element_type)
-                oob_idx = arith_d.constant(i32, oob_idx)
-                oob_idx = vector_d.splat(offsets_vec.type, oob_idx)
-                offsets_vec = arith_d.select(mask, offsets_vec, oob_idx)
+            offsets_vec = arith_d.index_cast(indexvec_type, offsets_vec)
+
+            # based on mask, select between the offsets_vec and out of bounds. In this case all 3 operands can be vectors
+            selected_index = arith_d.select(mask, offsets_vec, oob_index)
+            elems = list()
+
+            if splatted_mask:
+                # mask is same for all of them, can just pick the first index
+                selected_index = extract(selected_index, 0)
+
+                if is_read:
+                    return vector_d.load(vector_type, mem, indices=[selected_index])
+
+                else:
+                    vector_d.store(value, mem, indices=[selected_index])
+                    return
+
+            for i in range(elements_per_thread):
+                # mask is not same for all elements, need to unroll
+                this_index = extract(selected_index, i)  # this element
+
+                # Unmasked load, using selected_index
+                singlenumvec_type = VectorType.get([1], vector_type.element_type)
+                if is_read:
+                    elem = vector_d.load(singlenumvec_type, mem, indices=[this_index])
+                    elem = extract(elem, 0)
+                    elems.append(elem)
+                else:
+                    elem = extract(value, i)
+                    single_num_vector = vector_d.splat(singlenumvec_type, elem)
+                    vector_d.store(single_num_vector, mem, indices=[this_index])
 
             if is_read:
-                elements = []
-                for i in range(elements_per_thread):
-                    offset = extract(offsets_vec, i)
+                # now make a vector from all the elements loaded
+                return vector_d.from_elements(vector_type, elems)
 
-                    if mask is None:
-                        elem = memref_d.load(element_type, data, indices=[offset])
-                    else:
-                        elem = _create_buffer_read_write(element_type, data, offset)
-
-                    elements.append(elem)
-
-                return vector_d.from_elements(vector_type, elements)
-            else:
-                for i in range(elements_per_thread):
-                    offset = extract(offsets_vec, i)
-
-                    elem = extract(value, i)
-
-                    if mask is None:
-                        memref_d.store(elem, data, indices=[offset])
-                    else:
-                        _create_buffer_read_write(vector_type, data, offset, elem)
-
+            else:  # it was a store, return
                 return
 
-    else:
+        else:
+            # normal masked load/store
 
-        if offsets_vec is None:
             if is_read:
                 passthru = vector_d.splat(vector_type, zero)
-                return vector_d.maskedload(
-                    vector_type, mem, start_indices, mask, passthru
-                )
+                return vector_d.maskedload(vector_type, mem, indices, mask, passthru)
             else:
-                vector_d.maskedstore(mem, start_indices, mask, value)
+                vector_d.maskedstore(mem, indices, mask, value)
                 return
 
-        if mask is None:
-            mask_vec_type = VectorType.get(
-                [elements_per_thread], IntegerType.get_signless(1)
-            )
-            mask = _constant_mask(mask_vec_type)
-
+    if has_int_strides:
+        vec1 = VectorType.get([1], element_type)
+        vec1_mask = VectorType.get([1], IntegerType.get_signless(1))
         # TODO: Need static strides for linearize to work.
-        if has_int_strides:
-            vec1 = VectorType.get([1], element_type)
-            vec1_mask = VectorType.get([1], IntegerType.get_signless(1))
-            strides = [gen_sympy_index(add_emitter_subs(emitter), s) for s in strides]
-            data, _ = _linearize_memref(
-                mem, start_indices, (0,) * len(start_indices), strides
-            )
+        mem, _ = _linearize_memref(
+            mem, start_indices, (0,) * len(start_indices), strides
+        )
+        if buffer_ops_enabled:
+            mem = _cast_buffer_and_encode_stride(mem, strides, element_type, emitter)
 
-            # Unroll gather/scatter into individual masked ops.
-            # Vector canonicalizations will convert them into unmasked later if
-            # mask is constant.
-            if is_read:
-                passthru = vector_d.splat(vec1, zero)
-                elements = []
-                for i in range(elements_per_thread):
-                    mask_elem = extract(mask, i)
-                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
-
-                    offset = extract(offsets_vec, i)
-
-                    elem = vector_d.maskedload(
-                        vec1, data, [offset], mask_elem, passthru
-                    )
-                    elements.append(elem)
-
-                elements = [extract(v, 0) for v in elements]
-                return vector_d.from_elements(vector_type, elements)
-            else:
-                for i in range(elements_per_thread):
-                    mask_elem = extract(mask, i)
-                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
-
-                    offset = extract(offsets_vec, i)
-
-                    elem = extract(value, i)
-                    elem = vector_d.splat(vec1, elem)
-
-                    vector_d.maskedstore(data, [offset], mask_elem, elem)
-
-                return
-
+        # Unroll gather/scatter into individual masked ops.
+        # Vector canonicalizations will convert them into unmasked later if
+        # mask is constant.
         if is_read:
-            passthru = vector_d.splat(vector_type, zero)
-            return vector_d.gather(
-                vector_type, mem, start_indices, offsets_vec, mask, passthru
-            )
+            passthru = vector_d.splat(vec1, zero)
+            elements = []
+
+            for i in range(elements_per_thread):
+                mask_elem = extract(mask, i)
+                offset_th = extract(offsets_vec, i)
+
+                if no_masked_load_store_ops:
+                    oob_index_value = _get_out_of_bounds_index(element_type)
+                    oob_index = arith_d.constant(IndexType.get(), oob_index_value)
+
+                    offsets_vec_type = (
+                        VectorType.get(vector_type.shape, IndexType.get())
+                        if offsets_vec is None
+                        else offsets_vec.type
+                    )
+
+                    # each of these are single element
+                    selected_index = arith_d.select(mask_elem, offset_th, oob_index)
+                    indices = [selected_index]
+                    elem = vector_d.load(vec1, mem, indices)
+
+                else:
+                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
+                    elem = vector_d.maskedload(
+                        vec1, mem, [offset_th], mask_elem, passthru
+                    )
+                elements.append(elem)
+
+            elements = [extract(v, 0) for v in elements]
+            return vector_d.from_elements(vector_type, elements)
         else:
-            vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
+            for i in range(elements_per_thread):
+                mask_elem = extract(mask, i)
+
+                offset_th = extract(offsets_vec, i)
+
+                elem = extract(value, i)
+                elem = vector_d.splat(vec1, elem)
+
+                if no_masked_load_store_ops:
+
+                    oob_index_value = _get_out_of_bounds_index(element_type)
+                    oob_index = arith_d.constant(IndexType.get(), oob_index_value)
+
+                    selected_index = arith_d.select(mask_elem, offset_th, oob_index)
+                    vector_d.store(elem, mem, [selected_index])
+
+                else:
+                    mask_elem = vector_d.splat(vec1_mask, mask_elem)
+
+                    vector_d.maskedstore(mem, [offset_th], mask_elem, elem)
+
             return
+
+    if is_read:
+        passthru = vector_d.splat(vector_type, zero)
+        return vector_d.gather(
+            vector_type, mem, start_indices, offsets_vec, mask, passthru
+        )
+    else:
+        vector_d.scatter(mem, start_indices, offsets_vec, mask, value)
+        return
 
 
 @handle_op(read)
