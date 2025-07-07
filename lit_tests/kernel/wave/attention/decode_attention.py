@@ -238,7 +238,7 @@ def test_flash_decoding():
 
     # CHECK-LABEL:       func.func @phase_1
     # CHECK:               scf.for
-    # CHECK-COUNT-2:           vector.maskedload
+    # CHECK-COUNT-2:           vector.load
     # CHECK-COUNT-1:           arith.maximumf
     # CHECK-COUNT-1:           arith.subf
     # CHECK-COUNT-1:           math.exp2
