@@ -2094,7 +2094,6 @@ def test_self_index(shape, request):
         select_min_id = tkw.select(greather_than_cond, self_idx, threshold)
         tkw.write(select_min_id, result_self_index)
 
-    torch.manual_seed(0)
     ref = device_arange(128, dtype=torch.int32)
     a = device_ones(shape, dtype=torch.int32)
     result_self_index = device_zeros(shape, dtype=torch.int32)
