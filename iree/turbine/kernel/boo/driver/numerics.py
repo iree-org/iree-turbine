@@ -5,7 +5,12 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import torch
-from typing import Sequence
+from typing import Sequence, TypeVar
+from pathlib import Path
+import argparse
+import json
+import csv
+
 
 from iree.turbine.kernel.boo.exports.parser import OpCLIParser
 from iree.turbine.kernel.boo.driver.launch import get_launchable
@@ -45,8 +50,6 @@ def _compare_lists(
         result |= _compare(a, e, str(i))
     return result
 
-
-from typing import TypeVar
 
 _T = TypeVar("_T")
 
@@ -162,9 +165,6 @@ def _run(
     return results
 
 
-from pathlib import Path
-
-
 # TODO: consider extracting kind from the parser class instead of passing a string
 def _load_commands(commands_file: str, *, kind: str) -> list[str]:
     """Loads commands of a given kind from a text file."""
@@ -181,9 +181,6 @@ def _load_commands(commands_file: str, *, kind: str) -> list[str]:
         )
     commands = [c for c in path.read_text().splitlines() if c.startswith(kind)]
     return commands
-
-
-import argparse
 
 
 def _get_arg_parser() -> argparse.ArgumentParser:
@@ -207,10 +204,6 @@ def _get_arg_parser() -> argparse.ArgumentParser:
         help="Whether to allow jit compile during runs.",
     )
     return parser
-
-
-import json
-import csv
 
 
 def run_numerics(parser_cls: type[OpCLIParser], *, use_custom: bool):
