@@ -28,7 +28,7 @@ def fusion_transform(
 ) -> torch.nn.Module:
     """Applies fusions to the underlying fx graph for module by offloading subgraphs to IREE compiler/runtime.
 
-    This function expects the model to contain exclusively tensor arguments.
+    This function expects the model to contain exclusively tensor arguments and no keyword arguments.
 
     This currently uses dynamo to export a graph, from which we auto-generate custom boo ops to replace fusable subgraphs.
     """
@@ -37,6 +37,19 @@ def fusion_transform(
         raise ValueError("fusion_transform expects model arguments to be tensors.")
 
     exported_program = torch.export.export(module, args=args)
+
+    return _fusion_transform(exported_program, fusion_schema=fusion_schema)
+
+
+def _fusion_transform(
+    exported_program: torch.export.ExportedProgram,
+    *,
+    fusion_schema: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS,
+) -> torch.nn.Module:
+    """Applies fusions to the underlying fx graph of an ExportedProgram by offloading subgraphs to IREE compiler/runtime.
+
+    This function currently expects the ExportedProgram to only contain tensor arguments with static dims.
+    """
 
     gm: GraphModule = exported_program.graph_module
 
