@@ -195,7 +195,11 @@ class CapturedTrace:
     def walk(self, filter: Optional[Callable[[fx.Node], bool]] = None) -> list[fx.Node]:
         nodes: list[fx.Node] = []
         for region in self.region_graph.subgraphs.values():
+            # print("========================================")
+            # print(region.nodes)
+            # print("___________________________________")
             for node in region.nodes:
+                # print(f"+= {node} =+")
                 if filter is None or filter(node):
                     nodes.append(node)
         return nodes

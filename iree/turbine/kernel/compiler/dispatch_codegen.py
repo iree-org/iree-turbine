@@ -326,6 +326,7 @@ class DispatchEntrypoint(BoundKernelSignature):
             result_type = IndexType.get()
             zero_value = arith_d.constant(result_type, IntegerAttr.get(result_type, 0))
             linear_arg_value = self._abi_value_by_reference[binding.reference]
+            print(binding)
             return stream_d.binding_subspan(
                 binding.as_mlir_type(),
                 linear_arg_value,

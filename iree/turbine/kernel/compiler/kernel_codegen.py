@@ -121,6 +121,7 @@ class BindingDesc:
         idx_context = IndexingContext.current()
 
         def sym_to_dim_asm(s: IndexSymbol) -> str:
+            print(s, " is hella cool yo")
             static_value = idx_context.get_static_value(s)
             return "?" if static_value is None else str(static_value)
 
@@ -130,6 +131,7 @@ class BindingDesc:
             element_type_asm = kb_t.dtype.ir_type_asm()
             symbolic_shape = kb_t.symbolic_shape
             if symbolic_shape is not None:
+                print("ding dong")
                 shape_asm = "x".join(sym_to_dim_asm(s) for s in kb_t.symbolic_shape)
                 spec_asm = f"{shape_asm}x{element_type_asm}"
                 strides = []
@@ -139,6 +141,9 @@ class BindingDesc:
             ref_type = self.reference[1].type
             # If a physical layout is present, use it to determine the shape and strides.
             if ref_type.physical_layout:
+                print("bing bong", ref_type.physical_layout.shape)
+                import time
+                time.sleep(10)
                 shape_asm = "x".join(
                     sym_to_dim_asm(s) for s in ref_type.physical_layout.shape
                 )
@@ -150,6 +155,7 @@ class BindingDesc:
             if strides is None:
                 memref_asm = f"memref<{spec_asm}>"
             elif _is_symbolic(strides):
+                print(strides, " woash ")
                 strides = _get_mixed_stride(strides)
                 memref_asm = f"memref<{spec_asm}, strided<{strides}, offset: ?>>"
             else:

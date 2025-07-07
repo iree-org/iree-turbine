@@ -29,6 +29,7 @@ def get_prefill_attention_kernel(
     k_shape: tuple[int],
     v_shape: tuple[int],
     o_shape: tuple[int],
+    dynamic_dims: bool,
     input_dtype: Optional[torch.dtype] = torch.float16,
     output_dtype: Optional[torch.dtype] = torch.float32,
     size_dtype: Optional[torch.dtype] = torch.int32,
@@ -63,6 +64,11 @@ def get_prefill_attention_kernel(
     M_WAVES = 4
     N_WAVES = 1
 
+    print(q_shape)
+    print(k_shape)
+    print(v_shape)
+    print(o_shape)
+
     constraints: list[tkw.Constraint] = []
     constraints += [
         tkw.WorkgroupConstraint(
@@ -74,8 +80,11 @@ def get_prefill_attention_kernel(
     constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 2, primary=False)]
     constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3)]
     constraints += [tkw.TilingConstraint(N_KV, BLOCK_N_KV)]
+    # constraints += [tkw.TilingConstraint(D_Q, BLOCK_D_Q)]
+    # constraints += [tkw.WorkgroupConstraint(D_Q, BLOCK_D_Q, 4)]
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / M_WAVES)]
     constraints += [tkw.WaveConstraint(D_KV, BLOCK_D_KV / N_WAVES)]
+    # constraints += [tkw.WaveConstraint(H, BLOCK_H)]
 
     if mfma_variant[1] == MMAType.F32_16x16x16_F16:
         Mvec = 16
@@ -199,12 +208,34 @@ def get_prefill_attention_kernel(
         BLOCK_N_Q: SEQ_TILE_SIZE,
         BLOCK_D_KV: SEQ_TILE_SIZE,
         BLOCK_N_KV: SEQ_TILE_SIZE,
+        # BLOCK_D_Q: mfma_variant[0].k_dim,
+        # BLOCK_D_Q:  SEQ_TILE_SIZE,
+        # N_Q: 
         BLOCK_S: 1,
         H: shape.num_query_heads,
         H_KV: shape.num_kv_heads,
         D_KV: shape.head_size_kv,
         D_Q: shape.head_size,
         S: shape.num_seqs,
+        # N_Q: shape.num_query_heads,
     }
 
-    return prefill_attention, hyperparams
+    print(hyperparams)
+    print("===============================")
+    # print(dynamic_symbols)
+    # print(dynamic_symbols_map)
+
+    dynamic_symbols = []
+    dynamic_symbols_map = {}
+    if dynamic_dims:
+      for sym in (H, H_KV, S):
+        dynamic_symbols_map[sym] = hyperparams[sym]
+        dynamic_symbols.append(sym)
+        del hyperparams[sym]
+
+    print(hyperparams)
+    print(dynamic_symbols)
+    print(dynamic_symbols_map)
+    # raise ValueError()
+
+    return prefill_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
