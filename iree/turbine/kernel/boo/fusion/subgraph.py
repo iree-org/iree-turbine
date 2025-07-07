@@ -22,11 +22,15 @@ def _log_graph_module(label: str, gm: GraphModule):
     logger.debug("%s:\n%s", label, gm.print_readable(print_output=False))
 
 
+def _get_meta_item_from_nodes(
+    gm: GraphModule, op: str = "placeholder", item: str = "val"
+) -> tuple:
+    return tuple([n.meta.get(item) for n in gm.graph.nodes if n.op == op])
+
+
 def get_subgraph_replacement(subgraph: GraphModule) -> GraphModule:
     _log_graph_module("Extracted SubGraph Module", subgraph)
-    fake_args = tuple(
-        [n.meta.get("val") for n in subgraph.graph.nodes if n.op == "placeholder"]
-    )
+    fake_args = _get_meta_item_from_nodes(subgraph)
     joint_sg, metadata, in_spec, out_spec = _aot_export_function(
         subgraph.forward,
         fake_args,
@@ -36,9 +40,7 @@ def get_subgraph_replacement(subgraph: GraphModule) -> GraphModule:
     # in_spec, _kw_in_spec = in_spec.children_specs
     _log_graph_module("AOT Joint FWD/BWD Subgraph Module", joint_sg)
 
-    fake_args_joint = tuple(
-        [n.meta.get("val") for n in joint_sg.graph.nodes if n.op == "placeholder"]
-    )
+    fake_args_joint = _get_meta_item_from_nodes(joint_sg)
 
     custom_op = get_autograd_function(
         joint_sg,
