@@ -25,7 +25,6 @@ from ...ops.wave_ops import (
     Write,
     WorkgroupBarrier,
     get_custom,
-    SelfIndex,
 )
 from ..constraints import (
     Constraint,
