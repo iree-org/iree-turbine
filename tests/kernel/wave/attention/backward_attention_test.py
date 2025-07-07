@@ -1077,7 +1077,6 @@ def testAttentionOpsReference(shape: tuple[int, ...]):
     We subsequently use it as a reference for the Wave kernels because it's more
     stable and includes intermediate values we can test against.
     """
-    torch.manual_seed(0)
 
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
 
@@ -1113,7 +1112,6 @@ def testAttentionOpsReference(shape: tuple[int, ...]):
 @require_e2e
 @param_mfma_shape
 def testAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...]):
-    torch.manual_seed(0)
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
     scale = math.sqrt(1.0 / qk_head_dim)
     cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
@@ -1183,7 +1181,6 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
     if mfma_variant == MMAType.F32_32x32x8_F16:
         pytest.skip("Asymmetric MFMA is broken")
 
-    torch.manual_seed(0)
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
     scale = math.sqrt(1.0 / qk_head_dim)
     cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
@@ -1280,7 +1277,6 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
 @param_mfma_shape
 def testAttentionBackward_dv(mfma_variant: MMAType, shape: tuple[int, ...]):
     """This tests a kernel only for the gradient of v."""
-    torch.manual_seed(0)
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
     scale = math.sqrt(1.0 / qk_head_dim)
     cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
@@ -1343,7 +1339,6 @@ def testAttentionBackward_dv(mfma_variant: MMAType, shape: tuple[int, ...]):
 @param_mfma_shape
 def testAttentionBackward_dk(mfma_variant: MMAType, shape: tuple[int, ...]):
     """This tests a kernel only for the gradient of k."""
-    torch.manual_seed(0)
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
     scale = math.sqrt(1.0 / qk_head_dim)
     cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)
@@ -1429,7 +1424,6 @@ def testAttentionBackward_dk(mfma_variant: MMAType, shape: tuple[int, ...]):
 @expensive_test
 def testAttentionBackward_dq(mfma_variant: MMAType, shape: tuple[int, ...]):
     """This tests a kernel only for the gradient of q."""
-    torch.manual_seed(0)
     batch, q_seq_len, v_head_dim, qk_head_dim, kv_seq_len = shape
     scale = math.sqrt(1.0 / qk_head_dim)
     cmp_params = dict(atol=3e-3, rtol=3e-3, check_dtype=False)

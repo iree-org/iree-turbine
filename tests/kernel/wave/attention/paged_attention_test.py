@@ -202,7 +202,6 @@ def testPagedFlashDecoding(
     use_wave_runtime: bool,
     request,
 ):
-    torch.manual_seed(0)
     kv_lens = shape[6]
     shape = paged_decode_attention_shape(
         num_query_heads=shape[0],
@@ -389,7 +388,6 @@ def testPagedFlashDecodingMHA(
     mfma_variant: MMAType,
     request,
 ):
-    torch.manual_seed(0)
     kv_lens = shape[5]
     shape = paged_decode_attention_shape(
         num_query_heads=shape[0],

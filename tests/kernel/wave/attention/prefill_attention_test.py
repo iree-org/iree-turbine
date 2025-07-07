@@ -114,8 +114,6 @@ def testPrefillAttention(
     mfma_variant: MMAType,
     request,
 ):
-
-    torch.manual_seed(0)
     seq_lens = shape[4]
     shape = AttentionShape(
         num_query_heads=shape[0],

@@ -114,7 +114,6 @@ def testTransposedVAttentionPure(
     options = set_default_run_config(options)
     base_attention = wave_compile(options, base_attention)
 
-    torch.manual_seed(0)
     q = device_randn(q_shape, dtype=torch.float16)
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
@@ -192,7 +191,6 @@ def testAttentionPure(
     options = set_default_run_config(options)
     base_attention = wave_compile(options, base_attention)
 
-    torch.manual_seed(0)
     q = device_randn(q_shape, dtype=torch.float16)
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
@@ -703,7 +701,6 @@ def testAttentionBias(
     options = set_default_run_config(options)
     base_attention_bias = wave_compile(options, base_attention_bias)
 
-    torch.manual_seed(0)
     q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
     v = device_randn(shape[0], shape[4], shape[2], dtype=torch.float16)
@@ -899,7 +896,6 @@ def testAttentionSoftCap(
     options = set_default_run_config(options)
     base_attention_softcap = wave_compile(options, base_attention_softcap)
 
-    torch.manual_seed(0)
     q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
     v = device_randn(shape[0], shape[4], shape[2], dtype=torch.float16)
@@ -1073,7 +1069,6 @@ def testAttentionF8(
     options = set_default_run_config(options)
     base_attention = wave_compile(options, base_attention)
 
-    torch.manual_seed(0)
     q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
     v = device_randn(shape[0], shape[4], shape[2], dtype=torch.float16)

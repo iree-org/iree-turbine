@@ -1694,7 +1694,6 @@ def testBatchedGemm(shape: tuple[int], enable_scheduling: SchedulingType, reques
     options = set_default_run_config(options)
     batched_gemm = wave_compile(options, batched_gemm)
 
-    torch.manual_seed(0)
     a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
     c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
@@ -1806,7 +1805,6 @@ def testSequentialBatchedGemm(
     options = set_default_run_config(options)
     batched_gemm = wave_compile(options, batched_gemm)
 
-    torch.manual_seed(0)
     a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
     c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
@@ -1926,7 +1924,6 @@ def testSequentialBatchedGemmWhile(
     options = set_default_run_config(options)
     batched_gemm = wave_compile(options, batched_gemm)
 
-    torch.manual_seed(0)
     a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
     c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
@@ -2047,7 +2044,6 @@ def testSequentialBatchedGemmWhileWithOutputSum(
     options = set_default_run_config(options)
     batched_gemm = wave_compile(options, batched_gemm)
 
-    torch.manual_seed(0)
     a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
     c = device_zeros(shape[0], shape[1], shape[2], dtype=torch.float32)
@@ -2157,7 +2153,6 @@ def testBatchedGemmWithPermute(
     options = set_default_run_config(options)
     batched_gemm_with_permute = wave_compile(options, batched_gemm_with_permute)
 
-    torch.manual_seed(0)
     a = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     b = device_randn(shape[0], shape[2], shape[3], dtype=torch.float16)
     c = device_zeros(shape[1], shape[0], shape[2], dtype=torch.float32)

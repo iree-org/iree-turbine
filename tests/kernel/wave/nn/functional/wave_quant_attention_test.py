@@ -22,7 +22,6 @@ from iree.turbine.kernel.wave.utils.reference_kernel_utils import (
 @require_cdna3
 def test_SDPA_FP8_no_batch():
     # Testing SD layout.
-    torch.manual_seed(0)
     device = torch.device("cuda:0")
     query = torch.randn([256, 128], device=device)
     key = torch.randn([256, 128], device=device)
@@ -45,7 +44,6 @@ def test_SDPA_FP8_no_batch():
 @require_cdna3
 def test_SDPA_FP8_BSD():
     # Testing BSD layout.
-    torch.manual_seed(0)
     device = torch.device("cuda:0")
     query = torch.randn([4, 256, 128], device=device)
     key = torch.randn([4, 256, 128], device=device)
@@ -68,7 +66,6 @@ def test_SDPA_FP8_BSD():
 @require_cdna3
 def test_SDPA_FP8_BHSD():
     # Test BHSD layout.
-    torch.manual_seed(0)
     device = torch.device("cuda:0")
     query = torch.randn([4, 8, 64, 128], device=device)
     key = torch.randn([4, 8, 256, 128], device=device)
@@ -91,7 +88,6 @@ def test_SDPA_FP8_BHSD():
 @require_cdna3
 def test_SDPA_FP8_BHSD_causal():
     # Test BHSD layout.
-    torch.manual_seed(0)
     device = torch.device("cuda:0")
     query = torch.randn([4, 8, 64, 128], device=device)
     key = torch.randn([4, 8, 256, 128], device=device)

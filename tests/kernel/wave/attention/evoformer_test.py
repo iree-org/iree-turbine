@@ -115,7 +115,6 @@ def testEvoformerAttentionForward(
     options = set_default_run_config(options)
     evoformer_fwd = wave_compile(options, evoformer_fwd)
 
-    torch.manual_seed(0)
     if dtype == tkl.bf16:
         torch_dtype = torch.bfloat16
     else:

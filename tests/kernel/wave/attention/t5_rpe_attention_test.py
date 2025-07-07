@@ -113,7 +113,6 @@ def test_t5_rpe_attention(
     mfma_variant: MMAType,
     request,
 ):
-    torch.manual_seed(0)
     shape = AttentionShape(
         num_query_heads=shape[0],
         num_kv_heads=shape[1],

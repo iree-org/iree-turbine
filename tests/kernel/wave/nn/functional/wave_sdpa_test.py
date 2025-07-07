@@ -22,7 +22,6 @@ from iree.turbine.kernel.wave.utils.reference_kernel_utils import (
 @require_cdna3
 def test_SDPA_no_batch():
     # Testing SD layout.
-    torch.manual_seed(0)
     device = torch.device("cuda:0")
     query = torch.randn([256, 128], device=device, dtype=torch.float16)
     key = torch.randn([256, 128], device=device, dtype=torch.float16)
@@ -40,7 +39,6 @@ def test_SDPA_no_batch():
 @require_cdna3
 def test_SDPA_BSD():
     # Testing BSD layout.
-    torch.manual_seed(0)
     device = torch.device("cuda:0")
     query = torch.randn([4, 256, 128], device=device, dtype=torch.float16)
     key = torch.randn([4, 256, 128], device=device, dtype=torch.float16)
@@ -58,7 +56,6 @@ def test_SDPA_BSD():
 @require_cdna3
 def test_SDPA_BHSD():
     # Test BHSD layout.
-    torch.manual_seed(0)
     device = torch.device("cuda:0")
     query = torch.randn([4, 8, 64, 128], device=device, dtype=torch.float16)
     key = torch.randn([4, 8, 256, 128], device=device, dtype=torch.float16)
@@ -76,7 +73,6 @@ def test_SDPA_BHSD():
 @require_cdna3
 def test_SDPA_BHSD_causal():
     # Test BHSD layout with causal attention.
-    torch.manual_seed(0)
     device = torch.device("cuda:0")
     query = torch.randn([4, 8, 64, 128], device=device, dtype=torch.float16)
     key = torch.randn([4, 8, 256, 128], device=device, dtype=torch.float16)
