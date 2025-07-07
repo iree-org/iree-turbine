@@ -41,7 +41,9 @@ def _compare_lists(
     """Compares two lists of tensors and returns a dictionary indicating, per
     tensor, whether they are close and the maximum absolute and relative
     difference for an element."""
-    assert len(actual) == len(expected)
+    assert len(actual) == len(
+        expected
+    ), f"Length mismatch: expected {len(expected)}, got {len(actual)}."
     if len(actual) == 1:
         return _compare(actual[0], expected[0])
 
@@ -54,9 +56,13 @@ def _compare_lists(
 _T = TypeVar("_T")
 
 
-def _wrap_in_tuple(x: _T | tuple[_T, ...]) -> tuple[_T, ...]:
+def _wrap_in_tuple(x: _T | tuple[_T, ...] | list[_T]) -> tuple[_T, ...]:
     """Wraps the argument into a singleton tuple if it isn't already a tuple."""
-    return x if isinstance(x, tuple) else (x,)
+    if isinstance(x, tuple):
+        return x
+    if isinstance(x, list):
+        return tuple(x)
+    return (x,)
 
 
 def _run(
