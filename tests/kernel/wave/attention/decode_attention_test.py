@@ -74,7 +74,6 @@ def testFlashDecoding(
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
 
-    torch.manual_seed(0)
     B, M, N, K1, K2 = shape
     q = device_randn(B, M, K1, dtype=torch.float16)
     k = device_randn(B, K2, K1, dtype=torch.float16)
@@ -186,7 +185,6 @@ def testGqaFlashDecoding(
     hyperparams_1.update(get_default_scheduling_params())
 
     # Generate random input data
-    torch.manual_seed(0)
     q = device_randn(*q_shape, dtype=torch.float16)
     k = device_randn(*k_shape, dtype=torch.float16)
     v = device_randn(*v_shape, dtype=torch.float16)

@@ -25,8 +25,6 @@ from iree.turbine.kernel.wave.templates.speculative_decoding import (
 )
 import torch.nn.functional as F
 
-torch.manual_seed(0)
-
 
 def get_wave_speculative_decoding_kernel(
     batch_size, num_draft_tokens, vocab_size, seq_len

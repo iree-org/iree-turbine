@@ -188,7 +188,6 @@ def testSameConfig(tmp_path):
     }
     hyperparams.update(get_default_scheduling_params())
 
-    torch.manual_seed(0)
     q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
     v = device_randn(shape[0], shape[4], shape[2], dtype=torch.float16)
@@ -313,7 +312,6 @@ def testDifferentDynamicSameBlock(tmp_path):
 
     base_attention_0 = wave_compile(options, base_attention)
 
-    torch.manual_seed(0)
     q_shape_0 = device_randn(shape_0[0], shape_0[1], shape_0[3], dtype=torch.float16)
     k_shape_0 = device_randn(shape_0[0], shape_0[4], shape_0[3], dtype=torch.float16)
     v_shape_0 = device_randn(shape_0[0], shape_0[4], shape_0[2], dtype=torch.float16)
@@ -348,7 +346,6 @@ def testDifferentDynamicSameBlock(tmp_path):
     options = set_default_run_config(options)
     base_attention_1 = wave_compile(options, base_attention)
 
-    torch.manual_seed(0)
     q_shape_1 = device_randn(shape_1[0], shape_1[1], shape_1[3], dtype=torch.float16)
     k_shape_1 = device_randn(shape_1[0], shape_1[4], shape_1[3], dtype=torch.float16)
     v_shape_1 = device_randn(shape_1[0], shape_1[4], shape_1[2], dtype=torch.float16)
@@ -434,7 +431,6 @@ def testSameSizeDifferentBlock(tmp_path):
     }
     hyperparams.update(get_default_scheduling_params())
 
-    torch.manual_seed(0)
     q = device_randn(shape[0], shape[1], shape[3], dtype=torch.float16)
     k = device_randn(shape[0], shape[4], shape[3], dtype=torch.float16)
     v = device_randn(shape[0], shape[4], shape[2], dtype=torch.float16)
@@ -538,7 +534,6 @@ def testSameConfigDifferentFreeVar(tmp_path):
     options = set_default_run_config(options)
     base_attention = wave_compile(options, base_attention)
 
-    torch.manual_seed(0)
     q = device_randn(q_shape, dtype=torch.float16)
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)
@@ -570,7 +565,6 @@ def testSameConfigDifferentFreeVar(tmp_path):
     options = set_default_run_config(options)
     causal_attention = wave_compile(options, causal_attention)
 
-    torch.manual_seed(0)
     q = device_randn(q_shape, dtype=torch.float16)
     k = device_randn(k_shape, dtype=torch.float16)
     v = device_randn(v_shape, dtype=torch.float16)

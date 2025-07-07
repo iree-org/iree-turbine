@@ -103,7 +103,6 @@ def testAttentionPure(
     options = set_default_run_config(options)
     base_attention = wave_compile(options, base_attention)
 
-    torch.manual_seed(0)
     # Smaller range to help with FP8 minimum range
     MAX_RANGE = 128
     q = quantized_tensor(q_shape, dtype=torch.float16, scale=MAX_RANGE)

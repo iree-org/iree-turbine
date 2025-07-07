@@ -200,7 +200,6 @@ def create_inputs(
     H_KV = shape.num_kv_heads
     H_Q = shape.num_query_heads
     D = shape.head_size
-    torch.manual_seed(0)
     b_seq_len_prefix = device_randint(1, N_CTX // 2, (B,), dtype=torch.int32)
     if shape.fixed_seq_len_prefix:
         b_seq_len_prefix.fill_(shape.fixed_seq_len_prefix)
@@ -346,7 +345,6 @@ def testExtendAttention(
         pytest.skip(
             "Skipping test because causal and custom mask cannot be True simultaneously"
         )
-    torch.manual_seed(0)
     assert shape.num_query_heads % shape.num_kv_heads == 0
     (
         q_extend,
@@ -501,8 +499,6 @@ def testExtendRpeAttention(
     mfma_variant: MMAType,
     request,
 ):
-
-    torch.manual_seed(0)
     assert shape.num_query_heads % shape.num_kv_heads == 0
     (
         q_extend,
