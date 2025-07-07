@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Sequence, Set, List, Dict
+from typing import Sequence
 
 import torch
 from torch.fx.subgraph_rewriter import replace_pattern
@@ -83,17 +83,17 @@ def fused_subgraph(
 
 def extract_fusion_subgraph_modules(
     src_gm: GraphModule, fusion_schema: FusionSchema
-) -> tuple[list[GraphModule], list[Dict[Node, Node]]]:
+) -> tuple[list[GraphModule], list[dict[Node, Node]]]:
     """Traverses src_gm nodes in order. When a node matches a root op in the fusion_schema,
     A new subgraph is created with the root op in addition to any adjacent nodes matching the schema.
 
     All subgraphs found this way are returned in a list.
     The corresponding mappings from src_gm nodes -> subgraph nodes is also returned as a list.
     """
-    subgraph_projections: List[Dict[Node, Node]] = []
-    subgraph_inclusions: List[Dict[Node, Node]] = []
-    subgraphs: List[GraphModule] = []
-    used_nodes: Set[Node] = set()
+    subgraph_projections: list[dict[Node, Node]] = []
+    subgraph_inclusions: list[dict[Node, Node]] = []
+    subgraphs: list[GraphModule] = []
+    used_nodes: set[Node] = set()
     for root in src_gm.graph.nodes:
         # if this node is included in any subgraph already, we can't use it.
         if root in used_nodes:
