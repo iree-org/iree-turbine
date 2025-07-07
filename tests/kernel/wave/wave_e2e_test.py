@@ -2073,26 +2073,31 @@ def test_self_index(shape, request):
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: BLOCK_M, K: 0, N: BLOCK_N},
+            vector_shapes={M: 0, K: 0, N: BLOCK_N},
         )
     ]
 
     # This kernel contains reduction + self_index.
+    # It is loosely based on the speculative decode kernel.
     @tkw.wave(constraints)
     def test(
         a: tkl.Memory[M, K, N, ADDRESS_SPACE, tkl.i32],
-        result_self_index: tkl.Memory[N, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        result_self_index: tkl.Memory[M, K, N, GLOBAL_ADDRESS_SPACE, tkl.i32],
     ):
         input = tkw.read(a)
-        # reduction will update the indices.
         input_sum = tkw.sum(input, dim=N)
+        threshold = tkw.broadcast(input_sum, target_shape=[M, K, N])
+        cdf = tkw.cumsum(input, dim=N)
+        greather_than_cond = threshold >= cdf
         self_idx = tkw.self_index(N, dtype=tkl.i32)
-        tkw.write(self_idx, result_self_index)
+        self_idx = tkw.broadcast(self_idx, target_shape=[M, K, N])
+        select_min_id = tkw.select(greather_than_cond, self_idx, threshold)
+        tkw.write(select_min_id, result_self_index)
 
     torch.manual_seed(0)
     ref = device_arange(128, dtype=torch.int32)
     a = device_ones(shape, dtype=torch.int32)
-    result_self_index = device_zeros(shape[2], dtype=torch.int32)
+    result_self_index = device_zeros(shape, dtype=torch.int32)
 
     options = WaveCompileOptions(
         subs={
@@ -2108,4 +2113,4 @@ def test_self_index(shape, request):
     test = wave_compile(options, test)
 
     test(a, result_self_index)
-    assert_close(ref, result_self_index)
+    assert_close(ref, result_self_index[0, 0, :])
