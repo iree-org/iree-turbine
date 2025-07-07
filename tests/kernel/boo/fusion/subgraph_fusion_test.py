@@ -6,7 +6,9 @@
 
 import unittest
 import tempfile
+import pytest
 
+from typing import Sequence
 from pathlib import Path
 
 import torch
@@ -45,6 +47,30 @@ class SampleModule1(torch.nn.Module):
         a3 = a1 + a2
         mm = self.linear(a3)
         return mm
+
+
+class SampleModule2(torch.nn.Module):
+    def __init__(self, num_features: int = 3, kernel_size: int | Sequence[int] = 1):
+        super().__init__()
+        self.layer0 = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=kernel_size,
+            ),
+            torch.nn.Sigmoid(),
+        )
+        self.layer1 = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=kernel_size,
+            ),
+            torch.nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor):
+        return self.layer1(self.layer0(x))
 
 
 class SubgraphReplacementTest(unittest.TestCase):
@@ -120,6 +146,48 @@ class SubgraphReplacementTest(unittest.TestCase):
             self.assertIn("torch.ops.aten.relu", str(fused_m))
             y = fused_m(x0, x1)
             self.assertEqual(list(y.shape), [16, 16])
+
+    @pytest.mark.xfail(
+        reason=(
+            "Bug with repeated replacement when the first matching graph does not require the same combination of input gradients. "
+            "Remove when issue https://github.com/iree-org/iree-turbine/issues/1014 is resolved."
+        )
+    )
+    def testRepeatedReplacementBackward(self):
+        with tempfile.TemporaryDirectory() as td:
+            set_cache_dir(Path(td))
+            m = SampleModule2()
+            x = torch.ones([2, 3, 16, 16], requires_grad=False)
+            schema: FusionSchema = {
+                torch.ops.aten.conv2d.default: OpFusionSpec(
+                    recursive=True,
+                    consumers=(torch.ops.aten.sigmoid.default,),
+                )
+            }
+            fused_m = fusion_transform(m, (x,), fusion_schema=schema)
+            self.assertNotIn("torch.ops.aten.", str(fused_m))
+            y = fused_m(x)
+            y.sum().backward()
+
+            self.assertIsInstance(
+                fused_m.get_parameter("layer0.0.weight").grad,
+                torch.Tensor,
+                f"Expected `layer0.0.weight.grad` to be a torch.Tensor, got {type(fused_m.get_parameter('layer0.0.weight').grad)}",
+            )
+            self.assertIsInstance(
+                fused_m.get_parameter("layer0.0.bias").grad,
+                torch.Tensor,
+                f"Expected `layer0.0.bias.grad` to be a torch.Tensor, got {type(fused_m.get_parameter('layer0.0.bias').grad)}",
+            )
+            found_zero_grad = False
+            err_msg = ""
+            for name, param in m.named_parameters():
+                param_grad_is_zero = param.grad.abs().sum().item() == 0.0
+                if param_grad_is_zero:
+                    found_zero_grad = True
+                    err_msg += f"Parameter {name} unexpectedly has zero gradient.\n"
+
+            self.assertFalse(found_zero_grad, msg=err_msg)
 
 
 if __name__ == "__main__":
