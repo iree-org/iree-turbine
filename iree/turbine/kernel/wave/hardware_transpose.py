@@ -206,25 +206,11 @@ def mark_hw_transpose(write: Write, new_writes: dict, read: Read, new_reads, con
 
         logger.info(f"Marked hardware transpose write: {hw_write}")
 
-    mapping = read.mapping
-    if read.mapping is not None:
-        src_shape = transpose_last2(read.type.symbolic_shape)
-        out_mapping = {
-            k: IndexMapping.iterator(i)
-            for i, k in enumerate(src_shape)
-        }
-        input_mapping = out_mapping.copy()
-        mapping = IndexMapping(
-            num_iterators=len(out_mapping),
-            inputs=input_mapping,
-            outputs=out_mapping,
-            dynamic_val_mappings=mapping.dynamic_val_mappings
-        )
     with read.graph.inserting_before(read.fx_node):
                 new_read = Read(
                     read.memory,
                     read.elements_per_thread,
-                    mapping=mapping,
+                    mapping=read.mapping,
                     mapping_dynamic_vals=read.mapping_dynamic_vals,
                 ).add_to_graph(read.graph)
                 modified_index = modify_index_for_full_coverage(read.index)
