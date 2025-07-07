@@ -71,8 +71,9 @@ class OpSignature(ABC):
 
     @abstractmethod
     def get_arg_index_for_backward(self) -> int | None:
-        """For a backward mode, returns the index of the argument the derivative
-        of which is computed by the kernel with this signature.
+        """For a backward mode, returns the index of the argument whose
+        back-propagated gradient is computed by the kernel with this
+        signature.
 
         Returns None if a compiled kernel is not available for computing the
         derivative with the current mode.
