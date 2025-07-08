@@ -115,14 +115,12 @@ def get_speculative_decoding_kernel(
         num_spec_tokens_reg = tkw.broadcast(num_spec_tokens, target_shape=[BATCH_SIZE])
         num_accepted_tokens = tkw.read(accept_token_num)
 
-        sub1 = num_spec_tokens_reg - one
-        condition = num_accepted_tokens == sub1
-        not_condition = ~condition
-        not_condition = tkw.cast(not_condition, tkw.i1)
-        not_condition = tkw.broadcast(
-            not_condition, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
+        condition = num_accepted_tokens != (num_spec_tokens_reg - one)
+        condition = tkw.cast(condition, tkw.i1)
+        condition = tkw.broadcast(
+            condition, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
         )
-        draft_probs_reg = tkw.select(not_condition, draft_probs_reg, zero)
+        draft_probs_reg = tkw.select(condition, draft_probs_reg, zero)
 
         coin = tkw.read(updated_coins_vec, mapping=updated_coins_mapping)
         coin = tkw.broadcast(coin, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS])
