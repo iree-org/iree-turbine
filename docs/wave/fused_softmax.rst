@@ -54,7 +54,6 @@ Constraint Creation
    constraints: list[tkw.Constraint] = [
        tkw.HardwareConstraint(
            threads_per_wave=wave_size,
-           waves_per_block=(1, 1, 1),
            vector_shapes={M: BLOCK_M, N: N},
        )
    ]
