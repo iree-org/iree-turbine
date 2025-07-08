@@ -246,9 +246,13 @@ class ConvSignature(OpSignature):
             **kwargs,
         )
 
-    def make_signature_copy_for_forward(self) -> "ConvSignature":
+    def as_init_kwargs(self) -> dict[str, Any]:
         kwargs = self._signature._asdict()
         kwargs.pop("num_spatial_dims")
+        return kwargs
+
+    def make_signature_copy_for_forward(self) -> "ConvSignature":
+        kwargs = self.as_init_kwargs()
         kwargs["mode"] = "fwd"
         return ConvSignature(**kwargs)
 
