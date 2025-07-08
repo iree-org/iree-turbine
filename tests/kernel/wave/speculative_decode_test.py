@@ -31,14 +31,12 @@ def get_wave_speculative_decoding_kernel(
     num_draft_tokens,
     vocab_size,
     seq_len,
-    num_speculative_tokens,
 ):
     speculative_decoding, symbols, _, _ = get_speculative_decoding_kernel(
         batch_size,
         num_draft_tokens,
         vocab_size,
         seq_len,
-        num_speculative_tokens,
     )
     symbols.update(get_default_scheduling_params())
 
@@ -241,7 +239,10 @@ def tree_speculative_sampling_target_only(
     )
 
     wave_kernel = get_wave_speculative_decoding_kernel(
-        batch_size, num_draft_tokens, vocab_size, seq_len, num_speculative_tokens
+        batch_size,
+        num_draft_tokens,
+        vocab_size,
+        seq_len,
     )
     wave_kernel(
         target_probs,

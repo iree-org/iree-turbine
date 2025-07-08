@@ -103,11 +103,8 @@ def get_speculative_decoding_kernel(
         num_spec_tokens: tkl.i32,  # type: ignore
         predicts: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE, tkl.i32],
     ):
-        ZERO_P = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.f32](0.0)
+        zero = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.f32](0.0)
         one = tkw.Register[BATCH_SIZE, tkl.i32](1)
-        NUM_SPECULATIVE_TOKENS_CURR = tkw.Register[BATCH_SIZE, tkl.i32](
-            num_speculative_tokens
-        )
 
         last_offset = tkw.read(cur_prob_offset, elements_per_thread=1)
         tkw.set_symbol(LAST_OFFSET, last_offset)
@@ -128,14 +125,13 @@ def get_speculative_decoding_kernel(
         not_condition = tkw.broadcast(
             not_condition, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
         )
-        draft_probs_reg = tkw.select(not_condition, draft_probs_reg, ZERO_P)
+        draft_probs_reg = tkw.select(not_condition, draft_probs_reg, zero)
 
         coin = tkw.read(updated_coins_vec, mapping=updated_coins_mapping)
         coin = tkw.broadcast(coin, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS])
 
         diff = target_probs_reg - draft_probs_reg
 
-        zero = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.f32](0.0)
         relu_diff = tkw.maximum(diff, zero)
         sum_relu = tkw.sum(relu_diff, dim=VOCAB_SIZE)
         cdf = tkw.cumsum(relu_diff, dim=VOCAB_SIZE)
