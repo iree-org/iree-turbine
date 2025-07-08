@@ -112,7 +112,9 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
+        # TODO: reenable mi250 runner when fixed.
+        # os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
+        os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org]
     runs-on: ${{matrix.os}}
     timeout-minutes: 60
     needs: build_llvm_linux
