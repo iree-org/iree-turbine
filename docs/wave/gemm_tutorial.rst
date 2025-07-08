@@ -1,5 +1,5 @@
 GEMM Tutorial
-============
+=============
 
 This tutorial demonstrates how to implement a high-performance matrix multiplication (GEMM) kernel using Wave. We'll walk through the implementation step by step, explaining the key concepts and optimizations.
 
@@ -15,7 +15,7 @@ The GEMM kernel we'll implement computes C = A @ B.T, where:
 We'll use Wave's symbolic programming model and hardware-aware abstractions to create an efficient implementation.
 
 Implementation
--------------
+--------------
 
 First, we need to import the necessary modules and define our symbolic dimensions:
 
@@ -92,7 +92,7 @@ Now, let's define our GEMM kernel with appropriate constraints:
         tkw.write(repeat, c)
 
 Testing the Implementation
-------------------------
+--------------------------
 
 Let's create a test function to verify our GEMM implementation:
 
@@ -139,7 +139,7 @@ Let's create a test function to verify our GEMM implementation:
         print("GEMM test passed!")
 
 Key Components
--------------
+--------------
 
 1. **Memory Types and Data Types**:
 
@@ -182,7 +182,7 @@ Key Components
    - Write final result to global memory
 
 Performance Considerations
-------------------------
+--------------------------
 
 1. **Tile Size Selection**:
 
