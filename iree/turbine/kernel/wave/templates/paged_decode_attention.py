@@ -280,13 +280,7 @@ def get_paged_decode_attention_kernels(
         dynamic_val_mappings={K2: l},
     )
 
-    logits_out_mapping = tkw.IndexMapping(
-        num_iterators=4,
-        inputs={U: i, S: j, N: k, B: l},
-        outputs={U: i, S: j, N: k, B: l},
-    )
-
-    logits_in_mapping = tkw.IndexMapping(
+    logits_mapping = tkw.IndexMapping(
         num_iterators=4,
         inputs={U: i, S: j, N: k, B: l},
         outputs={U: i, S: j, N: k, B: l},
@@ -405,7 +399,7 @@ def get_paged_decode_attention_kernels(
 
             tkw.write(res_max_log_sum, output_max)
             res = tkw.broadcast(res, target_shape=[U, S, N, B])
-            tkw.write(res, output, mapping=logits_out_mapping)
+            tkw.write(res, output, mapping=logits_mapping)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(
@@ -432,7 +426,7 @@ def get_paged_decode_attention_kernels(
         ):
             # TODO: U iterator has tile size 1 and is always smaller than U,
             # so force the non-masked ops here by setting bounds to empty.
-            x_j = tkw.read(logits, bounds={}, mapping=logits_in_mapping)
+            x_j = tkw.read(logits, bounds={}, mapping=logits_mapping)
             xm_j = tkw.read(logits_max, bounds={})
             m_j = tkw.maximum(xm_j, partial_max)
             old_scale = tkw.exp2(partial_max - m_j)
