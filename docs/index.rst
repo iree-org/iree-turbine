@@ -4,7 +4,7 @@ IREE Turbine documentation
 Welcome to the documentation for https://github.com/iree-org/iree-turbine!
 
 API reference material
-=================
+======================
 
 .. toctree::
    :maxdepth: 1
@@ -21,15 +21,15 @@ API reference material
    kernel/*
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Wave
    :glob:
 
-   wave/*
+   wave/wave
 
 
 Project documentation
-=================
+=====================
 
 .. toctree::
    :maxdepth: 1
