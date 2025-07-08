@@ -180,7 +180,12 @@ def user_flags_jit_callback(func_name: str, extra_flags, source: str):
         ret = subprocess.run(command, capture_output=True, shell=True, timeout=10)
         if ret.returncode != 0:
             raise RuntimeError(
-                f"Failed compilation with diagnostics: {ret.stderr.decode()}."
+                f"Failed compilation for kernel {mlir_path.stem}. "
+                "If this is a supported BOO op, it's possible compilation failed due to a bad fusion.\n"
+                "Please file an issue at https://github.com/iree-org/iree/issues with the following info.\n"
+                f"SOURCE IR:\n{Path(mlir_path).read_text()}\n."
+                f"COMPILE COMMAND:\n{command}\n."
+                f"STDERR: {ret.stderr.decode()}."
             )
         return vmfb_path.read_bytes()
 

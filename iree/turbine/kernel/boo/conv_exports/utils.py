@@ -15,26 +15,8 @@ from pathlib import Path
 import torch
 
 __all__ = [
-    "load_commands",
     "Permutation",
 ]
-
-
-def load_commands(commands_file):
-    """loads commands from a text file."""
-    # try an absolute path
-    path = Path(commands_file)
-    # if the path doesn't point anywhere, try relative to cwd and this file.
-    if not path.is_file():
-        path = Path.cwd() / commands_file
-    if not path.is_file():
-        path = Path(__file__) / commands_file
-    if not path.is_file():
-        raise ValueError(
-            f"'commands-file' specification, '{commands_file}', cannot be found."
-        )
-    commands = [c for c in path.read_text().splitlines() if c.startswith("conv")]
-    return commands
 
 
 class Permutation:

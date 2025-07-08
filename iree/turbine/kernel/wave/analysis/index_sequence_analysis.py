@@ -317,7 +317,8 @@ def compute_stride(
         if dim == target_dim:
             break
         assert dim in vector_shapes, f"Dimension {dim} not found in vector shapes"
-        stride *= vector_shapes[dim]
+        # Sanity Check to ensure that the stride is never less than 1.
+        stride *= max(1, vector_shapes[dim])
 
     try:
         stride = int(stride)

@@ -29,3 +29,9 @@ class OpCLIParser(ABC):
         parser = cls.get_miopen_parser()
         args, _ = parser.parse_known_args(command.split())
         return cls.get_signature(args)
+
+    @classmethod
+    @abstractmethod
+    def get_op_name(cls) -> str:
+        """Returns the base name of the operation."""
+        ...
