@@ -18,7 +18,7 @@ from iree.turbine.kernel.wave.templates.speculative_decoding import (
 @run_test
 def test_speculative_decoding():
     # Get the kernel and its hyperparameters
-    kernel, hyperparams, _ = get_speculative_sampling_kernel(
+    kernel, hyperparams, _, _ = get_speculative_sampling_kernel(
         batch_size=10,
         num_speculative_tokens=3,
         threshold_single=0.01,
@@ -51,7 +51,6 @@ def test_speculative_decoding():
     # CHECK: vector.load
     # CHECK: vector.store
     # CHECK: arith.select
-    # CHECK: arith.addf
     # CHECK: arith.select
     # CHECK: scf.yield
     # CHECK: scf.yield
