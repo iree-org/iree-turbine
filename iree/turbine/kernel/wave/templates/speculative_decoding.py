@@ -15,7 +15,6 @@ def get_speculative_decoding_kernel(
     num_draft_tokens: int,
     vocab_size: int,
     seq_len: int,
-    num_speculative_tokens: int,
 ):
     BATCH_SIZE = tkl.sym.BATCH_SIZE
     NUM_DRAFT_TOKENS = tkl.sym.NUM_DRAFT_TOKENS
@@ -26,7 +25,6 @@ def get_speculative_decoding_kernel(
     BLOCK_VOCAB_SIZE = tkl.sym.BLOCK_VOCAB_SIZE
     LAST_OFFSET = tkl.sym.LAST_OFFSET
     LAST_IDX = tkl.sym.LAST_IDX
-    NUM_SPECULATIVE_TOKENS = tkl.sym.NUM_SPECULATIVE_TOKENS
 
     hyperparams = {
         BATCH_SIZE: batch_size,
@@ -36,7 +34,6 @@ def get_speculative_decoding_kernel(
         BLOCK_BATCH_SIZE: 1,
         BLOCK_NUM_DRAFT_TOK: 1,
         BLOCK_VOCAB_SIZE: 64,
-        NUM_SPECULATIVE_TOKENS: num_speculative_tokens,
     }
 
     dynamic_symbols = []
