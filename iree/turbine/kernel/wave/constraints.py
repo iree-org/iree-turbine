@@ -780,6 +780,20 @@ class WaveConstraint(DistributionConstraint):
 
         return bound
 
+    @property
+    def waves_per_block(self) -> IndexExpr:
+        if not self.wg_constraint:
+            raise ValueError("Wave constraint has no workgroup constraint")
+
+        return ceiling(self.wg_constraint.tile_size / self.tile_size)
+
+    @property
+    def workgroup_dim(self) -> int:
+        if not self.wg_constraint:
+            raise ValueError("Wave constraint has no workgroup constraint")
+
+        return self.wg_constraint.workgroup_dim
+
 
 def get_constrained_shape(
     shape: list[IndexExpr], constraints: list[WorkgroupConstraint | TilingConstraint]
