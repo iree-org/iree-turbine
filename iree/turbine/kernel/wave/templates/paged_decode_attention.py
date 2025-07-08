@@ -56,6 +56,12 @@ def get_paged_decode_attention_kernels(
     layer_scaling: Optional[float] = None,
     logit_cap: float = 0.0,
 ):
+    """
+    Supports multi-head attention (MHA), multi-query attention (MQA), and
+    grouped-query attention (GQA) depending on the number of query heads
+    compared to the number of key-value heads.
+    """
+
     multi_head_attention = shape.num_query_heads == shape.num_kv_heads
 
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
