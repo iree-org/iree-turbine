@@ -155,7 +155,6 @@ class WaveEmitter:
             try:
                 handler(self, node)
             except:
-                
                 print(f"Error handling {node}", file=sys.stderr)
                 raise
 

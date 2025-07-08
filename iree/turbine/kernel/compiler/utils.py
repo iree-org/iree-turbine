@@ -22,6 +22,22 @@ def strides_from_symbolic_shape(
         for static, dynamic in zip(static_shape, symbolic_shape)
     ]
     strides = []
-    for i in range(1, len(mixed_shape)):
-        strides.append(prod(mixed_shape[-i:]))
+
+    # def safe_prod(seq):
+    #     return prod((d if d is not None else 1) for d in seq)
+
+    try:
+        for i in range(1, len(mixed_shape)):
+            if mixed_shape[-i] is None:
+                # break
+                strides.append(mixed_shape[-1])
+            else:
+                strides.append(prod(mixed_shape[-i:]))
+        print("all good")
+        print(symbolic_shape, strides, " is very cool over here")
+        # breakpoint()
+        # if (len(mixed_shape) > 1):
+        #     breakpoint()
+    except:
+        breakpoint()
     return strides[::-1] + [1]

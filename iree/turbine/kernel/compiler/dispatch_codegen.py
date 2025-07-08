@@ -299,6 +299,7 @@ class DispatchEntrypoint(BoundKernelSignature):
         If the physical layout does have dynamic dimensions, then we return
         the dynamic dimensions based on the symbolic shape of the binding.
         """
+        print(binding.kernel_buffer_type.symbolic_shape, self.dynamic_symbols_mapping, " wow!!!")
         dynamic_dims = [
             self.dynamic_symbols_mapping[dim]
             for dim in binding.kernel_buffer_type.symbolic_shape
@@ -309,6 +310,7 @@ class DispatchEntrypoint(BoundKernelSignature):
             physical_shape = node_type.physical_layout.shape
             if all(physical_shape):
                 return []
+            print(dynamic_dims, physical_shape)
             assert len(dynamic_dims) == physical_shape.count(
                 None
             ), f"Expected {physical_shape.count(None)} dynamic dims, got {len(dynamic_dims)} for {node_type}"

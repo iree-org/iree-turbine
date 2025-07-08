@@ -143,7 +143,7 @@ class BindingDesc:
             if ref_type.physical_layout:
                 print("bing bong", ref_type.physical_layout.shape)
                 import time
-                time.sleep(10)
+                # time.sleep(10)
                 shape_asm = "x".join(
                     sym_to_dim_asm(s) for s in ref_type.physical_layout.shape
                 )

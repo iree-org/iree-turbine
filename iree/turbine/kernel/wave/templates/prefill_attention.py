@@ -131,10 +131,15 @@ def get_prefill_attention_kernel(
         outputs={H_KV: i, D_KV: j, N_KV: k},
     )
 
-    q_layout = tkl.MemoryLayout(shape=q_shape)
-    k_layout = tkl.MemoryLayout(shape=k_shape)
-    v_layout = tkl.MemoryLayout(shape=v_shape)
-    o_layout = tkl.MemoryLayout(shape=o_shape)
+    set_dynamic_dim = lambda shape: [x if x > 0 else None for x in shape]
+    q_layout = tkl.MemoryLayout(shape=set_dynamic_dim(q_shape))
+    k_layout = tkl.MemoryLayout(shape=set_dynamic_dim(k_shape))
+    v_layout = tkl.MemoryLayout(shape=set_dynamic_dim(v_shape))
+    o_layout = tkl.MemoryLayout(shape=set_dynamic_dim(o_shape))
+    # k_cache_layout = tkl.MemoryLayout(shape=k_cache_shape)
+    # v_cache_layout = tkl.MemoryLayout(shape=v_cache_shape)
+    # num_seqs_layout = tkl.MemoryLayout(shape=[None])
+    # kv_indices_layout = tkl.MemoryLayout(shape=[None])
 
     @tkw.wave(constraints)
     def prefill_attention(
@@ -226,16 +231,17 @@ def get_prefill_attention_kernel(
     # print(dynamic_symbols_map)
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
+    # dynamic_symbols_map = {}
     if dynamic_dims:
-      for sym in (H, H_KV, S):
-        dynamic_symbols_map[sym] = hyperparams[sym]
+      for sym in [S, H, H_KV, N_KV, N_Q]: #H, H_KV
+        # dynamic_symbols_map[sym] = hyperparams[sym]
         dynamic_symbols.append(sym)
-        del hyperparams[sym]
+        if sym in hyperparams:
+            del hyperparams[sym]
 
     print(hyperparams)
     print(dynamic_symbols)
-    print(dynamic_symbols_map)
+    # print(dynamic_symbols_map)
     # raise ValueError()
 
-    return prefill_attention, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return prefill_attention, hyperparams, dynamic_symbols #, dynamic_symbols_map
