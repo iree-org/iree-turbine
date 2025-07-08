@@ -1,4 +1,5 @@
---index-url https://download.pytorch.org/whl/cpu
-torch>=2.5,<2.8
+--index-url https://download.pytorch.org/whl/test/cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.6,<2.9
 torchaudio
 torchvision
