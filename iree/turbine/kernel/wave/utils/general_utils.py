@@ -140,6 +140,17 @@ def remove_global_indexing(
     return new_index
 
 
+def remove_thread_indexing(
+    index: dict[IndexSymbol, IndexSequence],
+) -> dict[IndexSymbol, IndexSequence]:
+    """
+    This function takes the index sequence for a global read and removes all
+    thread level indexing.
+    """
+    subs = {t: 0 for t in [THREAD_0, THREAD_1, THREAD_2, GPR_NUM]}
+    return {key: safe_subs(index[key], subs) for key in index}
+
+
 def is_shared_mem_access(custom: "CustomOp") -> bool:
     return custom.memory_type.address_space == SHARED_ADDRESS_SPACE
 
