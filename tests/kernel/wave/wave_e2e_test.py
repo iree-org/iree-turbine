@@ -27,7 +27,9 @@ from iree.turbine.kernel.wave.utils.run_utils import (
     set_default_run_config,
 )
 from iree.turbine.kernel.wave.utils.torch_utils import (
+    device_arange,
     device_full,
+    device_ones,
     device_randint,
     device_randn,
     device_randperm,
@@ -2047,3 +2049,67 @@ def test_atomic_min(shape, use_buffer_ops, request):
     test(a, c)
     assert_close(c[0, :], b)
     assert_close(c[1, :], b)
+
+
+@require_e2e
+@pytest.mark.parametrize("shape", [(48, 4, 128)])
+def test_self_index(shape, request):
+    run_bench = request.config.getoption("--runperf")
+
+    M = tkl.sym.M
+    K = tkl.sym.K
+    N = tkl.sym.N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    wave_size = 64
+    BLOCK_M = shape[0]
+    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
+
+    constraints = [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 0, K: 0, N: BLOCK_N},
+        )
+    ]
+
+    # This kernel contains reduction + self_index.
+    # It is loosely based on the speculative decode kernel.
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, K, N, ADDRESS_SPACE, tkl.i32],
+        result_self_index: tkl.Memory[M, K, N, GLOBAL_ADDRESS_SPACE, tkl.i32],
+    ):
+        input = tkw.read(a)
+        input_sum = tkw.sum(input, dim=N)
+        threshold = tkw.broadcast(input_sum, target_shape=[M, K, N])
+        cdf = tkw.cumsum(input, dim=N)
+        greather_than_cond = threshold >= cdf
+        self_idx = tkw.self_index(N, dtype=tkl.i32)
+        self_idx = tkw.broadcast(self_idx, target_shape=[M, K, N])
+        select_min_id = tkw.select(greather_than_cond, self_idx, threshold)
+        tkw.write(select_min_id, result_self_index)
+
+    ref = device_arange(128, dtype=torch.int32)
+    a = device_ones(shape, dtype=torch.int32)
+    result_self_index = device_zeros(shape, dtype=torch.int32)
+
+    options = WaveCompileOptions(
+        subs={
+            M: shape[0],
+            K: shape[1],
+            N: shape[2],
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=run_bench,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, result_self_index)
+    assert_close(ref, result_self_index[0, 0, :])
