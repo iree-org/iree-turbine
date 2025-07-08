@@ -5,9 +5,27 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, TypeVar, Union
 
 import torch
+
+_T = TypeVar("_T", bound="ModeBase")
+
+
+class ModeBase:
+    @classmethod
+    def parse(cls: type[_T], spec: Union[str, None, _T]) -> _T:
+        if spec is None:
+            return cls.FORWARD
+        if isinstance(spec, cls):
+            return spec
+        spec = spec.upper().replace("-", "_")
+        if spec not in cls.__members__:
+            raise ValueError(
+                f"For mode= argument, expected one of: "
+                f"{', '.join(cls.__members__.keys())}"
+            )
+        return cls[spec]
 
 
 class OpSignature(ABC):
@@ -38,3 +56,56 @@ class OpSignature(ABC):
     def get_output_size(self) -> int:
         """Returns the size of this operation outputs in bytes."""
         ...
+
+    @property
+    @abstractmethod
+    def is_forward(self) -> bool:
+        """Indicates whether this signature corresponds to the forward-mode
+        kernel."""
+        ...
+
+    @abstractmethod
+    def make_signature_copy_for_forward(self) -> "OpSignature":
+        """Returns a copy of this signature, but set up for forward mode."""
+        ...
+
+    @abstractmethod
+    def get_arg_index_for_backward(self) -> int | None:
+        """For a backward mode, returns the index of the argument whose
+        back-propagated gradient is computed by the kernel with this
+        signature.
+
+        Returns None if a compiled kernel is not available for computing the
+        derivative with the current mode.
+        """
+        ...
+
+    @abstractmethod
+    def arrange_backward_launch_args(
+        self,
+        forward_args: tuple[torch.Tensor, ...],
+        forward_results: tuple[torch.Tensor, ...],
+    ) -> tuple[torch.Tensor]:
+        """Arranges arguments and results of the forward pass in a way that they
+        can be passed as trailing arguments to the backward pass.
+
+        In the backward pass, we make an assumption that the result derivative
+        is always the leading argument. We may also need to "save" values from
+        the forward pass for the backward pass. We assume it is done by
+        returning these values from the forward pass.
+        """
+        ...
+
+    @property
+    def main_result_index(self) -> int:
+        """The index of the 'main' result of the operation.
+
+        All other results are expected to be used as a mechanism to pass values
+        between the forward and the backward pass. Therefore, various mechanisms
+        will only consider propagating derivatives through this result. The
+        design of at least the numerics testing must be revised if we ever need
+        truly multi-result operations.
+
+        Derived classes may override this.
+        """
+        return 0
