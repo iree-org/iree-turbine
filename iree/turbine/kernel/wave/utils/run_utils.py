@@ -44,12 +44,8 @@ def get_device_uuid(device_list: list[str], device_str: str) -> tuple[int, str]:
     return device_str
 
 
-def _inplace_invoke(
-    vm_context, device, entry_function, inputs, outputs, scalar_args, dynamic_dims
-):
-    linearized_arg_len = (
-        len(inputs) + len(outputs) + len(scalar_args) + len(dynamic_dims)
-    )
+def _inplace_invoke(vm_context, device, entry_function, inputs, outputs, scalar_args):
+    linearized_arg_len = len(inputs) + len(outputs) + len(scalar_args)
     # ret_list is 0 because we modify/write result in place.
     arg_list = rt.VmVariantList(linearized_arg_len)
     ret_list = rt.VmVariantList(0)
@@ -62,8 +58,8 @@ def _inplace_invoke(
         arg_list.push_ref(arg_tensor_bv)
 
     # Linearize arguments, In linearized arg_list, we first push in all inputs,
-    # then all the outputs, and lastly all the dynamic dims.
-    for input in chain(inputs, outputs, scalar_args, dynamic_dims):
+    # then all the outputs, and lastly all the scalar args.
+    for input in chain(inputs, outputs, scalar_args):
         if isinstance(input, torch.Tensor):
             push_tensor_to_arg_list(input)
         elif isinstance(input, int):
@@ -164,7 +160,6 @@ def invoke_vmfb(
         kernel_inputs,
         kernel_outputs,
         scalar_args,
-        dynamic_symbols,
     )
 
     if options.run_bench:
