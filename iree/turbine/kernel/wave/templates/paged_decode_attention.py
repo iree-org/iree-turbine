@@ -417,8 +417,10 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, B, N, tkl.f32],
         ):
-            x_j = tkw.read(logits)
-            xm_j = tkw.read(logits_max)
+            # TODO: U iterator has tile size 1 and is always smaller than U,
+            # so force the non-masked ops here by setting bounds to empty.
+            x_j = tkw.read(logits, bounds={})
+            xm_j = tkw.read(logits_max, bounds={})
             m_j = tkw.maximum(xm_j, partial_max)
             old_scale = tkw.exp2(partial_max - m_j)
             new_scale = tkw.exp2(xm_j - m_j)

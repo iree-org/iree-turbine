@@ -95,7 +95,7 @@ def test_paged_flash_decoding():
     # CHECK-LABEL:       func.func @phase_1
     # CHECK-COUNT-2:       memref.load
     # CHECK:               scf.for
-    # CHECK-COUNT-2:           vector.maskedload
+    # CHECK-COUNT-2:           vector.load
     # CHECK-COUNT-1:           arith.maximumf
     # CHECK-COUNT-1:           arith.subf
     # CHECK-COUNT-1:           math.exp2
@@ -165,7 +165,7 @@ def test_paged_flash_decoding_small_query_heads():
     # CHECK-LABEL:       func.func @phase_1
     # CHECK-COUNT-2:       memref.load
     # CHECK:               scf.for
-    # CHECK-COUNT-2:           vector.maskedload
+    # CHECK-COUNT-2:           vector.load
     # CHECK-COUNT-1:           arith.maximumf
     # CHECK-COUNT-1:           arith.subf
     # CHECK-COUNT-1:           math.exp2
