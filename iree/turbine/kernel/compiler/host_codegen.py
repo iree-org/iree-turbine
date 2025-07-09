@@ -25,6 +25,7 @@ from .ir import (
     flow_d,
     func_d,
     hal_d,
+    tensor_d,
 )
 
 from .._support.indexing import IndexSymbol
@@ -137,7 +138,25 @@ def isolated_test_call(
             if async_dispatch:
                 in_fence = arguments[-2]
                 out_fence = arguments[-1]
-                arguments = arguments[:-2]
+                arguments = list(arguments[:-2])
+
+                for i, b in enumerate(sig.kernel_buffer_bindings):
+                    shape = b.kernel_buffer_type.symbolic_shape
+
+                    arg = arguments[i]
+                    arg_type = memref_to_tensor([b.as_mlir_type()])[0]
+                    target_dims = [
+                        hal_d.buffer_view_dim(arg, d)
+                        for d in range(len(shape))
+                        if arg_type.is_dynamic_dim(d)
+                    ]
+                    arguments[i] = hal_d.tensor_import(
+                        arg_type,
+                        arg,
+                        wait_fence=in_fence,
+                        target_encoding=arg_type,
+                        target_dims=target_dims,
+                    )
 
             scalars_args = [
                 to_index(v)
@@ -148,26 +167,6 @@ def isolated_test_call(
             ]
             dynamic_args = [to_index(v) for v in arguments[dynamic_offset:]]
             dynamic_argument_map = {k: v for k, v in zip(dynamic_symbols, dynamic_args)}
-
-            if async_dispatch:
-                arguments = list(arguments)
-                for i, b in enumerate(sig.kernel_buffer_bindings):
-                    shape = b.kernel_buffer_type.symbolic_shape
-
-                    arg = arguments[i]
-                    arg_type = memref_to_tensor([b.as_mlir_type()])[0]
-                    target_dims = [
-                        dynamic_argument_map[s]
-                        for d, s in enumerate(shape)
-                        if arg_type.is_dynamic_dim(d)
-                    ]
-                    arguments[i] = hal_d.tensor_import(
-                        arg_type,
-                        arg,
-                        wait_fence=in_fence,
-                        target_encoding=arg_type,
-                        target_dims=target_dims,
-                    )
 
             assert isinstance(entry_block, Block)
             # Create a flow.dispatch op to the kernel
@@ -208,8 +207,8 @@ def isolated_test_call(
 
                     out_type = out_types[i]
                     source_dims = [
-                        dynamic_argument_map[s]
-                        for d, s in enumerate(shape)
+                        tensor_d.dim(out[i], arith_d.constant(IndexType.get(), d))
+                        for d in range(len(shape))
                         if out_type.is_dynamic_dim(d)
                     ]
                     out[i] = hal_d.tensor_export(

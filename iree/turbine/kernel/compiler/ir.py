@@ -54,6 +54,7 @@ from iree.compiler.dialects import (
     rocdl as rocdl_d,
     scf as scf_d,
     stream as stream_d,
+    tensor as tensor_d,
     transform as transform_d,
     vector as vector_d,
 )
