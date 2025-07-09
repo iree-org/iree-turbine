@@ -10,6 +10,7 @@ import functools
 from typing import Tuple, Iterable
 
 import torch
+from torch.fx.passes.shape_prop import TensorMetadata
 
 __all__ = [
     "is_boo_backward_enabled",
@@ -115,13 +116,51 @@ def get_func_name(
     return "_".join(name_items)
 
 
-def _tensor_type_str(t: torch.Tensor | None) -> str:
-    if t is None:
-        return ""
-    shape = t.shape
-    dtype = str(t.dtype).removeprefix("torch.")
+def _tensor_type_str(shape: Iterable[int], dtype: torch.dtype) -> str:
+    dtype = str(dtype).removeprefix("torch.")
     shape_str = "x".join([str(dim) for dim in shape])
     return shape_str + f"x{dtype}"
+
+
+def _is_contiguous(
+    t: torch.Tensor | TensorMetadata, memory_format: torch.memory_format
+) -> bool:
+    if isinstance(t, torch.Tensor):
+        return t.is_contiguous(memory_format=memory_format)
+    metadata_memory_format = getattr(t, "memory_format", None)
+    if metadata_memory_format is None:
+        if isinstance(t, TensorMetadata):
+            raise ValueError(
+                f"TensorMetadata: {t} does not have memory_format attribute!"
+            )
+        raise TypeError(
+            f"Unhandled type: {type(t)}. _is_contiguous input 0 must be a torch.Tensor or TensorMetadata object."
+        )
+
+
+def get_memory_format_information(
+    t: torch.Tensor | TensorMetadata, num_dims: int | None = None
+) -> tuple[bool, list[int] | None, list[int] | None]:
+    """For a torch.Tensor, returns a tuple contatining:
+
+    1. A bool indicating whether the tensor is in a num-dim-appropriate channels-last format.
+    2. An optional list indicating the channels-last to contiguous layout permutation.
+    3. An optional list indicating the inverse permutation.
+    """
+    num_dims = num_dims or len(t.shape) - 2
+    cl_mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_dims, None)
+    if cl_mem_format is None or not _is_contiguous(t, cl_mem_format):
+        return False, None, None
+
+    cl_contig = CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION.get(num_dims)
+    contig_cl = CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION.get(num_dims)
+    if None in [cl_contig, contig_cl]:
+        return (False, None, None)
+    return (
+        True,
+        cl_contig,
+        contig_cl,
+    )
 
 
 def get_arg_spec_name(base_name, *args):
@@ -131,5 +170,26 @@ def get_arg_spec_name(base_name, *args):
             raise TypeError(
                 f"Expected all function arguments to be (optional) tensors. Got {type(arg)} at position {idx}."
             )
-        name += f"_{_tensor_type_str(arg)}"
+        name += f"_{_tensor_type_str(arg.shape, arg.dtype)}"
     return name
+
+
+def get_arg_spec_name_and_memory_format_information(base_name, *args):
+    name = base_name
+    layout_handling: list[tuple[bool, list[int] | None, list[int] | None]] = []
+    for idx, arg in enumerate(args):
+        if arg is None:
+            layout_handling.append((False, None, None))
+            continue
+        if not isinstance(arg, torch.Tensor):
+            raise TypeError(
+                f"Expected all function arguments to be (optional) tensors. Got {type(arg)} at position {idx}."
+            )
+        shape = arg.shape
+        dtype = arg.dtype
+        name += f"_{_tensor_type_str(shape, dtype)}"
+        mem_format_info = get_memory_format_information(arg, len(shape) - 2)
+        if mem_format_info[0]:
+            name += "_cl"
+        layout_handling.append(mem_format_info)
+    return name, layout_handling

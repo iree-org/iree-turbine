@@ -73,6 +73,29 @@ class SampleModule2(torch.nn.Module):
         return self.layer1(self.layer0(x))
 
 
+class SampleModule3(torch.nn.Module):
+    def __init__(self, num_features: int = 3, kernel_size: int | Sequence[int] = 1):
+        super().__init__()
+        self.layer0 = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=kernel_size,
+            ),
+        )
+        self.layer1 = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=kernel_size,
+            ),
+            torch.nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor):
+        return self.layer1(self.layer0(x))
+
+
 class SubgraphReplacementTest(unittest.TestCase):
     def testReplacementWithPytorchBackward(self):
         with tempfile.TemporaryDirectory() as td:
@@ -127,6 +150,21 @@ class SubgraphReplacementTest(unittest.TestCase):
             self.assertNotIn("torch.ops.aten.add", str(fused_m))
             y = fused_m(x0, x1)
             self.assertEqual(list(y.shape), [16, 16])
+
+    def testReplacementChannelsLastConv(self):
+        with tempfile.TemporaryDirectory() as td:
+            set_cache_dir(Path(td))
+            m = SampleModule3().to(memory_format=torch.channels_last)
+            x = torch.ones([2, 3, 16, 16], requires_grad=False)
+            schema: FusionSchema = {
+                torch.ops.aten.conv2d.default: OpFusionSpec(
+                    recursive=True,
+                    consumers=(torch.ops.aten.sigmoid.default,),
+                )
+            }
+            fused_m = fusion_transform(m, (x,), fusion_schema=schema)
+            self.assertNotIn("torch.ops.aten.", str(fused_m))
+            y = fused_m(x)
 
     def testReplacementNonRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:

@@ -18,7 +18,12 @@ from torch.autograd import Function
 from iree.compiler.extras.fx_importer import FxImporter
 
 from .library import *
-from .utils import is_boo_backward_enabled, get_arg_spec_name
+from .utils import (
+    is_boo_backward_enabled,
+    get_arg_spec_name,
+    get_arg_spec_name_and_memory_format_information,
+    get_memory_format_information,
+)
 from ..runtime import get_launchable
 from ....dynamo.passes import turbine_cpu_pass_pipeline
 from ....transforms.general.custom_op_expansion import ExpandCustomOpsPass
@@ -93,9 +98,112 @@ def get_custom_graph_op(
     logger.debug("Got hash str '%s' for GraphModule: \n %s", hash, str(gm))
 
     if not hasattr(torch.ops.boo, op_name):
-        define_custom_graph_op(gm, op_name, force_single_dispatch=force_single_dispatch)
+        define_layout_customized_graph_op(
+            gm, op_name, force_single_dispatch=force_single_dispatch
+        )
 
     return get_library_op(op_name)
+
+
+def define_layout_customized_graph_op(
+    gm: GraphModule, op_name: str, *, force_single_dispatch: bool = False
+):
+    """Defines a custom op from the graph module with given op_name in the boo library."""
+    inputs, outputs = get_io_from_gm(gm)
+    # TODO: handle this better
+    is_none_output = maybe_trim_none_outputs(gm)
+    has_a_none_output = any(is_none_output)
+    schema = get_schema(inputs, outputs)
+    define_schema(op_name, schema)
+    output_mem_format_infos = [
+        get_memory_format_information(t) for t in outputs if t is not None
+    ]
+
+    class LayoutManagedModule(torch.nn.Module):
+        def __init__(
+            self,
+            mem_format_infos: list[tuple[bool, list[int] | None, list[int] | None]],
+        ):
+            super().__init__()
+            self.mem_format_infos = mem_format_infos
+
+        def forward(self, *args):
+            handled_args = []
+            for idx, arg in enumerate(args):
+                arg_mem_format_info = self.mem_format_infos[idx]
+                if not arg_mem_format_info[0]:
+                    handled_args.append(arg)
+                    continue
+                handled_args.append(arg.permute(arg_mem_format_info[-1]))
+            outputs = gm.forward(*handled_args)
+            single_output = False
+            if isinstance(outputs, torch.Tensor):
+                outputs = [outputs]
+                single_output = True
+            handled_outputs = []
+            for idx, o in enumerate(outputs):
+                o_mem_format_info = output_mem_format_infos[idx]
+                if not o_mem_format_info[0]:
+                    handled_outputs.append(o)
+                    continue
+                handled_outputs.append(o.permute(o_mem_format_info[1]))
+            return handled_outputs[0] if single_output else tuple(handled_outputs)
+
+    @register_impl(op_name)
+    def _(*args):
+
+        spec_name, mem_format_infos = get_arg_spec_name_and_memory_format_information(
+            op_name, *args
+        )
+
+        logger.debug("Memory format infos:\n%s", str(mem_format_infos))
+
+        l = get_launchable(
+            lambda: LayoutManagedModule(mem_format_infos),
+            arg_factory=args,
+            func_name=spec_name,
+            force_single_dispatch=force_single_dispatch,
+        )
+        handled_args = []
+        for idx, arg in enumerate(args):
+            arg_mem_format_info = mem_format_infos[idx]
+            if not arg_mem_format_info[0]:
+                handled_args.append(arg)
+                continue
+            handled_args.append(arg.permute(arg_mem_format_info[1]))
+        single_output = False
+        outputs = l(*[arg.data for arg in handled_args])
+        if isinstance(outputs, torch.Tensor):
+            outputs = [outputs]
+            single_output = True
+        handled_outputs = []
+        for idx, o in enumerate(outputs):
+            o_mem_format_info = output_mem_format_infos[idx]
+            if not o_mem_format_info[0]:
+                handled_outputs.append(o)
+                continue
+            handled_outputs.append(o.permute(o_mem_format_info[1]))
+        if not has_a_none_output:
+            return handled_outputs[0] if single_output else tuple(handled_outputs)
+        # We have at least one None output that needs to be included.
+        # Handle this better.
+        all_results = []
+        i = 0
+        for is_none in is_none_output:
+            if is_none:
+                all_results.append(None)
+            else:
+                all_results.append(handled_outputs[i])
+                i += 1
+        # It is probably safe to assume all_results has more than one value.
+        return tuple(all_results) if i > 1 else all_results[0]
+
+    @register_meta(op_name)
+    def _meta(*args):
+        outputs = gm.forward(*args)
+        if len(outputs) == 1:
+            return outputs[0]
+        return outputs
 
 
 def define_custom_graph_op(
@@ -103,6 +211,7 @@ def define_custom_graph_op(
 ):
     """Defines a custom op from the graph module with given op_name in the boo library."""
     inputs, outputs = get_io_from_gm(gm)
+    logger.debug("output_meta:\n%s", str(outputs))
     # TODO: handle this better
     is_none_output = maybe_trim_none_outputs(gm)
     has_a_none_output = any(is_none_output)
