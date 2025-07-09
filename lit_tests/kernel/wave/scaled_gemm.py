@@ -40,11 +40,7 @@ def test_scaled_gemm_mxfp4():
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, mma_type=mfma_variant)]
 
     @tkw.wave(constraints)
     def scaled_gemm(
@@ -146,11 +142,7 @@ def test_scaled_gemm_mxfp8():
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(2, 2, 1), mma_type=mfma_variant
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, mma_type=mfma_variant)]
 
     @tkw.wave(constraints)
     def scaled_gemm(

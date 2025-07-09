@@ -1,5 +1,5 @@
 Schedule Reordering Module
-=========================
+==========================
 
 This module implements a ping-pong scheduling algorithm for optimizing wave-level parallelism in GPU kernels. The algorithm enables two waves within the same SIMD group to run in parallel by carefully orchestrating their execution phases and synchronization.
 Most of the module and algorithm described below can be found in ``iree-turbine/iree/turbine/kernel/wave/schedule_reordering.py``
@@ -35,10 +35,10 @@ The scheduling algorithm implements a ping-pong pattern where two waves alternat
    * After synchronization, both waves can proceed to the next iteration
 
 Implementation Details
----------------------
+-----------------------
 
 Operation Classification
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 The algorithm classifies operations into four main categories:
 
@@ -48,7 +48,7 @@ The algorithm classifies operations into four main categories:
 * MMAs: Matrix multiplication operations
 
 Graph Reordering
-~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~
 
 The reordering process follows these steps:
 
@@ -72,7 +72,7 @@ The reordering process follows these steps:
    * Ensures correct execution order while enabling parallel wave execution
 
 Scheduling Strategy
------------------
+-------------------
 
 The module supports different scheduling strategies:
 
@@ -86,7 +86,7 @@ The strategy selection is based on:
 * Wave count requirements
 
 Key Functions
-------------
+-------------
 
 .. function:: schedule_reordering(trace, constraints, scheduling_type)
 
@@ -109,7 +109,7 @@ Key Functions
    maintaining correct execution order.
 
 Hardware Requirements
--------------------
+---------------------
 
 The algorithm requires specific hardware characteristics:
 
@@ -120,7 +120,7 @@ The algorithm requires specific hardware characteristics:
 The current implementation specifically targets configurations with 8 waves per block.
 
 Example Configuration
--------------------
+---------------------
 
 The default configuration for two-cluster ping-pong scheduling:
 

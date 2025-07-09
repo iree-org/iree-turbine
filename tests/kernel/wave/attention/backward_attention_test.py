@@ -200,7 +200,6 @@ def get_attention_fwd_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(WAVES_PER_BLOCK_M, WAVES_PER_BLOCK_N, WAVES_PER_BLOCK_B),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         )
@@ -349,7 +348,6 @@ def get_attention_bwd_kernel(
         tkw.TilingConstraint(M_qs, BLOCK_M),
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
             # TODO(#384): If we don't set the N vector shape here, then there is
             # a compilation failure when BLOCK_N (which is just set to the head
@@ -594,7 +592,6 @@ def get_attention_bwd_dv_kernel(
         tkw.TilingConstraint(M_qs, BLOCK_M),
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         ),
@@ -740,7 +737,6 @@ def get_attention_bwd_dk_kernel(
         tkw.TilingConstraint(M_qs, BLOCK_M),
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         ),
@@ -925,7 +921,6 @@ def get_attention_bwd_dq_kernel(
         tkw.TilingConstraint(M_qs, BLOCK_M),
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         ),

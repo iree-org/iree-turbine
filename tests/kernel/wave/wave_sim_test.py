@@ -29,9 +29,7 @@ def test_eltwise():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
 
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     @wave_sim(constraints)
     def eltwise(
@@ -67,9 +65,7 @@ def test_broadcast_1():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
 
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     @wave_sim(constraints)
     def eltwise(
@@ -105,9 +101,7 @@ def test_broadcast_2():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
 
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     @wave_sim(constraints)
     def eltwise(
@@ -140,9 +134,7 @@ def test_broadcast_3():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
 
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     @wave_sim(constraints)
     def eltwise(
@@ -178,9 +170,7 @@ def test_gemm():
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     # Wave-level micro-kernel.
     # Since warps are not directly addressable, there is no
@@ -235,9 +225,7 @@ def test_transpose_1():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
 
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -276,9 +264,7 @@ def test_transpose_2():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
 
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -375,9 +361,7 @@ def test_igemm_conv(n, c, nf, stride):
     constraints += [tkw.WorkgroupConstraint(NF, BLOCK_N, 1)]
     constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
-    constraints += [
-        tkw.HardwareConstraint(threads_per_wave=64, waves_per_block=(1, 1, 1))
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64)]
 
     @wave_sim(constraints)
     def conv(

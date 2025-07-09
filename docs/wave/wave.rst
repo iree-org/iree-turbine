@@ -1,8 +1,8 @@
 Wave: High-Performance Machine Learning Programming Language
-=======================================
+=============================================================================
 
 Motivation
----------
+-----------
 
 Wave is a high-level programming language designed to accelerate the development and optimization of machine learning kernels. it aims to dramatically improve kernel author velocity in two critical dimensions:
 
@@ -20,7 +20,7 @@ Wave is particularly focused on the machine learning domain, with deep integrati
 The language bridges the gap between high-level ML programming and low-level GPU performance by providing a flexible and expressive programming model that maintains close control over hardware resources while enabling rapid innovation in the ML space.
 
 Core Design Principles
---------------------
+-----------------------
 
 Wave is built around several key design principles that guide its architecture and implementation:
 
@@ -59,8 +59,14 @@ For more detailed information about Wave's architecture and optimization passes,
    :maxdepth: 2
    :caption: Contents:
 
+   getting_started
    system_architecture
    shared_memory
    runtime
    gemm_tutorial
    minimize_global_loads
+   pingpong_reordering
+   schedule
+   schedule_modifier
+   fused_softmax
+   aplp

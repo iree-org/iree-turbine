@@ -8,7 +8,7 @@ The goal is to assign a starting memory offset to each allocation such that the 
 The heuristic provides a fast, approximate solution to this problem. It does not guarantee optimality but often performs well in practice.
 
 The Allocation Data
-------------------
+--------------------
 
 We will use the following set of allocations for this explanation:
 
@@ -73,7 +73,7 @@ The heuristic proceeds as follows:
 5.  **Repeat:** Steps 2-4 are repeated for all allocations in the sorted order.
 
 Tracing the Heuristic for the Example Data
-----------------------------------------
+-------------------------------------------
 
 Let's trace the steps for our ``allocations_data``:
 

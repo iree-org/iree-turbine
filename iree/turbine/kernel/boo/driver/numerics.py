@@ -72,15 +72,16 @@ def _run(
     *,
     use_custom: bool,
     allow_jit_compile: bool,
+    seed: int | None = None,
+    device: int = 0,
 ) -> dict[str, str | dict[str, bool | float]]:
     """Runs the specified commands and returns the dictionary containing, for
     each command, the tensor numerics comparison result or an error message."""
     if not torch.cuda.is_available():
         raise RuntimeError("No cuda drivers found: Cannot run tests.")
 
-    # TODO: don't hardcode the device ID.
     results = dict()
-    cuda = torch.device("cuda:0")
+    cuda = torch.device(f"cuda:{device}")
     cpu = torch.device("cpu")
 
     for c in commands:
@@ -91,13 +92,11 @@ def _run(
         # get reference fwd nn module and sample args
         if is_fwd:
             m = sig.get_nn_module(use_custom=use_custom)
-            # TODO: why is seed hardcoded
-            args = sig.get_sample_args(device=cuda, seed=4)
+            args = sig.get_sample_args(device=cuda, seed=seed)
         else:
             fwd_sig = sig.make_signature_copy_for_forward()
             m = fwd_sig.get_nn_module(use_custom=use_custom)
-            # TODO: why is seed hardcoded
-            args = fwd_sig.get_sample_args(device=cuda, seed=4)
+            args = fwd_sig.get_sample_args(device=cuda, seed=seed)
 
         try:
             launch = get_launchable(sig, cache_only=(not allow_jit_compile))
@@ -193,6 +192,10 @@ def _get_arg_parser() -> argparse.ArgumentParser:
         default=False,
         help="Whether to allow jit compile during runs.",
     )
+    parser.add_argument(
+        "--seed", type=int, required=False, help="Random number generator seed."
+    )
+    parser.add_argument("--device", type=int, default=0, help="The device to run on.")
     return parser
 
 

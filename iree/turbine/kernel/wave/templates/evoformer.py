@@ -71,7 +71,6 @@ def get_evoformer_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(ratio_m, ratio_n, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, BN: 0, H: 0, M: Mvec, N: Nvec},
         )

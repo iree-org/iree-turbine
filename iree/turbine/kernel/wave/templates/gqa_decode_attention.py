@@ -91,11 +91,9 @@ def get_gqa_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 0)]
 
         vector_shapes = {H_KV: 0, B: 0, U: 1}
-        waves_per_block = (1, B_WAVES, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
-                waves_per_block=waves_per_block,
                 mma_type=mfma_variant[1],
                 vector_shapes=vector_shapes,
             )
@@ -115,11 +113,9 @@ def get_gqa_decode_attention_kernels(
             D_KV: BLOCK_D_KV,
             U: 1,
         }
-        waves_per_block = (1, 1, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
-                waves_per_block=waves_per_block,
                 mma_type=mfma_variant,
                 vector_shapes=vector_shapes,
             )

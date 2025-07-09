@@ -1,10 +1,10 @@
 Schedule File Format
-==================
+====================
 
 The schedule file format is used to store and load scheduling information for wave kernels. It provides a human-readable representation of the schedule, including metadata, resource usage, and operation timing.
 
 File Structure
--------------
+--------------
 
 The schedule file consists of three main sections:
 
@@ -13,7 +13,7 @@ The schedule file consists of three main sections:
 3. Schedule Table (required)
 
 Metadata Section
---------------
+----------------
 
 The metadata section appears at the top of the file and contains two required pieces of information:
 
@@ -27,7 +27,7 @@ Where:
 - ``<num_stages>`` is the number of pipeline stages
 
 Resource Reservation Table (RRT)
------------------------------
+--------------------------------
 
 The RRT section is optional and provides information about resource usage across the initiation interval. It is formatted as a table with the following structure:
 
@@ -47,7 +47,7 @@ The RRT section is optional and provides information about resource usage across
 The RRT shows how many resources of each type are used in each cycle of the initiation interval. This helps in understanding resource utilization and potential bottlenecks.
 
 Schedule Table
--------------
+--------------
 
 The schedule table provides detailed information about each operation in the schedule. It is formatted as a pipe-delimited table with the following columns:
 
@@ -122,7 +122,7 @@ In this example:
 - Each operation's dependencies are listed in the User Sort Keys column
 
 Using Schedule Files
-------------------
+--------------------
 
 Schedule files can be used in two ways:
 
