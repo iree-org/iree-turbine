@@ -199,6 +199,9 @@ def isolated_test_call(
                     [b.as_mlir_type() for b in sig.kernel_buffer_output_bindings]
                 )
                 barrier = hal_d.tensor_barrier(out_types, out, signal_fence=out_fence)
+                if len(out_types) == 1:
+                    barrier = [barrier]
+
                 view_type = IrType.parse("!hal.buffer_view")
                 for i, b in enumerate(sig.kernel_buffer_output_bindings):
                     shape = b.kernel_buffer_type.symbolic_shape
