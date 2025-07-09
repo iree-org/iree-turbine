@@ -314,11 +314,24 @@ class KernelSelection(ABC):
         else:
             return tuple(results)
 
+    def provided_arg_descs(self) -> list[Optional["ArgDescriptor"]]:
+        """Argument descriptors for optional or required arguments provided at
+        the call site. Sentinel values indicating optional arguments not passed
+        at call site are removed. Uninitialized arguments (`None` values) are
+        not removed."""
+        return list(
+            filter(
+                lambda arg_desc: not isinstance(arg_desc, EmptyOptionalTensorArg),
+                self.arg_descs,
+            )
+        )
+
     @property
     def spec_key(self) -> str:
         try:
             arg_keys = ",".join(
-                d.spec_key if d is not None else "None" for d in self.arg_descs
+                d.spec_key if d is not None else "None"
+                for d in self.provided_arg_descs()
             )
             return_keys = ",".join(
                 d.spec_key if d is not None else "None" for d in self.result_descs
@@ -343,6 +356,14 @@ class KernelSelection(ABC):
         semantics. The kernel must yield the result-mutated after all normal
         results in the order declared.
         """
+        ...
+
+    @abstractmethod
+    def arg_optional_tensor(self, arg: int) -> Optional["TensorArg"]:
+        """Declares an optional tensor argument.
+
+        Returns `None` if the argument was not provided at the call site, and a
+        `TensorArg` if it was."""
         ...
 
     @abstractmethod
@@ -450,6 +471,23 @@ class EagerKernelSelection(KernelSelection):
         if inplace_tied:
             self.inplace_tied_arg_descs.append(desc)
         return desc
+
+    def arg_optional_tensor(self, arg: int) -> Optional["TensorArg"]:
+        if arg >= len(self.args) or self.args[arg] is None:
+            if arg >= len(self.args):
+                # Extend arg_descs to handle missing optional arguments. In
+                # eager mode, trailing optional arguments may be omitted from
+                # the call site, so we need to ensure that arg_descs (created
+                # from passed arguments) extends to the maximum arity.
+                self.arg_descs.extend(
+                    cast(
+                        list[Optional[ArgDescriptor]],
+                        (arg + 1 - len(self.args)) * [None],
+                    )
+                )
+            self.arg_descs[arg] = EmptyOptionalTensorArg()
+            return None
+        return self.arg_tensor(arg)
 
     def arg_tensor_list(self, arg: int) -> "TensorListArg":
         arg_descs = self.arg_descs
@@ -734,7 +772,36 @@ class TensorListArg:
         return asms
 
 
-ArgDescriptor = Union[AttrArg, IntArg, TensorArg, TensorListArg]
+class EmptyOptionalTensorArg:
+    """Sentinel type marking an optional tensor argument that was not provided
+    at the call site.
+
+    To `KernelSelection` a `None` `ArgDescriptor` indicates an argument that's
+    part of the signature, but has not been initialized at an actual call site.
+    An EmptyOptionalTensorArg signals that at the call site no value was
+    provided, or explicit `None` was passed, for an optional argument.
+    """
+
+    ir_arity: int = 0
+    maybe_tensor_value: Optional[Tensor] = None
+    is_list: bool = False
+
+    def __repr__(self):
+        return "TensorArg(None)"
+
+    @property
+    def spec_key(self) -> str:
+        raise AssertionError("EmptyOptionalTensorArg has no spec_key")
+
+    @property
+    def mlir_type_asm(self) -> str:
+        raise AssertionError("EmptyOptionalTensorArg has no mlir_type_asm")
+
+    def generate_meta(self) -> list[Tensor]:
+        raise AssertionError("EmptyOptionalTensorArg has no meta generation")
+
+
+ArgDescriptor = Union[AttrArg, IntArg, TensorArg, TensorListArg, EmptyOptionalTensorArg]
 
 ###############################################################################
 # KernelBuilder
@@ -813,8 +880,8 @@ class FreeFuncKernelBuilder(KernelBuilder):
         with context, Location.unknown(), InsertionPoint(module_body):
             # Assemble arg types.
             arg_types = []
-            for d in ksel.arg_descs:
-                assert d is not None, "NYI: None arguments"
+            for d in ksel.provided_arg_descs():
+                assert d is not None, "Uninitialized argument descriptor"
                 arity = d.ir_arity
                 if not d.is_list:
                     if arity == 1:
@@ -848,8 +915,8 @@ class FreeFuncKernelBuilder(KernelBuilder):
         block_arguments = list(entry_block.arguments)
         block_arg_index = 0
         arg_bindings: list[Optional[Value]] = []
-        for desc in ksel.arg_descs:
-            assert desc is not None, "NYI: None arguments"
+        for desc in ksel.provided_arg_descs():
+            assert desc is not None, "Uninitialized argument descriptor"
             arity = desc.ir_arity
             if not desc.is_list:
                 if arity == 1:
