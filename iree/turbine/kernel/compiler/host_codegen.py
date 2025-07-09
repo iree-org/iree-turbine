@@ -24,17 +24,21 @@ from .ir import (
     arith_d,
     flow_d,
     func_d,
+    hal_d,
 )
 
 from .._support.indexing import IndexSymbol
 from .._support.location import capture_location
 from .._support.location_config import LocationCaptureConfig
-from .kernel_codegen import BindingDesc
+from .kernel_codegen import BindingDesc, KernelBufferUsage
 
 from typing import Optional
 
 
-def memref_to_tensor(memrefs: list[IrType]):
+def memref_to_tensor(memrefs: list[IrType], use_views: bool = False):
+    if use_views:
+        view_type = IrType.parse("!hal.buffer_view")
+
     tensors = []
     for m in memrefs:
         # append scalars as-it-is to tensors list
@@ -44,7 +48,7 @@ def memref_to_tensor(memrefs: list[IrType]):
             tensors.append(m)
             continue
         assert isinstance(m, MemRefType)
-        t = RankedTensorType.get(m.shape, m.element_type)
+        t = view_type if use_views else RankedTensorType.get(m.shape, m.element_type)
         tensors.append(t)
     return tensors
 
@@ -82,12 +86,14 @@ def isolated_test_call(
     dynamic_symbols: list[IndexSymbol] = [],
     *,
     location_capture_config: Optional[LocationCaptureConfig] = None,
+    async_dispatch: bool = False,
 ):
     with InsertionPoint(mb.body_block), Location.unknown():
         input_types = [b.as_mlir_type() for b in sig.kernel_buffer_bindings] + [
             b.as_mlir_type() for b in sig.scalar_bindings
         ]
-        input_tensors = memref_to_tensor(input_types)
+
+        input_tensors = memref_to_tensor(input_types, use_views=async_dispatch)
         argument_dims = get_dynamic_dims(sig.kernel_buffer_bindings, dynamic_symbols)
         # Adding unique dynamic dims as inputs.
         input_tensors += [IndexType.get() for _ in list(dict.fromkeys(argument_dims))]
@@ -96,8 +102,13 @@ def isolated_test_call(
             IndexType.get() for _ in set(dynamic_symbols).difference(argument_dims)
         ]
 
+        if async_dispatch:
+            fence_type = IrType.parse("!hal.fence")
+            input_tensors += [fence_type] * 2
+            func_name = func_name + "$async"
+
         output_types = [b.as_mlir_type() for b in sig.kernel_buffer_output_bindings]
-        output_tensors = memref_to_tensor(output_types)
+        output_tensors = memref_to_tensor(output_types, use_views=async_dispatch)
         result_dims = get_dynamic_dims(
             sig.kernel_buffer_output_bindings, dynamic_symbols
         )
@@ -113,6 +124,9 @@ def isolated_test_call(
             + scalar_bindings
             + sig.dynamic_dim_bindings
         ]
+        if async_dispatch:
+            arg_locs += [Location.unknown()] * 2
+
         entry_block = func_op.add_entry_block(arg_locs)
         scalars_offset = len(sig.kernel_buffer_bindings)
         scalars_count = len(scalar_bindings)
@@ -120,6 +134,11 @@ def isolated_test_call(
 
         with InsertionPoint(entry_block):
             arguments = entry_block.arguments
+            if async_dispatch:
+                in_fence = arguments[-2]
+                out_fence = arguments[-1]
+                arguments = arguments[:-2]
+
             scalars_args = [
                 to_index(v)
                 for v, b in zip(
@@ -129,6 +148,26 @@ def isolated_test_call(
             ]
             dynamic_args = [to_index(v) for v in arguments[dynamic_offset:]]
             dynamic_argument_map = {k: v for k, v in zip(dynamic_symbols, dynamic_args)}
+
+            if async_dispatch:
+                arguments = list(arguments)
+                for i, b in enumerate(sig.kernel_buffer_bindings):
+                    shape = b.kernel_buffer_type.symbolic_shape
+
+                    arg = arguments[i]
+                    arg_type = memref_to_tensor([b.as_mlir_type()])[0]
+                    target_dims = [
+                        dynamic_argument_map[s]
+                        for d, s in enumerate(shape)
+                        if arg_type.is_dynamic_dim(d)
+                    ]
+                    arguments[i] = hal_d.tensor_import(
+                        arg_type,
+                        arg,
+                        wait_fence=None,
+                        target_encoding=arg_type,
+                        target_dims=target_dims,
+                    )
 
             assert isinstance(entry_block, Block)
             # Create a flow.dispatch op to the kernel
@@ -145,13 +184,33 @@ def isolated_test_call(
             )
 
             out = flow_d.DispatchOp(
-                output_tensors,
+                memref_to_tensor(output_types),  # output_tensors,
                 [dynamic_argument_map[dim] for dim in dynamic_symbols] + scalars_args,
                 entrypoints,
-                entry_block.arguments,
+                arguments,
                 [dynamic_argument_map[dim] for dim in argument_dims],
                 [dynamic_argument_map[dim] for dim in result_dims],
                 tied_operands=tied_operands,
             )
+
+            if async_dispatch:
+                out = list(out.results)
+                out_types = memref_to_tensor(
+                    [b.as_mlir_type() for b in sig.kernel_buffer_output_bindings]
+                )
+                barrier = hal_d.tensor_barrier(out_types, out, signal_fence=out_fence)
+                view_type = IrType.parse("!hal.buffer_view")
+                for i, b in enumerate(sig.kernel_buffer_output_bindings):
+                    shape = b.kernel_buffer_type.symbolic_shape
+
+                    out_type = out_types[i]
+                    source_dims = [
+                        dynamic_argument_map[s]
+                        for d, s in enumerate(shape)
+                        if out_type.is_dynamic_dim(d)
+                    ]
+                    out[i] = hal_d.tensor_export(
+                        view_type, barrier[i], out_type, source_dims=source_dims
+                    )
 
             func_d.ReturnOp(out)
