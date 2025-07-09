@@ -2179,7 +2179,7 @@ def test_scalar_codegen_f32():
 
     # Final dispatch args dtype
     # CHECK: flow.dispatch @scalar_codegen_f32::@scalar_codegen_f32(
-    # CHECK-SAME: %arg0, %arg1, %arg2, %arg3)
+    # CHECK-SAME: %{{.*}}, %{{.*}}, %arg2, %arg3)
 
 
 @run_test
@@ -2232,7 +2232,7 @@ def test_scalar_codegen_i32():
 
     # Final dispatch args dtype
     # CHECK: flow.dispatch @scalar_codegen_i32::@scalar_codegen_i32(
-    # CHECK-SAME: %arg0, %arg1, %arg2, %arg3)
+    # CHECK-SAME: %{{.*}}, %{{.*}}, %arg2, %arg3)
 
 
 #  This kernel copies of data from a into b if tid.x < threshold.

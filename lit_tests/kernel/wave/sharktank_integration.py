@@ -170,6 +170,7 @@ class WaveBhsdFlashAttentionSharktankOp(CustomOp):
             func_name=wave_kernel_name,
             compile_to_mlir=True,
             canonicalize=False,
+            iree_launch_async=False,
         )
         options = set_default_run_config(options)
         with Context() as ctx:
