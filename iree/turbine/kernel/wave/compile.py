@@ -189,6 +189,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         options.func_name,
         options.dynamic_symbols,
         location_capture_config=options.location_capture_config,
+        async_dispatch=True,
     )
     asm = mb.module_op.get_asm(
         enable_debug_info=options.location_capture_config.level

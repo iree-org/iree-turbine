@@ -164,7 +164,7 @@ def isolated_test_call(
                     arguments[i] = hal_d.tensor_import(
                         arg_type,
                         arg,
-                        wait_fence=None,
+                        wait_fence=in_fence,
                         target_encoding=arg_type,
                         target_dims=target_dims,
                     )
