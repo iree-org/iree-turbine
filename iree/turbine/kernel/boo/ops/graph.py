@@ -8,6 +8,7 @@ from hashlib import sha1
 from typing import Sequence, Callable
 
 import torch
+from torch.fx import Node
 from torch.fx.graph_module import GraphModule
 from torch.fx.node import Target
 from torch.fx.passes.shape_prop import TensorMetadata

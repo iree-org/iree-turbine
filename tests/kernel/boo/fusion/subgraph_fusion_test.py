@@ -6,14 +6,16 @@
 
 import unittest
 import tempfile
-import pytest
 
 from typing import Sequence
 from pathlib import Path
 
 import torch
+from torch import fx
+from torch._dynamo.testing import EagerAndRecordGraphs
 
-from iree.turbine.kernel.boo.fusion import fusion_transform, OpFusionSpec, FusionSchema
+from iree.turbine.dynamo.backends import boo
+from iree.turbine.kernel.boo.fusion import OpFusionSpec, FusionSchema
 from iree.turbine.kernel.boo.runtime import set_cache_dir
 
 
@@ -81,32 +83,43 @@ class SubgraphReplacementTest(unittest.TestCase):
             x = torch.ones([3, 4, 16, 16])
 
             fusion_schema: FusionSchema = {
-                torch.ops.aten.linear.default: OpFusionSpec(
-                    consumers=(torch.ops.aten.relu.default,)
+                torch.ops.aten.addmm.default: OpFusionSpec(
+                    consumers=(torch.ops.aten.relu.default, torch.ops.aten.view.default)
                 ),
             }
-            fused_m = fusion_transform(m, (x,), fusion_schema=fusion_schema)
 
+            recorder = EagerAndRecordGraphs()
+            compiled_m = torch.compile(
+                m, backend=boo.backend(fusion_schema=fusion_schema, backend=recorder)
+            )
+            assert isinstance(compiled_m, torch.nn.Module)
+
+            y = compiled_m(x)
+
+            [fused_m] = recorder.graphs
+            assert isinstance(fused_m, fx.GraphModule)
             fused_m_print = str(fused_m)
 
-            self.assertNotIn("torch.ops.aten.linear", fused_m_print)
+            self.assertIn("torch.ops.boo.fused_op_", fused_m_print)
+            self.assertNotIn("torch.ops.aten.addmm", fused_m_print)
+            self.assertNotIn("torch.ops.aten.relu", fused_m_print)
 
             self.assertEqual(
-                fused_m.linear.weight.data_ptr(), m.linear.weight.data_ptr()
+                compiled_m.linear.weight.data_ptr(), m.linear.weight.data_ptr()
             )
-            self.assertEqual(fused_m.linear.bias.data_ptr(), m.linear.bias.data_ptr())
-
-            y = fused_m(x)
+            self.assertEqual(
+                compiled_m.linear.bias.data_ptr(), m.linear.bias.data_ptr()
+            )
 
             y.sum().backward()
 
-            self.assertIsNotNone(fused_m.linear.weight.grad)
-            self.assertIsNotNone(fused_m.linear.bias.grad)
+            self.assertIsNotNone(compiled_m.linear.weight.grad)
+            self.assertIsNotNone(compiled_m.linear.bias.grad)
 
             x2 = torch.ones([3, 3, 32, 16])
 
             with self.assertRaises(RuntimeError):
-                y2 = fused_m(x2)
+                y2 = compiled_m(x2)
 
     def testReplacementRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:
@@ -115,17 +128,24 @@ class SubgraphReplacementTest(unittest.TestCase):
             x0 = torch.randn([16, 16])
             x1 = torch.randn([16, 16])
             schema: FusionSchema = {
-                torch.ops.aten.linear.default: OpFusionSpec(
+                torch.ops.aten.addmm.default: OpFusionSpec(
                     recursive=True,
                     producers=(torch.ops.aten.relu.default, torch.ops.aten.add.Tensor),
                 )
             }
-            fused_m = fusion_transform(m, (x0, x1), fusion_schema=schema)
-            self.assertIn("generated_autograd_boo_fused_op_", str(fused_m))
+            recorder = EagerAndRecordGraphs()
+            compiled_m = torch.compile(
+                m, backend=boo.backend(fusion_schema=schema, backend=recorder)
+            )
+            assert isinstance(compiled_m, torch.nn.Module)
+
+            y = compiled_m(x0, x1)
+
+            [fused_m] = recorder.graphs
+            self.assertIn("torch.ops.boo.fused_op_", str(fused_m))
             self.assertNotIn("torch.ops.aten.relu", str(fused_m))
-            self.assertNotIn("torch.ops.aten.linear", str(fused_m))
-            self.assertNotIn("torch.ops.aten.add", str(fused_m))
-            y = fused_m(x0, x1)
+            self.assertNotIn("torch.ops.aten.addmm", str(fused_m))
+            self.assertNotIn("torch.ops.aten.add.Tensor", str(fused_m))
             self.assertEqual(list(y.shape), [16, 16])
 
     def testReplacementNonRecursiveFusion(self):
@@ -135,49 +155,58 @@ class SubgraphReplacementTest(unittest.TestCase):
             x0 = torch.randn([16, 16])
             x1 = torch.randn([16, 16])
             schema: FusionSchema = {
-                torch.ops.aten.linear.default: OpFusionSpec(
+                torch.ops.aten.addmm.default: OpFusionSpec(
                     recursive=False,
                     producers=(torch.ops.aten.relu.default, torch.ops.aten.add.Tensor),
                 )
             }
-            fused_m = fusion_transform(m, (x0, x1), fusion_schema=schema)
-            self.assertNotIn("torch.ops.aten.linear", str(fused_m))
-            self.assertIn("generated_autograd_boo_fused_op_", str(fused_m))
+            recorder = EagerAndRecordGraphs()
+            compiled_m = torch.compile(
+                m, backend=boo.backend(fusion_schema=schema, backend=recorder)
+            )
+            assert isinstance(compiled_m, torch.nn.Module)
+            y = compiled_m(x0, x1)
+            [fused_m] = recorder.graphs
+
+            self.assertNotIn("torch.ops.aten.addmm", str(fused_m))
+            self.assertIn("torch.ops.boo.fused_op_", str(fused_m))
             self.assertIn("torch.ops.aten.relu", str(fused_m))
-            y = fused_m(x0, x1)
             self.assertEqual(list(y.shape), [16, 16])
 
-    @pytest.mark.xfail(
-        reason=(
-            "Bug with repeated replacement when the first matching graph does not require the same combination of input gradients. "
-            "Remove when issue https://github.com/iree-org/iree-turbine/issues/1014 is resolved."
-        )
-    )
     def testRepeatedReplacementBackward(self):
         with tempfile.TemporaryDirectory() as td:
             set_cache_dir(Path(td))
             m = SampleModule2()
             x = torch.ones([2, 3, 16, 16], requires_grad=False)
             schema: FusionSchema = {
-                torch.ops.aten.conv2d.default: OpFusionSpec(
+                torch.ops.aten.convolution.default: OpFusionSpec(
                     recursive=True,
                     consumers=(torch.ops.aten.sigmoid.default,),
                 )
             }
-            fused_m = fusion_transform(m, (x,), fusion_schema=schema)
-            self.assertNotIn("torch.ops.aten.", str(fused_m))
-            y = fused_m(x)
+
+            recorder = EagerAndRecordGraphs()
+            compiled_m = torch.compile(
+                m, backend=boo.backend(fusion_schema=schema, backend=recorder)
+            )
+
+            y = compiled_m(x)
             y.sum().backward()
 
+            # Only the backward module should contain aten ops.
+            forward_module, backward_module = recorder.graphs
+            self.assertIn("torch.ops.aten.", str(backward_module))
+            self.assertNotIn("torch.ops.aten.", str(forward_module))
+
             self.assertIsInstance(
-                fused_m.get_parameter("layer0.0.weight").grad,
+                compiled_m.get_parameter("layer0.0.weight").grad,
                 torch.Tensor,
-                f"Expected `layer0.0.weight.grad` to be a torch.Tensor, got {type(fused_m.get_parameter('layer0.0.weight').grad)}",
+                f"Expected `layer0.0.weight.grad` to be a torch.Tensor, got {type(compiled_m.get_parameter('layer0.0.weight').grad)}",
             )
             self.assertIsInstance(
-                fused_m.get_parameter("layer0.0.bias").grad,
+                compiled_m.get_parameter("layer0.0.bias").grad,
                 torch.Tensor,
-                f"Expected `layer0.0.bias.grad` to be a torch.Tensor, got {type(fused_m.get_parameter('layer0.0.bias').grad)}",
+                f"Expected `layer0.0.bias.grad` to be a torch.Tensor, got {type(compiled_m.get_parameter('layer0.0.bias').grad)}",
             )
             found_zero_grad = False
             err_msg = ""
