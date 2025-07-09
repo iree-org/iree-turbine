@@ -141,17 +141,24 @@ class WaveKernel:
 
     def invoke_with_profile(self, *args, **kwargs):
         import cProfile
+        import timeit
 
         # Warmup
         for _ in range(self.options.profile_python_warmup):
             self.invoke(*args, **kwargs)
 
-        with cProfile.Profile() as pr:
-            for _ in range(self.options.profile_python_repetitions):
-                res = self.invoke(*args, **kwargs)
+        # with cProfile.Profile() as pr:
+        #     for _ in range(self.options.profile_python_repetitions):
+        #         res = self.invoke(*args, **kwargs)
 
-        pr.print_stats(sort="cumulative")
-        return res
+        # pr.print_stats(sort="cumulative")
+        repetitions = self.options.profile_python_repetitions
+        time = timeit.timeit(
+            lambda: self.invoke(*args, **kwargs),
+            number=repetitions,
+        )
+        print(f"Time: {time:.3f}s, {time / repetitions:.6f}s per iteration")
+        return self.invoke(*args, **kwargs)
 
 
 def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveKernel:
