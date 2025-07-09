@@ -36,7 +36,6 @@ def test_gemm():
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16,
         )
     ]

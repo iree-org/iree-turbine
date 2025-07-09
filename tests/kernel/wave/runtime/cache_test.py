@@ -164,7 +164,6 @@ def testSameConfig(tmp_path):
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 32, N: 32},
         )
@@ -271,7 +270,6 @@ def testDifferentDynamicSameBlock(tmp_path):
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 32, N: 32},
         )
@@ -407,7 +405,6 @@ def testSameSizeDifferentBlock(tmp_path):
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0, M: 32, N: 32},
         )
@@ -607,7 +604,6 @@ def testDifferentSignatureSameCore(tmp_path):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]
@@ -693,7 +689,6 @@ def testChangeFreeVarOfNestedFunction(tmp_path):
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
-            waves_per_block=(1, 1, 1),
             vector_shapes={M: BLOCK_M, N: BLOCK_N},
         )
     ]

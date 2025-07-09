@@ -22,9 +22,7 @@ ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
 def _make_constraints() -> list[tkw.Constraint]:
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
@@ -48,6 +46,7 @@ def _make_options(
         compile_to_mlir=True,
         location_capture_config=LocationCaptureConfig(loc_level),
         use_local_scope=use_local_scope,
+        canonicalize=False,
     )
     return options
 

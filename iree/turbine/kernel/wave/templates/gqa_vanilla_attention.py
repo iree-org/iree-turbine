@@ -107,7 +107,6 @@ def get_gqa_bshd_attention_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant[1],
             vector_shapes={B: 0, H: 0, H_KV: 0, N_Q: Mvec, D_KV: Nvec},
         )

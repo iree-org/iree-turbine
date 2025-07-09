@@ -85,7 +85,6 @@ def testChainedGemm(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant,
             vector_shapes={B: 0},
         )
@@ -233,7 +232,6 @@ def testChainedGemmF8(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=mfma_variant[0],
             vector_shapes={B: 0},
         )

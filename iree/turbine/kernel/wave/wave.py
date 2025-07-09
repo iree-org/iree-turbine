@@ -31,6 +31,7 @@ from .constraints import (
     TilingConstraint,
     WaveConstraint,
     WorkgroupConstraint,
+    ReorderingConstraint,
     get_grid_shape,
 )
 
@@ -61,6 +62,7 @@ from .scheduling.schedule import schedule_graph
 from .type_inference import infer_types
 from .shared_memory_indexing import apply_shared_memory_indexing_corrections
 from .generate_bounds_exprs import generate_bounds_exprs
+from .workgroup_reordering import reorder_workgroups
 
 # Utils
 from .utils.symbol_utils import subs_idxc, safe_subs
@@ -238,6 +240,14 @@ class LaunchableWave(Launchable):
             constraint
             for constraint in self.constraints
             if isinstance(constraint, HardwareConstraint)
+        ]
+
+    @property
+    def reordering_constraints(self) -> list[ReorderingConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, ReorderingConstraint)
         ]
 
     @property
@@ -525,6 +535,7 @@ class LaunchableWave(Launchable):
                 print_ir_before,
                 print_ir_after,
             ),
+            partial(reorder_workgroups, trace, self.reordering_constraints),
             partial(expand_graph, trace, self.constraints),
             partial(set_post_expansion_indices, trace, self.constraints),
             partial(remove_chained_getresult, trace),
