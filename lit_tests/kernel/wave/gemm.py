@@ -11,6 +11,7 @@ from iree.turbine.kernel.wave.utils.general_utils import (
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
+from sympy import ceiling
 
 M = tkl.sym.M
 N = tkl.sym.N
@@ -21,6 +22,7 @@ BLOCK_M = tkl.sym.BLOCK_M
 BLOCK_N = tkl.sym.BLOCK_N
 BLOCK_K = tkl.sym.BLOCK_K
 BLOCK_B = tkl.sym.BLOCK_B
+GROUP_SIZE_N = tkl.sym.GROUP_SIZE_N
 ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
 
@@ -122,6 +124,93 @@ def test_gemm():
     # CHECK-COUNT-2:      vector.load
     # CHECK:              amdgpu.mfma
     # CHECK-COUNT-4:    vector.store
+
+
+@run_test
+def test_reordered_gemm():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            waves_per_block=(2, 2, 1),
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+        )
+    ]
+
+    wg0, wg1 = WORKGROUP_0, WORKGROUP_1
+    num_wg_0 = ceiling(M / BLOCK_M)
+
+    flat_wg_index = wg1 * num_wg_0 + wg0
+    num_wg_group = GROUP_SIZE_N * num_wg_0
+    group_id = flat_wg_index // num_wg_group
+    first_wg_id_1 = group_id * GROUP_SIZE_N
+    new_wg0 = (flat_wg_index % num_wg_group) // GROUP_SIZE_N
+    new_wg1 = first_wg_id_1 + (flat_wg_index % num_wg_group) % GROUP_SIZE_N
+
+    constraints += [tkw.ReorderingConstraint(new_wg0, 0)]
+    constraints += [tkw.ReorderingConstraint(new_wg1, 1)]
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 512,
+            N: 512,
+            K: 512,
+            BLOCK_M: 64,
+            BLOCK_N: 64,
+            BLOCK_K: 32,
+            GROUP_SIZE_N: 4,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    gemm = wave_compile(options, gemm)
+    print(gemm.asm)
+
+    # In this test, we are modifying the workgroup indexing across operations according to each ReorderingConstraint.
+    # Without the ReorderingConstraint, affine_maps use just block_id_x to find the workgroup index along the M dimension of the data
+    # and just block_id_y to find the workgroup index along the N dimension (given that the wg0 maps to M and wg1 maps to N).
+    # With the ReorderingConstraint however, we want to look out for affine_maps using both block_id_x and and block_id_y to
+    # calculate the workgroup indices for both M and N. This is because the current reordering transformation uses the flattened workgroup index
+    # (whose calculations involve both wg0 and wg1) to find the new block_id_x along M and the new block_id_y along N. We can also make sure
+    # that the math for the final workgroup indexing matches the workgroup indexing we desire.
+
+    # CHECK-LABEL:    test_reordered_gemm
+    # CHECK-DAG:        #[[MAP_IDX_M:.+]] = affine_map<()[s0, s1, s2, s3] -> ((s1 * 32 + s0 floordiv 4) mod 64 + (((s2 * 8 + s3) mod 32) floordiv 4) * 64)>
+    # CHECK-DAG:        #[[MAP_IDX_N:.+]] = affine_map<()[s0, s1, s2, s3] -> (s1 * 32 + s2 * 64 + s0 floordiv 4 - ((s1 * 32 + s0 floordiv 4) floordiv 64) * 64 + ((s2 + s3 * 8) floordiv 32) * 256 - (s2 floordiv 4) * 256)>
+    # CHECK-DAG:        %[[IDX_M_READ:.+]] = affine.apply #[[MAP_IDX_M]]()[%thread_id_x, %thread_id_y, %block_id_y, %block_id_x]
+    # CHECK-DAG:        %[[IDX_N_READ:.+]] = affine.apply #[[MAP_IDX_N]]()[%thread_id_x, %thread_id_y, %block_id_x, %block_id_y]
+    # CHECK-DAG:        vector.load {{.*}}[%[[IDX_M_READ]], {{.*}}]
+    # CHECK-DAG:        vector.load {{.*}}[%[[IDX_N_READ]], {{.*}}]
+    # CHECK-DAG:        #[[MAP_IDX_M_WRITE:.+]] = affine_map<()[s0, s1, s2] -> ((((s0 * 8 + s1) mod 32) floordiv 4) * 64 + (s2 floordiv 64) * 32 + ((s2 mod 64) floordiv 16) * 4)>
+    # CHECK-DAG:        #[[MAP_IDX_N_WRITE:.+]] = affine_map<()[s0, s1, s2, s3] -> (s0 + s1 * 64 + s3 * 32 - (s0 floordiv 16) * 16 + ((s1 + s2 * 8) floordiv 32) * 256 - (s1 floordiv 4) * 256)>
+    # CHECK:            amdgpu.mfma
+    # CHECK:            %[[IDX_M_WRITE:.+]] = affine.apply #[[MAP_IDX_M_WRITE]]()[%block_id_y, %block_id_x, %thread_id_x]
+    # CHECK:            %[[IDX_N_WRITE:.+]] = affine.apply #[[MAP_IDX_N_WRITE]]()[%thread_id_x, %block_id_x, %block_id_y, %thread_id_y]
+    # CHECK:            vector.store {{.*}}[%[[IDX_M_WRITE]], %[[IDX_N_WRITE]]]
 
 
 @run_test
