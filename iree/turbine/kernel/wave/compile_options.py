@@ -43,6 +43,9 @@ class WaveCompileOptions:
     capture_trace: bool = False
     bench_with_constant_weights: bool = False
     bench_file: str = None
+    profile_python_wrapper: bool = False
+    profile_python_warmup: int = 1
+    profile_python_repetitions: int = 1000
 
     # === Cache options ===
     kernel_hash: str = None

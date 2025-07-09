@@ -65,8 +65,13 @@ class WaveKernel:
                 entry_point=self.func_name,
             )
 
+        if options.profile_python_wrapper:
+            self.call_handler = self.invoke_with_profile
+        else:
+            self.call_handler = self.invoke
+
     def __call__(self, *args, **kwargs):
-        return self.invoke(*args, **kwargs)
+        return self.call_handler(*args, **kwargs)
 
     def invoke(self, *args, **kwargs):
         """
@@ -133,6 +138,20 @@ class WaveKernel:
                 print_bench_result(benchmark_results, self.options.bench_file)
 
         return self.asm
+
+    def invoke_with_profile(self, *args, **kwargs):
+        import cProfile
+
+        # Warmup
+        for _ in range(self.options.profile_python_warmup):
+            self.invoke(*args, **kwargs)
+
+        with cProfile.Profile() as pr:
+            for _ in range(self.options.profile_python_repetitions):
+                res = self.invoke(*args, **kwargs)
+
+        pr.print_stats(sort="cumulative")
+        return res
 
 
 def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveKernel:
