@@ -16,7 +16,8 @@ from .cache import (
     is_cache_enabled,
 )
 from .utils.compile_utils import compile_to_vmfb
-from .utils.run_utils import invoke_vmfb, _write_file
+from .utils.run_utils import print_bench_result, write_file, invoke_with_wave_runtime
+from .profiling import benchmark_module
 from iree.turbine.kernel._support.context import push, pop
 from iree.turbine.kernel.lang import IndexSymbol
 from iree.turbine.runtime.launch import Launchable
@@ -52,6 +53,8 @@ class WaveKernel:
         self.symbols_args_map = symbols_args_map
 
         if not options.wave_runtime:
+            # launchable decides if function is async or not based on name.
+            self.func_name = options.func_name + "$async"
 
             def loader(device):
                 vm_instance = device.vm_instance
@@ -59,7 +62,7 @@ class WaveKernel:
 
             self.launchable = Launchable.from_vm_module(
                 loader,
-                entry_point=options.func_name + "$async",
+                entry_point=self.func_name,
             )
 
     def __call__(self, *args, **kwargs):
@@ -95,22 +98,40 @@ class WaveKernel:
             arg_idx, dim = self.symbols_args_map[sym]
             dynamic_symbols.append(args[arg_idx].shape[dim])
 
-        if not self.options.wave_runtime:
+        if self.options.wave_runtime:
+            invoke_with_wave_runtime(
+                self.options,
+                kernel_inputs,
+                kernel_outputs,
+                scalar_args,
+                self.bound_scalar_symbols,
+                dynamic_symbols,
+                self.gpu_func,
+            )
+        else:
             self.launchable(
                 *kernel_inputs, *kernel_outputs, *scalar_args, *dynamic_symbols
             )
-            return self.asm
 
-        invoke_vmfb(
-            self.executable,
-            self.options,
-            kernel_inputs,
-            kernel_outputs,
-            scalar_args,
-            self.bound_scalar_symbols,
-            dynamic_symbols,
-            self.gpu_func,
-        )
+            if self.options.run_bench:
+                benchmark_flags = {}
+                benchmark_flags["batch_size"] = self.options.benchmark_batch_size
+
+                if self.options.benchmark_repetitions is not None:
+                    benchmark_flags["benchmark_repetitions"] = int(
+                        self.options.benchmark_repetitions
+                    )
+                benchmark_results = benchmark_module(
+                    self.options,
+                    kernel_inputs,
+                    kernel_outputs,
+                    dynamic_symbols,
+                    self.executable,
+                    self.func_name,
+                    **benchmark_flags,
+                )
+                print_bench_result(benchmark_results, self.options.bench_file)
+
         return self.asm
 
 
@@ -212,7 +233,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
 
     compiled_wave_vmfb = compile_to_vmfb(asm, options)
     if options.create_vmfb_file:
-        _write_file(options.create_vmfb_file, "wb", compiled_wave_vmfb)
+        write_file(options.create_vmfb_file, "wb", compiled_wave_vmfb)
 
     kernel_usages = [
         binding.kernel_buffer_type.usage
