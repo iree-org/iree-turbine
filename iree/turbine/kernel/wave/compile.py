@@ -53,8 +53,10 @@ class WaveKernel:
         self.symbols_args_map = symbols_args_map
 
         if not options.wave_runtime:
-            # launchable decides if function is async or not based on name.
-            self.func_name = options.func_name + "$async"
+            # 'launchable' decides if function is async or not based on name.
+            self.func_name = options.func_name + (
+                "$async" if options.iree_launch_async else ""
+            )
 
             def loader(device):
                 vm_instance = device.vm_instance
@@ -140,25 +142,30 @@ class WaveKernel:
         return self.asm
 
     def invoke_with_profile(self, *args, **kwargs):
-        import cProfile
-        import timeit
 
         # Warmup
         for _ in range(self.options.profile_python_warmup):
             self.invoke(*args, **kwargs)
 
-        # with cProfile.Profile() as pr:
-        #     for _ in range(self.options.profile_python_repetitions):
-        #         res = self.invoke(*args, **kwargs)
-
-        # pr.print_stats(sort="cumulative")
         repetitions = self.options.profile_python_repetitions
-        time = timeit.timeit(
-            lambda: self.invoke(*args, **kwargs),
-            number=repetitions,
-        )
-        print(f"Time: {time:.3f}s, {time / repetitions:.6f}s per iteration")
-        return self.invoke(*args, **kwargs)
+        if self.options.profile_python_cprofile:
+            import cProfile
+
+            with cProfile.Profile() as pr:
+                for _ in range(repetitions):
+                    res = self.invoke(*args, **kwargs)
+
+            pr.print_stats(sort="cumulative")
+            return res
+        else:
+            import timeit
+
+            time = timeit.timeit(
+                lambda: self.invoke(*args, **kwargs),
+                number=repetitions,
+            )
+            print(f"Time: {time:.3f}s, {time / repetitions:.6f}s per iteration")
+            return self.invoke(*args, **kwargs)
 
 
 def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveKernel:
@@ -236,7 +243,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         options.func_name,
         options.dynamic_symbols,
         location_capture_config=options.location_capture_config,
-        async_dispatch=True,
+        async_dispatch=options.iree_launch_async,
     )
     asm = mb.module_op.get_asm(
         enable_debug_info=options.location_capture_config.level
