@@ -37,7 +37,6 @@ def get_speculative_decoding_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
 
     constraints = [tkw.WorkgroupConstraint(VOCAB_SIZE, VOCAB_SIZE, 0)]
     constraints += [tkw.WaveConstraint(VOCAB_SIZE, VOCAB_SIZE)]
@@ -65,12 +64,6 @@ def get_speculative_decoding_kernel(
         num_iterators=3,
         inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: LAST_OFFSET, VOCAB_SIZE: k},
         outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j, VOCAB_SIZE: k},
-    )
-
-    updated_coins_mapping = tkw.IndexMapping(
-        num_iterators=1,
-        inputs={BATCH_SIZE: i},
-        outputs={BATCH_SIZE: i},
     )
 
     output_mapping = tkw.IndexMapping(
@@ -122,7 +115,7 @@ def get_speculative_decoding_kernel(
         )
         draft_probs_reg = tkw.select(condition, draft_probs_reg, zero)
 
-        coin = tkw.read(updated_coins_vec, mapping=updated_coins_mapping)
+        coin = tkw.read(updated_coins_vec)
         coin = tkw.broadcast(coin, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS])
 
         diff = target_probs_reg - draft_probs_reg
@@ -153,7 +146,7 @@ def get_speculative_decoding_kernel(
         min_valid_token_idx = tkw.min(valid_lane_token_idx, dim=VOCAB_SIZE)
         tkw.write(min_valid_token_idx, predicts, mapping=output_mapping)
 
-    return tree_speculative_sampling, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return tree_speculative_sampling, hyperparams, dynamic_symbols
 
 
 def get_speculative_sampling_kernel(
@@ -190,7 +183,6 @@ def get_speculative_sampling_kernel(
     }
 
     dynamic_symbols = []
-    dynamic_symbols_map = {}
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
@@ -371,10 +363,8 @@ def get_speculative_sampling_kernel(
         threshold_acc_reg = tkw.Register[BATCH_SIZE, tkl.f32](threshold_acc)
         threshold_single_reg = tkw.Register[BATCH_SIZE, tkl.f32](threshold_single)
 
-        outer_loop_condition = (
-            (J < num_speculative_tokens)
-            & (sympy.Eq(GET_ITER_ARG(6), 0))
-            & (CUR_INDEX != -1)
+        outer_loop_condition = (J < num_speculative_tokens) & (
+            sympy.Eq(GET_ITER_ARG(6), 0)
         )
         inner_loop_condition = (CUR_INDEX >= 0) & (sympy.Eq(GET_ITER_ARG(6), 0))
 
@@ -449,7 +439,7 @@ def get_speculative_sampling_kernel(
                 prob_acc = tkw.select(
                     condition,
                     zero_f32,
-                    prob_acc + target_prob_single,
+                    prob_acc,
                 )
 
                 # Update cur_prob_offset.
@@ -562,4 +552,4 @@ def get_speculative_sampling_kernel(
         tkw.write(cur_prob_offset, cur_prob_offset_vec, elements_per_thread=1)
         tkw.write(num_accepted_tokens, accept_token_num, elements_per_thread=1)
 
-    return speculative_sampling, hyperparams, dynamic_symbols, dynamic_symbols_map
+    return speculative_sampling, hyperparams, dynamic_symbols
