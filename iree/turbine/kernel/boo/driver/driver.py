@@ -28,8 +28,10 @@ def main():
     parser = argparse.ArgumentParser(
         usage="%(prog)s [-h] [... MIOpenDriver command ...] [--commands-file COMMANDS_FILE]",
         description="""
-Run a convolution with the IREE runtime. Command line arguments mirror the
+Run a kernel with the IREE runtime. Command line arguments mirror the
 arguments to MIOpenDriver.
+
+Currently supports convolution and layernorm.
 
 If COMMANDS_FILE is specified, driver commands are read from the file. Each
 line is treated as a separate invocation of the driver, and any additional
@@ -115,10 +117,16 @@ def run(cli_args: Sequence[str], gpu_id: int):
     from iree.turbine.kernel.boo.exports.parser import OpCLIParser
 
     def dispatch(cli_args: Sequence[str]) -> type[OpCLIParser]:
-        if any(map(lambda x: "conv" in x, cli_args)):
+        if any("conv" in x for x in cli_args):
             from iree.turbine.kernel.boo.conv_exports.miopen_parser import ConvParser
 
             return ConvParser
+        if any("layernorm" in x for x in cli_args):
+            from iree.turbine.kernel.boo.layer_norm_exports.miopen_parser import (
+                LayerNormParser,
+            )
+
+            return LayerNormParser
         raise ValueError("unsupported operation kind in " + shlex.join(cli_args))
 
     from iree.turbine.kernel.boo.driver.launch import get_launchable
@@ -165,12 +173,12 @@ def run(cli_args: Sequence[str], gpu_id: int):
     mem_bytes_threshold = 96 * (10**9)
     iter_thresh = int(mem_bytes_threshold // res_mem_bytes)
 
-    result = None
+    results: tuple[torch.Tensor, ...] | torch.Tensor | None = None
     for iter in range(iter_per_device + 1):
         for device_idx, launch_args in enumerate(per_device_data):
             if iter == iter_per_device and device_idx >= rem_iter:
                 break
-            result = launchable(*launch_args)
+            results = launchable(*launch_args)
         if (iter + 1) % iter_thresh == 0:
             print(f"Synchronizing all devices on iter {iter} and collecting garbage.")
             for i in range(num_devices):
@@ -178,9 +186,13 @@ def run(cli_args: Sequence[str], gpu_id: int):
             gc.collect()
 
     torch.cuda.synchronize()
-    print(
-        f">>> result shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
-    )
+    results = results or ()
+    if isinstance(results, torch.Tensor):
+        results = (results,)
+    for i, result in enumerate(results):
+        print(
+            f">>> result #{i} shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
+        )
 
     return sig.get_func_name()
 

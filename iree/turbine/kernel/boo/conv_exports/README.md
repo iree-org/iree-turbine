@@ -5,7 +5,7 @@ This directory contains some code for generating and launching convolution kerne
 - `conv.py` : Contains `ConvSignature` class for initializing a specific convolution in python.
 - `generate.py` : (for IREE developers) A script for generating some MLIR.
 - `miopen_parser.py` : Contains a parser for converting an MiOpen driver command to a `ConvSignature`.
-- `preload.py` : Contains a `CachePrepopulator` class for pre-populating the launchable file cache. Can be run as a script with a specified commands `.txt` file.
+- `preload.py` : Instantiates a `CachePopulator` class (contained in ../driver/preload.py) for pre-populating the launchable file cache. Can be run as a script with a specified commands `.txt` file.
 - `numerics_runner.py` : A script for comparing boo gpu numerics against pytorch for convolutions in a specified `.txt` file.
 
 ## Useful Environment Variables:
@@ -102,7 +102,7 @@ cd iree/turbine/kernel/boo/conv_exports
 python preload.py "sample_commands.txt"
 ```
 
-Will preload the launchable cache for all available devices and for all miopen driver commands in "sample_commands.txt".
+Will preload the launchable cache for all available devices and for all MIOpen driver commands in "sample_commands.txt".
 
 To see other options, run:
 
@@ -114,27 +114,8 @@ If you just want to generate mlir files, you can pass `--device ""` or `-d ""`.
 
 #### From python
 
-```python
-from iree.turbine.kernel.boo.conv_exports import CachePopulator
-from iree.turbine.kernel.boo.driver.launch import get_launchable
-
-populator = CachePopulator(commands_file="path/to/miopen/commands_list.txt")
-
-populator.run()
-
-# You can grab an example signature from the populator:
-sample_signature = populator.signatures[0]
-
-# One can also check the cache for this signature
-cache_status = populator.get_cache_status(sample_signature.get_func_name())
-print(cache_status)
-
-# You can also get the list of failed signatures via:
-failed_funcs = populator.get_failures()
-
-conv = get_launchable(sample_signature)
-```
+See [driver documentation](../driver/README.md#pre-populating-the-launchable-cache).
 
 ## Benchmarking convolutions
 
-See [driver documentation](../driver/README.md#benchmarking)
+See [driver documentation](../driver/README.md#benchmarking).
