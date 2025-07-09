@@ -72,7 +72,6 @@ def get_brevitas_pertensor_fp8_attention_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant[1],
             vector_shapes={B: 0, N_Q: Mvec, D_KV: Nvec},
         )

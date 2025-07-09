@@ -47,7 +47,6 @@ def get_speculative_decoding_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={BATCH_SIZE: 0, NUM_DRAFT_TOKENS: 0, VOCAB_SIZE: 64},
         )
     ]
@@ -180,7 +179,6 @@ def get_speculative_sampling_kernel(
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={
                 NUM_DRAFT_TOKENS: num_draft_tokens,
                 J: 0,

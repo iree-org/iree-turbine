@@ -63,7 +63,6 @@ Now, let's define our GEMM kernel with appropriate constraints:
         # Hardware-specific constraints
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             mma_type=tkw.MMAType.F32_16x16x16_F16
         )
     ]
