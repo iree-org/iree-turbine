@@ -19,6 +19,8 @@ from .utils.compile_utils import compile_to_vmfb
 from .utils.run_utils import invoke_vmfb, _write_file
 from iree.turbine.kernel._support.context import push, pop
 from iree.turbine.kernel.lang import IndexSymbol
+from iree.turbine.runtime.launch import Launchable
+import iree.runtime as rt
 
 
 class WaveKernel:
@@ -48,6 +50,17 @@ class WaveKernel:
             self.gpu_func = None
         self.bound_scalar_symbols = bound_scalar_symbols
         self.symbols_args_map = symbols_args_map
+
+        if not options.wave_runtime:
+
+            def loader(device):
+                vm_instance = device.vm_instance
+                return rt.VmModule.copy_buffer(vm_instance, self.executable)
+
+            self.launchable = Launchable.from_vm_module(
+                loader,
+                entry_point=options.func_name,
+            )
 
     def __call__(self, *args, **kwargs):
         return self.invoke(*args, **kwargs)
@@ -81,6 +94,12 @@ class WaveKernel:
         for sym in self.options.dynamic_symbols:
             arg_idx, dim = self.symbols_args_map[sym]
             dynamic_symbols.append(args[arg_idx].shape[dim])
+
+        if not self.options.wave_runtime:
+            self.launchable(
+                *kernel_inputs, *kernel_outputs, *scalar_args, *dynamic_symbols
+            )
+            return self.asm
 
         invoke_vmfb(
             self.executable,
