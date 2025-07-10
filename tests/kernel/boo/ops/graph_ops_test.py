@@ -10,7 +10,6 @@ import tempfile
 from pathlib import Path
 
 import torch
-from torch._functorch.aot_autograd import aot_export_joint_simple
 
 from iree.turbine.kernel.boo.ops import get_custom_graph_op
 from iree.turbine.kernel.boo.runtime import set_cache_dir, LaunchableRuntimeCache
