@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 
 import torch
 import glob
@@ -67,13 +67,8 @@ class WaveKernel:
                 entry_point=self.func_name,
             )
 
-        if options.profile_python_wrapper:
-            self.call_handler = self.invoke_with_profile
-        else:
-            self.call_handler = self.invoke
-
     def __call__(self, *args, **kwargs):
-        return self.call_handler(*args, **kwargs)
+        return self.invoke(*args, **kwargs)
 
     def invoke(self, *args, **kwargs):
         """
@@ -141,37 +136,46 @@ class WaveKernel:
 
         return self.asm
 
-    def invoke_with_profile(self, *args, **kwargs):
 
-        # Warmup
-        for _ in range(self.options.profile_python_warmup):
-            self.invoke(*args, **kwargs)
+def invoke_with_profile(options: WaveCompileOptions, invoke: Callable, *args, **kwargs):
 
-        repetitions = self.options.profile_python_repetitions
-        if self.options.profile_python_cprofile:
-            import cProfile
+    # Warmup
+    for _ in range(options.profile_python_warmup):
+        invoke(*args, **kwargs)
 
-            with cProfile.Profile() as pr:
-                for _ in range(repetitions):
-                    res = self.invoke(*args, **kwargs)
+    repetitions = options.profile_python_repetitions
+    if options.profile_python_cprofile:
+        import cProfile
 
-            pr.print_stats(sort="cumulative")
-            return res
-        else:
-            import timeit
+        with cProfile.Profile() as pr:
+            for _ in range(repetitions):
+                res = invoke(*args, **kwargs)
 
-            time = timeit.timeit(
-                lambda: self.invoke(*args, **kwargs),
-                number=repetitions,
-            )
-            print(f"Time: {time:.3f}s, {time / repetitions:.6f}s per iteration")
-            return self.invoke(*args, **kwargs)
+        pr.print_stats(sort="cumulative")
+        return res
+    else:
+        import timeit
+
+        time = timeit.timeit(
+            lambda: invoke(*args, **kwargs),
+            number=repetitions,
+        )
+        print(f"Time: {time:.3f}s, {time / repetitions:.6f}s per iteration")
+        return invoke(*args, **kwargs)
+
+
+class WaveKernelWithProfile(WaveKernel):
+
+    def __call__(self, *args, **kwargs):
+        return invoke_with_profile(self.options, self.invoke, *args, **kwargs)
 
 
 def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveKernel:
     """
     Compiles the wave kernel to an executable.
     """
+
+    cls = WaveKernelWithProfile if options.profile_python_wrapper else WaveKernel
 
     # Check if this kernel has been compiled before, if the cache is enabled.
     cache_manager = None
@@ -201,7 +205,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
             options.kernel_launch_info = cached_kernel.kernel_launch_info
             if options.wave_runtime:
                 binary_path = get_binary_path()
-            return WaveKernel(
+            return cls(
                 options,
                 cached_kernel.vmfb,
                 cached_kernel.asm,
@@ -260,9 +264,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         asm = options.override_mlir
 
     if options.compile_to_mlir:
-        return WaveKernel(
-            options, None, asm, None, bound_scalar_symbols, symbols_args_map
-        )
+        return cls(options, None, asm, None, bound_scalar_symbols, symbols_args_map)
 
     compiled_wave_vmfb = compile_to_vmfb(asm, options)
     if options.create_vmfb_file:
@@ -286,7 +288,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     if options.wave_runtime:
         binary_path = get_binary_path()
 
-    return WaveKernel(
+    return cls(
         options,
         compiled_wave_vmfb,
         asm,
