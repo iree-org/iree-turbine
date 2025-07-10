@@ -78,7 +78,7 @@ def test_paged_flash_decoding():
     # CHECK:                  scf.if %[[COND]] {
     # CHECK-COUNT-1:          arith.divf
     # CHECK-COUNT-1:          math.log2
-    # CHECK-COUNT-9:         vector.store
+    # CHECK-COUNT-3:         vector.store
 
     options = WaveCompileOptions(
         subs=hyperparams_1,
