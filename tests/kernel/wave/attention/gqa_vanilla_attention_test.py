@@ -43,7 +43,7 @@ from iree.turbine.kernel.wave.utils.reference_kernel_utils import (
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("gqa_bshd_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
-@param_bool("causal")
+@param_bool("causal", "causal")
 @pytest.mark.parametrize("sliding_window", [-1, 1024])
 @pytest.mark.parametrize(
     "mfma_variant",
