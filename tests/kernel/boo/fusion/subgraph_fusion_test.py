@@ -90,7 +90,10 @@ class SubgraphReplacementTest(unittest.TestCase):
 
             recorder = EagerAndRecordGraphs()
             compiled_m = torch.compile(
-                m, backend=boo.backend(fusion_schema=fusion_schema, backend=recorder)
+                m,
+                backend=boo.backend(
+                    fusion_schema=fusion_schema, nested_backend=recorder
+                ),
             )
             assert isinstance(compiled_m, torch.nn.Module)
 
@@ -135,7 +138,7 @@ class SubgraphReplacementTest(unittest.TestCase):
             }
             recorder = EagerAndRecordGraphs()
             compiled_m = torch.compile(
-                m, backend=boo.backend(fusion_schema=schema, backend=recorder)
+                m, backend=boo.backend(fusion_schema=schema, nested_backend=recorder)
             )
             assert isinstance(compiled_m, torch.nn.Module)
 
@@ -162,7 +165,7 @@ class SubgraphReplacementTest(unittest.TestCase):
             }
             recorder = EagerAndRecordGraphs()
             compiled_m = torch.compile(
-                m, backend=boo.backend(fusion_schema=schema, backend=recorder)
+                m, backend=boo.backend(fusion_schema=schema, nested_backend=recorder)
             )
             assert isinstance(compiled_m, torch.nn.Module)
             y = compiled_m(x0, x1)
@@ -187,7 +190,7 @@ class SubgraphReplacementTest(unittest.TestCase):
 
             recorder = EagerAndRecordGraphs()
             compiled_m = torch.compile(
-                m, backend=boo.backend(fusion_schema=schema, backend=recorder)
+                m, backend=boo.backend(fusion_schema=schema, nested_backend=recorder)
             )
 
             y = compiled_m(x)
