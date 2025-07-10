@@ -7,7 +7,8 @@
 from typing import Sequence
 
 import torch
-from torch.fx.subgraph_rewriter import replace_pattern
+from torch.fx.subgraph_rewriter import replace_pattern, _replace_pattern
+from torch.fx.passes.utils.matcher_utils import InternalMatch
 from torch.fx.graph import Graph
 from torch.fx.graph_module import GraphModule
 from torch.fx.node import Node
@@ -83,15 +84,14 @@ def fused_subgraph(
 
 def extract_fusion_subgraph_modules(
     src_gm: GraphModule, fusion_schema: FusionSchema
-) -> tuple[list[GraphModule], list[dict[Node, Node]]]:
+) -> tuple[list[GraphModule], list[InternalMatch]]:
     """Traverses src_gm nodes in order. When a node matches a root op in the fusion_schema,
     A new subgraph is created with the root op in addition to any adjacent nodes matching the schema.
 
     All subgraphs found this way are returned in a list.
     The corresponding mappings from src_gm nodes -> subgraph nodes is also returned as a list.
     """
-    subgraph_projections: list[dict[Node, Node]] = []
-    subgraph_inclusions: list[dict[Node, Node]] = []
+    internal_matches: list[InternalMatch] = []
     subgraphs: list[GraphModule] = []
     used_nodes: set[Node] = set()
     for root in src_gm.graph.nodes:
@@ -188,19 +188,42 @@ def extract_fusion_subgraph_modules(
         subgraph.output(result=tuple(output_nodes))
         subgraph.lint()
 
-        subgraph_projections.append(subgraph_projection)
-        subgraph_inclusions.append(subgraph_inclusion)
+        pattern_anchors = [n for n in output_nodes if len(n.users) == 1]
+
+        internal_matches.append(
+            InternalMatch(anchors=pattern_anchors, nodes_map=subgraph_inclusion)
+        )
+
         used_nodes.update(subgraph_projection.keys())
         subgraphs.append(GraphModule(src_gm, subgraph))
 
-    return subgraphs, subgraph_projections
+    return subgraphs, internal_matches
 
 
 def replace_subgraphs(
     src_gm: GraphModule,
     external_subgraphs: Sequence[GraphModule],
+    internal_matches: Sequence[InternalMatch],
     replacements: Sequence[GraphModule],
 ):
     """Replaces instances of each subgraph in src_gm with their corresponding replacement graph."""
-    for sg, replacement in zip(external_subgraphs, replacements):
-        _ = replace_pattern(src_gm, sg, replacement)
+    for sg, match, replacement in zip(
+        external_subgraphs, internal_matches, replacements
+    ):
+
+        def _match_filter(m: InternalMatch, og_graph: Graph, pattern_graph: Graph):
+            # The anchor nodes for the current pattern-match can never be replaced by other pattern replacements.
+            # This filter will restrict the source graph modification to the exact subgraph we extracted.
+            expected_anchors = [match.nodes_map[a] for a in match.anchors]
+            found_anchors = [m.nodes_map[a] for a in m.anchors]
+            return set(expected_anchors) == set(found_anchors)
+
+        replaced_patterns = _replace_pattern(
+            src_gm, sg, replacement, match_filters=[_match_filter]
+        )
+        if len(replaced_patterns) != 1:
+            raise RuntimeError(
+                f"Replaced {len(replaced_patterns)} subgraphs in source graph module, but expected exactly one replacement. "
+                f"Source graph:\n{src_gm}\nPattern graph:\n{sg}."
+            )
+        logger.debug("Replaced patterns:\n%s", str(replaced_patterns))

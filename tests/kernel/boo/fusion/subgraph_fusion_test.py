@@ -147,12 +147,6 @@ class SubgraphReplacementTest(unittest.TestCase):
             y = fused_m(x0, x1)
             self.assertEqual(list(y.shape), [16, 16])
 
-    @pytest.mark.xfail(
-        reason=(
-            "Bug with repeated replacement when the first matching graph does not require the same combination of input gradients. "
-            "Remove when issue https://github.com/iree-org/iree-turbine/issues/1014 is resolved."
-        )
-    )
     def testRepeatedReplacementBackward(self):
         with tempfile.TemporaryDirectory() as td:
             set_cache_dir(Path(td))

@@ -55,12 +55,12 @@ def _fusion_transform(
 
     _log_graph_module("Source Graph Module", gm)
 
-    subgraphs, _ = extract_fusion_subgraph_modules(gm, fusion_schema)
+    subgraphs, internal_matches = extract_fusion_subgraph_modules(gm, fusion_schema)
     subgraph_repl = []
     for sg in subgraphs:
         subgraph_repl.append(get_subgraph_replacement(sg))
 
-    replace_subgraphs(gm, subgraphs, subgraph_repl)
+    replace_subgraphs(gm, subgraphs, internal_matches, subgraph_repl)
 
     # TODO: update any metadata which may have been modified by the replacement.
 
