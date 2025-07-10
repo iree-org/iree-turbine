@@ -588,13 +588,19 @@ class LaunchableWave(Launchable):
             trace, options, print_ir_before, print_ir_after
         )
 
-        # Optimizations.
         graph_passes += [
             partial(decompose_vmma_ops, trace, self.constraints),
             partial(decompose_dot_mma, trace, self.constraints),
-            partial(hoist_loop_invariant_ops, trace, self.constraints),
-            partial(global_to_shared_gathers, trace, self.constraints),
-            partial(minimize_global_loads, trace, self.constraints),
+        ]
+
+        # Optimizations.
+        if options.optimization_level:
+            graph_passes += [
+                partial(hoist_loop_invariant_ops, trace, self.constraints),
+                partial(global_to_shared_gathers, trace, self.constraints),
+                partial(minimize_global_loads, trace, self.constraints),
+            ]
+        graph_passes += [
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
         ]
 
@@ -624,21 +630,22 @@ class LaunchableWave(Launchable):
                 options.dump_schedule,
             )
         )
-        graph_passes.append(
-            partial(
-                schedule_reordering,
-                trace,
-                self.constraints,
-                scheduling_type,
-            )
-        )
 
+        if options.optimization_level:
+            graph_passes += [
+                partial(
+                    schedule_reordering,
+                    trace,
+                    self.constraints,
+                    scheduling_type,
+                ),
+                partial(
+                    minimize_shared_allocs,
+                    trace,
+                    options.minimize_shared_allocs,
+                ),
+            ]
         graph_passes += [
-            partial(
-                minimize_shared_allocs,
-                trace,
-                options.minimize_shared_allocs,
-            ),
             partial(add_shared_memory_barriers, trace),
             partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
             partial(generate_bounds_exprs, trace, self.constraints),

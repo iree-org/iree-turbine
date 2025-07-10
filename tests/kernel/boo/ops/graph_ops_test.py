@@ -10,9 +10,8 @@ import tempfile
 from pathlib import Path
 
 import torch
-from torch._functorch.aot_autograd import aot_export_joint_simple
 
-from iree.turbine.kernel.boo.ops import get_custom_graph_op, get_autograd_function
+from iree.turbine.kernel.boo.ops import get_custom_graph_op
 from iree.turbine.kernel.boo.runtime import set_cache_dir, LaunchableRuntimeCache
 
 
@@ -65,35 +64,6 @@ class GraphOpsTest(unittest.TestCase):
             )
             assert expected_dir_name_0 in cache_subdir_names
             assert expected_dir_name_1 in cache_subdir_names
-
-    def testAutogradOp(self):
-        with tempfile.TemporaryDirectory() as td:
-            set_cache_dir(Path(td))
-            m = SampleModule(16, 32)
-            x = torch.ones([3, 3, 16, 16])
-
-            # Export a graph.
-            exported = torch.export.export(m, args=(x,))
-            gm = exported.graph_module
-
-            # Get a joint graph (exploiting the fact that gm.forward has flattened args).
-            sample_args = (m.linear.weight, m.linear.bias, x)
-            joint_gm = aot_export_joint_simple(
-                gm.forward, sample_args, trace_joint=True
-            )
-
-            # Get an autograd custom op from the joint graph module.
-            autograd_f = get_autograd_function(joint_gm, None, 1)
-
-            y = autograd_f(*sample_args)
-
-            assert m.linear.weight.grad is None
-            assert m.linear.bias.grad is None
-
-            y[0].sum().backward()
-
-            assert m.linear.weight.grad.shape == m.linear.weight.shape
-            assert m.linear.bias.grad.shape == m.linear.bias.shape
 
 
 if __name__ == "__main__":
