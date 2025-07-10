@@ -24,6 +24,7 @@ import os
 from torch.testing import assert_close
 from ..common.utils import (
     enable_scheduling_barriers,
+    param_bool,
     require_e2e,
     require_cdna3,
 )
@@ -42,6 +43,7 @@ from iree.turbine.kernel.wave.utils.reference_kernel_utils import (
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("gqa_bshd_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
+@param_bool("causal")
 @pytest.mark.parametrize("sliding_window", [-1, 1024])
 @pytest.mark.parametrize(
     "mfma_variant",
@@ -50,9 +52,10 @@ from iree.turbine.kernel.wave.utils.reference_kernel_utils import (
         (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
     ],
 )
-def testCausalGQABSHDAttention(
+def testGQABSHDAttention(
     shape: AttentionShape,
     enable_scheduling: SchedulingType,
+    causal: bool,
     sliding_window: int,
     mfma_variant: tuple[MMAType],
     request,
@@ -60,12 +63,19 @@ def testCausalGQABSHDAttention(
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
 
+    if not causal:
+        sliding_window = -1
+
     (
         base_attention_func,
         hyperparams,
         dynamic_symbols,
     ) = get_gqa_bshd_attention_kernel(
-        shape, mfma_variant, is_causal=True, sliding_window_size=sliding_window
+        shape,
+        mfma_variant,
+        is_causal=causal,
+        sliding_window_size=sliding_window,
+        input_dtype=torch.float16,
     )
     q_shape = (
         shape.num_seqs,
@@ -117,7 +127,7 @@ def testCausalGQABSHDAttention(
 
     # Torch reference needs to be in BHSD format
     torch_ref = scaled_dot_product_attention_bhsd(
-        q, k, v, is_causal=True, sliding_window=sliding_window
+        q, k, v, is_causal=causal, sliding_window=sliding_window
     )
 
     assert_close(
