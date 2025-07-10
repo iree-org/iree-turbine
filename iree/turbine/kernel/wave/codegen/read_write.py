@@ -26,6 +26,8 @@ from ...compiler.ir import (
     arith_d,
     memref_d,
     vector_d,
+    rocdl_d,
+    llvm_d
 )
 
 from ...compiler.base import ValidationError
@@ -37,14 +39,19 @@ from ...compiler.vector_codegen import (
     cast_vector,
 )
 
+from iree.turbine.aot.support.ir_utils import get_conversion_op
+
 from ...ops.wave_ops import get_custom, read, write, CustomOp
 
-from ..utils.general_utils import get_fastest_index, infer_dim
+from ..utils.general_utils import get_fastest_index, infer_dim, get_hardware_constraint
 from ..utils.symbol_utils import safe_subs, subs_idxc
+from ..utils.classes import LDSTransposeRead
 
 from ..._support.indexing import IndexingContext, IndexExpr, IndexSequence, IndexSymbol
 from ...lang.global_symbols import *
 from ...lang.wave_types import IndexMapping
+
+from ..constraints import HardwareConstraint
 
 from .emitter import (
     WaveEmitter,
@@ -716,6 +723,43 @@ def _create_vec_read_write(
         return
 
 
+# TODO: support more variants; currently hardcoded for tr8
+
+def tid_mapping_i8_16x16x32(kb_src, tid, stride, emitter):
+    smem_base = memref_d.extract_aligned_pointer_as_index(kb_src)
+    tid_mlir = gen_sympy_index(add_emitter_subs(emitter), tid)
+
+    c2 = arith_d.constant(IndexType.get(), 2)
+    c8 = arith_d.constant(IndexType.get(), 8)
+
+    row = arith_d.divsi(tid_mlir, c2)
+    col = arith_d.remsi(tid_mlir, c2)
+    col = arith_d.muli(col, c8)
+    offset = arith_d.muli(row, stride)
+    offset = arith_d.addi(offset, col)
+    address = arith_d.addi(smem_base, offset)
+
+    return address
+
+def emit_hardware_transpose_intrinsic(
+    vector_type: VectorType, stride, kb_src, kb_ir_type, hardware_constraint, emitter
+) -> Value:
+      tid = hardware_constraint.linearized_thread_id % hardware_constraint.threads_per_wave
+      final_address = tid_mapping_i8_16x16x32(kb_src, tid, stride, emitter)
+      i64_type = IntegerType.get_signless(64)
+      final_address_i64 = arith_d.index_cast(i64_type, final_address)
+      ptr_type = llvm_d.PointerType.get(address_space=3, context=kb_ir_type.context)
+      llvm_ptr = llvm_d.inttoptr(ptr_type, final_address_i64)
+
+      i32_type = IntegerType.get_signless(32)
+      i32_vec_type = VectorType.get([2], i32_type)
+      packed_result = rocdl_d.ds_read_tr8_b64(i32_vec_type, llvm_ptr)
+
+      vtype = vector_type.element_type
+      vec8_v_type = VectorType.get([8], vtype)
+      result = vector_d.bitcast(vec8_v_type, packed_result)
+      return result
+
 @handle_op(read)
 def handle_read(emitter: WaveEmitter, node: fx.Node):
     # This is similar to tkl.store with fixed start indices for now.
@@ -737,25 +781,47 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     vector_type = VectorType.get(vector_shape, element_type)
     input_shape = _get_symbolic_shape(memory)
     elements_per_thread = cast_py_literal(emitter, elements_per_thread)
-    if get_custom(node).has_identity_mapping():
+    if get_custom(node).has_identity_mapping() or (hasattr(node, "transpose") and node.transpose):
         start_indices, start_indices_wg, start_indices_th = _build_start_indices(
             emitter, index
         )
-        mask = _build_mask(emitter, index, elements_per_thread, bounds)
-        result = _create_vec_read_write(
+
+        mask = _build_mask(
             emitter,
-            input_shape,
-            kb_src,
-            None,
-            vector_type,
-            start_indices,
-            start_indices_wg,
-            start_indices_th,
+            index,
             elements_per_thread,
-            get_custom(memory),
-            mask,
-            offsets_vec=None,
+            bounds
         )
+        memory_node = get_custom(memory)
+        hardware_constraint = get_hardware_constraint(emitter.constraints)
+        use_hw_transpose = (
+            not mask
+            and hasattr(memory_node, "hardware_transpose")
+            and memory_node.hardware_transpose == LDSTransposeRead.tr8_b64
+            and subs_idxc(elements_per_thread) == 8
+        )
+        if use_hw_transpose:
+            # distributed shape is shape in shared mem. last dim is stride
+            stride_expr = memory_node.distributed_shape[-1] # BLOCK_K + 8 
+            stride = gen_sympy_index(add_emitter_subs(emitter), stride_expr) # symbolic -> mlir
+            result = emit_hardware_transpose_intrinsic(
+                vector_type, stride, kb_src, kb_ir_type, hardware_constraint, emitter
+            )
+        else:
+            result = _create_vec_read_write(
+                emitter,
+                input_shape,
+                kb_src,
+                None,
+                vector_type,
+                start_indices,
+                start_indices_wg,
+                start_indices_th,
+                elements_per_thread,
+                get_custom(memory),
+                mask,
+                offsets_vec=None,
+            )
     else:
         dyn_vals = tuple(
             cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals
