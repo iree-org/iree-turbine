@@ -1,4 +1,4 @@
-from functorch.compile import make_boxed_compiler
+from functorch.compile import make_boxed_func
 import torch
 from torch import fx
 from torch._dynamo.backends.common import aot_autograd
@@ -26,19 +26,13 @@ def backend(
     'fusion_schema' may be used to control which operations are fused and
     offloaded.
     """
-    nested_backend_fn = make_boxed_compiler(
-        torch._dynamo.lookup_backend(nested_backend)
-    )
+    nested_backend_fn = torch._dynamo.lookup_backend(nested_backend)
 
-    def fw_compiler(model: fx.GraphModule, example_args):
+    def compiler_fn(model: fx.GraphModule, example_args):
         fusion_transform(model, fusion_schema=fusion_schema)
-        return nested_backend_fn(model, example_args)
+        return make_boxed_func(nested_backend_fn(model, example_args))
 
-    return aot_autograd(
-        fw_compiler=fw_compiler,
-        # Skip boo compilation for the backwards pass for now.
-        bw_compiler=nested_backend_fn,
-    )
+    return aot_autograd(fw_compiler=compiler_fn)
 
 
 default_backend = backend()
