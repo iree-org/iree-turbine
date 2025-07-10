@@ -12,7 +12,7 @@ This document details how to set up ROCprof Compute Viewer on your device. ROCpr
 
   1. Visit the ROCprof Compute Viewer release page and download version **0.1.1**:
 
-     https://github.com/ROCm/rocprof-compute-viewer/releases/tag/0.1.1 :contentReference[oaicite:3]{index=3}
+     https://github.com/ROCm/rocprof-compute-viewer/releases/tag/0.1.1
 
   2. Extract the archive and launch the viewer from the `bin` directory:
 
@@ -34,7 +34,7 @@ This document details how to set up ROCprof Compute Viewer on your device. ROCpr
         make -j$(nproc)
         sudo make install
 
-     Follow any additional upstream instructions for your platform :contentReference[oaicite:4]{index=4}.
+     Follow any additional upstream instructions for your platform.
 
   2. Launch the viewer:
 
