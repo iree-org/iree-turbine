@@ -446,6 +446,7 @@ class ConvForwardCustomGeneric(torch.nn.Module):
         self.wl = str(sig.kernel_layout).lower().replace("n", "f")
         self.ol = str(sig.output_layout).lower().replace("c", "f")
         self.explicit_padding = sig.explicit_padding
+        self.explicit_shape = list(sig.output_shape)
         self.x_pos = sig.input_grouped_dim
         self.w_pos = sig.kernel_grouped_dim
         self.o_pos = sig.output_grouped_dim
@@ -471,7 +472,14 @@ class ConvForwardCustomGeneric(torch.nn.Module):
             w = w.unflatten(self.w_pos, [self.groups, -1])
         x_pad = torch.constant_pad_nd(x, self.explicit_padding, value=0)
         output = generic_conv(
-            x_pad, w, self.stride, self.dilation, self.xl, self.wl, self.ol, []
+            x_pad,
+            w,
+            self.stride,
+            self.dilation,
+            self.xl,
+            self.wl,
+            self.ol,
+            self.explicit_shape,
         ).to(dtype=x_pad.dtype)
         if self.groups != 1:
             output = output.flatten(self.o_pos, self.o_pos + 1)
