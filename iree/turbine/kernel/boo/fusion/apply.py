@@ -24,7 +24,7 @@ __all__ = [
 def fusion_transform(module: fx.GraphModule, *, fusion_schema: FusionSchema) -> None:
     """Applies fusions to the underlying fx graph of a GraphModule by offloading subgraphs to IREE compiler/runtime."""
 
-    logger.debug("Source Graph Module:\n%s", str(module))
+    _log_graph_module("Source module", module)
 
     subgraphs = extract_fusion_subgraph_modules(module, fusion_schema)
     subgraph_replacements: list[tuple[FusedSubgraph, fx.Node]] = []
@@ -46,7 +46,7 @@ def fusion_transform(module: fx.GraphModule, *, fusion_schema: FusionSchema) -> 
     module.recompile()
     module.graph.lint()
 
-    logger.debug("Converted module:\n%s", str(module))
+    _log_graph_module("Converted module", module)
 
 
 def _replace_with_call(
@@ -66,3 +66,7 @@ def _replace_with_call(
         )
     for node_to_replace, call_output in zip(nodes_to_replace, outputs, strict=True):
         node_to_replace.replace_all_uses_with(call_output)
+
+
+def _log_graph_module(label: str, gm: fx.GraphModule):
+    logger.debug("%s:\n%s", label, gm.print_readable(print_output=False))
