@@ -46,6 +46,9 @@ def generate_bounds_exprs(trace: CapturedTrace, constraints: list[Constraint]):
     nodes = trace.walk(is_read_write)
     for node in nodes:
         node = get_custom(node)
+        if node.bounds is not None:
+            continue
+
         vector_shapes = node.vector_shapes or hardware_constraint.vector_shapes
         is_shared_mem = is_shared_mem_access(node)
         bounds = find_index_bounds(constraints, node.index, vector_shapes)

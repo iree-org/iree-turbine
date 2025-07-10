@@ -46,6 +46,7 @@ def _make_options(
         compile_to_mlir=True,
         location_capture_config=LocationCaptureConfig(loc_level),
         use_local_scope=use_local_scope,
+        canonicalize=False,
     )
     return options
 

@@ -155,6 +155,7 @@ def test_read_mapped_buffer():
         use_buffer_load_ops=True,
         use_buffer_store_ops=True,
         compile_to_mlir=True,
+        canonicalize=False,
     )
     read_mapped_buffer = wave_compile(options, read_mapped_buffer)
     print(read_mapped_buffer.asm)

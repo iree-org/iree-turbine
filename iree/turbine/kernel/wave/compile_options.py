@@ -14,7 +14,7 @@ class WaveCompileOptions:
     """
 
     # === General options ===
-    canonicalize: bool = False
+    canonicalize: bool = True
     func_name: str = "isolated_benchmark"
 
     # === Symbol mappings ===
