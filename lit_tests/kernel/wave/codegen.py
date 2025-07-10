@@ -1869,6 +1869,33 @@ def test_broadcast_add():
 
 
 @run_test
+def test_extract_register():
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    @tkw.wave(constraints)
+    def extract_register(
+        a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+    ):
+        a_reg = tkw.read(a, elements_per_thread=4)
+        # unused result, but calling it crashes
+        extracted = tkw.extract(a_reg, 0)
+        tkw.write(a_reg, a, elements_per_thread=4)
+
+    extract_register = wave_compile(get_wave_compile_options(), extract_register)
+    print(extract_register.asm)
+
+    # CHECK-LABEL: func @extract_register
+    # CHECK: %[[EXTRACTED:.+]] = vector.extract
+
+
+@run_test
 def test_binary_lowerings():
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
