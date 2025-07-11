@@ -537,6 +537,7 @@ def _device_import_torch_tensor_cuda_hip(
     # The None passed to tensor.__dlpack__ indicates we are doing no stream synchronization here.
     # We launch kernels through IREE runtime on the same stream as pytorch. If using multiple
     # streams, the user is expected to properly manage stream synchronization.
+    # `__dlpack__` will fail on tensor with gradients, so detach.
     capsule = t.detach().__dlpack__(None)
     bv = device.hal_device.from_dlpack_capsule(capsule)
     return bv
