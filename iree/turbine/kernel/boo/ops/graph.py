@@ -13,7 +13,6 @@ from torch.fx.node import Target
 from torch.fx.passes.shape_prop import TensorMetadata
 
 from .library import *
-from .utils import get_arg_spec_name
 from .utils import (
     get_arg_spec_name_and_memory_format_information,
     get_memory_format_information,

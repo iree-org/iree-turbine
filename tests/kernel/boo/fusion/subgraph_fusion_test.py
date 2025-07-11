@@ -180,14 +180,18 @@ class SubgraphReplacementTest(unittest.TestCase):
             m = SampleModule3().to(memory_format=torch.channels_last)
             x = torch.ones([2, 3, 16, 16], requires_grad=False)
             schema: FusionSchema = {
-                torch.ops.aten.conv2d.default: OpFusionSpec(
+                torch.ops.aten.convolution.default: OpFusionSpec(
                     recursive=True,
                     consumers=(torch.ops.aten.sigmoid.default,),
                 )
             }
-            fused_m = fusion_transform(m, (x,), fusion_schema=schema)
-            self.assertNotIn("torch.ops.aten.", str(fused_m))
-            y = fused_m(x)
+            recorder = EagerAndRecordGraphs()
+            compiled_m = torch.compile(
+                m, backend=boo.backend(fusion_schema=schema, nested_backend=recorder)
+            )
+            y = compiled_m(x)
+            [fwd_g] = recorder.graphs
+            self.assertNotIn("torch.ops.aten.", str(fwd_g))
 
     def testReplacementNonRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:
