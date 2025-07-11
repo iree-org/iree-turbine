@@ -7,7 +7,7 @@
 import os
 import functools
 
-from typing import Tuple, Iterable
+from typing import Tuple, Iterable, NamedTuple
 
 import torch
 from torch.fx.passes.shape_prop import TensorMetadata
@@ -138,9 +138,18 @@ def _is_contiguous(
         )
 
 
+class MemoryFormatInformation(NamedTuple):
+    is_channels_last: bool = False
+    # Whether the tensor is in channels_last format
+    permutation: None | list[int] = None
+    # A permutation which will materialize the channels_last format into the tensor's shape.
+    inverse_permutation: None | list[int] = None
+    # The inverse of permutation.
+
+
 def get_memory_format_information(
     t: torch.Tensor | TensorMetadata, num_dims: int | None = None
-) -> tuple[bool, list[int] | None, list[int] | None]:
+) -> MemoryFormatInformation:
     """For a torch.Tensor, returns a tuple contatining:
 
     1. A bool indicating whether the tensor is in a num-dim-appropriate channels-last format.
@@ -150,16 +159,16 @@ def get_memory_format_information(
     num_dims = num_dims or len(t.shape) - 2
     cl_mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_dims, None)
     if cl_mem_format is None or not _is_contiguous(t, cl_mem_format):
-        return False, None, None
+        return MemoryFormatInformation()
 
     cl_contig = CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION.get(num_dims)
     contig_cl = CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION.get(num_dims)
     if None in [cl_contig, contig_cl]:
-        return (False, None, None)
-    return (
-        True,
-        cl_contig,
-        contig_cl,
+        return MemoryFormatInformation()
+    return MemoryFormatInformation(
+        is_channels_last=True,
+        permutation=cl_contig,
+        inverse_permutation=contig_cl,
     )
 
 
@@ -174,9 +183,11 @@ def get_arg_spec_name(base_name, *args):
     return name
 
 
-def get_arg_spec_name_and_memory_format_information(base_name, *args):
+def get_arg_spec_name_and_memory_format_information(
+    base_name, *args
+) -> tuple[str, list[MemoryFormatInformation]]:
     name = base_name
-    layout_handling: list[tuple[bool, list[int] | None, list[int] | None]] = []
+    layout_handling: list[MemoryFormatInformation] = []
     for idx, arg in enumerate(args):
         if arg is None:
             layout_handling.append((False, None, None))

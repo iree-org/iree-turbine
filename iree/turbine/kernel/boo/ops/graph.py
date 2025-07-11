@@ -14,6 +14,7 @@ from torch.fx.passes.shape_prop import TensorMetadata
 
 from .library import *
 from .utils import (
+    MemoryFormatInformation,
     get_arg_spec_name_and_memory_format_information,
     get_memory_format_information,
 )
@@ -80,19 +81,28 @@ def _define_custom_graph_op(
 ):
     """Defines a custom op from the graph module with given op_name in the boo library."""
     inputs, outputs = _get_io_from_gm(gm)
-    # TODO: handle this better
     is_none_output = _maybe_trim_none_outputs(gm)
     has_a_none_output = any(is_none_output)
     schema = _get_schema(inputs, outputs)
     define_schema(op_name, schema)
+    # Get memory format information about the output tensors from the graph metadata.
     output_mem_format_infos = [
         get_memory_format_information(t) for t in outputs if t is not None
     ]
+    logger.debug("Output MemoryFormatInformation:\n%s", str(output_mem_format_infos))
 
     class LayoutManagedModule(torch.nn.Module):
+        """This wrapper around gm.forward is the content being offloaded to IREE.
+
+        We are expecting inputs to be permuted into a contiguous format before reaching this point.
+        The forward method performs the inverse permutations, which will be imported into MLIR.
+
+        A similar handling of output tensors is performed.
+        """
+
         def __init__(
             self,
-            mem_format_infos: list[tuple[bool, list[int] | None, list[int] | None]],
+            mem_format_infos: Sequence[MemoryFormatInformation],
         ):
             super().__init__()
             self.mem_format_infos = mem_format_infos
@@ -101,10 +111,12 @@ def _define_custom_graph_op(
             handled_args = []
             for idx, arg in enumerate(args):
                 arg_mem_format_info = self.mem_format_infos[idx]
-                if not arg_mem_format_info[0]:
+                if not arg_mem_format_info.is_channels_last:
                     handled_args.append(arg)
                     continue
-                handled_args.append(arg.permute(arg_mem_format_info[-1]))
+                handled_args.append(
+                    arg.permute(arg_mem_format_info.inverse_permutation)
+                )
             outputs = gm.forward(*handled_args)
             single_output = False
             if isinstance(outputs, torch.Tensor):
@@ -113,10 +125,10 @@ def _define_custom_graph_op(
             handled_outputs = []
             for idx, o in enumerate(outputs):
                 o_mem_format_info = output_mem_format_infos[idx]
-                if not o_mem_format_info[0]:
+                if not o_mem_format_info.is_channels_last:
                     handled_outputs.append(o)
                     continue
-                handled_outputs.append(o.permute(o_mem_format_info[1]))
+                handled_outputs.append(o.permute(o_mem_format_info.permutation))
             return handled_outputs[0] if single_output else tuple(handled_outputs)
 
     @register_impl(op_name)
@@ -128,19 +140,21 @@ def _define_custom_graph_op(
 
         logger.debug("Memory format infos:\n%s", str(mem_format_infos))
 
-        l = get_launchable(
-            lambda: LayoutManagedModule(mem_format_infos),
-            arg_factory=args,
-            func_name=spec_name,
-            force_single_dispatch=force_single_dispatch,
-        )
         handled_args = []
         for idx, arg in enumerate(args):
             arg_mem_format_info = mem_format_infos[idx]
-            if not arg_mem_format_info[0]:
+            if not arg_mem_format_info.is_channels_last:
                 handled_args.append(arg)
                 continue
-            handled_args.append(arg.permute(arg_mem_format_info[1]))
+            handled_args.append(arg.permute(arg_mem_format_info.permutation))
+
+        l = get_launchable(
+            lambda: LayoutManagedModule(mem_format_infos),
+            arg_factory=tuple(handled_args),
+            func_name=spec_name,
+            force_single_dispatch=force_single_dispatch,
+        )
+
         single_output = False
         outputs = l(*[arg.data for arg in handled_args])
         if isinstance(outputs, torch.Tensor):
@@ -149,10 +163,11 @@ def _define_custom_graph_op(
         handled_outputs = []
         for idx, o in enumerate(outputs):
             o_mem_format_info = output_mem_format_infos[idx]
-            if not o_mem_format_info[0]:
+            if not o_mem_format_info.is_channels_last:
                 handled_outputs.append(o)
                 continue
-            handled_outputs.append(o.permute(o_mem_format_info[1]))
+            handled_outputs.append(o.permute(o_mem_format_info.inverse_permutation))
+
         if not has_a_none_output:
             return handled_outputs[0] if single_output else tuple(handled_outputs)
         # We have at least one None output that needs to be included.
