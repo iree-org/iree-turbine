@@ -1,8 +1,9 @@
+#include <cstring>
+#include <hip/hip_runtime.h>
+#include <hip/hip_runtime_api.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_vector.h>
 #include <nanobind/stl/string.h>
-#include <hip/hip_runtime.h>
-#include <hip/hip_runtime_api.h>
 
 namespace nb = nanobind;
 
