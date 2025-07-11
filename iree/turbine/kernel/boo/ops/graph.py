@@ -64,9 +64,10 @@ def get_custom_graph_op(
     gm: GraphModule, *, force_single_dispatch: bool = False
 ) -> torch._ops.OpOverloadPacket:
     """Converts a graph module into a custom operator."""
-    hash = sha1(str(gm).encode(), usedforsecurity=False).hexdigest()
+    gm_string = str(gm.print_readable(print_output=False, include_stride=True))
+    hash = sha1(gm_string.encode(), usedforsecurity=False).hexdigest()
     op_name = f"fused_op_{hash}"
-    logger.debug("Got hash str '%s' for GraphModule: \n %s", hash, str(gm))
+    logger.debug("Got hash str '%s' for GraphModule: \n %s", hash, gm_string)
 
     if not hasattr(torch.ops.boo, op_name):
         _define_custom_graph_op(
@@ -89,7 +90,11 @@ def _define_custom_graph_op(
     output_mem_format_infos = [
         get_memory_format_information(t) for t in outputs if t is not None
     ]
-    logger.debug("Output MemoryFormatInformation:\n%s", str(output_mem_format_infos))
+    logger.debug(
+        "Output TensorMetadata:\n%s\nOutput MemoryFormatInformation:\n%s",
+        str(outputs),
+        str(output_mem_format_infos),
+    )
 
     class LayoutManagedModule(torch.nn.Module):
         """This wrapper around gm.forward is the content being offloaded to IREE.

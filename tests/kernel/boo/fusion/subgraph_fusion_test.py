@@ -185,13 +185,16 @@ class SubgraphReplacementTest(unittest.TestCase):
                     consumers=(torch.ops.aten.sigmoid.default,),
                 )
             }
+            expected_y = m(x)
             recorder = EagerAndRecordGraphs()
             compiled_m = torch.compile(
                 m, backend=boo.backend(fusion_schema=schema, nested_backend=recorder)
             )
             y = compiled_m(x)
-            [fwd_g] = recorder.graphs
-            self.assertNotIn("torch.ops.aten.", str(fwd_g))
+            [fwd_gm] = recorder.graphs
+            self.assertNotIn("torch.ops.aten.", str(fwd_gm))
+            self.assertEqual(list(y.shape), list(expected_y.shape))
+            self.assertEqual(list(y.stride()), list(expected_y.stride()))
 
     def testReplacementNonRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:

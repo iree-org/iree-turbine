@@ -136,6 +136,7 @@ def _is_contiguous(
         raise TypeError(
             f"Unhandled type: {type(t)}. _is_contiguous input 0 must be a torch.Tensor or TensorMetadata object."
         )
+    return metadata_memory_format == memory_format
 
 
 class MemoryFormatInformation(NamedTuple):
