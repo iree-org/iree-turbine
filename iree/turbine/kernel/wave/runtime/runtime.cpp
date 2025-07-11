@@ -1,11 +1,8 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_vector.h>
 #include <nanobind/stl/string.h>
-#include <torch/torch.h>
-#include <torch/extension.h>
 #include <hip/hip_runtime.h>
 #include <hip/hip_runtime_api.h>
-#include <ATen/hip/HIPContext.h>
 
 namespace nb = nanobind;
 
@@ -36,6 +33,7 @@ namespace nb = nanobind;
 
 struct KernelLaunchInfo
 {
+    uintptr_t stream; // hip stream pointer
     uintptr_t function; // function pointer to the kernel
     int sharedMemoryBytes;
     int gridX, gridY, gridZ;
@@ -48,7 +46,7 @@ using Int32Vector = std::vector<uint32_t>;
 static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
     const Int64Vector &dynamicDims, nb::list scalarArgs)
 {
-    hipStream_t stream = at::hip::getCurrentHIPStream();
+    hipStream_t stream = reinterpret_cast<hipStream_t>(info.stream);
     hipFunction_t function = reinterpret_cast<hipFunction_t>(info.function);
 
     size_t scalarSize = sizeof(uint32_t); // 32-bit for both float and int
@@ -117,7 +115,8 @@ NB_MODULE(wave_runtime, m)
     nb::bind_vector<Int64Vector>(m, "Int64Vector");
     nb::bind_vector<Int32Vector>(m, "Int32Vector");
     nb::class_<KernelLaunchInfo>(m, "KernelLaunchInfo")
-        .def(nb::init<uintptr_t, int, int, int, int, int, int, int>())
+        .def(nb::init<uintptr_t, uintptr_t, int, int, int, int, int, int, int>())
+        .def_rw("gpu_stream", &KernelLaunchInfo::stream)
         .def_rw("gpu_func", &KernelLaunchInfo::function)
         .def_rw("sharedMemoryBytes", &KernelLaunchInfo::sharedMemoryBytes)
         .def_rw("gridX", &KernelLaunchInfo::gridX)
