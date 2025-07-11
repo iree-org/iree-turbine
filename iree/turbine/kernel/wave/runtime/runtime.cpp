@@ -79,9 +79,9 @@ static void launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
         &kernArgSize,
         HIP_LAUNCH_PARAM_END};
 
-        HIP_CHECK_EXC(hipModuleLaunchKernel(function, info.gridX, info.gridY, info.gridZ,
-                                            info.blockX, info.blockY, info.blockZ, 0,
-                                            stream, nullptr, (void **)&hipLaunchParams));
+    HIP_CHECK_EXC(hipModuleLaunchKernel(function, info.gridX, info.gridY, info.gridZ,
+                                        info.blockX, info.blockY, info.blockZ, 0,
+                                        stream, nullptr, (void **)&hipLaunchParams));
 }
 
 static void unload_binary(void *ptr) noexcept
