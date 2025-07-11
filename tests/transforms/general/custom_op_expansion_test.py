@@ -50,7 +50,7 @@ class PassTest(unittest.TestCase):
             m_asm,
         )
 
-    def testTensorOpitonalArg(self):
+    def testTensorOptionalArg(self):
         m = self.run_test_case("custom_op_optional_arg.mlir")
         m_asm = str(m)
         self.assertNotIn("torch.constant.none", m_asm)

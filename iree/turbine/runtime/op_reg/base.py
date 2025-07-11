@@ -327,8 +327,7 @@ class KernelSelection(ABC):
     def spec_key(self) -> str:
         try:
             arg_keys = ",".join(
-                d.spec_key if d is not None else "None"
-                for d in self.get_provided_arg_descs()
+                d.spec_key if d is not None else "None" for d in self.arg_descs
             )
             return_keys = ",".join(
                 d.spec_key if d is not None else "None" for d in self.result_descs
@@ -789,7 +788,7 @@ class EmptyOptionalTensorArg:
 
     @property
     def spec_key(self) -> str:
-        raise AssertionError("EmptyOptionalTensorArg has no spec_key")
+        return "TensorArg(None)"
 
     @property
     def mlir_type_asm(self) -> str:
