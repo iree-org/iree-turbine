@@ -773,10 +773,11 @@ class EmptyOptionalTensorArg:
     """Sentinel type marking an optional tensor argument that was not provided
     at the call site.
 
-    To `KernelSelection` a `None` `ArgDescriptor` indicates an argument that's
-    part of the signature, but has not been initialized at an actual call site.
-    An EmptyOptionalTensorArg signals that at the call site no value was
-    provided, or explicit `None` was passed, for an optional argument.
+    To `KernelSelection` a `None` `ArgDescriptor` indicates an argument has been
+    declared as part of the signature, but the `ArgDescriptor` hasn't been
+    initialized with values an actual call site. An `EmptyOptionalTensorArg`
+    signals that an `ArgDescriptor` has been initialized, but an argument was
+    not provided at the call site.
     """
 
     ir_arity: int = 0
