@@ -39,7 +39,7 @@ class WaveKernel:
         self.executable = executable
         self.asm = asm
         if gpu_binary_path:
-            import wave_runtime
+            from .wave_runtime_wrapper import wave_runtime
 
             # It is safe to call this multiple times.
             wave_runtime.load_hip_functions()
