@@ -134,9 +134,8 @@ def get_dim_scaling(
     if isinstance(node, ReduceOp):
         reduction_dim = node.reduction_dim
         if not_computed(reduction_dim) and is_static_dim(reduction_dim):
-            dim_scaling[reduction_dim] = (
-                idxc.get_static_value(reduction_dim)
-                // node.vector_shapes[reduction_dim]
+            dim_scaling[reduction_dim] = ceildiv(
+                idxc.get_static_value(reduction_dim), node.vector_shapes[reduction_dim]
             )
 
     return dim_scaling
