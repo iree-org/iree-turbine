@@ -795,8 +795,8 @@ class EmptyOptionalTensorArg:
     def mlir_type_asm(self) -> str:
         raise AssertionError("EmptyOptionalTensorArg has no mlir_type_asm")
 
-    def generate_meta(self) -> list[Tensor]:
-        raise AssertionError("EmptyOptionalTensorArg has no meta generation")
+    def generate_meta(self) -> None:
+        return None
 
 
 ArgDescriptor = Union[AttrArg, IntArg, TensorArg, TensorListArg, EmptyOptionalTensorArg]
