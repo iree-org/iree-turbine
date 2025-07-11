@@ -9,10 +9,8 @@ import unittest
 import torch
 import torch.nn as nn
 
-from iree.turbine.ops._jinja_test_ops import (
-    test_linear_trailing_optional,
-    test_linear_middle_optional,
-)
+from iree.turbine import aot
+import iree.turbine.ops._jinja_test_ops as ops
 
 
 class CustomLinearTrailingOptional(nn.Module):
@@ -22,7 +20,7 @@ class CustomLinearTrailingOptional(nn.Module):
         weight: torch.Tensor,
         bias: torch.Tensor = None,
     ) -> torch.Tensor:
-        return test_linear_trailing_optional(input, weight, bias)
+        return ops.test_linear_trailing_optional(input, weight, bias)
 
 
 class CustomLinearMiddleOptional(nn.Module):
@@ -37,7 +35,7 @@ class CustomLinearMiddleOptional(nn.Module):
         input = args[0]
         weight = args[-1]
         bias = None if len(args) == 2 else args[1]
-        return test_linear_middle_optional(input, bias, weight)
+        return ops.test_linear_middle_optional(input, bias, weight)
 
 
 class OptionalBiasTest(unittest.TestCase):
@@ -49,37 +47,48 @@ class OptionalBiasTest(unittest.TestCase):
         self.weight = torch.randn((4, 3), generator=g)
         self.bias = torch.randn((3), generator=g)
 
-        # Reference torch.nn.Linear modules
-        self.torch_linear_with_bias = nn.Linear(4, 3, bias=True)
-        self.torch_linear_with_bias.weight.data = self.weight.t()
-        self.torch_linear_with_bias.bias.data = self.bias
-
-        self.torch_linear_without_bias = nn.Linear(4, 3, bias=False)
-        self.torch_linear_without_bias.weight.data = self.weight.t()
-
     def test_trailing_optional_with_bias(self):
         custom_module = CustomLinearTrailingOptional()
         custom_result = custom_module(self.inputs, self.weight, self.bias)
-        torch_result = self.torch_linear_with_bias(self.inputs)
-        self.assertTrue(torch.allclose(custom_result, torch_result))
+        self.assertTrue(
+            torch.allclose(custom_result, self.inputs @ self.weight + self.bias)
+        )
 
     def test_trailing_optional_without_bias(self):
         custom_module = CustomLinearTrailingOptional()
         custom_result = custom_module(self.inputs, self.weight)
-        torch_result = self.torch_linear_without_bias(self.inputs)
-        self.assertTrue(torch.allclose(custom_result, torch_result))
+        self.assertTrue(torch.allclose(custom_result, self.inputs @ self.weight))
 
     def test_middle_optional_with_bias(self):
         custom_module = CustomLinearMiddleOptional()
         custom_result = custom_module(self.inputs, self.bias, self.weight)
-        torch_result = self.torch_linear_with_bias(self.inputs)
-        self.assertTrue(torch.allclose(custom_result, torch_result))
+        self.assertTrue(
+            torch.allclose(custom_result, self.inputs @ self.weight + self.bias)
+        )
 
     def test_middle_optional_without_bias(self):
         custom_module = CustomLinearMiddleOptional()
         custom_result = custom_module(self.inputs, self.weight)
-        torch_result = self.torch_linear_without_bias(self.inputs)
-        self.assertTrue(torch.allclose(custom_result, torch_result))
+        self.assertTrue(torch.allclose(custom_result, self.inputs @ self.weight))
+
+    def test_aot_middle_optional_with_bias(self):
+        e = aot.export(
+            CustomLinearMiddleOptional(), args=(self.inputs, self.bias, self.weight)
+        )
+        mlir_asm = str(e.mlir_module)
+        self.assertIn(
+            "util.call @turbine_test_linear_middle_optional_2d_f32_biased(%0, %1, %2)",
+            mlir_asm,
+        )
+        self.assertIn("linalg.matmul", mlir_asm)
+        self.assertIn("linalg.generic", mlir_asm)
+
+    def test_aot_middle_optional_without_bias(self):
+        e = aot.export(CustomLinearMiddleOptional(), args=(self.inputs, self.weight))
+        mlir_asm = str(e.mlir_module)
+        self.assertIn("util.call @turbine_test_linear_2d_f32(%0, %1)", mlir_asm)
+        self.assertIn("linalg.matmul", mlir_asm)
+        self.assertNotIn("linalg.generic", mlir_asm)
 
 
 if __name__ == "__main__":

@@ -58,6 +58,7 @@ class PassTest(unittest.TestCase):
             "util.call @turbine_test_linear_2d_f32(%0, %1)",
             m_asm,
         )
+        self.assertNotIn("torch._turbine_jinja_test.test_linear_middle_optional", m_asm)
 
     def testStringAttrArg(self):
         global _TEST_STRING_ATTR

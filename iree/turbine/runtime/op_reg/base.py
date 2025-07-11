@@ -314,11 +314,8 @@ class KernelSelection(ABC):
         else:
             return tuple(results)
 
-    def provided_arg_descs(self) -> list[Optional["ArgDescriptor"]]:
-        """Argument descriptors for optional or required arguments provided at
-        the call site. Sentinel values indicating optional arguments not passed
-        at call site are removed. Uninitialized arguments (`None` values) are
-        not removed."""
+    def get_provided_arg_descs(self) -> list[Optional["ArgDescriptor"]]:
+        """Returns argument descriptors with empty optional arguments filtered out."""
         return list(
             filter(
                 lambda arg_desc: not isinstance(arg_desc, EmptyOptionalTensorArg),
@@ -331,7 +328,7 @@ class KernelSelection(ABC):
         try:
             arg_keys = ",".join(
                 d.spec_key if d is not None else "None"
-                for d in self.provided_arg_descs()
+                for d in self.get_provided_arg_descs()
             )
             return_keys = ",".join(
                 d.spec_key if d is not None else "None" for d in self.result_descs
@@ -880,7 +877,7 @@ class FreeFuncKernelBuilder(KernelBuilder):
         with context, Location.unknown(), InsertionPoint(module_body):
             # Assemble arg types.
             arg_types = []
-            for d in ksel.provided_arg_descs():
+            for d in ksel.get_provided_arg_descs():
                 assert d is not None, "Uninitialized argument descriptor"
                 arity = d.ir_arity
                 if not d.is_list:
@@ -915,7 +912,7 @@ class FreeFuncKernelBuilder(KernelBuilder):
         block_arguments = list(entry_block.arguments)
         block_arg_index = 0
         arg_bindings: list[Optional[Value]] = []
-        for desc in ksel.provided_arg_descs():
+        for desc in ksel.get_provided_arg_descs():
             assert desc is not None, "Uninitialized argument descriptor"
             arity = desc.ir_arity
             if not desc.is_list:
