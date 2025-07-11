@@ -101,7 +101,10 @@ setup(
         "iree.turbine": [
             "ops/templates/*.mlir",
             "kernel/boo/conv_exports/tuning_specs.mlir",
-        ],  # Include MLIR templates
+            "kernel/wave/runtime/CMakeLists.txt",
+            "kernel/wave/runtime/runtime.cpp",
+            "kernel/wave/runtime/setup.py",
+        ],  # Include MLIR templates and wave runtime files
     },
     entry_points={
         "torch_dynamo_backends": [
@@ -118,6 +121,7 @@ setup(
         f"Jinja2{get_version_spec('Jinja2')}",
         f"ml_dtypes{get_version_spec('ml_dtypes')}",
         f"typing_extensions{get_version_spec('typing_extensions')}",
+        f"nanobind{get_version_spec('nanobind')}",
     ],
     extras_require={
         "testing": [

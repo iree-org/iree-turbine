@@ -191,7 +191,7 @@ def invoke_with_wave_runtime(
     """
     Invokes the kernel with the wave runtime.
     """
-    import wave_runtime
+    from ..wave_runtime_wrapper import wave_runtime
 
     num_inputs = len(kernel_inputs)
     dynamic_dims = tuple(

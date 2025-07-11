@@ -18,7 +18,6 @@ class CMakeBuild(build_ext):
             self.build_cmake(ext)
 
     def build_cmake(self, ext):
-
         # Ensure CMake is available
         try:
             subprocess.check_output(["cmake", "--version"])
@@ -32,9 +31,12 @@ class CMakeBuild(build_ext):
         build_dir = os.path.abspath(os.path.join(self.build_temp, ext.name))
         os.makedirs(build_dir, exist_ok=True)
 
-        # Get extension directory
-        ext_fullpath = Path.cwd() / self.get_ext_fullpath(ext.name)
-        extdir = ext_fullpath.parent.resolve()
+        # Get extension directory - use build_lib if specified, otherwise use default
+        if hasattr(self, "build_lib") and self.build_lib:
+            extdir = Path(self.build_lib).resolve()
+        else:
+            ext_fullpath = Path.cwd() / self.get_ext_fullpath(ext.name)
+            extdir = ext_fullpath.parent.resolve()
 
         # Configure CMake
         cmake_args = [
