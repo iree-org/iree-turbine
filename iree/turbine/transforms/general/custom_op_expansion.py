@@ -11,8 +11,6 @@ from torch import Tensor
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
-from ...support.logging import aot_logger as logger
-
 from ...dynamo.type_conversion import (
     NativeTypeConverter,
 )

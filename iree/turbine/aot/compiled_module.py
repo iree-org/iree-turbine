@@ -705,19 +705,13 @@ class CompiledModule(metaclass=CompiledModuleMeta):
         # TODO: This should be done in two phases along with export_procs
         # in order to enable dependence.
         for key, ep_def in info.class_info.exported_programs:
-            imported_program = import_exported_program(
+            info.shadow_dict[key] = import_exported_program(
                 module_builder,
                 ep_def.exported_program,
                 symbol_name=ep_def.export_name or "main",
                 symbol_visibility=None if ep_def.public else "private",
                 arg_device=ep_def.arg_device,
             )
-            logger.debug(
-                "torch_mlir imported program for %s:\n%s",
-                ep_def.export_name,
-                imported_program.entry_func_op,
-            )
-            info.shadow_dict[key] = imported_program
 
         # Instantiate procs.
         # TODO: This should be done in two phases, first binding the symbols
