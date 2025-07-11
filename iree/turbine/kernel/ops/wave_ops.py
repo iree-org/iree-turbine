@@ -253,6 +253,9 @@ def le(lhs: "Register", rhs: "Register") -> "Register": ...
 def eq(lhs: "Register", rhs: "Register") -> "Register": ...
 
 
+def ne(lhs: "Register", rhs: "Register") -> "Register": ...
+
+
 def cast(src: "Register", dtype: DataType) -> "Register": ...
 
 
@@ -876,11 +879,13 @@ class BinaryPyOp(BinaryOpBase, ABC):
 @define_py_op(operator.ge)
 @define_py_op(operator.lt)
 @define_py_op(operator.le)
+@define_py_op(operator.ne)
 @define_interface_op("eq")
 @define_interface_op("gt")
 @define_interface_op("ge")
 @define_interface_op("lt")
 @define_interface_op("le")
+@define_interface_op("ne")
 @dataclass
 class ComparisonPyOp(BinaryOpBase, ABC):
     def infer_type(self):

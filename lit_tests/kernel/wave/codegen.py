@@ -1919,6 +1919,8 @@ def test_int_comparisons():
     def cmp_lowerings(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
+        c: tkl.Memory[M, N, ADDRESS_SPACE, tkw.i1],
+        d: tkl.Memory[M, N, ADDRESS_SPACE, tkw.i1],
     ):
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -1930,8 +1932,12 @@ def test_int_comparisons():
         s3 = tkw.select(sge, s1, s2)
         sle = s1 <= s2
         s4 = tkw.select(sle, s1, s2)
+        res_eq = s3 == s4
+        res_ne = s1 != s2
         res = s1 + s2 + s3 + s4
         tkw.write(res, a, elements_per_thread=4)
+        tkw.write(res_eq, c, elements_per_thread=4)
+        tkw.write(res_ne, d, elements_per_thread=4)
 
     cmp_lowerings = wave_compile(get_wave_compile_options(), cmp_lowerings)
     print(cmp_lowerings.asm)
@@ -1943,6 +1949,8 @@ def test_int_comparisons():
     # CHECK: arith.select
     # CHECK: arith.cmpi sge
     # CHECK: arith.select
+    # CHECK: arith.cmpi eq
+    # CHECK: arith.cmpi ne
 
 
 @run_test
@@ -1960,6 +1968,7 @@ def test_verbose_int_comparisons():
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.i32],
         c: tkl.Memory[M, N, ADDRESS_SPACE, tkw.i1],
+        d: tkl.Memory[M, N, ADDRESS_SPACE, tkw.i1],
     ):
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -1972,9 +1981,11 @@ def test_verbose_int_comparisons():
         sle = tkw.le(s1, s2)
         s4 = tkw.select(sle, s1, s2)
         res_eq = tkw.eq(s3, s4)
+        res_ne = tkw.ne(s1, s2)
         res = s1 + s2 + s3 + s4
         tkw.write(res, a, elements_per_thread=4)
         tkw.write(res_eq, c, elements_per_thread=4)
+        tkw.write(res_ne, d, elements_per_thread=4)
 
     verbose_cmp_lowerings = wave_compile(
         get_wave_compile_options(), verbose_cmp_lowerings
@@ -1988,7 +1999,10 @@ def test_verbose_int_comparisons():
     # CHECK: arith.select
     # CHECK: arith.cmpi sge
     # CHECK: arith.select
+    # CHECK: arith.cmpi sle
+    # CHECK: arith.select
     # CHECK: arith.cmpi eq
+    # CHECK: arith.cmpi ne
 
 
 @run_test
@@ -2005,6 +2019,8 @@ def test_float_comparisons():
     def cmpf_lowerings(
         a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
         b: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[M, N, ADDRESS_SPACE, tkw.i1],
+        d: tkl.Memory[M, N, ADDRESS_SPACE, tkw.i1],
     ):
         a_reg = tkw.read(a, elements_per_thread=4)
         b_reg = tkw.read(b, elements_per_thread=4)
@@ -2016,8 +2032,12 @@ def test_float_comparisons():
         s3 = tkw.select(sge, s1, s2)
         sle = s1 <= s2
         s4 = tkw.select(sle, s1, s2)
+        res_eq = s3 == s4
+        res_ne = s1 != s2
         res = s1 + s2 + s3 + s4
         tkw.write(res, a, elements_per_thread=4)
+        tkw.write(res_eq, c, elements_per_thread=4)
+        tkw.write(res_ne, d, elements_per_thread=4)
 
     cmpf_lowerings = wave_compile(get_wave_compile_options(), cmpf_lowerings)
     print(cmpf_lowerings.asm)
@@ -2031,6 +2051,8 @@ def test_float_comparisons():
     # CHECK: arith.select
     # CHECK: arith.cmpf ole
     # CHECK: arith.select
+    # CHECK: arith.cmpf oeq
+    # CHECK: arith.cmpf one
 
 
 # TODO: Something is broken in codegen and we are getting int in place of fx.Node

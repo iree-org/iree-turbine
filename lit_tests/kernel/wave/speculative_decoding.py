@@ -24,7 +24,7 @@ def test_speculative_decoding():
         threshold_single=0.01,
         threshold_acc=0.01,
         num_draft_tokens=6,
-        vocab_size=20,
+        vocab_size=64,
         seq_len=12,
     )
 
@@ -51,7 +51,6 @@ def test_speculative_decoding():
     # CHECK: vector.load
     # CHECK: vector.store
     # CHECK: arith.select
-    # CHECK: arith.addf
     # CHECK: arith.select
     # CHECK: scf.yield
     # CHECK: scf.yield

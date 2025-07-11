@@ -27,7 +27,10 @@ import torch.nn.functional as F
 
 
 def get_wave_speculative_decoding_kernel(
-    batch_size, num_draft_tokens, vocab_size, seq_len
+    batch_size,
+    num_draft_tokens,
+    vocab_size,
+    seq_len,
 ):
     speculative_decoding, symbols, _ = get_speculative_decoding_kernel(
         batch_size,
@@ -151,6 +154,32 @@ def reference_sampling_kernel(
         cur_prob_offset_vec[bx] = cur_prob_offset
         last_accepted_retrive_idx_vec[bx] = last_accepted_retrive_idx
 
+        # second kernel
+        last_offset = cur_prob_offset
+        q = target_probs[bx, last_offset]
+        p = (
+            draft_probs[bx, last_offset]
+            if num_accepted_tokens != num_speculative_tokens - 1
+            else torch.zeros_like(q)
+        )
+
+        relu_diff = F.relu(q - p)
+        sum_relu = relu_diff.sum()
+        u = coin * sum_relu
+        sampled_id = d - 1
+        aggregate = 0.0
+
+        for i in range(d):
+            val = relu_diff[i]
+            if val <= 0:
+                continue
+            aggregate += val
+            if aggregate > u:
+                sampled_id = i
+                break
+
+        predicts[last_accepted_retrive_idx] = sampled_id
+
 
 def tree_speculative_sampling_target_only(
     predicts,  # [seq_len], mutable
@@ -179,6 +208,9 @@ def tree_speculative_sampling_target_only(
     last_accepted_retrive_idx_vec = torch.empty(
         [batch_size], dtype=torch.int32, device=draft_probs.device
     )
+    updated_coins_vec = torch.empty(
+        [batch_size], dtype=torch.float32, device=draft_probs.device
+    )
 
     # TODO: Combine into one kernel.
     sampling_kernel = get_wave_speculative_sampling_kernel(
@@ -203,17 +235,23 @@ def tree_speculative_sampling_target_only(
         accept_index,
         cur_prob_offset_vec,
         last_accepted_retrive_idx_vec,
+        updated_coins_vec,
     )
 
     wave_kernel = get_wave_speculative_decoding_kernel(
-        batch_size, num_draft_tokens, vocab_size, seq_len
+        batch_size,
+        num_draft_tokens,
+        vocab_size,
+        seq_len,
     )
     wave_kernel(
         target_probs,
         draft_probs,
         cur_prob_offset_vec,
-        uniform_samples,
+        updated_coins_vec,
         last_accepted_retrive_idx_vec,
+        accept_token_num,
+        num_speculative_tokens,
         predicts,
     )
 
@@ -285,7 +323,9 @@ def testReferenceSpeculativeDecoding(
         device=device,
     )
 
-    target_logits = torch.full((2, 6, 20), 1, dtype=torch.float32, device=device)
+    # Updated target_logits last dim to be divisible by num threads per wave to
+    # satisfy the constraints.
+    target_logits = torch.full((2, 6, 64), 1, dtype=torch.float32, device=device)
     target_logits[0, 0, 3] = 10
     target_logits[0, 3, 4] = 10
     target_logits[0, 4, 5] = 10
