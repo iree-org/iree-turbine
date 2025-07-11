@@ -7,7 +7,9 @@ from torch._dynamo.backends.registry import CompilerFn
 from iree.turbine.kernel.boo.fusion.apply import fusion_transform
 from iree.turbine.kernel.boo.fusion.schema import (
     FusionSchema,
+    ReplacementSchema,
     DEFAULT_SUPPORTED_BOO_FUSIONS,
+    DEFAULT_POST_FUSION_REPLACEMENTS,
 )
 
 
@@ -15,6 +17,7 @@ def backend(
     *,
     nested_backend: str | CompilerFn = "eager",
     fusion_schema: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS,
+    post_fusion_replacements: ReplacementSchema = DEFAULT_POST_FUSION_REPLACEMENTS,
 ):
     """
     A 'torch.compile' backend that selectively offloads operations to IREE.
@@ -24,12 +27,17 @@ def backend(
     'nested_backend'. Any valid 'torch.compile' backend can be specified.
 
     'fusion_schema' may be used to control which operations are fused and
-    offloaded.
+    offloaded. 'post_fusion_replacements' is applied to any fused subgraphs that
+    are created.
     """
     nested_backend_fn = torch._dynamo.lookup_backend(nested_backend)
 
     def compiler_fn(model: fx.GraphModule, example_args):
-        fusion_transform(model, fusion_schema=fusion_schema)
+        fusion_transform(
+            model,
+            fusion_schema=fusion_schema,
+            post_fusion_replacements=post_fusion_replacements,
+        )
         return make_boxed_func(nested_backend_fn(model, example_args))
 
     return aot_autograd(fw_compiler=compiler_fn)

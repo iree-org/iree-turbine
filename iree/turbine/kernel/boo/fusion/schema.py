@@ -6,7 +6,11 @@
 
 from dataclasses import dataclass
 from typing import Dict, Sequence
+
+import torch
 from torch.fx.node import Target
+
+from .replacement import ReplacementSchema, replace_aten_convolution
 
 
 @dataclass
@@ -18,8 +22,11 @@ class OpFusionSpec:
 
 FusionSchema = Dict[Target, OpFusionSpec]
 
-# TODO: identify advantageous fusions.
-DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {}
+# TODO: extend this
+DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
+    torch.ops.aten.convolution.default: OpFusionSpec()
+}
 
-# TODO: set up custom implementation replacements.
-PRE_FUSION_DECOMPOSITIONS = {}
+DEFAULT_POST_FUSION_REPLACEMENTS: ReplacementSchema = {
+    torch.ops.aten.convolution.default: replace_aten_convolution
+}

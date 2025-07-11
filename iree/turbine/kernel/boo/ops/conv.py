@@ -5,7 +5,8 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 
-from typing import Sequence, Tuple
+from collections.abc import Callable
+from typing import Any, Sequence, Tuple
 
 import torch
 
