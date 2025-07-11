@@ -81,13 +81,21 @@ def get_gqa_bshd_attention_kernel(
     constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 2)]
     constraints += [tkw.WorkgroupConstraint(H, BLOCK_H, 3)]
     constraints += [tkw.WorkgroupConstraint(H_KV, BLOCK_H, 3, primary=False)]
-    constraints += [
-        tkw.TilingConstraint(
-            N_KV,
-            BLOCK_N_KV,
-            iters=sympy.Min((WORKGROUP_0 + 1) * BLOCK_N_Q, N_KV) // BLOCK_N_KV,
-        )
-    ]
+    if is_causal:
+        constraints += [
+            tkw.TilingConstraint(
+                N_KV,
+                BLOCK_N_KV,
+                iters=sympy.Min((WORKGROUP_0 + 1) * BLOCK_N_Q, N_KV) // BLOCK_N_KV,
+            )
+        ]
+    else:
+        constraints += [
+            tkw.TilingConstraint(
+                N_KV,
+                BLOCK_N_KV,
+            )
+        ]
     constraints += [tkw.WaveConstraint(N_Q, BLOCK_N_Q / 4)]
     constraints += [tkw.WaveConstraint(D_KV, BLOCK_D_KV / 1)]
 
@@ -107,7 +115,6 @@ def get_gqa_bshd_attention_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(4, 1, 1),
             mma_type=mfma_variant[1],
             vector_shapes={B: 0, H: 0, H_KV: 0, N_Q: Mvec, D_KV: Nvec},
         )

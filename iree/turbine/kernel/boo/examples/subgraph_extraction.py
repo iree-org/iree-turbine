@@ -9,8 +9,8 @@ import torch
 from torch.profiler import profile, ProfilerActivity
 from functools import partial
 
+from iree.turbine.dynamo.backends import boo
 from iree.turbine.kernel.boo.fusion import (
-    fusion_transform,
     FusionSchema,
     OpFusionSpec,
 )
@@ -70,17 +70,17 @@ def main(print_parameters: bool, trace_path: str):
     # If any convolution is followed by a relu, it will be fused into the IREE's convolution kernel.
     # If any linear is preceeded or followed by view ops, those will be fused into the linear op.
     schema: FusionSchema = {
-        torch.ops.aten.conv2d.default: OpFusionSpec(
+        torch.ops.aten.convolution.default: OpFusionSpec(
             recursive=True, producers=(), consumers=(torch.ops.aten.relu.default,)
         ),
-        torch.ops.aten.linear.default: OpFusionSpec(
+        torch.ops.aten.addmm.default: OpFusionSpec(
             recursive=True,
             producers=(torch.ops.aten.view.default,),
             consumers=(torch.ops.aten.view.default,),
         ),
     }
 
-    converted_module = fusion_transform(m, sample_inputs, fusion_schema=schema)
+    converted_module = torch.compile(m, backend=boo.backend(fusion_schema=schema))
 
     # warmup
     sample_output = converted_module(*sample_inputs)

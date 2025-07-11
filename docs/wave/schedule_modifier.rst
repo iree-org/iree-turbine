@@ -1,10 +1,10 @@
 Schedule Validator
-================
+==================
 
 The ScheduleValidator is a component that validates and optimizes operation schedules while maintaining resource and dependency constraints. It ensures that operations are scheduled in a way that respects both hardware resource limitations and data dependencies between operations.
 
 Key Features
------------
+------------
 
 - Validates and repairs schedules to maintain resource constraints
 - Handles both forward and backward schedule repairs using a directional constraint enforcement strategy
@@ -13,7 +13,7 @@ Key Features
 - Maintains dependency relationships between operations
 
 Components
----------
+----------
 
 1. ResourceUsageTracker
 
@@ -38,12 +38,12 @@ Components
    - Avoids unnecessary cascading repairs by processing nodes in order
 
 Directional Constraint Enforcement
---------------------------------
+----------------------------------
 
 The repair algorithm uses a directional strategy to efficiently maintain schedule validity:
 
 Forward Repair
-~~~~~~~~~~~~~
+~~~~~~~~~~~~~~
 
 When moving nodes forward in time:
 
@@ -57,7 +57,7 @@ When moving nodes forward in time:
   * Note: Moving a node forward can violate successor constraints, but we handle this by processing nodes in order
 
 Backward Repair
-~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
 
 When moving nodes backward in time:
 
@@ -78,7 +78,7 @@ specific order (forward or backward) and handle any constraint violations when w
 reach the affected nodes in that order.
 
 Worked Example
--------------
+--------------
 
 Let's walk through an example using a simple graph with 4 operations (a, b, c, d) and 2 resource types:
 
@@ -106,7 +106,7 @@ Let's walk through an example using a simple graph with 4 operations (a, b, c, d
     ]
 
 Initial Schedule
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~
 
 The initial schedule places operations with some spacing to allow for moves:
 
@@ -120,7 +120,7 @@ The initial schedule places operations with some spacing to allow for moves:
     }
 
 Creating the Validator
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 We create a ScheduleValidator with:
 
@@ -141,7 +141,7 @@ We create a ScheduleValidator with:
     )
 
 Attempting a Move
-~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
 
 Let's try to move operation 'c' to cycle 2, which would require backward repair:
 

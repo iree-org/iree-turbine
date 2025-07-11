@@ -14,7 +14,7 @@ class WaveCompileOptions:
     """
 
     # === General options ===
-    canonicalize: bool = False
+    canonicalize: bool = True
     func_name: str = "isolated_benchmark"
 
     # === Symbol mappings ===
@@ -60,6 +60,7 @@ class WaveCompileOptions:
     use_water_leak_check: bool = False
 
     # === Performance options ===
+    optimization_level: bool = True
     denorm_fp_math_f32: str = None
     waves_per_eu: int = None
     wave_runtime: str = None

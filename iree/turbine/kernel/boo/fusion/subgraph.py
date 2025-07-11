@@ -4,95 +4,38 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Sequence
+from typing import NamedTuple
 
 import torch
-from torch.fx.subgraph_rewriter import replace_pattern
 from torch.fx.graph import Graph
 from torch.fx.graph_module import GraphModule
 from torch.fx.node import Node
-from torch._functorch.aot_autograd import _aot_export_function
 
-from .schema import FusionSchema, OpFusionSpec, Target
-from ..ops.graph import get_autograd_function
+from .schema import FusionSchema
 from ....support.logging import aot_logger as logger
 
 
-def _log_graph_module(label: str, gm: GraphModule):
-    logger.debug("%s:\n%s", label, gm.print_readable(print_output=False))
-
-
-def _get_meta_item_from_nodes(
-    gm: GraphModule, op: str = "placeholder", item: str = "val"
-) -> tuple:
-    return tuple([n.meta.get(item) for n in gm.graph.nodes if n.op == op])
-
-
-def get_subgraph_replacement(subgraph: GraphModule) -> GraphModule:
-    _log_graph_module("Extracted SubGraph Module", subgraph)
-    fake_args = _get_meta_item_from_nodes(subgraph)
-    joint_sg, metadata, in_spec, out_spec = _aot_export_function(
-        subgraph.forward,
-        fake_args,
-        decompositions=None,
-    )
-    # TODO: do some minimal validation on the results of the above function.
-    # in_spec, _kw_in_spec = in_spec.children_specs
-    _log_graph_module("AOT Joint FWD/BWD Subgraph Module", joint_sg)
-
-    fake_args_joint = _get_meta_item_from_nodes(joint_sg)
-
-    custom_op = get_autograd_function(
-        joint_sg,
-        fake_args_joint,
-        num_fwd_outputs=metadata.num_forward_returns,
-        force_single_dispatch=False,
-    )
-
-    single_node_graph = fused_subgraph(
-        subgraph,
-        custom_op,
-        (n for n in subgraph.graph.nodes if n.op == "placeholder"),
-        num_outputs=metadata.num_forward_returns,
-    )
-    _log_graph_module("Replacement Subgraph", single_node_graph)
-    return single_node_graph
-
-
-def fused_subgraph(
-    root, target: Target, input_nodes: Sequence[Node], num_outputs: int
-) -> GraphModule:
-    g = Graph()
-    new_inputs = []
-    for n in input_nodes:
-        new_node = g.placeholder(n.name)
-        new_node.meta = n.meta
-        new_inputs.append(new_node)
-    fused_node = g.call_function(target, tuple(new_inputs))
-    outputs = (
-        [fused_node]
-        if num_outputs == 1
-        else [
-            g.call_method("__getitem__", args=(fused_node, i))
-            for i in range(num_outputs)
-        ]
-    )
-    g.output(result=tuple(outputs))
-    return GraphModule(root, g)
+class FusedSubgraph(NamedTuple):
+    module: GraphModule
+    """Module containing the subgraph to be fused."""
+    matched_nodes: list[Node]
+    """Nodes in the orignal graph that were matched."""
+    arguments: list[Node]
+    """Arguments that should be passed to 'module' when calling it."""
+    results: list[Node]
+    """Nodes in the original graph that are produced by calling 'module'."""
 
 
 def extract_fusion_subgraph_modules(
     src_gm: GraphModule, fusion_schema: FusionSchema
-) -> tuple[list[GraphModule], list[dict[Node, Node]]]:
+) -> list[FusedSubgraph]:
     """Traverses src_gm nodes in order. When a node matches a root op in the fusion_schema,
     A new subgraph is created with the root op in addition to any adjacent nodes matching the schema.
 
     All subgraphs found this way are returned in a list.
     The corresponding mappings from src_gm nodes -> subgraph nodes is also returned as a list.
     """
-    subgraph_projections: list[dict[Node, Node]] = []
-    subgraph_inclusions: list[dict[Node, Node]] = []
-    subgraphs: list[GraphModule] = []
+    subgraphs: list[FusedSubgraph] = []
     used_nodes: set[Node] = set()
     for root in src_gm.graph.nodes:
         # if this node is included in any subgraph already, we can't use it.
@@ -155,14 +98,17 @@ def extract_fusion_subgraph_modules(
         logger.debug("post-sort node_list: %s", str(node_list))
         # Create a detached subgraph
         subgraph = Graph()
-        output_nodes = []
-        subgraph_projection = {}
-        subgraph_inclusion = {}
+        output_nodes: list[Node] = []
+        subgraph_matched_nodes: list[Node] = []
+        subgraph_arguments: list[Node] = []
+        subgraph_results: list[Node] = []
+        subgraph_projection: dict[Node, Node] = {}
         for node in node_list:
             # Iterate over producers in src graph and make placeholders in detached subgraph if necessary.
             for producer in node.all_input_nodes:
                 if producer in node_list or producer in subgraph_projection.keys():
                     continue
+                subgraph_arguments.append(producer)
                 subgraph_input = subgraph.placeholder(name=producer.name)
                 subgraph_input.meta = producer.meta
                 tensor_meta = producer.meta.get("tensor_meta")
@@ -175,32 +121,27 @@ def extract_fusion_subgraph_modules(
                 ):
                     tensor_val.requires_grad = True
                 subgraph_projection[producer] = subgraph_input
-                subgraph_inclusion[subgraph_input] = producer
             # Copy over the current node to the detached subgraph, updating args based on corresponding elements of the detached subgraph.
             new_node = subgraph.node_copy(node, arg_transform=subgraph_projection.get)
             subgraph_projection[node] = new_node
-            subgraph_inclusion[new_node] = node
+            subgraph_matched_nodes.append(node)
             # Any nodes in the subgraph which have users outside the subgraph should be returned.
             if len(set(node.users.keys()).difference(node_list)) > 0:
                 output_nodes.append(new_node)
+                subgraph_results.append(node)
 
         # Add outputs to the detached subgraph.
         subgraph.output(result=tuple(output_nodes))
         subgraph.lint()
 
-        subgraph_projections.append(subgraph_projection)
-        subgraph_inclusions.append(subgraph_inclusion)
         used_nodes.update(subgraph_projection.keys())
-        subgraphs.append(GraphModule(src_gm, subgraph))
+        subgraphs.append(
+            FusedSubgraph(
+                module=GraphModule(src_gm, subgraph),
+                matched_nodes=subgraph_matched_nodes,
+                arguments=subgraph_arguments,
+                results=subgraph_results,
+            )
+        )
 
-    return subgraphs, subgraph_projections
-
-
-def replace_subgraphs(
-    src_gm: GraphModule,
-    external_subgraphs: Sequence[GraphModule],
-    replacements: Sequence[GraphModule],
-):
-    """Replaces instances of each subgraph in src_gm with their corresponding replacement graph."""
-    for sg, replacement in zip(external_subgraphs, replacements):
-        _ = replace_pattern(src_gm, sg, replacement)
+    return subgraphs

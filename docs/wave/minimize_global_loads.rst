@@ -1,5 +1,5 @@
 Global Load Minimization
-=======================
+========================
 
 This document explains Wave's global load minimization optimization, which is a crucial pass in the compilation pipeline that reduces memory traffic by optimizing how data is loaded from global memory.
 
@@ -128,7 +128,7 @@ The diagram above shows how the optimization transforms the computation graph:
    - Better memory access coalescing
 
 How It Works
------------
+------------
 
 The optimization process consists of several key steps:
 
@@ -183,7 +183,7 @@ The global load minimization pass will transform this kernel to:
 2. Add proper synchronization
 
 Key Transformations
------------------
+-------------------
 
 1. **Memory Access Coalescing**
 
@@ -200,7 +200,7 @@ Key Transformations
 
 
 Performance Impact
-----------------
+------------------
 
 The global load minimization optimization typically provides:
 
@@ -216,14 +216,14 @@ The global load minimization optimization typically provides:
 
 
 IR Transformation
-----------------
+-----------------
 
 The optimization transforms the IR to optimize memory access patterns. Here's a simplified view of the key changes:
 
 Before Optimization:
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: mlir
+.. code-block:: text
 
     func.func @gemm(%a: !stream.binding<memref<MxKxf16>>,
                    %b: !stream.binding<memref<NxKxf16>>,
@@ -247,9 +247,9 @@ Before Optimization:
     }
 
 After Optimization:
-~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: mlir
+.. code-block:: text
 
     func.func @gemm(%a: !stream.binding<memref<MxKxf16>>,
                    %b: !stream.binding<memref<NxKxf16>>,
@@ -277,7 +277,7 @@ After Optimization:
 For more details on the implementation, see the source code in `iree/turbine/kernel/wave/minimize_global_loads.py`.
 
 Related Optimizations
--------------------
+---------------------
 
 The global load minimization pass works in conjunction with other Wave optimizations:
 

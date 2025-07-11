@@ -4,14 +4,15 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import torch
-from torch.fx.graph_module import GraphModule
-from .schema import FusionSchema, DEFAULT_SUPPORTED_BOO_FUSIONS
+from collections.abc import Sequence
+
+from torch import fx
+
+from iree.turbine.kernel.boo.ops.graph import get_custom_graph_op
+from .schema import FusionSchema
 from .subgraph import (
+    FusedSubgraph,
     extract_fusion_subgraph_modules,
-    replace_subgraphs,
-    get_subgraph_replacement,
-    _log_graph_module,
 )
 from ....support.logging import aot_logger as logger
 
@@ -20,54 +21,52 @@ __all__ = [
 ]
 
 
-def fusion_transform(
-    module: torch.nn.Module,
-    args: tuple[torch.Tensor, ...],
-    *,
-    fusion_schema: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS,
-) -> torch.nn.Module:
-    """Applies fusions to the underlying fx graph for module by offloading subgraphs to IREE compiler/runtime.
+def fusion_transform(module: fx.GraphModule, *, fusion_schema: FusionSchema) -> None:
+    """Applies fusions to the underlying fx graph of a GraphModule by offloading subgraphs to IREE compiler/runtime."""
 
-    This function expects the model to contain exclusively tensor arguments and no keyword arguments.
+    _log_graph_module("Source module", module)
 
-    This currently uses dynamo to export a graph, from which we auto-generate custom boo ops to replace fusable subgraphs.
-    """
+    subgraphs = extract_fusion_subgraph_modules(module, fusion_schema)
+    subgraph_replacements: list[tuple[FusedSubgraph, fx.Node]] = []
+    for subgraph in subgraphs:
+        custom_op = get_custom_graph_op(subgraph.module, force_single_dispatch=False)
+        # Insert call as early as possible, to maintain topological order.
+        insert_pt = sorted(subgraph.arguments)[-1]
+        with module.graph.inserting_after(insert_pt):
+            call = module.graph.call_function(custom_op, tuple(subgraph.arguments))
+        # Delay replacement until we've inserted all calls, so that the
+        # references in 'subgraphs[i].arguments' are still valid.
+        subgraph_replacements.append((subgraph, call))
 
-    if not all([isinstance(a, torch.Tensor) for a in args]):
-        raise ValueError("fusion_transform expects model arguments to be tensors.")
+    for subgraph, call in subgraph_replacements:
+        _replace_with_call(module.graph, subgraph.results, call)
+        for node in reversed(sorted(subgraph.matched_nodes)):
+            module.graph.erase_node(node)
 
-    exported_program = torch.export.export(module, args=args)
+    module.recompile()
+    module.graph.lint()
 
-    return _fusion_transform(exported_program, fusion_schema=fusion_schema)
+    _log_graph_module("Converted module", module)
 
 
-def _fusion_transform(
-    exported_program: torch.export.ExportedProgram,
-    *,
-    fusion_schema: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS,
-) -> torch.nn.Module:
-    """Applies fusions to the underlying fx graph of an ExportedProgram by offloading subgraphs to IREE compiler/runtime.
+def _replace_with_call(
+    graph: fx.Graph,
+    nodes_to_replace: Sequence[fx.Node],
+    call: fx.Node,
+):
+    assert call.op == "call_function"
+    with graph.inserting_after(call):
+        outputs = (
+            [call]
+            if len(nodes_to_replace) == 1
+            else [
+                graph.call_method("__getitem__", args=(call, i))
+                for i in range(len(nodes_to_replace))
+            ]
+        )
+    for node_to_replace, call_output in zip(nodes_to_replace, outputs, strict=True):
+        node_to_replace.replace_all_uses_with(call_output)
 
-    This function currently expects the ExportedProgram to only contain tensor arguments with static dims.
-    """
 
-    gm: GraphModule = exported_program.graph_module
-
-    _log_graph_module("Source Graph Module", gm)
-
-    subgraphs, _ = extract_fusion_subgraph_modules(gm, fusion_schema)
-    subgraph_repl = []
-    for sg in subgraphs:
-        subgraph_repl.append(get_subgraph_replacement(sg))
-
-    replace_subgraphs(gm, subgraphs, subgraph_repl)
-
-    # TODO: update any metadata which may have been modified by the replacement.
-
-    logger.debug("Converted exported program:\n%s", str(exported_program))
-
-    converted_module = exported_program.module()
-
-    logger.debug("Converted module:\n%s", str(converted_module))
-
-    return converted_module
+def _log_graph_module(label: str, gm: fx.GraphModule):
+    logger.debug("%s:\n%s", label, gm.print_readable(print_output=False))
