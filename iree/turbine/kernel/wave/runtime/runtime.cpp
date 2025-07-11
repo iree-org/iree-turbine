@@ -4,6 +4,7 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_vector.h>
 #include <nanobind/stl/string.h>
+#include <sstream>
 
 namespace nb = nanobind;
 
@@ -24,14 +25,6 @@ namespace nb = nanobind;
         }                                                                                         \
     } while (0)
 
-#define HIP_CHECK_RETURN(expr) \
-    do                         \
-    {                          \
-        hipError_t e = (expr); \
-        if (e)                 \
-            return e;          \
-    } while (0)
-
 struct KernelLaunchInfo
 {
     uintptr_t stream; // hip stream pointer
@@ -44,7 +37,7 @@ struct KernelLaunchInfo
 using Int64Vector = std::vector<uint64_t>;
 using Int32Vector = std::vector<uint32_t>;
 
-static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
+static void launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
     const Int64Vector &dynamicDims, nb::list scalarArgs)
 {
     hipStream_t stream = reinterpret_cast<hipStream_t>(info.stream);
@@ -86,11 +79,9 @@ static int launch(const KernelLaunchInfo &info, const Int64Vector &tensors,
         &kernArgSize,
         HIP_LAUNCH_PARAM_END};
 
-    HIP_CHECK_RETURN(hipModuleLaunchKernel(function, info.gridX, info.gridY, info.gridZ,
-                                           info.blockX, info.blockY, info.blockZ, 0,
-                                           stream, nullptr, (void **)&hipLaunchParams));
-
-    return hipSuccess;
+        HIP_CHECK_EXC(hipModuleLaunchKernel(function, info.gridX, info.gridY, info.gridZ,
+                                            info.blockX, info.blockY, info.blockZ, 0,
+                                            stream, nullptr, (void **)&hipLaunchParams));
 }
 
 static void unload_binary(void *ptr) noexcept
