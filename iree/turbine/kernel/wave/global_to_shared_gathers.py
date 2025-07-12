@@ -307,6 +307,7 @@ def global_to_shared_gathers(trace: CapturedTrace, constraints: list[Constraint]
         constraint_tile_size,
         load_elems_per_thread,
         max_elements_per_load,
+        total_number_of_threads,
         allow_dynamic_transposed=True,
         use_memory_type=True,
     )
