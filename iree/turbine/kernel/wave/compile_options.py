@@ -43,6 +43,10 @@ class WaveCompileOptions:
     capture_trace: bool = False
     bench_with_constant_weights: bool = False
     bench_file: str = None
+    profile_python_wrapper: bool = False
+    profile_python_cprofile: bool = True  # If False, use timeit.timeit()
+    profile_python_warmup: int = 1
+    profile_python_repetitions: int = 1000
 
     # === Cache options ===
     kernel_hash: str = None
@@ -63,7 +67,8 @@ class WaveCompileOptions:
     optimization_level: bool = True
     denorm_fp_math_f32: str = None
     waves_per_eu: int = None
-    wave_runtime: str = None
+    wave_runtime: bool = False
+    iree_launch_async: bool = True
     use_buffer_load_ops: bool = False
     use_buffer_store_ops: bool = False
     use_stride_cache_swizzle: bool = False

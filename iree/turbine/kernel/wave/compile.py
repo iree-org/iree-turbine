@@ -1,7 +1,8 @@
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 
 import torch
 import glob
+from itertools import chain
 from copy import copy
 from .._support.indexing import IndexingContext
 from .._support.location_config import LocationCaptureLevel
@@ -16,9 +17,12 @@ from .cache import (
     is_cache_enabled,
 )
 from .utils.compile_utils import compile_to_vmfb
-from .utils.run_utils import invoke_vmfb, _write_file
+from .utils.run_utils import print_bench_result, write_file, invoke_with_wave_runtime
+from .profiling import benchmark_module
 from iree.turbine.kernel._support.context import push, pop
 from iree.turbine.kernel.lang import IndexSymbol
+from iree.turbine.runtime.launch import Launchable
+import iree.runtime as rt
 
 
 class WaveKernel:
@@ -48,6 +52,21 @@ class WaveKernel:
             self.gpu_func = None
         self.bound_scalar_symbols = bound_scalar_symbols
         self.symbols_args_map = symbols_args_map
+
+        if not options.wave_runtime:
+            # 'launchable' decides if function is async or not based on name.
+            self.func_name = options.func_name + (
+                "$async" if options.iree_launch_async else ""
+            )
+
+            def loader(device):
+                vm_instance = device.vm_instance
+                return rt.VmModule.copy_buffer(vm_instance, self.executable)
+
+            self.launchable = Launchable.from_vm_module(
+                loader,
+                entry_point=self.func_name,
+            )
 
     def __call__(self, *args, **kwargs):
         return self.invoke(*args, **kwargs)
@@ -82,23 +101,81 @@ class WaveKernel:
             arg_idx, dim = self.symbols_args_map[sym]
             dynamic_symbols.append(args[arg_idx].shape[dim])
 
-        invoke_vmfb(
-            self.executable,
-            self.options,
-            kernel_inputs,
-            kernel_outputs,
-            scalar_args,
-            self.bound_scalar_symbols,
-            dynamic_symbols,
-            self.gpu_func,
-        )
+        if self.options.wave_runtime:
+            invoke_with_wave_runtime(
+                self.options,
+                kernel_inputs,
+                kernel_outputs,
+                scalar_args,
+                self.bound_scalar_symbols,
+                dynamic_symbols,
+                self.gpu_func,
+            )
+        else:
+            tensors = [t.data for t in chain(kernel_inputs, kernel_outputs)]
+            self.launchable(*tensors, *scalar_args, *dynamic_symbols)
+
+            if self.options.run_bench:
+                benchmark_flags = {}
+                benchmark_flags["batch_size"] = self.options.benchmark_batch_size
+
+                if self.options.benchmark_repetitions is not None:
+                    benchmark_flags["benchmark_repetitions"] = int(
+                        self.options.benchmark_repetitions
+                    )
+                benchmark_results = benchmark_module(
+                    self.options,
+                    [t.data for t in kernel_inputs],
+                    [t.data for t in kernel_outputs],
+                    dynamic_symbols,
+                    self.executable,
+                    self.func_name,
+                    **benchmark_flags,
+                )
+                print_bench_result(benchmark_results, self.options.bench_file)
+
         return self.asm
+
+
+def invoke_with_profile(options: WaveCompileOptions, invoke: Callable, *args, **kwargs):
+
+    # Warmup
+    for _ in range(options.profile_python_warmup):
+        invoke(*args, **kwargs)
+
+    repetitions = options.profile_python_repetitions
+    if options.profile_python_cprofile:
+        import cProfile
+
+        with cProfile.Profile() as pr:
+            for _ in range(repetitions):
+                res = invoke(*args, **kwargs)
+
+        pr.print_stats(sort="cumulative")
+        return res
+    else:
+        import timeit
+
+        time = timeit.timeit(
+            lambda: invoke(*args, **kwargs),
+            number=repetitions,
+        )
+        print(f"Time: {time:.3f}s, {time / repetitions:.6f}s per iteration")
+        return invoke(*args, **kwargs)
+
+
+class WaveKernelWithProfile(WaveKernel):
+
+    def __call__(self, *args, **kwargs):
+        return invoke_with_profile(self.options, self.invoke, *args, **kwargs)
 
 
 def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveKernel:
     """
     Compiles the wave kernel to an executable.
     """
+
+    cls = WaveKernelWithProfile if options.profile_python_wrapper else WaveKernel
 
     # Check if this kernel has been compiled before, if the cache is enabled.
     cache_manager = None
@@ -128,7 +205,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
             options.kernel_launch_info = cached_kernel.kernel_launch_info
             if options.wave_runtime:
                 binary_path = get_binary_path()
-            return WaveKernel(
+            return cls(
                 options,
                 cached_kernel.vmfb,
                 cached_kernel.asm,
@@ -170,6 +247,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         options.func_name,
         options.dynamic_symbols,
         location_capture_config=options.location_capture_config,
+        async_dispatch=options.iree_launch_async,
     )
     asm = mb.module_op.get_asm(
         enable_debug_info=options.location_capture_config.level
@@ -186,13 +264,11 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         asm = options.override_mlir
 
     if options.compile_to_mlir:
-        return WaveKernel(
-            options, None, asm, None, bound_scalar_symbols, symbols_args_map
-        )
+        return cls(options, None, asm, None, bound_scalar_symbols, symbols_args_map)
 
     compiled_wave_vmfb = compile_to_vmfb(asm, options)
     if options.create_vmfb_file:
-        _write_file(options.create_vmfb_file, "wb", compiled_wave_vmfb)
+        write_file(options.create_vmfb_file, "wb", compiled_wave_vmfb)
 
     kernel_usages = [
         binding.kernel_buffer_type.usage
@@ -212,7 +288,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
     if options.wave_runtime:
         binary_path = get_binary_path()
 
-    return WaveKernel(
+    return cls(
         options,
         compiled_wave_vmfb,
         asm,

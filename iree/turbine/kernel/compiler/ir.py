@@ -46,6 +46,7 @@ from iree.compiler.dialects import (
     flow as flow_d,
     func as func_d,
     gpu as gpu_d,
+    hal as hal_d,
     iree_codegen as iree_codegen_d,
     llvm as llvm_d,
     math as math_d,
@@ -53,6 +54,7 @@ from iree.compiler.dialects import (
     rocdl as rocdl_d,
     scf as scf_d,
     stream as stream_d,
+    tensor as tensor_d,
     transform as transform_d,
     vector as vector_d,
 )

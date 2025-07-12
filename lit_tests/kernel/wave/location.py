@@ -73,7 +73,7 @@ def test_location_local_scope():
     # CHECK: vector.load {{.*}} loc("{{.*}}location.py":{{[0-9]+}}
     # CHECK: arith.addf {{.*}} loc("{{.*}}location.py":{{[0-9]+}}
     #
-    # CHECK: @isolated_benchmark(%{{.*}} loc("a"("{{.*}}location.py":{{[0-9]+}}{{.*}} loc("b"("{{.*}}location.py":{{[0-9]+}}
+    # CHECK: @isolated_benchmark$async(%{{.*}} loc("a"("{{.*}}location.py":{{[0-9]+}}{{.*}} loc("b"("{{.*}}location.py":{{[0-9]+}}
 
 
 @run_test
@@ -100,7 +100,7 @@ def test_location_global_scope():
     # CHECK-LABEL: @add_loc_global_scope
     # CHECK: vector.load {{.*}} loc(#[[loc_load:.+]])
     # CHECK: arith.addf {{.*}} loc(#[[loc_addf:.+]])
-    # CHECK: @isolated_benchmark(%{{.*}} loc("a"(#[[loc_arg]])), %{{.*}} loc("b"(#[[loc_arg]])))
+    # CHECK: @isolated_benchmark$async(%{{.*}} loc("a"(#[[loc_arg]])), %{{.*}} loc("b"(#[[loc_arg]])), %{{.*}} loc(unknown), %{{.*}} loc(unknown))
     # CHECK-DAG: #[[loc_load]] = loc("{{.*}}location.py":{{[0-9]+}}
     # CHECK-DAG: #[[loc_addf]] = loc("{{.*}}location.py":{{[0-9]+}}
 
