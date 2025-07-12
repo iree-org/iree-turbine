@@ -55,6 +55,9 @@ static void load_hip_functions()
     // We expect this module to be loaded permanently in the process so we don't
     // care about unloading it.
     auto module = dlopen("libamdhip64.so", RTLD_NOW);
+    if (!module)
+        throw std::runtime_error("Failed to load libamdhip64.so: " + std::string(dlerror()));
+
     GET_FUNC(module, hipModuleLaunchKernel);
     GET_FUNC(module, hipGetErrorName);
     GET_FUNC(module, hipGetErrorString);
