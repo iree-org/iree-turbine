@@ -2,6 +2,7 @@ from typing import Any, Optional, Callable
 
 import torch
 import glob
+from itertools import chain
 from copy import copy
 from .._support.indexing import IndexingContext
 from .._support.location_config import LocationCaptureLevel
@@ -111,9 +112,8 @@ class WaveKernel:
                 self.gpu_func,
             )
         else:
-            self.launchable(
-                *kernel_inputs, *kernel_outputs, *scalar_args, *dynamic_symbols
-            )
+            tensors = [t.data for t in chain(kernel_inputs, kernel_outputs)]
+            self.launchable(*tensors, *scalar_args, *dynamic_symbols)
 
             if self.options.run_bench:
                 benchmark_flags = {}
@@ -125,8 +125,8 @@ class WaveKernel:
                     )
                 benchmark_results = benchmark_module(
                     self.options,
-                    kernel_inputs,
-                    kernel_outputs,
+                    [t.data for t in kernel_inputs],
+                    [t.data for t in kernel_outputs],
                     dynamic_symbols,
                     self.executable,
                     self.func_name,
