@@ -41,6 +41,9 @@ class WaveKernel:
         if gpu_binary_path:
             import wave_runtime
 
+            # It is safe to call this multiple times.
+            wave_runtime.load_hip_functions()
+
             self.gpu_binary, self.gpu_func = wave_runtime.load_binary(
                 gpu_binary_path, options.kernel_launch_info.func_name
             )

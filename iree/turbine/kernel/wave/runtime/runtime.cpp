@@ -1,10 +1,60 @@
 #include <cstring>
-#include <hip/hip_runtime.h>
-#include <hip/hip_runtime_api.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/bind_vector.h>
 #include <nanobind/stl/string.h>
 #include <sstream>
+
+// Just hardcode necessary constants and types here, we don't expect them to
+// change as it will break all hip programs in existence.
+#define HIP_LAUNCH_PARAM_BUFFER_POINTER ((void*)0x01)
+#define HIP_LAUNCH_PARAM_BUFFER_SIZE ((void*)0x02)
+#define HIP_LAUNCH_PARAM_END ((void*)0x03)
+
+using hipError_t = int;
+using hipStream_t = void*;
+using hipFunction_t = void*;
+using hipModule_t = void*;
+
+ using hipModuleLaunchKernel_t = hipError_t(*)(hipFunction_t,
+    unsigned int, unsigned int,
+    unsigned int, unsigned int,
+    unsigned int, unsigned int,
+    unsigned int, hipStream_t,
+    void**, void**);
+
+using hipGetErrorName_t = const char*(*)(hipError_t);
+using hipGetErrorString_t = const char*(*)(hipError_t);
+using hipModuleUnload_t = hipError_t(*)(hipModule_t);
+using hipModuleLoad_t = hipError_t(*)(hipModule_t*, const char*);
+using hipModuleGetFunction_t = hipError_t(*)(hipFunction_t*, hipModule_t, const char*);
+
+hipModuleLaunchKernel_t hipModuleLaunchKernel = nullptr;
+hipGetErrorName_t hipGetErrorName = nullptr;
+hipGetErrorString_t hipGetErrorString = nullptr;
+hipModuleUnload_t hipModuleUnload = nullptr;
+hipModuleLoad_t hipModuleLoad = nullptr;
+hipModuleGetFunction_t hipModuleGetFunction = nullptr;
+
+static void load_hip_functions()
+{
+    if (hipModuleLaunchKernel && hipGetErrorName && hipGetErrorString &&
+        hipModuleUnload && hipModuleLoad && hipModuleGetFunction)
+        return;
+
+#ifdef __linux__
+    // We expect this module to be loaded permanently in the process so we don't
+    // care about unloading it.
+    auto module = dlopen("libamdhip64.so", RTLD_NOW);
+    hipModuleLaunchKernel = (hipModuleLaunchKernel_t)dlsym(module, "hipModuleLaunchKernel");
+    hipGetErrorName = (hipGetErrorName_t)dlsym(module, "hipGetErrorName");
+    hipGetErrorString = (hipGetErrorString_t)dlsym(module, "hipGetErrorString");
+    hipModuleUnload = (hipModuleUnload_t)dlsym(module, "hipModuleUnload");
+    hipModuleLoad = (hipModuleLoad_t)dlsym(module, "hipModuleLoad");
+    hipModuleGetFunction = (hipModuleGetFunction_t)dlsym(module, "hipModuleGetFunction");
+#else
+    #error "Unsupported platform"
+#endif
+}
 
 namespace nb = nanobind;
 
@@ -117,6 +167,7 @@ NB_MODULE(wave_runtime, m)
         .def_rw("blockX", &KernelLaunchInfo::blockX)
         .def_rw("blockY", &KernelLaunchInfo::blockY)
         .def_rw("blockZ", &KernelLaunchInfo::blockZ);
+    m.def("load_hip_functions", &load_hip_functions);
     m.def("launch", &launch);
     m.def("load_binary", &load_binary);
 }
