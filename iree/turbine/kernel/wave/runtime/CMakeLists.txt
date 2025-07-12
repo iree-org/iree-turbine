@@ -20,32 +20,6 @@ execute_process(
   COMMAND_ERROR_IS_FATAL ANY)
 find_package(nanobind CONFIG REQUIRED)
 
-# Link against torch, using the libraries and include dirs in site-packages.
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -c "import torch; print(torch.__path__[0])"
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_PATH
-  COMMAND_ERROR_IS_FATAL ANY)
-
-# Add all directories in /opt/rocm/lib/cmake to CMAKE_PREFIX_PATH
-file(GLOB subdirectories "/opt/rocm/lib/cmake/*")
-foreach(subdir ${subdirectories})
-  if(IS_DIRECTORY ${subdir})
-    list(APPEND CMAKE_PREFIX_PATH "${subdir}")
-  endif()
-endforeach()
-
-include_directories(${torch_PATH}/include ${torch_PATH}/include/torch/csrc/api/include/)
-link_directories(${torch_PATH}/lib)
-
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -c "import torch; print(int(torch._C._GLIBCXX_USE_CXX11_ABI))"
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE torch_cxx_abi
-  COMMAND_ERROR_IS_FATAL ANY)
-set(TORCH_CXX_FLAGS -D_GLIBCXX_USE_CXX11_ABI=${torch_cxx_abi})
-
-find_package(hip REQUIRED)
-add_definitions(-D__HIP_PLATFORM_AMD__ -DUSE_ROCM)
-
 # Build the core parts of nanobind once
 nanobind_build_library(nanobind SHARED)
 
@@ -53,8 +27,8 @@ nanobind_build_library(nanobind SHARED)
 add_library(wave_runtime MODULE runtime.cpp)
 
 # .. and link it against the nanobind parts
-set(TORCH_LIBRARIES ${torch_PATH}/lib/libtorch.so ${torch_PATH}/lib/libc10.so)
-target_link_libraries(wave_runtime PRIVATE nanobind hip::host ${TORCH_LIBRARIES})
+target_link_libraries(wave_runtime PRIVATE nanobind)
+
 set_target_properties(wave_runtime PROPERTIES LINK_WHAT_YOU_USE TRUE)
 
 # .. enable size optimizations
@@ -74,9 +48,6 @@ nanobind_disable_stack_protector(wave_runtime)
 
 # .. set the Python extension suffix
 nanobind_extension(wave_runtime)
-
-# .. set important compilation flags
-nanobind_compile_options(wave_runtime PRIVATE ${TORCH_CXX_FLAGS})
 
 # .. set important linker flags
 nanobind_link_options(wave_runtime)

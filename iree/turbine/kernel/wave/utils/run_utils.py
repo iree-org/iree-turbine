@@ -201,8 +201,11 @@ def invoke_with_wave_runtime(
     # on the dynamic symbols.
     grid = compute_grid(dynamic_dims, options.kernel_launch_info.grid)
 
+    stream = torch.cuda.current_stream().cuda_stream
+
     # Populate all the information required to launch the kernel.
     kernel_launch_info = wave_runtime.KernelLaunchInfo(
+        stream,
         gpu_func,
         options.kernel_launch_info.shared_memory_bytes,
         grid[0],
