@@ -69,4 +69,6 @@ def _replace_with_call(
 
 
 def _log_graph_module(label: str, gm: fx.GraphModule):
-    logger.debug("%s:\n%s", label, gm.print_readable(print_output=False))
+    logger.debug(
+        "%s:\n%s", label, gm.print_readable(print_output=False, include_stride=True)
+    )
