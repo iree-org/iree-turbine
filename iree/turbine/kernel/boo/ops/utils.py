@@ -127,16 +127,11 @@ def _is_contiguous(
 ) -> bool:
     if isinstance(t, torch.Tensor):
         return t.is_contiguous(memory_format=memory_format)
-    metadata_memory_format = getattr(t, "memory_format", None)
-    if metadata_memory_format is None:
-        if isinstance(t, TensorMetadata):
-            raise ValueError(
-                f"TensorMetadata: {t} does not have memory_format attribute!"
-            )
-        raise TypeError(
-            f"Unhandled type: {type(t)}. _is_contiguous input 0 must be a torch.Tensor or TensorMetadata object."
-        )
-    return metadata_memory_format == memory_format
+    if isinstance(t, TensorMetadata):
+        return t.memory_format == memory_format
+    raise TypeError(
+        f"Unhandled type: {type(t)}. _is_contiguous input 0 must be a torch.Tensor or TensorMetadata object."
+    )
 
 
 class MemoryFormatPermutation(NamedTuple):
