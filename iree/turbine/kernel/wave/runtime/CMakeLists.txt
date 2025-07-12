@@ -20,17 +20,6 @@ execute_process(
   COMMAND_ERROR_IS_FATAL ANY)
 find_package(nanobind CONFIG REQUIRED)
 
-# Add all directories in /opt/rocm/lib/cmake to CMAKE_PREFIX_PATH
-file(GLOB subdirectories "/opt/rocm/lib/cmake/*")
-foreach(subdir ${subdirectories})
-  if(IS_DIRECTORY ${subdir})
-    list(APPEND CMAKE_PREFIX_PATH "${subdir}")
-  endif()
-endforeach()
-
-find_package(hip REQUIRED)
-add_definitions(-D__HIP_PLATFORM_AMD__ -DUSE_ROCM)
-
 # Build the core parts of nanobind once
 nanobind_build_library(nanobind SHARED)
 
@@ -38,7 +27,7 @@ nanobind_build_library(nanobind SHARED)
 add_library(wave_runtime MODULE runtime.cpp)
 
 # .. and link it against the nanobind parts
-target_link_libraries(wave_runtime PRIVATE nanobind hip::host)
+target_link_libraries(wave_runtime PRIVATE nanobind)
 
 set_target_properties(wave_runtime PROPERTIES LINK_WHAT_YOU_USE TRUE)
 

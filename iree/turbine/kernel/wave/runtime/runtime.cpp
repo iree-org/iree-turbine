@@ -4,6 +4,10 @@
 #include <nanobind/stl/string.h>
 #include <sstream>
 
+#ifdef __linux__
+#include <dlfcn.h> // dlopen
+#endif
+
 // Just hardcode necessary constants and types here, we don't expect them to
 // change as it will break all hip programs in existence.
 #define HIP_LAUNCH_PARAM_BUFFER_POINTER ((void*)0x01)
@@ -28,12 +32,12 @@ using hipModuleUnload_t = hipError_t(*)(hipModule_t);
 using hipModuleLoad_t = hipError_t(*)(hipModule_t*, const char*);
 using hipModuleGetFunction_t = hipError_t(*)(hipFunction_t*, hipModule_t, const char*);
 
-hipModuleLaunchKernel_t hipModuleLaunchKernel = nullptr;
-hipGetErrorName_t hipGetErrorName = nullptr;
-hipGetErrorString_t hipGetErrorString = nullptr;
-hipModuleUnload_t hipModuleUnload = nullptr;
-hipModuleLoad_t hipModuleLoad = nullptr;
-hipModuleGetFunction_t hipModuleGetFunction = nullptr;
+static hipModuleLaunchKernel_t hipModuleLaunchKernel = nullptr;
+static hipGetErrorName_t hipGetErrorName = nullptr;
+static hipGetErrorString_t hipGetErrorString = nullptr;
+static hipModuleUnload_t hipModuleUnload = nullptr;
+static hipModuleLoad_t hipModuleLoad = nullptr;
+static hipModuleGetFunction_t hipModuleGetFunction = nullptr;
 
 static void load_hip_functions()
 {
@@ -42,15 +46,23 @@ static void load_hip_functions()
         return;
 
 #ifdef __linux__
+#define GET_FUNC(module, name) do { \
+    name = reinterpret_cast<decltype(name)>(dlsym(module, #name)); \
+    if (!name) { \
+        throw std::runtime_error("Failed to load symbol: " + std::string(#name)); \
+    } \
+} while (0)
     // We expect this module to be loaded permanently in the process so we don't
     // care about unloading it.
     auto module = dlopen("libamdhip64.so", RTLD_NOW);
-    hipModuleLaunchKernel = (hipModuleLaunchKernel_t)dlsym(module, "hipModuleLaunchKernel");
-    hipGetErrorName = (hipGetErrorName_t)dlsym(module, "hipGetErrorName");
-    hipGetErrorString = (hipGetErrorString_t)dlsym(module, "hipGetErrorString");
-    hipModuleUnload = (hipModuleUnload_t)dlsym(module, "hipModuleUnload");
-    hipModuleLoad = (hipModuleLoad_t)dlsym(module, "hipModuleLoad");
-    hipModuleGetFunction = (hipModuleGetFunction_t)dlsym(module, "hipModuleGetFunction");
+    GET_FUNC(module, hipModuleLaunchKernel);
+    GET_FUNC(module, hipGetErrorName);
+    GET_FUNC(module, hipGetErrorString);
+    GET_FUNC(module, hipModuleUnload);
+    GET_FUNC(module, hipModuleLoad);
+    GET_FUNC(module, hipModuleGetFunction);
+
+#undef GET_FUNC
 #else
     #error "Unsupported platform"
 #endif
