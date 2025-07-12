@@ -39,7 +39,7 @@ class WaveKernel:
         self.executable = executable
         self.asm = asm
         if gpu_binary_path:
-            import wave_runtime
+            from .wave_runtime_wrapper import wave_runtime
 
             self.gpu_binary, self.gpu_func = wave_runtime.load_binary(
                 gpu_binary_path, options.kernel_launch_info.func_name
