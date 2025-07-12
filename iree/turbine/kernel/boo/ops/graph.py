@@ -14,9 +14,9 @@ from torch.fx.passes.shape_prop import TensorMetadata
 
 from .library import *
 from .utils import (
-    MemoryFormatInformation,
-    get_arg_spec_name_and_memory_format_information,
-    get_memory_format_information,
+    MemoryFormatPermutation,
+    get_arg_spec_name_and_memory_format_permutations,
+    get_memory_format_permutation,
 )
 from ..runtime import get_launchable
 from ....support.logging import aot_logger as logger
@@ -86,14 +86,14 @@ def _define_custom_graph_op(
     has_a_none_output = any(is_none_output)
     schema = _get_schema(inputs, outputs)
     define_schema(op_name, schema)
-    # Get memory format information about the output tensors from the graph metadata.
-    output_mem_format_infos = [
-        get_memory_format_information(t) for t in outputs if t is not None
+    # Get memory format permutations for output tensors based on graph metadata.
+    output_mem_format_perms = [
+        get_memory_format_permutation(t) for t in outputs if t is not None
     ]
     logger.debug(
-        "Output TensorMetadata:\n%s\nOutput MemoryFormatInformation:\n%s",
+        "Output TensorMetadata:\n%s\nOutput MemoryFormatPermutation:\n%s",
         str(outputs),
-        str(output_mem_format_infos),
+        str(output_mem_format_perms),
     )
 
     class LayoutManagedModule(torch.nn.Module):
@@ -107,20 +107,19 @@ def _define_custom_graph_op(
 
         def __init__(
             self,
-            mem_format_infos: Sequence[MemoryFormatInformation],
+            mem_format_perms: Sequence[MemoryFormatPermutation],
         ):
             super().__init__()
-            self.mem_format_infos = mem_format_infos
+            self.mem_format_perms = mem_format_perms
 
         def forward(self, *args):
             handled_args = []
             for idx, arg in enumerate(args):
-                arg_mem_format_info = self.mem_format_infos[idx]
-                if not arg_mem_format_info.is_channels_last:
-                    handled_args.append(arg)
-                    continue
+                arg_perms = self.mem_format_perms[idx]
                 handled_args.append(
-                    arg.permute(arg_mem_format_info.inverse_permutation)
+                    arg
+                    if arg_perms is None
+                    else arg.permute(arg_perms.inverse_permutation)
                 )
             outputs = gm.forward(*handled_args)
             single_output = False
@@ -129,32 +128,28 @@ def _define_custom_graph_op(
                 single_output = True
             handled_outputs = []
             for idx, o in enumerate(outputs):
-                o_mem_format_info = output_mem_format_infos[idx]
-                if not o_mem_format_info.is_channels_last:
-                    handled_outputs.append(o)
-                    continue
-                handled_outputs.append(o.permute(o_mem_format_info.permutation))
+                o_perms = output_mem_format_perms[idx]
+                handled_outputs.append(
+                    o if o_perms is None else o.permute(o_perms.permutation)
+                )
             return handled_outputs[0] if single_output else tuple(handled_outputs)
 
     @register_impl(op_name)
     def _(*args):
 
-        spec_name, mem_format_infos = get_arg_spec_name_and_memory_format_information(
+        spec_name, mem_format_perms = get_arg_spec_name_and_memory_format_permutations(
             op_name, *args
         )
 
-        logger.debug("Memory format infos:\n%s", str(mem_format_infos))
-
         handled_args = []
         for idx, arg in enumerate(args):
-            arg_mem_format_info = mem_format_infos[idx]
-            if not arg_mem_format_info.is_channels_last:
-                handled_args.append(arg)
-                continue
-            handled_args.append(arg.permute(arg_mem_format_info.permutation))
+            arg_perms = mem_format_perms[idx]
+            handled_args.append(
+                arg if arg_perms is None else arg.permute(arg_perms.permutation)
+            )
 
         l = get_launchable(
-            lambda: LayoutManagedModule(mem_format_infos),
+            lambda: LayoutManagedModule(mem_format_perms),
             arg_factory=tuple(handled_args),
             func_name=spec_name,
             force_single_dispatch=force_single_dispatch,
@@ -167,11 +162,10 @@ def _define_custom_graph_op(
             single_output = True
         handled_outputs = []
         for idx, o in enumerate(outputs):
-            o_mem_format_info = output_mem_format_infos[idx]
-            if not o_mem_format_info.is_channels_last:
-                handled_outputs.append(o)
-                continue
-            handled_outputs.append(o.permute(o_mem_format_info.inverse_permutation))
+            o_perms = output_mem_format_perms[idx]
+            handled_outputs.append(
+                o if o_perms is None else o.permute(o_perms.inverse_permutation)
+            )
 
         if not has_a_none_output:
             return handled_outputs[0] if single_output else tuple(handled_outputs)
