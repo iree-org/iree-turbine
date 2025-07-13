@@ -273,6 +273,77 @@ def create_transpose_reads(
     return new_reads
 
 
+def create_transpose_writes(
+    write: Write,
+    new_reads: list[Read],
+    materialized_shape: Sequence[IndexSymbol],
+    store_elems_per_thread: int,
+    expected_number_of_stores: int,
+    dst_symbolic_shape: Sequence[IndexSymbol],
+    global_index: dict[IndexSymbol, IndexSequence],
+    linear_id: IndexExpr,
+) -> defaultdict[fx.Node, list[Write]]:
+    """
+    Create new writes for transpose.
+    """
+    repacked = []
+
+    store_shape = get_tiled_shape(
+        materialized_shape, store_elems_per_thread, expected_number_of_stores
+    )
+    logger.info(f"store_shape={store_shape}")
+
+    # Construct transpose.
+    for i in range(expected_number_of_stores):
+        with write.graph.inserting_before(write.fx_node):
+            values = []
+            for j in range(store_elems_per_thread):
+                value = Extract(new_reads[j], [i]).add_to_graph(write.graph)
+                values.append(value)
+
+            value = Reshape(values, store_elems_per_thread).add_to_graph(write.graph)
+            repacked.append(value)
+
+    new_writes = defaultdict(list)
+
+    # Construct new writes.
+    for i in range(expected_number_of_stores):
+        store_index = get_tiled_index(
+            linear_id,
+            store_shape,
+            store_elems_per_thread,
+            expected_number_of_stores,
+            i,
+            transpose=True,
+        )
+        store_index = {
+            k: IndexSequence(v, 1, 1) for k, v in zip(dst_symbolic_shape, store_index)
+        }
+        store_index = combine_index(
+            global_index,
+            store_index,
+            dst_symbolic_shape[-1],
+            store_elems_per_thread,
+        )
+        logger.info(f"store_index={store_index}")
+        with write.graph.inserting_before(write.fx_node):
+            value = repacked[i]
+            value.index = store_index
+
+            new_write = Write(
+                value,
+                write.memory,
+                store_elems_per_thread,
+                mapping=write.mapping,
+                mapping_dynamic_vals=write.mapping_dynamic_vals,
+            ).add_to_graph(write.graph)
+            new_write.index = store_index
+            new_write.vector_shapes = write.vector_shapes
+            new_writes[write.memory].append(new_write)
+
+    return new_writes
+
+
 def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
     """
     This pass is detecting when read-write pair is doing transpose and tries to
@@ -338,9 +409,7 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
 
         linear_id = hardware_constraint.linearized_thread_id
         global_index = remove_thread_indexing(read.index)
-        logger.info(
-            f"global_index={global_index}, store_elems_per_thread={store_elems_per_thread}"
-        )
+        logger.info(f"global_index={global_index}")
 
         new_reads = create_transpose_reads(
             read,
@@ -352,62 +421,15 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
             constraint_tile_size,
         )
 
-        repacked = []
-
-        store_shape = get_tiled_shape(
-            materialized_shape, store_elems_per_thread, expected_number_of_stores
+        new_writes = create_transpose_writes(
+            write,
+            new_reads,
+            materialized_shape,
+            store_elems_per_thread,
+            expected_number_of_stores,
+            dst_symbolic_shape,
+            global_index,
+            linear_id,
         )
-        logger.info(f"store_shape={store_shape}")
-
-        # Construct transpose.
-        for i in range(expected_number_of_stores):
-            with write.graph.inserting_before(write.fx_node):
-                values = []
-                for j in range(store_elems_per_thread):
-                    value = Extract(new_reads[j], [i]).add_to_graph(write.graph)
-                    values.append(value)
-
-                value = Reshape(values, store_elems_per_thread).add_to_graph(
-                    write.graph
-                )
-                repacked.append(value)
-
-        new_writes = defaultdict(list)
-
-        # Construct new writes.
-        for i in range(expected_number_of_stores):
-            store_index = get_tiled_index(
-                linear_id,
-                store_shape,
-                store_elems_per_thread,
-                expected_number_of_stores,
-                i,
-                transpose=True,
-            )
-            store_index = {
-                k: IndexSequence(v, 1, 1)
-                for k, v in zip(dst_symbolic_shape, store_index)
-            }
-            store_index = combine_index(
-                global_index,
-                store_index,
-                dst_symbolic_shape[-1],
-                store_elems_per_thread,
-            )
-            logger.info(f"store_index={store_index}")
-            with write.graph.inserting_before(write.fx_node):
-                value = repacked[i]
-                value.index = store_index
-
-                new_write = Write(
-                    value,
-                    write.memory,
-                    store_elems_per_thread,
-                    mapping=write.mapping,
-                    mapping_dynamic_vals=write.mapping_dynamic_vals,
-                ).add_to_graph(write.graph)
-                new_write.index = store_index
-                new_write.vector_shapes = write.vector_shapes
-                new_writes[write.memory].append(new_write)
 
         update_write_dependencies(new_writes, trace)
