@@ -11,6 +11,7 @@ from typing import Tuple, Iterable, NamedTuple
 
 import torch
 from torch.fx.passes.shape_prop import TensorMetadata
+from ....support.logging import runtime_logger as logger
 
 __all__ = [
     "is_boo_backward_enabled",
@@ -142,7 +143,10 @@ class MemoryFormatPermutation(NamedTuple):
 
 
 def get_memory_format_permutation(
-    t: torch.Tensor | TensorMetadata, num_dims: int | None = None
+    t: torch.Tensor | TensorMetadata,
+    num_dims: int | None = None,
+    *,
+    strict: bool = False,
 ) -> MemoryFormatPermutation | None:
     """Returns a MemoryFormatPermutation for a Tensor if one can be inferred.
     Currently, this only supports `channels_last` and `channels_last_3d` memory_formats.
@@ -150,12 +154,25 @@ def get_memory_format_permutation(
     num_dims = num_dims or len(t.shape) - 2
     cl_mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_dims, None)
     if cl_mem_format is None or not _is_contiguous(t, cl_mem_format):
+        if not _is_contiguous(t, memory_format=torch.contiguous_format):
+            stride = t.stride() if isinstance(t, torch.Tensor) else t.stride
+            if strict:
+                raise ValueError(
+                    f"Expected tensor to be in contiguous or channels_last(_3d) memory formats. "
+                    f"Got {type(t)} with {t.shape = }, {stride = }."
+                )
+            logger.warning(
+                "Encountered tensor at kernel boundary with unhandled memory format. Got %s with shape %s, stride %s."
+                "This tensor will be forced into contiguous format during dlpack handoff to IREE.",
+                str(type(t)),
+                str(t.shape),
+                str(stride),
+                exc_info=True,
+            )
         return None
 
     cl_contig = CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION.get(num_dims)
     contig_cl = CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION.get(num_dims)
-    if None in [cl_contig, contig_cl]:
-        return None
     return MemoryFormatPermutation(
         permutation=cl_contig,
         inverse_permutation=contig_cl,

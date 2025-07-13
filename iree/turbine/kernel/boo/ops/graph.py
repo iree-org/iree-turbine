@@ -88,7 +88,7 @@ def _define_custom_graph_op(
     define_schema(op_name, schema)
     # Get memory format permutations for output tensors based on graph metadata.
     output_mem_format_perms = [
-        get_memory_format_permutation(t) for t in outputs if t is not None
+        get_memory_format_permutation(t, strict=True) for t in outputs if t is not None
     ]
     logger.debug(
         "Output TensorMetadata:\n%s\nOutput MemoryFormatPermutation:\n%s",
