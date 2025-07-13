@@ -4,7 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import copy
 from typing import Sequence
 from ..wave.constraints import (
     Constraint,
@@ -38,7 +37,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def is_transpose_read(node: fx.Node) -> bool:
+def is_transpose_read_candidate(node: fx.Node) -> bool:
     read = get_custom(node)
     if not isinstance(read, Read):
         return False
@@ -59,7 +58,7 @@ def combine_index(
     """
     This function takes two index sequences and combines them.
     """
-    assert len(index1) == len(index2)
+    assert set(index1.keys()) == set(index2.keys())
     return {
         key: IndexSequence(
             index1[key].start + index2[key].start,
@@ -120,7 +119,7 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
     in each thread registers, using sequence of vector.extract_strided_slice/insert_strided_slice.
     """
     logger.info("in_thread_transpose")
-    candidates = trace.walk(is_transpose_read)
+    candidates = trace.walk(is_transpose_read_candidate)
 
     # Map expanded read-write pairs to their original read-write pair.
     id_to_read_write = defaultdict(list)
@@ -130,9 +129,8 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
             if not isinstance(write, Write):
                 continue
 
-            id_to_read_write[(read.pre_expansion_id, write.pre_expansion_id)].append(
-                (read, write)
-            )
+            key = (read.pre_expansion_id, write.pre_expansion_id)
+            id_to_read_write[key].append((read, write))
 
     constraint_tile_size = {
         c.dim: c.tile_size
