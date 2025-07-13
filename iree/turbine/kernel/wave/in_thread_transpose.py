@@ -196,6 +196,83 @@ def get_transpose_config(
     )
 
 
+def create_transpose_reads(
+    read: Read,
+    load_elems_per_thread: int,
+    expected_number_of_loads: int,
+    src_symbolic_shape: Sequence[IndexSymbol],
+    global_index: dict[IndexSymbol, IndexSequence],
+    linear_id: IndexExpr,
+    constraint_tile_size: dict[IndexSymbol, int],
+) -> list[Read]:
+    """
+    Create new reads for transpose.
+    """
+    load_shape = get_tiled_shape(
+        materialize_shape(constraint_tile_size, src_symbolic_shape),
+        load_elems_per_thread,
+        expected_number_of_loads,
+    )
+    logger.info(f"load_shape={load_shape}")
+
+    new_reads = []
+
+    # Construct new reads.
+    for i in range(expected_number_of_loads):
+        read_index = get_tiled_index(
+            linear_id,
+            load_shape,
+            load_elems_per_thread,
+            expected_number_of_loads,
+            i,
+            transpose=False,
+        )
+        read_index = {
+            k: IndexSequence(v, 1, 1) for k, v in zip(src_symbolic_shape, read_index)
+        }
+        read_index = combine_index(
+            global_index,
+            read_index,
+            src_symbolic_shape[-1],
+            load_elems_per_thread,
+        )
+        logger.info(f"read_index={read_index}")
+        mapping = read.mapping
+        if mapping is not None:
+            # As we are transposing read, update mapping to still be output
+            # identity.
+            out_mapping = {
+                k: IndexMapping.iterator(i) for i, k in enumerate(src_symbolic_shape)
+            }
+            subs = {v: out_mapping[k] for k, v in mapping.output_mapping.items()}
+            input_mapping = {
+                k: safe_subs(v, subs, simultaneous=True)
+                for k, v in mapping.input_mapping.items()
+            }
+            mapping = IndexMapping(
+                num_iterators=len(out_mapping),
+                inputs=input_mapping,
+                outputs=out_mapping,
+                dynamic_val_mappings=mapping.dynamic_val_mappings,
+            )
+
+        with read.graph.inserting_before(read.fx_node):
+            new_read = Read(
+                read.memory,
+                load_elems_per_thread,
+                mapping=mapping,
+                mapping_dynamic_vals=read.mapping_dynamic_vals,
+            ).add_to_graph(read.graph)
+            new_read.index = read_index
+            new_read.vector_shapes = read.vector_shapes
+            new_read_custom = get_custom(new_read)
+            new_read_custom.infer_type()
+            update_read_mapping_dynamic_values(new_read_custom)
+            new_reads.append(new_read)
+
+    return new_reads
+
+
 def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
     """
     This pass is detecting when read-write pair is doing transpose and tries to
@@ -265,70 +342,16 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
             f"global_index={global_index}, store_elems_per_thread={store_elems_per_thread}"
         )
 
-        new_reads = []
-        load_shape = get_tiled_shape(
-            materialize_shape(constraint_tile_size, src_symbolic_shape),
+        new_reads = create_transpose_reads(
+            read,
             load_elems_per_thread,
             expected_number_of_loads,
+            src_symbolic_shape,
+            global_index,
+            linear_id,
+            constraint_tile_size,
         )
-        logger.info(f"load_shape={load_shape}")
 
-        # Construct new reads.
-        for i in range(expected_number_of_loads):
-            read_index = get_tiled_index(
-                linear_id,
-                load_shape,
-                load_elems_per_thread,
-                expected_number_of_loads,
-                i,
-                transpose=False,
-            )
-            read_index = {
-                k: IndexSequence(v, 1, 1)
-                for k, v in zip(src_symbolic_shape, read_index)
-            }
-            read_index = combine_index(
-                global_index,
-                read_index,
-                src_symbolic_shape[-1],
-                load_elems_per_thread,
-            )
-            logger.info(f"read_index={read_index}")
-            mapping = read.mapping
-            if mapping is not None:
-                # As we are transposing read, update mapping to still be output
-                # identity.
-                out_mapping = {
-                    k: IndexMapping.iterator(i)
-                    for i, k in enumerate(src_symbolic_shape)
-                }
-                subs = {v: out_mapping[k] for k, v in mapping.output_mapping.items()}
-                input_mapping = {
-                    k: safe_subs(v, subs, simultaneous=True)
-                    for k, v in mapping.input_mapping.items()
-                }
-                mapping = IndexMapping(
-                    num_iterators=len(out_mapping),
-                    inputs=input_mapping,
-                    outputs=out_mapping,
-                    dynamic_val_mappings=mapping.dynamic_val_mappings,
-                )
-
-            with read.graph.inserting_before(read.fx_node):
-                new_read = Read(
-                    read.memory,
-                    load_elems_per_thread,
-                    mapping=mapping,
-                    mapping_dynamic_vals=read.mapping_dynamic_vals,
-                ).add_to_graph(read.graph)
-                new_read.index = read_index
-                new_read.vector_shapes = read.vector_shapes
-                new_read_custom = get_custom(new_read)
-                new_read_custom.infer_type()
-                update_read_mapping_dynamic_values(new_read_custom)
-                new_reads.append(new_read)
-
-        new_writes = defaultdict(list)
         repacked = []
 
         store_shape = get_tiled_shape(
@@ -348,6 +371,8 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
                     write.graph
                 )
                 repacked.append(value)
+
+        new_writes = defaultdict(list)
 
         # Construct new writes.
         for i in range(expected_number_of_stores):
