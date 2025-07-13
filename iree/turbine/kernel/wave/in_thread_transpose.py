@@ -4,7 +4,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Sequence
+from dataclasses import dataclass
+from typing import Sequence, Optional
 from ..wave.constraints import (
     Constraint,
     WorkgroupConstraint,
@@ -109,6 +110,92 @@ def get_tiled_index(
     return index
 
 
+@dataclass
+class TransposeConfig:
+    """
+    Configuration for in-thread transpose.
+    """
+
+    load_elems_per_thread: int
+    expected_number_of_loads: int
+    expected_number_of_stores: int
+    store_elems_per_thread: int
+    src_symbolic_shape: Sequence[IndexSymbol]
+    dst_symbolic_shape: Sequence[IndexSymbol]
+    materialized_shape: Sequence[IndexSymbol]
+
+
+def get_transpose_config(
+    hardware_constraint: "HardwareConstraint",
+    constraint_tile_size: dict[IndexSymbol, int],
+    total_number_of_threads: int,
+    reads_writes: list[tuple[Read, Write]],
+) -> Optional[TransposeConfig]:
+    """
+    Given a read-write pair, return the configuration for in-thread transpose.
+
+    Return None if no transpose is possible.
+    """
+    read, _ = reads_writes[0]
+    element_type = read.type.dtype
+    store_elems_per_thread = hardware_constraint.max_elems_per_load(element_type)
+    max_elements_per_store = total_number_of_threads * store_elems_per_thread
+    logger.info(
+        f"store_elems_per_thread={store_elems_per_thread}, "
+        f"max_elements_per_store={max_elements_per_store}"
+    )
+
+    dst_symbolic_shape = read.type.symbolic_shape
+
+    materialized_shape = materialize_shape(constraint_tile_size, dst_symbolic_shape)
+    if any(s > 1 for s in materialized_shape[:-2]) or any(
+        s <= 1 for s in materialized_shape[-2:]
+    ):
+        logger.info(
+            f"only last 2 dims transpose is supported, got {materialized_shape}"
+        )
+        return None
+
+    src_symbolic_shape = transpose_last2(dst_symbolic_shape)
+
+    total_number_of_elements = prod(materialized_shape)
+    logger.info(
+        f"src_shape={src_symbolic_shape}, "
+        f"dst_shape={dst_symbolic_shape}, "
+        f"materialized_shape={materialized_shape}, "
+        f"total_elements={total_number_of_elements}"
+    )
+
+    expected_number_of_stores = ceildiv(
+        total_number_of_elements, max_elements_per_store
+    )
+    actual_number_of_stores = len(reads_writes)
+    logger.info(
+        f"expected_number_of_stores={expected_number_of_stores}, actual_number_of_stores={actual_number_of_stores}"
+    )
+    if expected_number_of_stores <= 1:
+        return None
+
+    if materialized_shape[-2] % expected_number_of_stores != 0:
+        return None
+
+    # elems_per_thread/expected_number are transposed.
+    load_elems_per_thread, expected_number_of_loads = (
+        expected_number_of_stores,
+        store_elems_per_thread,
+    )
+
+    return TransposeConfig(
+        load_elems_per_thread=load_elems_per_thread,
+        expected_number_of_loads=expected_number_of_loads,
+        expected_number_of_stores=expected_number_of_stores,
+        store_elems_per_thread=store_elems_per_thread,
+        src_symbolic_shape=src_symbolic_shape,
+        dst_symbolic_shape=dst_symbolic_shape,
+        materialized_shape=materialized_shape,
+    )
+
+
 def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
     """
     This pass is detecting when read-write pair is doing transpose and tries to
@@ -155,48 +242,22 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
             # dynamic val mappings.
             continue
 
-        element_type = read.type.dtype
-
-        store_elems_per_thread = hardware_constraint.max_elems_per_load(element_type)
-        max_elements_per_store = total_number_of_threads * store_elems_per_thread
-        logger.info(
-            f"store_elems_per_thread={store_elems_per_thread}, "
-            f"max_elements_per_store={max_elements_per_store}"
+        transpose_config = get_transpose_config(
+            hardware_constraint,
+            constraint_tile_size,
+            total_number_of_threads,
+            reads_writes,
         )
-
-        dst_symbolic_shape = read.type.symbolic_shape
-
-        materialized_shape = materialize_shape(constraint_tile_size, dst_symbolic_shape)
-        if any(s > 1 for s in materialized_shape[:-2]) or any(
-            s <= 1 for s in materialized_shape[-2:]
-        ):
-            logger.info(
-                f"only last 2 dims transpose is supported, got {materialized_shape}"
-            )
+        if transpose_config is None:
             continue
 
-        src_symbolic_shape = transpose_last2(dst_symbolic_shape)
-
-        total_number_of_elements = prod(materialized_shape)
-        logger.info(
-            f"src_shape={src_symbolic_shape}, "
-            f"dst_shape={dst_symbolic_shape}, "
-            f"materialized_shape={materialized_shape}, "
-            f"total_elements={total_number_of_elements}"
-        )
-
-        expected_number_of_stores = ceildiv(
-            total_number_of_elements, max_elements_per_store
-        )
-        actual_number_of_stores = len(reads_writes)
-        logger.info(
-            f"expected_number_of_stores={expected_number_of_stores}, actual_number_of_stores={actual_number_of_stores}"
-        )
-        if expected_number_of_stores <= 1:
-            continue
-
-        if materialized_shape[-2] % expected_number_of_stores != 0:
-            continue
+        load_elems_per_thread = transpose_config.load_elems_per_thread
+        expected_number_of_loads = transpose_config.expected_number_of_loads
+        store_elems_per_thread = transpose_config.store_elems_per_thread
+        expected_number_of_stores = transpose_config.expected_number_of_stores
+        src_symbolic_shape = transpose_config.src_symbolic_shape
+        dst_symbolic_shape = transpose_config.dst_symbolic_shape
+        materialized_shape = transpose_config.materialized_shape
 
         linear_id = hardware_constraint.linearized_thread_id
         global_index = remove_thread_indexing(read.index)
@@ -205,12 +266,6 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
         )
 
         new_reads = []
-
-        # elems_per_thread/expected_number are transposed.
-        load_elems_per_thread, expected_number_of_loads = (
-            expected_number_of_stores,
-            store_elems_per_thread,
-        )
         load_shape = get_tiled_shape(
             materialize_shape(constraint_tile_size, src_symbolic_shape),
             load_elems_per_thread,
