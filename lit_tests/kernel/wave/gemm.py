@@ -126,6 +126,82 @@ def test_gemm():
 
 
 @run_test
+def test_non_transposed_gemm():
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 2)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [
+        tkw.HardwareConstraint(
+            threads_per_wave=64,
+            mma_type=tkw.MMAType.F32_16x16x16_F16,
+        )
+    ]
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+    # Transpose during read for expected shape: (M, K) @ (N, K) -> (M, N)
+    b_mapping = tkw.IndexMapping(
+        num_iterators=2, inputs={N: i, K: j}, outputs={N: i, K: j}
+    )
+
+    @tkw.wave(constraints)
+    def gemm(
+        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[K, N, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            b_reg = tkw.read(b, mapping=b_mapping)
+            acc = tkw.mma(a_reg, b_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    options = WaveCompileOptions(
+        subs={
+            M: 64,
+            N: 256,
+            K: 64,
+            BLOCK_M: 32,
+            BLOCK_N: 256,
+            BLOCK_K: 16,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+        },
+        canonicalize=True,
+        compile_to_mlir=True,
+    )
+    gemm = wave_compile(options, gemm)
+    print(gemm.asm)
+
+    # CHECK-LABEL:    test_non_transposed_gemm
+    # CHECK:          func.func @gemm
+    # CHECK-COUNT-1:    memref.alloc()
+    # CHECK:            scf.for
+    # CHECK:              vector.load
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK:              vector.store
+    # Check for in-thread-transpose pattern
+    # CHECK-COUNT-8:      vector.load
+    # CHECK-COUNT-8:      vector.extract
+    # CHECK:              vector.from_elements
+    # CHECK-COUNT-8:      vector.extract
+    # CHECK:              vector.from_elements
+    # CHECK-COUNT-2:      vector.store
+    # CHECK:              amdgpu.lds_barrier
+    # CHECK-COUNT-8:      vector.load
+    # CHECK:              amdgpu.mfma
+    # CHECK-COUNT-32:   vector.store
+
+
+@run_test
 def test_reordered_gemm():
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
