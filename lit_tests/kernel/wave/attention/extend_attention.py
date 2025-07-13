@@ -315,6 +315,8 @@ def test_causal_extend_attention_32x32x8():
     # CHECK-LABEL:       test_causal_extend_attention_32x32x8
     # CHECK:             func.func @extend_attention
     # CHECK-DAG:            %[[C4608:.*]] = arith.constant 4608 : index
+    # CHECK-DAG:            %[[C4352:.*]] = arith.constant 4352 : index
+    # CHECK-DAG:            %[[C0:.*]] = arith.constant 0 : index
     # CHECK-DAG:            stream.binding.subspan %{{.*}}[%{{.*}}] : !stream.binding -> memref<?x16x64xf16, strided<[1024, 64, 1], offset: ?>>
     # CHECK-DAG:            %[[ALLOC0:.*]] = memref.alloc() : memref<8960xi8, #gpu.address_space<workgroup>>
     # CHECK-DAG:            %[[ALLOC1:.*]] = memref.view %[[ALLOC0]][%[[C0]]][] : memref<8960xi8, #gpu.address_space<workgroup>> to memref<32x1x68xf16, #gpu.address_space<workgroup>>
