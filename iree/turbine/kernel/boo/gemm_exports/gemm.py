@@ -78,3 +78,17 @@ class GEMMSignature(OpSignature):
             b_shape = [self.b_shape[1], self.b_shape[0]]
 
         return (get(a_shape), get(b_shape))
+
+    @property
+    def is_forward(self) -> bool:
+        return True
+
+    def make_signature_copy_for_forward(self):
+        raise NotImplementedError
+
+    def get_arg_index_for_backward(self):
+        raise NotImplementedError
+
+    def arrange_backward_launch_args(self, forward_args, forward_results):
+        raise NotImplementedError
+
