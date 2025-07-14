@@ -20,7 +20,7 @@ from ..conv_exports import (
 from ..driver.launch import get_launchable
 from ..runtime import LaunchableRuntimeCache
 
-from ....runtime.op_reg import CustomOp
+from ....runtime.op_reg import CustomOp, KernelBuilder, KernelSelection
 
 __all__ = [
     "boo_layout_customizable_convolution",
@@ -29,14 +29,49 @@ __all__ = [
 # Forward Convolution Implementations #
 
 
-@CustomOp.register(library=BOO_LIBRARY, register_meta=False)
+@CustomOp.register(library=BOO_LIBRARY)
 class layout_customizable_convolution(CustomOp):
     signature = "layout_customizable_convolution(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout) -> Tensor"
 
-    def select(self, ksel):
-        raise NotImplementedError("convolution select NYI")
+    def select(self, ksel: KernelSelection):
+        # Declare args.
+        x = ksel.arg_tensor(0)
+        w = ksel.arg_tensor(1)
+        b = ksel.arg_optional_tensor(2)
+        stride = ksel.attr_list_int(3)
+        padding = ksel.attr_list_int(4)
+        dilation = ksel.attr_list_int(5)
+        groups = ksel.attr_int(6)
+        input_layout = ksel.attr_str(7)
+        kernel_layout = ksel.attr_str(8)
+        output_layout = ksel.attr_str(9)
+        # Specialize args.
+        x.specialize_all_dims()
+        w.specialize_all_dims()
+        if b:
+            b.specialize_all_dims()
+            ksel.variant = "biased"
 
-    def generate(self, ksel, kb):
+        self.conv_sig = ConvSignature(
+            input_shape=x.spec_dims,
+            kernel_shape=w.spec_dims,
+            bias=(b is not None),
+            input_layout=input_layout.v,
+            kernel_layout=kernel_layout.v,
+            output_layout=output_layout.v,
+            dtype=x.t.dtype,
+            stride=stride.v,
+            padding=padding.v,
+            dilation=dilation.v,
+            groups=groups.v,
+        )
+        output_shape = self.conv_sig.output_shape
+        o_meta = self.conv_sig.output_perms.inv()(
+            torch.empty(tuple(output_shape), dtype=self.conv_sig.dtype, device="meta")
+        )
+        ksel.return_tensor(o_meta)
+
+    def generate(self, ksel: KernelSelection, kb: KernelBuilder):
         raise NotImplementedError("convolution generate NYI")
 
     def eager_execute(self, *args):
@@ -97,38 +132,6 @@ def _boo_layout_customizable_convolution_impl(
     # Get a launchable and apply.
     conv = get_launchable(sig)
     return conv(*args)
-
-
-@register_meta("layout_customizable_convolution")
-def _boo_layout_customizable_convolution_meta(
-    x: torch.Tensor,
-    w: torch.Tensor,
-    b: None | torch.Tensor,
-    stride: Sequence[int],
-    padding: Sequence[int],
-    dilation: Sequence[int],
-    groups: int,
-    input_layout: str,
-    kernel_layout: str,
-    output_layout: str,
-) -> torch.Tensor:
-    sig = ConvSignature(
-        input_shape=x.shape,
-        kernel_shape=w.shape,
-        input_layout=input_layout,
-        kernel_layout=kernel_layout,
-        output_layout=output_layout,
-        bias=(b is not None),
-        dtype=x.dtype,
-        stride=stride,
-        padding=padding,
-        dilation=dilation,
-        transposed=False,
-        output_padding=0,
-        groups=groups,
-        mode="fwd",
-    )
-    return torch.empty(sig.output_shape, dtype=sig.dtype, device=x.device)
 
 
 # Backward Convolution Implementations #
