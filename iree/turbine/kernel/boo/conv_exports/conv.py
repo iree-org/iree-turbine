@@ -454,6 +454,11 @@ class ConvForwardCustomGeneric(torch.nn.Module):
             self.xl = self.xl[: self.x_pos] + "g" + self.xl[self.x_pos :]
             self.wl = self.wl[: self.w_pos] + "g" + self.wl[self.w_pos :]
             self.ol = self.ol[: self.o_pos] + "g" + self.ol[self.o_pos :]
+            self.explicit_shape = (
+                self.explicit_shape[: self.o_pos]
+                + [self.groups, self.explicit_shape[self.o_pos] // self.groups]
+                + self.explicit_shape[self.o_pos + 1 :]
+            )
             pad_g_idx = len(self.explicit_padding) - 1 - 2 * self.x_pos
             self.explicit_padding = (
                 self.explicit_padding[:pad_g_idx]
