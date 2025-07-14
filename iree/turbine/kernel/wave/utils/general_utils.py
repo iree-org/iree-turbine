@@ -179,7 +179,7 @@ def find_index_bounds(
             continue
 
         if subs_idxc(dim) % subs_idxc(vector_shape) != 0:
-            bounds[dim] = sympy.Min(subs_idxc(dim), subs_idxc(vector_shape))
+            bounds[dim] = dim
 
     if not bounds:
         return None
