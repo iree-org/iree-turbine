@@ -6,6 +6,7 @@
 
 import unittest
 import tempfile
+import pytest
 
 from typing import Sequence
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 import torch
 from torch import fx
 from torch._dynamo.testing import EagerAndRecordGraphs
+from torch.profiler import profile, ProfilerActivity
 
 from iree.turbine.dynamo.backends import boo
 from iree.turbine.kernel.boo.fusion import OpFusionSpec, FusionSchema
@@ -107,7 +109,11 @@ class SubgraphReplacementTest(unittest.TestCase):
 
             fusion_schema: FusionSchema = {
                 torch.ops.aten.addmm.default: OpFusionSpec(
-                    consumers=(torch.ops.aten.relu.default, torch.ops.aten.view.default)
+                    recursive=True,
+                    consumers=(
+                        torch.ops.aten.relu.default,
+                        torch.ops.aten.view.default,
+                    ),
                 ),
             }
 
@@ -142,10 +148,52 @@ class SubgraphReplacementTest(unittest.TestCase):
             self.assertIsNotNone(compiled_m.linear.weight.grad)
             self.assertIsNotNone(compiled_m.linear.bias.grad)
 
-            x2 = torch.ones([3, 3, 32, 16])
+    def testReplacementWithRecompile(self):
+        with tempfile.TemporaryDirectory() as td:
+            set_cache_dir(Path(td))
+            m = SampleModule(in_features=16, out_features=32)
+            x1 = torch.ones([3, 4, 16, 16])
+            x2 = torch.ones([3, 4, 32, 16])
 
-            with self.assertRaises(RuntimeError):
+            fusion_schema: FusionSchema = {
+                torch.ops.aten.addmm.default: OpFusionSpec(
+                    recursive=True,
+                    consumers=(
+                        torch.ops.aten.relu.default,
+                        torch.ops.aten.view.default,
+                    ),
+                ),
+            }
+
+            recorder = EagerAndRecordGraphs()
+            compiled_m = torch.compile(
+                m,
+                dynamic=False,
+                backend=boo.backend(
+                    fusion_schema=fusion_schema, nested_backend=recorder
+                ),
+            )
+
+            y1 = compiled_m(x1)
+
+            compiled_m.eval()
+            with torch.no_grad():
                 y2 = compiled_m(x2)
+
+            [gm1, gm2] = recorder.graphs
+
+            outputs1 = gm1.graph.find_nodes(op="output")
+            self.assertEqual(len(outputs1), 1)
+            output_node1 = outputs1[0]
+            # We aren't in inference mode for the first application.
+            # This graph should return three outputs: (linear result, pre-transposed result, None)
+            self.assertEqual(len(output_node1.args[0]), 3)
+
+            outputs2 = gm2.graph.find_nodes(op="output")
+            self.assertEqual(len(outputs2), 1)
+            # The second application should not have the extra outputs being stashed for backwards.
+            output_node2 = outputs2[0]
+            self.assertEqual(len(output_node2.args[0]), 1)
 
     def testReplacementRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:
@@ -265,6 +313,52 @@ class SubgraphReplacementTest(unittest.TestCase):
                     err_msg += f"Parameter {name} unexpectedly has zero gradient.\n"
 
             self.assertFalse(found_zero_grad, msg=err_msg)
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires GPU.")
+    def testNestedCompilerInductor(self):
+        with tempfile.TemporaryDirectory() as td:
+            set_cache_dir(Path(td))
+            device = torch.device("cuda:0")
+
+            schema: FusionSchema = {
+                torch.ops.aten.convolution.default: OpFusionSpec(
+                    recursive=True, consumers=(torch.ops.aten.sigmoid.default,)
+                )
+            }
+
+            mx = SampleModule3().to(device=device)
+            mx.eval()
+            my = SampleModule3().to(device=device)
+            my.eval()
+
+            @torch.compile(
+                dynamic=False,
+                backend=boo.backend(nested_backend="inductor", fusion_schema=schema),
+            )
+            def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                x1 = mx(x)
+                y1 = my(y)
+                z = (x1 + y1 + 2.0) / 16.0
+                return z
+
+            gen = torch.Generator(device=device)
+            gen.manual_seed(13)
+            x = torch.randn([2, 3, 16, 16], generator=gen, device=device)
+            y = torch.randn([1, 3, 16, 16], generator=gen, device=device)
+
+            # Do a warmup compile/run.
+            with torch.no_grad():
+                _ = f(x, y)
+
+            # Profile the next run.
+            with torch.no_grad() and profile(
+                activities=[ProfilerActivity.CUDA]
+            ) as prof:
+                z = f(x, y)
+
+            key_averages = str(prof.key_averages())
+            self.assertIn("fused_op", key_averages)
+            self.assertIn("triton_poi_fused_add_div", key_averages)
 
 
 if __name__ == "__main__":
