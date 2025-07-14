@@ -168,6 +168,19 @@ def find_index_bounds(
         if bound is not None:
             bounds[dim] = get_min_expr(bounds.get(dim, None), bound)
 
+    for dim, vector_shape in vector_shapes.items():
+        if dim not in index:
+            continue
+
+        if vector_shape <= 1:
+            continue
+
+        if dim in bounds:
+            continue
+
+        if subs_idxc(dim) % subs_idxc(vector_shape) != 0:
+            bounds[dim] = sympy.Min(subs_idxc(dim), subs_idxc(vector_shape))
+
     if not bounds:
         return None
 
