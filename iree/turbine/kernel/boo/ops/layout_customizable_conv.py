@@ -8,7 +8,7 @@ from typing import Sequence, Tuple
 
 import torch
 
-from .library import define_schema, register_impl, register_meta, BOO_LIBRARY
+from .library import register_meta, BOO_LIBRARY
 from .utils import *
 
 from ..conv_exports import (
@@ -72,7 +72,17 @@ class layout_customizable_convolution(CustomOp):
         ksel.return_tensor(o_meta)
 
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
-        raise NotImplementedError("convolution generate NYI")
+        sample_args = (ksel.arg_descs[0].t, ksel.arg_descs[1].t)
+        if ksel.variant == "biased":
+            sample_args = sample_args + (ksel.arg_descs[2].t,)
+        func_name = self.conv_sig.get_func_name()
+        module_op = generate_custom_op_compatible_ir(
+            self.conv_sig.get_nn_module(use_custom=True),
+            args=sample_args,
+            func_name=func_name,
+        )
+        # TODO: Merge this with kb and yield returns.
+        raise NotImplementedError("convolution generate NYI.")
 
     def eager_execute(self, *args):
         return _boo_layout_customizable_convolution_impl(*args)

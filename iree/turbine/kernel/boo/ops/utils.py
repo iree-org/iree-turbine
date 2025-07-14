@@ -12,6 +12,8 @@ from typing import Tuple, Iterable, NamedTuple
 import torch
 from torch.fx.passes.shape_prop import TensorMetadata
 from ....support.logging import runtime_logger as logger
+from ....support.ir_imports import Operation
+from ....aot import export, CompiledModule
 
 __all__ = [
     "is_boo_backward_enabled",
@@ -24,6 +26,7 @@ __all__ = [
     "CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION",
     "get_func_name",
     "get_arg_spec_name",
+    "generate_custom_op_compatible_ir",
 ]
 
 # Toggle Using Boo Backward Kernels #
@@ -211,3 +214,14 @@ def get_arg_spec_name_and_memory_format_permutations(
             name += "_cl"
         layout_handling.append(mem_format_info)
     return name, layout_handling
+
+
+def generate_custom_op_compatible_ir(
+    module: torch.nn.Module, args: tuple[torch.Tensor, ...], func_name: str
+) -> Operation:
+    e = export(module, args=args, func_name=func_name)
+    CompiledModule.run_pass_pipeline(
+        e.compiled_module,
+        "builtin.module(torch-backend-to-linalg-on-tensors-backend-pipeline)",
+    )
+    return e.mlir_module
