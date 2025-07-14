@@ -168,6 +168,23 @@ def find_index_bounds(
         if bound is not None:
             bounds[dim] = get_min_expr(bounds.get(dim, None), bound)
 
+    for dim, vector_shape in vector_shapes.items():
+        if dim not in index:
+            continue
+
+        if vector_shape <= 1:
+            continue
+
+        # We are trying to get the bounds from the constraints, but we can have
+        # a situation with nontrivial vector sizes which are not part of the
+        # constraints (e.g K1 in paged decode attention). Try to infer bounds
+        # directly from the vector shape in this case.
+        if dim in bounds:
+            continue
+
+        if subs_idxc(dim) % subs_idxc(vector_shape) != 0:
+            bounds[dim] = dim
+
     if not bounds:
         return None
 
