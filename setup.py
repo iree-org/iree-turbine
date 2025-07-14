@@ -8,12 +8,48 @@
 import json
 import os
 import distutils.command.build
+import subprocess
+import sys
 from pathlib import Path
 
-from setuptools import find_namespace_packages, setup
+from setuptools import find_namespace_packages, setup, Extension
+from setuptools.command.build_ext import build_ext
 
 THIS_DIR = os.path.realpath(os.path.dirname(__file__))
 REPO_ROOT = THIS_DIR
+
+
+class CMakeExtension(Extension):
+    def __init__(self, name: str, sourcedir: str = "") -> None:
+        super().__init__(name, sources=[])
+        self.sourcedir = os.fspath(Path(sourcedir).resolve())
+
+
+class CMakeBuild(build_ext):
+    def run(self):
+        for ext in self.extensions:
+            self.build_cmake(ext)
+
+    def build_cmake(self, ext):
+        # Create build directory
+        build_dir = os.path.abspath(os.path.join(self.build_temp, ext.name))
+        os.makedirs(build_dir, exist_ok=True)
+
+        # Get extension directory
+        ext_fullpath = Path.cwd() / self.get_ext_fullpath(ext.name)
+        extdir = ext_fullpath.parent.resolve()
+
+        # Configure CMake
+        cmake_args = [
+            f"-DPython_EXECUTABLE={sys.executable}",
+            f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}{os.sep}",
+            f"-DCMAKE_BUILD_TYPE={'Debug' if self.debug else 'Release'}",
+        ]
+        subprocess.check_call(["cmake", ext.sourcedir, *cmake_args], cwd=build_dir)
+
+        # Build CMake project
+        subprocess.check_call(["cmake", "--build", "."], cwd=build_dir)
+
 
 VERSION_FILE = os.path.join(REPO_ROOT, "version.json")
 VERSION_FILE_LOCAL = os.path.join(REPO_ROOT, "version_local.json")
@@ -126,5 +162,7 @@ setup(
             f"parameterized{get_version_spec('parameterized')}",
         ],
     },
-    cmdclass={"build": BuildCommand},
+    cmdclass={"build": BuildCommand, "build_ext": CMakeBuild},
+    ext_modules=[CMakeExtension("wave_runtime", "iree/turbine/kernel/wave/runtime")],
+    zip_safe=False,
 )

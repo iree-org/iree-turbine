@@ -22,6 +22,29 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+    env:
+      OUTPUT_DIR: "${{ github.workspace }}/bindist"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu packages.
+          - runs-on: ubuntu-24.04
+            platform: linux-x86_64
+            package: wave-lang
+            python-version: cp310-cp310
+          - runs-on: ubuntu-24.04
+            platform: linux-x86_64
+            package: wave-lang
+            python-version: cp311-cp311
+          - runs-on: ubuntu-24.04
+            platform: linux-x86_64
+            package: wave-lang
+            python-version: cp312-cp312
+          - runs-on: ubuntu-24.04
+            platform: linux-x86_64
+            package: wave-lang
+            python-version: cp313-cp313
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -38,6 +61,14 @@ jobs:
         run: |
           ./build_tools/compute_local_version.py -rc --write-json
           ./build_tools/build_release.py --no-download
+
+      - name: Build C++ dependencies (Linux x86_64, ${{ matrix.python-version }})
+        if: "matrix.package == 'wave-lang' && matrix.platform == 'linux-x86_64'"
+        env:
+          OVERRIDE_PYTHON_VERSIONS: "${{ matrix.python-version }}"
+        run: |
+          [ -e ./bindist/* ] && rm ./bindist/*
+          ./build_tools/build_linux_package.sh
 
       - name: Upload python wheels
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -199,7 +199,6 @@ jobs:
           pip install --no-compile -r pytorch-rocm-requirements.txt
           pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
           pip install -r requirements.txt -e .
-          pip install -r requirements-wave-runtime.txt -e .
 
       - name: Install pip deps (mi250)
         if: "(contains(toJSON(matrix.os), 'amdgpu') && !contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
