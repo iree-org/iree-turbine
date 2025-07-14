@@ -127,6 +127,7 @@ def identify_optimizable_loads(
     constraint_tile_size: dict[IndexSymbol, int],
     load_elems_per_thread: int,
     max_elements_per_load: int,
+    total_number_of_threads: int,
     allow_dynamic_transposed: bool = False,
     use_memory_type: bool = False,
 ) -> list[Read]:
@@ -170,9 +171,8 @@ def identify_optimizable_loads(
             continue
 
         expanded_dynamic_vals = None
-        memory_load_elems_per_thread = min(
-            load_elems_per_thread, materialized_shape[-1]
-        )
+        data_per_thread = ceildiv(total_number_of_elements, total_number_of_threads)
+        memory_load_elems_per_thread = min(load_elems_per_thread, data_per_thread)
         memory_max_elements_per_load = max_elements_per_load
         if len(custom.mapping_dynamic_vals) > 0 and not allow_dynamic_transposed:
             expanded_dynamic_vals = set(
@@ -382,6 +382,7 @@ def minimize_global_loads(trace: CapturedTrace, constraints: list[Constraint]):
         constraint_tile_size,
         load_elems_per_thread,
         max_elements_per_load,
+        total_number_of_threads,
     )
 
     # Construct new global read nodes and write shared nodes.

@@ -273,3 +273,103 @@ def test_mxfp8_scaled_mma_16x16x128():
     # CHECK-NEXT:   %[[AFFINE_APPLY8:.*]] = affine.apply #[[MAP8]]()[%[[THREAD_ID_X]]]
     # CHECK-NEXT:   vector.store %[[EXTRACT_STRIDED_SLICE_9]], %[[SPAN4]][%[[AFFINE_APPLY8]], %[[AFFINE_APPLY4]]] : memref<32x32xf32, strided<[32, 1], offset: ?>>, vector<1xf32>
     # CHECK-NEXT:   return
+
+
+# This test is important to ensure that distribution of bigger tile sizes with 8 waves work as expected.
+# Specifically to look out for are number of instructions and the vector shapes. This test is also
+# introduced in a PR for a fix to minimiz_global_loads, where for cases where optimized loads are reading
+# less than 128 bit wide and less than 8 elements. (i.e vector.load {{.*}} : memref<16384x512xi8, strided<[512, 1], offset: ?>>, vector<4xi8>)
+# used to be reading vector<8xi8>.
+
+
+@run_test
+def test_mxfp4_scaled_mma_256x256x256():
+    # Input sizes
+    M = tkl.sym.M
+    N = tkl.sym.N
+    K = tkl.sym.K
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+    # Address space (for GPU, shared(1) or global(0))
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    mfma_variant = ScaledMMAType.F32_16x16x128_F8F6F4
+
+    # Expose user-constraints
+    constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+    constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
+    constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, mma_type=mfma_variant)]
+
+    @tkw.wave(constraints)
+    def scaled_mma(
+        a: tkl.Memory[M, K / 2, ADDRESS_SPACE, tkl.i8],
+        a_scale: tkl.Memory[M, K / 32, ADDRESS_SPACE, tkl.i8],
+        b: tkl.Memory[N, K / 2, ADDRESS_SPACE, tkl.i8],
+        b_scale: tkl.Memory[N, K / 32, ADDRESS_SPACE, tkl.i8],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.bf16],
+    ):
+        c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+        @tkw.iterate(K, init_args=[c_reg])
+        def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
+            a_reg = tkw.read(a)
+            a_reg = tkw.bitcast(a_reg, tkl.f4e2m1fn)
+            a_scale_reg = tkw.read(a_scale)
+            a_scale_reg = tkw.bitcast(a_scale_reg, tkl.f8e8m0fnu)
+            b_reg = tkw.read(b)
+            b_reg = tkw.bitcast(b_reg, tkl.f4e2m1fn)
+            b_scale_reg = tkw.read(b_scale)
+            b_scale_reg = tkw.bitcast(b_scale_reg, tkl.f8e8m0fnu)
+            acc = tkw.scaled_mma(a_reg, a_scale_reg, b_reg, b_scale_reg, acc)
+            return acc
+
+        tkw.write(repeat, c)
+
+    hyperparams = {
+        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+        BLOCK_M: 256,
+        BLOCK_N: 256,
+        BLOCK_K: 256,
+        M: 16384,
+        N: 16384,
+        K: 16384,
+    }
+    hyperparams.update(get_default_scheduling_params())
+
+    options = WaveCompileOptions(
+        subs=hyperparams,
+        canonicalize=True,
+        backend="rocm",
+        target="gfx950",
+    )
+    scaled_mma = wave_compile(options, scaled_mma)
+    print(scaled_mma.asm)
+
+    # CHECK-LABEL:  test_mxfp4_scaled_mma_256x256x256
+    # CHECK:   func.func @scaled_mma(%arg0: !stream.binding, %arg1: !stream.binding, %arg2: !stream.binding, %arg3: !stream.binding, %arg4: !stream.binding) attributes {translation_info = #translation} {
+    # CHECK-DAG:    %[[C0:.+]] = arith.constant 0 : index
+    # CHECK-DAG:    %[[C1:.+]] = arith.constant 1 : index
+    # CHECK-DAG:    %[[C64:.+]] = arith.constant 64 : index
+    # CHECK:        scf.for %{{.*}} = %[[C0]] to %[[C64]] step %[[C1]]
+    # CHECK-COUNT-4:    vector.load {{.*}} : memref<16384x8192xi8, strided<[8192, 1], offset: ?>>, vector<16xi8>
+    # CHECK-COUNT-1:    vector.load {{.*}} : memref<16384x512xi8, strided<[512, 1], offset: ?>>, vector<4xi8>
+    # CHECK-COUNT-4:    vector.load {{.*}} : memref<16384x8192xi8, strided<[8192, 1], offset: ?>>, vector<16xi8>
+    # CHECK-COUNT-1:    vector.load {{.*}} : memref<16384x512xi8, strided<[512, 1], offset: ?>>, vector<4xi8>
+    # CHECK:            amdgpu.lds_barrier
+    # CHECK-COUNT-16:   vector.load {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<1xi8>
+    # CHECK-COUNT-16:   vector.load {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
+    # CHECK-COUNT-8:    vector.load {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<1xi8>
+    # CHECK-COUNT-8:    vector.load {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
+    # CHECK-COUNT-8:    vector.bitcast {{.*}} : vector<16xi8> to vector<32xf4E2M1FN>
+    # CHECK-COUNT-8:    vector.bitcast {{.*}} : vector<1xi8> to vector<1xf8E8M0FNU>
+    # CHECK-COUNT-16:   vector.bitcast {{.*}} : vector<16xi8> to vector<32xf4E2M1FN>
+    # CHECK-COUNT-16:   vector.bitcast {{.*}} : vector<1xi8> to vector<1xf8E8M0FNU>
+    # CHECK-COUNT-64:   amdgpu.scaled_mfma{{.*}} {k = 128 : i32, m = 16 : i32, n = 16 : i32} : f8E8M0FNU, vector<32xf4E2M1FN>, f8E8M0FNU, vector<32xf4E2M1FN>, vector<4xf32>
+    # CHECK:            scf.yield
+    # CHECK:        }
