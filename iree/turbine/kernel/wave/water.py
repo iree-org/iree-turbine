@@ -4,6 +4,10 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import json
+import linecache
+from pathlib import Path
+import tempfile
 from typing import Any, Sequence
 import sys
 import subprocess
@@ -174,7 +178,8 @@ def water_leak_in_bounds_check(module: Module):
         raise RuntimeError(
             "optional water_mlir module not installed but its use is requested"
         ) from err
-    binary = water_bin.find_binary("water-opt")
+    # binary = water_bin.find_binary("water-opt")
+    binary = Path("/home/tim/water/build/bin/water-opt")
     generic_mlir = _deiree(module)
     pipeline = [
         (
@@ -187,6 +192,7 @@ def water_leak_in_bounds_check(module: Module):
         "loop-invariant-code-motion",
         "int-range-optimizations",
         "canonicalize",
+        "water-check-static-assertions",
     ]
 
     def make_linear_pass_pipeline(
@@ -209,22 +215,77 @@ def water_leak_in_bounds_check(module: Module):
             + ")"
         )
 
-    result = subprocess.run(
-        [binary, "--allow-unregistered-dialect", make_linear_pass_pipeline(pipeline)],
-        input=generic_mlir,
-        capture_output=True,
-        text=True,
-    )
+    def get_code_context(filename, line_number, context=2):
+        """
+        Retrieves a line and a few lines of context around it.
+
+        Args:
+            filename (str): The path to the file.
+            line_number (int): The central line number to retrieve.
+            context (int): The number of lines to show before and after.
+
+        Returns:
+            A list of strings, each being a line of code.
+        """
+        start = max(1, line_number - context)
+        end = line_number + context
+
+        lines = []
+        for i in range(start, end + 1):
+            line = linecache.getline(filename, i)
+            if not line:
+                break
+            lines.append(f"{i:4d}{'*' if i == line_number else ' '}| {line.rstrip()}")
+
+        return "\n".join(lines)
+
+    def format_water_diagnostic(file, line, col, msg):
+        file = "/home/tim/iree-turbine/lit_tests/kernel/wave/water.py"
+        ctx = get_code_context(file, line, 3)
+        errormsg = f"{file}:{line}:{col}\n{msg}\n\n{ctx}"
+        return errormsg
+
+    excs = []
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        diagnosticsFile = Path(temp_dir) / "diagnostics.txt"
+        result = subprocess.run(
+            [
+                binary,
+                "--diagnostics-file",
+                diagnosticsFile,
+                "--allow-unregistered-dialect",
+                make_linear_pass_pipeline(pipeline),
+            ],
+            input=generic_mlir,
+            capture_output=True,
+            text=True,
+        )
+        if diagnosticsFile.is_file():
+            with open(diagnosticsFile, "r") as file:
+                for line in file:
+                    diag = json.loads(line.rstrip())
+                    msg = format_water_diagnostic(
+                        diag["file"], diag["line"], diag["column"], diag["message"]
+                    )
+                    exception = RuntimeError(f"Water diagnostic: {msg}")
+                    excs.append(exception)
+
     if len(result.stderr) != 0:
-        raise RuntimeError("Water MLIR error: " + result.stderr)
+        excs.append(RuntimeError("Water MLIR error: " + result.stderr))
 
     if int(os.environ.get("WAVE_WATER_DUMP_MLIR_AFTER", "0")) != 0:
         print(result.stdout, file=sys.stderr)
 
     if "cf.assert %false" in result.stdout:
-        raise RuntimeError(
+        exc = RuntimeError(
             "The kernel contains out-of-bounds accesses! Check that constraints divide sizes, among other things."
         )
+        excs.append(exc)
+
+    if len(excs) > 0:
+        raise ExceptionGroup("Water errors: ", excs)
+
     if "cf.assert" in result.stdout:
         print(
             "[warning] Couldn't statically determine the absence of out-of-bounds accesses."
