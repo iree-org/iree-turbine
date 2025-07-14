@@ -34,10 +34,12 @@ class WaveKernel:
         gpu_binary_path: Optional[str],
         bound_scalar_symbols: dict[IndexSymbol, int],
         symbols_args_map: dict[IndexSymbol, tuple[int, int]],
+        trace: Optional["CapturedTrace"] = None,
     ):
         self.options = options
         self.executable = executable
         self.asm = asm
+        self.trace = trace
         if gpu_binary_path:
             import wave_runtime
 
@@ -51,6 +53,12 @@ class WaveKernel:
             self.gpu_func = None
         self.bound_scalar_symbols = bound_scalar_symbols
         self.symbols_args_map = symbols_args_map
+
+    def get_trace(self) -> Optional["CapturedTrace"]:
+        """Returns the trace used to generate this kernel.
+        If this is a cached kernel, the trace is not available.
+        """
+        return self.trace
 
     def __call__(self, *args, **kwargs):
         return self.invoke(*args, **kwargs)
@@ -131,6 +139,7 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
             options.kernel_launch_info = cached_kernel.kernel_launch_info
             if options.wave_runtime:
                 binary_path = get_binary_path()
+
             return WaveKernel(
                 options,
                 cached_kernel.vmfb,
@@ -164,6 +173,13 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         options,
     ) = kernel._trace_and_get_kernel_signature(options)
     options.kernel_sig = kernel_sig
+
+    # Get the trace from the kernel. Since the trace contains complex objects
+    # that are not easily serializable, we don't cache the trace. So this trace
+    # is not available for cached kernels. The primary use case for the trace is
+    # is for tuning where each kernel is different from the others and so we
+    # don't want to cache the kernel in that case.
+    trace = kernel._trace()
 
     host_codegen.isolated_test_call(
         mb,
@@ -222,4 +238,5 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         binary_path,
         bound_scalar_symbols,
         symbols_args_map,
+        trace,
     )
