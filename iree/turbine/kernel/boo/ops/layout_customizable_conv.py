@@ -8,17 +8,19 @@ from typing import Sequence, Tuple
 
 import torch
 
+from .library import define_schema, register_impl, register_meta, BOO_LIBRARY
+from .utils import *
+
 from ..conv_exports import (
     ConvSignature,
     DEFAULT_LAYOUTS,
     Permutation,
 )
-from ..driver.launch import get_launchable
 
+from ..driver.launch import get_launchable
 from ..runtime import LaunchableRuntimeCache
 
-from .library import define_schema, register_impl, register_meta
-from .utils import *
+from ....runtime.op_reg import CustomOp
 
 __all__ = [
     "boo_layout_customizable_convolution",
@@ -26,13 +28,21 @@ __all__ = [
 
 # Forward Convolution Implementations #
 
-define_schema(
-    "layout_customizable_convolution",
-    "(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout) -> Tensor",
-)
+
+@CustomOp.register(library=BOO_LIBRARY, register_meta=False)
+class layout_customizable_convolution(CustomOp):
+    signature = "layout_customizable_convolution(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout) -> Tensor"
+
+    def select(self, ksel):
+        raise NotImplementedError("convolution select NYI")
+
+    def generate(self, ksel, kb):
+        raise NotImplementedError("convolution generate NYI")
+
+    def eager_execute(self, *args):
+        return _boo_layout_customizable_convolution_impl(*args)
 
 
-@register_impl("layout_customizable_convolution")
 def _boo_layout_customizable_convolution_impl(
     x: torch.Tensor,
     w: torch.Tensor,
@@ -122,14 +132,20 @@ def _boo_layout_customizable_convolution_meta(
 
 
 # Backward Convolution Implementations #
+@CustomOp.register(library=BOO_LIBRARY, register_meta=False)
+class layout_customizable_convolution_backward(CustomOp):
+    signature = "layout_customizable_convolution_backward(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
 
-define_schema(
-    "layout_customizable_convolution_backward",
-    "(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)",
-)
+    def select(self, ksel):
+        raise NotImplementedError("convolution_backward select NYI")
+
+    def generate(self, ksel, kb):
+        raise NotImplementedError("convolution_backward generate NYI")
+
+    def eager_execute(self, *args):
+        return _boo_layout_customizable_convolution_backward_impl(*args)
 
 
-@register_impl("layout_customizable_convolution_backward")
 def _boo_layout_customizable_convolution_backward_impl(
     x: torch.Tensor,
     w: torch.Tensor,
@@ -228,7 +244,7 @@ def pytorch_layout_customizable_convolution_backward(ctx, grad_output):
         grad_output,
         x,
         w,
-        None,
+        [w.shape[0]],
         ctx.stride,
         ctx.padding,
         ctx.dilation,

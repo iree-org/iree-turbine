@@ -17,10 +17,11 @@ from ..driver.launch import get_launchable
 
 from ..runtime import LaunchableRuntimeCache
 
-from .library import define_schema, register_impl, register_meta
-
+from .library import define_schema, register_impl, register_meta, BOO_LIBRARY
 from .utils import *
 from .layout_customizable_conv import boo_layout_customizable_convolution
+
+from ....runtime.op_reg import CustomOp
 
 __all__ = [
     "boo_conv",
@@ -29,13 +30,21 @@ __all__ = [
 
 # Forward Convolution Implementations #
 
-define_schema(
-    "convolution",
-    "(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups) -> Tensor",
-)
+
+@CustomOp.register(library=BOO_LIBRARY, register_meta=False)
+class convolution(CustomOp):
+    signature = "convolution(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups) -> Tensor"
+
+    def select(self, ksel):
+        raise NotImplementedError("convolution select NYI")
+
+    def generate(self, ksel, kb):
+        raise NotImplementedError("convolution generate NYI")
+
+    def eager_execute(self, *args):
+        return _boo_convolution_impl(*args)
 
 
-@register_impl("convolution")
 def _boo_convolution_impl(
     x: torch.Tensor,
     w: torch.Tensor,
@@ -147,13 +156,21 @@ def _boo_convolution_meta(
 
 # Backward Convolution Implementations #
 
-define_schema(
-    "convolution_backward",
-    "(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, bool[] mask) -> (Tensor?, Tensor?, Tensor?)",
-)
+
+@CustomOp.register(library=BOO_LIBRARY, register_meta=False)
+class convolution_backward(CustomOp):
+    signature = "convolution_backward(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
+
+    def select(self, ksel):
+        raise NotImplementedError("convolution_backward select NYI")
+
+    def generate(self, ksel, kb):
+        raise NotImplementedError("convolution_backward generate NYI")
+
+    def eager_execute(self, *args):
+        return _boo_convolution_backward_impl(*args)
 
 
-@register_impl("convolution_backward")
 def _boo_convolution_backward_impl(
     x: torch.Tensor,
     w: torch.Tensor,
@@ -256,7 +273,7 @@ def pytorch_convolution_backward(ctx, grad_output):
         grad_output,
         x,
         w,
-        None,
+        [w.shape[0]],
         ctx.stride,
         ctx.padding,
         ctx.dilation,
