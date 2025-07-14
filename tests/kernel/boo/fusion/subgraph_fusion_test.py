@@ -107,7 +107,11 @@ class SubgraphReplacementTest(unittest.TestCase):
 
             fusion_schema: FusionSchema = {
                 torch.ops.aten.addmm.default: OpFusionSpec(
-                    consumers=(torch.ops.aten.relu.default, torch.ops.aten.view.default)
+                    recursive=True,
+                    consumers=(
+                        torch.ops.aten.relu.default,
+                        torch.ops.aten.view.default,
+                    ),
                 ),
             }
 
@@ -142,10 +146,51 @@ class SubgraphReplacementTest(unittest.TestCase):
             self.assertIsNotNone(compiled_m.linear.weight.grad)
             self.assertIsNotNone(compiled_m.linear.bias.grad)
 
-            x2 = torch.ones([3, 3, 32, 16])
+    def testReplacementWithRecompile(self):
+        with tempfile.TemporaryDirectory() as td:
+            set_cache_dir(Path(td))
+            m = SampleModule(in_features=16, out_features=32)
+            x1 = torch.ones([3, 4, 16, 16])
+            x2 = torch.ones([3, 4, 32, 16])
 
-            with self.assertRaises(RuntimeError):
+            fusion_schema: FusionSchema = {
+                torch.ops.aten.addmm.default: OpFusionSpec(
+                    recursive=True,
+                    consumers=(
+                        torch.ops.aten.relu.default,
+                        torch.ops.aten.view.default,
+                    ),
+                ),
+            }
+
+            recorder = EagerAndRecordGraphs()
+            compiled_m = torch.compile(
+                m,
+                backend=boo.backend(
+                    fusion_schema=fusion_schema, nested_backend=recorder
+                ),
+            )
+
+            y1 = compiled_m(x1)
+
+            compiled_m.eval()
+            with torch.no_grad():
                 y2 = compiled_m(x2)
+
+            [gm1, gm2] = recorder.graphs
+
+            outputs1 = gm1.graph.find_nodes(op="output")
+            self.assertEqual(len(outputs1), 1)
+            output_node1 = outputs1[0]
+            # We aren't in inference mode for the first application.
+            # This graph should return three outputs: (linear result, pre-transposed result, None)
+            self.assertEqual(len(output_node1.args[0]), 3)
+
+            outputs2 = gm2.graph.find_nodes(op="output")
+            self.assertEqual(len(outputs2), 1)
+            # The second application should not have the extra outputs being stashed for backwards.
+            output_node2 = outputs2[0]
+            self.assertEqual(len(output_node2.args[0]), 1)
 
     def testReplacementRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:
