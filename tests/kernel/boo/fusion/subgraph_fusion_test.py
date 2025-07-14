@@ -75,6 +75,29 @@ class SampleModule2(torch.nn.Module):
         return self.layer1(self.layer0(x))
 
 
+class SampleModule3(torch.nn.Module):
+    def __init__(self, num_features: int = 3, kernel_size: int | Sequence[int] = 1):
+        super().__init__()
+        self.layer0 = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=kernel_size,
+            ),
+        )
+        self.layer1 = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=kernel_size,
+            ),
+            torch.nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor):
+        return self.layer1(self.layer0(x))
+
+
 class SubgraphReplacementTest(unittest.TestCase):
     def testReplacementWithPytorchBackward(self):
         with tempfile.TemporaryDirectory() as td:
@@ -150,6 +173,28 @@ class SubgraphReplacementTest(unittest.TestCase):
             self.assertNotIn("torch.ops.aten.addmm", str(fused_m))
             self.assertNotIn("torch.ops.aten.add.Tensor", str(fused_m))
             self.assertEqual(list(y.shape), [16, 16])
+
+    def testReplacementChannelsLastConv(self):
+        with tempfile.TemporaryDirectory() as td:
+            set_cache_dir(Path(td))
+            m = SampleModule3().to(memory_format=torch.channels_last)
+            x = torch.ones([2, 3, 16, 16], requires_grad=False)
+            schema: FusionSchema = {
+                torch.ops.aten.convolution.default: OpFusionSpec(
+                    recursive=True,
+                    consumers=(torch.ops.aten.sigmoid.default,),
+                )
+            }
+            expected_y = m(x)
+            recorder = EagerAndRecordGraphs()
+            compiled_m = torch.compile(
+                m, backend=boo.backend(fusion_schema=schema, nested_backend=recorder)
+            )
+            y = compiled_m(x)
+            [fwd_gm] = recorder.graphs
+            self.assertNotIn("torch.ops.aten.", str(fwd_gm))
+            self.assertEqual(list(y.shape), list(expected_y.shape))
+            self.assertEqual(list(y.stride()), list(expected_y.stride()))
 
     def testReplacementNonRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:

@@ -13,7 +13,11 @@ from torch.fx.node import Target
 from torch.fx.passes.shape_prop import TensorMetadata
 
 from .library import *
-from .utils import get_arg_spec_name
+from .utils import (
+    MemoryFormatPermutation,
+    get_arg_spec_name_and_memory_format_permutations,
+    get_memory_format_permutation,
+)
 from ..runtime import get_launchable
 from ....support.logging import aot_logger as logger
 
@@ -60,9 +64,10 @@ def get_custom_graph_op(
     gm: GraphModule, *, force_single_dispatch: bool = False
 ) -> torch._ops.OpOverloadPacket:
     """Converts a graph module into a custom operator."""
-    hash = sha1(str(gm).encode(), usedforsecurity=False).hexdigest()
+    gm_string = str(gm.print_readable(print_output=False, include_stride=True))
+    hash = sha1(gm_string.encode(), usedforsecurity=False).hexdigest()
     op_name = f"fused_op_{hash}"
-    logger.debug("Got hash str '%s' for GraphModule: \n %s", hash, str(gm))
+    logger.debug("Got hash str '%s' for GraphModule: \n %s", hash, gm_string)
 
     if not hasattr(torch.ops.boo, op_name):
         _define_custom_graph_op(
@@ -77,27 +82,94 @@ def _define_custom_graph_op(
 ):
     """Defines a custom op from the graph module with given op_name in the boo library."""
     inputs, outputs = _get_io_from_gm(gm)
-    # TODO: handle this better
     is_none_output = _maybe_trim_none_outputs(gm)
     has_a_none_output = any(is_none_output)
     schema = _get_schema(inputs, outputs)
     define_schema(op_name, schema)
+    # Get memory format permutations for output tensors based on graph metadata.
+    output_mem_format_perms = [
+        get_memory_format_permutation(t, strict=True) for t in outputs if t is not None
+    ]
+    logger.debug(
+        "Output TensorMetadata:\n%s\nOutput MemoryFormatPermutation:\n%s",
+        str(outputs),
+        str(output_mem_format_perms),
+    )
+
+    class LayoutManagedModule(torch.nn.Module):
+        """This wrapper around gm.forward is the content being offloaded to IREE.
+
+        We are expecting inputs to be permuted into a contiguous format before reaching this point.
+        The forward method performs the inverse permutations, which will be imported into MLIR.
+
+        A similar handling of output tensors is performed.
+        """
+
+        def __init__(
+            self,
+            mem_format_perms: Sequence[MemoryFormatPermutation],
+        ):
+            super().__init__()
+            self.mem_format_perms = mem_format_perms
+
+        def forward(self, *args):
+            handled_args = []
+            for idx, arg in enumerate(args):
+                arg_perms = self.mem_format_perms[idx]
+                handled_args.append(
+                    arg
+                    if arg_perms is None
+                    else arg.permute(arg_perms.inverse_permutation)
+                )
+            outputs = gm.forward(*handled_args)
+            single_output = False
+            if isinstance(outputs, torch.Tensor):
+                outputs = [outputs]
+                single_output = True
+            handled_outputs = []
+            for idx, o in enumerate(outputs):
+                o_perms = output_mem_format_perms[idx]
+                handled_outputs.append(
+                    o if o_perms is None else o.permute(o_perms.permutation)
+                )
+            return handled_outputs[0] if single_output else tuple(handled_outputs)
 
     @register_impl(op_name)
     def _(*args):
-        spec_name = get_arg_spec_name(op_name, *args)
+
+        spec_name, mem_format_perms = get_arg_spec_name_and_memory_format_permutations(
+            op_name, *args
+        )
+
+        handled_args = []
+        for idx, arg in enumerate(args):
+            arg_perms = mem_format_perms[idx]
+            handled_args.append(
+                arg if arg_perms is None else arg.permute(arg_perms.permutation)
+            )
+
         l = get_launchable(
-            gm,
-            arg_factory=args,
+            lambda: LayoutManagedModule(mem_format_perms),
+            arg_factory=tuple(handled_args),
             func_name=spec_name,
             force_single_dispatch=force_single_dispatch,
         )
-        results = l(*[arg.data for arg in args])
+
+        single_output = False
+        outputs = l(*[arg.data for arg in handled_args])
+        if isinstance(outputs, torch.Tensor):
+            outputs = [outputs]
+            single_output = True
+        handled_outputs = []
+        for idx, o in enumerate(outputs):
+            o_perms = output_mem_format_perms[idx]
+            handled_outputs.append(
+                o if o_perms is None else o.permute(o_perms.inverse_permutation)
+            )
+
         if not has_a_none_output:
-            return results
+            return handled_outputs[0] if single_output else tuple(handled_outputs)
         # We have at least one None output that needs to be included.
-        if isinstance(results, torch.Tensor):
-            results = [results]
         # Handle this better.
         all_results = []
         i = 0
@@ -105,7 +177,7 @@ def _define_custom_graph_op(
             if is_none:
                 all_results.append(None)
             else:
-                all_results.append(results[i])
+                all_results.append(handled_outputs[i])
                 i += 1
         # It is probably safe to assume all_results has more than one value.
         return tuple(all_results) if i > 1 else all_results[0]
