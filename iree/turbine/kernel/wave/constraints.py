@@ -780,6 +780,20 @@ class WaveConstraint(DistributionConstraint):
 
         return bound
 
+    @property
+    def waves_per_block(self) -> IndexExpr:
+        if not self.wg_constraint:
+            raise ValueError("Wave constraint has no workgroup constraint")
+
+        return ceiling(self.wg_constraint.tile_size / self.tile_size)
+
+    @property
+    def workgroup_dim(self) -> int:
+        if not self.wg_constraint:
+            raise ValueError("Wave constraint has no workgroup constraint")
+
+        return self.wg_constraint.workgroup_dim
+
 
 def get_constrained_shape(
     shape: list[IndexExpr], constraints: list[WorkgroupConstraint | TilingConstraint]
@@ -833,3 +847,27 @@ def get_constrained_shape(
             if isinstance(x, TilingConstraint)
         ][0]
     return tuple(constrained_shape)
+
+
+@dataclass
+class ReorderingConstraint:
+    """
+    A constraint of the form `tkw.ReorderingConstraint(new_wg0, 0)`
+    specifies how workgroups are mapped to data along workgroup dim 0,
+    according to the 'new_wg0' expression.
+    The internal indexing of waves and threads within the workgroup do not change.
+    The assumption is that each workgroup dimension has already been distributed by each WorkgroupConstraint,
+    and since a ReorderingConstraint only shifts the positioning of workgroups after this,
+    this class does not extend DistributionConstraint.
+    """
+
+    reordered_equation: IndexExpr
+    workgroup_dim: int
+
+    def __post_init__(self):
+        self.wg_dim = None
+        match self.workgroup_dim:
+            case 0 | 1 | 2:
+                self.wg_dim = get_workgroup_symbol(self.workgroup_dim)
+            case _:
+                raise ValueError("Invalid workgroup dimension. Expected 0, 1, 2")

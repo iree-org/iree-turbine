@@ -61,8 +61,8 @@ def eager_dispatch(ksel: KernelSelection):
     # This is very simplistic and will need to be extended for multi-device, etc.
     device: Optional[Device] = None
     torch_device: Optional[torch.device] = None
-    for arg_desc in ksel.arg_descs:
-        assert arg_desc is not None, "NYI: None arguments"
+    for arg_desc in ksel.get_provided_arg_descs():
+        assert arg_desc is not None, "Uninitialized argument descriptor"
         if not arg_desc.is_list:
             if arg_desc.ir_arity == 1:
                 # One arg has maybe_tensor_value as a single element (common case).
@@ -128,8 +128,8 @@ def eager_dispatch(ksel: KernelSelection):
         # import_torch_tensor.
         arg_list.push_ref(device.import_torch_tensor(tensor_arg))
 
-    for arg_desc in ksel.arg_descs:
-        assert arg_desc is not None, "NYI: None arguments"
+    for arg_desc in ksel.get_provided_arg_descs():
+        assert arg_desc is not None, "Uninitialized argument descriptor"
         arity = arg_desc.ir_arity
         if not arg_desc.is_list:
             # Non-list.

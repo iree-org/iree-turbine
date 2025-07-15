@@ -8,7 +8,11 @@ import iree.turbine.kernel.lang as tkl
 import iree.turbine.kernel.wave as tkw
 from iree.turbine.kernel.lang.global_symbols import *
 from iree.turbine.kernel.wave.constraints import MMAType
-from iree.turbine.kernel.wave.utils.general_utils import clamp, torch_dtype_to_wave
+from iree.turbine.kernel.wave.utils.general_utils import (
+    ceildiv,
+    clamp,
+    torch_dtype_to_wave,
+)
 import sympy
 from enum import Enum
 from collections import namedtuple
@@ -36,8 +40,8 @@ def get_paged_decode_intermediate_arrays_shapes(
     phase_0_output_shape = (
         num_kv_splits,
         shape.num_seqs,
-        shape.head_size_kv,
         shape.num_query_heads,
+        shape.head_size_kv,
     )
     phase_0_output_max_shape = (
         num_kv_splits,
@@ -54,11 +58,15 @@ def get_paged_decode_attention_kernels(
     input_dtype: torch.dtype = torch.float16,
     output_dtype: torch.dtype = torch.float16,
     layer_scaling: Optional[float] = None,
-    mha: bool = False,
     logit_cap: float = 0.0,
 ):
-    if mha:
-        assert shape.num_query_heads == shape.num_kv_heads
+    """
+    Supports multi-head attention (MHA), multi-query attention (MQA), and
+    grouped-query attention (GQA) depending on the number of query heads
+    compared to the number of key-value heads.
+    """
+
+    multi_head_attention = shape.num_query_heads == shape.num_kv_heads
 
     wave_input_dtype = torch_dtype_to_wave(input_dtype)
     wave_output_dtype = torch_dtype_to_wave(output_dtype)
@@ -76,7 +84,7 @@ def get_paged_decode_attention_kernels(
     SPLIT_LEN = tkl.sym.SPLIT_LEN
     SPLITS_ACTIVE = tkl.sym.SPLITS_ACTIVE
     U = tkl.sym.U  # Num splits
-    if mha:
+    if multi_head_attention:
         BH = B
     else:
         BH = tkl.sym.BH
@@ -95,12 +103,20 @@ def get_paged_decode_attention_kernels(
         PHASE_1 = (1,)
 
     THREADS_PER_WAVE = 64
+
     PHASE_1_BLOCK_B_WAVES = 1
-    PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
-    PHASE_1_BLOCK_N = 16
+    phase_1_distribute_query_heads = shape.num_query_heads > 64
+    if phase_1_distribute_query_heads:
+        PHASE_1_BLOCK_B = 64 * PHASE_1_BLOCK_B_WAVES
+        PHASE_1_BLOCK_N_WAVES = 1
+        PHASE_1_BLOCK_N = 16
+    else:
+        PHASE_1_BLOCK_B = 1 * PHASE_1_BLOCK_B_WAVES
+        PHASE_1_BLOCK_N_WAVES = ceildiv(shape.head_size_kv, 64)
+        PHASE_1_BLOCK_N = 64 * PHASE_1_BLOCK_N_WAVES
     head_ratio = shape.num_query_heads // shape.num_kv_heads
     MMA_VEC_SIZE = 16  # TODO: Actual value depends in mma type
-    if mha:
+    if multi_head_attention:
         B_WAVES = 1
     else:
         B_WAVES = clamp(head_ratio // MMA_VEC_SIZE, 1, 4)
@@ -150,11 +166,9 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
 
         vector_shapes = {BH: 0, S: 0, U: 1}
-        waves_per_block = (1, B_WAVES, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
-                waves_per_block=waves_per_block,
                 mma_type=mfma_variant[1],
                 vector_shapes=vector_shapes,
             )
@@ -182,11 +196,9 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
 
         vector_shapes = {S: 0, U: 1}
-        waves_per_block = (1, B_WAVES, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
-                waves_per_block=waves_per_block,
                 mma_type=mfma_variant[1],
                 vector_shapes=vector_shapes,
             )
@@ -194,23 +206,31 @@ def get_paged_decode_attention_kernels(
         return constraints
 
     def phase_1_constraints() -> list[tkw.Constraint]:
-        constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(B, BLOCK_B, 0)]
+        constraints: list[tkw.Constraint] = []
+        if phase_1_distribute_query_heads:
+            constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 0)]
+            constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+        else:
+            constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
+            constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+
         constraints += [tkw.WaveConstraint(B, BLOCK_B // PHASE_1_BLOCK_B_WAVES)]
-        constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-        constraints += [tkw.WaveConstraint(N, BLOCK_N)]
+        constraints += [tkw.WaveConstraint(N, BLOCK_N // PHASE_1_BLOCK_N_WAVES)]
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 2)]
         constraints += [tkw.TilingConstraint(U, BLOCK_U, iters=SPLITS_ACTIVE)]
         vector_shapes = {
             S: 0,
             B: BLOCK_B // PHASE_1_BLOCK_B_WAVES,
-            N: 1,
+            N: (
+                1
+                if phase_1_distribute_query_heads
+                else BLOCK_N // PHASE_1_BLOCK_N_WAVES
+            ),
             U: 1,
         }
-        waves_per_block = (PHASE_1_BLOCK_B_WAVES, 1, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
-                waves_per_block=waves_per_block,
                 mma_type=mfma_variant,
                 vector_shapes=vector_shapes,
             )
@@ -219,7 +239,7 @@ def get_paged_decode_attention_kernels(
 
     def get_constraints(phase: Phase) -> list[tkw.Constraint]:
         if phase == Phase.PHASE_0:
-            if mha:
+            if multi_head_attention:
                 return phase_0_constraints_mha()
             else:
                 return phase_0_constraints()
@@ -260,6 +280,12 @@ def get_paged_decode_attention_kernels(
         dynamic_val_mappings={K2: l},
     )
 
+    logits_mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={U: i, S: j, N: k, B: l},
+        outputs={U: i, S: j, N: k, B: l},
+    )
+
     # The kv-cache layout here is (SEQ, HEADS, HEAD_DIM).
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
@@ -268,7 +294,7 @@ def get_paged_decode_attention_kernels(
         v: tkl.Memory[N_KV, BH, N, ADDRESS_SPACE, wave_input_dtype],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         kv_indices: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        output: tkl.Memory[U, S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         # =========================================================================
@@ -372,11 +398,12 @@ def get_paged_decode_attention_kernels(
             res_max_log_sum = res_max + tkw.log2(res_sum)
 
             tkw.write(res_max_log_sum, output_max)
-            tkw.write(res, output)
+            res = tkw.broadcast(res, target_shape=[U, S, N, B])
+            tkw.write(res, output, mapping=logits_mapping)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(
-        logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        logits: tkl.Memory[U, S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, wave_output_dtype],
@@ -397,8 +424,10 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, B, N, tkl.f32],
         ):
-            x_j = tkw.read(logits)
-            xm_j = tkw.read(logits_max)
+            # TODO: U iterator has tile size 1 and is always smaller than U,
+            # so force the non-masked ops here by setting bounds to empty.
+            x_j = tkw.read(logits, bounds={}, mapping=logits_mapping)
+            xm_j = tkw.read(logits_max, bounds={})
             m_j = tkw.maximum(xm_j, partial_max)
             old_scale = tkw.exp2(partial_max - m_j)
             new_scale = tkw.exp2(xm_j - m_j)
@@ -419,7 +448,7 @@ def get_paged_decode_attention_kernels(
             elements_per_thread=1,  # TODO: cannot remove this yet as vector shapes are inferred incorrectly
         )
 
-    if mha:
+    if multi_head_attention:
         symbols_0 = {
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             BLOCK_B: 1,

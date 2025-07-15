@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from typing import Callable
+from typing import Callable, Optional
 
 import torch
 from torch import Tensor
@@ -18,6 +18,7 @@ from ...dynamo.type_conversion import (
 from ...runtime.op_reg.base import (
     ALL_CUSTOM_OP_REGS,
     AttrArg,
+    EmptyOptionalTensorArg,
     IntArg,
     CustomOp,
     KernelBuilder,
@@ -211,6 +212,13 @@ class AOTKernelSelection(KernelSelection):
         self._validators.append(validator)
         return desc
 
+    def arg_optional_tensor(self, arg: int) -> Optional["TensorArg"]:
+        operand = self.operands[arg]
+        if str(operand.type) == "!torch.none":
+            self.arg_descs[arg] = EmptyOptionalTensorArg()
+            return None
+        return self.arg_tensor(arg, inplace_tied=False)
+
     def arg_tensor_list(self, arg: int) -> TensorListArg:
         raise NotImplementedError("NYI: AOT arg_tensor_list")
 
@@ -361,7 +369,9 @@ class InlineKernelBuilder(KernelBuilder):
             operands = list(torch_op.operands)
             arg_bindings = []
             for desc, operand in zip(ksel.arg_descs, operands):
-                assert desc is not None, "NYI: None arguments"
+                assert desc is not None, "Uninitialized argument descriptor"
+                if isinstance(desc, EmptyOptionalTensorArg):
+                    continue
                 arity = desc.ir_arity
                 if not desc.is_list:
                     if arity == 1:

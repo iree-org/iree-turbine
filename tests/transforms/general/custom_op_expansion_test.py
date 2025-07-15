@@ -17,6 +17,9 @@ from iree.turbine.runtime.op_reg import (
     KernelSelection,
 )
 
+# import to regiser custom ops
+import iree.turbine.ops._jinja_test_ops  # ignore[unused-import]
+
 from iree.turbine.support.ir_imports import (
     Context,
     Module,
@@ -46,6 +49,16 @@ class PassTest(unittest.TestCase):
             "%1 = torch_c.from_builtin_tensor %cast_0 : tensor<97x8xf32> -> !torch.vtensor<[97,8],f32>",
             m_asm,
         )
+
+    def testTensorOptionalArg(self):
+        m = self.run_test_case("custom_op_optional_arg.mlir")
+        m_asm = str(m)
+        self.assertNotIn("torch.constant.none", m_asm)
+        self.assertIn(
+            "util.call @turbine_test_linear_2d_f32(%0, %1)",
+            m_asm,
+        )
+        self.assertNotIn("torch._turbine_jinja_test.test_linear_middle_optional", m_asm)
 
     def testStringAttrArg(self):
         global _TEST_STRING_ATTR

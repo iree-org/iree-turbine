@@ -65,7 +65,6 @@ def get_quant_linear_kernel(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(2, 2, 1),
             vector_shapes={B: 0},
             mma_type=mfma_variant,
         )

@@ -226,6 +226,10 @@ class ConvSignature(OpSignature):
         grouped_dim_char = "C"
         return layout.find(grouped_dim_char)
 
+    @property
+    def is_forward(self) -> bool:
+        return self.mode == Mode.FORWARD
+
     @staticmethod
     def get(
         input: torch.Tensor,
@@ -241,6 +245,41 @@ class ConvSignature(OpSignature):
             bias=(bias is not None),
             **kwargs,
         )
+
+    def as_init_kwargs(self) -> dict[str, Any]:
+        kwargs = self._signature._asdict()
+        kwargs.pop("num_spatial_dims")
+        return kwargs
+
+    def make_signature_copy_for_forward(self) -> "ConvSignature":
+        kwargs = self.as_init_kwargs()
+        kwargs["mode"] = "fwd"
+        return ConvSignature(**kwargs)
+
+    def get_arg_index_for_backward(self) -> int | None:
+        assert not self.is_forward
+        # TODO: should we just use the index of the argument we are computing
+        # the derivative of as mode and -1 as forward instead?
+        match self.mode:
+            case Mode.INPUT_BACKWARD:
+                return 0
+            case Mode.WEIGHT_BACKWARD:
+                return 1
+            case _:
+                return None
+
+    def arrange_backward_launch_args(
+        self,
+        forward_args: tuple[torch.Tensor, ...],
+        forward_results: tuple[torch.Tensor, ...],
+    ) -> tuple[torch.Tensor, ...]:
+        assert not self.is_forward
+        x, w, *_ = forward_args
+        if self.mode == Mode.INPUT_BACKWARD:
+            return (w,)
+        if self.mode == Mode.WEIGHT_BACKWARD:
+            return (x,)
+        raise ValueError(f"Unsupported mode {self.mode}")
 
     def get_conv_kwargs(self):
         """Gets `torch.convolution` (forward-only) kwargs from the signature."""
@@ -411,6 +450,7 @@ class ConvForwardCustomGeneric(torch.nn.Module):
         self.wl = str(sig.kernel_layout).lower().replace("n", "f")
         self.ol = str(sig.output_layout).lower().replace("c", "f")
         self.explicit_padding = sig.explicit_padding
+        self.explicit_shape = list(sig.output_shape)
         self.x_pos = sig.input_grouped_dim
         self.w_pos = sig.kernel_grouped_dim
         self.o_pos = sig.output_grouped_dim
@@ -436,7 +476,14 @@ class ConvForwardCustomGeneric(torch.nn.Module):
             w = w.unflatten(self.w_pos, [self.groups, -1])
         x_pad = torch.constant_pad_nd(x, self.explicit_padding, value=0)
         output = generic_conv(
-            x_pad, w, self.stride, self.dilation, self.xl, self.wl, self.ol, []
+            x_pad,
+            w,
+            self.stride,
+            self.dilation,
+            self.xl,
+            self.wl,
+            self.ol,
+            self.explicit_shape,
         ).to(dtype=x_pad.dtype)
         if self.groups != 1:
             output = output.flatten(self.o_pos, self.o_pos + 1)

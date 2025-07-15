@@ -52,9 +52,7 @@ def get_wave_compile_options(canonicalize: bool = False, dynamic_symbols=[]):
 @run_test
 def test_cast():
     constraints: list[tkw.Constraint] = [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(1, 1, 1), vector_shapes={M: 16, N: 16}
-        )
+        tkw.HardwareConstraint(threads_per_wave=64, vector_shapes={M: 16, N: 16})
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]

@@ -67,11 +67,9 @@ def get_decode_attention_kernels(
             SymbolicAlias(U, K2, lambda x: sympy.ceiling(x / (BLOCK_K2 / K_WAVES)))
         ]
         vector_shapes = {B: 0}
-        waves_per_block = (M_WAVES, N_WAVES, K_WAVES)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
-                waves_per_block=waves_per_block,
                 mma_type=mfma_variant,
                 vector_shapes=vector_shapes,
             )
@@ -91,11 +89,9 @@ def get_decode_attention_kernels(
             N: BLOCK_N,
             U: 1,
         }
-        waves_per_block = (1, 1, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
-                waves_per_block=waves_per_block,
                 mma_type=mfma_variant,
                 vector_shapes=vector_shapes,
             )

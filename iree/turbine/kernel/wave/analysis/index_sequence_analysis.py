@@ -31,6 +31,7 @@ from ..constraints import (
     HardwareConstraint,
     TilingConstraint,
     WorkgroupConstraint,
+    DistributionConstraint,
 )
 from ..assumptions import Assumption
 from ..symbolic_constraints import SymbolicAlias
@@ -317,7 +318,8 @@ def compute_stride(
         if dim == target_dim:
             break
         assert dim in vector_shapes, f"Dimension {dim} not found in vector shapes"
-        stride *= vector_shapes[dim]
+        # Sanity Check to ensure that the stride is never less than 1.
+        stride *= max(1, vector_shapes[dim])
 
     try:
         stride = int(stride)
@@ -352,11 +354,7 @@ def set_thread_independent_index(
     if isinstance(custom, (Iterate, Placeholder)) and not isinstance(custom, IterArg):
         return
 
-    constraints = [
-        c
-        for c in constraints
-        if not isinstance(c, (HardwareConstraint, Assumption, SymbolicAlias))
-    ]
+    constraints = [c for c in constraints if isinstance(c, DistributionConstraint)]
 
     index = {}
     for dim in custom.indexing_dims:

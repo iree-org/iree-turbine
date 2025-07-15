@@ -44,6 +44,7 @@ from typing import List, Optional
 # (NUM_Q_HEADS, NUM_KV_HEADS, HEAD_SIZE, HEAD_SIZE_KV, BLOCK_SIZE, NUM_SEQS, SEQ_LEN)
 shapes = [(16, 1, 64, 64, 32, 2, 100)]
 shapes += [(6, 1, 128, 128, 32, 1, 100)]
+shapes += [(64, 1, 13, 13, 32, 1, 100)]
 shapes += [(16, 2, 64, 64, 32, 1, 100)]  # (16 // 2) < 16
 shapes += [(16, 1, 64, 64, 32, 2, 3)]  # small SEQ_LEN test
 shapes += [(64, 1, 80, 80, 32, 2, 128)]
@@ -447,7 +448,6 @@ def testPagedFlashDecodingMHA(
         num_kv_splits,
         input_dtype=dtype,
         output_dtype=dtype,
-        mha=True,
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())

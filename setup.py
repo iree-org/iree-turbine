@@ -107,6 +107,8 @@ setup(
         "torch_dynamo_backends": [
             "turbine_cpu = iree.turbine.dynamo.backends.base:backend",
             "iree_turbine = iree.turbine.dynamo.backends.base:backend",
+            "iree_boo = iree.turbine.dynamo.backends.boo:default_backend",
+            "iree_boo_inductor = iree.turbine.dynamo.backends.boo:inductor_backend",
         ],
     },
     install_requires=[

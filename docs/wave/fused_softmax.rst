@@ -4,7 +4,7 @@ Fused Softmax Tutorial
 This tutorial demonstrates how to implement Fused Softmax using Wave.
 
 Softmax Function
-----------------
+-----------------
 
 The softmax function is defined as:
 
@@ -20,7 +20,7 @@ Note:
 **Rows = samples**, **Columns = classes**
 
 Fused Softmax
--------------
+--------------
 
 A *fused* softmax implementation combines the exponentiation, summation, and normalization into a single kernel. This avoids intermediate memory reads/writes, reducing latency and improving performance.
 
@@ -30,17 +30,17 @@ The function:
 
    test_fused_softmax(...)
 
-is defined in `wave_e2e_test.py`. It loads the softmax kernel with the correct constraints and compares the result with PyTorch’s built-in `softmax` function. Input shapes are defined in `test_param.json`.
+is defined in `wave_e2e_test.py`. It loads the softmax kernel with the correct constraints and compares the result with PyTorch's built-in `softmax` function. Input shapes are defined in `test_param.json`.
 
 Key GPU Programming Terms in Wave
----------------------------------
+-----------------------------------
 
 - **Thread**: Smallest unit of execution in GPU.
 - **Wave**: A group of threads (typically 32 or 64) that processes a tile. Equivalent to a CUDA warp.
 - **Workgroup**: A group of waves. The grid is divided into workgroups, each of which may include one or more waves.
 
 Constraint Creation
--------------------
+--------------------
 
 .. code-block:: python
 
@@ -54,7 +54,6 @@ Constraint Creation
    constraints: list[tkw.Constraint] = [
        tkw.HardwareConstraint(
            threads_per_wave=wave_size,
-           waves_per_block=(1, 1, 1),
            vector_shapes={M: BLOCK_M, N: N},
        )
    ]

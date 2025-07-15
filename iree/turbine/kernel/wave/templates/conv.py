@@ -122,7 +122,6 @@ def get_igemm_conv2d(
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(ratio_n, ratio_m, 1),
         )
     ]
 

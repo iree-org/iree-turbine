@@ -38,17 +38,15 @@ def get_speculative_decoding_kernel(
 
     dynamic_symbols = []
 
-    constraints = [tkw.WorkgroupConstraint(VOCAB_SIZE, BLOCK_VOCAB_SIZE, 0)]
+    constraints = [tkw.WorkgroupConstraint(VOCAB_SIZE, VOCAB_SIZE, 0)]
+    constraints += [tkw.WaveConstraint(VOCAB_SIZE, VOCAB_SIZE)]
     constraints += [tkw.WorkgroupConstraint(BATCH_SIZE, BLOCK_BATCH_SIZE, 1)]
-    constraints += [
-        tkw.WorkgroupConstraint(NUM_DRAFT_TOKENS, BLOCK_NUM_DRAFT_TOK, 1, primary=False)
-    ]
-    constraints += [tkw.WaveConstraint(VOCAB_SIZE, BLOCK_VOCAB_SIZE)]
+
     constraints += [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={BATCH_SIZE: 0, NUM_DRAFT_TOKENS: 0, VOCAB_SIZE: 64},
+            vector_shapes={BATCH_SIZE: 0, NUM_DRAFT_TOKENS: 0, VOCAB_SIZE: VOCAB_SIZE},
         )
     ]
 
@@ -68,12 +66,6 @@ def get_speculative_decoding_kernel(
         outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j, VOCAB_SIZE: k},
     )
 
-    uniform_mapping = tkw.IndexMapping(
-        num_iterators=2,
-        inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: sympy.Integer(0)},
-        outputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
-    )
-
     output_mapping = tkw.IndexMapping(
         num_iterators=2,
         inputs={BATCH_SIZE: i, NUM_DRAFT_TOKENS: j},
@@ -89,14 +81,21 @@ def get_speculative_decoding_kernel(
             BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, GLOBAL_ADDRESS_SPACE, tkl.f32
         ],
         cur_prob_offset: tkl.Memory[BATCH_SIZE, GLOBAL_ADDRESS_SPACE, tkl.i32],
-        uniform_samples: tkl.Memory[
-            BATCH_SIZE, NUM_DRAFT_TOKENS, GLOBAL_ADDRESS_SPACE, tkl.f32
-        ],
+        updated_coins_vec: tkl.Memory[BATCH_SIZE, GLOBAL_ADDRESS_SPACE, tkl.f32],
         last_accepted_retrive_idx_vec: tkl.Memory[
             BATCH_SIZE, GLOBAL_ADDRESS_SPACE, tkl.i32
         ],
+        accept_token_num: tkl.Memory[
+            BATCH_SIZE,
+            GLOBAL_ADDRESS_SPACE,
+            tkl.i32,
+        ],
+        num_spec_tokens: tkl.i32,  # type: ignore
         predicts: tkl.Memory[SEQ_LEN, GLOBAL_ADDRESS_SPACE, tkl.i32],
     ):
+        zero = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.f32](0.0)
+        one = tkw.Register[BATCH_SIZE, tkl.i32](1)
+
         last_offset = tkw.read(cur_prob_offset, elements_per_thread=1)
         tkw.set_symbol(LAST_OFFSET, last_offset)
 
@@ -106,15 +105,21 @@ def get_speculative_decoding_kernel(
         target_probs_reg = tkw.read(target_probs, mapping=target_probs_mapping)
         draft_probs_reg = tkw.read(draft_probs, mapping=draft_probs_mapping)
 
-        # TODO: Add conditioned mask once scalar codegen is landed.
-        # mask_cond = num_accepted_tokens != num_speculative_tokens_sub1
-        # mask_cond = tkw.broadcast(mask_cond, target_shape=[B, N, D])
-        # p_reg = tkw.select(mask_cond, p_reg, zero)
+        num_spec_tokens_reg = tkw.broadcast(num_spec_tokens, target_shape=[BATCH_SIZE])
+        num_accepted_tokens = tkw.read(accept_token_num)
 
-        coin = tkw.read(uniform_samples, mapping=uniform_mapping)
+        condition = num_accepted_tokens != (num_spec_tokens_reg - one)
+        condition = tkw.cast(condition, tkw.i1)
+        condition = tkw.broadcast(
+            condition, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
+        )
+        draft_probs_reg = tkw.select(condition, draft_probs_reg, zero)
+
+        coin = tkw.read(updated_coins_vec)
+        coin = tkw.broadcast(coin, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS])
+
         diff = target_probs_reg - draft_probs_reg
 
-        zero = tkl.Register[VOCAB_SIZE, tkl.f32](0.0)
         relu_diff = tkw.maximum(diff, zero)
         sum_relu = tkw.sum(relu_diff, dim=VOCAB_SIZE)
         cdf = tkw.cumsum(relu_diff, dim=VOCAB_SIZE)
@@ -123,13 +128,15 @@ def get_speculative_decoding_kernel(
             coin * sum_relu, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
         )
         greater_than_u = cdf > threshold_dist_u
+
         # Initializing `pad_token` to the last token in the vocabulary to be default
         # and within bounds.
         pad_token = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](
             VOCAB_SIZE - 1
         )
-        token_idx = tkl.Register[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE, tkl.i32](
-            THREAD_0
+        token_idx = tkw.self_index(VOCAB_SIZE, dtype=tkl.i32)
+        token_idx = tkw.broadcast(
+            token_idx, target_shape=[BATCH_SIZE, NUM_DRAFT_TOKENS, VOCAB_SIZE]
         )
 
         # TODO: We can implement with `ballot(greater_than_u)` and early exit
@@ -180,7 +187,6 @@ def get_speculative_sampling_kernel(
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
-            waves_per_block=(1, 1, 1),
             vector_shapes={
                 NUM_DRAFT_TOKENS: num_draft_tokens,
                 J: 0,
@@ -347,6 +353,7 @@ def get_speculative_sampling_kernel(
             GLOBAL_ADDRESS_SPACE_0,
             tkl.i32,
         ],
+        updated_coins_vec: tkl.Memory[BATCH_SIZE, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         one = tkw.Register[BATCH_SIZE, tkl.i32](1)
         zero = tkw.Register[BATCH_SIZE, tkl.i32](0)
@@ -420,18 +427,19 @@ def get_speculative_sampling_kernel(
                 tkw.set_symbol(DRAFT_TOKEN_ID, draft_token_id)
                 tkw.set_symbol(CUR_PROB_OFFSET, cur_prob_offset)
                 target_prob_single = read_3d_into_1d(target_probs)
+                prob_acc += target_prob_single
 
                 condition = (coin <= (prob_acc / threshold_acc_reg)) | (
                     target_prob_single >= threshold_single_reg
                 )
                 not_condition = ~condition
 
-                # Update num_accepted_tokens if the condition is true.
-                num_accepted_tokens = tkw.select(
-                    condition, num_accepted_tokens + one, num_accepted_tokens
+                # Update prob_acc.
+                prob_acc = tkw.select(
+                    condition,
+                    zero_f32,
+                    prob_acc,
                 )
-                tkw.set_symbol(NUM_ACCEPTED_TOKENS, num_accepted_tokens)
-                tkw.set_symbol(LAST_ACCEPTED_RETRIEVE_IDX, last_accepted_retrieve_idx)
 
                 # Update cur_prob_offset.
                 cur_prob_offset = tkw.select(
@@ -446,6 +454,15 @@ def get_speculative_sampling_kernel(
                     read_2d_into_1d(uniform_samples),
                     coin,
                 )
+                tkw.write(coin, updated_coins_vec)
+                tkw.set_symbol(LAST_ACCEPTED_RETRIEVE_IDX, last_accepted_retrieve_idx)
+
+                # Update num_accepted_tokens if the condition is true.
+                num_accepted_tokens = tkw.select(
+                    condition, num_accepted_tokens + one, num_accepted_tokens
+                )
+                tkw.set_symbol(NUM_ACCEPTED_TOKENS, num_accepted_tokens)
+                tkw.set_symbol(LAST_ACCEPTED_RETRIEVE_IDX, last_accepted_retrieve_idx)
 
                 @tkw.conditional(condition)
                 def then_():
@@ -462,13 +479,6 @@ def get_speculative_sampling_kernel(
                     condition,
                     draft_index,
                     last_accepted_retrieve_idx,
-                )
-
-                # Update prob_acc.
-                prob_acc = tkw.select(
-                    condition,
-                    zero_f32,
-                    prob_acc + target_prob_single,
                 )
 
                 # Update cur_index.

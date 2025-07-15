@@ -3,7 +3,42 @@ Facilities to launch BOO kernels in standalone processes.
 ## Contents
 
 - `driver.py`: A script for benchmarking kernels with MIOpen-compatible options.
-- `launch.py`: Contains the `get_launchbale` for converting an `OpSignature` into a kernel launchable from Python. This launchable interacts with a file cache the user can control with the environment variables `BOO_CACHE_ON=<0 or 1>` and  `BOO_CACHE_DIR=<absolute path>`.
+- `launch.py`: Contains the `get_launchable` for converting an `OpSignature` into a kernel launchable from Python. This launchable interacts with a file cache the user can control with the environment variables `BOO_CACHE_ON=<0 or 1>` and  `BOO_CACHE_DIR=<absolute path>`.
+- `numerics.py`: Contains logic for creating GPU numerics comparisons against PyTorch baseline.
+- `preload.py`: Contains logic for pre-populating the file cache with launchables.
+
+
+## Pre-populating the Launchable Cache
+
+For command-line use, look at the `<op_name>_exports/README.md`.
+
+From Python,
+
+```python
+from iree.turbine.kernel.boo.driver.preload import CachePopulator
+from iree.turbine.kernel.boo.driver.launch import get_launchable
+from iree.turbine.kernel.boo.<op_name>_exports.<op_name> import <OpName>Signature
+from iree.turbine.kernel.boo.<op_name>_exports.miopen_parser import <OpName>Parser
+
+# Note that you will have to specify op-specific parser and signature classes.
+populator = CachePopulator(commands_file="path/to/miopen/commands_list.txt",
+                           parser_cls=<OpName>Parser,
+                           signature_cls=<OpName>Signature)
+
+populator.run()
+
+# You can grab an example signature from the populator:
+sample_signature = populator.signatures[0]
+
+# One can also check the cache for this signature
+cache_status = populator.get_cache_status(sample_signature.get_func_name())
+print(cache_status)
+
+# You can also get the list of failed signatures via:
+failed_funcs = populator.get_failures()
+
+conv = get_launchable(sample_signature)
+```
 
 ## Benchmarking
 
@@ -44,8 +79,8 @@ The `--time 1` (or `-t 1` for short) option to collect timing is implemented by 
 ```
 git clone https://github.com/wolfpld/tracy.git
 cd tracy/csvexport
-cmake -B csvexport/build -S csvexport -DCMAKE_BUILD_TYPE=Release
-cmake --build csvexport/build --parallel --config Release
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel --config Release
 export PATH="$PWD/build/:$PATH"
 ```
 

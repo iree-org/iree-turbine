@@ -1,10 +1,10 @@
 Getting Started with Wave
-========================
+=========================
 
 This guide will help you get up and running with Wave, a high-performance machine learning programming language designed for accelerating ML kernel development.
 
 Prerequisites
-------------
+--------------
 
 Before installing Wave, ensure you have the following prerequisites:
 
@@ -15,7 +15,7 @@ Before installing Wave, ensure you have the following prerequisites:
 5. Rust 1.70 or later
 
 Installation
------------
+-------------
 
 1. Install PyTorch with ROCm support:
 
@@ -38,7 +38,7 @@ Installation
 
 
 Next Steps
----------
+-----------
 
 - Read the :doc:`system_architecture` guide to understand Wave's compilation pipeline
 - Check out the :doc:`gemm_tutorial` for a more complex example
