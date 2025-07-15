@@ -79,8 +79,8 @@ The `--time 1` (or `-t 1` for short) option to collect timing is implemented by 
 ```
 git clone https://github.com/wolfpld/tracy.git
 cd tracy/csvexport
-cmake -B csvexport/build -S csvexport -DCMAKE_BUILD_TYPE=Release
-cmake --build csvexport/build --parallel --config Release
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel --config Release
 export PATH="$PWD/build/:$PATH"
 ```
 
