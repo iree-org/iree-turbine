@@ -80,7 +80,7 @@ class layout_customizable_convolution(CustomOp):
             sample_args = sample_args + (ksel.arg_descs[2].t,)
         func_name = self.conv_sig.get_func_name()
         module_op = generate_custom_op_compatible_ir(
-            self.conv_sig.get_nn_module(use_custom=False),
+            self.conv_sig.get_nn_module(use_custom=True),
             args=sample_args,
             func_name=func_name,
         )
