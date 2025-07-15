@@ -21,12 +21,12 @@ from ..driver.launch import get_launchable
 from ..runtime import LaunchableRuntimeCache
 
 from ....runtime.op_reg import CustomOp, KernelBuilder, KernelSelection, impl_helper
-from ....support.logging import aot_logger as logger
 from ....transforms.merger import Merger
-from ....support.ir_imports import Operation
+from ....support.ir_imports import Operation, StringAttr
 
 __all__ = [
     "boo_layout_customizable_convolution",
+    "convolution_replacement",
 ]
 
 # Forward Convolution Implementations #
@@ -91,6 +91,9 @@ class layout_customizable_convolution(CustomOp):
         )
         merger.merge()
         func_op = kb.symbol_table[merger.translate_symbol(func_name)]
+        func_op.operation.attributes["sym_visibility"] = StringAttr.get(
+            "private", kb.context
+        )
         kb.yield_results(
             *impl_helper.call_function(
                 func_op,
@@ -377,7 +380,7 @@ class _Boolayout_customizable_Convolution(torch.autograd.Function):
 def boo_layout_customizable_convolution(
     x: torch.Tensor,
     w: torch.Tensor,
-    b: torch.Tensor,
+    b: torch.Tensor | None,
     stride: Sequence[int],
     padding: Sequence[int],
     dilation: Sequence[int],
@@ -417,3 +420,46 @@ def boo_layout_customizable_convolution(
             output_layout,
         )
     )
+
+
+def convolution_replacement(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    b: None | torch.Tensor,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+) -> torch.Tensor:
+    num_spatial_dims = len(x.shape) - 2
+
+    mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_spatial_dims)
+    default_layout = DEFAULT_LAYOUTS[num_spatial_dims]
+    cl_layout = CHANNELS_LAST_LAYOUTS[num_spatial_dims]
+    cl_contig_perm = CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION[num_spatial_dims]
+    contig_cl_perm = CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION[num_spatial_dims]
+
+    x_cl = False if mem_format is None else x.is_contiguous(memory_format=mem_format)
+    w_cl = False if mem_format is None else w.is_contiguous(memory_format=mem_format)
+
+    input_layout = cl_layout if x_cl else default_layout
+    kernel_layout = cl_layout if w_cl else default_layout
+    # Match output layout to weight layout to propagate channels_last format.
+    output_layout = cl_layout if w_cl else default_layout
+
+    x = x if not x_cl else x.permute(cl_contig_perm)
+    w = w if not w_cl else w.permute(cl_contig_perm)
+
+    result: torch.Tensor = layout_customizable_convolution(
+        x,
+        w,
+        b,
+        stride,
+        padding,
+        dilation,
+        groups,
+        input_layout=input_layout,
+        kernel_layout=kernel_layout,
+        output_layout=output_layout,
+    )
+    return result if not w_cl else result.permute(contig_cl_perm)
