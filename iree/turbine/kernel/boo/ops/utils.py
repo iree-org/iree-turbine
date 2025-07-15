@@ -219,9 +219,9 @@ def get_arg_spec_name_and_memory_format_permutations(
 def generate_custom_op_compatible_ir(
     module: torch.nn.Module, args: tuple[torch.Tensor, ...], func_name: str
 ) -> Operation:
-    e = export(module, args=args, func_name=func_name)
+    e = export(module, args=args, function_name=func_name)
     CompiledModule.run_pass_pipeline(
         e.compiled_module,
-        "builtin.module(torch-backend-to-linalg-on-tensors-backend-pipeline)",
+        "builtin.module(canonicalize, torch-func-backend-type-conversion)",
     )
     return e.mlir_module

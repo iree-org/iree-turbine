@@ -20,7 +20,10 @@ from ..conv_exports import (
 from ..driver.launch import get_launchable
 from ..runtime import LaunchableRuntimeCache
 
-from ....runtime.op_reg import CustomOp, KernelBuilder, KernelSelection
+from ....runtime.op_reg import CustomOp, KernelBuilder, KernelSelection, impl_helper
+from ....support.logging import aot_logger as logger
+from ....transforms.merger import Merger
+from ....support.ir_imports import Operation
 
 __all__ = [
     "boo_layout_customizable_convolution",
@@ -66,8 +69,8 @@ class layout_customizable_convolution(CustomOp):
             groups=groups.v,
         )
         output_shape = self.conv_sig.output_shape
-        o_meta = self.conv_sig.output_perms.inv()(
-            torch.empty(tuple(output_shape), dtype=self.conv_sig.dtype, device="meta")
+        o_meta = torch.empty(
+            tuple(output_shape), dtype=self.conv_sig.dtype, device="meta"
         )
         ksel.return_tensor(o_meta)
 
@@ -77,12 +80,23 @@ class layout_customizable_convolution(CustomOp):
             sample_args = sample_args + (ksel.arg_descs[2].t,)
         func_name = self.conv_sig.get_func_name()
         module_op = generate_custom_op_compatible_ir(
-            self.conv_sig.get_nn_module(use_custom=True),
+            self.conv_sig.get_nn_module(use_custom=False),
             args=sample_args,
             func_name=func_name,
         )
-        # TODO: Merge this with kb and yield returns.
-        raise NotImplementedError("convolution generate NYI.")
+        # A bit silly, but we need to load the module_op into the kb.context.
+        module_op = Operation.parse(str(module_op), context=kb.context)
+        merger = Merger(
+            module_op, kb.module_body.owner, target_symbol_table=kb.symbol_table
+        )
+        merger.merge()
+        func_op = kb.symbol_table[merger.translate_symbol(func_name)]
+        kb.yield_results(
+            *impl_helper.call_function(
+                func_op,
+                *[binding for binding in kb.arg_bindings if binding is not None]
+            )
+        )
 
     def eager_execute(self, *args):
         return _boo_layout_customizable_convolution_impl(*args)
