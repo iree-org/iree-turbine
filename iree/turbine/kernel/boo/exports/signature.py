@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from abc import ABC, abstractmethod
-from typing import Optional, TypeVar, Union
+from typing import Any, Optional, TypeVar, Union
 
 import torch
 
@@ -62,6 +62,12 @@ class OpSignature(ABC):
     def is_forward(self) -> bool:
         """Indicates whether this signature corresponds to the forward-mode
         kernel."""
+        ...
+
+    @abstractmethod
+    def as_init_kwargs(self) -> dict[str, Any]:
+        """Return a dictionary that can be used as kwargs of the __init__
+        function to construct a copy of this signature."""
         ...
 
     @abstractmethod
