@@ -426,7 +426,7 @@ def testScaledGemmMXFP8(
     ],
 )
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.PREFETCH])
-def testScaledGemmPingPongMXFP4(
+def testScaledGemmPrefetechMXFP4(
     shape: tuple[int],
     mfma_variant: ScaledMMAType,
     enable_scheduling: SchedulingType,
@@ -449,14 +449,10 @@ def testScaledGemmPingPongMXFP4(
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
 
-    constraints += [
-        tkw.HardwareConstraint(
-            threads_per_wave=64, waves_per_block=(4, 2, 1), mma_type=mfma_variant
-        )
-    ]
+    constraints += [tkw.HardwareConstraint(threads_per_wave=64, mma_type=mfma_variant)]
 
     @tkw.wave(constraints)
-    def pingpong_gemm(
+    def prefetch_gemm(
         a: tkl.Memory[M, K / 2, ADDRESS_SPACE, tkl.i8],
         a_scale: tkl.Memory[M, K / 32, ADDRESS_SPACE, tkl.i8],
         b: tkl.Memory[N, K / 2, ADDRESS_SPACE, tkl.i8],
@@ -497,13 +493,13 @@ def testScaledGemmPingPongMXFP4(
         schedule=enable_scheduling,
     )
     options = set_default_run_config(options)
-    pingpong_gemm = wave_compile(options, pingpong_gemm)
+    prefetch_gemm = wave_compile(options, prefetch_gemm)
 
     x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(shape)
     out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=torch.float32)
 
     w_t = w.T.contiguous()
-    pingpong_gemm(x, x_scales, w_t, w_scales, out)
+    prefetch_gemm(x, x_scales, w_t, w_scales, out)
     torch_out = torchScaledGemmMXFP4(x, w, x_scales, w_scales)
 
     torch.testing.assert_close(torch_out, out, check_dtype=False)

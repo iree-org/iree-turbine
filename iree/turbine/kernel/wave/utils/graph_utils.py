@@ -21,7 +21,6 @@ from ...ops.wave_ops import (
     MMA,
     IterArg,
     SharedMemoryBarrier,
-    WorkgroupBarrier,
 )
 from ..._support.indexing import IndexSymbol
 from typing import Callable, Sequence, Optional
@@ -379,7 +378,7 @@ def is_barrier_between_same_graph(src: fx.Node, dst: fx.Node) -> bool:
     """
     next_node = src.next
     while next_node != dst and next_node.next.op != "root":
-        if isinstance(get_custom(next_node), (SharedMemoryBarrier, WorkgroupBarrier)):
+        if isinstance(get_custom(next_node), SharedMemoryBarrier):
             return True
         next_node = next_node.next
     return False

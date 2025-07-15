@@ -72,6 +72,10 @@ class SchedReorderStrategy(Enum):
     MXFP4_PP_CLUSTER = 0x211
 
 
+def is_pingpong_strategy(strategy):
+    return int(hex(strategy.value)[3]) == 2
+
+
 """
 Track tile size requirements for different reordering strategies.
 """
@@ -87,6 +91,52 @@ class CompatibleBlockSize:
 
 twoPPConfig = CompatibleBlockSize(128, 256, 64, 16)
 MXFP4PPConfig = CompatibleBlockSize(256, 128, 256, 4)
+
+
+class InsertionMode(Enum):
+    BEFORE = 0
+    AFTER = 1
+
+
+class InsertionPoint(object):
+    """
+    Helper class to keep track of movements/insertion of ops into very
+    precise/specific locations before or after an another op
+    (referred here as "anchor op".)
+    """
+
+    def __init__(self, mode, op, anchor_op):
+        # Initialize insertion mode.
+        if not isinstance(mode, InsertionMode):
+            raise ValueError("Unexpected insetion mode.")
+        self.mode = mode
+
+        # Initialize source location.
+        if isinstance(anchor_op, fx.Node):
+            self.anchor_op = anchor_op
+        elif isinstance(anchor_op, (list, tuple)):
+            if mode == InsertionMode.AFTER:
+                self.anchor_op = flatten_list(anchor_op)[-1]
+            else:
+                self.anchor_op = flatten_list(anchor_op)[0]
+        else:
+            raise ValueError("Unexpected src type")
+
+        if not isinstance(op, fx.Node):
+            raise ValueError("Unexpected op type.")
+        self.op = op
+
+    @property
+    def graph(self):
+        return self.anchor_op.graph
+
+
+def insert_op_after(op, anchor_op):
+    return InsertionPoint(InsertionMode.AFTER, op, anchor_op)
+
+
+def insert_op_before(op, anchor_op):
+    return InsertionPoint(InsertionMode.BEFORE, op, anchor_op)
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph) -> fx.Node:
@@ -146,13 +196,69 @@ def schedule_nodes_to_graph(graph, node_map, nodes):
         node_map[node] = new_node.fx_node
 
 
+def schedule_cluster_dependencies(
+    cluster_nodes, exhaustive_cluster_nodes, pre_cluster_nodes
+):
+    """
+    This function help add dependencies nodes that are not explicitly specified
+    inside the cluster.
+    """
+    schedule_weight = dict.fromkeys(pre_cluster_nodes, 0)
+    workqueue = deque(exhaustive_cluster_nodes)
+    non_solved_counter = 0
+    order_dependency = {
+        cluster_nodes[i + 1]: cluster_nodes[i] for i in range(len(cluster_nodes) - 1)
+    }
+    edge_weight = 1
+    while workqueue:
+        node = workqueue.popleft()
+        # Combine graph depedency + order dependency
+        node_deps = flatten_list(node.args) + [order_dependency.get(node)]
+        node_loop_deps = [
+            node_dep
+            for node_dep in node_deps
+            if isinstance(node_dep, fx.Node) and node_dep.graph == node.graph
+        ]
+        if not node_loop_deps:
+            non_solved_counter = 0
+            schedule_weight[node] = 0
+            continue
+        if any([dep not in schedule_weight for dep in node_loop_deps]):
+            non_solved_counter += 1
+            if non_solved_counter > len(workqueue):
+                raise ValueError(
+                    "Cannot find producer(s) for remaining item in workqueue."
+                )
+            workqueue.append(node)
+            continue
+        non_solved_counter = 0
+        schedule_weight[node] = (
+            max([schedule_weight[dep] for dep in node_loop_deps]) + edge_weight
+        )
+    return sorted(exhaustive_cluster_nodes, key=lambda x: schedule_weight[x])
+
+
+def insert_scheduling_nodes(reordered_original_nodes, insertion_points):
+    """
+    This function helps output a new list/order of nodes with scheduling
+    nodes inserted in precise locations specified by insertion_points.
+    """
+    reordered_nodes = reordered_original_nodes.copy()
+    for insertion_point in insertion_points:
+        insert_index = reordered_nodes.index(insertion_point.anchor_op)
+        if insertion_point.mode == InsertionMode.AFTER:
+            insert_index += 1
+        reordered_nodes.insert(insert_index, insertion_point.op)
+    return reordered_nodes
+
+
 def reorder_graph(graph, clusters):
     node_list = list(graph.nodes)
     prune_duplicates = lambda x: list(dict.fromkeys(x))
     # This lambda filters away scheduling ops generated in this pass
     # such as SetWavePrio, WorkgroupBarrier, SchedulingBarriers.
     prune_reordering_nodes = lambda x: [
-        x for x in flattened_cluster if x.graph == graph
+        x for x in flattened_cluster if not isinstance(x, InsertionPoint)
     ]
 
     flattened_cluster, _ = pytree.tree_flatten(clusters)
@@ -170,8 +276,17 @@ def reorder_graph(graph, clusters):
     # Slice node_list to get post cluster nodes
     post_cluster_nodes = [x for x in node_list if x > latest_cluster_node]
 
+    # Exhaustive clustered nodes
+    exhaustive_cluster_nodes = [
+        x for x in node_list if x >= earliest_cluster_node and x <= latest_cluster_node
+    ]
+
+    reordered_original_nodes = schedule_cluster_dependencies(
+        original_cluster_nodes, exhaustive_cluster_nodes, pre_cluster_nodes
+    )
+
     total_reordered_node = (
-        len(pre_cluster_nodes) + len(ordered_cluster) + len(post_cluster_nodes)
+        len(pre_cluster_nodes) + len(reordered_original_nodes) + len(post_cluster_nodes)
     )
 
     # Reorederd should have same number of nodes with original.
@@ -181,11 +296,21 @@ def reorder_graph(graph, clusters):
     if len(node_list) != total_reordered_node:
         return None
 
+    insertion_points = [
+        node for node in flattened_cluster if isinstance(node, InsertionPoint)
+    ]
+
+    # Insertion of scheduling nodes specified in this pass.
+    # e.g set_wave_prio, wg_barrier, shared_memory_barrier.
+    reordered_nodes = insert_scheduling_nodes(
+        reordered_original_nodes, insertion_points
+    )
+
     # Schedule pre-cluster, cluster, and post-cluster nodes in new graph.
     reordered_graph = fx.Graph()
     node_map = {}
     schedule_nodes_to_graph(reordered_graph, node_map, pre_cluster_nodes)
-    schedule_nodes_to_graph(reordered_graph, node_map, flattened_cluster)
+    schedule_nodes_to_graph(reordered_graph, node_map, reordered_nodes)
     schedule_nodes_to_graph(reordered_graph, node_map, post_cluster_nodes)
 
     return reordered_graph
@@ -307,7 +432,7 @@ def add_conditional_barriers_to_loop(custom_iterate, trace, hardware_constraint)
     return
 
 
-def insert_prefetch_loop_barriers(custom_iterate, clusters):
+def insert_prefetch_loop_barriers(custom_iterate, cluster_graph, clusters):
     """
     This function manually inserts first barrier right before for loop, and
     the barrier inside the loop close to the end of the loop. This ordering
@@ -317,10 +442,9 @@ def insert_prefetch_loop_barriers(custom_iterate, clusters):
     graph = custom_iterate.graph
     with graph.inserting_before(custom_iterate.fx_node):
         SharedMemoryBarrier().add_to_graph(graph)
-    cluster_graph = clusters[-1].graph
     # TODO: Replace this with just lgmkcnt or change lowering of
     # SharedMemoryBarrier to only do lgmkcnt w/os sbarrier
-    with cluster_graph.inserting_after(clusters[-1]):
+    with cluster_graph.inserting_before(cluster_graph.output_node()):
         clusters.append(SharedMemoryBarrier().add_to_graph(cluster_graph))
     return
 
@@ -393,37 +517,69 @@ def transform_two_PP_clusters(
     # 1st cluster interleaved local and global reads.
     clusters.append(sliced_local_load_lhs[0])
     clusters.append(sliced_local_load_rhs[0])
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(
+        insert_op_after(
+            SchedulingBarrier([]).add_to_graph(tmp_graph), sliced_local_load_rhs[0]
+        )
+    )
 
     clusters.append(global_load_lhs)
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(
+        insert_op_after(SchedulingBarrier([]).add_to_graph(tmp_graph), global_load_lhs)
+    )
 
     clusters.append(sliced_local_load_lhs[1])
     clusters.append(sliced_local_load_rhs[1])
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(
+        insert_op_after(
+            SchedulingBarrier([]).add_to_graph(tmp_graph), sliced_local_load_rhs[1]
+        )
+    )
 
     clusters.append(global_load_rhs)
-    clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(
+        insert_op_after(WorkgroupBarrier().add_to_graph(tmp_graph), global_load_rhs)
+    )
+    clusters.append(
+        insert_op_after(SchedulingBarrier([]).add_to_graph(tmp_graph), clusters[-1].op)
+    )
 
     # 2nd cluster mma_slice[0].
-    clusters.append(SetWavePrio(1).add_to_graph(tmp_graph))
+    clusters.append(
+        insert_op_before(SetWavePrio(1).add_to_graph(tmp_graph), sliced_mma_nodes[0])
+    )
     clusters.append(sliced_mma_nodes[0])
-    clusters.append(SetWavePrio(0).add_to_graph(tmp_graph))
-    clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(
+        insert_op_after(SetWavePrio(0).add_to_graph(tmp_graph), sliced_mma_nodes[0])
+    )
+    clusters.append(
+        insert_op_after(WorkgroupBarrier().add_to_graph(tmp_graph), clusters[-1].op)
+    )
+    clusters.append(
+        insert_op_after(SchedulingBarrier([]).add_to_graph(tmp_graph), clusters[-1].op)
+    )
 
     # 3rd cluster local writes.
     clusters.append(local_write_lhs)
     clusters.append(local_write_rhs)
-    clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(
+        insert_op_after(WorkgroupBarrier().add_to_graph(tmp_graph), local_write_rhs)
+    )
+    clusters.append(
+        insert_op_after(SchedulingBarrier([]).add_to_graph(tmp_graph), clusters[-1].op)
+    )
 
     # 4th cluster mma_slice[1].
-    clusters.append(SetWavePrio(1).add_to_graph(tmp_graph))
+    clusters.append(
+        insert_op_before(SetWavePrio(1).add_to_graph(tmp_graph), sliced_mma_nodes[1])
+    )
     clusters.append(sliced_mma_nodes[1])
-    clusters.append(SetWavePrio(0).add_to_graph(tmp_graph))
-    clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
+    clusters.append(
+        insert_op_after(SetWavePrio(0).add_to_graph(tmp_graph), sliced_mma_nodes[1])
+    )
+    clusters.append(
+        insert_op_after(SchedulingBarrier([]).add_to_graph(tmp_graph), clusters[-1].op)
+    )
 
     return clusters
 
@@ -467,68 +623,23 @@ def transform_MXFP4_PP_clusters(
     assert len(sliced_mma_nodes) == num_slices
 
     clusters = []
-    tmp_graph = fx.Graph()
-    # 1st cluster interleaved local and global reads.
-    sliced_local_load_lhs_0, slice_lhs_chain_ops_0 = split_local_load_from_chain(
-        sliced_local_load_lhs[0]
-    )
-    sliced_local_load_lhs_1, slice_lhs_chain_ops_1 = split_local_load_from_chain(
-        sliced_local_load_lhs[1]
-    )
-    (
-        sliced_local_load_lhs_scale_0,
-        slice_lhs_scale_chain_ops_0,
-    ) = split_local_load_from_chain(sliced_local_load_lhs_scale[0])
-    (
-        sliced_local_load_lhs_scale_1,
-        slice_lhs_scale_chain_ops_1,
-    ) = split_local_load_from_chain(sliced_local_load_lhs_scale[1])
 
-    sliced_local_load_rhs_0, slice_rhs_chain_ops_0 = split_local_load_from_chain(
-        sliced_local_load_rhs[0]
-    )
-    sliced_local_load_rhs_1, slice_rhs_chain_ops_1 = split_local_load_from_chain(
-        sliced_local_load_rhs[1]
-    )
-    (
-        sliced_local_load_rhs_scale_0,
-        slice_rhs_scale_chain_ops_0,
-    ) = split_local_load_from_chain(sliced_local_load_rhs_scale[0])
-    (
-        sliced_local_load_rhs_scale_1,
-        slice_rhs_scale_chain_ops_1,
-    ) = split_local_load_from_chain(sliced_local_load_rhs_scale[1])
-
-    # TODO: NS3 is also useful so that we can feed write anywhere too.
-    # TODO: Add 32x32x64 with more slices on mma to decrease register pressure.
-
-    # 1st cluster: Global loads lhs/rhs + Shared load sliced(1/2) lhs/rhs scales
-    # clusters.append(WorkgroupBarrier().add_to_graph(tmp_graph))
-    # clusters.append(SchedulingBarrier([]).add_to_graph(tmp_graph))
     clusters.append(global_load_rhs_scale)
-    clusters.append(flatten_list(sliced_local_load_rhs_scale_0))
-    clusters.append(flatten_list(sliced_local_load_rhs_scale_1))
+    clusters.append(sliced_local_load_rhs_scale[0])
+    clusters.append(sliced_local_load_rhs_scale[1])
 
     clusters.append(global_load_lhs_scale)
-    clusters.append(flatten_list(sliced_local_load_lhs_scale_0))
-    clusters.append(flatten_list(sliced_local_load_lhs_scale_1))
+    clusters.append(sliced_local_load_lhs_scale[0])
+    clusters.append(sliced_local_load_lhs_scale[1])
 
     clusters.append(global_load_rhs)
-    clusters.append(flatten_list(sliced_local_load_rhs_0))
-    clusters.append(flatten_list(sliced_local_load_rhs_1))
+    clusters.append(sliced_local_load_rhs[0])
+    clusters.append(sliced_local_load_rhs[1])
 
     clusters.append(global_load_lhs)
-    clusters.append(flatten_list(sliced_local_load_lhs_0))
-    clusters.append(flatten_list(sliced_local_load_lhs_1))
+    clusters.append(sliced_local_load_lhs[0])
+    clusters.append(sliced_local_load_lhs[1])
 
-    clusters.append(flatten_list(slice_lhs_chain_ops_0))
-    clusters.append(flatten_list(slice_rhs_chain_ops_0))
-    clusters.append(flatten_list(slice_lhs_scale_chain_ops_0))
-    clusters.append(flatten_list(slice_rhs_scale_chain_ops_0))
-    clusters.append(flatten_list(slice_lhs_chain_ops_1))
-    clusters.append(flatten_list(slice_rhs_chain_ops_1))
-    clusters.append(flatten_list(slice_lhs_scale_chain_ops_1))
-    clusters.append(flatten_list(slice_rhs_scale_chain_ops_1))
     clusters.append(sliced_mma_nodes[0])
     clusters.append(sliced_mma_nodes[1])
     clusters.append(local_write_lhs_scale)
@@ -552,7 +663,7 @@ def get_closest_local_load(node: fx.Node):
     while workqueue:
         cur_node = workqueue.pop()
         if is_shared_read(get_custom(cur_node)):
-            return local_load_chain[::-1]
+            return cur_node
         child_nodes = [arg_node for arg_node in cur_node.args if can_extend(arg_node)]
 
         # Update ancestor and seen tracker, and workqueue with new child nodes.
@@ -593,7 +704,7 @@ def get_scale_local_loads(mma_nodes):
 def get_local_writes(local_loads):
     local_writes = set()
     for local_load in local_loads:
-        custom = get_custom(local_load[0])
+        custom = get_custom(local_load)
         cur_writes = [
             w
             for w in custom.memory.users
@@ -653,11 +764,6 @@ def schedule_reordering(
         # Early exit if cannot find either local loads
         if not local_load_lhs or not local_load_rhs:
             continue
-        if not (
-            is_shared_read(get_custom(local_load_lhs[0][0]))
-            and is_shared_read(get_custom(local_load_rhs[0][0]))
-        ):
-            continue
         local_write_lhs = get_local_writes(local_load_lhs)
         local_write_rhs = get_local_writes(local_load_rhs)
         global_load_lhs = get_global_loads(local_write_lhs)
@@ -687,8 +793,7 @@ def schedule_reordering(
 
         # Cannot find a suitable transform, early exit.
         if reorder_strategy == SchedReorderStrategy.NONE:
-            clusters = [node for node in graph.nodes][:-1]
-            insert_prefetch_loop_barriers(custom_iterate, clusters)
+            continue
         elif reorder_strategy == SchedReorderStrategy.TWO_PP_CLUSTER:
             clusters = transform_two_PP_clusters(
                 mma_nodes,
@@ -699,7 +804,7 @@ def schedule_reordering(
                 local_write_lhs,
                 local_write_rhs,
             )
-            insert_prefetch_loop_barriers(custom_iterate, clusters)
+            insert_prefetch_loop_barriers(custom_iterate, graph, clusters)
         elif reorder_strategy == SchedReorderStrategy.MXFP4_PP_CLUSTER:
             clusters = transform_MXFP4_PP_clusters(
                 mma_nodes,
@@ -716,9 +821,7 @@ def schedule_reordering(
                 local_write_lhs_scale,
                 local_write_rhs_scale,
             )
-            # clusters = [g_node for g_node in graph.nodes][:-1]
             clusters = flatten_list(clusters)
-            # insert_prefetch_loop_barriers(custom_iterate, clusters)
         else:
             raise ValueError("Unhandled SchedReorderStrategy case.")
         reordered_graph = reorder_graph(graph, clusters)
@@ -730,5 +833,5 @@ def schedule_reordering(
         trace.add_subgraph(reordered_subgraph_name, reordered_graph)
         trace.get_root_graph().subgraphs[reordered_subgraph_name] = reordered_graph
         custom_iterate.update_arg("subgraph_name", reordered_subgraph_name)
-        if reorder_strategy == SchedReorderStrategy.TWO_PP_CLUSTER:
+        if is_pingpong_strategy(reorder_strategy):
             add_conditional_barriers_to_loop(custom_iterate, trace, hardware_constraint)

@@ -248,7 +248,7 @@ def packed_mxfp4_test():
     ]
 
     @tkw.wave(constraints)
-    def gemm_mxfp4_pingpong(
+    def gemm_mxfp4_prefetch(
         a: tkl.Memory[M, K / 2, ADDRESS_SPACE, tkl.i8],
         a_scale: tkl.Memory[M, K / 32, ADDRESS_SPACE, tkl.i8],
         b: tkl.Memory[N, K / 2, ADDRESS_SPACE, tkl.i8],
@@ -300,70 +300,60 @@ def packed_mxfp4_test():
         schedule=SchedulingType.PREFETCH,
         compile_to_mlir=True,
     )
-    gemm_mxfp4_pingpong = wave_compile(options, gemm_mxfp4_pingpong)
-    print(gemm_mxfp4_pingpong.asm)
+    gemm_mxfp4_prefetch = wave_compile(options, gemm_mxfp4_prefetch)
+    print(gemm_mxfp4_prefetch.asm)
 
-    # CHECK-DAG:      #[[FLAT_MAP:.+]] = affine_map<()[s0, s1] -> (s1 * 4 + s0 floordiv 64)>
-    # CHECK-LABEL:    gemm_mxfp4_pingpong
+    # CHECK-LABEL:    gemm_mxfp4_prefetch
 
-    # Prologue
-    # CHECK-COUNT-4:  vector.load %[[LHS:.+]]{{.*}} : memref<1024x512xi8, strided<[512, 1], offset: ?>>, vector<16xi8>
-    # CHECK:          vector.load %[[LHS_SCALE:.+]]{{.*}} : memref<1024x32xi8, strided<[32, 1], offset: ?>>, vector<8xi8>
-    # CHECK-COUNT-4:  vector.load %[[RHS:.+]]{{.*}} : memref<1024x512xi8, strided<[512, 1], offset: ?>>, vector<16xi8>
-    # CHECK:          vector.load %[[RHS_SCALE:.+]]{{.*}} : memref<1024x32xi8, strided<[32, 1], offset: ?>>, vector<8xi8>
+    # Prologue Global Read
+    # CHECK-COUNT-4:  vector.load {{.*}} : memref<1024x512xi8, strided<[512, 1], offset: ?>>, vector<16xi8>
+    # CHECK:          vector.load {{.*}} : memref<1024x32xi8, strided<[32, 1], offset: ?>>, vector<4xi8>
+    # CHECK-COUNT-4:  vector.load {{.*}} : memref<1024x512xi8, strided<[512, 1], offset: ?>>, vector<16xi8>
+    # CHECK:          vector.load {{.*}} : memref<1024x32xi8, strided<[32, 1], offset: ?>>, vector<4xi8>
 
-    # Warp High and Warp Lo computation
-    # CHECK:         %[[FLAT_WAVE_ID:.+]] = affine.apply #[[FLAT_MAP]]()[%thread_id_x, %thread_id_y]
-    # CHECK:         %[[FLAT_WAVE_ID_I32:.+]] = arith.index_cast %[[FLAT_WAVE_ID]] : index to i32
-    # CHECK:         %[[WARP_HI:.+]] = arith.cmpi sge, %[[FLAT_WAVE_ID_I32]], %c4_i32 : i32
-    # CHECK:         %[[WARP_LO:.+]] = arith.cmpi slt, %[[FLAT_WAVE_ID_I32]], %c4_i32 : i32
-    # CHECK:         %[[WARP_HI_SPLAT:.+]] = vector.splat %[[WARP_HI]]
-    # CHECK:         %[[IS_WARP_HI:.+]] = vector.extractelement %[[WARP_HI_SPLAT]]
-
-    # cond_barrier on warp hi to brings assymetry between 2 wave in same SIMD and Block.
-    # CHECK:          scf.if %[[IS_WARP_HI]] {
-    # CHECK-NEXT:       rocdl.s.barrier
-    # CHECK-NEXT:     }
+    # Prologue Local Write
+    # CHECK-COUNT-4:  vector.store {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
+    # CHECK:          vector.store {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<4xi8>
+    # CHECK-COUNT-4:  vector.store {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
+    # CHECK:          vector.store {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<4xi8>
 
     # Steady State
     # CHECK:          scf.for
 
-    # Cluster 1: Global loads lhs/rhs
-    # CHECK-COUNT-8:            vector.load {{.*}} : memref<1024x512xi8, strided<[512, 1], offset: ?>>, vector<16xi8>
-    # Cluster 1: Shared load sliced(1/2) lhs/rhs scales
-    # CHECK-COUNT-8:            vector.load {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<1xi8>
-    # CHECK:                    rocdl.s.barrier
+    # Steady State global_load_rhs_scale
+    # CHECK:            vector.load %{{.*}} : memref<1024x32xi8, strided<[32, 1], offset: ?>>, vector<4xi8>
+    # Steady State local_load_rhs_scale
+    # CHECK=COUNT-16:   vector.load %{{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<1xi8>
 
-    # Cluster 2: Global loads lhs/rhs scale
-    # CHECK-COUNT-2:            vector.load {{.*}} : memref<1024x32xi8, strided<[32, 1], offset: ?>>, vector<8xi8>
-    # Cluster 2: Shared load sliced(1/2) lhs/rhs
-    # CHECK-COUNT-12:           vector.load {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
-    # CHECK:                    rocdl.s.barrier
+    # Steady State global_load_lhs_scale
+    # CHECK:            vector.load %{{.*}} : memref<1024x32xi8, strided<[32, 1], offset: ?>>, vector<4xi8>
+    # Steady State local_load_lhs_scale
+    # CHECK=COUNT-16:   vector.load %{{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<1xi8>
 
-    # Cluster 3: Slice(1/2) Bitcast to mxfp4
-    # CHECK-COUNT-24:           vector.bitcast
-    # Cluster 3: Slice (1/2) MMA
-    # CHECK:                    rocdl.s.setprio 1
-    # CHECK-COUNT-32:           amdgpu.scaled_mfma
-    # CHECK:                    rocdl.s.setprio 0
-    # CHECK:                    rocdl.s.barrier
+    # Steady State global_load_rhs
+    # CHECK-COUNT-4:    vector.load %{{.*}} : memref<1024x512xi8, strided<[512, 1], offset: ?>>, vector<16xi8>
+    # Steady State local_load_rhs
+    # CHECK=COUNT-16:   vector.load %{{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
 
-    # Cluster 4: Shared load sliced(2/2) lhs/rhs scales
-    # CHECK-COUNT-12:           vector.load {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<1xi8>
-    # Cluster 4: Shared load sliced(2/2) lhs/rhs
-    # CHECK:                    vector.load {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
-    # CHECK:                    rocdl.s.barrier
+    # Steady State global_load_lhs
+    # CHECK-COUNT-4:    vector.load %{{.*}} : memref<1024x512xi8, strided<[512, 1], offset: ?>>, vector<16xi8>
+    # Steady State local_load_lhs
+    # CHECK=COUNT-16:   vector.load %{{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
 
-    # Cluster 5: Shared write lhs/rhs
-    # CHECK-COUNT-8:            vector.store {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
-    # Cluster 5: Shared write lhs/rhs scale
-    # CHECK-COUNT-2:            vector.store {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<8xi8>
-    # CHECK:                    rocdl.s.barrier
+    # Steady State MFMA
+    # CHECK-COUNT-64:   amdgpu.scaled_mfma
 
-    # Cluster 6: Sliced bitcast for lhs/rhs/lhs_scale/rhs_scale to mxfp4
-    # CHECK-COUNT-24:           vector.bitcast
-    # Cluster 6: Slice (2/2) MMA
-    # CHECK:                    rocdl.s.setprio 1
-    # CHECK-COUNT-32:           amdgpu.scaled_mfma
-    # CHECK:                    rocdl.s.setprio 0
-    # CHECK:                    rocdl.s.barrier
+    # Steady State Local Write (lhs_scale, rhs_scale, lhs, rhs)
+    # CHECK-COUNT-2:    vector.store {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<4xi8>
+    # CHECK-COUNT-8:    vector.store {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
+    # CHECK:            scf.yield
+    # CHECK:          }
+
+    # Epilogue Local Read
+    # CHECK-COUNT-16: vector.load {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<1xi8>
+    # CHECK-COUNT-16: vector.load {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
+    # CHECK-COUNT-8:  vector.load {{.*}} : memref<256x16xi8, #gpu.address_space<workgroup>>, vector<1xi8>
+    # CHECK-COUNT-8:  vector.load {{.*}} : memref<256x136xi8, #gpu.address_space<workgroup>>, vector<16xi8>
+
+    # Epilogue MFMA
+    # CHECK-COUNT-64: amdgpu.scaled_mfma

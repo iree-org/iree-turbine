@@ -18,9 +18,9 @@ wheel
 
 # It is expected that you have installed a PyTorch version/variant specific
 # to your needs, so we only include a minimum version spec.
-# torch>=2.5,<2.8
-# torchaudio
-# torchvision
+torch>=2.5,<2.8
+torchaudio
+torchvision
 
 # Used for managing pre-commit flows.
 pre-commit
