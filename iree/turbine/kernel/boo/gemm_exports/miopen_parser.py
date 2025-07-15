@@ -76,3 +76,7 @@ class GEMMParser(OpCLIParser):
             "--transB", "-v", type=int, default=0, help="Transpose B matrix (Default=0)"
         )
         return parser
+
+    @classmethod
+    def get_op_name(cls) -> str:
+        return "gemm"

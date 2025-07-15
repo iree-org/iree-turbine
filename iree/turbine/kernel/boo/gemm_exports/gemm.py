@@ -28,9 +28,9 @@ class GEMMSignature(OpSignature):
             f"{m}x{k}x{n}",
         ]
         if self.transpose_a:
-            name_items.append("_transA")
-        if self.transpose_a:
-            name_items.append("_transB")
+            name_items.append("transA")
+        if self.transpose_b:
+            name_items.append("transB")
         return "_".join(name_items)
 
     def get_output_size(self) -> int:
@@ -91,4 +91,3 @@ class GEMMSignature(OpSignature):
 
     def arrange_backward_launch_args(self, forward_args, forward_results):
         raise NotImplementedError
-

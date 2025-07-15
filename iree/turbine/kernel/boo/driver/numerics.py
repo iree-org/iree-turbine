@@ -10,6 +10,7 @@ from pathlib import Path
 import argparse
 import json
 import csv
+import traceback
 
 
 from iree.turbine.kernel.boo.exports.parser import OpCLIParser
@@ -101,7 +102,7 @@ def _run(
         try:
             launch = get_launchable(sig, cache_only=(not allow_jit_compile))
         except Exception as e:
-            print(e)
+            traceback.print_exc()
             results[c] = f"Failed import to MLIR."
             continue
 
@@ -201,7 +202,7 @@ def _get_arg_parser() -> argparse.ArgumentParser:
 
 def run_numerics(parser_cls: type[OpCLIParser], *, use_custom: bool):
     """Runs numeric tests for operations listed in a commands file provided via
-    CLI arguments parseable by the given parser class."""
+    CLI arguments parsable by the given parser class."""
     parser = _get_arg_parser()
     args = parser.parse_args()
     commands = load_commands(args.commands_file, parser_cls)
