@@ -1,5 +1,8 @@
 # TKW: A Wave Kernel Language for GPUs
 
+> [!IMPORTANT]
+> This directory is moving to the https://github.com/iree-org/wave repository!
+
 TKW is a high-level programming language designed to simplify the development of GPU micro-kernels by abstracting over intricate details of GPU hardware. It allows developers to write efficient micro-kernels, focusing on core computations while inferring the required data transfers and indexing automatically. TKW implements a wave-based programming model to express programs leveraging coalesced memory accesses effortlessly and supports the explicit use of matrix multiplication intrinsics.
 
 ## Design Goals
