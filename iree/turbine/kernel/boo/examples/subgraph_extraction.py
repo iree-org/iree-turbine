@@ -11,6 +11,7 @@ from functools import partial
 
 from iree.turbine.dynamo.backends import boo
 from iree.turbine.kernel.boo.fusion import (
+    replace_convolution_node,
     FusionSchema,
     OpFusionSpec,
 )
@@ -71,7 +72,10 @@ def main(print_parameters: bool, trace_path: str):
     # If any linear is preceeded or followed by view ops, those will be fused into the linear op.
     schema: FusionSchema = {
         torch.ops.aten.convolution.default: OpFusionSpec(
-            recursive=True, producers=(), consumers=(torch.ops.aten.relu.default,)
+            root_replacement_fn=replace_convolution_node,
+            recursive=True,
+            producers=(),
+            consumers=(torch.ops.aten.relu.default,),
         ),
         torch.ops.aten.addmm.default: OpFusionSpec(
             recursive=True,
@@ -90,8 +94,10 @@ def main(print_parameters: bool, trace_path: str):
         torch.cuda.synchronize()
 
     with profiler_ctx(trace_path != ""):
-        sample_output = converted_module(*sample_inputs)
-        sample_output.sum().backward()
+        with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+            sample_output = converted_module(*sample_inputs)
+            y = sample_output.sum()
+        y.backward()
 
     if print_parameters:
         for name, param in m.named_parameters():

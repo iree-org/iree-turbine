@@ -132,6 +132,17 @@ def extract_fusion_subgraph_modules(
 
         # Add outputs to the detached subgraph.
         subgraph.output(result=tuple(output_nodes))
+
+        # Apply replacements.
+        if node_spec.root_replacement_fn is not None:
+            logger.debug(
+                "Applying replacement function to subgraph:\n%s", str(subgraph)
+            )
+            subgraph_projection[root] = node_spec.root_replacement_fn(
+                subgraph_projection[root]
+            )
+            logger.debug("Graph after replacement:\n%s", str(subgraph))
+
         subgraph.lint()
 
         used_nodes.update(subgraph_projection.keys())

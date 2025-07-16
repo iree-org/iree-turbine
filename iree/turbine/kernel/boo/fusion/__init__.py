@@ -6,5 +6,6 @@
 
 from .apply import *
 from .auto import *
+from .custom_replacement import *
 from .schema import *
 from .subgraph import *
