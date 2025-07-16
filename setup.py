@@ -100,7 +100,7 @@ setup(
     package_data={
         "iree.turbine": [
             "ops/templates/*.mlir",
-            "kernel/boo/conv_exports/tuning_specs.mlir",
+            "kernel/boo/runtime/tuning_specs.mlir",
         ],  # Include MLIR templates
     },
     entry_points={
