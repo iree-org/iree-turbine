@@ -17,10 +17,11 @@ from ..driver.launch import get_launchable
 
 from ..runtime import LaunchableRuntimeCache
 
-from .library import define_schema, register_impl, register_meta
-
+from .library import define_schema, register_impl, register_meta, BOO_LIBRARY
 from .utils import *
 from .layout_customizable_conv import boo_layout_customizable_convolution
+
+from ....runtime.op_reg import CustomOp, KernelSelection, KernelBuilder
 
 __all__ = [
     "boo_conv",
@@ -29,13 +30,61 @@ __all__ = [
 
 # Forward Convolution Implementations #
 
-define_schema(
-    "convolution",
-    "(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups) -> Tensor",
-)
+
+@CustomOp.register(library=BOO_LIBRARY)
+class convolution(CustomOp):
+    signature = "convolution(Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, int[] dilation, int groups) -> Tensor"
+
+    def select(self, ksel: KernelSelection):
+        # Declare args.
+        x = ksel.arg_tensor(0)
+        w = ksel.arg_tensor(1)
+        b = ksel.arg_optional_tensor(2)
+        stride = ksel.attr_list_int(3)
+        padding = ksel.attr_list_int(4)
+        dilation = ksel.attr_list_int(5)
+        groups = ksel.attr_int(6)
+        # Specialize args.
+        x.specialize_all_dims()
+        w.specialize_all_dims()
+        if b:
+            b.specialize_all_dims()
+            ksel.variant = "biased"
+
+        # Manually set memory_format specialization to correct meta impl for eager_execution.
+        num_spatial_dims = len(x.spec_dims) - 2
+        cl_mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_spatial_dims)
+        output_mem_format = (
+            cl_mem_format
+            if cl_mem_format and w.t.is_contiguous(memory_format=cl_mem_format)
+            else torch.contiguous_format
+        )
+        self.conv_sig = ConvSignature(
+            input_shape=x.spec_dims,
+            kernel_shape=w.spec_dims,
+            bias=(b is not None),
+            dtype=x.t.dtype,
+            stride=stride.v,
+            padding=padding.v,
+            dilation=dilation.v,
+            groups=groups.v,
+        )
+        output_shape = self.conv_sig.output_shape
+        o_meta = torch.empty(
+            tuple(output_shape),
+            dtype=self.conv_sig.dtype,
+            memory_format=output_mem_format,
+            device="meta",
+        )
+        ksel.return_tensor(o_meta)
+
+    def generate(self, ksel: KernelSelection, kb: KernelBuilder):
+        raise NotImplementedError("convolution generate NYI")
+
+    def eager_execute(self, *args):
+        return _boo_convolution_impl(*args)
 
 
-@register_impl("convolution")
 def _boo_convolution_impl(
     x: torch.Tensor,
     w: torch.Tensor,
@@ -110,50 +159,23 @@ def _boo_convolution_impl(
     return result if not w_cl else result.permute(contig_cl_perm)
 
 
-@register_meta("convolution")
-def _boo_convolution_meta(
-    x: torch.Tensor,
-    w: torch.Tensor,
-    b: None | torch.Tensor,
-    stride: Sequence[int],
-    padding: Sequence[int],
-    dilation: Sequence[int],
-    groups: int,
-) -> torch.Tensor:
-    sig = ConvSignature(
-        input_shape=x.shape,
-        kernel_shape=w.shape,
-        dtype=x.dtype,
-        stride=stride,
-        padding=padding,
-        dilation=dilation,
-        transposed=False,
-        output_padding=0,
-        groups=groups,
-        mode="fwd",
-    )
-    num_spatial_dims = len(x.shape) - 2
-    cl_memory_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_spatial_dims)
-    memory_format = (
-        cl_memory_format
-        if cl_memory_format is not None
-        and w.is_contiguous(memory_format=cl_memory_format)
-        else torch.contiguous_format
-    )
-    return torch.empty(
-        sig.output_shape, dtype=sig.dtype, device=x.device, memory_format=memory_format
-    )
-
-
 # Backward Convolution Implementations #
 
-define_schema(
-    "convolution_backward",
-    "(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, bool[] mask) -> (Tensor?, Tensor?, Tensor?)",
-)
+
+@CustomOp.register(library=BOO_LIBRARY, register_meta=False)
+class convolution_backward(CustomOp):
+    signature = "convolution_backward(Tensor input, Tensor weight, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
+
+    def select(self, ksel):
+        raise NotImplementedError("convolution_backward select NYI")
+
+    def generate(self, ksel, kb):
+        raise NotImplementedError("convolution_backward generate NYI")
+
+    def eager_execute(self, *args):
+        return _boo_convolution_backward_impl(*args)
 
 
-@register_impl("convolution_backward")
 def _boo_convolution_backward_impl(
     x: torch.Tensor,
     w: torch.Tensor,
@@ -256,7 +278,7 @@ def pytorch_convolution_backward(ctx, grad_output):
         grad_output,
         x,
         w,
-        None,
+        [w.shape[0]],
         ctx.stride,
         ctx.padding,
         ctx.dilation,
