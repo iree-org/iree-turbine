@@ -429,7 +429,12 @@ def convolution_replacement(
     padding: Sequence[int],
     dilation: Sequence[int],
     groups: int,
+    output_is_channels_last: bool | None = None,
 ) -> torch.Tensor:
+    """Intended to be used for replacing `torch.ops.aten.convolution` in an fx.Graph to generate better IR for fusions.
+
+    For eager boo convolution, use boo_conv from iree.turbine.kernel.boo.ops.conv instead.
+    """
     num_spatial_dims = len(x.shape) - 2
 
     mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_spatial_dims)
@@ -443,8 +448,10 @@ def convolution_replacement(
 
     input_layout = cl_layout if x_cl else default_layout
     kernel_layout = cl_layout if w_cl else default_layout
-    # Match output layout to weight layout to propagate channels_last format.
-    output_layout = cl_layout if w_cl else default_layout
+    output_is_channels_last = (
+        output_is_channels_last if output_is_channels_last is not None else w_cl
+    )
+    output_layout = cl_layout if output_is_channels_last else default_layout
 
     x = x if not x_cl else x.permute(cl_contig_perm)
     w = w if not w_cl else w.permute(cl_contig_perm)
@@ -461,4 +468,4 @@ def convolution_replacement(
         kernel_layout=kernel_layout,
         output_layout=output_layout,
     )
-    return result if not w_cl else result.permute(contig_cl_perm)
+    return result if not output_is_channels_last else result.permute(contig_cl_perm)
