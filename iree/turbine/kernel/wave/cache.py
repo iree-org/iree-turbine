@@ -181,11 +181,33 @@ class WaveCacheManager(object):
         key = [
             arg_dtypes,
             processed_constraints,
+            # We include only those fields from `WaveCompileOptions` that may
+            # alter the generated IR.  We deliberately do not use the string
+            # representation of the `WaveCompileOptions` type since the computed
+            # cache key is itself a member field of the type.  We list the
+            # options here in the same order as they are defined in
+            # compile_options.py.
+            options.canonicalize,
+            options.func_name,
             options.subs,
             options.dynamic_symbols,
             options.schedule,
             options.use_scheduling_barriers,
-            options.canonicalize,
+            options.backend,
+            options.target,
+            options.gpu_native_math_precision,
+            options.iree_preprocessing_pass_pipeline,
+            options.override_mlir,
+            options.optimization_level,
+            options.denorm_fp_math_f32,
+            options.waves_per_eu,
+            options.use_buffer_load_ops,
+            options.use_buffer_store_ops,
+            options.use_stride_cache_swizzle,
+            options.use_fast_math,
+            options.minimize_shared_allocs,
+            options.reorder_allocs,
+            options.override_schedule,
         ]
 
         # Add kernel/helper function specific hashes.
