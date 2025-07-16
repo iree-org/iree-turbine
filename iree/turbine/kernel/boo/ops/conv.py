@@ -33,7 +33,7 @@ __all__ = [
 
 @CustomOp.register(library=BOO_LIBRARY)
 class convolution(CustomOp):
-    signature = "convolution(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups) -> Tensor"
+    signature = "convolution(Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, int[] dilation, int groups) -> Tensor"
 
     def select(self, ksel: KernelSelection):
         # Declare args.
@@ -164,7 +164,7 @@ def _boo_convolution_impl(
 
 @CustomOp.register(library=BOO_LIBRARY, register_meta=False)
 class convolution_backward(CustomOp):
-    signature = "convolution_backward(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
+    signature = "convolution_backward(Tensor input, Tensor weight, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
 
     def select(self, ksel):
         raise NotImplementedError("convolution_backward select NYI")

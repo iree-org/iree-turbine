@@ -163,7 +163,7 @@ def _boo_layout_customizable_convolution_impl(
 # Backward Convolution Implementations #
 @CustomOp.register(library=BOO_LIBRARY, register_meta=False)
 class layout_customizable_convolution_backward(CustomOp):
-    signature = "layout_customizable_convolution_backward(Tensor x, Tensor w, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
+    signature = "layout_customizable_convolution_backward(Tensor input, Tensor weight, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
 
     def select(self, ksel):
         raise NotImplementedError("convolution_backward select NYI")
