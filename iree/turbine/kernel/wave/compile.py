@@ -140,6 +140,9 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
             if options.wave_runtime:
                 binary_path = get_binary_path()
 
+            if options.print_mlir:
+                print(cached_kernel.asm)
+
             return WaveKernel(
                 options,
                 cached_kernel.vmfb,
