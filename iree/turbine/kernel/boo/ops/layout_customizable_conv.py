@@ -34,13 +34,13 @@ __all__ = [
 
 @CustomOp.register(library=BOO_LIBRARY)
 class layout_customizable_convolution(CustomOp):
-    signature = "layout_customizable_convolution(Tensor x, Tensor w, Tensor? b, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout) -> Tensor"
+    signature = "layout_customizable_convolution(Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout) -> Tensor"
 
     def select(self, ksel: KernelSelection):
         # Declare args.
-        x = ksel.arg_tensor(0)
-        w = ksel.arg_tensor(1)
-        b = ksel.arg_optional_tensor(2)
+        input = ksel.arg_tensor(0)
+        weight = ksel.arg_tensor(1)
+        bias = ksel.arg_optional_tensor(2)
         stride = ksel.attr_list_int(3)
         padding = ksel.attr_list_int(4)
         dilation = ksel.attr_list_int(5)
@@ -49,20 +49,20 @@ class layout_customizable_convolution(CustomOp):
         kernel_layout = ksel.attr_str(8)
         output_layout = ksel.attr_str(9)
         # Specialize args.
-        x.specialize_all_dims()
-        w.specialize_all_dims()
-        if b:
-            b.specialize_all_dims()
+        input.specialize_all_dims()
+        weight.specialize_all_dims()
+        if bias:
+            bias.specialize_all_dims()
             ksel.variant = "biased"
 
         self.conv_sig = ConvSignature(
-            input_shape=x.spec_dims,
-            kernel_shape=w.spec_dims,
-            bias=(b is not None),
+            input_shape=input.spec_dims,
+            kernel_shape=weight.spec_dims,
+            bias=(bias is not None),
             input_layout=input_layout.v,
             kernel_layout=kernel_layout.v,
             output_layout=output_layout.v,
-            dtype=x.t.dtype,
+            dtype=input.t.dtype,
             stride=stride.v,
             padding=padding.v,
             dilation=dilation.v,
@@ -79,21 +79,20 @@ class layout_customizable_convolution(CustomOp):
         if ksel.variant == "biased":
             sample_args = sample_args + (ksel.arg_descs[2].t,)
         func_name = self.conv_sig.get_func_name()
+        # Get a module containing the func op for our custom convolution.
+        # This IR is a combination of expanded CustomOps and torch code.
+        # We are essentially fusing these things together into one inline-able op.
         module_op = generate_custom_op_compatible_ir(
             self.conv_sig.get_nn_module(use_custom=True),
             args=sample_args,
             func_name=func_name,
+            context=kb.context,
         )
-        # A bit silly, but we need to load the module_op into the kb.context.
-        module_op = Operation.parse(str(module_op), context=kb.context)
         merger = Merger(
             module_op, kb.module_body.owner, target_symbol_table=kb.symbol_table
         )
         merger.merge()
         func_op = kb.symbol_table[merger.translate_symbol(func_name)]
-        func_op.operation.attributes["sym_visibility"] = StringAttr.get(
-            "private", kb.context
-        )
         kb.yield_results(
             *impl_helper.call_function(
                 func_op,
