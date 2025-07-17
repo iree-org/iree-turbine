@@ -61,7 +61,7 @@ def test_custom_boo_conv_used():
 
 
 def test_filter_transpose_conv():
-    """Test that we're using our custom convolution op"""
+    """Test that we don't offload transpose conv to IREE/BOO."""
     with tempfile.TemporaryDirectory() as td:
         set_cache_dir(Path(td))
         recorder = EagerAndRecordGraphs()
