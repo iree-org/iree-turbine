@@ -17,22 +17,18 @@ class CachePopulatorTest(unittest.TestCase):
             set_cache_dir(cache_dir=cache_dir)
 
             from iree.turbine.kernel.boo.driver.preload import CachePopulator
-            from iree.turbine.kernel.boo.conv_exports.miopen_parser import ConvParser
-            from iree.turbine.kernel.boo.conv_exports.conv import ConvSignature
 
             commands = [
                 "convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC",
                 "convbfp16 -n 128 -c 35 -H 48 -W 32 -k 35 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC",
+                "layernorm --input 2x3x4x5",
             ]
 
-            pop = CachePopulator(
-                commands=commands, parser_cls=ConvParser, signature_cls=ConvSignature
-            )
-
+            pop = CachePopulator(commands=commands)
             pop.run()
 
             self.assertTrue(
-                len(pop.signatures) == 2, "Number of signatures should be 2."
+                len(pop.signatures) == 3, "Number of signatures should be 3."
             )
             self.assertTrue(pop.commands is None, "Commands should be cleared.")
             self.assertTrue(pop.commands_file is None, "Commands_file should be None.")

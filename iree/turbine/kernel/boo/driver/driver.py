@@ -16,11 +16,8 @@ import torch
 from torch.autograd.profiler_util import FunctionEvent
 from torch.profiler import DeviceType, ProfilerActivity, profile
 
-from iree.turbine.kernel.boo.conv_exports.miopen_parser import ConvParser
 from iree.turbine.kernel.boo.driver.launch import get_launchable
-from iree.turbine.kernel.boo.exports.parser import OpCLIParser
-from iree.turbine.kernel.boo.gemm_exports.miopen_parser import GEMMParser
-from iree.turbine.kernel.boo.layer_norm_exports.miopen_parser import LayerNormParser
+from iree.turbine.kernel.boo.driver.registry import BooOpRegistry
 
 
 def main():
@@ -110,7 +107,15 @@ command-line arguments are appended to the arguments from the file.
 
 def run(cli_args: Sequence[str], gpu_id: int):
     print(shlex.join(cli_args))
-    parser_cls = _dispatch(cli_args)
+    key = BooOpRegistry.find_key_from_command(" ".join(cli_args))
+    if key is None:
+        raise ValueError(
+            "unsupported operation kind in "
+            + shlex.join(cli_args)
+            + ". Supported operations: "
+            + str(BooOpRegistry.keys())
+        )
+    parser_cls = BooOpRegistry.get_parser(key)
     parser = parser_cls.get_miopen_parser()
     parser.add_argument(
         "--iter", type=int, help="Number of iterations to run", default=100
@@ -188,16 +193,6 @@ def profile_gpu(func: Callable[[], str]) -> tuple[dict[str, list[int]], str]:
         if event.device_type == DeviceType.CUDA:
             events[event.name].append(event.self_device_time_total)
     return events, result
-
-
-def _dispatch(cli_args: Sequence[str]) -> type[OpCLIParser]:
-    if any("conv" in x for x in cli_args):
-        return ConvParser
-    if any("layernorm" in x for x in cli_args):
-        return LayerNormParser
-    if any("gemm" in x for x in cli_args):
-        return GEMMParser
-    raise ValueError("unsupported operation kind in " + shlex.join(cli_args))
 
 
 if __name__ == "__main__":

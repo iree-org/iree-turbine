@@ -411,3 +411,7 @@ convbfp16 -n 1 -c 256 -H 24 -W 16 -k 192 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1
 convbfp16 -n 1 -c 256 -H 24 -W 16 -k 192 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 4 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
 convbfp16 -n 1 -c 35 -H 24 -W 16 -k 64 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
 convbfp16 -n 1 -c 35 -H 24 -W 16 -k 64 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 4 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+layernorm --input 10x32x42x32 -t 1 --iter 100
+layernorm --input 10x32x42x32 -t 1 -F 2 --iter 100
+layernorm --input 10x32x42x32 -t 1 -F 3 --iter 100
+layernorm --input 10x32x42x32 -t 1 -F 4 --iter 100
