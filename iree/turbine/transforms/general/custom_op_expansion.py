@@ -44,6 +44,7 @@ from ...support.ir_imports import (
     SymbolTable,
     Value,
 )
+from ...support.logging import aot_logger as logger
 
 from ..rewriter import (
     Pass,
@@ -114,6 +115,7 @@ class ExpandCustomOpsPass(Pass):
             module_body=module_body,
             symbol_table=self.symbol_table,
         )
+        logger.debug("Generating custom op: %s", ksel)
         with kb.ip, kb.location:
             op_reg.generate(ksel, kb)
         assert kb.yielded, "Custom op generation did not yield_results()"
