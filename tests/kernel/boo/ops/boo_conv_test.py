@@ -44,6 +44,8 @@ def testBackwardCachePytorch(x_grad, w_grad):
         )
         y = boo_conv(x, w, shared_layout="NCHW")
 
+        # If none of the gradients are required, backward computation will raise
+        # an error. Tell pytest that this is expected.
         context = (
             contextlib.nullcontext()
             if x_grad or w_grad
