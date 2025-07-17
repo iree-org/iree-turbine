@@ -13,7 +13,7 @@ from ..runtime import get_launchable as generic_get_launchable
 def get_module_asm(
     signature: OpSignature, func_name: str | None = None, use_custom: bool = True
 ) -> str:
-    func_name = func_name or signature.get_func_name()
+    func_name = func_name or signature.func_name
     module_factory = lambda: signature.get_nn_module(use_custom=use_custom)
     arg_factory = lambda: signature.get_sample_args(splat_value=0)
     return generic_get_module_asm(
@@ -24,7 +24,7 @@ def get_module_asm(
 def get_launchable(
     signature: OpSignature, *, use_custom=True, cache_only=False
 ) -> Launchable:
-    func_name = signature.get_func_name()
+    func_name = signature.func_name
     module_factory = lambda: signature.get_nn_module(use_custom=use_custom)
     arg_factory = lambda: signature.get_sample_args(splat_value=0)
     return generic_get_launchable(

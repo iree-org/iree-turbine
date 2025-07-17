@@ -25,6 +25,8 @@ def test_layer_norm_impl(
     input_shape: tuple[int, ...],
     elementwise_affine_bias: tuple[bool, bool],
 ):
+    """Tests our custom implementation of gradients using PyTorch operations
+    against PyTorch gradients."""
     elementwise_affine, bias = elementwise_affine_bias
 
     # TODO: consider generalizing the get_fwd_signature method to return any
@@ -62,7 +64,6 @@ def test_layer_norm_impl(
     dLossDInput = bwd_input(dLossDOutput, *bwd_input_args)
     grads = [dLossDInput]
 
-    # TODO(azinenko): this may have been swapped accidentally
     if elementwise_affine:
         bwd_weight_args = bwd_weight_sig.arrange_backward_launch_args(args, fwd_results)
         dLossDWeights = bwd_weight(dLossDOutput, *bwd_weight_args)
@@ -72,8 +73,6 @@ def test_layer_norm_impl(
         bwd_bias_args = bwd_bias_sig.arrange_backward_launch_args(args, fwd_results)
         dLossDBias = bwd_bias(dLossDOutput, *bwd_bias_args)
         grads.append(dLossDBias)
-
-    # TODO: why are we not checking the forward results?
 
     rtol = 1e-4
     atol = 1e-4

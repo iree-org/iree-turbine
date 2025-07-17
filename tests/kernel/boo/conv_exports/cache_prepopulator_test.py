@@ -38,7 +38,7 @@ class CachePopulatorTest(unittest.TestCase):
             self.assertTrue(pop.commands_file is None, "Commands_file should be None.")
 
             for sig in pop.signatures:
-                name = sig.get_func_name()
+                name = sig.func_name
                 sub_dir = set_cache_dir() / name
                 self.assertTrue(
                     sub_dir.is_dir(),

@@ -13,6 +13,7 @@ from typing import (
 )
 
 from enum import IntEnum
+from functools import cached_property
 import math
 
 import torch
@@ -311,7 +312,8 @@ class ConvSignature(OpSignature):
             return (get(self.output_shape), get(self.kernel_shape))
         raise ValueError(f"Unknown mode: {self.mode}")
 
-    def get_func_name(self):
+    @cached_property
+    def func_name(self) -> str:
         name_items = [
             "conv",
             f"{self.num_spatial_dims}d",

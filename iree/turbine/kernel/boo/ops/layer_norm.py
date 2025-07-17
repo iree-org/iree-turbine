@@ -38,7 +38,7 @@ def _boo_layer_norm_impl(
 
     # TODO: support non-contiguous memory formats via permutations
 
-    func_name = signature.get_func_name()
+    func_name = signature.func_name
     args = tuple(
         filter(
             lambda x: x is not None,

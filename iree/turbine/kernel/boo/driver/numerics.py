@@ -97,6 +97,7 @@ def _run(
             fwd_sig = sig.make_signature_copy_for_forward()
             m = fwd_sig.get_nn_module(use_custom=use_custom)
             args = fwd_sig.get_sample_args(device=cuda, seed=seed)
+
         try:
             launch = get_launchable(sig, cache_only=(not allow_jit_compile))
         except Exception as e:

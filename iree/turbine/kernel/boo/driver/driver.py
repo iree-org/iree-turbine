@@ -194,7 +194,7 @@ def run(cli_args: Sequence[str], gpu_id: int):
             f">>> result #{i} shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
         )
 
-    return sig.get_func_name()
+    return sig.func_name
 
 
 TRACY_PORT = str(random.randint(40_000, 50_000))
