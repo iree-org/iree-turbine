@@ -51,6 +51,10 @@ def extract_fusion_subgraph_modules(
         node_spec = fusion_schema.get(root.target, None)
         if node_spec is None:
             continue
+
+        if not node_spec.check_filters(root):
+            continue
+
         node_list = [root]
 
         # Walk producers from root and include them in the subgraph
@@ -68,6 +72,8 @@ def extract_fusion_subgraph_modules(
                 if producer.target not in node_spec.producers:
                     continue
                 if producer in used_nodes:
+                    continue
+                if not node_spec.check_filters(producer):
                     continue
                 # Insert producers at the front, since we want to preserve at least some weak ordering of nodes.
                 # Is it possible for this to generate an invalid ordering? (Maybe it's better to just sort node_list after).
@@ -89,6 +95,8 @@ def extract_fusion_subgraph_modules(
                 if consumer.target not in node_spec.consumers:
                     continue
                 if consumer in used_nodes:
+                    continue
+                if not node_spec.check_filters(consumer):
                     continue
                 visited_nodes.add(consumer)
                 node_list.append(consumer)
