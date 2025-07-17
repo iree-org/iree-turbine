@@ -16,6 +16,7 @@ from .replacement import ReplacementSchema, replace_aten_convolution
 @dataclass
 class OpFusionSpec:
     recursive: bool = True
+    make_single_dispatch: bool = False
     producers: Sequence[Target] = ()
     consumers: Sequence[Target] = ()
 
@@ -24,7 +25,7 @@ FusionSchema = Dict[Target, OpFusionSpec]
 
 # TODO: extend this
 DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
-    torch.ops.aten.convolution.default: OpFusionSpec()
+    torch.ops.aten.convolution.default: OpFusionSpec(make_single_dispatch=True),
 }
 
 DEFAULT_POST_FUSION_REPLACEMENTS: ReplacementSchema = {

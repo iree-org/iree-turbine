@@ -18,6 +18,8 @@ from ....support.logging import aot_logger as logger
 class FusedSubgraph(NamedTuple):
     module: GraphModule
     """Module containing the subgraph to be fused."""
+    single_dispatch: bool
+    """Whether to force compile the subgraph as a single dispatch."""
     matched_nodes: list[Node]
     """Nodes in the orignal graph that were matched."""
     arguments: list[Node]
@@ -138,6 +140,7 @@ def extract_fusion_subgraph_modules(
         subgraphs.append(
             FusedSubgraph(
                 module=GraphModule(src_gm, subgraph),
+                single_dispatch=node_spec.make_single_dispatch,
                 matched_nodes=subgraph_matched_nodes,
                 arguments=subgraph_arguments,
                 results=subgraph_results,

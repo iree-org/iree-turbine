@@ -40,7 +40,9 @@ def fusion_transform(
 
     subgraph_replacements: list[tuple[FusedSubgraph, fx.Node]] = []
     for subgraph in subgraphs:
-        custom_op = get_custom_graph_op(subgraph.module, force_single_dispatch=False)
+        custom_op = get_custom_graph_op(
+            subgraph.module, force_single_dispatch=subgraph.single_dispatch
+        )
         # Insert call as early as possible, to maintain topological order.
         insert_pt = sorted(subgraph.arguments)[-1]
         with module.graph.inserting_after(insert_pt):
