@@ -4,27 +4,36 @@ Facilities to launch BOO kernels in standalone processes.
 
 - `driver.py`: A script for benchmarking kernels with MIOpen-compatible options.
 - `launch.py`: Contains the `get_launchable` for converting an `OpSignature` into a kernel launchable from Python. This launchable interacts with a file cache the user can control with the environment variables `BOO_CACHE_ON=<0 or 1>` and  `BOO_CACHE_DIR=<absolute path>`.
-- `numerics.py`: Contains logic for creating GPU numerics comparisons against PyTorch baseline.
-- `preload.py`: Contains logic for pre-populating the file cache with launchables.
+- `numerics.py`: A script for comparing BOO GPU numerics against PyTorch baselines for ops specified by commands in a `.txt` file.
+- `preload.py`: Instantiates a `CachePopulator` class for pre-populating the launchable file cache. Can be run as a script with  specified commands `.txt` file.
+- `registry.py`: A module for automated discovery of BOO ops in the `../op_exports` directory and dispatch to the appropriate signature and parser classes based on the textual command.
 
 
 ## Pre-populating the Launchable Cache
 
-For command-line use, look at the `<op_name>_exports/README.md`.
+### From Command Line
 
-From Python,
+```sh
+# Assuming working directory is iree/turbine/kernel/boo/driver:
+python preload.py <sample_commands.txt>
+```
+
+Will preload the launchable cache for all available devices and for all MIOpen driver commands in "sample_commands.txt".
+
+To see other options, run:
+
+```
+python preload.py --help
+```
+
+### From Python
 
 ```python
 from iree.turbine.kernel.boo.driver.preload import CachePopulator
 from iree.turbine.kernel.boo.driver.launch import get_launchable
-from iree.turbine.kernel.boo.<op_name>_exports.<op_name> import <OpName>Signature
-from iree.turbine.kernel.boo.<op_name>_exports.miopen_parser import <OpName>Parser
 
 # Note that you will have to specify op-specific parser and signature classes.
-populator = CachePopulator(commands_file="path/to/miopen/commands_list.txt",
-                           parser_cls=<OpName>Parser,
-                           signature_cls=<OpName>Signature)
-
+populator = CachePopulator(commands_file="path/to/miopen/commands_list.txt")
 populator.run()
 
 # You can grab an example signature from the populator:

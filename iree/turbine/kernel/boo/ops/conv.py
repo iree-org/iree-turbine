@@ -9,7 +9,7 @@ from typing import Sequence, Tuple
 
 import torch
 
-from ..conv_exports import (
+from ..op_exports.conv import (
     ConvSignature,
     DEFAULT_LAYOUTS,
 )

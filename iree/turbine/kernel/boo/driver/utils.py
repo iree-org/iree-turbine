@@ -6,11 +6,14 @@
 
 from pathlib import Path
 
-from iree.turbine.kernel.boo.exports.parser import OpCLIParser
+from iree.turbine.kernel.boo.driver.registry import BooOpRegistry
 
 
-def load_commands(commands_file: str, parser_cls: type[OpCLIParser]) -> list[str]:
-    """Loads commands of a given kind from a text file."""
+def load_commands(commands_file: str) -> list[str]:
+    """Loads commands of a given kind from a text file.
+
+    Only keep commands that are known to be parseable.
+    """
     # try an absolute path
     path = Path(commands_file)
     # if the path doesn't point anywhere, try relative to cwd and this file.
@@ -22,9 +25,10 @@ def load_commands(commands_file: str, parser_cls: type[OpCLIParser]) -> list[str
         raise ValueError(
             f"'commands-file' specification, '{commands_file}', cannot be found."
         )
+
     commands = [
         c
         for c in path.read_text().splitlines()
-        if c.startswith(parser_cls.get_op_name())
+        if BooOpRegistry.find_key_from_command(c) is not None
     ]
     return commands

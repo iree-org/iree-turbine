@@ -7,7 +7,7 @@
 import pytest
 
 import torch
-from iree.turbine.kernel.boo.layer_norm_exports.layer_norm import (
+from iree.turbine.kernel.boo.op_exports.layer_norm import (
     Mode,
     LayerNormSignature,
 )

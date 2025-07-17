@@ -7,7 +7,7 @@
 import pytest
 
 import torch
-from iree.turbine.kernel.boo.conv_exports.conv import Mode, ConvSignature
+from iree.turbine.kernel.boo.op_exports.conv import Mode, ConvSignature
 
 
 # Note: Singleton parameters are intentionally included for ease of adding additional configurations to test
