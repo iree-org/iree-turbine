@@ -180,7 +180,7 @@ class CachePopulator:
 
 
 def mlir_import(sig: OpSignature) -> tuple[str, bool]:
-    func_name = sig.get_func_name()
+    func_name = sig.func_name
     success = False
     try:
         get_module_asm(sig, func_name)

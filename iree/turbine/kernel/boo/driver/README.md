@@ -31,7 +31,7 @@ populator.run()
 sample_signature = populator.signatures[0]
 
 # One can also check the cache for this signature
-cache_status = populator.get_cache_status(sample_signature.get_func_name())
+cache_status = populator.get_cache_status(sample_signature.func_name)
 print(cache_status)
 
 # You can also get the list of failed signatures via:

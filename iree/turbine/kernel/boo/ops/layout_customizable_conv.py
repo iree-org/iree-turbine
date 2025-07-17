@@ -78,7 +78,7 @@ class layout_customizable_convolution(CustomOp):
         sample_args = (ksel.arg_descs[0].t, ksel.arg_descs[1].t)
         if ksel.variant == "biased":
             sample_args = sample_args + (ksel.arg_descs[2].t,)
-        func_name = self.conv_sig.get_func_name()
+        func_name = self.conv_sig.func_name
         # Get a module containing the func op for our custom convolution.
         # This IR is a combination of expanded CustomOps and torch code.
         # We are essentially fusing these things together into one inline-able op.
