@@ -8,7 +8,7 @@ import torch
 from typing import Collection, Iterable
 from os import PathLike
 
-from .conversions import torch_dtyped_shape_to_iree_format
+from .conversions import torch_dtyped_shape_to_iree_format, IREE_TYPE_ASM_TO_TORCH_DTYPE
 
 
 def iree_tool_format_cli_input_arg(arg: torch.Tensor, file_path: str | PathLike) -> str:
@@ -31,6 +31,37 @@ def write_raw_tensor(tensor: torch.Tensor, file_path: str | PathLike):
     """Write the contents of the tensor as they are in memory without any metadata."""
     with open(file_path, "wb") as f:
         f.write(tensor.cpu().view(dtype=torch.int8).numpy().data)
+
+
+def read_raw_tensor(iree_input_arg_like: str) -> torch.Tensor:
+    """
+    Convert a torch tensor saved in binary format by `write_raw_tensor` back into
+    a torch tensor.
+
+    Args:
+        iree_input_arg_like: A string like "1x2x3xf32=@/some/path/arg0.bin"
+            or a path to a file containing the raw tensor data.
+    """
+    shape_format_str, file_path = iree_input_arg_like.split("@")
+    # To avoid splitting on the 'x' in complex
+    shape_format_str = shape_format_str.replace("complex", "c")
+
+    shape_format_list = shape_format_str.split("x")
+    shape = tuple(int(dim) for dim in shape_format_list[:-1])
+    dtype_str = shape_format_list[-1][:-1]  # Remove trailing '='
+    dtype_str = dtype_str.replace("c", "complex")
+
+    if dtype_str not in IREE_TYPE_ASM_TO_TORCH_DTYPE:
+        raise ValueError(f"Unknown dtype: {dtype_str}")
+    if dtype_str == "i8":
+        raise NotImplementedError(
+            "Cannot distinguish between torch.int8, torch.uint8, torch.qint8, torch.quint8, all use i8 in IREE."
+        )
+    torch_dtype = IREE_TYPE_ASM_TO_TORCH_DTYPE[dtype_str]
+
+    with open(file_path, "rb") as f:
+        tensor = torch.frombuffer(f.read(), dtype=torch.int8).view(torch_dtype)
+    return tensor.reshape(shape)
 
 
 def iree_tool_prepare_input_args(
