@@ -186,7 +186,8 @@ def run(cli_args: Sequence[str], gpu_id: int):
             gc.collect()
 
     torch.cuda.synchronize()
-    results = results or ()
+    if results is None:
+        results = ()
     if isinstance(results, torch.Tensor):
         results = (results,)
     for i, result in enumerate(results):
