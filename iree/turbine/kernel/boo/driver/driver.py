@@ -113,26 +113,19 @@ command-line arguments are appended to the arguments from the file.
 def run(cli_args: Sequence[str], gpu_id: int):
     # In order to be properly traced only the subprocesses should import
     # 'iree.runtime', so all turbine imports need to be kept local.
-
-    from iree.turbine.kernel.boo.exports.parser import OpCLIParser
-
-    def dispatch(cli_args: Sequence[str]) -> type[OpCLIParser]:
-        if any("conv" in x for x in cli_args):
-            from iree.turbine.kernel.boo.conv_exports.miopen_parser import ConvParser
-
-            return ConvParser
-        if any("layernorm" in x for x in cli_args):
-            from iree.turbine.kernel.boo.layer_norm_exports.miopen_parser import (
-                LayerNormParser,
-            )
-
-            return LayerNormParser
-        raise ValueError("unsupported operation kind in " + shlex.join(cli_args))
-
     from iree.turbine.kernel.boo.driver.launch import get_launchable
+    from iree.turbine.kernel.boo.driver.registry import BooOpRegistry
 
     print(shlex.join(cli_args))
-    parser_cls = dispatch(cli_args)
+    key = BooOpRegistry.find_key_from_command(" ".join(cli_args))
+    if key is None:
+        raise ValueError(
+            "unsupported operation kind in "
+            + shlex.join(cli_args)
+            + ". Supported operations: "
+            + str(BooOpRegistry.keys())
+        )
+    parser_cls = BooOpRegistry.get_parser(key)
     parser = parser_cls.get_miopen_parser()
     parser.add_argument(
         "--iter", type=int, help="Number of iterations to run", default=100
@@ -186,7 +179,8 @@ def run(cli_args: Sequence[str], gpu_id: int):
             gc.collect()
 
     torch.cuda.synchronize()
-    results = results or ()
+    if results is None:
+        results = ()
     if isinstance(results, torch.Tensor):
         results = (results,)
     for i, result in enumerate(results):
