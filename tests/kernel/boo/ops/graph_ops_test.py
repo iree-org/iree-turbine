@@ -47,11 +47,14 @@ class GraphOpsTest(unittest.TestCase):
             # Get a graph op (note, model params are pytree flattened as args).
             graph_op = get_custom_graph_op(gm)
 
-            # Apply created graph op on various shaped inputs.
+            # Apply the graph op.
             y = graph_op(m.linear.weight, m.linear.bias, x)
             assert list(y.shape) == [3, 3, 16, 32]
+            # Since we exported with static dims, applying to an input with a different shape should throw an error.
             new_x = torch.ones([4, 3, 32, 16])
-            with pytest.raises(ValueError):
+            with pytest.raises(
+                ValueError, match=r"INVALID_ARGUMENT; tensor shape dimension 0 mismatch"
+            ):
                 new_y = graph_op(m.linear.weight, m.linear.bias, new_x)
 
             # Verify caching.
