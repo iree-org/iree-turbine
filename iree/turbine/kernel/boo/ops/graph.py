@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from hashlib import sha1
-from typing import Sequence
+from typing import Sequence, Literal
 
 import torch
 from torch.fx.graph_module import GraphModule
@@ -63,7 +63,11 @@ def _get_schema(
 def get_custom_graph_op(
     gm: GraphModule, *, force_single_dispatch: bool = False
 ) -> torch._ops.OpOverloadPacket:
-    """Converts a graph module into a custom operator."""
+    """Converts a graph module into a custom operator.
+
+    This function infers input/output signature from the graph metadata, and produces a specialized op.
+    The returned op will not automatically re-specialize for different inputs.
+    """
     gm_string = str(gm.print_readable(print_output=False, include_stride=True))
     hash = sha1(gm_string.encode(), usedforsecurity=False).hexdigest()
     call_function_names = "_".join(
@@ -78,6 +82,60 @@ def get_custom_graph_op(
         )
 
     return get_library_op(op_name)
+
+
+def _handle_layouts(
+    args: Sequence[torch.Tensor],
+    perms: Sequence[MemoryFormatPermutation | None],
+    perm_item: Literal["permutation", "inverse_permutation"],
+) -> tuple[torch.Tensor, ...]:
+    """Applies torch.permute(arg[i], perms[i].perm_item) to all args."""
+    return tuple(
+        [
+            arg if perm is None else arg.permute(getattr(perm, perm_item))
+            for perm, arg in zip(perms, args, strict=True)
+        ]
+    )
+
+
+class _LayoutManagedModuleForAOTMlirExport(torch.nn.Module):
+    """This conjugates the forward call of a source module with permutations.
+
+    The use of this module is the following:
+
+    1. In an aot situation, identify non-contiguous inputs and outputs.
+    2. For each non-contiguous input/output, identify a shape permutation which would result in a contiguous tensor.
+    3. Outside the function boundary given to IREE, permute the input tensors to contiguous format.
+    4. Inside this module (which is to be compiled with IREE), the inverse permutations are applied to inputs.
+    5. To the outputs, we also apply the forward permutations inside this module.
+    6. Since the outputs of IREE are always contiguous, those permutations produce outputs with data stored in the desired layout.
+    7. In pytorch, permute the outputs of IREE back to the original shape.
+    """
+
+    def __init__(
+        self,
+        input_mem_format_perms: Sequence[MemoryFormatPermutation],
+        output_mem_format_perms: Sequence[MemoryFormatPermutation],
+        source_module: torch.nn.Module,
+    ):
+        super().__init__()
+        self.input_mem_format_perms = input_mem_format_perms
+        self.output_mem_format_perms = output_mem_format_perms
+        self.src_module = source_module
+
+    def forward(self, *args):
+        handled_args = _handle_layouts(
+            args, perms=self.input_mem_format_perms, perm_item="inverse_permutation"
+        )
+        outputs = self.src_module(*handled_args)
+        single_output = False
+        if isinstance(outputs, torch.Tensor):
+            outputs = [outputs]
+            single_output = True
+        handled_outputs = _handle_layouts(
+            outputs, perms=self.output_mem_format_perms, perm_item="permutation"
+        )
+        return handled_outputs[0] if single_output else tuple(handled_outputs)
 
 
 def _define_custom_graph_op(
@@ -99,79 +157,39 @@ def _define_custom_graph_op(
         str(output_mem_format_perms),
     )
 
-    class LayoutManagedModule(torch.nn.Module):
-        """This wrapper around gm.forward is the content being offloaded to IREE.
+    input_fake_tensors: list[torch.Tensor] = [
+        n.meta.get("val") for n in gm.graph.find_nodes(op="placeholder")
+    ]
 
-        We are expecting inputs to be permuted into a contiguous format before reaching this point.
-        The forward method performs the inverse permutations, which will be imported into MLIR.
-
-        A similar handling of output tensors is performed.
-        """
-
-        def __init__(
-            self,
-            mem_format_perms: Sequence[MemoryFormatPermutation],
-        ):
-            super().__init__()
-            self.mem_format_perms = mem_format_perms
-
-        def forward(self, *args):
-            handled_args = []
-            for idx, arg in enumerate(args):
-                arg_perms = self.mem_format_perms[idx]
-                handled_args.append(
-                    arg
-                    if arg_perms is None
-                    else arg.permute(arg_perms.inverse_permutation)
-                )
-            outputs = gm.forward(*handled_args)
-            single_output = False
-            if isinstance(outputs, torch.Tensor):
-                outputs = [outputs]
-                single_output = True
-            handled_outputs = []
-            for idx, o in enumerate(outputs):
-                o_perms = output_mem_format_perms[idx]
-                handled_outputs.append(
-                    o if o_perms is None else o.permute(o_perms.permutation)
-                )
-            return handled_outputs[0] if single_output else tuple(handled_outputs)
+    spec_name, input_mem_format_perms = (
+        get_arg_spec_name_and_memory_format_permutations(op_name, *input_fake_tensors)
+    )
 
     @register_impl(op_name)
     def _(*args):
-
-        spec_name, mem_format_perms = get_arg_spec_name_and_memory_format_permutations(
-            op_name, *args
+        handled_inputs = _handle_layouts(
+            args, perms=input_mem_format_perms, perm_item="permutation"
         )
-
-        handled_args = []
-        for idx, arg in enumerate(args):
-            arg_perms = mem_format_perms[idx]
-            handled_args.append(
-                arg if arg_perms is None else arg.permute(arg_perms.permutation)
-            )
-
-        l = get_launchable(
-            lambda: LayoutManagedModule(mem_format_perms),
-            arg_factory=tuple(handled_args),
+        launch = get_launchable(
+            lambda: _LayoutManagedModuleForAOTMlirExport(
+                input_mem_format_perms=input_mem_format_perms,
+                output_mem_format_perms=output_mem_format_perms,
+                source_module=gm,
+            ),
+            lambda: handled_inputs,
             func_name=spec_name,
             force_single_dispatch=force_single_dispatch,
         )
-
+        outputs = launch(*[arg.data for arg in handled_inputs])
         single_output = False
-        outputs = l(*[arg.data for arg in handled_args])
         if isinstance(outputs, torch.Tensor):
             outputs = [outputs]
             single_output = True
-        handled_outputs = []
-        for idx, o in enumerate(outputs):
-            o_perms = output_mem_format_perms[idx]
-            handled_outputs.append(
-                o if o_perms is None else o.permute(o_perms.inverse_permutation)
-            )
-
+        handled_outputs = _handle_layouts(
+            outputs, perms=output_mem_format_perms, perm_item="inverse_permutation"
+        )
         if not has_a_none_output:
-            return handled_outputs[0] if single_output else tuple(handled_outputs)
+            return handled_outputs[0] if single_output else handled_outputs
         # We have at least one None output that needs to be included.
         # Handle this better.
         all_results = []
