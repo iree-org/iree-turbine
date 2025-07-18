@@ -42,9 +42,10 @@ class OpSignature(ABC):
         """Generates sample arguments as PyTorch tensors for the operation."""
         ...
 
+    @property
     @abstractmethod
-    def get_func_name(self) -> str:
-        """Generates an MLIR function name to use for the operation, unique across operations."""
+    def func_name(self) -> str:
+        """MLIR function name to use for the operation, unique across operations."""
         ...
 
     @abstractmethod

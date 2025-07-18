@@ -13,12 +13,13 @@ from typing import (
 )
 
 from enum import IntEnum
+from functools import cached_property
 import math
 
 import torch
 
 from .utils import Permutation
-from ..exports.signature import OpSignature
+from ..exports.signature import OpSignature, ModeBase
 from ....ops.conv_fwd import conv_2d_nhwc_fhwc, generic_conv
 from ....ops.insert_slice import insert_slice
 
@@ -32,7 +33,7 @@ __all__ = [
 ]
 
 
-class Mode(IntEnum):
+class Mode(ModeBase, IntEnum):
     FORWARD = 0
     INPUT_BACKWARD = 1
     WEIGHT_BACKWARD = 2
@@ -41,20 +42,6 @@ class Mode(IntEnum):
     FWD = FORWARD
     BWD = INPUT_BACKWARD
     WRW = WEIGHT_BACKWARD
-
-    @staticmethod
-    def parse(spec: Union[str, None, "Mode"]) -> "Mode":
-        if spec is None:
-            return Mode.FORWARD
-        if isinstance(spec, Mode):
-            return spec
-        spec = spec.upper().replace("-", "_")
-        if spec not in Mode.__members__:
-            raise ValueError(
-                f"For mode= argument, expected one of: "
-                f"{', '.join(Mode.__members__.keys())}"
-            )
-        return Mode[spec]
 
     def __str__(self):
         return self.name
@@ -325,7 +312,8 @@ class ConvSignature(OpSignature):
             return (get(self.output_shape), get(self.kernel_shape))
         raise ValueError(f"Unknown mode: {self.mode}")
 
-    def get_func_name(self):
+    @cached_property
+    def func_name(self) -> str:
         name_items = [
             "conv",
             f"{self.num_spatial_dims}d",
@@ -458,6 +446,11 @@ class ConvForwardCustomGeneric(torch.nn.Module):
             self.xl = self.xl[: self.x_pos] + "g" + self.xl[self.x_pos :]
             self.wl = self.wl[: self.w_pos] + "g" + self.wl[self.w_pos :]
             self.ol = self.ol[: self.o_pos] + "g" + self.ol[self.o_pos :]
+            self.explicit_shape = (
+                self.explicit_shape[: self.o_pos]
+                + [self.groups, self.explicit_shape[self.o_pos] // self.groups]
+                + self.explicit_shape[self.o_pos + 1 :]
+            )
             pad_g_idx = len(self.explicit_padding) - 1 - 2 * self.x_pos
             self.explicit_padding = (
                 self.explicit_padding[:pad_g_idx]

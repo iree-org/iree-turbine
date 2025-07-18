@@ -9,7 +9,8 @@ from collections.abc import Sequence
 from torch import fx
 
 from iree.turbine.kernel.boo.ops.graph import get_custom_graph_op
-from .schema import FusionSchema
+from .schema import FusionSchema, ReplacementSchema
+from .replacement import apply_replacements
 from .subgraph import (
     FusedSubgraph,
     extract_fusion_subgraph_modules,
@@ -21,15 +22,27 @@ __all__ = [
 ]
 
 
-def fusion_transform(module: fx.GraphModule, *, fusion_schema: FusionSchema) -> None:
+def fusion_transform(
+    module: fx.GraphModule,
+    *,
+    fusion_schema: FusionSchema,
+    post_fusion_replacements: ReplacementSchema
+) -> None:
     """Applies fusions to the underlying fx graph of a GraphModule by offloading subgraphs to IREE compiler/runtime."""
 
     _log_graph_module("Source module", module)
 
     subgraphs = extract_fusion_subgraph_modules(module, fusion_schema)
+
+    for subgraph in subgraphs:
+        apply_replacements(subgraph.module.graph, post_fusion_replacements)
+        subgraph.module.recompile()
+
     subgraph_replacements: list[tuple[FusedSubgraph, fx.Node]] = []
     for subgraph in subgraphs:
-        custom_op = get_custom_graph_op(subgraph.module, force_single_dispatch=False)
+        custom_op = get_custom_graph_op(
+            subgraph.module, force_single_dispatch=subgraph.single_dispatch
+        )
         # Insert call as early as possible, to maintain topological order.
         insert_pt = sorted(subgraph.arguments)[-1]
         with module.graph.inserting_after(insert_pt):
@@ -46,7 +59,7 @@ def fusion_transform(module: fx.GraphModule, *, fusion_schema: FusionSchema) -> 
     module.recompile()
     module.graph.lint()
 
-    _log_graph_module("Converted module", module)
+    _log_graph_module("Post-fusion module", module)
 
 
 def _replace_with_call(
@@ -65,7 +78,7 @@ def _replace_with_call(
             ]
         )
     for node_to_replace, call_output in zip(nodes_to_replace, outputs, strict=True):
-        node_to_replace.replace_all_uses_with(call_output)
+        node_to_replace.replace_all_uses_with(call_output, propagate_meta=True)
 
 
 def _log_graph_module(label: str, gm: fx.GraphModule):

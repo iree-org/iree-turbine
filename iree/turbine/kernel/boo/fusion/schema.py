@@ -5,21 +5,51 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from dataclasses import dataclass
-from typing import Dict, Sequence
-from torch.fx.node import Target
+from typing import Callable, Dict, Sequence
+
+import torch
+from torch.fx.node import Target, Node
+
+from .replacement import ReplacementSchema, replace_aten_convolution
 
 
 @dataclass
 class OpFusionSpec:
     recursive: bool = True
+    """Whether to recursively fuse in producers and consumers."""
+    make_single_dispatch: bool = False
+    """Whether to force compile a fused op into a single dispatch."""
+    match_filters: Sequence[Callable[[Node], bool]] = ()
+    """A sequence of filter functions to restrict what gets included in the subgraph.
+    If any of these return false, the node is not included in the fused subgraph."""
     producers: Sequence[Target] = ()
+    """Producer nodes we want to fuse with."""
     consumers: Sequence[Target] = ()
+    """Consumer nodes we want to fuse with."""
+
+    def check_filters(self, node: Node):
+        return all([f(node) for f in self.match_filters])
 
 
 FusionSchema = Dict[Target, OpFusionSpec]
 
-# TODO: identify advantageous fusions.
-DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {}
 
-# TODO: set up custom implementation replacements.
-PRE_FUSION_DECOMPOSITIONS = {}
+def _conv_transpose_filter(node: Node) -> bool:
+    if node.target != torch.ops.aten.convolution.default:
+        return True
+    transposed = node.args[-3]
+    return transposed == False
+
+
+# TODO: extend this
+DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
+    torch.ops.aten.convolution.default: OpFusionSpec(
+        make_single_dispatch=True,
+        match_filters=(_conv_transpose_filter,),
+        consumers=(torch.ops.aten.relu.default, torch.ops.aten.sigmoid.default),
+    ),
+}
+
+DEFAULT_POST_FUSION_REPLACEMENTS: ReplacementSchema = {
+    torch.ops.aten.convolution.default: replace_aten_convolution
+}

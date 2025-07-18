@@ -12,6 +12,9 @@ from typing import Tuple, Iterable, NamedTuple
 import torch
 from torch.fx.passes.shape_prop import TensorMetadata
 from ....support.logging import runtime_logger as logger
+from ....support.ir_imports import Operation, PassManager, Context
+from iree.compiler.extras.fx_importer import FxImporter
+from ....transforms.general.custom_op_expansion import ExpandCustomOpsPass
 
 __all__ = [
     "is_boo_backward_enabled",
@@ -24,6 +27,7 @@ __all__ = [
     "CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION",
     "get_func_name",
     "get_arg_spec_name",
+    "generate_custom_op_compatible_ir",
 ]
 
 # Toggle Using Boo Backward Kernels #
@@ -211,3 +215,27 @@ def get_arg_spec_name_and_memory_format_permutations(
             name += "_cl"
         layout_handling.append(mem_format_info)
     return name, layout_handling
+
+
+def generate_custom_op_compatible_ir(
+    module: torch.nn.Module,
+    args: tuple[torch.Tensor, ...],
+    func_name: str,
+    context: Context,
+) -> Operation:
+    """Returns an mlir module operation.
+
+    The provided torch.nn.Module is imported as an mlir function which can be inlined during ExpandCustomOpsPass.
+    """
+    importer = FxImporter(context=context)
+    e = torch.export.export(module, args=args)
+    importer.import_program(e, func_name=func_name, func_visibility="private")
+    module_op = importer.module_op
+    expansion_pass = ExpandCustomOpsPass(module_op)
+    expansion_pass.run()
+    pm = PassManager.parse(
+        "builtin.module(canonicalize, torch-func-backend-type-conversion)",
+        module_op.context,
+    )
+    pm.run(module_op)
+    return module_op.operation

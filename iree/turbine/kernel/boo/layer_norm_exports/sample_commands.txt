@@ -1,0 +1,4 @@
+layernorm --input 10x32x42x32 -t 1 --iter 100
+layernorm --input 10x32x42x32 -t 1 -F 2 --iter 100
+layernorm --input 10x32x42x32 -t 1 -F 3 --iter 100
+layernorm --input 10x32x42x32 -t 1 -F 4 --iter 100

@@ -18,7 +18,10 @@ from torch.profiler import profile, ProfilerActivity
 
 from iree.turbine.dynamo.backends import boo
 from iree.turbine.kernel.boo.fusion import OpFusionSpec, FusionSchema
-from iree.turbine.kernel.boo.runtime import set_cache_dir
+from iree.turbine.kernel.boo.runtime import (
+    set_cache_dir,
+    LaunchableRuntimeCache,
+)
 
 
 class SampleModule(torch.nn.Module):
@@ -243,6 +246,41 @@ class SubgraphReplacementTest(unittest.TestCase):
             self.assertNotIn("torch.ops.aten.", str(fwd_gm))
             self.assertEqual(list(y.shape), list(expected_y.shape))
             self.assertEqual(list(y.stride()), list(expected_y.stride()))
+
+    def testReplacementSingleDispatch(self):
+        LaunchableRuntimeCache.clear()
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td) / "testReplacementSingleDispatch"
+            set_cache_dir(cache_dir)
+            x = torch.ones([2, 3, 16, 16], requires_grad=False)
+            w = torch.ones([4, 3, 1, 1], requires_grad=False)
+            schema: FusionSchema = {
+                torch.ops.aten.convolution.default: OpFusionSpec(
+                    recursive=True,
+                    make_single_dispatch=True,
+                    consumers=(torch.ops.aten.sigmoid.default,),
+                )
+            }
+
+            @torch.compile(backend=boo.backend(fusion_schema=schema))
+            def forward(x, w):
+                return torch.ops.aten.sigmoid(torch.ops.aten.conv2d(x, w, None))
+
+            y = forward(x, w)
+            cached_items = list(cache_dir.glob("*/*.mlir"))
+            self.assertEqual(
+                len(cached_items),
+                1,
+                msg=f"Expected one cached items, got {cached_items}.",
+            )
+            mlir_file = cached_items[0]
+            name = mlir_file.stem
+            contents = mlir_file.read_text()
+            self.assertIn(
+                "make-single-dispatch",
+                contents,
+                msg=f"Expected single dispatch for kernel {name}.",
+            )
 
     def testReplacementNonRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:

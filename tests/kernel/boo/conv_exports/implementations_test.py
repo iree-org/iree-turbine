@@ -79,10 +79,12 @@ def test_conv_impl(
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
-def test_conv_custom_impl(dtype):
+@pytest.mark.parametrize("groups", [1, 2])
+def test_conv_custom_impl(groups: int, dtype):
     sig = ConvSignature(
         input_shape=[1, 16, 16, 2],
-        kernel_shape=[4, 3, 3, 2],
+        kernel_shape=[4, 3, 3, 2 // groups],
+        groups=groups,
         shared_layout="NHWC",
         dtype=dtype,
     )

@@ -66,7 +66,10 @@ def get_custom_graph_op(
     """Converts a graph module into a custom operator."""
     gm_string = str(gm.print_readable(print_output=False, include_stride=True))
     hash = sha1(gm_string.encode(), usedforsecurity=False).hexdigest()
-    op_name = f"fused_op_{hash}"
+    call_function_names = "_".join(
+        n.name for n in gm.graph.nodes if n.op == "call_function"
+    )
+    op_name = f"fused_op_{call_function_names}_{hash}"
     logger.debug("Got hash str '%s' for GraphModule: \n %s", hash, gm_string)
 
     if not hasattr(torch.ops.boo, op_name):
