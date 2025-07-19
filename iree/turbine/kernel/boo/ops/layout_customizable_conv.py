@@ -14,6 +14,7 @@ from .utils import *
 from ..conv_exports import (
     ConvSignature,
     DEFAULT_LAYOUTS,
+    get_conv_func_name,
     Permutation,
 )
 
@@ -119,7 +120,7 @@ def _boo_layout_customizable_convolution_impl(
 
     # Unfortunately, pytorch converts the tuple inputs to lists for some reason.
     # We need to convert them back to tuples.
-    func_name = get_func_name(
+    func_name = get_conv_func_name(
         tuple(x.shape),
         tuple(w.shape),
         str(x.dtype),
