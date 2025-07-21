@@ -4,7 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from dataclasses import dataclass
 from typing import List
 import pytest
 
@@ -86,7 +85,3 @@ def test_gemm_backward_impl(
         print(f"Expected for gradient #{i}: ", args[i].grad)
         print(f"Actual for gradient #{i}: ", grads[i])
     raise RuntimeError(f"Tensor matches: {results}")
-
-
-if __name__ == "__main__":
-    pytest.main(["-s", __file__])
