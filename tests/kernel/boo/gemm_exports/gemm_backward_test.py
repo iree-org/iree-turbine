@@ -56,14 +56,10 @@ def test_gemm_backward_impl(
     # Test backward for A
     bwd_a_args = bwd_a_sig.arrange_backward_launch_args(args, fwd_results)
     dLossDa = bwd_a(dLoss, *bwd_a_args)
-    if bwd_a_sig.transpose_a:
-        dLossDa = dLossDa.t()
 
     # Test backward for B
     bwd_b_args = bwd_b_sig.arrange_backward_launch_args(args, fwd_results)
     dLossDb = bwd_b(dLoss, *bwd_b_args)
-    if bwd_b_sig.transpose_b:
-        dLossDb = dLossDb.t()
 
     grads = [dLossDa, dLossDb]
 

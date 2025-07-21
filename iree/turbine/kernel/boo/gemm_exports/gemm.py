@@ -175,9 +175,14 @@ class GEMMBackwardA(torch.nn.Module):
     def forward(self, grad_output: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         # For C = A @ B, dA = dC @ B^T
         if self.sig.transpose_b:
-            return torch.mm(grad_output, b)
+            result = torch.mm(grad_output, b)
         else:
-            return torch.mm(grad_output, b.t())
+            result = torch.mm(grad_output, b.t())
+
+        if self.sig.transpose_a:
+            return result.t()
+
+        return result
 
 
 class GEMMBackwardB(torch.nn.Module):
@@ -190,6 +195,11 @@ class GEMMBackwardB(torch.nn.Module):
     def forward(self, grad_output: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
         # For C = A @ B, dB = A^T @ dC
         if self.sig.transpose_a:
-            return torch.mm(a, grad_output)
+            result = torch.mm(a, grad_output)
         else:
-            return torch.mm(a.t(), grad_output)
+            result = torch.mm(a.t(), grad_output)
+
+        if self.sig.transpose_b:
+            return result.t()
+
+        return result
