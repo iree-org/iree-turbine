@@ -6,14 +6,22 @@
 
 import torch
 
+from enum import IntEnum
 from dataclasses import dataclass
 from typing import Optional, List
 import math
 
-from ..exports.signature import OpSignature
+from ..exports.signature import OpSignature, ModeBase
 
 
-@dataclass
+class Mode(ModeBase, IntEnum):
+    """Mode selector for GEMM, with each gradient being its own mode."""
+
+    FORWARD = 0
+    A_BACKWARD = 1
+    B_BACKWARD = 2
+
+
 class GEMMSignature(OpSignature):
     """Signature for General Matrix Multiplication (GEMM) operations"""
 
@@ -22,22 +30,26 @@ class GEMMSignature(OpSignature):
     transpose_a: bool = False
     transpose_b: bool = False
     dtype: torch.dtype = torch.float32
+    mode: Mode = Mode.FORWARD
 
-    def get_func_name(self) -> str:
-        """Format: gemm_{dtype}_{m}x{k}x{n}[_transA][_transB]"""
-        m, k = self.a_shape
-        _, n = self.b_shape
-
-        name_items = [
-            "gemm",
-            str(self.dtype).removeprefix("torch."),
-            f"{m}x{k}x{n}",
-        ]
-        if self.transpose_a:
-            name_items.append("transA")
-        if self.transpose_b:
-            name_items.append("transB")
-        return "_".join(name_items)
+    def __init__(
+        self,
+        *,
+        a_shape: List[int],
+        b_shape: List[int],
+        transpose_a: bool = False,
+        transpose_b: bool = False,
+        dtype: torch.dtype = torch.float32,
+        mode: Mode = Mode.FORWARD,
+    ):
+        if len(a_shape) != len(b_shape) != 2:
+            raise ValueError(f"expected shapes to be of rank 2")
+        self.a_shape = a_shape
+        self.b_shape = b_shape
+        self.transpose_a = transpose_a
+        self.transpose_b = transpose_b
+        self.dtype = dtype
+        self.mode = mode
 
     def get_output_size(self) -> int:
         """Returns the size of the output tensor in bytes."""
@@ -46,19 +58,14 @@ class GEMMSignature(OpSignature):
         return math.prod([m, n]) * self.dtype.itemsize
 
     def get_nn_module(self, **kwargs) -> torch.nn.Module:
-        class Linear(torch.nn.Module):
-            def __init__(self, sig: GEMMSignature):
-                super().__init__()
-                self.sig = sig
-
-            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-                if self.sig.transpose_a:
-                    a = a.t()
-                if self.sig.transpose_b:
-                    b = b.t()
-                return torch.mm(a, b)
-
-        return Linear(self)
+        if self.mode == Mode.FORWARD:
+            return GEMMForward(self)
+        elif self.mode == Mode.A_BACKWARD:
+            return GEMMBackwardA(self)
+        elif self.mode == Mode.B_BACKWARD:
+            return GEMMBackwardB(self)
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")
 
     def get_sample_args(
         self,
@@ -87,13 +94,102 @@ class GEMMSignature(OpSignature):
 
     @property
     def is_forward(self) -> bool:
-        return True
+        return self.mode == Mode.FORWARD
+
+    @property
+    def main_result_index(self) -> int:
+        return 0  # GEMM only has one output
 
     def make_signature_copy_for_forward(self):
-        raise NotImplementedError
+        kwargs = self.as_init_kwargs()
+        kwargs["mode"] = Mode.FORWARD
+        return GEMMSignature(**kwargs)
 
     def get_arg_index_for_backward(self):
-        raise NotImplementedError
+        if self.mode == Mode.A_BACKWARD:
+            return 0
+        elif self.mode == Mode.B_BACKWARD:
+            return 1
 
     def arrange_backward_launch_args(self, forward_args, forward_results):
-        raise NotImplementedError
+        # forward: C = A @ B
+        if self.mode == Mode.A_BACKWARD:
+            # backward: dA = dC @ B^T
+            return (forward_args[1],)
+        elif self.mode == Mode.B_BACKWARD:
+            # backward: dB = A^T @ dC
+            return (forward_args[0],)
+
+    @property
+    def func_name(self):
+        """Format: gemm_{dtype}_{mode}_{m}x{k}x{n}[_transA][_transB]"""
+        m, k = self.a_shape
+        _, n = self.b_shape
+
+        name_items = [
+            "gemm",
+            str(self.dtype).removeprefix("torch."),
+            self.mode.name.lower(),
+            f"{m}x{k}x{n}",
+        ]
+        if self.transpose_a:
+            name_items.append("transA")
+        if self.transpose_b:
+            name_items.append("transB")
+        return "_".join(name_items)
+
+    def as_init_kwargs(self):
+        return {
+            "a_shape": self.a_shape,
+            "b_shape": self.b_shape,
+            "transpose_a": self.transpose_a,
+            "transpose_b": self.transpose_b,
+            "dtype": self.dtype,
+            "mode": self.mode,
+        }
+
+
+class GEMMForward(torch.nn.Module):
+    """Forward GEMM operation"""
+
+    def __init__(self, sig: GEMMSignature):
+        super().__init__()
+        self.sig = sig
+
+    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        # C = A @ B
+        if self.sig.transpose_a:
+            a = a.t()
+        if self.sig.transpose_b:
+            b = b.t()
+        return torch.mm(a, b)
+
+
+class GEMMBackwardA(torch.nn.Module):
+    """Backward for input A"""
+
+    def __init__(self, sig: GEMMSignature):
+        super().__init__()
+        self.sig = sig
+
+    def forward(self, grad_output: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        # For C = A @ B, dA = dC @ B^T
+        if self.sig.transpose_b:
+            return torch.mm(grad_output, b)
+        else:
+            return torch.mm(grad_output, b.t())
+
+
+class GEMMBackwardB(torch.nn.Module):
+    """Backward for input B"""
+
+    def __init__(self, sig: GEMMSignature):
+        super().__init__()
+        self.sig = sig
+
+    def forward(self, grad_output: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
+        # For C = A @ B, dB = A^T @ dC
+        if self.sig.transpose_a:
+            return torch.mm(a, grad_output)
+        else:
+            return torch.mm(a.t(), grad_output)

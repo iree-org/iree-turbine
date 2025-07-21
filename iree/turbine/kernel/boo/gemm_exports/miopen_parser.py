@@ -7,8 +7,12 @@
 import argparse
 import torch
 
-from iree.turbine.kernel.boo.gemm_exports.gemm import GEMMSignature
 from iree.turbine.kernel.boo.exports.parser import OpCLIParser
+
+from iree.turbine.kernel.boo.gemm_exports.gemm import (
+    Mode,
+    GEMMSignature,
+)
 
 
 class _DTypeCommandDispatcher:
