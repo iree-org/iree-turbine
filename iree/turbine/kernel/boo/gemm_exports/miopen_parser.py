@@ -46,12 +46,23 @@ class GEMMParser(OpCLIParser):
             args.b_w > 0
         ), f"Expected positive value for B width, got shape {args.b_w}"
 
+        match args.forw:
+            case 1:
+                mode = Mode.FORWARD
+            case 2:
+                mode = Mode.A_BACKWARD
+            case 3:
+                mode = Mode.B_BACKWARD
+            case _:
+                raise ValueError(f"Unsupported mode {args.forw}.")
+
         return GEMMSignature(
             a_shape=[args.a_w, args.a_h],
             b_shape=[args.a_h, args.b_w],
             transpose_a=args.transA,
             transpose_b=args.transB,
             dtype=_DTypeCommandDispatcher.get_dtype(args.command),
+            mode=mode,
         )
 
     @staticmethod
@@ -78,6 +89,13 @@ class GEMMParser(OpCLIParser):
         )
         parser.add_argument(
             "--transB", "-v", type=int, default=0, help="Transpose B matrix (Default=0)"
+        )
+        parser.add_argument(
+            "--forw",
+            "-F",
+            type=int,
+            default=1,
+            help="Run only Forward Gemm (Default=1)",
         )
         return parser
 
