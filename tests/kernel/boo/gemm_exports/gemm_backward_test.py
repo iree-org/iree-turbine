@@ -81,3 +81,7 @@ def test_gemm_backward_impl(
         print(f"Expected for gradient #{i}: ", args[i].grad)
         print(f"Actual for gradient #{i}: ", grads[i])
     raise RuntimeError(f"Tensor matches: {results}")
+
+
+if __name__ == "__main__":
+    pytest.main(["-s", __file__])
