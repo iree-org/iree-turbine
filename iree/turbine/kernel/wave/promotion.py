@@ -67,8 +67,8 @@ def apply_promotion_pattern(
     ```
     read_from_global lhs
     write_to_shared lhs
-    read_from_global lhs
-    write_to_shared lhs
+    read_from_global rhs
+    write_to_shared rhs
     shared_barrier
     read_from_shared lhs
     read_from_shared rhs

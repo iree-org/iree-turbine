@@ -275,6 +275,20 @@ def select(
 ) -> "Register": ...
 
 
+def gather_to_lds(
+    src: Memory,
+    src_idx: dict[IndexSymbol, IndexSequence],
+    src_type: DataType,
+    dst: Memory,
+    dst_idx: dict[IndexSymbol, IndexSequence],
+    dst_type: DataType,
+    src_mapping: Optional[IndexMapping] = None,
+    dst_mapping: Optional[IndexMapping] = None,
+    elements_per_thread: Optional[IndexExpr | int] = None,
+):
+    ...
+
+
 def define_op(op_name: str) -> Callable[[T], T]:
     def decorator(cls: T) -> T:
         cls.tkw_op_name = op_name
@@ -2491,3 +2505,23 @@ class Reshape(CustomOp, ABC):
 
     def infer_type(self):
         self.type = get_custom(_to_sequence(self.args)[0]).type
+
+
+@define_op("gather_to_lds")
+@dataclass
+class GatherToLDS(CustomOp):
+    """
+    Represents an instruction that performs direct load from global
+    to lds. Source node points to the global memory to load from
+    and the destination node points to shared memory.
+    """
+
+    src: Memory
+    src_idx: dict[IndexSymbol, IndexSequence]
+    src_type: DataType
+    dst: Memory
+    dst_idx: dict[IndexSymbol, IndexSequence]
+    dst_type: DataType
+    src_mapping: Optional[IndexMapping]
+    dst_mapping: Optional[IndexMapping]
+    elements_per_thread: Optional[IndexExpr | int]
