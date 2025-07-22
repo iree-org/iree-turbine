@@ -225,11 +225,6 @@ def get_launchable(
     cache_only=False,
     force_single_dispatch=False,
 ) -> Launchable:
-    if cache_only and not is_cache_enabled():
-        raise ValueError(
-            "cache_only=True requires caching to be enabled. "
-            + "Please enable caching or set cache_only=False"
-        )
     session_cache_key = func_name + cache_only * "_no_jit"
     launch = LaunchableRuntimeCache.get(session_cache_key)
     if launch:

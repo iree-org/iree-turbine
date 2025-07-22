@@ -29,6 +29,8 @@ from iree.runtime import (
     VmVariantList,
 )
 
+from iree.turbine.kernel.boo.runtime.cache import is_cache_enabled
+
 from ..support.logging import runtime_logger as logger
 
 from .device import (
@@ -113,6 +115,10 @@ class Launchable:
             key_hash = device.get_type_key_hash()
             vmfb_path = Path(file_cache_dir) / f"{key_hash}.vmfb"
             if not vmfb_path.is_file():
+                if not is_cache_enabled():
+                    raise ValueError(
+                        f"No vmfb found at {vmfb_path} because cache is not enabled."
+                    )
                 raise RuntimeError(
                     f"No vmfb found at {vmfb_path}. Please try running with jit compilation enabled, "
                     f"or verify {Path(file_cache_dir).parent} is the correct cache directory to use."
