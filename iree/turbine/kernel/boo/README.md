@@ -34,17 +34,14 @@ boo_model = torch.compile(model, dynamic=False, backend="iree_boo")
 boo_inductor_model = torch.compile(model, dynamic=False, backend="iree_boo_inductor")
 ```
 
-To customize the backend further, the boo backend can be called directly.
+If a nested backend besided `inductor` is desired, a customized boo backend can be defined directly.
 
 ```python
 import torch
 
 import iree.turbine.dynamo.backends.boo as boo
-from iree.turbine.kernel.boo.fusion import FusionSchema, ReplacementSchema
 
-custom_fusion_schema : FusionSchema = ...
-custom_replacement_schema : ReplacementSchema = ...
-customized_backend = boo.backend(nested_backend="some_other_backend", fusion_schema=custom_fusion_schema, post_fusion_replacements=custom_replacement_schema)
+customized_backend = boo.backend(nested_backend="some_other_backend")
 
 model : torch.nn.Module = ...
 
