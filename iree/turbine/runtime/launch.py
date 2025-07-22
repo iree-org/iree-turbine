@@ -115,7 +115,8 @@ class Launchable:
             if not vmfb_path.is_file():
                 raise RuntimeError(
                     f"No vmfb found at {vmfb_path}. Please try running with jit compilation enabled, "
-                    f"or verify {Path(file_cache_dir).parent} is the correct cache directory to use."
+                    f"or verify {Path(file_cache_dir).parent} is the correct cache directory to use "
+                    "and that caching is not disabled (for example via environment variable)."
                 )
             vm_instance = device.vm_instance
             logger.debug("Loading vmfb from cache: %s", str(vmfb_path))

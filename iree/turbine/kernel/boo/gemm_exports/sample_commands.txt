@@ -1,0 +1,3 @@
+gemmfp16 --a_w 32 --a_h 64 --b_w 128
+gemmfp16 --a_w 32 --a_h 64 --b_w 128 --transA 1
+gemmfp16 --a_w 32 --a_h 64 --b_w 128 --transB 1
