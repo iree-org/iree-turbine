@@ -109,15 +109,26 @@ def _try_get_permutations_from_strides(
     strides: Sequence[int], shape: Sequence[int]
 ) -> None | MemoryFormatPermutation:
     rank = len(strides)
-    sorted_strides = sorted(zip(strides, range(rank), shape), reverse=True)
+    sorted_strides = sorted(
+        list(zip(strides, range(rank), shape, strict=True)), reverse=True
+    )
 
     # Check this metadata corresponds to a permutation of a contiguous tensor.
     numel = math.prod(shape)
-    for stride, _, size in sorted_strides:
+    for stride, dim, size in sorted_strides:
+        if size == 1:
+            # Don't need to check anything here.
+            continue
         if numel % size != 0:
+            logger.debug(
+                "Got size %s for numel %s at dim %s", str(size), str(numel), str(dim)
+            )
             return None
-        numel = numel / size
+        numel = numel // size
         if stride != numel:
+            logger.debug(
+                "Got stride %s for numel %s at dim %s", str(size), str(numel), str(dim)
+            )
             return None
 
     # The middle items form a permutation which would result in a contiguous tensor.
@@ -140,8 +151,8 @@ def get_memory_format_permutation(
     """Returns a MemoryFormatPermutation for a Tensor if one can be inferred.
     This checks for `channels_last` and `channels_last_3d` memory_formats directly.
 
-    If a tensor is not in a `channels_last` format, this function tries to infer a
-    MemoryFormatPermutation directly from the stride metadata.
+    If a tensor is neither in a `channels_last` format nor contiguous, then a
+    MemoryFormatPermutation is directly inferred from the stride metadata.
 
     If a MemoryFormatPermutation cannot be inferred (e.g., t is a proper subview),
     then a warning is issued, or if `strict=True`, then an error is raised.
@@ -206,7 +217,7 @@ def get_arg_spec_name_and_memory_format_permutations(
         name += f"_{_tensor_type_str(shape, dtype)}"
         mem_format_info = get_memory_format_permutation(arg, len(shape) - 2)
         if mem_format_info:
-            name += "_cl"
+            name += "_perm_" + "".join([str(i) for i in mem_format_info.permutation])
         layout_handling.append(mem_format_info)
     return name, layout_handling
 
