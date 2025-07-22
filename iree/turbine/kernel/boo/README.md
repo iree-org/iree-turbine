@@ -1,6 +1,6 @@
-The BOO (Bag of Ops) project is intended to provide a python interface for launching individual IREE kernels within a pytorch model.
+The BOO (Bag of Ops) project is intended to provide a python interface for fusing and launching standalone IREE kernels in a pytorch model.
 
-Currently, forward and backward convolution kernels are supported.
+Currently, convolution kernels are supported with bias and activation fusions.
 
 ## Environment Variables
 
@@ -8,13 +8,49 @@ There are a few environment variables that control BOO behavior:
 
 - `BOO_CACHE_ON=<0 or 1>`: whether to cache kernel artifacts for boo kernels (default = 1).
 - `BOO_CACHE_DIR=<path to cache dir>`: where to store kernel artifacts (default = `~/.cache/turbine_kernels/boo/`).
-- `BOO_USE_BACKWARD_KERNELS=<0 or 1>`: whether to use our backward kernels (default = 0).
+- `BOO_USE_BACKWARD_KERNELS=<0 or 1>`: whether to use our backward kernels for boo ops (default = 0).
 
 And several other variables are useful for debugging:
 
 - `TURBINE_LOG_LEVEL=DEBUG`: enable debug output from Turbine.
 
 ## Usage:
+
+### Enabling supported fusions in a model:
+
+The best way to enable boo kernels in a model is to use one of our `torch.compile` backends:
+
+- `"iree_boo"` : Uses IREE to identify and generate fused kernels based on `DEFAULT_SUPPORTED_BOO_FUSIONS` in [schema.py](./fusion/schema.py)
+- `"iree_boo_inductor"` : Applies the same fusions as `iree_boo`, but additionally applies the `inductor` backend to the rest of the model.
+
+```python
+import torch
+
+model : torch.nn.Module = ...
+
+# To just use boo fusions:
+boo_model = torch.compile(model, dynamic=False, backend="iree_boo")
+# To use boo fusions and inductor:
+boo_inductor_model = torch.compile(model, dynamic=False, backend="iree_boo_inductor")
+```
+
+To customize the backend further, the boo backend can be called directly.
+
+```python
+import torch
+
+import iree.turbine.dynamo.backends.boo as boo
+from iree.turbine.kernel.boo.fusion import FusionSchema, ReplacementSchema
+
+custom_fusion_schema : FusionSchema = ...
+custom_replacement_schema : ReplacementSchema = ...
+customized_backend = boo.backend(nested_backend="some_other_backend", fusion_schema=custom_fusion_schema, post_fusion_replacements=custom_replacement_schema)
+
+model : torch.nn.Module = ...
+
+customized_boo_model = torch.compile(model, dynamic=False, backend=customized_backend)
+```
+
 
 ### Launch a single convolution:
 
@@ -33,24 +69,14 @@ b = None # optionally fuse with a bias-add
 y = boo_conv(x,w,b) # can also specify stride, dilation, padding, groups, and layouts (e.g., "NHWC")
 ```
 
-### Replace `Conv2d` in a model with `BooConv2d`:
-
-For a `resnet_18` boo convolution example with sample training, see [`examples/resnet_18_backward.py`](examples/resnet_18_backward.py).
-
-```python
-from iree.turbine.kernel.boo.modeling import replace_conv2d_with_boo_conv
-
-model = ... # torch.nn.Module
-
-replacement_kwargs = {"stride" : (1,1)} # controls which types of Conv2d are replaced.
-model = replace_conv2d_with_boo_conv(model, **replacement_kwargs)
-outputs = model(...)
-```
-
-### Use a `BooConv2d` module directly:
+### Use a `BooConv2d` module:
 
 ```python
 from iree.turbine.kernel.boo.modeling import BooConv2d
 
 conv2d = BooConv2d(...) # usual Conv2d args
 ```
+
+### Benchmarking BOO ops:
+
+See [driver documentation](./driver/README.md).
