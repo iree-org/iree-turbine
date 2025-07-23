@@ -114,20 +114,6 @@ dLdy, _ = wrw_sig.get_sample_args(device=torch_device, seed=2)
 dLdw = conv_wrw(dLdy, x)
 ```
 
-### Replace `Conv2d` in a model with `BooConv2d`
-
-For a `resnet_18` boo convolution example with sample training, see [`examples/resnet_18_backward.py`](examples/resnet_18_backward.py).
-
-```python
-from iree.turbine.kernel.boo.modeling import replace_conv2d_with_boo_conv
-
-model = ... # torch.nn.Module
-
-replacement_kwargs = {"stride" : (1,1)} # controls which types of Conv2d are replaced.
-model = replace_conv2d_with_boo_conv(model, **replacement_kwargs)
-outputs = model(...)
-```
-
 ### Use a `BooConv2d` module directly
 
 ```python
