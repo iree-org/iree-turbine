@@ -104,6 +104,28 @@ class SampleModule3(torch.nn.Module):
 
 
 class SubgraphReplacementTest(unittest.TestCase):
+    def testLinearLayoutHandling(self):
+        LaunchableRuntimeCache.clear()
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td) / "testLinearLayoutHandling"
+            set_cache_dir(cache_dir)
+            schema: FusionSchema = {torch.ops.aten.addmm.default: OpFusionSpec()}
+            recorder = EagerAndRecordGraphs()
+            m = torch.compile(
+                torch.nn.Linear(in_features=64, out_features=16),
+                dynamic=False,
+                backend=boo.backend(
+                    nested_backend=recorder,
+                    fusion_schema=schema,
+                ),
+            )
+            x = torch.randn([32, 64])
+            m(x)
+            mlir_files = list(cache_dir.glob("*/*.mlir"))
+            assert len(mlir_files) == 1, f"Expected one mlir file, got {mlir_files}."
+            mlir_string = mlir_files[0].read_text()
+            assert "linalg.transpose" in mlir_string
+
     def testReplacementWithPytorchBackward(self):
         with tempfile.TemporaryDirectory() as td:
             set_cache_dir(Path(td))

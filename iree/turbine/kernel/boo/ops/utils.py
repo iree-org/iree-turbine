@@ -5,14 +5,16 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import os
+import math
 
-from typing import Tuple, Iterable, NamedTuple
+from typing import Tuple, Iterable, NamedTuple, Sequence
 
 import torch
 from torch.fx.passes.shape_prop import TensorMetadata
+from iree.compiler.extras.fx_importer import FxImporter
+
 from ....support.logging import runtime_logger as logger
 from ....support.ir_imports import Operation, PassManager, Context
-from iree.compiler.extras.fx_importer import FxImporter
 from ....transforms.general.custom_op_expansion import ExpandCustomOpsPass
 
 __all__ = [
@@ -103,6 +105,43 @@ class MemoryFormatPermutation(NamedTuple):
     inverse_permutation: list[int]
 
 
+def _try_get_permutations_from_strides(
+    strides: Sequence[int], shape: Sequence[int]
+) -> None | MemoryFormatPermutation:
+    rank = len(strides)
+    sorted_strides = sorted(
+        list(zip(strides, range(rank), shape, strict=True)), reverse=True
+    )
+
+    # Check this metadata corresponds to a permutation of a contiguous tensor.
+    numel = math.prod(shape)
+    for stride, dim, size in sorted_strides:
+        if size == 1:
+            # Don't need to check anything here.
+            continue
+        if numel % size != 0:
+            logger.debug(
+                "Got size %s for numel %s at dim %s", str(size), str(numel), str(dim)
+            )
+            return None
+        numel = numel // size
+        if stride != numel:
+            logger.debug(
+                "Got stride %s for numel %s at dim %s", str(size), str(numel), str(dim)
+            )
+            return None
+
+    # The middle items form a permutation which would result in a contiguous tensor.
+    to_contig_perm = list([item[1] for item in sorted_strides])
+    # Compute the inverse permutation.
+    inverse_perm = [None] * rank
+    for i in range(rank):
+        inverse_perm[to_contig_perm[i]] = i
+    return MemoryFormatPermutation(
+        permutation=to_contig_perm, inverse_permutation=inverse_perm
+    )
+
+
 def get_memory_format_permutation(
     t: torch.Tensor | TensorMetadata,
     num_dims: int | None = None,
@@ -110,13 +149,22 @@ def get_memory_format_permutation(
     strict: bool = False,
 ) -> MemoryFormatPermutation | None:
     """Returns a MemoryFormatPermutation for a Tensor if one can be inferred.
-    Currently, this only supports `channels_last` and `channels_last_3d` memory_formats.
+    This checks for `channels_last` and `channels_last_3d` memory_formats directly.
+
+    If a tensor is neither in a `channels_last` format nor contiguous, then a
+    MemoryFormatPermutation is directly inferred from the stride metadata.
+
+    If a MemoryFormatPermutation cannot be inferred (e.g., t is a proper subview),
+    then a warning is issued, or if `strict=True`, then an error is raised.
     """
     num_dims = num_dims or len(t.shape) - 2
     cl_mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_dims, None)
     if cl_mem_format is None or not _is_contiguous(t, cl_mem_format):
         if not _is_contiguous(t, memory_format=torch.contiguous_format):
             stride = t.stride() if isinstance(t, torch.Tensor) else t.stride
+            maybe_perms = _try_get_permutations_from_strides(stride, t.shape)
+            if maybe_perms is not None:
+                return maybe_perms
             if strict:
                 raise ValueError(
                     f"Expected tensor to be in contiguous or channels_last(_3d) memory formats. "
@@ -169,7 +217,7 @@ def get_arg_spec_name_and_memory_format_permutations(
         name += f"_{_tensor_type_str(shape, dtype)}"
         mem_format_info = get_memory_format_permutation(arg, len(shape) - 2)
         if mem_format_info:
-            name += "_cl"
+            name += "_perm_" + "".join([str(i) for i in mem_format_info.permutation])
         layout_handling.append(mem_format_info)
     return name, layout_handling
 
