@@ -5,7 +5,9 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from dataclasses import dataclass
+from operator import getitem
 from typing import Callable, Dict, Sequence
+
 
 import torch
 from torch.fx.node import Target, Node
@@ -30,6 +32,25 @@ class OpFusionSpec:
     def check_filters(self, node: Node):
         return all([f(node) for f in self.match_filters])
 
+    def is_fusable_producer(self, node: Node):
+        """Checks if `node` is a fusable producer.
+
+        This currently doesn't allow `getitem` unless explicitly indicated by `self.producers`.
+        """
+        if node.op != "call_function" or not self.check_filters(node):
+            return False
+        # TODO: add support for capturing all `getitem` ops for multi-output producers.
+        return node.target in self.producers
+
+    def is_fusable_consumer(self, node: Node):
+        """Checks if `node` is a fusable consumer.
+
+        Any multi-output nodes also get their consuming `getitem` calls fused into the graph.
+        """
+        if node.op != "call_function" or not self.check_filters(node):
+            return False
+        return node.target in self.consumers or node.target == getitem
+
 
 FusionSchema = Dict[Target, OpFusionSpec]
 
@@ -44,9 +65,13 @@ def _conv_transpose_filter(node: Node) -> bool:
 # TODO: extend this
 DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
     torch.ops.aten.convolution.default: OpFusionSpec(
+        recursive=True,
         make_single_dispatch=True,
         match_filters=(_conv_transpose_filter,),
-        consumers=(torch.ops.aten.relu.default, torch.ops.aten.sigmoid.default),
+        consumers=(
+            torch.ops.aten.relu.default,
+            torch.ops.aten.sigmoid.default,
+        ),
     ),
 }
 

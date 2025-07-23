@@ -7,6 +7,7 @@
 from collections.abc import Sequence
 
 from torch import fx
+from operator import getitem
 
 from iree.turbine.kernel.boo.ops.graph import get_custom_graph_op
 from .schema import FusionSchema, ReplacementSchema
@@ -73,7 +74,7 @@ def _replace_with_call(
             [call]
             if len(nodes_to_replace) == 1
             else [
-                graph.call_method("__getitem__", args=(call, i))
+                graph.call_function(getitem, args=(call, i))
                 for i in range(len(nodes_to_replace))
             ]
         )

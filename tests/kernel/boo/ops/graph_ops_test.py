@@ -28,10 +28,47 @@ class SampleModule(torch.nn.Module):
         return self.relu(self.linear(x))
 
 
+class LongFusionSample(torch.nn.Module):
+    def __init__(self, in_features: int, out_features: int, iter: int = 10):
+        super().__init__()
+        self.iter = iter
+        self.linear = torch.nn.Linear(
+            in_features=in_features, out_features=out_features
+        )
+        self.act = torch.nn.Sequential(
+            torch.nn.Tanh(),
+            torch.nn.ReLU(),
+        )
+
+    def forward(self, x):
+        y = self.linear(x)
+        for _ in range(self.iter):
+            y = self.act(y)
+        return y
+
+
 class GraphOpsTest(unittest.TestCase):
     def setUp(self):
         LaunchableRuntimeCache.clear()
         LaunchableRuntimeCache.set_cache_limit(0)
+
+    def testLongPathName(self):
+        with tempfile.TemporaryDirectory() as td:
+            set_cache_dir(Path(td))
+
+            m = LongFusionSample(16, 32, 10)
+            x = torch.ones([3, 3, 16, 16])
+
+            with torch.no_grad():
+                exported = torch.export.export(m, args=(x,))
+
+            gm = exported.graph_module
+
+            # Get a graph op (note, model params are pytree flattened as args).
+            graph_op = get_custom_graph_op(gm)
+            assert len(graph_op._qualified_op_name) < 256 - len(
+                ".mlir"
+            ), f"Name: '{graph_op._qualified_op_name}' is too long."
 
     def testForwardOnlyOp(self):
         with tempfile.TemporaryDirectory() as td:

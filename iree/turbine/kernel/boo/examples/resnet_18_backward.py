@@ -29,7 +29,11 @@ from iree.turbine.kernel.boo.modeling import replace_conv2d_with_boo_conv
 
 
 def get_model(
-    use_boo=True, compile=False, memory_format=torch.channels_last, **boo_conv_kwargs
+    use_direct_replacement=False,
+    compile=False,
+    compile_backend="iree_boo",
+    memory_format=torch.channels_last,
+    **boo_conv_kwargs,
 ):
     """Sets up a resnet 18 model on cuda device based on provided parameters."""
     # base model
@@ -37,13 +41,18 @@ def get_model(
     # boo replacement
     resnet_model = (
         replace_conv2d_with_boo_conv(resnet_model, **boo_conv_kwargs)
-        if use_boo
+        if use_direct_replacement
         else resnet_model
     )
     # move to gpu and apply memory format
     resnet_model = resnet_model.to(device="cuda", memory_format=memory_format)
     # compile model
-    resnet_model = torch.compile(resnet_model) if compile else resnet_model
+    resnet_model = (
+        torch.compile(resnet_model, dynamic=False, backend=compile_backend)
+        if compile
+        else resnet_model
+    )
+    resnet_model.train()
     return resnet_model
 
 
@@ -160,8 +169,14 @@ def _get_argparse():
         help="Set this to use torch.compile on the model",
     )
     parser.add_argument(
+        "-b",
+        "--compile_backend",
+        type=str,
+        help="Specify a torch.compile backend. E.g. 'iree_boo' or 'iree_boo_inductor'",
+    )
+    parser.add_argument(
         "-r",
-        "--use_boo",
+        "--use_direct_replacement",
         action="store_true",
         default=False,
         help="Set this to replace Conv2d modules with BooConv2d",
@@ -174,7 +189,7 @@ def _get_argparse():
         help="Set this to use NCHW format. Default layout is torch.channels_last.",
     )
     parser.add_argument(
-        "-b",
+        "-B",
         "--batch_size",
         type=int,
         default=128,
@@ -200,7 +215,13 @@ if __name__ == "__main__":
     memory_format = (
         torch.contiguous_format if args.pytorch_layout else torch.channels_last
     )
-    resnet_model = get_model(args.use_boo, args.compile, memory_format, stride=(1, 1))
+    resnet_model = get_model(
+        args.use_direct_replacement,
+        args.compile,
+        args.compile_backend,
+        memory_format,
+        stride=(1, 1),
+    )
     train_loader = get_train_loader(args.batch_size, args.image_size)
     train_loop(
         args.trace_path,
