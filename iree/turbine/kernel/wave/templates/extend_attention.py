@@ -201,8 +201,8 @@ def get_extend_attention_kernel(
     k_layout = tkl.MemoryLayout(shape=set_dynamic_dim(k_shape))
     v_layout = tkl.MemoryLayout(shape=set_dynamic_dim(v_shape))
     o_layout = tkl.MemoryLayout(shape=set_dynamic_dim(o_shape))
-    k_cache_layout = tkl.MemoryLayout(shape=k_cache_shape)
-    v_cache_layout = tkl.MemoryLayout(shape=v_cache_shape)
+    k_cache_layout = tkl.MemoryLayout(shape=set_dynamic_dim(k_cache_shape))
+    v_cache_layout = tkl.MemoryLayout(shape=set_dynamic_dim(v_cache_shape))
     num_seqs_layout = tkl.MemoryLayout(shape=[None])
     kv_indices_layout = tkl.MemoryLayout(shape=[None])
 
@@ -243,6 +243,7 @@ def get_extend_attention_kernel(
         )
         tkw.set_symbol(N_KV, seq_len_prefix)
         if use_custom_mask:
+            print("sdiufgsdf")
             seq_len = seq_len_prefix + seq_len_extend
             tkw.set_symbol(SEQ_LEN, seq_len)
             seq_mask_start_idx = tkw.read(mask_offsets, elements_per_thread=1)
@@ -254,6 +255,7 @@ def get_extend_attention_kernel(
             partial_sum: tkl.Register[H, N_Q, tkl.f32],
             acc: tkl.Register[H, D_KV, N_Q, tkl.f32],
         ):
+            print("ming mong ming mong")
             q_reg = tkw.read(
                 q,
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
@@ -335,6 +337,7 @@ def get_extend_attention_kernel(
             partial_sum: tkl.Register[H, N_Q, tkl.f32],
             acc: tkl.Register[H, D_KV, N_Q, tkl.f32],
         ):
+            print("bingo bongo")
             imm_reg = tkl.Register[H, N_KV, N_Q, tkl.f32](0.0)
             q_reg = tkw.read(
                 q,
@@ -482,6 +485,9 @@ def get_extend_attention_kernel(
         D_Q: shape.head_size,
     }
 
+    print(hyperparams)
+    # raise ValueError()
+
     dynamic_symbols = [N_Q, N_KV, S]
 
     if use_custom_mask:
@@ -491,5 +497,7 @@ def get_extend_attention_kernel(
             hyperparams,
             dynamic_symbols,
         )
+
+    # print("AAAAA ", hyperparams, dynamic_symbols, H)
 
     return extend_attention, hyperparams, dynamic_symbols

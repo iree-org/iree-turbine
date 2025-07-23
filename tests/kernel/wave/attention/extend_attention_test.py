@@ -288,6 +288,8 @@ def create_inputs(
     rpe_bias.copy_(device_randn(max_rpe_context_length + 1, dtype=torch.float32))
     rpe_bias[max_rpe_context_length] = 0
 
+    print(max_len_extend)
+
     return (
         q_extend,
         k_extend,
@@ -377,6 +379,11 @@ def testExtendAttention(
     output = device_zeros(
         extend_token_num, shape.num_query_heads, shape.head_size, dtype=torch.float32
     )
+    print(        q_extend.shape,
+        k_extend.shape,
+        v_extend.shape,
+        k_buffer.shape,
+        v_buffer.shape,)
     (
         extend_attention,
         hyperparams,
