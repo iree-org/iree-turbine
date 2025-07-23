@@ -13,7 +13,7 @@ from typing import (
 )
 
 from enum import IntEnum
-from functools import cached_property
+from functools import lru_cache
 import math
 
 import torch
@@ -30,6 +30,7 @@ __all__ = [
     "ConvBackwardWeight",
     "ConvBackwardInput",
     "DEFAULT_LAYOUTS",
+    "get_conv_func_name",
 ]
 
 
@@ -48,6 +49,51 @@ class Mode(ModeBase, IntEnum):
 
 
 DEFAULT_LAYOUTS = {1: "NCH", 2: "NCHW", 3: "NCDHW"}
+
+
+@lru_cache(maxsize=None)
+def get_conv_func_name(
+    input_shape: tuple,
+    kernel_shape: tuple,
+    dtype: str,
+    mode: str,
+    bias: bool,
+    stride: tuple,
+    padding: tuple,
+    dilation: tuple,
+    groups: int,
+    input_layout: str,
+    kernel_layout: str,
+    output_layout: str,
+) -> str:
+    """Returns the function name to use for a convolution with the specified configuration.
+
+    If a signature object is available, use `OpSignature.func_name` instead.
+    """
+    num_spatial_dims = len(input_shape) - 2
+    name_items = [
+        "conv",
+        f"{num_spatial_dims}d",
+        str(dtype).removeprefix("torch."),
+        str(mode).lower(),
+    ]
+    if bias and mode == "FORWARD":
+        name_items.append("b")
+    to_shape_string = lambda l: "x".join([str(i) for i in l])
+    name_items.extend(
+        [
+            to_shape_string(input_shape),
+            input_layout.lower(),
+            to_shape_string(kernel_shape),
+            kernel_layout.lower().replace("n", "f"),
+            output_layout.lower().replace("c", "f"),
+            to_shape_string(stride) + "s",
+            to_shape_string(padding) + "p",
+            to_shape_string(dilation) + "d",
+            f"{groups}g",
+        ]
+    )
+    return "_".join(name_items)
 
 
 class ConvSignatureStorage(NamedTuple):
@@ -312,31 +358,22 @@ class ConvSignature(OpSignature):
             return (get(self.output_shape), get(self.kernel_shape))
         raise ValueError(f"Unknown mode: {self.mode}")
 
-    @cached_property
+    @property
     def func_name(self) -> str:
-        name_items = [
-            "conv",
-            f"{self.num_spatial_dims}d",
-            str(self.dtype).removeprefix("torch."),
-            str(self.mode).lower(),
-        ]
-        if self.bias and self.mode == Mode.FORWARD:
-            name_items.append("b")
-        l2s = lambda l: "x".join([str(i) for i in l])
-        name_items.extend(
-            [
-                l2s(self.input_shape),
-                self.input_layout.lower(),
-                l2s(self.kernel_shape),
-                self.kernel_layout.lower().replace("n", "f"),
-                self.output_layout.lower().replace("c", "f"),
-                l2s(self.stride) + "s",
-                l2s(self.padding) + "p",
-                l2s(self.dilation) + "d",
-                f"{self.groups}g",
-            ]
+        return get_conv_func_name(
+            tuple(self.input_shape),
+            tuple(self.kernel_shape),
+            self.dtype,
+            str(self.mode),
+            self.bias,
+            tuple(self.stride),
+            tuple(self.padding),
+            tuple(self.dilation),
+            self.groups,
+            self.input_layout,
+            self.kernel_layout,
+            self.output_layout,
         )
-        return "_".join(name_items)
 
     def get_nn_module(self, *, use_custom: bool = False) -> torch.nn.Module:
         """For a given ConvSignature, returns a torch.nn.Module implementation."""

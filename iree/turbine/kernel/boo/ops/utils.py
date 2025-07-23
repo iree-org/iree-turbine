@@ -5,7 +5,6 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import os
-import functools
 
 from typing import Tuple, Iterable, NamedTuple
 
@@ -25,7 +24,6 @@ __all__ = [
     "CHANNELS_LAST_MEMORY_FORMAT",
     "CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION",
     "CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION",
-    "get_func_name",
     "get_arg_spec_name",
     "generate_custom_op_compatible_ir",
 ]
@@ -78,47 +76,6 @@ CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION = {
     2: [0, 3, 1, 2],
     3: [0, 4, 1, 2, 3],
 }
-
-
-@functools.lru_cache(maxsize=None)
-def get_func_name(
-    input_shape: tuple,
-    kernel_shape: tuple,
-    dtype: str,
-    mode: str,
-    bias: bool,
-    stride: tuple,
-    padding: tuple,
-    dilation: tuple,
-    groups: int,
-    input_layout: str,
-    kernel_layout: str,
-    output_layout: str,
-) -> str:
-    num_spatial_dims = len(input_shape) - 2
-    name_items = [
-        "conv",
-        f"{num_spatial_dims}d",
-        str(dtype).removeprefix("torch."),
-        str(mode).lower(),
-    ]
-    if bias and mode == "FORWARD":
-        name_items.append("b")
-    to_shape_string = lambda l: "x".join([str(i) for i in l])
-    name_items.extend(
-        [
-            to_shape_string(input_shape),
-            input_layout.lower(),
-            to_shape_string(kernel_shape),
-            kernel_layout.lower().replace("n", "f"),
-            output_layout.lower().replace("c", "f"),
-            to_shape_string(stride) + "s",
-            to_shape_string(padding) + "p",
-            to_shape_string(dilation) + "d",
-            f"{groups}g",
-        ]
-    )
-    return "_".join(name_items)
 
 
 def _tensor_type_str(shape: Iterable[int], dtype: torch.dtype) -> str:

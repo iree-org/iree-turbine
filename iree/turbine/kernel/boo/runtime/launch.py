@@ -167,7 +167,7 @@ def out_of_process_compile(
     return func_name, tuple(success)
 
 
-def user_flags_jit_callback(func_name: str, extra_flags, source: str):
+def user_flags_jit_callback(func_name: str, extra_flags: Sequence[str], source: str):
     """VmModule callback for out-of-process compilation with extra flags provided.
     If boo cache is disabled, this will create temporary files for compilation."""
 
@@ -242,30 +242,24 @@ def get_launchable(
             parameter_providers=(),
             entry_point=f"{func_name}$async",
         )
-    elif BOO_TUNING_SPEC_PATH != "":
-        module_asm = get_module_asm(
-            module_factory, arg_factory, func_name, force_single_dispatch
-        )
-        launch = Launchable.from_vm_module(
-            user_flags_jit_callback(
-                func_name,
-                (
-                    f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}",
-                    "--iree-llvmgpu-set-workgroup-distribution-along=x",
-                ),
-                module_asm,
-            ),
-            entry_point=f"{func_name}$async",
-        )
     else:
         module_asm = get_module_asm(
             module_factory, arg_factory, func_name, force_single_dispatch
         )
-        launch = Launchable.jit_compile(
-            module_asm,
-            parameter_providers=(),
+        extra_flags = [
+            "--iree-llvmgpu-set-workgroup-distribution-along=x",
+        ]
+        if BOO_TUNING_SPEC_PATH != "":
+            extra_flags.append(
+                f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}"
+            )
+        launch = Launchable.from_vm_module(
+            user_flags_jit_callback(
+                func_name,
+                extra_flags,
+                module_asm,
+            ),
             entry_point=f"{func_name}$async",
-            file_cache_dir=cache_dir,
         )
     LaunchableRuntimeCache.add(session_cache_key, launch)
     return launch
