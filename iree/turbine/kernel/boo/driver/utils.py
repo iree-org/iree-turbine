@@ -6,7 +6,7 @@
 
 from pathlib import Path
 
-from iree.turbine.kernel.boo.driver.registry import BooOpRegistry
+from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 
 
 def load_commands(commands_file: str) -> list[str]:

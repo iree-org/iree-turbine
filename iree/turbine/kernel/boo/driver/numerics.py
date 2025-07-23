@@ -13,7 +13,7 @@ import csv
 import traceback
 
 
-from iree.turbine.kernel.boo.driver.registry import BooOpRegistry
+from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.driver.utils import load_commands
 

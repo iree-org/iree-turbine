@@ -1256,6 +1256,3 @@ class ConvParser(OpCLIParser):
             help="Number of Groups (Default=1)",
         )
         return parser
-
-
-BOO_OP_EXPORT = ("conv", ConvSignature, ConvParser)

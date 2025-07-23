@@ -446,6 +446,3 @@ class LayerNormParser(OpCLIParser):
     @classmethod
     def get_op_name(cls) -> str:
         return "layernorm"
-
-
-BOO_OP_EXPORT = ("layernorm", LayerNormSignature, LayerNormParser)

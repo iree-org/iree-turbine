@@ -11,7 +11,7 @@ import argparse
 
 import torch
 
-from iree.turbine.kernel.boo.driver.registry import BooOpRegistry
+from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.utils import load_commands
 from iree.turbine.kernel.boo.driver.launch import get_module_asm
 from iree.turbine.kernel.boo.runtime import BOO_TUNING_SPEC_PATH
@@ -20,7 +20,6 @@ from iree.turbine.runtime.device import get_device_from_torch
 from iree.turbine.support.ir_imports import MLIRError
 from iree.turbine.support.logging import runtime_logger as logger
 from iree.turbine.kernel.boo.exports.signature import OpSignature
-from iree.turbine.kernel.boo.exports.parser import OpCLIParser
 
 __all__ = [
     "CachePopulator",
@@ -93,7 +92,7 @@ class CachePopulator:
         self._assemble_signatures()
         logger.debug(
             "Pre-populating signatures: %s",
-            str(list[self.signatures]),
+            str(list(self.signatures)),
         )
 
         key_hashes_and_flags = set()
