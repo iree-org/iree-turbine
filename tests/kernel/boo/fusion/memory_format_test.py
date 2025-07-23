@@ -13,7 +13,10 @@ from itertools import permutations
 from typing import Sequence
 
 import torch
-from iree.turbine.kernel.boo.ops.utils import get_memory_format_permutation
+from iree.turbine.kernel.boo.ops.utils import (
+    get_memory_format_permutation,
+    CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION,
+)
 
 perms = list(permutations(range(4), 4))
 
@@ -29,11 +32,16 @@ def test_memory_formats(perm: Sequence[int]):
             x_pp.is_contiguous()
         ), f"Expected contiguous tensor. Got strides {x_pp.stride()}, shape {x_pp.shape}, for perm {perm} and mem_format_perms {mem_format_perms}."
         assert x_pp.shape == x.shape
+        assert mem_format_perms.inverse_permutation == list(perm)
     else:
         assert x_p.is_contiguous()
-    assert list(perm) == [0, 1, 2, 3] or mem_format_perms.inverse_permutation == list(
-        perm
-    )
+        assert list(perm) == [0, 1, 2, 3]
+    # If x_p is channels_last, we should use a specific permutation.
+    if x_p.is_contiguous(memory_format=torch.channels_last):
+        assert mem_format_perms is not None
+        assert (
+            mem_format_perms.permutation == CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION[2]
+        ), "Expected channels-last permutation for channels-last tensor."
 
 
 @pytest.mark.parametrize("perm", perms)
@@ -48,10 +56,10 @@ def test_memory_formats_unit_dim(perm: Sequence[int]):
         ), f"Expected contiguous tensor. Got strides {x_pp.stride()}, shape {x_pp.shape}, for perm {perm} and mem_format_perms {mem_format_perms}."
     else:
         assert x_p.is_contiguous()
+        assert list([i for i in perm if i != 2]) == [0, 1, 3]
+    # If x_p is channels_last, we should use a specific permutation.
     if x_p.is_contiguous(memory_format=torch.channels_last):
-        assert mem_format_perms.permutation == [
-            0,
-            2,
-            3,
-            1,
-        ], "Expected channels-last permutation for channels-last tensor."
+        assert mem_format_perms is not None
+        assert (
+            mem_format_perms.permutation == CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION[2]
+        ), "Expected channels-last permutation for channels-last tensor."
