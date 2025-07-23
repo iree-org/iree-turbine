@@ -10,7 +10,7 @@ from typing import Any, Sequence, Tuple
 
 import torch
 
-from ..conv_exports import (
+from ..op_exports.conv import (
     ConvSignature,
     DEFAULT_LAYOUTS,
     get_conv_func_name,

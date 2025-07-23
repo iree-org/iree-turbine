@@ -13,7 +13,7 @@ import csv
 import traceback
 
 
-from iree.turbine.kernel.boo.exports.parser import OpCLIParser
+from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.driver.utils import load_commands
 
@@ -69,7 +69,6 @@ def _wrap_in_tuple(x: _T | tuple[_T, ...] | list[_T]) -> tuple[_T, ...]:
 
 def _run(
     commands: Sequence[str],
-    parser_cls: type[OpCLIParser],
     *,
     use_custom: bool,
     allow_jit_compile: bool,
@@ -86,8 +85,9 @@ def _run(
     cpu = torch.device("cpu")
 
     for c in commands:
-        # TODO: if would be nice not to have parsers flying around...
-        sig = parser_cls.command_to_signature(c)
+        sig = BooOpRegistry.parse_command(c)
+        if c is None:
+            continue
         print(c)
         is_fwd = sig.is_forward
         # get reference fwd nn module and sample args
@@ -197,20 +197,25 @@ def _get_arg_parser() -> argparse.ArgumentParser:
         "--seed", type=int, required=False, help="Random number generator seed."
     )
     parser.add_argument("--device", type=int, default=0, help="The device to run on.")
+    parser.add_argument(
+        "--use-custom",
+        type=bool,
+        default=True,
+        help="Whether to use custom (handwritten MLIR) implementation.",
+    )
     return parser
 
 
-def run_numerics(parser_cls: type[OpCLIParser], *, use_custom: bool):
+def _run_numerics():
     """Runs numeric tests for operations listed in a commands file provided via
-    CLI arguments parsable by the given parser class."""
+    CLI arguments parseable by any registered parser class."""
     parser = _get_arg_parser()
     args = parser.parse_args()
-    commands = load_commands(args.commands_file, parser_cls)
+    commands = load_commands(args.commands_file)
     results = _run(
         commands,
-        parser_cls,
         allow_jit_compile=args.allow_jit_compile,
-        use_custom=use_custom,
+        use_custom=args.use_custom,
     )
     dumps = json.dumps(results, indent=4, separators=(",", " : "))
     if not args.output_file:
@@ -250,3 +255,7 @@ def run_numerics(parser_cls: type[OpCLIParser], *, use_custom: bool):
                 for k0, v0 in v1.items():
                     line_dict[f"{k1} {k0}"] = v0
             writer.writerow(line_dict)
+
+
+if __name__ == "__main__":
+    _run_numerics()

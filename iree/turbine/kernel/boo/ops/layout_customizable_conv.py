@@ -11,7 +11,7 @@ import torch
 from .library import register_meta, BOO_LIBRARY
 from .utils import *
 
-from ..conv_exports import (
+from ..op_exports.conv import (
     ConvSignature,
     DEFAULT_LAYOUTS,
     get_conv_func_name,

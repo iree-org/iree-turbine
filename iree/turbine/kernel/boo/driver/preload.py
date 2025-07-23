@@ -11,6 +11,7 @@ import argparse
 
 import torch
 
+from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.utils import load_commands
 from iree.turbine.kernel.boo.driver.launch import get_module_asm
 from iree.turbine.kernel.boo.runtime import BOO_TUNING_SPEC_PATH
@@ -19,7 +20,6 @@ from iree.turbine.runtime.device import get_device_from_torch
 from iree.turbine.support.ir_imports import MLIRError
 from iree.turbine.support.logging import runtime_logger as logger
 from iree.turbine.kernel.boo.exports.signature import OpSignature
-from iree.turbine.kernel.boo.exports.parser import OpCLIParser
 
 __all__ = [
     "CachePopulator",
@@ -45,8 +45,6 @@ class CachePopulator:
     def __init__(
         self,
         *,
-        parser_cls: type[OpCLIParser],
-        signature_cls: type[OpSignature],
         cache_dir: Union[str, Path, None] = None,
         devices: Sequence[Union[torch.device, str]] | None = None,
         signatures: Sequence[OpSignature] = (),
@@ -55,8 +53,6 @@ class CachePopulator:
         allow_download: bool = False,
         extra_compile_flags: Sequence[str] = (),
     ):
-        self.parser_cls = parser_cls
-        self.signature_cls = signature_cls
         self.cache_dir = set_cache_dir(cache_dir)
         self.torch_devices = devices or _get_unique_torch_device_list()
         self.torch_devices = [torch.device(d) for d in self.torch_devices if d != ""]
@@ -74,12 +70,10 @@ class CachePopulator:
 
     def _assemble_signatures(self):
         if self.commands_file:
-            self.commands += load_commands(self.commands_file, self.parser_cls)
+            self.commands += load_commands(self.commands_file)
             self.commands_file = None
         if len(self.commands) > 0:
-            new_signatures = [
-                self.parser_cls.command_to_signature(c) for c in self.commands
-            ]
+            new_signatures = [BooOpRegistry.parse_command(c) for c in self.commands]
             self.signatures = list(self.signatures) + list(new_signatures)
             self.commands = None
         # de-duplicate signatures
@@ -98,7 +92,7 @@ class CachePopulator:
         self._assemble_signatures()
         logger.debug(
             "Pre-populating signatures: %s",
-            str(list([s._signature for s in self.signatures])),
+            str(list(self.signatures)),
         )
 
         key_hashes_and_flags = set()
@@ -130,7 +124,7 @@ class CachePopulator:
                 )
                 logger.warning(warning_msg)
             sig_dicts_and_cls = [
-                (sig.as_init_kwargs(), self.signature_cls) for sig in self.signatures
+                (sig.as_init_kwargs(), type(sig)) for sig in self.signatures
             ]
             name_and_status = pool.map(_mlir_import_picklable, sig_dicts_and_cls)
         else:
@@ -217,8 +211,6 @@ def _mlir_import_picklable(
 def _cl_main(
     args: argparse.Namespace,
     extra_flags: Sequence[str],
-    parser_cls: type[OpCLIParser],
-    signature_cls: type[OpSignature],
 ):
     if args.cache_dir:
         set_cache_dir(args.cache_dir)
@@ -226,8 +218,6 @@ def _cl_main(
         [args.device] if args.device is not None else _get_unique_torch_device_list()
     )
     populator = CachePopulator(
-        parser_cls=parser_cls,
-        signature_cls=signature_cls,
         devices=devices,
         commands_file=args.commands_file,
         extra_compile_flags=extra_flags,
@@ -291,11 +281,14 @@ def _get_preload_args() -> tuple[str, str]:
     return parser.parse_known_args()
 
 
-# TODO: we need a parser dispatcher to avoid having one preloader per op kind
-def preload(parser_cls: type[OpCLIParser], signature_cls: type[OpSignature]):
+def preload():
     args, extra_compile_flags = _get_preload_args()
     if BOO_TUNING_SPEC_PATH != "":
         extra_compile_flags.extend(
             [f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}"]
         )
-    _cl_main(args, extra_compile_flags, parser_cls, signature_cls)
+    _cl_main(args, extra_compile_flags)
+
+
+if __name__ == "__main__":
+    preload()
