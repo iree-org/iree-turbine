@@ -200,7 +200,7 @@ def _get_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--use-custom",
         type=bool,
-        default=False,
+        default=True,
         help="Whether to use custom (handwritten MLIR) implementation.",
     )
     return parser
