@@ -6,7 +6,6 @@
 
 import argparse
 import contextlib
-from pathlib import Path
 from functools import partial
 
 try:
@@ -17,7 +16,7 @@ except ImportError as e:
     )
 
 import torch
-from torch.profiler import profile, ProfilerActivity, record_function
+from torch.profiler import profile, ProfilerActivity
 
 import torch.optim as optim
 import torchvision.transforms as transforms
@@ -29,12 +28,12 @@ from iree.turbine.kernel.boo.modeling import replace_conv2d_with_boo_conv
 
 
 def get_model(
-    use_direct_replacement=False,
-    compile=False,
-    compile_backend="iree_boo",
-    memory_format=torch.channels_last,
+    use_direct_replacement: bool = False,
+    compile: bool = False,
+    compile_backend: str = "iree_boo",
+    memory_format: torch.memory_format = torch.channels_last,
     **boo_conv_kwargs,
-):
+) -> torch.nn.Module:
     """Sets up a resnet 18 model on cuda device based on provided parameters."""
     # base model
     resnet_model = torchvision.models.resnet18(pretrained=False)
@@ -52,7 +51,6 @@ def get_model(
         if compile
         else resnet_model
     )
-    resnet_model.train()
     return resnet_model
 
 
@@ -222,6 +220,8 @@ if __name__ == "__main__":
         memory_format,
         stride=(1, 1),
     )
+    # Ensure model is in training mode. E.g. BatchNorm2d will update running stats.
+    resnet_model.train()
     train_loader = get_train_loader(args.batch_size, args.image_size)
     train_loop(
         args.trace_path,
