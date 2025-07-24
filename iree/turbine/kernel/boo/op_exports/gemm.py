@@ -7,8 +7,7 @@
 import torch
 
 from enum import IntEnum
-from dataclasses import dataclass
-from typing import Optional, List
+from typing import Any
 import math
 import argparse
 
@@ -27,8 +26,8 @@ class Mode(ModeBase, IntEnum):
 class GEMMSignature(OpSignature):
     """Signature for General Matrix Multiplication (GEMM) operations"""
 
-    a_shape: List[int]
-    b_shape: List[int]
+    a_shape: list[int]
+    b_shape: list[int]
     transpose_a: bool = False
     transpose_b: bool = False
     dtype: torch.dtype = torch.float32
@@ -37,8 +36,8 @@ class GEMMSignature(OpSignature):
     def __init__(
         self,
         *,
-        a_shape: List[int],
-        b_shape: List[int],
+        a_shape: list[int],
+        b_shape: list[int],
         transpose_a: bool = False,
         transpose_b: bool = False,
         dtype: torch.dtype = torch.float32,
@@ -74,13 +73,13 @@ class GEMMSignature(OpSignature):
         *,
         device: str | torch.device | None = None,
         splat_value: int | float | None = None,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         gen = torch.Generator(device=device)
         if seed is not None:
             gen = gen.manual_seed(seed)
 
-        def get(shape: List[int]) -> torch.Tensor:
+        def get(shape: list[int]) -> torch.Tensor:
             if splat_value is not None:
                 return torch.ones(shape, dtype=self.dtype, device=device) * splat_value
             return torch.randn(shape, generator=gen, dtype=self.dtype, device=device)
@@ -102,16 +101,17 @@ class GEMMSignature(OpSignature):
     def main_result_index(self) -> int:
         return 0  # GEMM only has one output
 
-    def make_signature_copy_for_forward(self):
+    def make_signature_copy_for_forward(self) -> "GEMMSignature":
         kwargs = self.as_init_kwargs()
         kwargs["mode"] = Mode.FORWARD
         return GEMMSignature(**kwargs)
 
-    def get_arg_index_for_backward(self):
+    def get_arg_index_for_backward(self) -> int:
         if self.mode == Mode.A_BACKWARD:
             return 0
         elif self.mode == Mode.B_BACKWARD:
             return 1
+        raise ValueError("Unknown mode.")
 
     def arrange_backward_launch_args(self, forward_args, forward_results):
         # forward: C = A @ B
@@ -123,7 +123,7 @@ class GEMMSignature(OpSignature):
             return (forward_args[0],)
 
     @property
-    def func_name(self):
+    def func_name(self) -> str:
         """Format: gemm_{dtype}_{mode}_{m}x{k}x{n}[_transA][_transB]"""
         m, k = self.a_shape
         _, n = self.b_shape
@@ -140,7 +140,7 @@ class GEMMSignature(OpSignature):
             name_items.append("transB")
         return "_".join(name_items)
 
-    def as_init_kwargs(self):
+    def as_init_kwargs(self) -> dict[str, Any]:
         return {
             "a_shape": self.a_shape,
             "b_shape": self.b_shape,
