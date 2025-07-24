@@ -8,7 +8,7 @@ from typing import List
 import pytest
 
 import torch
-from iree.turbine.kernel.boo.gemm_exports.miopen_parser import (
+from iree.turbine.kernel.boo.op_exports.gemm import (
     Mode,
     GEMMSignature,
 )
