@@ -273,7 +273,7 @@ def pytorch_convolution_backward(ctx, grad_output):
     """Fallback implementation for backward."""
     x, w = ctx.saved_tensors
 
-    mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
+    mask = tuple(ctx.needs_input_grad[0:3])
 
     # return to NCHW if necessary
     input_grad, weight_grad, bias_grad = torch.ops.aten.convolution_backward(
@@ -333,7 +333,7 @@ class _BooConvolution(torch.autograd.Function):
 
         x, w = ctx.saved_tensors
 
-        mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
+        mask = tuple(ctx.needs_input_grad[0:3])
 
         input_grad, weight_grad, bias_grad = torch.ops.boo.convolution_backward(
             x,
