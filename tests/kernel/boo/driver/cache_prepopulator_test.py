@@ -16,13 +16,13 @@ def _marked_xfail(*args):
         *args,
         marks=pytest.mark.xfail(
             condition=not torch.cuda.is_available(),
-            reason="CPU layernorm compile failure",
+            reason="CPU layernorm/gemm compile failure",
         ),
     )
 
 
-@pytest.mark.parametrize("add_layernorm", (_marked_xfail(True), False))
-def testPopulator(add_layernorm: bool):
+@pytest.mark.parametrize("add_gpu_only", (_marked_xfail(True), False))
+def testPopulator(add_gpu_only: bool):
     with TemporaryDirectory() as td:
         td = "/tmp/alxfoo"
         cache_dir = Path(td)
@@ -34,13 +34,14 @@ def testPopulator(add_layernorm: bool):
             "convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC",
             "convbfp16 -n 128 -c 35 -H 48 -W 32 -k 35 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC",
         ]
-        if add_layernorm:
+        if add_gpu_only:
             commands.append("layernorm --input 2x3x4x5")
+            commands.append("gemm --a_w 32 --a_h 64 --b_w 128")
 
         pop = CachePopulator(commands=commands)
         pop.run()
 
-        expected = 3 if add_layernorm else 2
+        expected = 4 if add_gpu_only else 2
         assert (
             len(pop.signatures) == expected
         ), f"Number of signatures should be {expected}."

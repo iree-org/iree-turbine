@@ -9,6 +9,7 @@ from ..exports.signature import OpSignature
 from ..exports.parser import OpCLIParser
 
 from .conv import ConvParser, ConvSignature
+from .gemm import GEMMParser, GEMMSignature
 from .layer_norm import LayerNormParser, LayerNormSignature
 
 
@@ -86,4 +87,5 @@ class BooOpRegistry:
 
 # Register ops.
 BooOpRegistry._register("conv", ConvSignature, ConvParser)
+BooOpRegistry._register("gemm", GEMMSignature, GEMMParser)
 BooOpRegistry._register("layernorm", LayerNormSignature, LayerNormParser)
