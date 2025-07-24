@@ -24,7 +24,6 @@ def _marked_xfail(*args):
 @pytest.mark.parametrize("add_layernorm", (_marked_xfail(True), False))
 def testPopulator(add_layernorm: bool):
     with TemporaryDirectory() as td:
-        td = "/tmp/alxfoo"
         cache_dir = Path(td)
         set_cache_dir(cache_dir=cache_dir)
 
