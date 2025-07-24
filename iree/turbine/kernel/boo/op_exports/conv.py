@@ -10,7 +10,6 @@ from typing import (
     Collection,
     List,
     Tuple,
-    NamedTuple,
     Optional,
     Union,
 )
@@ -184,8 +183,10 @@ def get_conv_func_name(
     return "_".join(name_items)
 
 
-class ConvSignatureStorage(NamedTuple):
-    """A named tuple specifying some convolution configuration."""
+class ConvSignature(OpSignature):
+    """
+    Convolution signature that provides information for launching specific kernels.
+    """
 
     input_shape: List[int]
     kernel_shape: List[int]
@@ -202,13 +203,6 @@ class ConvSignatureStorage(NamedTuple):
     output_padding: List[int]
     groups: int
     mode: Mode
-
-
-class ConvSignature(OpSignature):
-    """
-    Wraps ConvSignatureStorage with some additional helper methods and easier instantiation.
-
-    """
 
     def __init__(
         self,
@@ -258,27 +252,22 @@ class ConvSignature(OpSignature):
 
         if isinstance(mode, str):
             mode = Mode.parse(mode)
-        self._signature = ConvSignatureStorage(
-            input_shape=input_shape,
-            kernel_shape=kernel_shape,
-            num_spatial_dims=num_spatial_dims,
-            dtype=dtype,
-            input_layout=get_layout(input_layout),
-            kernel_layout=get_layout(kernel_layout),
-            output_layout=get_layout(output_layout),
-            bias=bias,
-            stride=listify(stride),
-            padding=listify(padding),
-            dilation=listify(dilation),
-            output_padding=listify(output_padding),
-            transposed=transposed,
-            groups=groups,
-            mode=mode,
-        )
 
-    def __getattr__(self, name):
-        # forward stored signature attributes
-        return self._signature.__getattribute__(name)
+        self.input_shape = input_shape
+        self.kernel_shape = kernel_shape
+        self.num_spatial_dims = num_spatial_dims
+        self.dtype = dtype
+        self.input_layout = get_layout(input_layout)
+        self.kernel_layout = get_layout(kernel_layout)
+        self.output_layout = get_layout(output_layout)
+        self.bias = bias
+        self.stride = listify(stride)
+        self.padding = listify(padding)
+        self.dilation = listify(dilation)
+        self.output_padding = listify(output_padding)
+        self.transposed = transposed
+        self.groups = groups
+        self.mode = mode
 
     @property
     def input_perms(self) -> Permutation:
@@ -368,9 +357,28 @@ class ConvSignature(OpSignature):
         )
 
     def as_init_kwargs(self) -> dict[str, Any]:
-        kwargs = self._signature._asdict()
-        kwargs.pop("num_spatial_dims")
-        return kwargs
+        # "num_spatial_dims" is a derived value and is not needed for
+        # construction, therefore it is intentionally excluded from the list
+        # below.
+        return {
+            key: getattr(self, key)
+            for key in (
+                "input_shape",
+                "kernel_shape",
+                "dtype",
+                "input_layout",
+                "kernel_layout",
+                "output_layout",
+                "bias",
+                "stride",
+                "padding",
+                "dilation",
+                "transposed",
+                "output_padding",
+                "groups",
+                "mode",
+            )
+        }
 
     def make_signature_copy_for_forward(self) -> "ConvSignature":
         kwargs = self.as_init_kwargs()
@@ -412,7 +420,8 @@ class ConvSignature(OpSignature):
             "output_padding",
             "groups",
         ]
-        return {name: self._asdict()[name] for name in conv_extra_args}
+        kwargs = self.as_init_kwargs()
+        return {name: kwargs[name] for name in conv_extra_args}
 
     def get_sample_args(
         self,
