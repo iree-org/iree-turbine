@@ -67,13 +67,9 @@ def extract_fusion_subgraph_modules(
             for producer in curr_node.all_input_nodes:
                 if producer in visited_nodes:
                     continue
-                if producer.op != "call_function":
-                    continue
-                if producer.target not in node_spec.producers:
-                    continue
                 if producer in used_nodes:
                     continue
-                if not node_spec.check_filters(producer):
+                if not node_spec.is_fusable_producer(producer):
                     continue
                 # Insert producers at the front, since we want to preserve at least some weak ordering of nodes.
                 # Is it possible for this to generate an invalid ordering? (Maybe it's better to just sort node_list after).
@@ -90,13 +86,9 @@ def extract_fusion_subgraph_modules(
             for consumer in curr_node.users:
                 if consumer in visited_nodes:
                     continue
-                if consumer.op != "call_function":
-                    continue
-                if consumer.target not in node_spec.consumers:
-                    continue
                 if consumer in used_nodes:
                     continue
-                if not node_spec.check_filters(consumer):
+                if not node_spec.is_fusable_consumer(consumer):
                     continue
                 visited_nodes.add(consumer)
                 node_list.append(consumer)

@@ -269,6 +269,45 @@ class SubgraphReplacementTest(unittest.TestCase):
             self.assertEqual(list(y.shape), list(expected_y.shape))
             self.assertEqual(list(y.stride()), list(expected_y.stride()))
 
+    def testReplacementMultiOutputNode(self):
+        schema: FusionSchema = {
+            torch.ops.aten._native_batch_norm_legit_functional.default: OpFusionSpec(),
+        }
+        LaunchableRuntimeCache.clear()
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td)
+            set_cache_dir(cache_dir)
+            recorder = EagerAndRecordGraphs()
+            backend = boo.backend(nested_backend=recorder, fusion_schema=schema)
+            m = torch.compile(
+                torch.nn.BatchNorm2d(num_features=16), dynamic=False, backend=backend
+            )
+
+            x = torch.randn([2, 16, 32, 32])
+
+            y = m(x)
+
+            assert len(recorder.graphs) == 1, "Expected one graph."
+            assert "torch.ops.boo.fused_op" in str(
+                recorder.graphs[0]
+            ), "Expected a boo op in graph."
+            assert m.num_batches_tracked == 1, "Expected one tracked batch."
+
+            y.sum().backward()
+
+            assert len(recorder.graphs) == 2, "Expected two graphs after backward call."
+            assert "torch.ops.boo" not in str(
+                recorder.graphs[-1]
+            ), "Expected no boo ops in backward graph."
+            assert (
+                isinstance(m.weight.grad, torch.Tensor)
+                and torch.max(torch.abs(m.weight.grad)).item() != 0
+            ), "Expected some weight gradient."
+            assert (
+                isinstance(m.bias.grad, torch.Tensor)
+                and torch.max(torch.abs(m.bias.grad)).item() != 0
+            ), "Expected some bias gradient."
+
     def testReplacementSingleDispatch(self):
         LaunchableRuntimeCache.clear()
         with tempfile.TemporaryDirectory() as td:

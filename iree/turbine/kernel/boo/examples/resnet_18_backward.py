@@ -6,7 +6,6 @@
 
 import argparse
 import contextlib
-from pathlib import Path
 from functools import partial
 
 try:
@@ -17,7 +16,7 @@ except ImportError as e:
     )
 
 import torch
-from torch.profiler import profile, ProfilerActivity, record_function
+from torch.profiler import profile, ProfilerActivity
 
 import torch.optim as optim
 import torchvision.transforms as transforms
@@ -29,21 +28,29 @@ from iree.turbine.kernel.boo.modeling import replace_conv2d_with_boo_conv
 
 
 def get_model(
-    use_boo=True, compile=False, memory_format=torch.channels_last, **boo_conv_kwargs
-):
+    use_direct_replacement: bool = False,
+    compile: bool = False,
+    compile_backend: str = "iree_boo",
+    memory_format: torch.memory_format = torch.channels_last,
+    **boo_conv_kwargs,
+) -> torch.nn.Module:
     """Sets up a resnet 18 model on cuda device based on provided parameters."""
     # base model
     resnet_model = torchvision.models.resnet18(pretrained=False)
     # boo replacement
     resnet_model = (
         replace_conv2d_with_boo_conv(resnet_model, **boo_conv_kwargs)
-        if use_boo
+        if use_direct_replacement
         else resnet_model
     )
     # move to gpu and apply memory format
     resnet_model = resnet_model.to(device="cuda", memory_format=memory_format)
     # compile model
-    resnet_model = torch.compile(resnet_model) if compile else resnet_model
+    resnet_model = (
+        torch.compile(resnet_model, dynamic=False, backend=compile_backend)
+        if compile
+        else resnet_model
+    )
     return resnet_model
 
 
@@ -160,8 +167,14 @@ def _get_argparse():
         help="Set this to use torch.compile on the model",
     )
     parser.add_argument(
+        "-b",
+        "--compile_backend",
+        type=str,
+        help="Specify a torch.compile backend. E.g. 'iree_boo' or 'iree_boo_inductor'",
+    )
+    parser.add_argument(
         "-r",
-        "--use_boo",
+        "--use_direct_replacement",
         action="store_true",
         default=False,
         help="Set this to replace Conv2d modules with BooConv2d",
@@ -174,7 +187,7 @@ def _get_argparse():
         help="Set this to use NCHW format. Default layout is torch.channels_last.",
     )
     parser.add_argument(
-        "-b",
+        "-B",
         "--batch_size",
         type=int,
         default=128,
@@ -200,7 +213,15 @@ if __name__ == "__main__":
     memory_format = (
         torch.contiguous_format if args.pytorch_layout else torch.channels_last
     )
-    resnet_model = get_model(args.use_boo, args.compile, memory_format, stride=(1, 1))
+    resnet_model = get_model(
+        args.use_direct_replacement,
+        args.compile,
+        args.compile_backend,
+        memory_format,
+        stride=(1, 1),
+    )
+    # Ensure model is in training mode. E.g. BatchNorm2d will update running stats.
+    resnet_model.train()
     train_loader = get_train_loader(args.batch_size, args.image_size)
     train_loop(
         args.trace_path,
