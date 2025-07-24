@@ -1064,6 +1064,7 @@ def get_attention_bwd_dq_kernel(
     return attention_bwd_dq, hyperparams
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @pytest.mark.parametrize("shape", big_shapes, ids=get_param_id)
 def testAttentionOpsReference(shape: tuple[int, ...]):
@@ -1104,6 +1105,7 @@ def testAttentionOpsReference(shape: tuple[int, ...]):
     assert_close(dv_ops, dv_ref)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @param_mfma_shape
 def testAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...]):
@@ -1169,6 +1171,7 @@ def testAttentionForward(mfma_variant: MMAType, shape: tuple[int, ...]):
     assert_close(o, o_ref, **cmp_params)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @param_mfma_shape
 @expensive_test
@@ -1268,6 +1271,7 @@ def testAttentionBackward(mfma_variant: MMAType, shape: tuple[int, ...]):
     assert_close(dq, dq_ref, **cmp_params)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @param_mfma_shape
 def testAttentionBackward_dv(mfma_variant: MMAType, shape: tuple[int, ...]):
@@ -1330,6 +1334,7 @@ def testAttentionBackward_dv(mfma_variant: MMAType, shape: tuple[int, ...]):
     assert_close(dv, dv_ref, **cmp_params)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @param_mfma_shape
 def testAttentionBackward_dk(mfma_variant: MMAType, shape: tuple[int, ...]):
@@ -1414,6 +1419,7 @@ def testAttentionBackward_dk(mfma_variant: MMAType, shape: tuple[int, ...]):
     assert_close(dk, dk_ref, **cmp_params)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @param_mfma_shape
 @expensive_test
