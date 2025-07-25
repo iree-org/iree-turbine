@@ -7,13 +7,10 @@
 import argparse
 from typing import (
     Any,
-    Collection,
-    List,
-    Tuple,
-    NamedTuple,
-    Optional,
-    Union,
+    Sequence,
+    TypeVar,
 )
+from collections.abc import Collection
 from enum import IntEnum
 from functools import lru_cache
 import math
@@ -37,11 +34,13 @@ __all__ = [
     "get_conv_func_name",
 ]
 
+_T = TypeVar("_T")
+
 
 class Permutation:
     """Composable and invertible lists which represent the second argument of `torch.permute`."""
 
-    def __init__(self, ordering: List[int]):
+    def __init__(self, ordering: Sequence[int]):
         assert list(sorted(ordering)) == list(
             range(len(ordering))
         ), "ordering must be rearragement of [0,1,2,...,n-1]"
@@ -52,13 +51,13 @@ class Permutation:
         return len(self._items)
 
     @property
-    def items(self) -> Tuple[int, ...]:
+    def items(self) -> tuple[int, ...]:
         return self._items
 
-    def __getitem__(self, n: int):
+    def __getitem__(self, n: int) -> int:
         return self.items[n]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Permutation of {self.size} : {self.items}"
 
     def __eq__(self, other: object) -> bool:
@@ -66,15 +65,15 @@ class Permutation:
             return False
         return self.items == other.items
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.size
 
-    def __mul__(self, other: "Permutation"):
+    def __mul__(self, other: "Permutation") -> "Permutation":
         """mimics composition `torch.permute(torch.permute(a, p1), p0) = torch.permute(a, p0*p1)"""
         assert self.size == other.size, "permutations must be the same size"
         return Permutation([other.items[element] for element in self.items])
 
-    def __call__(self, other):
+    def __call__(self, other: torch.Tensor | Collection[_T]) -> torch.Tensor | list[_T]:
         """apply the permutation to a tensor or iterable (e.g., a shape)"""
         if isinstance(other, torch.Tensor):
             assert (
@@ -84,6 +83,7 @@ class Permutation:
         if isinstance(other, Collection):
             assert len(other) == self.size
             return [other[item] for item in self.items]
+        raise TypeError(f"Unexpected argument type: {type(other)}.")
 
     def __truediv__(self, other: "Permutation") -> "Permutation":
         return self * other.inv()
@@ -97,13 +97,13 @@ class Permutation:
         return Permutation(inverse)
 
     @staticmethod
-    def identity(size: int):
+    def identity(size: int) -> "Permutation":
         """creates an identity permutation"""
         assert size > 0, "size must be positive integer"
         return Permutation(list(range(size)))
 
     @staticmethod
-    def get(src: Collection, target: Collection):
+    def get(src: Collection[_T], target: Collection[_T]) -> "Permutation":
         """Gets a permutation p such that `torch.permute(a, p) = b` where `a.shape = src` and `b.shape = target`"""
         n = len(src)
         assert n > 0 and n == len(
@@ -132,7 +132,7 @@ class Mode(ModeBase, IntEnum):
     BWD = INPUT_BACKWARD
     WRW = WEIGHT_BACKWARD
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -184,50 +184,45 @@ def get_conv_func_name(
     return "_".join(name_items)
 
 
-class ConvSignatureStorage(NamedTuple):
-    """A named tuple specifying some convolution configuration."""
+class ConvSignature(OpSignature):
+    """
+    Convolution signature that provides information for launching specific kernels.
+    """
 
-    input_shape: List[int]
-    kernel_shape: List[int]
+    input_shape: list[int]
+    kernel_shape: list[int]
     num_spatial_dims: int
     dtype: torch.dtype
     input_layout: str
     kernel_layout: str
     output_layout: str
     bias: bool
-    stride: List[int]
-    padding: List[int]
-    dilation: List[int]
+    stride: list[int]
+    padding: list[int]
+    dilation: list[int]
     transposed: bool
-    output_padding: List[int]
+    output_padding: list[int]
     groups: int
     mode: Mode
-
-
-class ConvSignature(OpSignature):
-    """
-    Wraps ConvSignatureStorage with some additional helper methods and easier instantiation.
-
-    """
 
     def __init__(
         self,
         *,
-        input_shape: List[int],
-        kernel_shape: List[int],
-        shared_layout: Optional[str] = None,
-        input_layout: Optional[str] = None,
-        kernel_layout: Optional[str] = None,
-        output_layout: Optional[str] = None,
+        input_shape: list[int],
+        kernel_shape: list[int],
+        shared_layout: str | None = None,
+        input_layout: str | None = None,
+        kernel_layout: str | None = None,
+        output_layout: str | None = None,
         bias: bool = False,
         dtype: torch.dtype = torch.bfloat16,
-        stride: Union[int, List[int]] = 1,
-        padding: Union[int, List[int]] = 0,
-        dilation: Union[int, List[int]] = 1,
+        stride: int | list[int] = 1,
+        padding: int | list[int] = 0,
+        dilation: int | list[int] = 1,
         transposed: bool = False,
-        output_padding: Union[int, List[int]] = 0,
+        output_padding: int | list[int] = 0,
         groups: int = 1,
-        mode: Union[str, Mode] = Mode.FORWARD,
+        mode: str | Mode = Mode.FORWARD,
     ):
         if len(input_shape) != len(kernel_shape):
             raise ValueError(
@@ -243,7 +238,7 @@ class ConvSignature(OpSignature):
                 return provided
             return default_layout
 
-        def listify(value: Any) -> List[int]:
+        def listify(value: Any) -> list[int]:
             if isinstance(value, list):
                 assert len(value) == num_spatial_dims
                 return value
@@ -258,27 +253,22 @@ class ConvSignature(OpSignature):
 
         if isinstance(mode, str):
             mode = Mode.parse(mode)
-        self._signature = ConvSignatureStorage(
-            input_shape=input_shape,
-            kernel_shape=kernel_shape,
-            num_spatial_dims=num_spatial_dims,
-            dtype=dtype,
-            input_layout=get_layout(input_layout),
-            kernel_layout=get_layout(kernel_layout),
-            output_layout=get_layout(output_layout),
-            bias=bias,
-            stride=listify(stride),
-            padding=listify(padding),
-            dilation=listify(dilation),
-            output_padding=listify(output_padding),
-            transposed=transposed,
-            groups=groups,
-            mode=mode,
-        )
 
-    def __getattr__(self, name):
-        # forward stored signature attributes
-        return self._signature.__getattribute__(name)
+        self.input_shape = input_shape
+        self.kernel_shape = kernel_shape
+        self.num_spatial_dims = num_spatial_dims
+        self.dtype = dtype
+        self.input_layout = get_layout(input_layout)
+        self.kernel_layout = get_layout(kernel_layout)
+        self.output_layout = get_layout(output_layout)
+        self.bias = bias
+        self.stride = listify(stride)
+        self.padding = listify(padding)
+        self.dilation = listify(dilation)
+        self.output_padding = listify(output_padding)
+        self.transposed = transposed
+        self.groups = groups
+        self.mode = mode
 
     @property
     def input_perms(self) -> Permutation:
@@ -299,7 +289,7 @@ class ConvSignature(OpSignature):
         return Permutation.get(default, self.output_layout)
 
     @property
-    def output_shape(self) -> List:
+    def output_shape(self) -> list:
         """Gets the output shape of the forward conv."""
         # pytorch conv shapes:
         in_shape_p = self.input_perms(self.input_shape)
@@ -319,7 +309,7 @@ class ConvSignature(OpSignature):
         return self.output_perms(out_shape_p)
 
     @property
-    def explicit_padding(self) -> List[int]:
+    def explicit_padding(self) -> list[int]:
         """Padding of input tensor compatible with torch.constant_pad_nd."""
         torch_pads_NCHW = [[0, 0], [0, 0]] + [[p, p] for p in self.padding]
         # permute back to input ordering
@@ -355,7 +345,7 @@ class ConvSignature(OpSignature):
     def get(
         input: torch.Tensor,
         weight: torch.Tensor,
-        bias: Optional[torch.Tensor] = None,
+        bias: torch.Tensor | None = None,
         **kwargs,
     ) -> "ConvSignature":
         """gets a signature from provided input, weight, bias tensors and additional kwargs"""
@@ -368,9 +358,28 @@ class ConvSignature(OpSignature):
         )
 
     def as_init_kwargs(self) -> dict[str, Any]:
-        kwargs = self._signature._asdict()
-        kwargs.pop("num_spatial_dims")
-        return kwargs
+        # "num_spatial_dims" is a derived value and is not needed for
+        # construction, therefore it is intentionally excluded from the list
+        # below.
+        return {
+            key: getattr(self, key)
+            for key in (
+                "input_shape",
+                "kernel_shape",
+                "dtype",
+                "input_layout",
+                "kernel_layout",
+                "output_layout",
+                "bias",
+                "stride",
+                "padding",
+                "dilation",
+                "transposed",
+                "output_padding",
+                "groups",
+                "mode",
+            )
+        }
 
     def make_signature_copy_for_forward(self) -> "ConvSignature":
         kwargs = self.as_init_kwargs()
@@ -402,7 +411,7 @@ class ConvSignature(OpSignature):
             return (x,)
         raise ValueError(f"Unsupported mode {self.mode}")
 
-    def get_conv_kwargs(self):
+    def get_conv_kwargs(self) -> dict[str, Any]:
         """Gets `torch.convolution` (forward-only) kwargs from the signature."""
         conv_extra_args = [
             "stride",
@@ -412,14 +421,15 @@ class ConvSignature(OpSignature):
             "output_padding",
             "groups",
         ]
-        return {name: self._asdict()[name] for name in conv_extra_args}
+        kwargs = self.as_init_kwargs()
+        return {name: kwargs[name] for name in conv_extra_args}
 
     def get_sample_args(
         self,
         *,
         device: str | torch.device | None = None,
         splat_value: int | float | None = None,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> tuple[torch.Tensor, ...]:
         """Gets example args for the convolution (mode-dependent)"""
         out_channels = self.kernel_shape[self.kernel_perms[0]]
@@ -511,7 +521,7 @@ class ConvForward(torch.nn.Module):
         self.explicit_padding = sig.explicit_padding
         self.kwargs["padding"] = [0] * sig.num_spatial_dims
 
-    def forward(self, *args):
+    def forward(self, *args: torch.Tensor) -> torch.Tensor:
         mod_args = [
             self.perms[0](
                 torch.constant_pad_nd(args[0], self.explicit_padding, value=0)
@@ -541,7 +551,7 @@ class ConvForwardCustomNHWC(torch.nn.Module):
         self.has_bias = sig.bias
         self.explicit_padding = sig.explicit_padding
 
-    def forward(self, *args):
+    def forward(self, *args: torch.Tensor) -> torch.Tensor:
         x_pad = torch.constant_pad_nd(args[0], self.explicit_padding, value=0)
         x_pad = self.perms[0](x_pad)
         w = self.perms[1](args[1])
@@ -586,7 +596,7 @@ class ConvForwardCustomGeneric(torch.nn.Module):
         self.dilation = sig.dilation
         self.has_bias = sig.bias
 
-    def forward(self, *args):
+    def forward(self, *args: torch.Tensor) -> torch.Tensor:
         x = args[0]
         w = args[1]
         if self.groups != 1:
@@ -649,7 +659,7 @@ class ConvBackwardInput(torch.nn.Module):
         self.kwargs["transposed"] = True
         self.kwargs["output_padding"] = pad_correction
 
-    def forward(self, dLdy, w):
+    def forward(self, dLdy: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         dLdy = self.perms[0](dLdy)
         w = self.perms[1](w)
         dLdx = torch.convolution(
@@ -785,7 +795,7 @@ class ConvBackwardInputCustomGeneric(torch.nn.Module):
                 [p for dim_pads in permuted_pads for p in dim_pads]
             )
 
-    def forward(self, dLdy, w):
+    def forward(self, dLdy: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         if self.groups != 1:
             dLdy = dLdy.unflatten(self.x_pos, [self.groups, -1])
             w = w.unflatten(self.w_pos, [self.groups, -1])
@@ -870,7 +880,7 @@ class ConvBackwardWeight(torch.nn.Module):
         self.explicit_padding = sig.explicit_padding
         self.kwargs["padding"] = sig.num_spatial_dims * [0]
 
-    def forward(self, dLdy, x):
+    def forward(self, dLdy: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         x = torch.constant_pad_nd(x, self.explicit_padding, 0)
         conv = torch.convolution(
             self.perms[0](x),
@@ -931,7 +941,7 @@ class ConvBackwardWeightCustomGeneric(torch.nn.Module):
                 + self.explicit_padding[pad_g_idx:]
             )
 
-    def forward(self, dLdy, x):
+    def forward(self, dLdy: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         if self.groups != 1:
             x = x.unflatten(self.x_pos, [self.groups, -1])
             dLdy = dLdy.unflatten(self.w_pos, [self.groups, -1])
@@ -959,7 +969,7 @@ class ConvParser(OpCLIParser):
     def get_op_name(self) -> str:
         return "conv"
 
-    def get_signature(args):
+    def get_signature(args) -> ConvSignature:
         layouts = {
             "input_layout": args.in_layout,
             "kernel_layout": args.fil_layout,
@@ -1072,7 +1082,7 @@ class ConvParser(OpCLIParser):
             mode=mode,
         )
 
-    def get_miopen_parser():
+    def get_miopen_parser() -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser()
         # TODO: support commented-out args
         parser.add_argument(
