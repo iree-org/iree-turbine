@@ -243,7 +243,6 @@ def get_extend_attention_kernel(
         )
         tkw.set_symbol(N_KV, seq_len_prefix)
         if use_custom_mask:
-            print("sdiufgsdf")
             seq_len = seq_len_prefix + seq_len_extend
             tkw.set_symbol(SEQ_LEN, seq_len)
             seq_mask_start_idx = tkw.read(mask_offsets, elements_per_thread=1)
