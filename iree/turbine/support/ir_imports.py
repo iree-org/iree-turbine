@@ -19,6 +19,7 @@ from iree.compiler.ir import (
     DictAttr,
     FlatSymbolRefAttr,
     FloatAttr,
+    FloatType,
     FunctionType,
     IndexType,
     InsertionPoint,
@@ -66,4 +67,5 @@ from iree.compiler.dialects import (
     util as util_d,
     arith as arith_d,
     tensor as tensor_d,
+    linalg as linalg_d,
 )
