@@ -4,7 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import unittest
 import tempfile
 import pytest
 
@@ -103,7 +102,7 @@ class SampleModule3(torch.nn.Module):
         return self.layer1(self.layer0(x))
 
 
-class SubgraphReplacementTest(unittest.TestCase):
+class TestSubgraphReplacement:
     def testLinearLayoutHandling(self):
         LaunchableRuntimeCache.clear()
         with tempfile.TemporaryDirectory() as td:
@@ -157,21 +156,17 @@ class SubgraphReplacementTest(unittest.TestCase):
             assert isinstance(fused_m, fx.GraphModule)
             fused_m_print = str(fused_m)
 
-            self.assertIn("torch.ops.boo.fused_op_", fused_m_print)
-            self.assertNotIn("torch.ops.aten.addmm", fused_m_print)
-            self.assertNotIn("torch.ops.aten.relu", fused_m_print)
+            assert "torch.ops.boo.fused_op_" in fused_m_print
+            assert "torch.ops.aten.addmm" not in fused_m_print
+            assert "torch.ops.aten.relu" not in fused_m_print
 
-            self.assertEqual(
-                compiled_m.linear.weight.data_ptr(), m.linear.weight.data_ptr()
-            )
-            self.assertEqual(
-                compiled_m.linear.bias.data_ptr(), m.linear.bias.data_ptr()
-            )
+            assert compiled_m.linear.weight.data_ptr() == m.linear.weight.data_ptr()
+            assert compiled_m.linear.bias.data_ptr() == m.linear.bias.data_ptr()
 
             y.sum().backward()
 
-            self.assertIsNotNone(compiled_m.linear.weight.grad)
-            self.assertIsNotNone(compiled_m.linear.bias.grad)
+            assert compiled_m.linear.weight.grad is not None
+            assert compiled_m.linear.bias.grad is not None
 
     def testReplacementWithRecompile(self):
         with tempfile.TemporaryDirectory() as td:
@@ -208,17 +203,17 @@ class SubgraphReplacementTest(unittest.TestCase):
             [gm1, gm2] = recorder.graphs
 
             outputs1 = gm1.graph.find_nodes(op="output")
-            self.assertEqual(len(outputs1), 1)
+            assert len(outputs1) == 1
             output_node1 = outputs1[0]
             # We aren't in inference mode for the first application.
             # This graph should return three outputs: (linear result, pre-transposed result, None)
-            self.assertEqual(len(output_node1.args[0]), 3)
+            assert len(output_node1.args[0]) == 3
 
             outputs2 = gm2.graph.find_nodes(op="output")
-            self.assertEqual(len(outputs2), 1)
+            assert len(outputs2) == 1
             # The second application should not have the extra outputs being stashed for backwards.
             output_node2 = outputs2[0]
-            self.assertEqual(len(output_node2.args[0]), 1)
+            assert len(output_node2.args[0]) == 1
 
     def testReplacementRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:
@@ -241,11 +236,11 @@ class SubgraphReplacementTest(unittest.TestCase):
             y = compiled_m(x0, x1)
 
             [fused_m] = recorder.graphs
-            self.assertIn("torch.ops.boo.fused_op_", str(fused_m))
-            self.assertNotIn("torch.ops.aten.relu", str(fused_m))
-            self.assertNotIn("torch.ops.aten.addmm", str(fused_m))
-            self.assertNotIn("torch.ops.aten.add.Tensor", str(fused_m))
-            self.assertEqual(list(y.shape), [16, 16])
+            assert "torch.ops.boo.fused_op_" in str(fused_m)
+            assert "torch.ops.aten.relu" not in str(fused_m)
+            assert "torch.ops.aten.addmm" not in str(fused_m)
+            assert "torch.ops.aten.add.Tensor" not in str(fused_m)
+            assert list(y.shape) == [16, 16]
 
     def testReplacementChannelsLastConv(self):
         with tempfile.TemporaryDirectory() as td:
@@ -265,9 +260,9 @@ class SubgraphReplacementTest(unittest.TestCase):
             )
             y = compiled_m(x)
             [fwd_gm] = recorder.graphs
-            self.assertNotIn("torch.ops.aten.", str(fwd_gm))
-            self.assertEqual(list(y.shape), list(expected_y.shape))
-            self.assertEqual(list(y.stride()), list(expected_y.stride()))
+            assert "torch.ops.aten." not in str(fwd_gm)
+            assert list(y.shape) == list(expected_y.shape)
+            assert list(y.stride()) == list(expected_y.stride())
 
     def testReplacementMultiOutputNode(self):
         schema: FusionSchema = {
@@ -329,19 +324,15 @@ class SubgraphReplacementTest(unittest.TestCase):
 
             y = forward(x, w)
             cached_items = list(cache_dir.glob("*/*.mlir"))
-            self.assertEqual(
-                len(cached_items),
-                1,
-                msg=f"Expected one cached items, got {cached_items}.",
-            )
+            assert (
+                len(cached_items) == 1
+            ), f"Expected one cached items, got {cached_items}."
             mlir_file = cached_items[0]
             name = mlir_file.stem
             contents = mlir_file.read_text()
-            self.assertIn(
-                "make-single-dispatch",
-                contents,
-                msg=f"Expected single dispatch for kernel {name}.",
-            )
+            assert (
+                "make-single-dispatch" in contents
+            ), f"Expected single dispatch for kernel {name}."
 
     def testReplacementNonRecursiveFusion(self):
         with tempfile.TemporaryDirectory() as td:
@@ -363,10 +354,10 @@ class SubgraphReplacementTest(unittest.TestCase):
             y = compiled_m(x0, x1)
             [fused_m] = recorder.graphs
 
-            self.assertNotIn("torch.ops.aten.addmm", str(fused_m))
-            self.assertIn("torch.ops.boo.fused_op_", str(fused_m))
-            self.assertIn("torch.ops.aten.relu", str(fused_m))
-            self.assertEqual(list(y.shape), [16, 16])
+            assert "torch.ops.aten.addmm" not in str(fused_m)
+            assert "torch.ops.boo.fused_op_" in str(fused_m)
+            assert "torch.ops.aten.relu" in str(fused_m)
+            assert list(y.shape) == [16, 16]
 
     def testRepeatedReplacementBackward(self):
         with tempfile.TemporaryDirectory() as td:
@@ -390,19 +381,15 @@ class SubgraphReplacementTest(unittest.TestCase):
 
             # Only the backward module should contain aten ops.
             forward_module, backward_module = recorder.graphs
-            self.assertIn("torch.ops.aten.", str(backward_module))
-            self.assertNotIn("torch.ops.aten.", str(forward_module))
+            assert "torch.ops.aten." in str(backward_module)
+            assert "torch.ops.aten." not in str(forward_module)
 
-            self.assertIsInstance(
-                compiled_m.get_parameter("layer0.0.weight").grad,
-                torch.Tensor,
-                f"Expected `layer0.0.weight.grad` to be a torch.Tensor, got {type(compiled_m.get_parameter('layer0.0.weight').grad)}",
-            )
-            self.assertIsInstance(
-                compiled_m.get_parameter("layer0.0.bias").grad,
-                torch.Tensor,
-                f"Expected `layer0.0.bias.grad` to be a torch.Tensor, got {type(compiled_m.get_parameter('layer0.0.bias').grad)}",
-            )
+            assert isinstance(
+                compiled_m.get_parameter("layer0.0.weight").grad, torch.Tensor
+            ), f"Expected `layer0.0.weight.grad` to be a torch.Tensor, got {type(compiled_m.get_parameter('layer0.0.weight').grad)}"
+            assert isinstance(
+                compiled_m.get_parameter("layer0.0.bias").grad, torch.Tensor
+            ), f"Expected `layer0.0.bias.grad` to be a torch.Tensor, got {type(compiled_m.get_parameter('layer0.0.bias').grad)}"
             found_zero_grad = False
             err_msg = ""
             for name, param in m.named_parameters():
@@ -411,7 +398,7 @@ class SubgraphReplacementTest(unittest.TestCase):
                     found_zero_grad = True
                     err_msg += f"Parameter {name} unexpectedly has zero gradient.\n"
 
-            self.assertFalse(found_zero_grad, msg=err_msg)
+            assert not found_zero_grad, err_msg
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires GPU.")
     def testNestedCompilerInductor(self):
@@ -456,9 +443,5 @@ class SubgraphReplacementTest(unittest.TestCase):
                 z = f(x, y)
 
             key_averages = str(prof.key_averages())
-            self.assertIn("fused_op", key_averages)
-            self.assertIn("triton_poi_fused_add_div", key_averages)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            assert "fused_op" in key_averages
+            assert "triton_poi_fused_add_div" in key_averages
