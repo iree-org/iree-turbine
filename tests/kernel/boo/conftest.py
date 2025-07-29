@@ -14,11 +14,14 @@ from iree.turbine.kernel.boo.runtime import (
 
 @pytest.fixture(autouse=True)
 def _isolate_tests(tmp_path: Path):
+    import torch
+
     # Ensure each test has its own cache directory, in case the cache is enabled.
     set_cache_dir(tmp_path / ".cache" / "turbine_kernels" / "boo")
 
     # Reset any relevant caches.
     LaunchableRuntimeCache.reset()
+    torch.compiler.reset()
 
 
 @pytest.fixture

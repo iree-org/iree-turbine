@@ -103,7 +103,6 @@ class TestSubgraphReplacement:
         recorder = EagerAndRecordGraphs()
         m = torch.compile(
             torch.nn.Linear(in_features=64, out_features=16),
-            dynamic=False,
             backend=boo.backend(
                 nested_backend=recorder,
                 fusion_schema=schema,
@@ -249,9 +248,7 @@ class TestSubgraphReplacement:
         }
         recorder = EagerAndRecordGraphs()
         backend = boo.backend(nested_backend=recorder, fusion_schema=schema)
-        m = torch.compile(
-            torch.nn.BatchNorm2d(num_features=16), dynamic=False, backend=backend
-        )
+        m = torch.compile(torch.nn.BatchNorm2d(num_features=16), backend=backend)
 
         x = torch.randn([2, 16, 32, 32])
 
@@ -381,7 +378,6 @@ class TestSubgraphReplacement:
         my.eval()
 
         @torch.compile(
-            dynamic=False,
             backend=boo.backend(nested_backend="inductor", fusion_schema=schema),
         )
         def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
