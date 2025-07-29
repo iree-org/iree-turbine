@@ -17,6 +17,14 @@ from iree.turbine.kernel.boo.fusion.schema import (
     EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
 )
 
+ALL_DEVICES = [
+    "cpu",
+    pytest.param(
+        "cuda",
+        marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="requires GPU"),
+    ),
+]
+
 
 def test_custom_boo_conv_used():
     """Test that we're using our custom convolution op"""
@@ -84,18 +92,7 @@ def test_filter_transpose_conv():
     assert call_node.target == torch.ops.aten.convolution.default
 
 
-@pytest.mark.parametrize(
-    "device",
-    [
-        "cpu",
-        pytest.param(
-            "cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="requires GPU"
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("device", ALL_DEVICES)
 @pytest.mark.parametrize(
     "memory_format", [torch.contiguous_format, torch.channels_last]
 )
@@ -249,3 +246,35 @@ def test_boo_convolution_backward_replacement(input_grad: bool, experimental: bo
         and m.bias.grad is not None
         and torch.sum(torch.abs(m.bias.grad)) != 0
     )
+
+
+@pytest.mark.parametrize("device", ALL_DEVICES)
+@pytest.mark.parametrize("memory_format", [torch.channels_last])
+def test_boo_batch_norm_used(device: torch.device, memory_format: torch.memory_format):
+    """Test that we're using our custom convolution op"""
+    N, C, H, W = (8, 64, 56, 56)
+    with torch.device(device):
+        input = torch.randn((N, C, H, W), dtype=torch.bfloat16).to(
+            memory_format=memory_format
+        )
+        model = torch.nn.BatchNorm2d(num_features=C).to(memory_format=memory_format)
+        recorder = EagerAndRecordGraphs()
+        compiled_model = torch.compile(
+            model,
+            backend=boo.backend(
+                nested_backend=recorder,
+                fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
+            ),
+        )
+
+        compiled_model(input)
+
+    [compiled_module] = recorder.graphs
+    assert isinstance(compiled_module, fx.GraphModule)
+
+    boo_targets = [
+        node
+        for node in compiled_module.graph.nodes
+        if node.op == "call_function" and "boo." in str(node.target)
+    ]
+    assert len(boo_targets) == 1
