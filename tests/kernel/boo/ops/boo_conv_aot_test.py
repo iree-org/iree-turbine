@@ -5,14 +5,13 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import pytest
-import tempfile
 
 from pathlib import Path
 
 import torch
 import iree.turbine.kernel.boo.ops as boo_ops
 import iree.turbine.aot as aot
-from iree.turbine.kernel.boo.runtime import set_cache_dir, LaunchableRuntimeCache
+from iree.turbine.kernel.boo.runtime import LaunchableRuntimeCache
 
 
 class LayoutCustomizableSample0(torch.nn.Module):
@@ -65,7 +64,7 @@ def test_AOT_layout_customizable(device: torch.device):
 
 
 @pytest.mark.parametrize("device", devices)
-def test_AOT_layout_conv_replacement(device: torch.device):
+def test_AOT_layout_conv_replacement(device: torch.device, boo_cache_dir: Path):
     N = 2
     C = 32
     H = 16
@@ -76,17 +75,13 @@ def test_AOT_layout_conv_replacement(device: torch.device):
     w = torch.randn([f, C, k, k], device=device).to(memory_format=torch.channels_last)
     exported_program = torch.export.export(LayoutCustomizableSample1(), args=(x, w))
     gm = exported_program.graph_module
-    with tempfile.TemporaryDirectory() as td:
-        LaunchableRuntimeCache.clear()
-        set_cache_dir(Path(td))
-        graph_op = boo_ops.get_custom_graph_op(gm, force_single_dispatch=True)
-        y: torch.Tensor = graph_op(x, w)
-        assert y.is_contiguous(
-            memory_format=torch.channels_last
-        ), "Output must be in channels last format."
-        cached_items = list(Path.glob(Path(td), "*/"))
-        assert len(cached_items) == 1, f"Expected one cached item, got {cached_items}."
-        p = cached_items[0]
-        assert p.name.endswith(
-            "_2x32x16x16xfloat32_perm_0231_2x32x1x1xfloat32_perm_0231"
-        )
+    LaunchableRuntimeCache.clear()
+    graph_op = boo_ops.get_custom_graph_op(gm, force_single_dispatch=True)
+    y: torch.Tensor = graph_op(x, w)
+    assert y.is_contiguous(
+        memory_format=torch.channels_last
+    ), "Output must be in channels last format."
+    cached_items = list(Path.glob(boo_cache_dir, "*/"))
+    assert len(cached_items) == 1, f"Expected one cached item, got {cached_items}."
+    p = cached_items[0]
+    assert p.name.endswith("_2x32x16x16xfloat32_perm_0231_2x32x1x1xfloat32_perm_0231")
