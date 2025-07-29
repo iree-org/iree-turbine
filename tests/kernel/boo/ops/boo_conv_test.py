@@ -5,7 +5,6 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import contextlib
-import unittest
 import pytest
 import tempfile
 
@@ -130,7 +129,8 @@ def testBackwardCacheBoo(x_grad, w_grad):
 
 
 @pytest.mark.usefixtures("use_backward")
-class BooConvTest(unittest.TestCase):
+class TestBooConv:
+    @pytest.fixture(autouse=True)
     def setUp(self):
         LaunchableRuntimeCache.clear()
         LaunchableRuntimeCache.set_cache_limit(0)
@@ -143,11 +143,9 @@ class BooConvTest(unittest.TestCase):
             w = torch.ones([4, 2, 2, 3], dtype=torch.float32, device=device)
             y = boo_conv(x, w, shared_layout="NHWC", stride=2, dilation=2)
             y_exp = torch.ones_like(y, device=device) * 12.0
-            self.assertAlmostEqual(
-                torch.abs(y - y_exp).sum().item(),
-                0.0,
-                msg=f"Expected output to be close to splat 12.0 tensor. Got {y}",
-            )
+            assert (
+                round(torch.abs(y - y_exp).sum().item(), ndigits=7) == 0.0
+            ), f"Expected output to be close to splat 12.0 tensor. Got {y}"
 
     @pytest.mark.xfail(
         condition=not torch.cuda.is_available(),
@@ -208,27 +206,27 @@ class BooConvTest(unittest.TestCase):
             items = [x.name for x in Path(td).glob("*/")]
             expected_dtype_str = "float32"
             unexpected_dtype_str = "bfloat16"
-            self.assertNotIn(
-                f"conv_2d_{unexpected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{unexpected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                not in items
             )
-            self.assertIn(
-                f"conv_2d_{expected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{expected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                in items
             )
-            self.assertIn(
-                f"conv_2d_{expected_dtype_str}_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{expected_dtype_str}_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                in items
             )
-            self.assertIn(
-                f"conv_2d_{expected_dtype_str}_input_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{expected_dtype_str}_input_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                in items
             )
 
-            self.assertEqual(y.dtype, torch.float32)
-            self.assertEqual(x.grad.dtype, torch.float32)
-            self.assertEqual(w.grad.dtype, torch.float32)
-            self.assertEqual(w.dtype, torch.float32)
+            assert y.dtype == torch.float32
+            assert x.grad.dtype == torch.float32
+            assert w.grad.dtype == torch.float32
+            assert w.dtype == torch.float32
 
         with tempfile.TemporaryDirectory() as td_0:
             set_cache_dir(Path(td_0))
@@ -242,27 +240,27 @@ class BooConvTest(unittest.TestCase):
             items = [x.name for x in Path(td_0).glob("*/")]
             expected_dtype_str = "bfloat16"
             unexpected_dtype_str = "float32"
-            self.assertNotIn(
-                f"conv_2d_{unexpected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{unexpected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                not in items
             )
-            self.assertIn(
-                f"conv_2d_{expected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{expected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                in items
             )
-            self.assertIn(
-                f"conv_2d_{expected_dtype_str}_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{expected_dtype_str}_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                in items
             )
-            self.assertIn(
-                f"conv_2d_{expected_dtype_str}_input_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{expected_dtype_str}_input_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                in items
             )
             # Make sure we got back the correct original dtypes.
-            self.assertEqual(y.dtype, torch.bfloat16)
-            self.assertEqual(x.grad.dtype, torch.float32)
-            self.assertEqual(w.grad.dtype, torch.float32)
-            self.assertEqual(w.dtype, torch.float32)
+            assert y.dtype == torch.bfloat16
+            assert x.grad.dtype == torch.float32
+            assert w.grad.dtype == torch.float32
+            assert w.dtype == torch.float32
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU to test.")
     def testBooConvBackwardsAmpContextCUDA(self):
@@ -283,28 +281,24 @@ class BooConvTest(unittest.TestCase):
             items = [x.name for x in Path(td).glob("*/")]
             expected_dtype_str = "bfloat16"
             unexpected_dtype_str = "float32"
-            self.assertNotIn(
-                f"conv_2d_{unexpected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{unexpected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                not in items
             )
-            self.assertIn(
-                f"conv_2d_{expected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{expected_dtype_str}_forward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                in items
             )
-            self.assertIn(
-                f"conv_2d_{expected_dtype_str}_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{expected_dtype_str}_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                in items
             )
-            self.assertIn(
-                f"conv_2d_{expected_dtype_str}_input_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-                items,
+            assert (
+                f"conv_2d_{expected_dtype_str}_input_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                in items
             )
             # Make sure we got back the correct original dtypes.
-            self.assertEqual(y.dtype, torch.bfloat16)
-            self.assertEqual(x.grad.dtype, torch.float32)
-            self.assertEqual(w.grad.dtype, torch.float32)
-            self.assertEqual(w.dtype, torch.float32)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            assert y.dtype == torch.bfloat16
+            assert x.grad.dtype == torch.float32
+            assert w.grad.dtype == torch.float32
+            assert w.dtype == torch.float32

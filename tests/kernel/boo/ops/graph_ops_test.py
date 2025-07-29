@@ -4,7 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import unittest
 import tempfile
 import pytest
 
@@ -47,7 +46,8 @@ class LongFusionSample(torch.nn.Module):
         return y
 
 
-class GraphOpsTest(unittest.TestCase):
+class TestGraphOps:
+    @pytest.fixture(autouse=True)
     def setUp(self):
         LaunchableRuntimeCache.clear()
         LaunchableRuntimeCache.set_cache_limit(0)
@@ -101,7 +101,3 @@ class GraphOpsTest(unittest.TestCase):
                 op_name + "_32x16xfloat32_32xfloat32_3x3x16x16xfloat32"
             )
             assert expected_dir_name_0 in cache_subdir_names
-
-
-if __name__ == "__main__":
-    unittest.main()
