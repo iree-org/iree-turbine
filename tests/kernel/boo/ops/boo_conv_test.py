@@ -30,7 +30,6 @@ def use_backward():
     ("x_grad", "w_grad"), ((False, False), (True, False), (False, True), (True, True))
 )
 def testBackwardCachePytorch(x_grad, w_grad, boo_cache_dir: Path):
-    LaunchableRuntimeCache.clear()
     device = "cuda:0" if torch.cuda.is_available() else None
     x = torch.ones(
         [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=x_grad
@@ -83,7 +82,6 @@ def _marked_xfail(*args):
     ),
 )
 def testBackwardCacheBoo(x_grad, w_grad, boo_cache_dir: Path):
-    LaunchableRuntimeCache.clear()
     device = "cuda:0" if torch.cuda.is_available() else None
     x = torch.ones(
         [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=x_grad
@@ -123,7 +121,6 @@ def testBackwardCacheBoo(x_grad, w_grad, boo_cache_dir: Path):
 class TestBooConv:
     @pytest.fixture(autouse=True)
     def setUp(self):
-        LaunchableRuntimeCache.clear()
         LaunchableRuntimeCache.set_cache_limit(0)
 
     def testBooConvNonDefault(self):

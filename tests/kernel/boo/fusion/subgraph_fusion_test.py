@@ -16,9 +16,6 @@ from torch.profiler import profile, ProfilerActivity
 
 from iree.turbine.dynamo.backends import boo
 from iree.turbine.kernel.boo.fusion import OpFusionSpec, FusionSchema
-from iree.turbine.kernel.boo.runtime import (
-    LaunchableRuntimeCache,
-)
 
 
 class SampleModule(torch.nn.Module):
@@ -102,7 +99,6 @@ class SampleModule3(torch.nn.Module):
 
 class TestSubgraphReplacement:
     def testLinearLayoutHandling(self, boo_cache_dir: Path):
-        LaunchableRuntimeCache.clear()
         schema: FusionSchema = {torch.ops.aten.addmm.default: OpFusionSpec()}
         recorder = EagerAndRecordGraphs()
         m = torch.compile(
@@ -251,7 +247,6 @@ class TestSubgraphReplacement:
         schema: FusionSchema = {
             torch.ops.aten._native_batch_norm_legit_functional.default: OpFusionSpec(),
         }
-        LaunchableRuntimeCache.clear()
         recorder = EagerAndRecordGraphs()
         backend = boo.backend(nested_backend=recorder, fusion_schema=schema)
         m = torch.compile(
@@ -284,7 +279,6 @@ class TestSubgraphReplacement:
         ), "Expected some bias gradient."
 
     def testReplacementSingleDispatch(self, boo_cache_dir: Path):
-        LaunchableRuntimeCache.clear()
         x = torch.ones([2, 3, 16, 16], requires_grad=False)
         w = torch.ones([4, 3, 1, 1], requires_grad=False)
         schema: FusionSchema = {

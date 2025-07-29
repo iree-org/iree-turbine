@@ -48,7 +48,6 @@ class LongFusionSample(torch.nn.Module):
 class TestGraphOps:
     @pytest.fixture(autouse=True)
     def setUp(self):
-        LaunchableRuntimeCache.clear()
         LaunchableRuntimeCache.set_cache_limit(0)
 
     def testLongPathName(self):
