@@ -5,11 +5,43 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import unittest
+import pytest
 
 import torch
 
 import iree.turbine.aot as aot
 from iree.turbine.ops.insert_slice import insert_slice, generic_insert_slice
+
+
+@pytest.mark.parametrize(
+    "src_shape, dst_shape, offsets, strides",
+    (
+        ((4, 2), (4, 4), (0, 0), (1, 2)),
+        ((4, 2), (4, 3), (0, 0), (1, 2)),
+        ((4, 2), (10, 10), (0, 0), (1, 2)),
+        (
+            (4, 2),
+            (5, 5),
+            (1, 1),
+            (1, 2),
+        ),
+    ),
+)
+def testEagerGeneric(src_shape, dst_shape, offsets, strides):
+    src = torch.ones(src_shape)
+    y = generic_insert_slice(src, dst_shape, offsets, strides)
+    y_ref = torch.zeros(dst_shape)
+    end_indices = [
+        off + src_dim * dim_s
+        for off, src_dim, dim_s in zip(offsets, src_shape, strides)
+    ]
+    y_ref[
+        slice(offsets[0], end_indices[0], strides[0]),
+        slice(offsets[1], end_indices[1], strides[1]),
+    ] = 1.0
+    assert torch.allclose(
+        y, y_ref, rtol=1e-5, atol=1e-8
+    ), f"IREE output and pytorch output differ significantly.\n{y=}\n{y_ref=}."
 
 
 class InsertSliceTest(unittest.TestCase):
@@ -21,13 +53,6 @@ class InsertSliceTest(unittest.TestCase):
         y_ref[0:8:2, 2:4:1] = src
         diff = torch.max(torch.abs(y - y_ref)).item()
         self.assertAlmostEqual(diff, 0.0)
-
-    def testEagerGeneric(self):
-        src = torch.ones((4, 2))
-        y = generic_insert_slice(src, [4, 4], [0, 0], [1, 2])
-        y_ref = torch.zeros([4, 4])
-        y_ref[:, 0:-1:2] = 1.0
-        self.assertEqual(torch.max(torch.abs(y - y_ref)).item(), 0.0)
 
     def testAOT(self):
         class M(torch.nn.Module):

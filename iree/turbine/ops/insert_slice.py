@@ -164,7 +164,19 @@ class generic_insert_slice(CustomOp):
         offsets_desc = ksel.attr_list_int(2)
         strides_desc = ksel.attr_list_int(3)
 
-        assert all([o == 0 for o in offsets_desc.v]), "NYI: nonzero offsets."
+        has_offsets = any([o != 0 for o in offsets_desc.v])
+        indexing_valid = all(
+            [
+                o + in_size * s in range(out_size, out_size + s)
+                for o, in_size, s, out_size in zip(
+                    offsets_desc.v, src_desc.t.shape, strides_desc.v, sizes_desc.v
+                )
+            ]
+        )
+
+        ksel.variant = (
+            "tensor_extract" if has_offsets or not indexing_valid else "default"
+        )
 
         torch._check(
             len(offsets_desc.v) == len(strides_desc.v) == len(sizes_desc.v),
@@ -177,15 +189,13 @@ class generic_insert_slice(CustomOp):
     @no_type_check
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
         src_rtt = RankedTensorType(kb.arg_value(0).type)
-        # dst_rtt = RankedTensorType.parse(ksel.result_descs[0].mlir_type_asm, kb.context)
-        # src_spec_dims = ksel.arg_descs[0].spec_dims
         sizes = ksel.arg_descs[1].v
         offset = ksel.arg_descs[2].v
         stride = ksel.arg_descs[3].v
         arg_binding = kb.arg_bindings[0]
         element_type = RankedTensorType(arg_binding.type).element_type
 
-        def body_builder(arg: element_type, out: element_type) -> element_type:  # type: ignore
+        def body_builder_direct(arg: element_type, out: element_type) -> element_type:  # type: ignore
             indices = [
                 linalg_d.IndexOp(
                     IntegerAttr.get(IntegerType.get_signless(64), i)
@@ -193,7 +203,7 @@ class generic_insert_slice(CustomOp):
                 for i in range(len(sizes))
             ]
             checks = []
-            for i, s, o in zip(indices, stride, offset):
+            for i, s in zip(indices, stride):
                 if s == 1:
                     continue
                 rem = arith_d.RemUIOp(i, arith_d.constant(IndexType.get(), s))
@@ -205,6 +215,53 @@ class generic_insert_slice(CustomOp):
                 element_type, 0.0 if isinstance(element_type, FloatType) else 0
             )
             output = arg
+            for check in checks:
+                output = arith_d.select(check, output, zero)
+            return output
+
+        # I'm not sure if this is going to codegen well. Should test and look at alternatives.
+        def body_builder_tensor_extract(out: element_type) -> element_type:  # type: ignore
+            indices = [
+                linalg_d.IndexOp(
+                    IntegerAttr.get(IntegerType.get_signless(64), i)
+                ).result
+                for i in range(len(sizes))
+            ]
+            checks = []
+            extract_indices = []
+            zero_index = arith_d.constant(IndexType.get(), 0)
+            for i, s, o, input_dim in zip(indices, stride, offset, src_rtt.shape):
+                stride_index = arith_d.constant(IndexType.get(), s)
+                offset_index = arith_d.constant(IndexType.get(), o)
+                # i - offset
+                sub = arith_d.subi(i, offset_index)
+                # (i - offset) % stride
+                rem = arith_d.RemUIOp(sub, stride_index)
+                # (i - offset) % stride == 0
+                cmp = arith_d.CmpIOp(arith_d.CmpIPredicate.eq, rem, zero_index)
+                checks.append(cmp)
+                # (i - offset) // stride
+                input_index = arith_d.FloorDivSIOp(sub, stride_index)
+                # clamp input index to [0, input_size - 1]
+                input_index_geq_0 = arith_d.CmpIOp(
+                    arith_d.CmpIPredicate.sge, input_index, zero_index
+                )
+                cst_input_dim_m_1 = arith_d.constant(IndexType.get(), input_dim - 1)
+                input_index_leq_input_dim_m_1 = arith_d.CmpIOp(
+                    arith_d.CmpIPredicate.sle, input_index, cst_input_dim_m_1
+                )
+                clamp0 = arith_d.select(input_index_geq_0, input_index, zero_index)
+                clamp1 = arith_d.select(
+                    input_index_leq_input_dim_m_1, clamp0, cst_input_dim_m_1
+                )
+                extract_indices.append(clamp1)
+                # Return zero when outside clamp
+                checks.extend([input_index_geq_0, input_index_leq_input_dim_m_1])
+
+            zero = arith_d.constant(
+                element_type, 0.0 if isinstance(element_type, FloatType) else 0
+            )
+            output = tensor_d.extract(arg_binding, extract_indices)
             for check in checks:
                 output = arith_d.select(check, output, zero)
             return output
@@ -231,8 +288,17 @@ class generic_insert_slice(CustomOp):
             out_map = linalg_d.AffineMap.get(
                 dim_count=len(sizes), symbol_count=0, exprs=out_exprs
             )
-            g: Value = linalg_d.generic(
-                (arg_binding,), (empty,), (in_map, out_map), len(sizes) * ("parallel",)
-            )(body_builder)
+            inputs = (arg_binding,) if ksel.variant == "default" else ()
+            outputs = (empty,)
+            maps = (in_map, out_map) if ksel.variant == "default" else (out_map,)
+            iterator_types = len(sizes) * ("parallel",)
+            body_builder = (
+                body_builder_direct
+                if ksel.variant == "default"
+                else body_builder_tensor_extract
+            )
+            g: Value = linalg_d.generic(inputs, outputs, maps, iterator_types)(
+                body_builder
+            )
 
         kb.yield_results(g)
