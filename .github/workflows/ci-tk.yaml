@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: [linux-mi300-1gpu-ossci-iree-org]
+        runs-on: [linux-mi325-1gpu-ossci-iree-org]
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 240 # Building LLVM can take multiple hours on public GH runners
     steps:
@@ -112,7 +112,7 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
+        os: [ubuntu-22.04, linux-mi325-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
     timeout-minutes: 60
     needs: build_llvm_linux
