@@ -34,9 +34,9 @@ jobs:
         pytorch_requirements: ["pytorch-cpu-requirements.txt"]
 
         include:
-          - name: linux-mi300
+          - name: linux-mi325
             version: "3.11"
-            runs-on: linux-mi300-1gpu-ossci-iree-org
+            runs-on: linux-mi325-1gpu-ossci-iree-org
             pytorch_requirements: "pytorch-rocm-requirements.txt"
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 60
