@@ -49,6 +49,7 @@ from iree.turbine.kernel.wave.utils.reference_kernel_utils import (
 )
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
 @pytest.mark.parametrize(
@@ -131,6 +132,7 @@ def testTransposedVAttentionPure(
     assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @pytest.mark.parametrize("input_shape", get_test_shapes("attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
@@ -208,6 +210,7 @@ def testAttentionPure(
     assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
@@ -302,6 +305,7 @@ def testAttentionCausal(
     assert_close(output, torch_ref, check_dtype=False, atol=1e-3, rtol=1e-3)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("all_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
@@ -414,6 +418,7 @@ def testAttentionBSHD(
     )
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("bhsd_attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
@@ -538,6 +543,7 @@ def testAttentionBHSDCausal(
     )
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
@@ -730,6 +736,7 @@ def testAttentionBias(
         assert_close(output, torch_ref, atol=3e-3, rtol=8e-1, check_dtype=False)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
@@ -922,6 +929,7 @@ def testAttentionSoftCap(
         assert_close(output, torch_ref, atol=3e-3, rtol=8e-1, check_dtype=False)
 
 
+@pytest.mark.skip(reason="Flaky + Wave is moving out of the repo")
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("attention"))
