@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: [linux-mi300-1gpu-ossci-iree-org]
+        runs-on: [linux-mi325-1gpu-ossci-iree-org]
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 240 # Building LLVM can take multiple hours on public GH runners
     steps:
@@ -112,7 +112,7 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [ubuntu-22.04, linux-mi300-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
+        os: [ubuntu-22.04, linux-mi325-1gpu-ossci-iree-org, nodai-amdgpu-mi250-x86-64]
     runs-on: ${{matrix.os}}
     timeout-minutes: 60
     needs: build_llvm_linux
@@ -124,7 +124,7 @@ jobs:
 
       - name: Checkout Water
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         with:
           repository: ftynse/water
           ref: ${{ env.WATER_REF }}
@@ -132,13 +132,13 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Cache Vars
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         run: |
           echo "LLVM_SHA=$(cat $GITHUB_WORKSPACE/water/$LLVM_SHA_FILE)" >> $GITHUB_ENV
           echo "WAVE_TEST_WATER=1" >> $GITHUB_ENV
 
       - name: Setup env
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         run: |
           sudo apt update
           sudo apt install -y ninja-build cmake clang lld
@@ -146,7 +146,7 @@ jobs:
       - name: Cache LLLVM-MLIR
         id: cache-llvm-mlir
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         with:
           path: llvm-mlir/_mlir_install/**
           key: ${{ runner.os }}-build-llvm-${{ env.LLVM_CACHE_NUMBER }}-${{ env.LLVM_SHA }}
@@ -165,13 +165,13 @@ jobs:
           echo "$VENV_DIR/bin" >> "$GITHUB_PATH"
 
       - name: Build water
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         run: |
           cd ${GITHUB_WORKSPACE}/water/build_tools/wheel
           WATER_MLIR_DIR=${GITHUB_WORKSPACE}/llvm-mlir/_mlir_install/lib/cmake/mlir python -m pip wheel .
 
       - name: Install water
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         run: |
           cd ${GITHUB_WORKSPACE}/water/build_tools/wheel
           pip install --force-reinstall *.whl
@@ -182,7 +182,7 @@ jobs:
           toolchain: stable
 
       - name: Install pip deps
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && !contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && !contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         run: |
           python -m pip install --no-compile --upgrade pip
           # Note: We install in three steps in order to satisfy requirements
@@ -192,8 +192,8 @@ jobs:
           pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
           pip install -r requirements.txt -e .
 
-      - name: Install GPU rocm and pip deps (mi300)
-        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+      - name: Install GPU rocm and pip deps (mi325)
+        if: "(!contains(toJSON(matrix.os), 'amdgpu') && contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         run: |
           python -m pip install --no-compile --upgrade pip
           pip install --no-compile -r pytorch-rocm-requirements.txt
@@ -202,7 +202,7 @@ jobs:
           pip install -r requirements-wave-runtime.txt -e .
 
       - name: Install pip deps (mi250)
-        if: "(contains(toJSON(matrix.os), 'amdgpu') && !contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        if: "(contains(toJSON(matrix.os), 'amdgpu') && !contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         run: |
           python -m pip install --no-compile --upgrade pip
           pip install --no-compile -r pytorch-rocm-requirements.txt
@@ -215,7 +215,7 @@ jobs:
           pytest -n 4 --capture=tee-sys -vv ./tests/kernel/wave/
 
       - name: Test TKW runtime related stack on amdgpu
-        if: "(contains(toJSON(matrix.os), 'amdgpu') || contains(toJSON(matrix.os), 'mi300')) && !cancelled()"
+        if: "(contains(toJSON(matrix.os), 'amdgpu') || contains(toJSON(matrix.os), 'mi325')) && !cancelled()"
         run: |
           export WAVE_CACHE_DIR=$PWD/.wave
           rm -rf ./.wave
@@ -223,12 +223,12 @@ jobs:
           WAVE_CACHE_ON=1 pytest --capture=tee-sys -vv --run-e2e --durations=100 ./tests/kernel/wave/runtime
 
       - name: Run e2e tests on AMD GPU
-        if: "(contains(toJSON(matrix.os), 'amdgpu') || contains(toJSON(matrix.os), 'mi300')) && (github.event_name == 'pull_request') && !cancelled()"
+        if: "(contains(toJSON(matrix.os), 'amdgpu') || contains(toJSON(matrix.os), 'mi325')) && (github.event_name == 'pull_request') && !cancelled()"
         run: |
           WAVE_CACHE_ON=0 pytest -n 4 --capture=tee-sys -vv --run-e2e --durations=100 ./tests/kernel/wave/
 
       - name: Run expensive e2e tests on AMD GPU
-        if: "(contains(toJSON(matrix.os), 'amdgpu') || contains(toJSON(matrix.os), 'mi300')) && (github.event_name != 'pull_request') && !cancelled()"
+        if: "(contains(toJSON(matrix.os), 'amdgpu') || contains(toJSON(matrix.os), 'mi325')) && (github.event_name != 'pull_request') && !cancelled()"
         run: |
           WAVE_CACHE_ON=0 pytest -n 4 --timeout=600 --capture=tee-sys -vv --run-e2e --run-expensive-tests --durations=100 ./tests/kernel/wave/
 

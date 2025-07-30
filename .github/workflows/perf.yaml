@@ -31,7 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         version: [3.11]
-        os: [linux-mi300-1gpu-ossci-iree-org]
+        os: [linux-mi325-1gpu-ossci-iree-org]
     runs-on: ${{matrix.os}}
     timeout-minutes: 60
     if: github.event.pull_request.draft == false
@@ -63,8 +63,8 @@ jobs:
           pip install --no-cache-dir -r requirements-iree-pinned.txt --upgrade
           pip install -r requirements.txt -e .
 
-      - name: Run e2e tests on MI300
-        if: "contains(matrix.os, 'mi300') && !cancelled()"
+      - name: Run e2e tests on MI325
+        if: "contains(matrix.os, 'mi325') && !cancelled()"
         run: |
           export TEST_PARAMS_PATH="tests/kernel/wave/test_param.json"
           pytest -n 1 --capture=tee-sys -vv --run-e2e ./tests/kernel/wave/
