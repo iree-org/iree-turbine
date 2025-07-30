@@ -4,7 +4,7 @@ from iree.turbine.kernel.boo.runtime import set_cache_dir, use_cache_dir
 
 
 @pytest.fixture(autouse=True)
-def _isolate_tests(tmp_path):
+def _isolate_tests(tmp_path: Path):
     # Ensure each test has its own cache directory, in case the cache is enabled.
     set_cache_dir(tmp_path / ".cache" / "turbine_kernels" / "boo")
 
