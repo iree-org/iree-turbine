@@ -4,7 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import tempfile
 from pathlib import Path
 import pytest
 
@@ -19,7 +18,6 @@ from iree.turbine.kernel.boo.modeling import (
     replace_convs_with_boo,
 )
 from iree.turbine.kernel.boo.runtime import (
-    set_cache_dir,
     LaunchableRuntimeCache,
 )
 
@@ -130,203 +128,179 @@ class TestBooConv2dLaunching:
 
         self.model1 = M().to(device=self.device)
 
-    def testBasic(self):
-        with tempfile.TemporaryDirectory() as td:
-            cache_dir = Path(td)
-            set_cache_dir(cache_dir)
-            x = torch.ones([10, 2, 16, 16], device=self.device, dtype=torch.float32)
-            _ = self.model0(x)
-            assert (
-                "conv_2d_float32_forward_10x2x16x16_nchw_3x2x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
-                in [i.name for i in cache_dir.glob("*")]
-            )
+    def testBasic(self, boo_cache_dir: Path):
+        x = torch.ones([10, 2, 16, 16], device=self.device, dtype=torch.float32)
+        _ = self.model0(x)
+        assert (
+            "conv_2d_float32_forward_10x2x16x16_nchw_3x2x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+            in [i.name for i in boo_cache_dir.glob("*")]
+        )
 
-    def testNoBatch(self):
-        with tempfile.TemporaryDirectory() as td:
-            cache_dir = Path(td)
-            set_cache_dir(cache_dir)
-            x = torch.ones([2, 16, 16], device=self.device, dtype=torch.float32)
-            _ = self.model0(x)
-            assert (
-                "conv_2d_float32_forward_1x2x16x16_nchw_3x2x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
-                in [i.name for i in cache_dir.glob("*")]
-            )
+    def testNoBatch(self, boo_cache_dir: Path):
+        x = torch.ones([2, 16, 16], device=self.device, dtype=torch.float32)
+        _ = self.model0(x)
+        assert (
+            "conv_2d_float32_forward_1x2x16x16_nchw_3x2x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+            in [i.name for i in boo_cache_dir.glob("*")]
+        )
 
-    def testReplacement(self):
-        with tempfile.TemporaryDirectory() as td:
-            cache_dir = Path(td)
-            set_cache_dir(cache_dir)
-            x = torch.ones([10, 3, 16, 16], device=self.device, dtype=torch.float32)
-            model2 = replace_conv2d_with_boo_conv(self.model1)
-            _ = model2(x)
-            func_names = [i.name for i in cache_dir.glob("*")]
-            assert (
-                "conv_2d_float32_forward_10x3x16x16_nchw_2x3x3x3_fchw_nfhw_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_float32_forward_b_10x2x14x14_nchw_3x2x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
+    def testReplacement(self, boo_cache_dir: Path):
+        x = torch.ones([10, 3, 16, 16], device=self.device, dtype=torch.float32)
+        model2 = replace_conv2d_with_boo_conv(self.model1)
+        _ = model2(x)
+        func_names = [i.name for i in boo_cache_dir.glob("*")]
+        assert (
+            "conv_2d_float32_forward_10x3x16x16_nchw_2x3x3x3_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_float32_forward_b_10x2x14x14_nchw_3x2x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
 
-    def testChannelsLast(self):
-        with tempfile.TemporaryDirectory() as td:
-            cache_dir = Path(td)
-            set_cache_dir(cache_dir)
-            x = torch.ones([10, 2, 16, 16], device=self.device, dtype=torch.float32).to(
-                memory_format=torch.channels_last
-            )
-            model = self.model0.to(memory_format=torch.channels_last)
-            _ = model(x)
-            func_names = [i.name for i in cache_dir.glob("*")]
-            assert (
-                "conv_2d_float32_forward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
+    def testChannelsLast(self, boo_cache_dir: Path):
+        x = torch.ones([10, 2, 16, 16], device=self.device, dtype=torch.float32).to(
+            memory_format=torch.channels_last
+        )
+        model = self.model0.to(memory_format=torch.channels_last)
+        _ = model(x)
+        func_names = [i.name for i in boo_cache_dir.glob("*")]
+        assert (
+            "conv_2d_float32_forward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
 
-    def testReplacementChannelsLast(self):
-        with tempfile.TemporaryDirectory() as td:
-            cache_dir = Path(td)
-            set_cache_dir(cache_dir)
-            x = torch.ones([10, 3, 16, 16], device=self.device, dtype=torch.float32).to(
-                memory_format=torch.channels_last
-            )
-            model2 = replace_conv2d_with_boo_conv(self.model1).to(
-                memory_format=torch.channels_last
-            )
-            _ = model2(x)
-            func_names = [i.name for i in cache_dir.glob("*")]
-            assert (
-                "conv_2d_float32_forward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_float32_forward_b_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
+    def testReplacementChannelsLast(self, boo_cache_dir: Path):
+        x = torch.ones([10, 3, 16, 16], device=self.device, dtype=torch.float32).to(
+            memory_format=torch.channels_last
+        )
+        model2 = replace_conv2d_with_boo_conv(self.model1).to(
+            memory_format=torch.channels_last
+        )
+        _ = model2(x)
+        func_names = [i.name for i in boo_cache_dir.glob("*")]
+        assert (
+            "conv_2d_float32_forward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_float32_forward_b_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
 
-    def testBackward(self):
-        with tempfile.TemporaryDirectory() as td:
-            cache_dir = Path(td)
-            set_cache_dir(cache_dir)
-            model = self.model0.to(memory_format=torch.channels_last).train()
-            x = torch.ones(
-                [10, 2, 16, 16],
-                device=self.device,
-                dtype=torch.float32,
-                requires_grad=True,
-            ).to(memory_format=torch.channels_last)
-            y = model(x)
-            y.retain_grad()
-            assert y.is_contiguous(memory_format=torch.channels_last)
-            loss = y.sum()
-            loss.backward()
-            # By doing permute calls within the custom op body (instead of outside), the grad_output
-            # at the end of the graph (dloss/dy) is actually contiguous rather than in torch.channels_last.
-            # It is likely better to let IREE handle the transpose if necessary than to force the layout.
-            func_names = [i.name for i in cache_dir.glob("*")]
-            assert (
-                "conv_2d_float32_forward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_float32_weight_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_float32_input_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
+    def testBackward(self, boo_cache_dir: Path):
+        model = self.model0.to(memory_format=torch.channels_last).train()
+        x = torch.ones(
+            [10, 2, 16, 16],
+            device=self.device,
+            dtype=torch.float32,
+            requires_grad=True,
+        ).to(memory_format=torch.channels_last)
+        y = model(x)
+        y.retain_grad()
+        assert y.is_contiguous(memory_format=torch.channels_last)
+        loss = y.sum()
+        loss.backward()
+        # By doing permute calls within the custom op body (instead of outside), the grad_output
+        # at the end of the graph (dloss/dy) is actually contiguous rather than in torch.channels_last.
+        # It is likely better to let IREE handle the transpose if necessary than to force the layout.
+        func_names = [i.name for i in boo_cache_dir.glob("*")]
+        assert (
+            "conv_2d_float32_forward_10x16x16x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_float32_weight_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_float32_input_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
 
-    def testCompileWithBackwardF32(self):
-        with tempfile.TemporaryDirectory() as td:
-            cache_dir = Path(td)
-            set_cache_dir(cache_dir)
-            x = torch.ones(
-                [10, 3, 16, 16],
-                device=self.device,
-                dtype=torch.float32,
-                requires_grad=True,
-            ).to(memory_format=torch.channels_last)
-            model2 = replace_conv2d_with_boo_conv(self.model1).to(
-                memory_format=torch.channels_last
-            )
-            compiled = torch.compile(model2)
+    def testCompileWithBackwardF32(self, boo_cache_dir: Path):
+        x = torch.ones(
+            [10, 3, 16, 16],
+            device=self.device,
+            dtype=torch.float32,
+            requires_grad=True,
+        ).to(memory_format=torch.channels_last)
+        model2 = replace_conv2d_with_boo_conv(self.model1).to(
+            memory_format=torch.channels_last
+        )
+        compiled = torch.compile(model2)
 
+        y = compiled(x)
+        loss = y.sum()
+
+        loss.backward()
+
+        func_names = [i.name for i in boo_cache_dir.glob("*")]
+        assert (
+            "conv_2d_float32_forward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_float32_forward_b_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_float32_input_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_float32_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_float32_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_float32_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU to test.")
+    def testCompileWithBackwardAMPGPU(self, boo_cache_dir: Path):
+        x = torch.ones(
+            [10, 3, 16, 16],
+            device=self.device,
+            dtype=torch.float32,
+            requires_grad=True,
+        ).to(memory_format=torch.channels_last)
+        model2 = replace_conv2d_with_boo_conv(self.model1).to(
+            memory_format=torch.channels_last
+        )
+        compiled = torch.compile(model2)
+        with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
             y = compiled(x)
             loss = y.sum()
 
-            loss.backward()
+        loss.backward()
 
-            func_names = [i.name for i in cache_dir.glob("*")]
-            assert (
-                "conv_2d_float32_forward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_float32_forward_b_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_float32_input_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_float32_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_float32_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_float32_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU to test.")
-    def testCompileWithBackwardAMPGPU(self):
-        with tempfile.TemporaryDirectory() as td:
-            cache_dir = Path(td)
-            set_cache_dir(cache_dir)
-            x = torch.ones(
-                [10, 3, 16, 16],
-                device=self.device,
-                dtype=torch.float32,
-                requires_grad=True,
-            ).to(memory_format=torch.channels_last)
-            model2 = replace_conv2d_with_boo_conv(self.model1).to(
-                memory_format=torch.channels_last
-            )
-            compiled = torch.compile(model2)
-            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-                y = compiled(x)
-                loss = y.sum()
-
-            loss.backward()
-
-            func_names = [i.name for i in cache_dir.glob("*")]
-            assert (
-                "conv_2d_bfloat16_forward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_bfloat16_forward_b_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_bfloat16_input_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_bfloat16_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_bfloat16_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
-            assert (
-                "conv_2d_bfloat16_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-                in func_names
-            )
+        func_names = [i.name for i in boo_cache_dir.glob("*")]
+        assert (
+            "conv_2d_bfloat16_forward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_bfloat16_forward_b_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_bfloat16_input_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_bfloat16_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_bfloat16_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
+        assert (
+            "conv_2d_bfloat16_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            in func_names
+        )
