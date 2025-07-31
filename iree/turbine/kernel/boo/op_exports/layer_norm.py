@@ -44,6 +44,7 @@ class LayerNormSignature(OpSignature):
         bias: bool = True,
         dtype=torch.bfloat16,
         mode: str | Mode = Mode.FORWARD,
+        forwarded_args_dtype: torch.dtype | None = None,
     ):
         if (
             len(normalized_shape) > len(input_shape)
@@ -60,6 +61,7 @@ class LayerNormSignature(OpSignature):
         self.bias = bias
         self.dtype = dtype
         self.mode = Mode.parse(mode)
+        self.forwarded_args_dtype = forwarded_args_dtype or dtype
 
     @property
     def output_shape(self) -> list[int]:
@@ -116,6 +118,7 @@ class LayerNormSignature(OpSignature):
             "layer_norm",
             f"{len(self.normalized_shape)}d",
             str(self.dtype).removeprefix("torch."),
+            str(self.forwarded_args_dtype).removeprefix("torch."),
             self.mode.name.lower(),
             "x".join(str(i) for i in self.input_shape),
             "w" if self.elementwise_affine is not None else "",
@@ -175,6 +178,7 @@ class LayerNormSignature(OpSignature):
             "bias": self.bias,
             "dtype": self.dtype,
             "mode": self.Mode,
+            "forwarded_args_dtype": self.forwarded_args_dtype,
         }
 
     def get_output_size(self) -> int:
@@ -229,16 +233,16 @@ class LayerNormSignature(OpSignature):
                 get(self.output_shape),
                 get(self.input_shape),
                 get(self.normalized_shape),
-                get(self.aggregate_shape),
-                get(self.aggregate_shape),
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
             )
         if self.mode == Mode.WEIGHT_BACKWARD:
             # (dLdy, input, mean, rstd)
             return (
                 get(self.output_shape),
                 get(self.input_shape),
-                get(self.aggregate_shape),
-                get(self.aggregate_shape),
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
             )
         if self.mode == Mode.BIAS_BACKWARD:
             # (dLdy,)
@@ -253,6 +257,7 @@ class LayerNormForward(torch.nn.Module):
         super().__init__()
         self.normalized_shape = signature.normalized_shape
         self.eps = signature.eps
+        self.forwarded_args_dtype = signature.forwarded_args_dtype
 
     def forward(
         self,
@@ -272,8 +277,13 @@ class LayerNormForward(torch.nn.Module):
         #     torch.layer_norm(input, self.normalized_shape, weight, bias, self.eps)
         #
         # wrapper hides. We want those too so we can save them for backward.
-        return torch.ops.aten.native_layer_norm(
+        output, mean, rstd = torch.ops.aten.native_layer_norm(
             input, self.normalized_shape, weight, bias, self.eps
+        )
+        return (
+            output,
+            mean.to(dtype=self.forwarded_args_dtype),
+            rstd.to(dtype=self.forwarded_args_dtype),
         )
 
 
@@ -285,6 +295,7 @@ class LayerNormBackwardInput(torch.nn.Module):
         super().__init__()
         self.normalized_shape = signature.normalized_shape
         self.eps = signature.eps
+        self.dtype = signature.dtype
 
         self.normalized_dim = list(
             range(len(signature.input_shape))[-len(self.normalized_shape) :]
@@ -303,6 +314,8 @@ class LayerNormBackwardInput(torch.nn.Module):
     ) -> torch.Tensor:
         # Recompute norm instead of saving it. Judging by the signature, this is the same
         # decision as ATen.
+        mean = mean.to(dtype=self.dtype)
+        rstd = rstd.to(dtype=self.dtype)
         norm = (input - mean) * rstd
         dnorm = grad_output * weight if weight is not None else grad_output
         dx = (
@@ -321,6 +334,8 @@ class LayerNormBackwardWeight(torch.nn.Module):
         super().__init__()
         self.normalized_shape = signature.normalized_shape
         self.eps = signature.eps
+        self.dtype = signature.dtype
+
         self.normalized_dim = list(
             range(len(signature.input_shape))[-len(self.normalized_shape) :]
         )
@@ -337,6 +352,8 @@ class LayerNormBackwardWeight(torch.nn.Module):
     ):
         # Recompute norm instead of saving it. Judging by the signature, this is the same
         # decision as ATen.
+        mean = mean.to(dtype=self.dtype)
+        rstd = rstd.to(dtype=self.dtype)
         norm = (input - mean) * rstd
         return (grad_output * norm).sum(self.keep_dim)
 

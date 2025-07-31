@@ -16,12 +16,14 @@ from iree.turbine.kernel.boo.op_exports.layer_norm import (
 # Note that elementwise_affine and bias flags are grouped together to avoid an
 # invalid combination.
 @pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("forwarded_dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("input_shape", [(10, 12, 14, 16), (11, 13, 15)])
 @pytest.mark.parametrize(
     "elementwise_affine_bias", [(False, False), (True, False), (True, True)]
 )
 def test_layer_norm_impl(
     dtype: torch.dtype,
+    forwarded_dtype: torch.dtype,
     input_shape: tuple[int, ...],
     elementwise_affine_bias: tuple[bool, bool],
 ):
@@ -37,6 +39,7 @@ def test_layer_norm_impl(
         "elementwise_affine": elementwise_affine,
         "bias": bias,
         "dtype": dtype,
+        "forwarded_args_dtype": forwarded_dtype,
     }
     fwd_sig = LayerNormSignature(**kwargs)
     args = fwd_sig.get_sample_args(seed=1)
@@ -53,6 +56,9 @@ def test_layer_norm_impl(
     bwd_bias = bwd_bias_sig.get_nn_module(use_custom=True).to(device="cpu")
 
     fwd_results = fwd(*args)
+    assert fwd_results[1].dtype == forwarded_dtype
+    assert fwd_results[2].dtype == forwarded_dtype
+
     main_result = fwd_results[fwd_sig.main_result_index]
     main_result.retain_grad()
     # TODO: this is not a good loss function (#1021).
