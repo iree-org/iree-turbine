@@ -27,7 +27,7 @@ __all__ = [
 
 _default_cache_base_dir = Path.home() / ".cache" / "turbine_kernels" / "boo"
 BOO_CACHE_DIR = Path(os.environ.get("BOO_CACHE_DIR", _default_cache_base_dir))
-BOO_CACHE_ON = int(os.environ.get("BOO_CACHE_ON", 1))
+BOO_CACHE_ON = int(os.environ.get("BOO_CACHE_ON", 0))
 
 
 def set_cache_dir(cache_dir: Union[Path, str, None] = None) -> Path:
