@@ -193,7 +193,9 @@ def run(cli_args: Sequence[str], gpu_id: int, use_iree: bool):
     )
     args = parser.parse_args(cli_args)
     sig = parser_cls.get_signature(args)
-    launchable = get_launchable(sig) if use_iree else sig.get_nn_module(use_custom=True)
+    launchable = (
+        get_launchable(sig) if use_iree else sig.get_nn_module(use_custom=False)
+    )
 
     # get the number of available GPU's
     num_devices = 1 if gpu_id != -1 else torch.cuda.device_count()
