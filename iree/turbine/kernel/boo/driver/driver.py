@@ -7,7 +7,7 @@
 from collections import defaultdict
 import gc
 import argparse
-from typing import Callable, Sequence
+from typing import Callable, Sequence, Literal
 import os
 import shlex
 import statistics
@@ -62,50 +62,115 @@ command-line arguments are appended to the arguments from the file.
         mio_file_args = [[]]  # use CLI arguments
 
     csv_file = open(args.csv if args.csv is not None else os.devnull, "w")
-    csv_file.write("arguments,min_time (us)\n")
+    csv_file.write("arguments,iree min time (us), ref min time (us)\n")
 
-    runner_parser = argparse.ArgumentParser()
-    runner_parser.add_argument("--time", "-t", type=int, help="Enable timing")
-    for file_args in mio_file_args:
-        driver_args = file_args + extra_cli_args
-        timing_args, runner_args = runner_parser.parse_known_args(driver_args)
-        func = lambda: run(runner_args, args.gpu_id)
-        csv_file.write(shlex.join(driver_args) + ",")
-        if not timing_args.time:
-            func()
-            continue
-
+    def _run_func_profiler(func) -> tuple[dict[str, list[int]], str]:
         try:
             zones, func_name = profile_gpu(func)
         except Exception as exc:
             print(f">>> ERROR: {exc}")
             csv_file.write("N.A.\n")
-            continue
-        dispatch_zone_names = [n for n in zones.keys() if n.startswith(func_name)]
+            return {}, ""
+        dispatch_zone_names = [n for n in zones.keys()]
         if len(dispatch_zone_names) == 0:
             print(">>> FAILED TO COLLECT TIMING INFO")
             csv_file.write("failed to collect timing info\n")
+            return {}, ""
+        return zones, func_name
+
+    runner_parser = argparse.ArgumentParser()
+    runner_parser.add_argument("--time", "-t", type=int, help="Enable timing")
+
+    for file_args in mio_file_args:
+        driver_args = file_args + extra_cli_args
+        timing_args, runner_args = runner_parser.parse_known_args(driver_args)
+        iree_func = lambda: run(runner_args, args.gpu_id, use_iree=True)
+        ref_func = lambda: run(runner_args, args.gpu_id, use_iree=False)
+        csv_file.write(shlex.join(driver_args) + ",")
+
+        if not timing_args.time:
+            iree_func()
             continue
-        for zone_name in dispatch_zone_names:
-            times = zones[zone_name]
-            s = ">>> "
-            s += f"min={min(times):.2f}us "
-            s += f"max={max(times):.2f}us "
-            s += f"mean={statistics.mean(times):.2f}us "
-            s += f"stddev={statistics.stdev(times) if len(times) > 1 else 0:.2f}us"
-            if len(dispatch_zone_names) > 1:
-                s += f"\t({zone_name})"
-            print(s)
 
-        if len(dispatch_zone_names) == 0:
-            csv_file.write("no timing info\n")
-        elif len(dispatch_zone_names) > 1:
-            csv_file.write("multiple dispatches\n")
+        iree_zones, func_name = _run_func_profiler(iree_func)
+        if len(iree_zones.keys()) < 1:
+            continue
+
+        # get iree stats and print
+        iree_filter: Callable[[str], bool] = lambda name: name.startswith(func_name)
+        iree_results = get_zone_stats(iree_zones, iree_filter)
+        print_zone_stats(iree_results)
+
+        ref_filter: Callable[[str], bool] = lambda name: name not in iree_zones.keys()
+        ref_zones, _ = _run_func_profiler(ref_func)
+        assert ref_zones is not None, "Error during reference run."
+        ref_results = get_zone_stats(ref_zones, ref_filter)
+        print_zone_stats(ref_results)
+        iree_theoretical_min = get_theoretical_min_time(iree_results)
+        ref_theoretical_min = get_theoretical_min_time(ref_results)
+        csv_file.write(f"{iree_theoretical_min:.2f},{ref_theoretical_min:.2f}\n")
+        print(
+            f"Theoretical total min times:\n\tIREE: {iree_theoretical_min:.2f}\tREF: {ref_theoretical_min:.2f}"
+        )
+
+
+ZoneStats = dict[Literal["min", "max", "mean", "stddev", "count"], float | int]
+ZoneStatsSummary = dict[str, ZoneStats]
+
+
+def get_theoretical_min_time(results: ZoneStatsSummary) -> float:
+    """Computes a theoretical min time by summing the min time from each zone with multiplicity."""
+    total = 0.0
+    count: None | int = None
+    for stats in results.values():
+        if count is None:
+            count = int(stats["count"])
         else:
-            csv_file.write(f"{min(zones[dispatch_zone_names[0]]):.2f}\n")
+            count = min(count, int(stats["count"]))
+
+        total += stats["min"] * stats["count"]
+    assert count is not None and count > 0
+    return total / count
 
 
-def run(cli_args: Sequence[str], gpu_id: int):
+def get_zone_stats(
+    zones: dict[str, list[int]], name_filter: Callable[[str], bool] = (lambda s: True)
+) -> ZoneStatsSummary:
+    """Get statistics for each zone as a dictionary."""
+    results: ZoneStatsSummary = {}
+    for zone_name, times in zones.items():
+        if not name_filter(zone_name):
+            continue
+        min_time = min(times)
+        max_time = min(times)
+        mean_time = statistics.mean(times)
+        stddev = statistics.stdev(times) if len(times) > 1 else 0
+        count = len(times)
+        results[zone_name] = {
+            "min": min_time,
+            "max": max_time,
+            "mean": mean_time,
+            "stddev": stddev,
+            "count": count,
+        }
+    return results
+
+
+def print_zone_stats(results: ZoneStatsSummary) -> None:
+    """Prints a ZoneStatsSummary."""
+    multiple_zones = len(results.keys()) > 1
+    for zone_name, stats in results.items():
+        s = ">>> "
+        if multiple_zones:
+            s += f"{zone_name}\n>>>>\t"
+        decorate_val = lambda val: (
+            f"{val:.2f}us" if isinstance(val, float) else str(val)
+        )
+        s += " ".join([f"{key}={decorate_val(value)}" for key, value in stats.items()])
+        print(s)
+
+
+def run(cli_args: Sequence[str], gpu_id: int, use_iree: bool):
     print(shlex.join(cli_args))
     key = BooOpRegistry.find_key_from_command(" ".join(cli_args))
     if key is None:
@@ -128,7 +193,7 @@ def run(cli_args: Sequence[str], gpu_id: int):
     )
     args = parser.parse_args(cli_args)
     sig = parser_cls.get_signature(args)
-    launchable = get_launchable(sig)
+    launchable = get_launchable(sig) if use_iree else sig.get_nn_module(use_custom=True)
 
     # get the number of available GPU's
     num_devices = 1 if gpu_id != -1 else torch.cuda.device_count()
