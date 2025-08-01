@@ -166,7 +166,7 @@ def main():
         iree_results = _get_zone_stats(iree_zones)
         _print_zone_stats(iree_results)
 
-        iree_theoretical_min = _get_theoretical_min_time(iree_results)
+        iree_theoretical_min = _get_theoretical_min_time(iree_results, timing_args.iter)
         print(f">>> Per-launch GPU min time (IREE): {iree_theoretical_min:.2f}us")
         csv_file.write(f"{iree_theoretical_min:.2f}")
 
@@ -194,7 +194,8 @@ def main():
 
         ref_results = _get_zone_stats(ref_zones)
         _print_zone_stats(ref_results)
-        ref_theoretical_min = _get_theoretical_min_time(ref_results)
+        ref_theoretical_min = _get_theoretical_min_time(ref_results, timing_args.iter)
+
         csv_file.write(f",{ref_theoretical_min:.2f}\n")
         print(
             f">>> Per-launch GPU min time ({ref_backend}): {ref_theoretical_min:.2f}us"
@@ -265,19 +266,12 @@ def _get_sample_args(
     return per_device_data
 
 
-def _get_theoretical_min_time(results: ZoneStatsSummary) -> float:
+def _get_theoretical_min_time(results: ZoneStatsSummary, iter: int) -> float:
     """Computes a theoretical min time by summing the min time from each zone with multiplicity."""
     total = 0.0
-    count: None | int = None
     for stats in results.values():
-        if count is None:
-            count = int(stats["count"])
-        else:
-            count = min(count, int(stats["count"]))
-
-        total += stats["min"] * stats["count"]
-    assert count is not None and count > 0
-    return total / count
+        total += stats["min"] * (stats["count"] // iter)
+    return total
 
 
 def _extract_zones(prof: profile | None) -> ZoneData:
