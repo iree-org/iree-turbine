@@ -11,7 +11,7 @@ from pathlib import Path
 
 import torch
 
-from iree.turbine.kernel.boo.runtime import LaunchableRuntimeCache, use_cache_dir
+from iree.turbine.kernel.boo.runtime import use_cache_dir
 from iree.turbine.kernel.boo.ops import (
     boo_conv,
     enable_backward,
@@ -30,7 +30,6 @@ def use_backward():
     ("x_grad", "w_grad"), ((False, False), (True, False), (False, True), (True, True))
 )
 def testBackwardCachePytorch(x_grad, w_grad, boo_cache_dir: Path):
-    LaunchableRuntimeCache.clear()
     device = "cuda:0" if torch.cuda.is_available() else None
     x = torch.ones(
         [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=x_grad
@@ -83,7 +82,6 @@ def _marked_xfail(*args):
     ),
 )
 def testBackwardCacheBoo(x_grad, w_grad, boo_cache_dir: Path):
-    LaunchableRuntimeCache.clear()
     device = "cuda:0" if torch.cuda.is_available() else None
     x = torch.ones(
         [1, 1, 16, 16], dtype=torch.float32, device=device, requires_grad=x_grad
@@ -121,11 +119,6 @@ def testBackwardCacheBoo(x_grad, w_grad, boo_cache_dir: Path):
 
 @pytest.mark.usefixtures("use_backward")
 class TestBooConv:
-    @pytest.fixture(autouse=True)
-    def setUp(self):
-        LaunchableRuntimeCache.clear()
-        LaunchableRuntimeCache.set_cache_limit(0)
-
     def testBooConvNonDefault(self):
         device = "cuda:0" if torch.cuda.is_available() else None
         x = torch.ones([2, 16, 16, 3], dtype=torch.float32, device=device)

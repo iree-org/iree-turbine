@@ -118,11 +118,13 @@ class LaunchableRuntimeCache:
         return _launchable_cache
 
     @staticmethod
-    def clear():
-        global _launchable_cache
-        if not "_launchable_cache" in globals():
-            return
-        _launchable_cache.session_cache.clear()
+    def reset():
+        # Delete the current cache object, to ensure it's fully reset.
+        launchable_cache = globals().pop("_launchable_cache", None)
+        if launchable_cache is not None:
+            assert isinstance(launchable_cache, LaunchableRuntimeCache)
+            # Clear the old cache in case someone has a reference to it.
+            launchable_cache.session_cache.clear()
 
     @staticmethod
     def set_cache_limit(new_cache_limit: int | None):

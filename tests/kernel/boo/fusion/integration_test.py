@@ -19,7 +19,6 @@ def test_custom_boo_conv_used():
     recorder = EagerAndRecordGraphs()
     compiled_conv = torch.compile(
         torch.ops.aten.convolution,
-        dynamic=False,
         backend=boo.backend(nested_backend=recorder),
     )
 
@@ -55,7 +54,6 @@ def test_filter_transpose_conv():
     recorder = EagerAndRecordGraphs()
     compiled_conv = torch.compile(
         torch.ops.aten.convolution,
-        dynamic=False,
         backend=boo.backend(nested_backend=recorder),
     )
 
@@ -103,7 +101,7 @@ def test_output_layout(device: str, memory_format: torch.memory_format):
     """Test that we properly match the layout of pytorch's implementation."""
     with torch.device(device):
         conv = torch.ops.aten.convolution
-        boo_conv = torch.compile(conv, dynamic=False, backend="iree_boo")
+        boo_conv = torch.compile(conv, backend="iree_boo")
         N, C, H, W = (1, 16, 4, 4)
         F = 32
         K = 3

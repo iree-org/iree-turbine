@@ -11,7 +11,6 @@ from pathlib import Path
 import torch
 import iree.turbine.kernel.boo.ops as boo_ops
 import iree.turbine.aot as aot
-from iree.turbine.kernel.boo.runtime import LaunchableRuntimeCache
 
 
 class LayoutCustomizableSample0(torch.nn.Module):
@@ -75,7 +74,6 @@ def test_AOT_layout_conv_replacement(device: torch.device, boo_cache_dir: Path):
     w = torch.randn([f, C, k, k], device=device).to(memory_format=torch.channels_last)
     exported_program = torch.export.export(LayoutCustomizableSample1(), args=(x, w))
     gm = exported_program.graph_module
-    LaunchableRuntimeCache.clear()
     graph_op = boo_ops.get_custom_graph_op(gm, force_single_dispatch=True)
     y: torch.Tensor = graph_op(x, w)
     assert y.is_contiguous(

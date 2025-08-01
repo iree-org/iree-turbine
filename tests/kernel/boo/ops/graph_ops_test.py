@@ -11,7 +11,6 @@ from pathlib import Path
 import torch
 
 from iree.turbine.kernel.boo.ops import get_custom_graph_op
-from iree.turbine.kernel.boo.runtime import LaunchableRuntimeCache
 
 
 class SampleModule(torch.nn.Module):
@@ -46,11 +45,6 @@ class LongFusionSample(torch.nn.Module):
 
 
 class TestGraphOps:
-    @pytest.fixture(autouse=True)
-    def setUp(self):
-        LaunchableRuntimeCache.clear()
-        LaunchableRuntimeCache.set_cache_limit(0)
-
     def testLongPathName(self):
         m = LongFusionSample(16, 32, 10)
         x = torch.ones([3, 3, 16, 16])
