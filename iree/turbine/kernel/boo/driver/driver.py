@@ -299,7 +299,7 @@ def _get_zone_stats(zones: ZoneData) -> ZoneStatsSummary:
     results: ZoneStatsSummary = {}
     for zone_name, times in zones.items():
         min_time = min(times)
-        max_time = min(times)
+        max_time = max(times)
         mean_time = statistics.mean(times)
         stddev = statistics.stdev(times) if len(times) > 1 else 0
         count = len(times)
