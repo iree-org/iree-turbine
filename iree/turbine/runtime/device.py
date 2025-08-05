@@ -50,6 +50,17 @@ __all__ = [
     "DeviceState",
 ]
 
+TORCH_DEVICE_NAME_TO_SKU = {
+    "AMD Instinct MI300A": "mi300a",
+    "AMD Instinct MI300X": "mi300x",
+    "AMD Instinct MI308X": "mi308x",
+    "AMD Instinct MI325X": "mi325x",
+    "AMD Instinct MI250X": "mi250x",
+    "AMD Instinct MI250": "mi250",
+    "AMD Instinct MI210": "mi210",
+    "AMD Instinct MI100": "mi100",
+}
+
 
 # TODO: move this down into iree as an extention to the
 #       driver api.
@@ -700,14 +711,20 @@ def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
     # specified target. However the IREE target-chip flag only expects the
     # prefix. See: https://github.com/iree-org/iree/issues/17402
     # This should be changed to tunnel through target information unmolested.
-    gcn_arch_name: str = props.gcnArchName
+    gcn_arch_name = props.gcnArchName
+    assert isinstance(gcn_arch_name, str)
     colon_pos = gcn_arch_name.find(":")
     if colon_pos >= 0:
-        gcn_arch_name = gcn_arch_name[0:colon_pos]
+        hip_target = gcn_arch_name[0:colon_pos]
+    else:
+        hip_target = gcn_arch_name
+    # Use a specific SKU if we recognize it.
+    hip_sku = TORCH_DEVICE_NAME_TO_SKU.get(props.name)
+    if hip_sku is not None:
+        hip_target = hip_sku
     if device:
-        gcn_arch_name = gcn_arch_name
         device.compile_target_flags = device.compile_target_flags + (
-            f"--iree-hip-target={gcn_arch_name}",
+            f"--iree-hip-target={hip_target}",
         )
         device._recompute_target_keys()
     return device
