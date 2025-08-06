@@ -17,11 +17,11 @@ from ..exports.parser import OpCLIParser
 class Mode(ModeBase, IntEnum):
     """Mode selector for layer normalization, with each gradient being its own mode."""
 
-    FORWARD = 0
-    INPUT_BACKWARD = 1
-    WEIGHT_BACKWARD = 2
-    BIAS_BACKWARD = 3
-    FULL_BACKWARD = 4
+    FORWARD = 1
+    INPUT_BACKWARD = 2
+    WEIGHT_BACKWARD = 4
+    BIAS_BACKWARD = 8
+    FULL_BACKWARD = INPUT_BACKWARD | WEIGHT_BACKWARD | BIAS_BACKWARD
 
 
 class LayerNormSignature(OpSignature):
@@ -46,6 +46,7 @@ class LayerNormSignature(OpSignature):
         dtype=torch.bfloat16,
         mode: str | Mode = Mode.FORWARD,
         forwarded_args_dtype: torch.dtype | None = None,
+        use_aten: bool = True,
     ):
         if (
             len(normalized_shape) > len(input_shape)
@@ -63,6 +64,7 @@ class LayerNormSignature(OpSignature):
         self.dtype = dtype
         self.mode = Mode.parse(mode)
         self.forwarded_args_dtype = forwarded_args_dtype or dtype
+        self.use_aten = use_aten
 
     @property
     def output_shape(self) -> list[int]:
@@ -124,6 +126,7 @@ class LayerNormSignature(OpSignature):
             "x".join(str(i) for i in self.input_shape),
             "w" if self.elementwise_affine is not None else "",
             "b" if self.bias is not None else "",
+            "aten" if self.use_aten else "",
         ]
         return "_".join(name_items)
 
@@ -183,6 +186,7 @@ class LayerNormSignature(OpSignature):
             "dtype": self.dtype,
             "mode": self.Mode,
             "forwarded_args_dtype": self.forwarded_args_dtype,
+            "use_aten": self.use_aten,
         }
 
     def get_output_size(self) -> int:
@@ -395,9 +399,9 @@ class LayerNormBackwardFull(torch.nn.Module):
     weights, and bias of the layer normalization given the gradient of its
     output."""
 
-    def __init__(self, signature: LayerNormSignature, *, use_aten=True):
+    def __init__(self, signature: LayerNormSignature):
         super().__init__()
-        self.use_aten = use_aten
+        self.use_aten = signature.use_aten
         self.normalized_shape = signature.normalized_shape
         self.need_bias = signature.bias
         self.need_weight = signature.elementwise_affine
@@ -438,12 +442,14 @@ class LayerNormBackwardFull(torch.nn.Module):
         # Recompute norm instead of saving it. Judging by the signature, this is the same
         # decision as ATen.
         norm = (input - mean) * rstd
+        # norm = norm.to(dtype=input.dtype)
         dnorm = grad_output * weight if weight is not None else grad_output
         dx = (
             dnorm
             - dnorm.mean(dim=self.normalized_dim, keepdim=True)
             - norm * (dnorm * norm).mean(dim=self.normalized_dim, keepdim=True)
         ) * rstd
+        # dx = dx.to(dtype=input.dtype)
         dw = None
         if self.need_weight:
             dw = (grad_output * norm).sum(self.keep_dim)
@@ -489,19 +495,10 @@ class LayerNormParser(OpCLIParser):
         ), "Can only normalize one trailing dimension for now (MIOpen limitation)."
         normalized_shape = shape[args.normalized_dim :]
 
-        match args.forw:
-            case 1:
-                mode = Mode.FORWARD
-            case 2:
-                mode = Mode.INPUT_BACKWARD
-            case 3:
-                mode = Mode.WEIGHT_BACKWARD
-            case 4:
-                mode = Mode.BIAS_BACKWARD
-            case 5:
-                mode = Mode.FULL_BACKWARD
-            case _:
-                raise ValueError(f"Unsupported mode {args.forw}.")
+        try:
+            mode = Mode(args.forw)
+        except Exception as e:
+            raise ValueError(f"Unsupported mode {args.forw}.") from e
 
         return LayerNormSignature(
             input_shape=shape,
@@ -511,6 +508,7 @@ class LayerNormParser(OpCLIParser):
             bias=True,
             dtype=_DTypeCommandDispatcher.get_dtype(args.command),
             mode=mode,
+            use_aten=args.use_aten,
         )
 
     def get_miopen_parser() -> argparse.ArgumentParser:
@@ -519,7 +517,11 @@ class LayerNormParser(OpCLIParser):
             "command", default="layernorm", choices=_DTypeCommandDispatcher.choices()
         )
         parser.add_argument(
-            "--forw", "-F", type=int, default=1, help="Run only forward LayerNorm"
+            "--forw",
+            "-F",
+            type=int,
+            default=1,
+            help="Kind of kernel to run, not compatible with MIOpen (1 forward, 2 backward input, 4 backward weight, 8 backward bias, 14 full backward)",
         )
         parser.add_argument(
             "--input",
@@ -538,6 +540,12 @@ class LayerNormParser(OpCLIParser):
         )
         parser.add_argument(
             "--normalized_dim", "-o", type=int, default=3, help="Normalized dim"
+        )
+        parser.add_argument(
+            "--use-aten",
+            type=bool,
+            default=True,
+            help="Use core ATen op instead of a manual implementation",
         )
         return parser
 
