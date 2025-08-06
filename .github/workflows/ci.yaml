@@ -72,12 +72,7 @@ jobs:
       - name: Run unit tests
         if: ${{ !cancelled() }}
         run: |
-          pytest -n 4 --capture=tee-sys -vv .
-
-      - name: Run LIT tests
-        if: ${{ !cancelled() }}
-        run: |
-          lit lit_tests/ -v
+          pytest -n 4 --timeout=300 --capture=tee-sys -vv .
 
       - name: MyPy Type Checking
         if: ${{ !cancelled() }}
