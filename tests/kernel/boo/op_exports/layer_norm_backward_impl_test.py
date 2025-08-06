@@ -114,14 +114,16 @@ def test_layer_norm_impl(
 @pytest.mark.parametrize(
     "elementwise_affine_bias", [(False, False), (True, False), (True, True)]
 )
+@pytest.mark.parametrize("use_aten", [True, False])
 def test_layer_norm_combined_impl(
     input_shape: tuple[int, ...],
     device: str,
     dtype: torch.dtype,
     elementwise_affine_bias: tuple[bool, bool],
+    use_aten: bool,
 ):
     # Account for ATen weirdness on GPU.
-    if device == "cuda" and dtype == torch.bfloat16:
+    if device == "cuda" and dtype == torch.bfloat16 and use_aten:
         forwarded_args_dtype = torch.float32
     else:
         forwarded_args_dtype = dtype
@@ -134,6 +136,7 @@ def test_layer_norm_combined_impl(
         "bias": bias,
         "dtype": dtype,
         "forwarded_args_dtype": forwarded_args_dtype,
+        "use_aten": use_aten,
     }
     fwd_sig = LayerNormSignature(**kwargs)
     args = fwd_sig.get_sample_args(seed=1)
@@ -150,15 +153,14 @@ def test_layer_norm_combined_impl(
 
     main_result = fwd_results[fwd_sig.main_result_index]
     main_result.retain_grad()
-    # TODO: this is not a good loss function (#1021).
-    loss = main_result.sum()
+    loss = main_result.mean() / main_result.numel()
     loss.backward(retain_graph=True)
 
     bwd_input_args = bwd_sig.arrange_backward_launch_args(args, fwd_results)
     grads = tuple(x for x in bwd(main_result.grad, *bwd_input_args) if x is not None)
 
-    rtol = 1e-4
-    atol = 1e-4
+    rtol = 1e-6
+    atol = 1e-6
     assert len(grads) == len(args)
     results = [
         torch.allclose(arg.grad, grad, rtol=rtol, atol=atol)
