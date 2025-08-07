@@ -81,6 +81,9 @@ class TestGraphOps:
         ):
             new_y = graph_op(m.linear.weight, m.linear.bias, new_x)
 
+        # Verify timeline progressed after failure.
+        y = graph_op(m.linear.weight, m.linear.bias, x)
+
         # Verify caching.
         op_name = graph_op._qualified_op_name.split("::")[-1]
         cache_subdir_names = [p.name for p in boo_cache_dir.glob("*/")]
