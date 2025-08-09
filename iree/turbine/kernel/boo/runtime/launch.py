@@ -247,6 +247,8 @@ def get_launchable(
             module_factory, arg_factory, func_name, force_single_dispatch
         )
         extra_flags = [
+            "--iree-opt-level=O3",
+            "--iree-dispatch-creation-enable-fuse-padding-into-linalg-consumer-ops",
             "--iree-llvmgpu-set-workgroup-distribution-along=x",
         ]
         if BOO_TUNING_SPEC_PATH != "":
