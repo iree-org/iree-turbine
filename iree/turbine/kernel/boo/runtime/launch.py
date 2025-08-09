@@ -11,7 +11,7 @@ import warnings
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Callable, Iterable, Tuple, Sequence
+from typing import Any, Callable, Iterable, Tuple, Sequence, TypeAlias
 
 import torch
 
@@ -20,7 +20,7 @@ from iree.runtime import VmModule
 from .cache import *
 from ....aot import export
 from ....importers.ir import Attribute, MLIRError
-from ....runtime import Launchable
+from ....runtime import Launchable, Device
 from ....support.logging import runtime_logger as logger
 
 __all__ = [
@@ -127,9 +127,12 @@ def get_module_asm(
     return module_asm
 
 
+CompilerFlagsCallback: TypeAlias = Callable[[Device, Path], list[str]]
+
+
 def out_of_process_compile(
     func_name: str, key_hashes_and_flags: Sequence[Tuple[str, Sequence[str]]]
-) -> Tuple[str, Tuple[bool]]:
+) -> Tuple[str, Tuple[bool, ...]]:
     """Runs compilation via command line tool. Does not raise an exception if compilation fails."""
     boo_cache = set_cache_dir()
     mlir_path = boo_cache / func_name / f"{func_name}.mlir"
@@ -167,7 +170,9 @@ def out_of_process_compile(
     return func_name, tuple(success)
 
 
-def user_flags_jit_callback(func_name: str, extra_flags: Sequence[str], source: str):
+def user_flags_jit_callback(
+    func_name: str, compiler_flags_callback: CompilerFlagsCallback, source: str
+):
     """VmModule callback for out-of-process compilation with extra flags provided.
     If boo cache is disabled, this will create temporary files for compilation."""
 
@@ -199,7 +204,9 @@ def user_flags_jit_callback(func_name: str, extra_flags: Sequence[str], source: 
             vmfb = vmfb_path.read_bytes()
             return VmModule.copy_buffer(vm_instance, vmfb)
 
-        flags = list(device.compile_target_flags) + list(extra_flags)
+        flags = list(device.compile_target_flags) + compiler_flags_callback(
+            device, vmfb_path.parent
+        )
 
         if is_cache_enabled():
             mlir_path = boo_cache / func_name / f"{func_name}.mlir"
@@ -217,13 +224,29 @@ def user_flags_jit_callback(func_name: str, extra_flags: Sequence[str], source: 
     return callback
 
 
+def default_compiler_flags_callback(device: Device, cache_dir: Path) -> list[str]:
+    flags: list[str] = []
+    if device.driver_id == "hip":
+        flags.append("--iree-opt-level=O3")
+        if BOO_TUNING_SPEC_PATH != "":
+            assert Path(
+                BOO_TUNING_SPEC_PATH
+            ).is_file(), "Provided path for tuning specs is invalid."
+            flags.append(f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}")
+    else:
+        # This is the highest level with full backend support.
+        flags.append("--iree-opt-level=O1")
+    return flags
+
+
 def get_launchable(
     module_factory: torch.nn.Module | Callable[[], torch.nn.Module],
     arg_factory: Iterable | Callable[[], Iterable],
-    func_name="main",
+    func_name: str = "main",
     *,
-    cache_only=False,
-    force_single_dispatch=False,
+    cache_only: bool = False,
+    force_single_dispatch: bool = False,
+    compiler_flags_callback: CompilerFlagsCallback = default_compiler_flags_callback,
 ) -> Launchable:
     session_cache_key = func_name + cache_only * "_no_jit"
     launch = LaunchableRuntimeCache.get(session_cache_key)
@@ -237,6 +260,9 @@ def get_launchable(
         arg_factory = lambda: args
     cache_dir = set_cache_dir() / func_name if is_cache_enabled() else None
     if cache_only:
+        assert (
+            cache_dir is not None
+        ), "Cache-only was requested, but the cache is disabled."
         launch = Launchable.from_file_cache_only(
             cache_dir,
             parameter_providers=(),
@@ -246,17 +272,10 @@ def get_launchable(
         module_asm = get_module_asm(
             module_factory, arg_factory, func_name, force_single_dispatch
         )
-        extra_flags = [
-            "--iree-llvmgpu-set-workgroup-distribution-along=x",
-        ]
-        if BOO_TUNING_SPEC_PATH != "":
-            extra_flags.append(
-                f"--iree-codegen-tuning-spec-path={BOO_TUNING_SPEC_PATH}"
-            )
         launch = Launchable.from_vm_module(
             user_flags_jit_callback(
                 func_name,
-                extra_flags,
+                compiler_flags_callback,
                 module_asm,
             ),
             entry_point=f"{func_name}$async",
