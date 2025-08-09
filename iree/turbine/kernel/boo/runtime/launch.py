@@ -174,7 +174,16 @@ def user_flags_jit_callback(func_name: str, extra_flags: Sequence[str], source: 
     boo_cache = set_cache_dir()
 
     def _compile(flags, mlir_path, vmfb_path):
-        cl_list = ["iree-compile"] + flags + [str(mlir_path), "-o", str(vmfb_path)]
+        stats_path = vmfb_path.parent / f"compilation_statistics.txt"
+        cl_list = [
+            "iree-compile",
+            *flags,
+            str(mlir_path),
+            "-o",
+            str(vmfb_path),
+            f"--iree-scheduling-dump-statistics-file={stats_path}",
+            f"--iree-scheduling-dump-statistics-format=json",
+        ]
         command = shlex.join(cl_list)
         (vmfb_path.parent / f"compile_command_{vmfb_path.stem}.txt").write_text(command)
         ret = subprocess.run(command, capture_output=True, shell=True, timeout=10)
