@@ -10,7 +10,6 @@ from typing import Sequence, Literal
 import torch
 from torch.fx.graph_module import GraphModule
 from torch.fx.node import Target
-from torch.fx.passes.shape_prop import TensorMetadata
 
 from .library import *
 from .utils import (
@@ -28,8 +27,8 @@ __all__ = [
 
 def _get_io_from_gm(
     gm: GraphModule,
-) -> tuple[list[Target], list[TensorMetadata | None]]:
-    """Returns input nodes and output TensorMetadata from the graph module."""
+) -> tuple[list[Target], list[torch.Tensor | None]]:
+    """Returns input nodes and output fake tensors from the graph module."""
 
     inputs = []
     meta_outputs = []
@@ -39,7 +38,7 @@ def _get_io_from_gm(
         if node.op == "output":
             meta_outputs.extend(
                 [
-                    val.meta.get("tensor_meta", None) if val is not None else None
+                    val.meta.get("val", None) if val is not None else None
                     for val in node.args[0]
                 ]
             )
@@ -47,7 +46,7 @@ def _get_io_from_gm(
 
 
 def _get_schema(
-    inputs: Sequence[Target], outputs: Sequence[TensorMetadata | None]
+    inputs: Sequence[Target], outputs: Sequence[torch.Tensor | None]
 ) -> str:
     """Generate a schema from the result of `get_io_from_gm`."""
 
@@ -122,8 +121,8 @@ class _LayoutManagedModuleForAOTMlirExport(torch.nn.Module):
 
     def __init__(
         self,
-        input_mem_format_perms: Sequence[MemoryFormatPermutation],
-        output_mem_format_perms: Sequence[MemoryFormatPermutation],
+        input_mem_format_perms: Sequence[MemoryFormatPermutation | None],
+        output_mem_format_perms: Sequence[MemoryFormatPermutation | None],
         source_module: torch.nn.Module,
     ):
         super().__init__()
@@ -160,14 +159,18 @@ def _define_custom_graph_op(
         get_memory_format_permutation(t, strict=True) for t in outputs if t is not None
     ]
     logger.debug(
-        "Output TensorMetadata:\n%s\nOutput MemoryFormatPermutation:\n%s",
+        "Output fake tensors:\n%s\nOutput MemoryFormatPermutation:\n%s",
         str(outputs),
         str(output_mem_format_perms),
     )
 
-    input_fake_tensors: list[torch.Tensor] = [
+    input_fake_tensors: list[torch.Tensor | None] = [
         n.meta.get("val") for n in gm.graph.find_nodes(op="placeholder")
     ]
+
+    assert all(
+        [t is not None for t in input_fake_tensors]
+    ), f"Expected fake input tensors for graph module:\n{gm}\nGot {input_fake_tensors}."
 
     spec_name, input_mem_format_perms = (
         get_arg_spec_name_and_memory_format_permutations(op_name, *input_fake_tensors)
