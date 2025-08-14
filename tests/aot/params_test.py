@@ -97,11 +97,11 @@ class ParamsTest(unittest.TestCase):
         output = export(m, args=(torch.empty([128, 20]),))
         asm = str(output.mlir_module)
         self.assertIn(
-            'util.global private @__auto.classifier.weight = #stream.parameter.named<"model"::"classifier.weight">',
+            'util.global private @__auto.classifier.weight = #flow.parameter.named<"model"::"classifier.weight">',
             asm,
         )
         self.assertIn(
-            'util.global private @__auto.classifier.bias = #stream.parameter.named<"model"::"classifier.bias">',
+            'util.global private @__auto.classifier.bias = #flow.parameter.named<"model"::"classifier.bias">',
             asm,
         )
         # Verify that the small tensor is inlined.
