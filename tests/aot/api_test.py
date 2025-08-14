@@ -108,11 +108,11 @@ class ExportAPI(unittest.TestCase):
         asm = str(exported.mlir_module)
         self.assertNotIn("dense_resource", asm)
         self.assertIn(
-            'util.global private @__auto.classifier.weight = #stream.parameter.named<"model"::"classifier.weight">',
+            'util.global private @__auto.classifier.weight = #flow.parameter.named<"model"::"classifier.weight">',
             asm,
         )
         self.assertIn(
-            'util.global private @__auto.classifier.bias = #stream.parameter.named<"model"::"classifier.bias">',
+            'util.global private @__auto.classifier.bias = #flow.parameter.named<"model"::"classifier.bias">',
             asm,
         )
 

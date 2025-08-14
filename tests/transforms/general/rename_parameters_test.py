@@ -19,9 +19,9 @@ from iree.turbine.transforms.general import rename_parameters
 
 SIMPLE_GLOBALS_ASM = r"""
 module {
-    util.global private @_params.classifier.default {noinline} = #stream.parameter.named<"default"> : tensor<30xf32>
-    util.global private @_params.classifier.weight {noinline} = #stream.parameter.named<"foo"::"WEIGHT"> : tensor<30x20xf32>
-    util.global private @_params.classifier.bias {noinline} = #stream.parameter.named<"foo"::"params.classifier.bias"> : tensor<30xf32>
+    util.global private @_params.classifier.default {noinline} = #flow.parameter.named<"default"> : tensor<30xf32>
+    util.global private @_params.classifier.weight {noinline} = #flow.parameter.named<"foo"::"WEIGHT"> : tensor<30x20xf32>
+    util.global private @_params.classifier.bias {noinline} = #flow.parameter.named<"foo"::"params.classifier.bias"> : tensor<30xf32>
     util.global private @_params.classifier.other {noinline} = dense<0.0> : tensor<30xf32>
     util.global private @_uninitialized {noinline} : tensor<30xf32>
 }
@@ -45,15 +45,15 @@ class RenameTest(unittest.TestCase):
             module_asm = str(module_op)
             print(module_asm)
             self.assertIn(
-                '@_params.classifier.default {noinline} = #stream.parameter.named<"XXX"::"YYY"> : tensor<30xf32>',
+                '@_params.classifier.default {noinline} = #flow.parameter.named<"XXX"::"YYY"> : tensor<30xf32>',
                 module_asm,
             )
             self.assertIn(
-                '@_params.classifier.weight {noinline} = #stream.parameter.named<"foo"::"weight"> : tensor<30x20xf32>',
+                '@_params.classifier.weight {noinline} = #flow.parameter.named<"foo"::"weight"> : tensor<30x20xf32>',
                 module_asm,
             )
             self.assertIn(
-                '@_params.classifier.bias {noinline} = #stream.parameter.named<"bar"::"BIAS"> : tensor<30xf32>',
+                '@_params.classifier.bias {noinline} = #flow.parameter.named<"bar"::"BIAS"> : tensor<30xf32>',
                 module_asm,
             )
 
