@@ -4,7 +4,7 @@ Currently, convolution with bias and activation fusions and layernorm kernels ar
 
 ## Usage
 
-Install `iree-turbine` following the instructions [here](./README.md#quick-start-for-users).
+Install `iree-turbine` following the instructions [here](/README.md#quick-start-for-users).
 Installing a nightly version is recommended as BOO is under rapid development.
 
 ### Enabling supported fusions in a model
