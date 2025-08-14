@@ -70,9 +70,9 @@ class TransposedMMMatcher(NamedOpMatcher[TransposedMMResult]):
 # TODO (ian): Make more generalizable using RenameParametersPass. Currently hardcoded for brevitas quantization
 GROUP_MATMUL_TEMPLATE = r"""
 module {{
-  util.global private @{param_name} {{noinline}} = #stream.parameter.named<"model"::"{param_name}"> : tensor<{k}x{n_div}xi8>
-  util.global private @{param_name}.quant.scale {{noinline}} = #stream.parameter.named<"model"::"{param_name}_scale"> : tensor<{k}x{group0}x{element_type}>
-  util.global private @{param_name}.quant.zero_point {{noinline}} = #stream.parameter.named<"model"::"{param_name}_zp"> : tensor<{k}x{group0}x{element_type}>
+  util.global private @{param_name} {{noinline}} = #flow.parameter.named<"model"::"{param_name}"> : tensor<{k}x{n_div}xi8>
+  util.global private @{param_name}.quant.scale {{noinline}} = #flow.parameter.named<"model"::"{param_name}_scale"> : tensor<{k}x{group0}x{element_type}>
+  util.global private @{param_name}.quant.zero_point {{noinline}} = #flow.parameter.named<"model"::"{param_name}_zp"> : tensor<{k}x{group0}x{element_type}>
 
   func.func private @compute_mm_group_quant(%a : tensor<{m}x{n}x{element_type}>) -> tensor<{m}x{k}x{element_type}> {{
     %c0 = arith.constant 0 : index

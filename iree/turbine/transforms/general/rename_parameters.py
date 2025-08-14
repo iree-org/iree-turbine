@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""This pass will rename any #stream.parameter.named<> attributes on globals.
+"""This pass will rename any #flow.parameter.named<> attributes on globals.
 
 It can either be used as-is or by sub-classing (i.e. in a model specific
 subclass that renames from A->B, etc).
@@ -50,7 +50,7 @@ class RenameParametersPass(Pass):
             # Make a prototype named parameter attribute so we can get its
             # typeid.
             self.parameter_attr_typeid = Attribute.parse(
-                '#stream.parameter.named<""::"">'
+                '#flow.parameter.named<""::"">'
             ).typeid
 
     def run(self):
@@ -89,13 +89,13 @@ class RenameParametersPass(Pass):
             if scoped_name[0] is None:
                 name = StringAttr.get(scoped_name[1])
                 return Attribute.parse(
-                    f"#stream.parameter.named<{name}> : {parameter_attr.type}"
+                    f"#flow.parameter.named<{name}> : {parameter_attr.type}"
                 )
             else:
                 scope = StringAttr.get(scoped_name[0])
                 name = StringAttr.get(scoped_name[1])
                 return Attribute.parse(
-                    f"#stream.parameter.named<{scope}::{name}> : {parameter_attr.type}"
+                    f"#flow.parameter.named<{scope}::{name}> : {parameter_attr.type}"
                 )
 
         # Check the rename map.
@@ -125,7 +125,7 @@ def _parse_parameter_attr(attr: Attribute) -> Optional[List[str]]:
     # vs string parsing them.
     # TODO: The parameter attribute correctly parses C escapes but prints unescaped :(
     asm = str(attr)
-    PREFIX = "#stream.parameter.named<"
+    PREFIX = "#flow.parameter.named<"
     STR_PATTERN = re.compile(r'"(.*?)(?!\\)"')
     if asm.startswith(PREFIX):
         asm = asm[len(PREFIX) :]
