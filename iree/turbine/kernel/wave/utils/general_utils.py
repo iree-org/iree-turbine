@@ -9,12 +9,13 @@ import iree.turbine.kernel.lang as tkl
 import os
 import sympy
 import torch
+import torch.fx as fx
 from typing import Any, Callable, Optional
 
 
 from ..._support.indexing import IndexExpr, IndexSequence, IndexSymbol
 from ...lang.global_symbols import *
-from ...ops.wave_ops import CustomOp, Read, Iterate, Write
+from ...ops.wave_ops import CustomOp, Read, Iterate, Write, get_custom
 from ..assumptions import Assumption
 from ..constraints import (
     Constraint,
@@ -389,6 +390,26 @@ def is_shared_read(node: CustomOp) -> bool:
     return (
         isinstance(node, Read)
         and subs_idxc(node.memory_type.address_space) == SHARED_ADDRESS_SPACE
+    )
+
+
+def has_write_shared_user(node: Read) -> bool:
+    return any(
+        isinstance(user, Write)
+        and subs_idxc(user.memory_type.address_space) == SHARED_ADDRESS_SPACE
+        for user in node.users
+    )
+
+
+def is_valid_global_read(node: fx.Node) -> bool:
+    """
+    Check if a read node is global and if its user writes to shared memory.
+    """
+    custom = get_custom(node)
+    return (
+        isinstance(custom, Read)
+        and subs_idxc(custom.memory_type.address_space) == GLOBAL_ADDRESS_SPACE
+        and has_write_shared_user(custom)
     )
 
 

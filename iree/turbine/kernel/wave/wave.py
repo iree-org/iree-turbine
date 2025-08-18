@@ -12,7 +12,7 @@ from ..compiler import builder, dispatch_codegen, kernel_codegen
 from ..lang import Grid, IndexMapping
 from ..lang.global_symbols import *
 from ..ops import wave_ops
-from ..ops.wave_ops import Iterate, CustomOp, get_custom, IterArg
+from ..ops.wave_ops import Iterate, CustomOp, get_custom
 from .._support.indexing import IndexingContext, IndexExpr, index_symbol
 from .symbolic_constraints import SymbolicAlias
 from .._support.tracing import (
@@ -52,6 +52,7 @@ from .decompose_vmma_ops import decompose_vmma_ops
 from .decompose_scan_ops import decompose_scan_ops
 from .decompose_dot_mma import decompose_dot_mma
 from .expansion.expansion import expand_graph, add_get_results
+from .gather_to_shared import gather_to_shared
 from .global_to_shared_gathers import global_to_shared_gathers
 from .hoisting import hoist_loop_invariant_ops
 from .minimize_global_loads import minimize_global_loads
@@ -602,6 +603,7 @@ class LaunchableWave(Launchable):
             ]
         graph_passes += [
             partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
+            partial(gather_to_shared, trace, self.constraints),
         ]
 
         # Partition strided operators.

@@ -22,12 +22,14 @@ from copy import deepcopy
 from .utils.symbol_utils import subs_idxc
 from .utils.general_utils import is_gather
 from .minimize_global_loads import (
-    has_write_shared_user,
     construct_min_global_access_pattern,
     materialize_shape,
     identify_optimizable_loads,
     update_write_dependencies,
     SharedReadMetadata,
+)
+from .utils.general_utils import (
+    has_write_shared_user,
 )
 
 """
