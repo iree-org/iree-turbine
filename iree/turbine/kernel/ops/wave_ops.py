@@ -1104,6 +1104,9 @@ class Placeholder(CustomOp):
 
     def infer_type(self):
         self.fx_node.type = self._type
+        # If type is None use the type from the placeholder's meta "lifted" node
+        if not self.fx_node.type and "lifted" in self.fx_node.meta:
+            self.fx_node.type = get_custom(self.fx_node.meta["lifted"]).type
 
     @property
     def index(self) -> list[dict[IndexSymbol, IndexSequence]]:

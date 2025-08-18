@@ -23,7 +23,7 @@ def infer_types(trace: CapturedTrace, subgraph: Optional[fx.Graph] = None):
         if isinstance(custom, NestedRegionOp):
             infer_types(trace, trace.region_graph.subgraphs[custom.subgraph_name])
         custom.infer_type()
-        # For implicit captures, get type from variables in root graph.
-        if "lifted" in custom.fx_node.meta:
+        # For implicit captures, get type from variables in root graph if type has not already been set.
+        if custom.type is None and "lifted" in custom.fx_node.meta:
             custom.type = custom.fx_node.meta["lifted"].type
         logger.debug(f"Setting type for {custom.fx_node} = {custom.type}")
