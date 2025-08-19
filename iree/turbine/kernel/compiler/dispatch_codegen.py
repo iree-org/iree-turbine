@@ -200,7 +200,7 @@ class StreamExecutable:
             )
 
             # TODO: Support passing workload to the dispatch function.
-            from ..wave.codegen import gen_sympy_index
+            # from ..wave.codegen import gen_sympy_index
 
             arguments = workgroup_builder.entry_block.arguments
 
@@ -221,14 +221,9 @@ class StreamExecutable:
                 result_type = index_type
                 workgroup_values = []
                 for dim in grid.dims:
-                    if isinstance(dim, IndexExpr):
-                        workgroup_values.append(gen_sympy_index(symbols_mapping, dim))
-                    else:
-                        workgroup_values.append(
-                            arith_d.constant(
-                                result_type, IntegerAttr.get(result_type, dim)
-                            )
-                        )
+                    workgroup_values.append(
+                        arith_d.constant(result_type, IntegerAttr.get(result_type, dim))
+                    )
 
                 while len(workgroup_values) < 3:
                     workgroup_values.append(

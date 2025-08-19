@@ -9,10 +9,8 @@ from typing import Any, Callable, Type, Optional, Sequence, Union, List
 import types
 
 from dataclasses import dataclass
-import inspect
 import operator as py_operator
 
-import torch
 import torch.fx as fx
 import torch.utils._pytree as pytree
 
@@ -55,12 +53,8 @@ from .ir import (
     AffineExpr,
     AffineMapAttr,
     ArrayAttr,
-    FunctionType,
     VectorType,
-    DenseElementsAttr,
-    F32Type,
     IndexType,
-    FloatAttr,
     InsertionPoint,
     IrType,
     Location,
@@ -70,7 +64,6 @@ from .ir import (
     VectorType,
     arith_d,
     func_d,
-    math_d,
     vector_d,
     scf_d,
 )
@@ -835,11 +828,6 @@ def cast_kernel_buffer(
     value, node = cast_py_lvalue(emitter, kb)
     ir_type = value.type
     py_type = node.type
-    if py_type is None:
-        try:
-            py_type = ops.wave_ops.get_custom(node).type
-        except:
-            raise CodegenError(f"Could not find type for node {node}")
 
     if not MemRefType.isinstance(ir_type):
         raise CodegenError(

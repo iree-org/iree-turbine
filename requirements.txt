@@ -24,6 +24,3 @@ torchvision
 
 # Used for managing pre-commit flows.
 pre-commit
-
-# For scheduling in wave
-./iree/turbine/kernel/wave/scheduling/aplp

@@ -1,9 +1,0 @@
-[build-system]
-requires = ["maturin>=1.0,<2.0"]
-build-backend = "maturin"
-
-[project]
-name = "aplp"
-version = "0.1.0"
-description = "A Python package with a Rust extension for APLP computation."
-requires-python = ">=3.7"

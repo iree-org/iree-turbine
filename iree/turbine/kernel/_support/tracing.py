@@ -136,15 +136,15 @@ class KernelTracer(SubgraphTracer):
                 node.meta["dtype"] = t
                 node.meta["symbolic_type"] = []
                 self.current_arg_id += 1
-            elif issubclass(t, SymbolBind):
-                assert (
-                    node.op == "placeholder"
-                ), "SymbolBind must be a placeholder, got {node.op}"
-                node.meta["arg_id"] = self.current_arg_id
-                node.meta["symbol_name"] = self.arg_names[self.current_arg_id]
-                node.meta["dtype"] = t.dtype
-                node.meta["symbolic_type"] = []
-                self.current_arg_id += 1
+            # elif issubclass(t, SymbolBind):
+            #     assert (
+            #         node.op == "placeholder"
+            #     ), "SymbolBind must be a placeholder, got {node.op}"
+            #     node.meta["arg_id"] = self.current_arg_id
+            #     node.meta["symbol_name"] = self.arg_names[self.current_arg_id]
+            #     node.meta["dtype"] = t.dtype
+            #     node.meta["symbolic_type"] = []
+            #     self.current_arg_id += 1
             elif isinstance(t, KernelBufferMeta):
                 # Set arg_id meta to placeholder/argument nodes
                 # S.T we don't rely on topological order for correct
@@ -156,18 +156,11 @@ class KernelTracer(SubgraphTracer):
         return super().proxy(node)
 
     def create_arg(self, a):
-        # Cannot import globally due to import cycles
-        from ..wave.constraints import GenericDot
-
         # Let IndexExpr persist as arguments.
         if isinstance(a, sympy.Basic):
             return a
         # Let DataType persist as arguments.
         if isinstance(a, DataType):
-            return a
-        if isinstance(a, IndexMapping):
-            return a
-        if isinstance(a, GenericDot):
             return a
         if isinstance(a, FunctionType):
             return a
@@ -253,12 +246,6 @@ class CompiledContext(BaseContext):
             backed_sym_index_type(BoundedRelation(0, n, upper_inclusive=False))
             for n in grid_type.symbolic_shape
         ]
-
-    def register_custom_op(self, name: str, op: CustomOp):
-        def handler(*args, **kwargs):
-            return op.handle(self.region_graph, *args, **kwargs)
-
-        setattr(self, f"handle_{name}", handler)
 
     ### ========================================================================
     ### Core Operations
