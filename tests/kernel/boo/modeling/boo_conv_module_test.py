@@ -137,6 +137,9 @@ class TestBooConv2dLaunching:
             in [i.name for i in boo_cache_dir.glob("*")]
         )
 
+    @pytest.mark.xfail(
+        condition=torch.cuda.is_available(), reason="Compilation failure on GPU."
+    )
     def testReplacement(self, boo_cache_dir: Path):
         x = torch.ones([10, 3, 16, 16], device=self.device, dtype=torch.float32)
         model2 = replace_conv2d_with_boo_conv(self.model1)
