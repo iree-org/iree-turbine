@@ -20,7 +20,6 @@ source "${WHEELHOUSE_DIR}"/test.venv/bin/activate
 pip install --no-index -f "${WHEELHOUSE_DIR}" iree-turbine[testing]
 pip install --no-index -f "${WHEELHOUSE_DIR}" torchvision
 # Install local packages
-pip install ${REPO_ROOT}/iree/turbine/kernel/wave/scheduling/aplp
 pip freeze
 
 # Run tests
