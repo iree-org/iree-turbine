@@ -73,53 +73,11 @@ def _get_worker_id(config):
     return int(worker_id[2:])
 
 
-def _set_default_device(config):
-    """
-    Distributes the tests over multiple GPUs.
-    """
-    distribute = int(config.getoption("--gpu-distribute"))
-    if distribute < 1:
-        return
-
-    worker_id = _get_worker_id(config)
-    if worker_id is None:
-        return
-
-    device_id = worker_id % distribute
-
-    import iree.turbine.kernel.wave.utils.general_utils as general_utils
-
-    general_utils.DEFAULT_GPU_DEVICE = device_id
-
-
-def _disable_cache(config):
-    import iree.turbine.kernel.wave.cache as cache
-
-    cache.WAVE_CACHE_ON = int(os.environ.get("WAVE_CACHE_ON", 0))
-
-
-def _set_cache_dir(config):
-    """
-    Sets the unique cache directory for the current worker to avoid race conditions.
-    """
-    worker_id = _get_worker_id(config)
-    if worker_id is None:
-        return
-
-    import iree.turbine.kernel.wave.cache as cache
-
-    base_cache_dir = cache.CACHE_BASE_DIR
-    cache.CACHE_BASE_DIR = base_cache_dir / f"worker_{worker_id}"
-
-
 def _has_marker(item, marker):
     return next(item.iter_markers(marker), None) is not None
 
 
 def pytest_collection_modifyitems(config, items):
-    _set_default_device(config)
-    _disable_cache(config)
-    _set_cache_dir(config)
     run_e2e = config.getoption("--run-e2e")
     run_expensive = config.getoption("--run-expensive-tests")
     run_perf = config.getoption("--runperf")

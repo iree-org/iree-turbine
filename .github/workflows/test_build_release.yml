@@ -40,11 +40,6 @@ jobs:
         with:
           python-version: ${{ matrix.version }}
 
-      - name: "Setting up Rust"
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
       - name: Install dependencies
         run: pip install -r ./build_tools/requirements-packaging.txt
 
