@@ -31,8 +31,6 @@ from ..lang.grid import Grid
 from ..lang.types import (
     Index,
 )
-from ..lang.wave_types import IndexMapping, SymbolBind
-from ..ops.wave_ops import CustomOp
 
 from .regions import RegionGraph, SubgraphTracer
 from .location_config import LocationCaptureConfig

@@ -35,9 +35,9 @@ from ..lang.kernel_buffer import (
     KernelBufferUsage,
     is_kernel_buffer_meta_derived,
 )
-from ..lang.wave_types import Memory, SymbolBind
+from ..lang.tkw_types import Memory, SymbolBind
 from ..lang.grid import Grid
-from ..ops.wave_ops import get_custom, Placeholder, NestedRegionOp, Read, Write
+from ..ops.tkw_ops import get_custom, Placeholder, NestedRegionOp, Read, Write
 
 from .base import (
     CodegenError,

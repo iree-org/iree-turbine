@@ -1,6 +1,5 @@
 from typing import (
     Any,
-    Callable,
     ClassVar,
     Iterable,
     Optional,
@@ -123,7 +122,7 @@ class Register(metaclass=KernelBufferMeta):
     value: float
 
     def __new__(cls, value: float) -> "Register":
-        from ..ops.wave_ops import register
+        from ..ops.tkw_ops import register
 
         return register(cls.symbolic_shape, cls.dtype, value)
 
