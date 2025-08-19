@@ -199,9 +199,6 @@ class StreamExecutable:
                 export_block, lambda vs: stream_d.ReturnOp(vs)
             )
 
-            # TODO: Support passing workload to the dispatch function.
-            # from ..wave.codegen import gen_sympy_index
-
             arguments = workgroup_builder.entry_block.arguments
 
             # Map dynamic symbols or bound scalar symbols to block arguments.

@@ -136,15 +136,6 @@ class KernelTracer(SubgraphTracer):
                 node.meta["dtype"] = t
                 node.meta["symbolic_type"] = []
                 self.current_arg_id += 1
-            # elif issubclass(t, SymbolBind):
-            #     assert (
-            #         node.op == "placeholder"
-            #     ), "SymbolBind must be a placeholder, got {node.op}"
-            #     node.meta["arg_id"] = self.current_arg_id
-            #     node.meta["symbol_name"] = self.arg_names[self.current_arg_id]
-            #     node.meta["dtype"] = t.dtype
-            #     node.meta["symbolic_type"] = []
-            #     self.current_arg_id += 1
             elif isinstance(t, KernelBufferMeta):
                 # Set arg_id meta to placeholder/argument nodes
                 # S.T we don't rely on topological order for correct
