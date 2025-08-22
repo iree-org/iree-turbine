@@ -7,10 +7,10 @@
 import argparse
 from typing import (
     Any,
+    overload,
     Sequence,
     TypeVar,
 )
-from collections.abc import Collection
 from enum import IntEnum
 from functools import lru_cache
 import math
@@ -21,7 +21,7 @@ import torch
 from ..exports.signature import OpSignature, ModeBase
 from ..exports.parser import OpCLIParser
 from ....ops.conv_fwd import conv_2d_nhwc_fhwc, generic_conv
-from ....ops.insert_slice import insert_slice
+from ....ops.insert_slice import generic_insert_slice
 
 __all__ = [
     "Mode",
@@ -73,16 +73,22 @@ class Permutation:
         assert self.size == other.size, "permutations must be the same size"
         return Permutation([other.items[element] for element in self.items])
 
-    def __call__(self, other: torch.Tensor | Collection[_T]) -> torch.Tensor | list[_T]:
+    @overload
+    def __call__(self, other: torch.Tensor) -> torch.Tensor: ...
+
+    @overload
+    def __call__(self, other: Sequence[_T]) -> list[_T]: ...
+
+    def __call__(self, other):
         """apply the permutation to a tensor or iterable (e.g., a shape)"""
         if isinstance(other, torch.Tensor):
             assert (
                 len(other.shape) == self.size
             ), f"permutation must match the rank of the tensor being permuted, got permutation size {self.size} for tensor of shape {other.shape}"
             return torch.permute(other, self.items)
-        if isinstance(other, Collection):
+        if isinstance(other, Sequence):
             assert len(other) == self.size
-            return [other[item] for item in self.items]
+            return list([other[item] for item in self.items])
         raise TypeError(f"Unexpected argument type: {type(other)}.")
 
     def __truediv__(self, other: "Permutation") -> "Permutation":
@@ -103,7 +109,7 @@ class Permutation:
         return Permutation(list(range(size)))
 
     @staticmethod
-    def get(src: Collection[_T], target: Collection[_T]) -> "Permutation":
+    def get(src: Sequence[_T], target: Sequence[_T]) -> "Permutation":
         """Gets a permutation p such that `torch.permute(a, p) = b` where `a.shape = src` and `b.shape = target`"""
         n = len(src)
         assert n > 0 and n == len(
@@ -706,7 +712,7 @@ class ConvBackwardInputCustomGeneric(torch.nn.Module):
         self.input_padding = sig.padding
 
         # compute the dims which need a flip for the weight tensor
-        self.flip_dims = []
+        self.flip_dims: list[int] = []
         for i, (char, size) in enumerate(zip(sig.kernel_layout, sig.kernel_shape)):
             if char in {"N", "C"} or size == 1:
                 continue
@@ -748,10 +754,10 @@ class ConvBackwardInputCustomGeneric(torch.nn.Module):
                 break
 
         # If strides are > 1, we scatter dLdy into a zero init tensor
-        self._slice_offset = []
-        self._slice_stride = []
-        self._strided_sizes = []
-        self.explicit_padding = []
+        self._slice_offset: list[int] = []
+        self._slice_stride: list[int] = []
+        self._strided_sizes: list[int] = []
+        self.explicit_padding: list[int] = []
         if self._do_insert_slice:
             shape_pt_layout = sig.output_perms.inv()(sig.output_shape)
             for i, size in enumerate(shape_pt_layout):
@@ -804,10 +810,9 @@ class ConvBackwardInputCustomGeneric(torch.nn.Module):
             w = torch.flip(w, self.flip_dims)
 
         if self._do_insert_slice:
-            zero_init = torch.zeros(
-                self._strided_sizes, dtype=dLdy.dtype, device=dLdy.device
+            dLdy = generic_insert_slice(
+                dLdy, self._strided_sizes, self._slice_offset, self._slice_stride
             )
-            dLdy = insert_slice(dLdy, zero_init, self._slice_offset, self._slice_stride)
         else:
             dLdy = torch.constant_pad_nd(dLdy, self.explicit_padding, 0)
 
