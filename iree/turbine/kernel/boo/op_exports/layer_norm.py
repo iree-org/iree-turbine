@@ -187,9 +187,9 @@ class LayerNormSignature(OpSignature):
         if self.mode == Mode.BIAS_BACKWARD or self.mode == Mode.WEIGHT_BACKWARD:
             return math.prod(self.normalized_shape) * int(self.dtype.itemsize)
 
-    def get_nn_module(self, use_custom: bool) -> torch.nn.Module:
+    def get_nn_module(self, **kwargs) -> torch.nn.Module:
         # TODO: this is specific to conv and may need to be refactored further
-        assert use_custom, "skipping use_custom not supported for layernorm"
+        # Note: `use_custom` kwarg is intentionally ignored, since no custom impl is provided.
         if self.mode == Mode.FORWARD:
             return LayerNormForward(self)
         if self.mode == Mode.INPUT_BACKWARD:
