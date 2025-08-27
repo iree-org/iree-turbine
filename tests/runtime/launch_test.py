@@ -35,7 +35,7 @@ func.func @main(%arg0: tensor<4xi32>, %arg1: tensor<4xi32>) -> tensor<4xi32> {
 
 MLIR_PARAMS_ASM = r"""
 module @test_module {
-util.global private @param = #stream.parameter.named<"param"> : tensor<4xi32>
+util.global private @param = #flow.parameter.named<"param"> : tensor<4xi32>
 func.func @main(%arg0: tensor<4xi32>, %arg1: tensor<4xi32>) -> tensor<4xi32> {
     %0 = arith.muli %arg0, %arg1 : tensor<4xi32>
     %param = util.global.load @param : tensor<4xi32>

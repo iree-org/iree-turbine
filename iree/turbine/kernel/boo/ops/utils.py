@@ -86,18 +86,6 @@ def _tensor_type_str(shape: Iterable[int], dtype: torch.dtype) -> str:
     return shape_str + f"x{dtype}"
 
 
-def _is_contiguous(
-    t: torch.Tensor | TensorMetadata, memory_format: torch.memory_format
-) -> bool:
-    if isinstance(t, torch.Tensor):
-        return t.is_contiguous(memory_format=memory_format)
-    if isinstance(t, TensorMetadata):
-        return t.memory_format == memory_format
-    raise TypeError(
-        f"Unhandled type: {type(t)}. _is_contiguous input 0 must be a torch.Tensor or TensorMetadata object."
-    )
-
-
 class MemoryFormatPermutation(NamedTuple):
     """Contains a shape permutation used to convert a non-contiguous tensor into a contiguous format."""
 
@@ -143,7 +131,7 @@ def _try_get_permutations_from_strides(
 
 
 def get_memory_format_permutation(
-    t: torch.Tensor | TensorMetadata,
+    t: torch.Tensor,
     num_dims: int | None = None,
     *,
     strict: bool = False,
@@ -159,9 +147,9 @@ def get_memory_format_permutation(
     """
     num_dims = num_dims or len(t.shape) - 2
     cl_mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_dims, None)
-    if cl_mem_format is None or not _is_contiguous(t, cl_mem_format):
-        if not _is_contiguous(t, memory_format=torch.contiguous_format):
-            stride = t.stride() if isinstance(t, torch.Tensor) else t.stride
+    if cl_mem_format is None or not t.is_contiguous(memory_format=cl_mem_format):
+        if not t.is_contiguous(memory_format=torch.contiguous_format):
+            stride = t.stride()
             maybe_perms = _try_get_permutations_from_strides(stride, t.shape)
             if maybe_perms is not None:
                 return maybe_perms

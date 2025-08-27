@@ -100,7 +100,9 @@ def eager_dispatch(ksel: KernelSelection):
 
     # Compile.
     # TODO: We can do compilation asynchronously with the device movement
-    vm_context, vm_f, config = compile_standalone_kernel(device, ksel)
+    vm_context, vm_f, config = compile_standalone_kernel(
+        device, ksel, async_invocations=True
+    )
 
     # Build the concrete args, issuing device movement as necessary.
     arg_list = VmVariantList(len(ksel.arg_descs))

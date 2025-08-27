@@ -2,21 +2,10 @@ The BOO (Bag of Ops) project is intended to provide a python interface for fusin
 
 Currently, convolution with bias and activation fusions and layernorm kernels are supported, in both forward and backward modes.
 
-## Environment Variables
-
-There are a few environment variables that control BOO behavior:
-
-- `BOO_CACHE_ON=<0 or 1>`: whether to cache kernel artifacts for boo kernels (default = 1).
-- `BOO_CACHE_DIR=<path to cache dir>`: where to store kernel artifacts (default = `~/.cache/turbine_kernels/boo/`).
-- `BOO_USE_BACKWARD_KERNELS=<0 or 1>`: whether to use our backward kernels for boo ops (default = 0).
-- `BOO_TUNING_SPEC_PATH=<absolute file path>` : Indicates where to load a tuning spec for conv launchables. Some tuning specs are already included in `tuning_specs.mlir`, and the default behavior of `get_launchable` will use this included spec. You can disable using tuning specs via `export BOO_TUNING_SPEC_PATH=""`.
-
-And several other variables are useful for debugging:
-
-- `TURBINE_LOG_LEVEL=DEBUG`: enable debug output from Turbine.
-- `TURBINE_DEBUG` : See `iree.turbine.runtime.logging` for more details. It is useful to set `TURBINE_DEBUG="log_level=DEBUG"` to see debug prints when something goes wrong.
-
 ## Usage
+
+Install `iree-turbine` following the instructions [here](/README.md#quick-start-for-users).
+Installing a nightly version is recommended as BOO is under rapid development.
 
 ### Enabling supported fusions in a model
 
@@ -136,6 +125,21 @@ signature = BooOpRegistry.parse_command(miopen_driver_command)
 
 conv = get_launchable(signature)
 ```
+
+## Environment Variables
+
+There are a few environment variables that control BOO behavior:
+
+- `BOO_CACHE_ON=<0 or 1>`: whether to cache kernel artifacts for boo kernels (default = 0).
+- `BOO_CACHE_DIR=<path to cache dir>`: where to store kernel artifacts (default = `~/.cache/turbine_kernels/boo/`).
+- `BOO_USE_BACKWARD_KERNELS=<0 or 1>`: whether to use our backward kernels for boo ops (default = 0).
+- `BOO_TUNING_SPEC_PATH=<absolute file path>` : Indicates where to load a tuning spec for conv launchables. Some tuning specs are already included in `tuning_specs.mlir`, and the default behavior of `get_launchable` will use this included spec. You can disable using tuning specs via `export BOO_TUNING_SPEC_PATH=""`.
+
+And several other variables are useful for debugging:
+
+- `TURBINE_LOG_LEVEL=DEBUG`: enable debug output from Turbine.
+- `TURBINE_DEBUG` : See `iree.turbine.runtime.logging` for more details. It is useful to set `TURBINE_DEBUG="log_level=DEBUG"` to see debug prints when something goes wrong.
+
 
 ## Advanced Usage
 

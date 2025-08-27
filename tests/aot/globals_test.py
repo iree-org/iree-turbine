@@ -332,11 +332,11 @@ class GlobalsTest(unittest.TestCase):
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertIn(
-            '#stream.parameter.named<"model"::"params.classifier.weight"> : tensor<30x20xf32>',
+            '#flow.parameter.named<"model"::"params.classifier.weight"> : tensor<30x20xf32>',
             module_str,
         )
         self.assertIn(
-            '#stream.parameter.named<"model"::"params.classifier.bias"> : tensor<30xf32>',
+            '#flow.parameter.named<"model"::"params.classifier.bias"> : tensor<30xf32>',
             module_str,
         )
 
@@ -358,11 +358,11 @@ class GlobalsTest(unittest.TestCase):
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertIn(
-            '#stream.parameter.named<"foo"::"PARAMS.CLASSIFIER.WEIGHT"> : tensor<30x20xf32>',
+            '#flow.parameter.named<"foo"::"PARAMS.CLASSIFIER.WEIGHT"> : tensor<30x20xf32>',
             module_str,
         )
         self.assertIn(
-            '#stream.parameter.named<"foo"::"PARAMS.CLASSIFIER.BIAS"> : tensor<30xf32>',
+            '#flow.parameter.named<"foo"::"PARAMS.CLASSIFIER.BIAS"> : tensor<30xf32>',
             module_str,
         )
 
@@ -387,11 +387,11 @@ class GlobalsTest(unittest.TestCase):
         module_str = str(CompiledModule.get_mlir_module(inst))
         print(module_str)
         self.assertIn(
-            '#stream.parameter.named<"foo"::"WEIGHT"> : tensor<30x20xf32>',
+            '#flow.parameter.named<"foo"::"WEIGHT"> : tensor<30x20xf32>',
             module_str,
         )
         self.assertIn(
-            '#stream.parameter.named<"foo"::"params.classifier.bias"> : tensor<30xf32>',
+            '#flow.parameter.named<"foo"::"params.classifier.bias"> : tensor<30xf32>',
             module_str,
         )
 

@@ -320,7 +320,7 @@ class ModuleBuilder:
                 external_name_attr = StringAttr.get(external_name)
                 # TODO: Have real Python builders for this.
                 ir_attrs["initial_value"] = Attribute.parse(
-                    f"#stream.parameter.named<{external_scope_attr}::{external_name_attr}> : {tensor_type}"
+                    f"#flow.parameter.named<{external_scope_attr}::{external_name_attr}> : {tensor_type}"
                 )
             elif attrs.uninitialized:
                 # Emit unitialized initial_value to signal that the memory

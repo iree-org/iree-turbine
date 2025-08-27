@@ -59,7 +59,15 @@ def invoke_vm_function(
 
     # Invoke.
     start = timer()
-    vm_context.invoke(vm_function, arg_list, ret_list)
+    try:
+        vm_context.invoke(vm_function, arg_list, ret_list)
+    except:
+        if is_async:
+            # For testing, we may not want to abort a thread after a failed launch.
+            # Signaling here will allow the main timeline to progress.
+            signal_fence.signal()
+            device.finalize_iree_action(external_timepoint)
+        raise
 
     if is_async:
         device.finalize_iree_action(external_timepoint)
