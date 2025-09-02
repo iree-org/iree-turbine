@@ -8,7 +8,7 @@ from collections import defaultdict
 from contextlib import nullcontext
 import gc
 import argparse
-from typing import Callable, Sequence, Literal
+from typing import Callable, Sequence, NamedTuple
 import os
 import shlex
 import statistics
@@ -22,7 +22,18 @@ from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 
 ZoneData = dict[str, list[float]]
-ZoneStats = dict[Literal["min", "max", "mean", "stddev", "count"], float | int]
+
+ALL_STATS = ["min", "max", "mean", "stddev", "num_dispatches"]
+
+
+class ZoneStats(NamedTuple):
+    min: float | str = "N.A."
+    max: float | str = "N.A."
+    mean: float | str = "N.A."
+    stddev: float | str = "N.A."
+    num_dispatches: int | str = "N.A."
+
+
 ZoneStatsSummary = dict[str, ZoneStats]
 
 
@@ -46,8 +57,10 @@ command-line arguments are appended to the arguments from the file.
         "--reference-backend",
         type=str,
         choices=["torch", "torch-compile"],
-        default=None,
+        action="append",
+        default=[],
         required=False,
+        help="Choose reference backends to compare performance against.",
     )
     parser.add_argument(
         "--csv",
@@ -67,7 +80,7 @@ command-line arguments are appended to the arguments from the file.
     parser.add_argument(
         "--splat-input-value",
         default=None,
-        type=int,
+        type=float,
         help="Use a splat value for inputs (defaults to random values).",
     )
     return parser
@@ -98,19 +111,22 @@ def main():
         mio_args = [extra_cli_args]  # use CLI arguments
 
     # Check the reference backend
-    ref_backend = meta_args.reference_backend
+    ref_backends = meta_args.reference_backend
     # TODO: Add ability to benchmark against torch-compile (inductor).
-    if ref_backend == "torch-compile":
+    if "torch-compile" in ref_backends:
         raise NotImplementedError(
             "Comparing against torch-compiled reference not yet implemented."
         )
 
     # Setup a csv output file with headers.
+    csv_stats = ALL_STATS
+    backends = ["iree_boo"] + ref_backends
     csv_file = open(meta_args.csv if meta_args.csv is not None else os.devnull, "w")
-    csv_headers = ["arguments", "iree min time (us)"]
-    if ref_backend is not None:
-        csv_headers.append(f"{ref_backend} min time (us)")
-    csv_file.write(",".join(csv_headers))
+    csv_headers = ["arguments"]
+    for b in backends:
+        for stat in csv_stats:
+            csv_headers.extend([f"{b} {stat}"])
+    csv_file.write(",".join(csv_headers) + "\n")
 
     timing_parser = _get_timing_parser()
 
@@ -131,9 +147,6 @@ def main():
         sample_inputs = _get_sample_args(
             signature, meta_args.splat_input_value, devices
         )
-        launchable = get_launchable(signature)
-        for device in devices:
-            launchable.preload(device)
         output_num_bytes = signature.get_output_size()
 
         profile_context = (
@@ -142,64 +155,64 @@ def main():
             else nullcontext()
         )
 
-        ### IREE run ###
-        try:
-            with profile_context as iree_prof:
-                run(launchable, timing_args.iter, output_num_bytes, sample_inputs)
-        except Exception as exc:
-            print(f">>> ERROR: {exc}")
-            csv_file.write("N.A.\n")
-            continue
+        for backend in backends:
+            _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
+            try:
+                with profile_context as prof:
+                    run(_func, timing_args.iter, output_num_bytes, sample_inputs)
+            except Exception as exc:
+                print(f">>> ERROR: {exc}")
+                csv_file.write("N.A.," * len(csv_stats))
+                continue
 
-        if not timing_args.time:
-            csv_file.write("untimed\n")
-            continue
+            if not timing_args.time:
+                csv_file.write("untimed," * len(csv_stats))
+                continue
 
-        iree_zones = _extract_zones(iree_prof)
+            zones = _extract_zones(prof)
 
-        if len(iree_zones.keys()) == 0:
-            print(">>> FAILED TO COLLECT TIMING INFO")
-            csv_file.write("failed to collect timing info\n")
-            continue
+            if len(zones.keys()) == 0:
+                print(">>> FAILED TO COLLECT TIMING INFO")
+                csv_file.write("failed to collect timing info," * len(csv_stats))
+                continue
 
-        # Get iree stats and print.
-        iree_results = _get_zone_stats(iree_zones)
-        _print_zone_stats(iree_results)
+            # Get iree stats and print.
+            results = _get_zone_stats(zones)
+            _print_zone_stats(results)
 
-        iree_theoretical_min = _get_theoretical_min_time(iree_results, timing_args.iter)
-        print(f">>> Per-launch GPU min time (IREE): {iree_theoretical_min:.2f}us")
-        csv_file.write(f"{iree_theoretical_min:.2f}")
+            aggregate_stats = get_aggregate_stats(csv_stats, results, timing_args.iter)
 
-        if not ref_backend:
-            csv_file.write("\n")
-            continue
+            print(
+                f">>>\tPer-launch # GPU kernel dispatches ({backend}): {aggregate_stats.num_dispatches / timing_args.iter}"
+            )
+            print(
+                f">>>\tPer-launch GPU mean time ({backend}): {aggregate_stats.mean}us"
+            )
 
-        ref_func = signature.get_nn_module(use_custom=False)
+            for stat in csv_stats:
+                csv_file.write(f"{aggregate_stats._asdict()[stat]},")
 
-        ### Reference run ###
-        print(f">>> Running with reference backend {ref_backend}.")
-        try:
-            with profile_context as ref_prof:
-                run(ref_func, timing_args.iter, output_num_bytes, sample_inputs)
-        except Exception as exc:
-            print(f">>> ERROR during reference run: {exc}")
-            csv_file.write(",N.A.\n")
-            continue
+        csv_file.write("\n")
 
-        ref_zones = _extract_zones(ref_prof)
-        if ref_zones is None or len(ref_zones) == 0:
-            print(f">>> Could not profile reference run.")
-            csv_file.write(",N.A.\n")
-            continue
 
-        ref_results = _get_zone_stats(ref_zones)
-        _print_zone_stats(ref_results)
-        ref_theoretical_min = _get_theoretical_min_time(ref_results, timing_args.iter)
+SUPPORTED_AGGREGATE_STATS = ["mean", "num_dispatches"]
 
-        csv_file.write(f",{ref_theoretical_min:.2f}\n")
-        print(
-            f">>> Per-launch GPU min time ({ref_backend}): {ref_theoretical_min:.2f}us"
-        )
+
+def get_aggregate_stats(
+    csv_stats: list[str], results: ZoneStatsSummary, iter: int
+) -> ZoneStats:
+    if len(results.keys()) == 1:
+        zone_stats = list(results.values())[0]
+        return zone_stats
+    ret = {}
+    for stat in csv_stats:
+        if stat not in SUPPORTED_AGGREGATE_STATS:
+            ret[stat] = "unsupported stat calculation"
+        elif stat == "mean":
+            ret[stat] = _get_mean_gpu_time_per_launch(results, iter)
+        elif stat == "num_dispatches":
+            ret[stat] = _get_total_num_dispatches(results)
+    return ZoneStats(**ret)
 
 
 def run(
@@ -223,7 +236,9 @@ def run(
                 break
             results = func(*launch_args)
         if (iter + 1) % iter_thresh == 0:
-            print(f"Synchronizing all devices on iter {iter} and collecting garbage.")
+            print(
+                f">>>\tSynchronizing all devices on iter {iter} and collecting garbage."
+            )
             for i in range(num_devices):
                 torch.cuda.synchronize(torch.device(f"cuda:{i}"))
             gc.collect()
@@ -235,9 +250,20 @@ def run(
         results = (results,)
     for i, result in enumerate(results):
         print(
-            f">>> result #{i} shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
+            f">>>\tresult #{i} shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
         )
     return
+
+
+BACKEND_TO_FUNC_GENERATOR: dict[str, Callable[[OpSignature], Callable]] = {
+    "iree_boo": get_launchable,
+    "torch": (lambda signature: signature.get_nn_module(use_custom=False)),
+}
+
+
+def _get_total_num_dispatches(results: ZoneStatsSummary) -> int:
+    """Returns averaged number of kernel launches per iter. In some cases this could be non-integer."""
+    return sum([int(s.num_dispatches) for s in results.values()])
 
 
 def _get_devices(gpu_id: int) -> list[torch.device]:
@@ -252,7 +278,7 @@ def _get_devices(gpu_id: int) -> list[torch.device]:
 
 
 def _get_sample_args(
-    sig: OpSignature, splat_input_value: None | int, devices: list[torch.device]
+    sig: OpSignature, splat_input_value: None | int | float, devices: list[torch.device]
 ) -> list[tuple[torch.Tensor, ...]]:
     """Generates sample args on each device."""
     per_device_data = [
@@ -266,12 +292,12 @@ def _get_sample_args(
     return per_device_data
 
 
-def _get_theoretical_min_time(results: ZoneStatsSummary, iter: int) -> float:
-    """Computes a theoretical min time by summing the min time from each zone with multiplicity."""
-    total = 0.0
+def _get_mean_gpu_time_per_launch(results: ZoneStatsSummary, iter: int) -> float:
+    total_time = 0.0
     for stats in results.values():
-        total += stats["min"] * (stats["count"] // iter)
-    return total
+        assert isinstance(stats.mean, float) and isinstance(stats.num_dispatches, int)
+        total_time += stats.mean * stats.num_dispatches
+    return total_time / iter
 
 
 def _extract_zones(prof: profile | None) -> ZoneData:
@@ -297,25 +323,27 @@ def _get_zone_stats(zones: ZoneData) -> ZoneStatsSummary:
         mean_time = statistics.mean(times)
         stddev = statistics.stdev(times) if len(times) > 1 else 0
         count = len(times)
-        results[zone_name] = {
-            "min": min_time,
-            "max": max_time,
-            "mean": mean_time,
-            "stddev": stddev,
-            "count": count,
-        }
+        results[zone_name] = ZoneStats(
+            min=min_time,
+            max=max_time,
+            mean=mean_time,
+            stddev=stddev,
+            num_dispatches=count,
+        )
     return results
 
 
 def _print_zone_stats(results: ZoneStatsSummary) -> None:
     """Prints a ZoneStatsSummary."""
     for zone_name, stats in results.items():
-        s = ">>> "
-        s += f"{zone_name}\n>>>\t"
+        s = ">>>\t"
+        s += f"{zone_name}\n>>>\t\t"
         decorate_val = lambda val: (
             f"{val:.2f}us" if isinstance(val, float) else str(val)
         )
-        s += " ".join([f"{key}={decorate_val(value)}" for key, value in stats.items()])
+        s += " ".join(
+            [f"{key}={decorate_val(value)}" for key, value in stats._asdict().items()]
+        )
         print(s)
 
 
