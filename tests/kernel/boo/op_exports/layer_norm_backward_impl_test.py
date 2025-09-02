@@ -31,11 +31,13 @@ def _marked_xfail(*args):
 @pytest.mark.parametrize(
     "elementwise_affine_bias", [(False, False), (True, False), (True, True)]
 )
+@pytest.mark.parametrize("use_aten", [True, False])
 def test_layer_norm_impl(
     dtype: torch.dtype,
     forwarded_dtype: torch.dtype,
     input_shape: tuple[int, ...],
     elementwise_affine_bias: tuple[bool, bool],
+    use_aten: bool,
 ):
     """Tests our custom implementation of gradients using PyTorch operations
     against PyTorch gradients."""
@@ -49,7 +51,8 @@ def test_layer_norm_impl(
         "elementwise_affine": elementwise_affine,
         "bias": bias,
         "dtype": dtype,
-        "forwarded_args_dtype": forwarded_dtype,
+        "forwarded_args_dtype": forwarded_dtype if not use_aten else None,
+        "use_aten": use_aten,
     }
     fwd_sig = LayerNormSignature(**kwargs)
     args = fwd_sig.get_sample_args(seed=1)
@@ -66,8 +69,8 @@ def test_layer_norm_impl(
     bwd_bias = bwd_bias_sig.get_nn_module(use_custom=True).to(device="cpu")
 
     fwd_results = fwd(*args)
-    assert fwd_results[1].dtype == forwarded_dtype
-    assert fwd_results[2].dtype == forwarded_dtype
+    assert fwd_results[1].dtype == forwarded_dtype or use_aten
+    assert fwd_results[2].dtype == forwarded_dtype or use_aten
 
     main_result = fwd_results[fwd_sig.main_result_index]
     main_result.retain_grad()
