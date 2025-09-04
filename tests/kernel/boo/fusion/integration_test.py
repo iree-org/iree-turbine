@@ -125,3 +125,39 @@ def test_output_layout(device: str, memory_format: torch.memory_format):
         assert isinstance(expected_result, torch.Tensor)
         assert actual_result.shape == expected_result.shape
         assert actual_result.stride() == expected_result.stride()
+
+
+@pytest.mark.xfail(
+    condition=not torch.cuda.is_available(),
+    reason="CPU compile failure potentially related to single dispatch.",
+)
+def test_boo_layer_norm_used():
+    """Test that we're using BOO custom layer norm op."""
+
+    # Force everything to be on a GPU since this fails to compile on CPU.
+    device = torch.device("cuda")
+    input = torch.randn((10, 20, 30), device=device)
+    normalized_shape = (30,)
+
+    recorder = EagerAndRecordGraphs()
+    compiled_layer_norm = torch.compile(
+        torch.nn.LayerNorm(
+            normalized_shape, elementwise_affine=False, bias=False, device=device
+        ),
+        backend=boo.backend(nested_backend=recorder),
+    )
+
+    compiled_layer_norm(input)
+
+    [compiled_module] = recorder.graphs
+    assert isinstance(compiled_module, fx.GraphModule)
+    print(compiled_module)
+    node_target: str | None = None
+    for node in compiled_module.graph.nodes:
+        if node.op == "call_function" and "boo." in str(node.target):
+            node_target = node.target
+            break
+
+    # Make sure we are using a BOO op.
+    assert node_target is not None, "No BOO op found in the graph"
+    assert "fused_op_native_layer_norm" in str(node_target)

@@ -73,6 +73,10 @@ DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
             torch.ops.aten.sigmoid.default,
         ),
     ),
+    torch.ops.aten.native_layer_norm.default: OpFusionSpec(
+        recursive=False,
+        make_single_dispatch=True,
+    ),
 }
 
 DEFAULT_POST_FUSION_REPLACEMENTS: ReplacementSchema = {

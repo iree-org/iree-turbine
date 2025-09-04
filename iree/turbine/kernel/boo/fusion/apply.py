@@ -35,6 +35,7 @@ def fusion_transform(
 
     subgraphs = extract_fusion_subgraph_modules(module, fusion_schema)
 
+    # Replace subgraphs with custom (templated MLIR) kernels if required.
     for subgraph in subgraphs:
         apply_replacements(subgraph.module.graph, post_fusion_replacements)
         subgraph.module.recompile()
