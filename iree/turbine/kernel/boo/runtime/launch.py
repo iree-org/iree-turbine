@@ -228,6 +228,9 @@ def default_compiler_flags_callback(device: Device, cache_dir: Path) -> list[str
     flags: list[str] = []
     if device.driver_id == "hip":
         flags.append("--iree-opt-level=O3")
+        flags.append(
+            "--iree-dispatch-creation-enable-fuse-padding-into-linalg-consumer-ops"
+        )
         if BOO_TUNING_SPEC_PATH != "":
             assert Path(
                 BOO_TUNING_SPEC_PATH
