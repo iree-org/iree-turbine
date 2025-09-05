@@ -518,14 +518,10 @@ class ConvForward(torch.nn.Module):
         self.kwargs = sig.get_conv_kwargs()
         if not sig.bias:
             self.kwargs["bias"] = None
-        self.explicit_padding = sig.explicit_padding
-        self.kwargs["padding"] = [0] * sig.num_spatial_dims
 
     def forward(self, *args: torch.Tensor) -> torch.Tensor:
         mod_args = [
-            self.perms[0](
-                torch.constant_pad_nd(args[0], self.explicit_padding, value=0)
-            ),
+            self.perms[0](args[0]),
             self.perms[1](args[1]),
         ]
         if "bias" not in self.kwargs.keys():
