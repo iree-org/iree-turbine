@@ -13,11 +13,12 @@ import warnings
 
 import torch
 
-from .utils import Permutation
+from .utils import Permutation, permute_layout
 from ..exports.signature import OpSignature, ModeBase
 from ..exports.parser import OpCLIParser
 from ....ops.conv_fwd import conv_2d_nhwc_fhwc, generic_conv
 from ....ops.insert_slice import insert_slice
+from typing import Sequence
 
 __all__ = [
     "Mode",
@@ -350,19 +351,47 @@ class ConvSignature(OpSignature):
                 return torch.ones(shape, dtype=self.dtype, device=device) * splat_value
             return torch.randn(shape, generator=gen, dtype=self.dtype, device=device)
 
+        def get_permuted(
+            shape: Sequence[int], order: Sequence[int] | Permutation
+        ) -> torch.Tensor:
+            tensor = get(shape)
+            items = order if not isinstance(order, Permutation) else order.items
+            if items == sorted(items):
+                return tensor
+            return permute_layout(tensor, order)
+
+        # Argument tensors will have to be permuted accordingly to the layouts
+        # specified in the signature.
+        input_permutation = Permutation.get("NCHW", self.input_layout)
+        kernel_permutation = Permutation.get("NCHW", self.kernel_layout)
+        output_permutation = Permutation.get("NCHW", self.output_layout)
+
         if self.mode == Mode.FORWARD:
             # (x, w, b) or (x, w)
             return (
-                (get(self.input_shape), get(self.kernel_shape), get(out_channels))
+                (
+                    get_permuted(self.input_shape, input_permutation),
+                    get_permuted(self.kernel_shape, kernel_permutation),
+                    get_permuted(out_channels, output_permutation),
+                )
                 if self.bias
-                else (get(self.input_shape), get(self.kernel_shape))
+                else (
+                    get_permuted(self.input_shape, input_permutation),
+                    get_permuted(self.kernel_shape, kernel_permutation),
+                )
             )
         if self.mode == Mode.WEIGHT_BACKWARD:
             # (dLdy, x)
-            return (get(self.output_shape), get(self.input_shape))
+            return (
+                get_permuted(self.output_shape, output_permutation),
+                get_permuted(self.input_shape, input_permutation),
+            )
         if self.mode == Mode.INPUT_BACKWARD:
             # (dLdy, w)
-            return (get(self.output_shape), get(self.kernel_shape))
+            return (
+                get_permuted(self.output_shape, output_permutation),
+                get_permuted(self.kernel_shape, kernel_permutation),
+            )
         raise ValueError(f"Unknown mode: {self.mode}")
 
     @property
