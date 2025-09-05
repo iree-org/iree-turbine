@@ -83,6 +83,12 @@ command-line arguments are appended to the arguments from the file.
         type=float,
         help="Use a splat value for inputs (defaults to random values).",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Print command/output on STDOUT.",
+    )
     return parser
 
 
@@ -131,15 +137,20 @@ def main():
     timing_parser = _get_timing_parser()
 
     devices = _get_devices(meta_args.gpu_id)
+    testCount = 0
 
     for driver_args in mio_args:
+        testCount = testCount + 1
         command = shlex.join(driver_args)
-        print(f"\n>>> {command}\n")
+        if meta_args.verbose:
+            print(f"\n>>> {command}\n")
+        else:
+            print("Running test :", testCount)
         timing_args, runner_args = timing_parser.parse_known_args(driver_args)
         csv_file.write(shlex.join(driver_args) + ",")
         signature = BooOpRegistry.parse_command(shlex.join(runner_args))
 
-        if signature is None:
+        if signature is None and meta_args.verbose:
             print(f">>> Boo op registry failed to parse {shlex.join(runner_args)}.")
             csv_file.write("N.A.\n")
             continue
@@ -159,9 +170,16 @@ def main():
             _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
             try:
                 with profile_context as prof:
-                    run(_func, timing_args.iter, output_num_bytes, sample_inputs)
+                    run(
+                        _func,
+                        timing_args.iter,
+                        output_num_bytes,
+                        sample_inputs,
+                        meta_args.verbose,
+                    )
             except Exception as exc:
-                print(f">>> ERROR: {exc}")
+                if meta_args.verbose:
+                    print(f">>> ERROR: {exc}")
                 csv_file.write("N.A.," * len(csv_stats))
                 continue
 
@@ -171,23 +189,24 @@ def main():
 
             zones = _extract_zones(prof)
 
-            if len(zones.keys()) == 0:
+            if len(zones.keys()) == 0 and meta_args.verbose:
                 print(">>> FAILED TO COLLECT TIMING INFO")
                 csv_file.write("failed to collect timing info," * len(csv_stats))
                 continue
 
             # Get iree stats and print.
             results = _get_zone_stats(zones)
-            _print_zone_stats(results)
+            if meta_args.verbose:
+                _print_zone_stats(results)
 
             aggregate_stats = get_aggregate_stats(csv_stats, results, timing_args.iter)
-
-            print(
-                f">>>\tPer-launch # GPU kernel dispatches ({backend}): {aggregate_stats.num_dispatches / timing_args.iter}"
-            )
-            print(
-                f">>>\tPer-launch GPU mean time ({backend}): {aggregate_stats.mean}us"
-            )
+            if meta_args.verbose:
+                print(
+                    f">>>\tPer-launch # GPU kernel dispatches ({backend}): {aggregate_stats.num_dispatches / timing_args.iter}"
+                )
+                print(
+                    f">>>\tPer-launch GPU mean time ({backend}): {aggregate_stats.mean}us"
+                )
 
             for stat in csv_stats:
                 csv_file.write(f"{aggregate_stats._asdict()[stat]},")
@@ -220,6 +239,7 @@ def run(
     iter: int,
     output_num_bytes: int,
     per_device_args: Sequence[tuple[torch.Tensor, ...]],
+    verbose: bool,
 ) -> None:
     """Distributes `iter`-many applications of `func` to `per_device_args`."""
     num_devices = len(per_device_args)
@@ -235,7 +255,7 @@ def run(
             if iter == iter_per_device and device_idx >= rem_iter:
                 break
             results = func(*launch_args)
-        if (iter + 1) % iter_thresh == 0:
+        if (iter + 1) % iter_thresh == 0 and verbose:
             print(
                 f">>>\tSynchronizing all devices on iter {iter} and collecting garbage."
             )
@@ -249,9 +269,10 @@ def run(
     if isinstance(results, torch.Tensor):
         results = (results,)
     for i, result in enumerate(results):
-        print(
-            f">>>\tresult #{i} shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
-        )
+        if verbose:
+            print(
+                f">>>\tresult #{i} shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
+            )
     return
 
 
