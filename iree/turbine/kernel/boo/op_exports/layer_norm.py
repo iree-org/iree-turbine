@@ -10,6 +10,7 @@ from typing import Any, Sequence, Optional
 import torch
 import math
 from functools import cached_property
+from .utils import Permutation, permute_layout
 from ..exports.signature import OpSignature, ModeBase
 from ..exports.parser import OpCLIParser
 
@@ -33,6 +34,7 @@ class LayerNormSignature(OpSignature):
     bias: bool
     dtype: torch.dtype
     mode: Mode
+    input_permutation: list[int]
 
     def __init__(
         self,
@@ -45,6 +47,7 @@ class LayerNormSignature(OpSignature):
         dtype=torch.bfloat16,
         mode: str | Mode = Mode.FORWARD,
         forwarded_args_dtype: torch.dtype | None = None,
+        input_permutation: Sequence[int] | None = None,
     ):
         if (
             len(normalized_shape) > len(input_shape)
@@ -62,6 +65,9 @@ class LayerNormSignature(OpSignature):
         self.dtype = dtype
         self.mode = Mode.parse(mode)
         self.forwarded_args_dtype = forwarded_args_dtype or dtype
+        self.input_permutation = input_permutation or list(
+            Permutation.identity(len(input_shape)).items
+        )
 
     @property
     def output_shape(self) -> list[int]:
@@ -123,6 +129,11 @@ class LayerNormSignature(OpSignature):
             "x".join(str(i) for i in self.input_shape),
             "w" if self.elementwise_affine is not None else "",
             "b" if self.bias is not None else "",
+            (
+                "perm_" + "".join(self.input_permutation)
+                if self.input_permutation != sorted(self.input_permutation)
+                else ""
+            ),
         ]
         return "_".join(name_items)
 
@@ -179,6 +190,7 @@ class LayerNormSignature(OpSignature):
             "dtype": self.dtype,
             "mode": self.Mode,
             "forwarded_args_dtype": self.forwarded_args_dtype,
+            "input_permutation": self.input_permutation,
         }
 
     def get_output_size(self) -> int:
@@ -219,9 +231,15 @@ class LayerNormSignature(OpSignature):
                 return torch.ones(shape, dtype=self.dtype, device=device) * splat_value
             return torch.randn(shape, generator=gen, dtype=self.dtype, device=device)
 
+        def get_permuted(shape: Sequence[int], order: Sequence[int]) -> torch.Tensor:
+            tensor = get(shape)
+            if order == sorted(order):
+                return tensor
+            return permute_layout(tensor, order)
+
         if self.mode == Mode.FORWARD:
             # (x, w?, b?)
-            args = [get(self.input_shape)]
+            args = [get_permuted(self.input_shape, self.input_permutation)]
             if self.elementwise_affine:
                 args.append(get(self.normalized_shape))
             if self.bias:
@@ -231,7 +249,7 @@ class LayerNormSignature(OpSignature):
             # (dLdy, input, weight, mean, rstd)
             return (
                 get(self.output_shape),
-                get(self.input_shape),
+                get_permuted(self.input_shape, self.input_permutation),
                 get(self.normalized_shape),
                 get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
                 get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
@@ -240,7 +258,7 @@ class LayerNormSignature(OpSignature):
             # (dLdy, input, mean, rstd)
             return (
                 get(self.output_shape),
-                get(self.input_shape),
+                get_permuted(self.input_shape, self.input_permutation),
                 get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
                 get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
             )
@@ -430,6 +448,7 @@ class LayerNormParser(OpCLIParser):
             bias=True,
             dtype=_DTypeCommandDispatcher.get_dtype(args.command),
             mode=mode,
+            input_permutation=args.input_permutation,
         )
 
     def get_miopen_parser() -> argparse.ArgumentParser:
@@ -458,6 +477,7 @@ class LayerNormParser(OpCLIParser):
         parser.add_argument(
             "--normalized_dim", "-o", type=int, default=3, help="Normalized dim"
         )
+        parser.add_argument("--input-permutation", type=int, nargs="*", default=None)
         return parser
 
     @classmethod
