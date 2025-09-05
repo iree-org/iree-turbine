@@ -5,12 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import argparse
-from typing import (
-    Any,
-    Sequence,
-    TypeVar,
-)
-from collections.abc import Collection
+from typing import Any
 from enum import IntEnum
 from functools import lru_cache
 import math
@@ -18,10 +13,12 @@ import warnings
 
 import torch
 
+from .utils import Permutation, permute_layout
 from ..exports.signature import OpSignature, ModeBase
 from ..exports.parser import OpCLIParser
 from ....ops.conv_fwd import conv_2d_nhwc_fhwc, generic_conv
 from ....ops.insert_slice import insert_slice
+from typing import Sequence
 
 __all__ = [
     "Mode",
@@ -33,93 +30,6 @@ __all__ = [
     "DEFAULT_LAYOUTS",
     "get_conv_func_name",
 ]
-
-_T = TypeVar("_T")
-
-
-class Permutation:
-    """Composable and invertible lists which represent the second argument of `torch.permute`."""
-
-    def __init__(self, ordering: Sequence[int]):
-        assert list(sorted(ordering)) == list(
-            range(len(ordering))
-        ), "ordering must be rearragement of [0,1,2,...,n-1]"
-        self._items = tuple(ordering)
-
-    @property
-    def size(self) -> int:
-        return len(self._items)
-
-    @property
-    def items(self) -> tuple[int, ...]:
-        return self._items
-
-    def __getitem__(self, n: int) -> int:
-        return self.items[n]
-
-    def __repr__(self) -> str:
-        return f"Permutation of {self.size} : {self.items}"
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Permutation):
-            return False
-        return self.items == other.items
-
-    def __len__(self) -> int:
-        return self.size
-
-    def __mul__(self, other: "Permutation") -> "Permutation":
-        """mimics composition `torch.permute(torch.permute(a, p1), p0) = torch.permute(a, p0*p1)"""
-        assert self.size == other.size, "permutations must be the same size"
-        return Permutation([other.items[element] for element in self.items])
-
-    def __call__(self, other: torch.Tensor | Collection[_T]) -> torch.Tensor | list[_T]:
-        """apply the permutation to a tensor or iterable (e.g., a shape)"""
-        if isinstance(other, torch.Tensor):
-            assert (
-                len(other.shape) == self.size
-            ), f"permutation must match the rank of the tensor being permuted, got permutation size {self.size} for tensor of shape {other.shape}"
-            return torch.permute(other, self.items)
-        if isinstance(other, Collection):
-            assert len(other) == self.size
-            return [other[item] for item in self.items]
-        raise TypeError(f"Unexpected argument type: {type(other)}.")
-
-    def __truediv__(self, other: "Permutation") -> "Permutation":
-        return self * other.inv()
-
-    def inv(self) -> "Permutation":
-        """inverts the permutation x*inv(x) = inv(x)*x = Permutation.identity(x.size)"""
-        inverse = list(range(self.size))
-        for i in range(self.size):
-            index = self.items[i]
-            inverse[index] = i
-        return Permutation(inverse)
-
-    @staticmethod
-    def identity(size: int) -> "Permutation":
-        """creates an identity permutation"""
-        assert size > 0, "size must be positive integer"
-        return Permutation(list(range(size)))
-
-    @staticmethod
-    def get(src: Collection[_T], target: Collection[_T]) -> "Permutation":
-        """Gets a permutation p such that `torch.permute(a, p) = b` where `a.shape = src` and `b.shape = target`"""
-        n = len(src)
-        assert n > 0 and n == len(
-            target
-        ), "source and target iterables must share the same positive length"
-        d = {t: i for i, t in enumerate(target)}
-        inverse = []
-        try:
-            for item in src:
-                value = d.pop(item)
-                inverse.append(value)
-        except KeyError as e:
-            raise ValueError(
-                f"src and target should be permutations of a common set of unique items, got {src=}, {target=}"
-            )
-        return Permutation(inverse).inv()
 
 
 class Mode(ModeBase, IntEnum):
@@ -441,19 +351,47 @@ class ConvSignature(OpSignature):
                 return torch.ones(shape, dtype=self.dtype, device=device) * splat_value
             return torch.randn(shape, generator=gen, dtype=self.dtype, device=device)
 
+        def get_permuted(
+            shape: Sequence[int], order: Sequence[int] | Permutation
+        ) -> torch.Tensor:
+            tensor = get(shape)
+            items = order if not isinstance(order, Permutation) else order.items
+            if items == sorted(items):
+                return tensor
+            return permute_layout(tensor, order)
+
+        # Argument tensors will have to be permuted accordingly to the layouts
+        # specified in the signature.
+        input_permutation = Permutation.get("NCHW", self.input_layout)
+        kernel_permutation = Permutation.get("NCHW", self.kernel_layout)
+        output_permutation = Permutation.get("NCHW", self.output_layout)
+
         if self.mode == Mode.FORWARD:
             # (x, w, b) or (x, w)
             return (
-                (get(self.input_shape), get(self.kernel_shape), get(out_channels))
+                (
+                    get_permuted(self.input_shape, input_permutation),
+                    get_permuted(self.kernel_shape, kernel_permutation),
+                    get_permuted(out_channels, output_permutation),
+                )
                 if self.bias
-                else (get(self.input_shape), get(self.kernel_shape))
+                else (
+                    get_permuted(self.input_shape, input_permutation),
+                    get_permuted(self.kernel_shape, kernel_permutation),
+                )
             )
         if self.mode == Mode.WEIGHT_BACKWARD:
             # (dLdy, x)
-            return (get(self.output_shape), get(self.input_shape))
+            return (
+                get_permuted(self.output_shape, output_permutation),
+                get_permuted(self.input_shape, input_permutation),
+            )
         if self.mode == Mode.INPUT_BACKWARD:
             # (dLdy, w)
-            return (get(self.output_shape), get(self.kernel_shape))
+            return (
+                get_permuted(self.output_shape, output_permutation),
+                get_permuted(self.kernel_shape, kernel_permutation),
+            )
         raise ValueError(f"Unknown mode: {self.mode}")
 
     @property
