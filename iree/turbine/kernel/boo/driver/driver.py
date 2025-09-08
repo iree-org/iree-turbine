@@ -150,8 +150,9 @@ def main():
         csv_file.write(shlex.join(driver_args) + ",")
         signature = BooOpRegistry.parse_command(shlex.join(runner_args))
 
-        if signature is None and meta_args.verbose:
-            print(f">>> Boo op registry failed to parse {shlex.join(runner_args)}.")
+        if signature is None:
+            if meta_args.verbose:
+                print(f">>> Boo op registry failed to parse {shlex.join(runner_args)}.")
             csv_file.write("N.A.\n")
             continue
 
@@ -189,8 +190,9 @@ def main():
 
             zones = _extract_zones(prof)
 
-            if len(zones.keys()) == 0 and meta_args.verbose:
-                print(">>> FAILED TO COLLECT TIMING INFO")
+            if len(zones.keys()) == 0:
+                if meta_args.verbose:
+                    print(">>> FAILED TO COLLECT TIMING INFO")
                 csv_file.write("failed to collect timing info," * len(csv_stats))
                 continue
 
