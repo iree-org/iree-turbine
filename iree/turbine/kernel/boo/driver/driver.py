@@ -257,10 +257,11 @@ def run(
             if iter == iter_per_device and device_idx >= rem_iter:
                 break
             results = func(*launch_args)
-        if (iter + 1) % iter_thresh == 0 and verbose:
-            print(
-                f">>>\tSynchronizing all devices on iter {iter} and collecting garbage."
-            )
+        if (iter + 1) % iter_thresh == 0:
+            if verbose:
+                print(
+                    f">>>\tSynchronizing all devices on iter {iter} and collecting garbage."
+                )
             for i in range(num_devices):
                 torch.cuda.synchronize(torch.device(f"cuda:{i}"))
             gc.collect()
