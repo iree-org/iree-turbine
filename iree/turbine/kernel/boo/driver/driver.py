@@ -84,6 +84,7 @@ command-line arguments are appended to the arguments from the file.
         help="Use a splat value for inputs (defaults to random values).",
     )
     parser.add_argument(
+        "-v",
         "--verbose",
         action="store_true",
         default=False,
@@ -176,6 +177,7 @@ def main():
                         timing_args.iter,
                         output_num_bytes,
                         sample_inputs,
+                        devices,
                         meta_args.verbose,
                     )
             except Exception as exc:
@@ -241,6 +243,7 @@ def run(
     iter: int,
     output_num_bytes: int,
     per_device_args: Sequence[tuple[torch.Tensor, ...]],
+    devices: Sequence[torch.device],
     verbose: bool,
 ) -> None:
     """Distributes `iter`-many applications of `func` to `per_device_args`."""
@@ -262,11 +265,12 @@ def run(
                 print(
                     f">>>\tSynchronizing all devices on iter {iter} and collecting garbage."
                 )
-            for i in range(num_devices):
-                torch.cuda.synchronize(torch.device(f"cuda:{i}"))
+            for device in devices:
+                torch.cuda.synchronize(device)
             gc.collect()
 
-    torch.cuda.synchronize()
+    for device in devices:
+        torch.cuda.synchronize(device)
     if results is None:
         results = ()
     if isinstance(results, torch.Tensor):
