@@ -31,6 +31,14 @@ class ModeBase:
 class OpSignature(ABC):
     """Base class for operation signatures providing sufficient information for launching."""
 
+    @property
+    def force_single_dispatch(self) -> bool:
+        """
+        Whether to compile as a single dispatch for the boo driver.
+        Default `False` can be overridden for specific ops.
+        """
+        return False
+
     @abstractmethod
     def get_sample_args(
         self,

@@ -32,5 +32,5 @@ def get_launchable(
         arg_factory=arg_factory,
         func_name=func_name,
         cache_only=cache_only,
-        force_single_dispatch=True,
+        force_single_dispatch=signature.force_single_dispatch,
     )
