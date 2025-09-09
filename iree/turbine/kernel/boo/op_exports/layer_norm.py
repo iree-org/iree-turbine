@@ -73,6 +73,10 @@ class LayerNormSignature(OpSignature):
     def output_shape(self) -> list[int]:
         return self.input_shape
 
+    @property
+    def force_single_dispatch(self) -> bool:
+        return True
+
     @staticmethod
     def get(
         input: torch.Tensor,
