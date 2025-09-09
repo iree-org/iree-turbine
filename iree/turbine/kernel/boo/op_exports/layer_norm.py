@@ -10,6 +10,7 @@ from typing import Any, Sequence, Optional
 import torch
 import math
 from functools import cached_property
+from .utils import Permutation, permute_layout
 from ..exports.signature import OpSignature, ModeBase
 from ..exports.parser import OpCLIParser
 
@@ -33,6 +34,7 @@ class LayerNormSignature(OpSignature):
     bias: bool
     dtype: torch.dtype
     mode: Mode
+    input_permutation: list[int]
 
     def __init__(
         self,
@@ -44,6 +46,8 @@ class LayerNormSignature(OpSignature):
         bias: bool = True,
         dtype=torch.bfloat16,
         mode: str | Mode = Mode.FORWARD,
+        forwarded_args_dtype: torch.dtype | None = None,
+        input_permutation: Sequence[int] | None = None,
     ):
         if (
             len(normalized_shape) > len(input_shape)
@@ -60,6 +64,10 @@ class LayerNormSignature(OpSignature):
         self.bias = bias
         self.dtype = dtype
         self.mode = Mode.parse(mode)
+        self.forwarded_args_dtype = forwarded_args_dtype or dtype
+        self.input_permutation = input_permutation or list(
+            Permutation.identity(len(input_shape)).items
+        )
 
     @property
     def output_shape(self) -> list[int]:
@@ -116,10 +124,16 @@ class LayerNormSignature(OpSignature):
             "layer_norm",
             f"{len(self.normalized_shape)}d",
             str(self.dtype).removeprefix("torch."),
+            str(self.forwarded_args_dtype).removeprefix("torch."),
             self.mode.name.lower(),
             "x".join(str(i) for i in self.input_shape),
             "w" if self.elementwise_affine is not None else "",
             "b" if self.bias is not None else "",
+            (
+                "perm_" + "".join(map(str, self.input_permutation))
+                if self.input_permutation != sorted(self.input_permutation)
+                else ""
+            ),
         ]
         return "_".join(name_items)
 
@@ -175,6 +189,8 @@ class LayerNormSignature(OpSignature):
             "bias": self.bias,
             "dtype": self.dtype,
             "mode": self.Mode,
+            "forwarded_args_dtype": self.forwarded_args_dtype,
+            "input_permutation": self.input_permutation,
         }
 
     def get_output_size(self) -> int:
@@ -187,9 +203,9 @@ class LayerNormSignature(OpSignature):
         if self.mode == Mode.BIAS_BACKWARD or self.mode == Mode.WEIGHT_BACKWARD:
             return math.prod(self.normalized_shape) * int(self.dtype.itemsize)
 
-    def get_nn_module(self, use_custom: bool) -> torch.nn.Module:
+    def get_nn_module(self, **kwargs) -> torch.nn.Module:
         # TODO: this is specific to conv and may need to be refactored further
-        assert use_custom, "skipping use_custom not supported for layernorm"
+        # Note: `use_custom` kwarg is intentionally ignored, since no custom impl is provided.
         if self.mode == Mode.FORWARD:
             return LayerNormForward(self)
         if self.mode == Mode.INPUT_BACKWARD:
@@ -215,9 +231,15 @@ class LayerNormSignature(OpSignature):
                 return torch.ones(shape, dtype=self.dtype, device=device) * splat_value
             return torch.randn(shape, generator=gen, dtype=self.dtype, device=device)
 
+        def get_permuted(shape: Sequence[int], order: Sequence[int]) -> torch.Tensor:
+            tensor = get(shape)
+            if order == sorted(order):
+                return tensor
+            return permute_layout(tensor, order)
+
         if self.mode == Mode.FORWARD:
             # (x, w?, b?)
-            args = [get(self.input_shape)]
+            args = [get_permuted(self.input_shape, self.input_permutation)]
             if self.elementwise_affine:
                 args.append(get(self.normalized_shape))
             if self.bias:
@@ -227,18 +249,18 @@ class LayerNormSignature(OpSignature):
             # (dLdy, input, weight, mean, rstd)
             return (
                 get(self.output_shape),
-                get(self.input_shape),
+                get_permuted(self.input_shape, self.input_permutation),
                 get(self.normalized_shape),
-                get(self.aggregate_shape),
-                get(self.aggregate_shape),
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
             )
         if self.mode == Mode.WEIGHT_BACKWARD:
             # (dLdy, input, mean, rstd)
             return (
                 get(self.output_shape),
-                get(self.input_shape),
-                get(self.aggregate_shape),
-                get(self.aggregate_shape),
+                get_permuted(self.input_shape, self.input_permutation),
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
             )
         if self.mode == Mode.BIAS_BACKWARD:
             # (dLdy,)
@@ -253,6 +275,7 @@ class LayerNormForward(torch.nn.Module):
         super().__init__()
         self.normalized_shape = signature.normalized_shape
         self.eps = signature.eps
+        self.forwarded_args_dtype = signature.forwarded_args_dtype
 
     def forward(
         self,
@@ -272,8 +295,13 @@ class LayerNormForward(torch.nn.Module):
         #     torch.layer_norm(input, self.normalized_shape, weight, bias, self.eps)
         #
         # wrapper hides. We want those too so we can save them for backward.
-        return torch.ops.aten.native_layer_norm(
+        output, mean, rstd = torch.ops.aten.native_layer_norm(
             input, self.normalized_shape, weight, bias, self.eps
+        )
+        return (
+            output,
+            mean.to(dtype=self.forwarded_args_dtype),
+            rstd.to(dtype=self.forwarded_args_dtype),
         )
 
 
@@ -285,6 +313,7 @@ class LayerNormBackwardInput(torch.nn.Module):
         super().__init__()
         self.normalized_shape = signature.normalized_shape
         self.eps = signature.eps
+        self.dtype = signature.dtype
 
         self.normalized_dim = list(
             range(len(signature.input_shape))[-len(self.normalized_shape) :]
@@ -303,6 +332,8 @@ class LayerNormBackwardInput(torch.nn.Module):
     ) -> torch.Tensor:
         # Recompute norm instead of saving it. Judging by the signature, this is the same
         # decision as ATen.
+        mean = mean.to(dtype=self.dtype)
+        rstd = rstd.to(dtype=self.dtype)
         norm = (input - mean) * rstd
         dnorm = grad_output * weight if weight is not None else grad_output
         dx = (
@@ -321,6 +352,8 @@ class LayerNormBackwardWeight(torch.nn.Module):
         super().__init__()
         self.normalized_shape = signature.normalized_shape
         self.eps = signature.eps
+        self.dtype = signature.dtype
+
         self.normalized_dim = list(
             range(len(signature.input_shape))[-len(self.normalized_shape) :]
         )
@@ -337,6 +370,8 @@ class LayerNormBackwardWeight(torch.nn.Module):
     ):
         # Recompute norm instead of saving it. Judging by the signature, this is the same
         # decision as ATen.
+        mean = mean.to(dtype=self.dtype)
+        rstd = rstd.to(dtype=self.dtype)
         norm = (input - mean) * rstd
         return (grad_output * norm).sum(self.keep_dim)
 
@@ -413,6 +448,7 @@ class LayerNormParser(OpCLIParser):
             bias=True,
             dtype=_DTypeCommandDispatcher.get_dtype(args.command),
             mode=mode,
+            input_permutation=args.input_permutation,
         )
 
     def get_miopen_parser() -> argparse.ArgumentParser:
@@ -441,6 +477,7 @@ class LayerNormParser(OpCLIParser):
         parser.add_argument(
             "--normalized_dim", "-o", type=int, default=3, help="Normalized dim"
         )
+        parser.add_argument("--input-permutation", type=int, nargs="*", default=None)
         return parser
 
     @classmethod
