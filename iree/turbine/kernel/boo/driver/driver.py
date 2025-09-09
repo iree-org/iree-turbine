@@ -84,7 +84,6 @@ command-line arguments are appended to the arguments from the file.
         help="Use a splat value for inputs (defaults to random values).",
     )
     parser.add_argument(
-        "-v",
         "--verbose",
         action="store_true",
         default=False,
