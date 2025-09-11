@@ -10,6 +10,7 @@ from iree.turbine.kernel.boo.fusion.schema import (
     ReplacementSchema,
     DEFAULT_SUPPORTED_BOO_FUSIONS,
     DEFAULT_POST_FUSION_REPLACEMENTS,
+    EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
 )
 
 
@@ -45,3 +46,4 @@ def backend(
 
 default_backend = backend()
 inductor_backend = backend(nested_backend="inductor")
+experimental_backend = backend(fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS)

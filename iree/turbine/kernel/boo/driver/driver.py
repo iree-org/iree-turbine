@@ -325,6 +325,9 @@ BACKEND_TO_FUNC_GENERATOR: dict[str, Callable[[OpSignature], Callable]] = {
     "torch": (lambda signature: signature.get_nn_module(use_custom=False)),
     "inductor": partial(get_torch_compiled_module, backend="inductor"),
     "iree_boo": partial(get_torch_compiled_module, backend="iree_boo"),
+    "iree_boo_experimental": partial(
+        get_torch_compiled_module, backend="iree_boo_experimental"
+    ),
     "iree_boo_inductor": partial(
         get_torch_compiled_module, backend="iree_boo_inductor"
     ),

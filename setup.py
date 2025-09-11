@@ -108,6 +108,7 @@ setup(
             "turbine_cpu = iree.turbine.dynamo.backends.base:backend",
             "iree_turbine = iree.turbine.dynamo.backends.base:backend",
             "iree_boo = iree.turbine.dynamo.backends.boo:default_backend",
+            "iree_boo_experimental = iree.turbine.dynamo.backends.boo:experimental_backend",
             "iree_boo_inductor = iree.turbine.dynamo.backends.boo:inductor_backend",
         ],
     },
