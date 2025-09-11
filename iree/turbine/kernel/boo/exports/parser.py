@@ -27,7 +27,7 @@ class OpCLIParser(ABC):
     def command_to_signature(cls, command: str) -> OpSignature:
         """Convert a textual command to signature by parsing it."""
         parser = cls.get_miopen_parser()
-        args, _ = parser.parse_known_args(command.split())
+        args = parser.parse_args(command.split())
         return cls.get_signature(args)
 
     @classmethod
