@@ -61,11 +61,6 @@ class OpSignature(ABC):
         """Generates a PyTorch neural network module containing this operation."""
         ...
 
-    @abstractmethod
-    def get_output_size(self) -> int:
-        """Returns the size of this operation outputs in bytes."""
-        ...
-
     @property
     @abstractmethod
     def is_forward(self) -> bool:

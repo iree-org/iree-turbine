@@ -156,7 +156,6 @@ def main():
         sample_inputs = _get_sample_args(
             signature, meta_args.splat_input_value, devices
         )
-        output_num_bytes = signature.get_output_size()
 
         for backend in backends:
             _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
@@ -164,7 +163,6 @@ def main():
                 prof = run(
                     _func,
                     timing_args,
-                    output_num_bytes,
                     sample_inputs,
                     devices,
                     meta_args.verbose,
@@ -230,7 +228,6 @@ def get_aggregate_stats(
 def run(
     func: Callable,
     timing_args: argparse.Namespace,
-    output_num_bytes: int,
     per_device_args: Sequence[tuple[torch.Tensor, ...]],
     devices: Sequence[torch.device],
     verbose: bool,
@@ -244,6 +241,8 @@ def run(
     # Reset torch.compile caches to avoid hitting re-compile limits.
     torch.compiler.reset()
 
+    example_results = func(*per_device_args[0])
+    output_num_bytes = sum(x.element_size() * x.numel() for x in example_results)
     num_devices = len(per_device_args)
     # This is a rough threshold: Mi300x 192 GB memory divided by 2.
     mem_bytes_threshold = 96 * (10**9)
