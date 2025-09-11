@@ -62,6 +62,16 @@ def _conv_transpose_filter(node: Node) -> bool:
     return transposed == False
 
 
+def _layernorm_permute_filter(node: Node) -> bool:
+    if node.target != torch.ops.aten.native_layer_norm.default:
+        return True
+
+    # Only support layernorms where the reduced dimension is the fastest varying
+    # and contiguous.
+    stride = node.args[0].meta["tensor_meta"].stride
+    return stride[-1] == 1
+
+
 # TODO: extend this
 DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
     torch.ops.aten.convolution.default: OpFusionSpec(
@@ -73,6 +83,14 @@ DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
             torch.ops.aten.sigmoid.default,
         ),
     ),
+    torch.ops.aten.native_layer_norm.default: OpFusionSpec(
+        recursive=False,
+        make_single_dispatch=True,
+        match_filters=(_layernorm_permute_filter,),
+    ),
+}
+
+EXPERIMENTAL_SUPPORTED_BOO_FUSIONS: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS | {
     torch.ops.aten.native_layer_norm.default: OpFusionSpec(
         recursive=False,
         make_single_dispatch=True,
