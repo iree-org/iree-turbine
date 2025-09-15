@@ -61,8 +61,8 @@ def test_conv_impl(
     s = y.sum()
     s.backward(retain_graph=True)
     dsdy = y.grad
-    dsdx = bwd(dsdy, w)
-    dsdw = wrw(dsdy, x)
+    dsdx = bwd(dsdy, x, w)
+    dsdw = wrw(dsdy, x, w)
     rtol = 1e-4
     atol = 1e-4
     bwd_match = torch.allclose(dsdx, x.grad, rtol=rtol, atol=atol)

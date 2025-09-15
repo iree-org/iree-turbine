@@ -24,8 +24,7 @@ __all__ = [
     "ConvParser",
     "ConvSignature",
     "ConvForward",
-    "ConvBackwardWeight",
-    "ConvBackwardInput",
+    "ConvBackward",
     "DEFAULT_LAYOUTS",
     "get_conv_func_name",
 ]
@@ -357,12 +356,13 @@ class ConvSignature(OpSignature):
                 if self.bias
                 else (get(self.input_shape), get(self.kernel_shape))
             )
-        if self.mode == Mode.WEIGHT_BACKWARD:
-            # (dLdy, x)
-            return (get(self.output_shape), get(self.input_shape))
-        if self.mode == Mode.INPUT_BACKWARD:
-            # (dLdy, w)
-            return (get(self.output_shape), get(self.kernel_shape))
+        if self.mode == Mode.WEIGHT_BACKWARD or self.mode == Mode.INPUT_BACKWARD:
+            # (dLdy, x, w)
+            return (
+                get(self.output_shape),
+                get(self.input_shape),
+                get(self.kernel_shape),
+            )
         raise ValueError(f"Unknown mode: {self.mode}")
 
     @property
@@ -382,19 +382,29 @@ class ConvSignature(OpSignature):
             self.output_layout,
         )
 
+    @property
+    def backward_mask(self) -> list[bool]:
+        if self.mode == Mode.WEIGHT_BACKWARD:
+            return [False, True, False]
+        if self.mode == Mode.INPUT_BACKWARD:
+            return [True, False, False]
+        if self.mode == Mode.FORWARD:
+            return [False, False, False]
+        raise ValueError(f"signature has unexpected mode: {self.mode}")
+
     def get_nn_module(self, *, use_custom: bool = False) -> torch.nn.Module:
         """For a given ConvSignature, returns a torch.nn.Module implementation."""
         if self.mode == Mode.WEIGHT_BACKWARD:
             return (
                 ConvBackwardWeightCustomGeneric(self)
                 if use_custom
-                else ConvBackwardWeight(self)
+                else ConvBackward(self)
             )
         if self.mode == Mode.INPUT_BACKWARD:
             return (
                 ConvBackwardInputCustomGeneric(self)
                 if use_custom
-                else ConvBackwardInput(self)
+                else ConvBackward(self)
             )
         if self.mode == Mode.FORWARD:
             return (
@@ -529,51 +539,52 @@ class ConvForwardCustomGeneric(torch.nn.Module):
         return output
 
 
-class ConvBackwardInput(torch.nn.Module):
+class ConvBackward(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
         super().__init__()
-        # TODO: Unblock when torch-mlir fix for grouped tranpose convolution lands
-        if sig.groups != 1:
-            raise NotImplementedError(
-                "unimplemented input grad decompostion: groups != 1"
-            )
-        if sig.transposed:
-            raise NotImplementedError(
-                "unimplemented input grad decomposition: transposed conv"
-            )
         self.perms = [
             sig.output_perms.inv(),
+            sig.input_perms,
             sig.kernel_perms,
             sig.input_perms.inv(),
+            sig.kernel_perms.inv(),
         ]
         # remainder from forward output_shape calculation needs to be accounted for
         pad_correction = []
-        in_shape_p = sig.input_perms(sig.input_shape)
         ker_shape_p = sig.kernel_perms(sig.kernel_shape)
-        for i in range(sig.num_spatial_dims):
-            pad_correction.append(
-                (
-                    (in_shape_p[i + 2] - 1)
-                    + 2 * sig.padding[i]
-                    - sig.dilation[i] * (ker_shape_p[i + 2] - 1)
-                )
-                % sig.stride[i]
-            )
         # get arguments for substitute conv
-        self.kwargs = sig.get_conv_kwargs()
-        self.kwargs["transposed"] = True
-        self.kwargs["output_padding"] = pad_correction
+        self.bias_sizes = [ker_shape_p[0]]
+        self.stride = sig.stride
+        self.padding = sig.padding
+        self.dilation = sig.dilation
+        self.transposed = sig.transposed
+        self.output_padding = sig.output_padding
+        self.groups = sig.groups
+        self.mask = sig.backward_mask
 
-    def forward(self, dLdy: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
+    ) -> torch.Tensor:
         dLdy = self.perms[0](dLdy)
-        w = self.perms[1](w)
-        dLdx = torch.convolution(
+        x = self.perms[1](x)
+        w = self.perms[2](w)
+        grads = torch.ops.aten.convolution_backward(
             dLdy,
+            x,
             w,
-            bias=None,
-            **self.kwargs,
+            self.bias_sizes,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.transposed,
+            self.output_padding,
+            self.groups,
+            self.mask,
         )
-        return self.perms[2](dLdx)
+        if self.mask[0]:
+            return self.perms[3](grads[0])
+        if self.mask[1]:
+            return self.perms[4](grads[1])
 
 
 class ConvBackwardInputCustomGeneric(torch.nn.Module):
@@ -700,7 +711,9 @@ class ConvBackwardInputCustomGeneric(torch.nn.Module):
                 [p for dim_pads in permuted_pads for p in dim_pads]
             )
 
-    def forward(self, dLdy: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
+    ) -> torch.Tensor:
         if self.groups != 1:
             dLdy = dLdy.unflatten(self.x_pos, [self.groups, -1])
             w = w.unflatten(self.w_pos, [self.groups, -1])
@@ -731,83 +744,6 @@ class ConvBackwardInputCustomGeneric(torch.nn.Module):
             dLdx = dLdx.flatten(self.o_pos, self.o_pos + 1)
 
         return dLdx
-
-
-class ConvBackwardWeight(torch.nn.Module):
-    def __init__(self, sig: ConvSignature):
-        super().__init__()
-        # TODO: support grouped weight_grad
-        # Note: expanding the weight shape to g x Cout//g x Cin//g x K
-        # dLdw[gidx, co, ci, k] = sum_n sum_hout x[n, gidx, ci, dil*k + s*hout]* dLdy[n, gidx, co, hout]
-        # The sum is over N, so this convolution-like op should have group=1, and the "batch-dim"
-        # should be Cin, since it is shared by `x` and `dLdw`; however, dLdy only gets used
-        # at the same gidx for Cout, which adds some redundancy if we perform this as a conv.
-        # i.e., Z = conv{g=1}(x.T, dLdy.T).T has shape CoutxCinxK, but needs to be Coutx(Cin//g)xK.
-        # dLdw[gidx, co,ci,k] = Z[gidx*(Cout//g) + co, gidx*(Cin//g) + ci,k].
-        # Reshaping Z to (Cout//g) x g x g x (Cin//g) x K, this is essentially taking a diagonal slice
-        # over the (g x g) dims.
-        if sig.groups != 1:
-            raise NotImplementedError(
-                "unimplemented weight grad decompostion: groups != 1"
-            )
-        if sig.transposed:
-            raise NotImplementedError(
-                "unimplemented weight grad decomposition: transposed conv"
-            )
-        self.ND = sig.num_spatial_dims
-        self.K = sig.kernel_perms(sig.kernel_shape)[-self.ND :]
-        self.kwargs = {
-            "stride": sig.dilation,
-            "padding": sig.padding,
-            "dilation": sig.stride,
-            "transposed": False,
-            "output_padding": sig.num_spatial_dims * (0,),
-            # can't group N
-            "groups": 1,
-        }
-        # need to permute layouts further for weight grad:
-        # 1. x (NCHW) to (CNHW)
-        #    already have in_perm : (in_layout) -> (NCHW)
-        #    so compose (1,0,2,3) o in_perm : (in_layout) -> (CNHW)
-        # 2. dLdy (NCoutHW) to (CoutNHW)
-        #    already have out_perm : (NCoutHW) -> (out_layout)
-        #    so compose (1,0,2,3) o out_perm^{-1} : (out_layout) -> (CoutNHW)
-        # 3. dLdw (CinCoutHW) back to (CoutCinHW)
-        #    already have kernel_perm : (fil_layout) -> (CoutCinHW)
-        #    so pre-compose kernel_perm^{-1} o (1,0,2,3) : (CinCoutHW) -> (fil_layout)
-        #    note: (1,0,2,3) is it's own inverse.
-        NC_perm = Permutation([1, 0] + list(range(2, sig.num_spatial_dims + 2)))
-        self.perms = [
-            NC_perm * sig.input_perms,
-            NC_perm / sig.output_perms,
-            sig.kernel_perms.inv() * NC_perm,
-        ]
-        self.explicit_padding = sig.explicit_padding
-        self.kwargs["padding"] = sig.num_spatial_dims * [0]
-
-    def forward(self, dLdy: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        x = torch.constant_pad_nd(x, self.explicit_padding, 0)
-        conv = torch.convolution(
-            self.perms[0](x),
-            self.perms[1](dLdy),
-            bias=None,
-            **self.kwargs,
-        )
-
-        # The forward conv's output_shape calculation is subtractive w.r.t. kernel_shape.
-        # Therefore, we need to remove unneccessary values from the backward conv.
-        # We choose to slice them out after the conv in this impl.
-        # One could instead pre-pad spatial dims:
-        #  1. x by stride - pad_correction (see ConvBackwardInput)
-        #  2. dLdy by 1
-        if self.ND == 1:
-            sliced = conv[..., : self.K[0]]
-        if self.ND == 2:
-            sliced = conv[..., : self.K[0], : self.K[1]]
-        if self.ND == 3:
-            sliced = conv[..., : self.K[0], : self.K[1], : self.K[2]]
-
-        return self.perms[2](sliced)
 
 
 class ConvBackwardWeightCustomGeneric(torch.nn.Module):
@@ -846,7 +782,9 @@ class ConvBackwardWeightCustomGeneric(torch.nn.Module):
                 + self.explicit_padding[pad_g_idx:]
             )
 
-    def forward(self, dLdy: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
+    ) -> torch.Tensor:
         if self.groups != 1:
             x = x.unflatten(self.x_pos, [self.groups, -1])
             dLdy = dLdy.unflatten(self.w_pos, [self.groups, -1])
