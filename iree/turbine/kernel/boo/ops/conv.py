@@ -227,12 +227,12 @@ def _boo_convolution_backward_impl(
     if mask[0]:
         bwd_sig = ConvSignature.get(x, w, mode="bwd", **kwargs)
         bwd_conv = get_launchable(bwd_sig)
-        input_grad = bwd_conv(grad_output, w.data)
+        input_grad = bwd_conv(grad_output, x.data, w.data)
         input_grad = input_grad if not x_cl else input_grad.permute(contig_cl_perm)
 
     if mask[1]:
         wrw_conv = get_launchable(ConvSignature.get(x, w, mode="wrw", **kwargs))
-        weight_grad = wrw_conv(grad_output, x.data)
+        weight_grad = wrw_conv(grad_output, x.data, w.data)
         weight_grad = weight_grad if not w_cl else weight_grad.permute(contig_cl_perm)
 
     if mask[2]:
