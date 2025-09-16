@@ -176,8 +176,8 @@ def test_boo_layer_norm_used(permuted: bool, experimental: bool):
             node_target = node.target
             break
 
-    # Make sure we are using a BOO op without permutation or if in experimental mode, and not using it
-    # otherwise.
+    # Make sure we are using a BOO op without permutation or if in experimental
+    # mode, and not using it otherwise.
     if not permuted or experimental:
         assert node_target is not None, "No BOO op found in the graph"
         assert "fused_op_native_layer_norm" in str(node_target)
