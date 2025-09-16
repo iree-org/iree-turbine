@@ -9,7 +9,6 @@ from typing import Any
 from enum import IntEnum
 from functools import lru_cache
 import math
-import warnings
 
 import torch
 
@@ -47,6 +46,30 @@ class Mode(ModeBase, IntEnum):
 
     def __str__(self) -> str:
         return self.name
+
+    @staticmethod
+    def from_backward_mask(mask: list[bool]) -> "Mode":
+        if len(mask) != 3:
+            raise ValueError(
+                f"Expected a list of three bool values for mask, got {mask}."
+            )
+        if mask == [False, False, False]:
+            return Mode.FORWARD
+        if mask == [True, True, True]:
+            return Mode.ALL_BACKWARD
+        if mask == [True, False, False]:
+            return Mode.INPUT_BACKWARD
+        if mask == [False, True, False]:
+            return Mode.WEIGHT_BACKWARD
+        if mask == [False, False, True]:
+            return Mode.BIAS_BACKWARD
+        if mask == [True, True, False]:
+            return Mode.INPUT_WEIGHT_BACKWARD
+        if mask == [True, False, True]:
+            return Mode.INPUT_BIAS_BACKWARD
+        if mask == [False, True, True]:
+            return Mode.WEIGHT_BIAS_BACKWARD
+        assert False, "Unreachable"
 
     @property
     def backward_mask(self) -> list[bool]:
@@ -158,6 +181,7 @@ class ConvSignature(OpSignature):
         output_padding: int | list[int] = 0,
         groups: int = 1,
         mode: str | Mode = Mode.FORWARD,
+        backward_mask: list[bool] | None = None,
     ):
         if len(input_shape) != len(kernel_shape):
             raise ValueError(
@@ -186,7 +210,9 @@ class ConvSignature(OpSignature):
                     f"ConvSignature kwarg has value {value} with type {type(value).__name__}, but expected int or iterable."
                 ) from e
 
-        if isinstance(mode, str):
+        if backward_mask is not None:
+            mode = Mode.from_backward_mask(backward_mask)
+        elif isinstance(mode, str):
             mode = Mode.parse(mode)
 
         self.input_shape = input_shape
@@ -419,12 +445,6 @@ class ConvSignature(OpSignature):
                 if use_custom and not self.transposed
                 else ConvForward(self)
             )
-        if self.mode == Mode.INPUT_BACKWARD and use_custom:
-            return ConvBackwardInputCustomGeneric(self)
-        if self.mode == Mode.WEIGHT_BACKWARD and use_custom:
-            return ConvBackwardWeightCustomGeneric(self)
-        if use_custom:
-            raise NotImplementedError(f"Unhandled case: custom module for {self.mode}.")
         mask = self.backward_mask
         num_grads = sum(int(m) for m in mask)
         assert (
@@ -432,11 +452,11 @@ class ConvSignature(OpSignature):
         ), f"Expected between one and three backward computations for mode: {self.mode}."
         match num_grads:
             case 1:
-                return ConvBackwardOneGrad(self)
+                return ConvBackwardOneGrad(self, use_custom)
             case 2:
-                return ConvBackwardTwoGrad(self)
+                return ConvBackwardTwoGrad(self, use_custom)
             case 3:
-                return ConvBackwardThreeGrad(self)
+                return ConvBackwardThreeGrad(self, use_custom)
             case _:
                 assert False, "Unreachable"
         raise ValueError(
@@ -576,99 +596,6 @@ class ConvForwardCustomGeneric(torch.nn.Module):
             sizes.extend([1] * (len(self.ol.replace("g", "")) - self.o_pos - 1))
             output = output + args[2].unflatten(0, sizes)
         return output
-
-
-class ConvBackwardBase(torch.nn.Module):
-    def __init__(self, sig: ConvSignature):
-        super().__init__()
-        self.perms = [
-            sig.output_perms.inv(),
-            sig.input_perms,
-            sig.kernel_perms,
-            sig.input_perms.inv(),
-            sig.kernel_perms.inv(),
-        ]
-        # remainder from forward output_shape calculation needs to be accounted for
-        pad_correction = []
-        ker_shape_p = sig.kernel_perms(sig.kernel_shape)
-        # get arguments for substitute conv
-        self.bias_sizes = [ker_shape_p[0]]
-        self.stride = sig.stride
-        self.padding = sig.padding
-        self.dilation = sig.dilation
-        self.transposed = sig.transposed
-        self.output_padding = sig.output_padding
-        self.groups = sig.groups
-        self.mask = sig.backward_mask
-
-    def _forward(
-        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
-        dLdy = self.perms[0](dLdy)
-        x = self.perms[1](x)
-        w = self.perms[2](w)
-        grads = torch.ops.aten.convolution_backward(
-            dLdy,
-            x,
-            w,
-            self.bias_sizes,
-            self.stride,
-            self.padding,
-            self.dilation,
-            self.transposed,
-            self.output_padding,
-            self.groups,
-            self.mask,
-        )
-        return grads
-
-
-class ConvBackwardOneGrad(ConvBackwardBase):
-    def __init__(self, sig: ConvSignature):
-        super().__init__(sig)
-        assert sum([int(m) for m in self.mask]) == 1
-
-    def forward(
-        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
-    ) -> torch.Tensor:
-        grads = self._forward(dLdy, x, w)
-        if self.mask[0]:
-            return self.perms[3](grads[0])
-        if self.mask[1]:
-            return self.perms[4](grads[1])
-        if self.mask[2]:
-            return grads[2]
-        assert False, f"Unreachable: mask {self.mask} should have a single `True`."
-
-
-class ConvBackwardTwoGrad(ConvBackwardBase):
-    def __init__(self, sig: ConvSignature):
-        super().__init__(sig)
-        assert sum([int(m) for m in self.mask]) == 2
-
-    def forward(
-        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        grads = self._forward(dLdy, x, w)
-        if not self.mask[0]:
-            return (self.perms[4](grads[1]), grads[2])
-        if not self.mask[1]:
-            return (self.perms[3](grads[0]), grads[2])
-        if not self.mask[2]:
-            return (self.perms[3](grads[0]), self.perms[4](grads[1]))
-        assert False, f"Unreachable: mask {self.mask} should have a single `False`."
-
-
-class ConvBackwardThreeGrad(ConvBackwardBase):
-    def __init__(self, sig: ConvSignature):
-        super().__init__(sig)
-        assert all(self.mask)
-
-    def forward(
-        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
-    ) -> torch.Tensor:
-        grads = self._forward(dLdy, x, w)
-        return (self.perms[3](grads[0]), self.perms[4](grads[1]), grads[2])
 
 
 class ConvBackwardInputCustomGeneric(torch.nn.Module):
@@ -889,6 +816,140 @@ class ConvBackwardWeightCustomGeneric(torch.nn.Module):
         if self.groups != 1:
             dLdw = dLdw.flatten(self.o_pos, self.o_pos + 1)
         return dLdw
+
+
+class ConvBackwardBiasCustomGeneric(torch.nn.Module):
+    def __init__(self, sig: ConvSignature):
+        super().__init__()
+        self.bias_sizes = sig.kernel_shape[sig.kernel_layout.find("N")]
+        self.reduction_dims = [
+            idx for idx, char in enumerate(sig.output_layout) if char != "C"
+        ]
+
+    def forward(
+        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
+    ) -> torch.Tensor:
+        return torch.sum(dLdy, self.reduction_dims)
+
+
+class ConvBackwardBase(torch.nn.Module):
+    def __init__(self, sig: ConvSignature):
+        super().__init__()
+        self.perms = [
+            sig.output_perms.inv(),
+            sig.input_perms,
+            sig.kernel_perms,
+            sig.input_perms.inv(),
+            sig.kernel_perms.inv(),
+        ]
+        # remainder from forward output_shape calculation needs to be accounted for
+        ker_shape_p = sig.kernel_perms(sig.kernel_shape)
+        # get arguments for substitute conv
+        self.bias_sizes = [ker_shape_p[0]]
+        self.stride = sig.stride
+        self.padding = sig.padding
+        self.dilation = sig.dilation
+        self.transposed = sig.transposed
+        self.output_padding = sig.output_padding
+        self.groups = sig.groups
+        self.mask = sig.backward_mask
+
+    def forward(
+        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        dLdy = self.perms[0](dLdy)
+        x = self.perms[1](x)
+        w = self.perms[2](w)
+        grads = torch.ops.aten.convolution_backward(
+            dLdy,
+            x,
+            w,
+            self.bias_sizes,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.transposed,
+            self.output_padding,
+            self.groups,
+            self.mask,
+        )
+        dLdx = None if grads[0] is None else self.perms[3](grads[0])
+        dLdw = None if grads[1] is None else self.perms[4](grads[1])
+        dLdb = None if grads[2] is None else grads[2]
+        return (dLdx, dLdw, dLdb)
+
+
+class ConvCustomBackwardBase(torch.nn.Module):
+    def __init__(self, sig: ConvSignature):
+        super().__init__()
+        self.grad_modules = [
+            ConvBackwardInputCustomGeneric(sig),
+            ConvBackwardWeightCustomGeneric(sig),
+            ConvBackwardBiasCustomGeneric(sig),
+        ]
+        self.mask = sig.backward_mask
+
+    def forward(
+        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        return (
+            self.grad_modules[0].forward(dLdy, x, w) if self.mask[0] else None,
+            self.grad_modules[1].forward(dLdy, x, w) if self.mask[1] else None,
+            self.grad_modules[2].forward(dLdy, x, w) if self.mask[2] else None,
+        )
+
+
+class ConvBackwardOneGrad(torch.nn.Module):
+    def __init__(self, sig: ConvSignature, use_custom: bool = False):
+        super().__init__()
+        mask = sig.backward_mask
+        assert (
+            sum([int(m) for m in mask]) == 1
+        ), f"Expected one `True` in backward mask, got {mask}"
+        self._m = (
+            ConvBackwardBase(sig) if not use_custom else ConvCustomBackwardBase(sig)
+        )
+        self.index = [idx for idx, m in enumerate(mask) if m][0]
+
+    def forward(
+        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
+    ) -> torch.Tensor:
+        outs = self._m(dLdy, x, w)
+        return outs[self.index]
+
+
+class ConvBackwardTwoGrad(torch.nn.Module):
+    def __init__(self, sig: ConvSignature, use_custom: bool = False):
+        super().__init__()
+        mask = sig.backward_mask
+        assert (
+            sum([int(m) for m in mask]) == 2
+        ), f"Expected one `False in backward mask, got {mask}"
+        self._m = (
+            ConvBackwardBase(sig) if not use_custom else ConvCustomBackwardBase(sig)
+        )
+        self.skip_index = [idx for idx, m in enumerate(mask) if not m][0]
+
+    def forward(
+        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        outs = self._m(dLdy, x, w)
+        return outs[: self.skip_index] + outs[self.skip_index + 1 :]
+
+
+class ConvBackwardThreeGrad(torch.nn.Module):
+    def __init__(self, sig: ConvSignature, use_custom: bool = False):
+        super().__init__()
+        mask = sig.backward_mask
+        assert all(mask), f"Expected all `True` in backward mask, got {mask}"
+        self._m = (
+            ConvBackwardBase(sig) if not use_custom else ConvCustomBackwardBase(sig)
+        )
+
+    def forward(
+        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return self._m(dLdy, x, w)
 
 
 class ConvParser(OpCLIParser):
