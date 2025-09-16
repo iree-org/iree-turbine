@@ -12,6 +12,7 @@ from torch import fx
 from torch._dynamo.testing import EagerAndRecordGraphs
 
 from iree.turbine.dynamo.backends import boo
+from iree.turbine.kernel.boo.fusion.schema import EXPERIMENTAL_SUPPORTED_BOO_FUSIONS
 
 
 def test_custom_boo_conv_used():
@@ -125,3 +126,60 @@ def test_output_layout(device: str, memory_format: torch.memory_format):
         assert isinstance(expected_result, torch.Tensor)
         assert actual_result.shape == expected_result.shape
         assert actual_result.stride() == expected_result.stride()
+
+
+@pytest.mark.xfail(
+    condition=not torch.cuda.is_available(),
+    reason="CPU compile failure potentially related to single dispatch.",
+)
+@pytest.mark.parametrize("permuted", [False, True])
+@pytest.mark.parametrize("experimental", [False, True])
+def test_boo_layer_norm_used(permuted: bool, experimental: bool):
+    """Test that we're using BOO custom layer norm op."""
+
+    # Force everything to be on a GPU since this fails to compile on CPU.
+    device = torch.device("cuda")
+    input = torch.randn((10, 20, 30), device=device)
+
+    # Permute if requested. Cloning is needed to ensure we have non-unit
+    # trailing stride.
+    if permuted:
+        input = (
+            input.permute([0, 2, 1])
+            .clone(memory_format=torch.contiguous_format)
+            .permute([0, 2, 1])
+        )
+    normalized_shape = (30,)
+
+    recorder = EagerAndRecordGraphs()
+    backend = (
+        boo.backend(nested_backend=recorder)
+        if not experimental
+        else boo.backend(
+            nested_backend=recorder, fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS
+        )
+    )
+    compiled_layer_norm = torch.compile(
+        torch.nn.LayerNorm(
+            normalized_shape, elementwise_affine=False, bias=False, device=device
+        ),
+        backend=backend,
+    )
+
+    compiled_layer_norm(input)
+
+    [compiled_module] = recorder.graphs
+    assert isinstance(compiled_module, fx.GraphModule)
+    node_target: str | None = None
+    for node in compiled_module.graph.nodes:
+        if node.op == "call_function" and "boo." in str(node.target):
+            node_target = node.target
+            break
+
+    # Make sure we are using a BOO op without permutation or if in experimental
+    # mode, and not using it otherwise.
+    if not permuted or experimental:
+        assert node_target is not None, "No BOO op found in the graph"
+        assert "fused_op_native_layer_norm" in str(node_target)
+    else:
+        assert node_target is None, "BOO op used when should have been disabled"
