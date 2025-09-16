@@ -12,6 +12,7 @@ from typing import Callable, Sequence, NamedTuple
 import os
 import shlex
 import statistics
+from functools import partial
 
 import torch
 from torch.autograd.profiler_util import FunctionEvent
@@ -56,7 +57,7 @@ command-line arguments are appended to the arguments from the file.
     parser.add_argument(
         "--reference-backend",
         type=str,
-        choices=["torch", "torch-compile"],
+        choices=[k for k in BACKEND_TO_FUNC_GENERATOR.keys() if k != "iree_boo_legacy"],
         action="append",
         default=[],
         required=False,
@@ -126,7 +127,7 @@ def main():
 
     # Setup a csv output file with headers.
     csv_stats = ALL_STATS
-    backends = ["iree_boo"] + ref_backends
+    backends = ["iree_boo_legacy"] + ref_backends
     csv_file = open(meta_args.csv if meta_args.csv is not None else os.devnull, "w")
     csv_headers = ["arguments"]
     for b in backends:
@@ -282,9 +283,24 @@ def run(
     return
 
 
+def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
+    """Returns the module defined by the signature compiled using the specified
+    backend."""
+    mod = signature.get_nn_module(use_custom=False)
+    return torch.compile(mod, dynamic=False, backend=backend)
+
+
 BACKEND_TO_FUNC_GENERATOR: dict[str, Callable[[OpSignature], Callable]] = {
-    "iree_boo": get_launchable,
     "torch": (lambda signature: signature.get_nn_module(use_custom=False)),
+    "inductor": partial(get_torch_compiled_module, backend="inductor"),
+    "iree_boo_legacy": get_launchable,
+    "iree_boo": partial(get_torch_compiled_module, backend="iree_boo"),
+    "iree_boo_experimental": partial(
+        get_torch_compiled_module, backend="iree_boo_experimental"
+    ),
+    "iree_boo_inductor": partial(
+        get_torch_compiled_module, backend="iree_boo_inductor"
+    ),
 }
 
 
