@@ -104,6 +104,9 @@ setup(
         ],  # Include MLIR templates
     },
     entry_points={
+        "console_scripts": [
+            "iree-boo-driver = iree.turbine.kernel.boo.driver.driver:main",
+        ],
         "torch_dynamo_backends": [
             "turbine_cpu = iree.turbine.dynamo.backends.base:backend",
             "iree_turbine = iree.turbine.dynamo.backends.base:backend",
