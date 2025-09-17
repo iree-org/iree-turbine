@@ -166,7 +166,7 @@ def _boo_convolution_impl(
 
 @CustomOp.register(library=BOO_LIBRARY, register_meta=False)
 class convolution_backward(CustomOp):
-    signature = "convolution_backward(Tensor input, Tensor weight, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
+    signature = "convolution_backward(Tensor grad_output, Tensor input, Tensor weight, int[] stride, int[] padding, int[] dilation, int groups, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
 
     def select(self, ksel):
         raise NotImplementedError("convolution_backward select NYI")
@@ -179,9 +179,9 @@ class convolution_backward(CustomOp):
 
 
 def _boo_convolution_backward_impl(
+    grad_output: torch.Tensor,
     x: torch.Tensor,
     w: torch.Tensor,
-    grad_output: torch.Tensor,
     stride: Sequence[int],
     padding: Sequence[int],
     dilation: Sequence[int],
@@ -249,9 +249,9 @@ def _boo_convolution_backward_impl(
 
 @register_meta("convolution_backward")
 def _boo_convolution_backward_meta(
+    grad_output: torch.Tensor,
     x: torch.Tensor,
     w: torch.Tensor,
-    grad_output: torch.Tensor,
     stride: Sequence[int],
     padding: Sequence[int],
     dilation: Sequence[int],
@@ -336,9 +336,9 @@ class _BooConvolution(torch.autograd.Function):
         mask = tuple((ctx.needs_input_grad[i] for i in range(3)))
 
         input_grad, weight_grad, bias_grad = torch.ops.boo.convolution_backward(
+            grad_output,
             x,
             w,
-            grad_output,
             ctx.stride,
             ctx.padding,
             ctx.dilation,
