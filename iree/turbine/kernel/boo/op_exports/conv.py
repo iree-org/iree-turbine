@@ -407,14 +407,13 @@ class ConvSignature(OpSignature):
                 if self.bias
                 else (get(self.input_shape), get(self.kernel_shape))
             )
-        if self.mode == Mode.WEIGHT_BACKWARD or self.mode == Mode.INPUT_BACKWARD:
-            # (dLdy, x, w)
-            return (
-                get(self.output_shape),
-                get(self.input_shape),
-                get(self.kernel_shape),
-            )
-        raise ValueError(f"Unknown mode: {self.mode}")
+        # All backward modes take (dLdy, x, w) as inputs.
+        # (dLdy, x, w)
+        return (
+            get(self.output_shape),
+            get(self.input_shape),
+            get(self.kernel_shape),
+        )
 
     @property
     def func_name(self) -> str:

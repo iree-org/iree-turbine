@@ -109,11 +109,15 @@ def testBackwardCacheBoo(x_grad, w_grad, boo_cache_dir: Path):
     )
     assert _validate(
         "conv_2d_float32_weight_backward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-        w_grad,
+        w_grad and not x_grad,
     )
     assert _validate(
         "conv_2d_float32_input_backward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g",
-        x_grad,
+        x_grad and not w_grad,
+    )
+    assert _validate(
+        "conv_2d_float32_input_weight_backward_1x1x16x16_nchw_1x1x2x2_fchw_nfhw_1x1s_0x0p_1x1d_1g",
+        x_grad and w_grad,
     )
 
 
@@ -158,9 +162,6 @@ class TestBooConv:
         b = torch.ones([1], dtype=torch.float32, device=device, requires_grad=True)
         torch.autograd.gradcheck(boo_conv, (x, w, b), atol=1e-5, eps=1e-3)
 
-    @pytest.mark.xfail(
-        reason="CPU backward compile failure. Remove when #998 is resolved."
-    )
     def testBooConvBackwardsAmpContextCPU(self, tmp_path: Path):
         """We expect this to not perform autocasting."""
 
@@ -191,11 +192,7 @@ class TestBooConv:
                 in items
             )
             assert (
-                f"conv_2d_{expected_dtype_str}_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
-                in items
-            )
-            assert (
-                f"conv_2d_{expected_dtype_str}_input_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                f"conv_2d_{expected_dtype_str}_input_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
                 in items
             )
 
@@ -223,11 +220,7 @@ class TestBooConv:
                 in items
             )
             assert (
-                f"conv_2d_{expected_dtype_str}_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
-                in items
-            )
-            assert (
-                f"conv_2d_{expected_dtype_str}_input_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+                f"conv_2d_{expected_dtype_str}_input_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
                 in items
             )
             # Make sure we got back the correct original dtypes.
@@ -262,11 +255,7 @@ class TestBooConv:
             in items
         )
         assert (
-            f"conv_2d_{expected_dtype_str}_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
-            in items
-        )
-        assert (
-            f"conv_2d_{expected_dtype_str}_input_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
+            f"conv_2d_{expected_dtype_str}_input_weight_backward_1x1x32x32_nchw_1x1x4x4_fchw_nfhw_1x1s_0x0p_1x1d_1g"
             in items
         )
         # Make sure we got back the correct original dtypes.
