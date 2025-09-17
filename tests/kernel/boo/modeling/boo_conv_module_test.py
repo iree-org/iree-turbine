@@ -203,11 +203,7 @@ class TestBooConv2dLaunching:
             in func_names
         )
         assert (
-            "conv_2d_float32_weight_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g"
-            in func_names
-        )
-        assert (
-            "conv_2d_float32_input_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g"
+            "conv_2d_float32_input_weight_backward_10x16x16x2_nhwc_3x2x2x2_fhwc_nfhw_1x1s_0x0p_1x1d_1g"
             in func_names
         )
 
@@ -238,19 +234,11 @@ class TestBooConv2dLaunching:
             in func_names
         )
         assert (
-            "conv_2d_float32_input_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            "conv_2d_float32_input_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
             in func_names
         )
         assert (
-            "conv_2d_float32_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-            in func_names
-        )
-        assert (
-            "conv_2d_float32_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-            in func_names
-        )
-        assert (
-            "conv_2d_float32_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            "conv_2d_float32_all_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
             in func_names
         )
 
@@ -282,18 +270,10 @@ class TestBooConv2dLaunching:
             in func_names
         )
         assert (
-            "conv_2d_bfloat16_input_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            "conv_2d_bfloat16_input_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
             in func_names
         )
         assert (
-            "conv_2d_bfloat16_input_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-            in func_names
-        )
-        assert (
-            "conv_2d_bfloat16_weight_backward_10x16x16x3_nhwc_2x3x3x3_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
-            in func_names
-        )
-        assert (
-            "conv_2d_bfloat16_weight_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+            "conv_2d_bfloat16_all_backward_10x14x14x2_nhwc_3x2x2x2_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
             in func_names
         )

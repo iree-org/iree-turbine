@@ -560,17 +560,17 @@ def convolution_backward_replacement(
     input_layout = (
         default_layout
         if input_perms is None
-        else "".join([default_layout[i] for i in input_perms.inverse_permutation])
+        else "".join([default_layout[i] for i in input_perms.permutation])
     )
     kernel_layout = (
         default_layout
         if kernel_perms is None
-        else "".join([default_layout[i] for i in kernel_perms.inverse_permutation])
+        else "".join([default_layout[i] for i in kernel_perms.permutation])
     )
     output_layout = (
         default_layout
         if output_perms is None
-        else "".join([default_layout[i] for i in output_perms.inverse_permutation])
+        else "".join([default_layout[i] for i in output_perms.permutation])
     )
 
     x_contig = x if input_perms is None else x.permute(input_perms.permutation)

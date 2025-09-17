@@ -5,8 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 
-from collections.abc import Callable
-from typing import Any, Sequence, Tuple
+from typing import Sequence, Tuple
 
 import torch
 
@@ -19,7 +18,7 @@ from ..driver.launch import get_launchable
 
 from ..runtime import LaunchableRuntimeCache
 
-from .library import define_schema, register_impl, register_meta, BOO_LIBRARY
+from .library import register_meta, BOO_LIBRARY
 from .utils import *
 from .layout_customizable_conv import boo_layout_customizable_convolution
 
@@ -190,61 +189,79 @@ def _boo_convolution_backward_impl(
 ) -> Tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
 
     num_spatial_dims = len(x.shape) - 2
-    mem_format = CHANNELS_LAST_MEMORY_FORMAT.get(num_spatial_dims)
-    default_layout = DEFAULT_LAYOUTS[num_spatial_dims]
-    cl_layout = CHANNELS_LAST_LAYOUTS[num_spatial_dims]
-    cl_contig_perm = CHANNELS_LAST_TO_CONTIGUOUS_PERMUTATION[num_spatial_dims]
-    contig_cl_perm = CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION[num_spatial_dims]
 
-    x_cl = False if mem_format is None else x.is_contiguous(memory_format=mem_format)
-    w_cl = False if mem_format is None else w.is_contiguous(memory_format=mem_format)
-    o_cl = (
-        False
-        if mem_format is None
-        else grad_output.is_contiguous(memory_format=mem_format)
+    default_layout = DEFAULT_LAYOUTS[num_spatial_dims]
+
+    input_perms = get_memory_format_permutation(x, num_spatial_dims)
+    kernel_perms = get_memory_format_permutation(w, num_spatial_dims)
+    output_perms = get_memory_format_permutation(grad_output, num_spatial_dims)
+
+    input_layout = (
+        default_layout
+        if input_perms is None
+        else "".join([default_layout[i] for i in input_perms.permutation])
+    )
+    kernel_layout = (
+        default_layout
+        if kernel_perms is None
+        else "".join([default_layout[i] for i in kernel_perms.permutation])
+    )
+    output_layout = (
+        default_layout
+        if output_perms is None
+        else "".join([default_layout[i] for i in output_perms.permutation])
     )
 
-    input_layout = cl_layout if x_cl else default_layout
-    kernel_layout = cl_layout if w_cl else default_layout
-    output_layout = cl_layout if o_cl else default_layout
+    x_contig = x if input_perms is None else x.permute(input_perms.permutation)
+    w_contig = w if kernel_perms is None else w.permute(kernel_perms.permutation)
+    dLdy_contig = (
+        grad_output
+        if output_perms is None
+        else grad_output.permute(output_perms.permutation)
+    )
 
-    x = x if not x_cl else x.permute(cl_contig_perm)
-    w = w if not w_cl else w.permute(cl_contig_perm)
-    grad_output = grad_output if not o_cl else grad_output.permute(cl_contig_perm)
+    sig = ConvSignature(
+        input_shape=x_contig.shape,
+        kernel_shape=w_contig.shape,
+        input_layout=input_layout,
+        kernel_layout=kernel_layout,
+        output_layout=output_layout,
+        dtype=x_contig.dtype,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        groups=groups,
+        backward_mask=mask,
+    )
 
-    kwargs = {
-        "stride": stride,
-        "padding": padding,
-        "dilation": dilation,
-        "groups": groups,
-        "input_layout": input_layout,
-        "kernel_layout": kernel_layout,
-        "output_layout": output_layout,
-    }
+    launch = get_launchable(sig, use_custom=True)
 
-    input_grad = weight_grad = bias_grad = None
+    grads = launch(dLdy_contig.data, x_contig.data, w_contig.data)
 
-    if mask[0]:
-        bwd_sig = ConvSignature.get(x, w, mode="bwd", **kwargs)
-        bwd_conv = get_launchable(bwd_sig)
-        input_grad = bwd_conv(grad_output, x.data, w.data)
-        input_grad = input_grad if not x_cl else input_grad.permute(contig_cl_perm)
+    if isinstance(grads, torch.Tensor):
+        grads = (grads,)
 
-    if mask[1]:
-        wrw_conv = get_launchable(ConvSignature.get(x, w, mode="wrw", **kwargs))
-        weight_grad = wrw_conv(grad_output, x.data, w.data)
-        weight_grad = weight_grad if not w_cl else weight_grad.permute(contig_cl_perm)
+    outputs = [None, None, None]
+    g_idx = 0
 
-    if mask[2]:
-        # TODO: use iree to perform the reduce sum?
-        output_layout = output_layout
-        reduce_dims = []
-        for i, char in enumerate(output_layout):
-            if char != "C":
-                reduce_dims.append(i)
-        bias_grad = torch.sum(grad_output, reduce_dims)
+    for o_idx, m in enumerate(mask):
+        if m:
+            outputs[o_idx] = grads[g_idx]
+            g_idx += 1
 
-    return input_grad, weight_grad, bias_grad
+    return (
+        (
+            outputs[0]
+            if outputs[0] is None or input_perms is None
+            else outputs[0].permute(input_perms.inverse_permutation)
+        ),
+        (
+            outputs[1]
+            if outputs[1] is None or kernel_perms is None
+            else outputs[1].permute(kernel_perms.inverse_permutation)
+        ),
+        outputs[2],
+    )
 
 
 @register_meta("convolution_backward")
