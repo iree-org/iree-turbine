@@ -4,6 +4,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import torch
+
 from ..support.ir_imports import (
     RankedTensorType,
     IrType,
@@ -110,6 +112,60 @@ class test_linear_trailing_optional(CustomOp):
                 tensor_Result_type=res_desc.mlir_type_asm,
             )
         kb.yield_results(*impl_helper.call_function(func_op, *kb.arg_bindings))
+
+
+@CustomOp.register(library=LIBRARY)
+class test_optional_returns(CustomOp):
+    """A CustomOp version of linear, but with the bias passed as an optional second argument rather than trailing argument."""
+
+    signature = (
+        "test_optional_returns(Tensor a, Tensor b, bool[] mask) -> (Tensor?, Tensor?)"
+    )
+
+    def select(self, ksel: KernelSelection):
+        a_desc = ksel.arg_tensor(0)
+        b_desc = ksel.arg_tensor(1)
+        mask_desc = ksel.attr_list_bool(2)
+        mask = mask_desc.v
+        assert len(mask) == 2, "Must have two bool values for mask arg."
+        ksel.maybe_return_tensor(
+            torch.empty(a_desc.t.shape, device="meta") if mask[0] else None
+        )
+        ksel.maybe_return_tensor(
+            torch.empty(b_desc.t.shape, device="meta") if mask[1] else None
+        )
+
+    def generate(self, ksel: KernelSelection, kb: KernelBuilder):
+        # result type + non-optional args
+        a_desc = ksel.arg_descs[0]
+        b_desc = ksel.arg_descs[1]
+        rank_a = len(a_desc.t.shape)
+        rank_b = len(b_desc.t.shape)
+        mask = ksel.arg_descs[2].v
+        mask_str = "mask_" + "_".join([str(m) for m in mask])
+        types = [
+            a_desc.mlir_type_asm,
+            b_desc.mlir_type_asm,
+        ]
+        names = [r"%a", r"%b"]
+        return_vals = ", ".join([name for m, name in zip(mask, names) if m])
+        return_types = ", ".join([t for t, m in zip(types, mask) if m])
+        return_string = "" if not any(mask) else return_vals + " : " + return_types
+        function_name = f"turbine_test_optional_returns_{mask_str}_{rank_a}d_{rank_b}d"
+        # Instantiate template
+        func_op = _templates.inline_template_function(
+            kb,
+            "test_optional_returns",
+            function_name,
+            tensor_type_a=types[0],
+            tensor_type_b=types[1],
+            mask=mask_str,
+            rank_a=rank_a,
+            rank_b=rank_b,
+            func_return_type=f"({return_types})",
+            return_string=return_string,
+        )
+        kb.yield_results(*impl_helper.call_function(func_op, *kb.arg_bindings[0:2]))
 
 
 @CustomOp.register(library=LIBRARY)
