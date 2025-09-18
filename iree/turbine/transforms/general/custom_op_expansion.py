@@ -304,6 +304,13 @@ class AOTKernelSelection(KernelSelection):
         self.result_descs.append(desc)
         return desc
 
+    def maybe_return_tensor(
+        self, t: Tensor | None
+    ) -> TensorArg | EmptyOptionalTensorArg:
+        desc = EmptyOptionalTensorArg() if t is None else TensorArg(t)
+        self.result_descs.append(desc)
+        return desc
+
 
 def _get_constant_str_from_value(v: Value) -> str:
     """Given a constant str producer, return the str.
@@ -441,12 +448,26 @@ class InlineKernelBuilder(KernelBuilder):
         """Yields results of the kernel computation."""
         assert not self.yielded, "yield_results has already been called"
         ksel = self.ksel
-        expected_count = len(ksel.result_descs) + len(ksel.inplace_tied_arg_descs)
+        expected_count = len(
+            [
+                desc
+                for desc in ksel.result_descs
+                if not isinstance(desc, EmptyOptionalTensorArg)
+            ]
+        ) + len(ksel.inplace_tied_arg_descs)
         assert (
             len(results) == expected_count
         ), f"Mismatched yielded results and declared+inplace: Expected={expected_count}, Got={len(results)}"
+
+        none_type = IrType.parse("!torch.none", context=self.context)
+        is_none = lambda value: value.type == none_type
         with self.ip, self.location:
-            torch_op_results: list[Value] = list(self.torch_op.results)
+            torch_op_results: list[Value] = list(
+                [res for res in self.torch_op.results if not is_none(res)]
+            )
+            torch_op_none_returns: list[Value] = list(
+                [res for res in self.torch_op.results if is_none(res)]
+            )
             assert len(results) == len(
                 torch_op_results
             ), f"Mismatched yield_results with custom op results"
@@ -458,4 +479,10 @@ class InlineKernelBuilder(KernelBuilder):
                     static_info_cast=True,
                 )
                 old_result.replace_all_uses_with(new_result)
+            if len(torch_op_none_returns) > 0:
+                constant_none = Operation.create(
+                    "torch.constant.none", results=[none_type]
+                ).result
+                for none_ret in torch_op_none_returns:
+                    none_ret.replace_all_uses_with(constant_none)
         self.yielded = True

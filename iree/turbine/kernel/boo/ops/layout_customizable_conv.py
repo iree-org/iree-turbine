@@ -8,7 +8,7 @@ from typing import Sequence, Tuple
 
 import torch
 
-from .library import register_meta, BOO_LIBRARY
+from .library import BOO_LIBRARY
 from .utils import *
 
 from ..op_exports.conv import (
@@ -23,11 +23,12 @@ from ..runtime import LaunchableRuntimeCache
 
 from ....runtime.op_reg import CustomOp, KernelBuilder, KernelSelection, impl_helper
 from ....transforms.merger import Merger
-from ....support.ir_imports import Operation, StringAttr
 
 __all__ = [
     "boo_layout_customizable_convolution",
     "convolution_replacement",
+    "layout_customizable_convolution_backward",
+    "convolution_backward_replacement",
 ]
 
 # Forward Convolution Implementations #
@@ -162,9 +163,12 @@ def _boo_layout_customizable_convolution_impl(
 
 
 # Backward Convolution Implementations #
-@CustomOp.register(library=BOO_LIBRARY, register_meta=False)
+@CustomOp.register(library=BOO_LIBRARY)
 class layout_customizable_convolution_backward(CustomOp):
-    signature = "layout_customizable_convolution_backward(Tensor grad_output, Tensor input, Tensor weight, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
+
+    @property
+    def signature(self) -> str:
+        return "layout_customizable_convolution_backward(Tensor grad_output, Tensor input, Tensor weight, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
 
     def select(self, ksel: KernelSelection):
         # Declare args.
@@ -178,7 +182,7 @@ class layout_customizable_convolution_backward(CustomOp):
         input_layout = ksel.attr_str(7)
         kernel_layout = ksel.attr_str(8)
         output_layout = ksel.attr_str(9)
-        mask = ksel.attr_list_int(10)
+        mask = ksel.attr_list_bool(10)
         # Specialize args.
         grad_output.specialize_all_dims()
         input.specialize_all_dims()
@@ -197,11 +201,20 @@ class layout_customizable_convolution_backward(CustomOp):
             groups=groups.v,
             backward_mask=mask.v,
         )
-        output_shape = self.conv_sig.output_shape
-        o_meta = torch.empty(
-            tuple(output_shape), dtype=self.conv_sig.dtype, device="meta"
+        dLdx = ksel.maybe_return_tensor(
+            torch.empty(input.spec_dims, device="meta") if mask.v[0] else None
         )
-        ksel.return_tensor(o_meta)
+        dLdw = ksel.maybe_return_tensor(
+            torch.empty(weight.spec_dims, device="meta") if mask.v[1] else None
+        )
+        dLdb = ksel.maybe_return_tensor(
+            torch.empty(weight.spec_dims[kernel_layout.v.find("N")], device="meta")
+            if mask.v[2]
+            else None
+        )
+        dLdx.specialize_all_dims()
+        dLdw.specialize_all_dims()
+        dLdb.specialize_all_dims()
 
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
         sample_args = (ksel.arg_descs[0].t, ksel.arg_descs[1].t, ksel.arg_descs[2].t)
@@ -220,12 +233,8 @@ class layout_customizable_convolution_backward(CustomOp):
         )
         merger.merge()
         func_op = kb.symbol_table[merger.translate_symbol(func_name)]
-        kb.yield_results(
-            *impl_helper.call_function(
-                func_op, *[binding for binding in kb.arg_bindings]
-            )
-        )
-        raise NotImplementedError("convolution_backward select NYI")
+        outputs = impl_helper.call_function(func_op, *kb.arg_bindings[0:3])
+        kb.yield_results(*outputs)
 
     def eager_execute(self, *args):
         return _boo_layout_customizable_convolution_backward_impl(*args)
@@ -288,31 +297,6 @@ def _boo_layout_customizable_convolution_backward_impl(
             g_idx += 1
 
     return outputs[0], outputs[1], outputs[2]
-
-
-@register_meta("layout_customizable_convolution_backward")
-def _boo_layout_customizable_convolution_backward_meta(
-    grad_output: torch.Tensor,
-    x: torch.Tensor,
-    w: torch.Tensor,
-    stride: Sequence[int],
-    padding: Sequence[int],
-    dilation: Sequence[int],
-    groups: int,
-    input_layout: str,
-    kernel_layout: str,
-    output_layout: str,
-    mask: Tuple[bool, bool, bool],
-) -> Tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
-    input_grad = weight_grad = bias_grad = None
-    if mask[0]:
-        input_grad = torch.empty_like(x)
-    if mask[1]:
-        weight_grad = torch.empty_like(w)
-    if mask[2]:
-        output_channels = w.shape[kernel_layout.find("N")]
-        bias_grad = torch.empty([output_channels], dtype=x.dtype, device=x.device)
-    return input_grad, weight_grad, bias_grad
 
 
 def pytorch_layout_customizable_convolution_backward(ctx, grad_output):

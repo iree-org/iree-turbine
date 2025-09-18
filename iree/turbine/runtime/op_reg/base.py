@@ -445,6 +445,19 @@ class KernelSelection(ABC):
         """
         ...
 
+    @abstractmethod
+    def maybe_return_tensor(
+        self, t: Tensor | None
+    ) -> Union["TensorArg", "EmptyOptionalTensorArg"]:
+        """Marks the next return value as an optional Tensor.
+        If `None` is passed, this will create a sentinel Arg for the missing return value.
+
+        By default, it will be rank and dtype specialized but have completely dynamic
+        dimensions. Dimensions can be further constrained by modifying the returned
+        descriptor.
+        """
+        ...
+
     def return_new_tensor(self, size: list, dtype: torch.dtype) -> "TensorArg":
         """Constructs a new symbolic tensor and marks the next result as returning it.
 
@@ -588,6 +601,13 @@ class EagerKernelSelection(KernelSelection):
 
     def return_tensor(self, t: Tensor) -> "TensorArg":
         desc = TensorArg(t)
+        self.result_descs.append(desc)
+        return desc
+
+    def maybe_return_tensor(
+        self, t: Tensor | None
+    ) -> Union["TensorArg", "EmptyOptionalTensorArg"]:
+        desc = EmptyOptionalTensorArg() if t is None else TensorArg(t)
         self.result_descs.append(desc)
         return desc
 
@@ -820,6 +840,14 @@ class EmptyOptionalTensorArg:
     def generate_meta(self) -> None:
         return None
 
+    def specialize_all_dims(self):
+        """Does nothing. Added to enable simple use with `maybe_return_tensor`."""
+        return
+
+    def specialize_dims(self, *indices: int):
+        """Does nothing. Added to enable simple use with `maybe_return_tensor`."""
+        return
+
 
 ArgDescriptor = Union[AttrArg, IntArg, TensorArg, TensorListArg, EmptyOptionalTensorArg]
 
@@ -983,7 +1011,13 @@ class FreeFuncKernelBuilder(KernelBuilder):
         """Yields results of the kernel computation."""
         assert not self.yielded, "yield_results has already been called"
         ksel = self.ksel
-        expected_count = len(ksel.result_descs) + len(ksel.inplace_tied_arg_descs)
+        expected_count = len(
+            [
+                desc
+                for desc in ksel.result_descs
+                if not isinstance(desc, EmptyOptionalTensorArg)
+            ]
+        ) + len(ksel.inplace_tied_arg_descs)
         assert (
             len(results) == expected_count
         ), f"Mismatched yielded results and declared+inplace: Expected={expected_count}, Got={len(results)}"
