@@ -400,6 +400,15 @@ class KernelSelection(ABC):
         ...
 
     @abstractmethod
+    def attr_list_bool(self, arg: int) -> "AttrArg":
+        """Declares an argument to be a list<bool> attribute.
+
+        Such arguments are not materialized in the IR as Values but may be used to
+        generate the IR. In AOT contexts, they must be derived from static values.
+        """
+        ...
+
+    @abstractmethod
     def attr_list_int(self, arg: int) -> "AttrArg":
         """Declares an argument to be a list<integer> attribute.
 
@@ -522,6 +531,20 @@ class EagerKernelSelection(KernelSelection):
         assert isinstance(
             arg_value, int
         ), f"Argument type mismatch from Torch for {arg}: Expected int, got {type(arg_value)}"
+        arg_descs[arg] = desc = AttrArg(arg_value)
+        return desc
+
+    def attr_list_bool(self, arg: int) -> "AttrArg":
+        arg_descs = self.arg_descs
+        arg_value = self.args[arg]
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        assert isinstance(
+            arg_value, list
+        ), f"Argument type mismatch from Torch for {arg}: Expected list, got {type(arg_value)}"
+        if len(arg_value) > 0:
+            assert isinstance(
+                arg_value[0], bool
+            ), f"Argument type mismatch from Torch for {arg}: Expected list of int, got element type of {type(arg_value[0])}"
         arg_descs[arg] = desc = AttrArg(arg_value)
         return desc
 

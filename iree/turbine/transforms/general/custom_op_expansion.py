@@ -251,6 +251,18 @@ class AOTKernelSelection(KernelSelection):
         arg_descs[arg] = desc = AttrArg(int_value)
         return desc
 
+    def attr_list_bool(self, arg: int) -> AttrArg:
+        arg_descs = self.arg_descs
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        operand = self.operands[arg]
+        ty = operand.type
+        assert (
+            str(ty) == "!torch.list<bool>"
+        ), f"Argument type mismatch from Torch IR for {arg}: Expected !torch.list<bool>, got {ty}"
+        list_value = _get_constant_list_bool_from_value(operand)
+        arg_descs[arg] = desc = AttrArg(list_value)
+        return desc
+
     def attr_list_int(self, arg: int) -> AttrArg:
         arg_descs = self.arg_descs
         assert arg_descs[arg] is None, f"Already constrained argument {arg}"
@@ -305,6 +317,31 @@ def _get_constant_str_from_value(v: Value) -> str:
     return StringAttr(constant_op.attributes["value"]).value
 
 
+def _get_constant_bool_from_value(v: Value) -> bool:
+    """Given a constant bool producer, return the bool.
+
+    Example: %bool = torch.constant.bool False
+    """
+    constant_op = OpResult(v).owner
+    assert (
+        constant_op.name == "torch.constant.bool"
+    ), f"Expected constant !torch.bool to be produced by a torch.constant.bool op but got: {constant_op}"
+    return bool(IntegerAttr(constant_op.attributes["value"]).value)
+
+
+def _get_constant_list_bool_from_value(v: Value) -> list[bool]:
+    """Given a constant bool list producer, return the list."""
+    constant_op = OpResult(v).owner
+    assert (
+        constant_op.name == "torch.prim.ListConstruct"
+    ), f"Expected constant !torch.list<bool> to be produced by a torch.prim.ListConstruct op but got: {constant_op}"
+    lst = []
+    for i in constant_op.operands:
+        item = _get_constant_bool_from_value(i)
+        lst.append(item)
+    return lst
+
+
 def _get_constant_int_from_value(v: Value) -> int:
     """Given a constant int producer, return the int.
 
@@ -325,8 +362,8 @@ def _get_constant_list_int_from_value(v: Value) -> list[int]:
     ), f"Expected constant !torch.list<int> to be produced by a torch.prim.ListConstruct op but got: {constant_op}"
     lst = []
     for i in constant_op.operands:
-        v = _get_constant_int_from_value(i)
-        lst.append(v)
+        item = _get_constant_int_from_value(i)
+        lst.append(item)
     return lst
 
 
@@ -350,8 +387,8 @@ def _get_constant_list_float_from_value(v: Value) -> list[float]:
     ), f"Expected constant !torch.list<float> to be produced by a torch.prim.ListConstruct op but got: {constant_op}"
     lst = []
     for i in constant_op.operands:
-        v = _get_constant_int_from_value(i)
-        lst.append(v)
+        item = _get_constant_float_from_value(i)
+        lst.append(item)
     return lst
 
 
