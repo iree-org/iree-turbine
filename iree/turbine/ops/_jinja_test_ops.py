@@ -19,6 +19,8 @@ from ..runtime.op_reg import (
     impl_helper,
 )
 
+from ..runtime.op_reg import AttrArg, TensorArg
+
 __all__ = [
     "trace",
 ]
@@ -118,20 +120,22 @@ class test_linear_trailing_optional(CustomOp):
 class test_optional_returns(CustomOp):
     """A CustomOp version of linear, but with the bias passed as an optional second argument rather than trailing argument."""
 
-    signature = (
-        "test_optional_returns(Tensor a, Tensor b, bool[] mask) -> (Tensor?, Tensor?)"
-    )
+    @property
+    def signature(self) -> str:
+        return "test_optional_returns(Tensor a, Tensor b, bool[] mask) -> (Tensor?, Tensor?)"
 
-    def select(self, ksel: KernelSelection):
-        a_desc = ksel.arg_tensor(0)
-        b_desc = ksel.arg_tensor(1)
-        mask_desc = ksel.attr_list_bool(2)
+    def select(self, sel: KernelSelection):
+        a_desc = sel.arg_tensor(0)
+        b_desc = sel.arg_tensor(1)
+        mask_desc = sel.attr_list_bool(2)
         mask = mask_desc.v
-        assert len(mask) == 2, "Must have two bool values for mask arg."
-        ksel.maybe_return_tensor(
+        assert (
+            isinstance(mask, list) and len(mask) == 2
+        ), "Must have two values for mask arg."
+        sel.maybe_return_tensor(
             torch.empty(a_desc.t.shape, device="meta") if mask[0] else None
         )
-        ksel.maybe_return_tensor(
+        sel.maybe_return_tensor(
             torch.empty(b_desc.t.shape, device="meta") if mask[1] else None
         )
 
@@ -139,9 +143,14 @@ class test_optional_returns(CustomOp):
         # result type + non-optional args
         a_desc = ksel.arg_descs[0]
         b_desc = ksel.arg_descs[1]
+        assert isinstance(a_desc, TensorArg)
+        assert isinstance(b_desc, TensorArg)
         rank_a = len(a_desc.t.shape)
         rank_b = len(b_desc.t.shape)
-        mask = ksel.arg_descs[2].v
+        mask_desc = ksel.arg_descs[2]
+        assert isinstance(mask_desc, AttrArg)
+        mask = mask_desc.v
+        assert isinstance(mask, list)
         mask_str = "mask_" + "_".join([str(m) for m in mask])
         types = [
             a_desc.mlir_type_asm,
@@ -165,7 +174,7 @@ class test_optional_returns(CustomOp):
             func_return_type=f"({return_types})",
             return_string=return_string,
         )
-        kb.yield_results(*impl_helper.call_function(func_op, *kb.arg_bindings[0:2]))
+        kb.yield_results(*impl_helper.call_function(func_op, *kb.arg_bindings[0:2]))  # type: ignore
 
 
 @CustomOp.register(library=LIBRARY)

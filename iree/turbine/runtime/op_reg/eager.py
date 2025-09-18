@@ -174,7 +174,7 @@ def eager_dispatch(ksel: KernelSelection):
         _log_eager_dispatch(config, arg_list, invoke_time * 1000)
 
     # Unpack results.
-    results = []
+    results: list[torch.Tensor | None] = []
     bv_index = 0
     for result_desc in ksel.result_descs:
         if isinstance(result_desc, EmptyOptionalTensorArg):

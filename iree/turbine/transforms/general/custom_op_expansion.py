@@ -307,7 +307,9 @@ class AOTKernelSelection(KernelSelection):
     def maybe_return_tensor(
         self, t: Tensor | None
     ) -> TensorArg | EmptyOptionalTensorArg:
-        desc = EmptyOptionalTensorArg() if t is None else TensorArg(t)
+        desc: TensorArg | EmptyOptionalTensorArg = (
+            EmptyOptionalTensorArg() if t is None else TensorArg(t)
+        )
         self.result_descs.append(desc)
         return desc
 
