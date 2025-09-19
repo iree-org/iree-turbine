@@ -8,6 +8,7 @@
 from typing import cast
 import numpy as np
 import os
+import torch.fx
 
 from ..support.ir_imports import (
     Attribute,
@@ -44,11 +45,11 @@ IREE_LIBRARY = def_library("iree")
 
 @CustomOp.register(library=IREE_LIBRARY)
 class trace_tensor(CustomOp):
-    signature = "trace_tensor(str trace_key, Tensor(a!) tensor) -> ()"
+    signature = "trace_tensor(str trace_key, Tensor tensor) -> ()"
 
     def select(self, ksel: KernelSelection):
         ksel.attr_str(0)
-        ksel.arg_tensor(1, inplace_tied=True)
+        ksel.arg_tensor(1)
 
     def eager_execute(self, key, tensor):
         debugging.trace_tensor_callback(key, tensor)
@@ -56,8 +57,25 @@ class trace_tensor(CustomOp):
     def generate(self, ksel: KernelSelection, kb: KernelBuilder):
         key = cast(AttrArg, ksel.arg_descs[0])
         _emit_tensor_trace(kb, cast(str, key.v), [kb.arg_bindings[1]])
-        kb.yield_results(kb.arg_bindings[1])
+        kb.yield_results()
 
+
+# This relies on a nonpublic functionality, so it is likely that it will break in
+# future torch versions.
+# We really want to make the op side-effecting because this is really the correct
+# semantics.
+# If we don't have this we need to declare the op as mutating the tensor argument, which
+# causes problems when trying to trace frozen tensors.
+# It will also cause problems when for example we trace a tensor that does not affect
+# the result of the export. Then the trace op will be removed as dead code.
+# E.g.
+# ```
+# y = x.clone()
+# trace_tensor(y)
+# ```
+torch.fx.node._side_effectful_functions.add(
+    trace_tensor.default  # type: ignore[attr-defined]
+)
 
 ################################################################################
 # transfer_to_logical_device

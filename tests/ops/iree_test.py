@@ -35,8 +35,32 @@ class TraceTensorTest(unittest.TestCase):
 
     def testAOT(self):
         class MyModule(nn.Module):
-            def forward(self, x):
+            def forward(self, x: torch.Tensor):
                 ops.iree.trace_tensor("TEST", x)
+                return x + 1
+
+        cm = aot.export(MyModule(), args=(torch.empty(9, 8),))
+        asm = str(cm.mlir_module)
+        self.assertIn('flow.tensor.trace "TEST" =', asm)
+
+    def testAOT_WithDynamicDims(self):
+        class MyModule(nn.Module):
+            def forward(self, x: torch.Tensor):
+                ops.iree.trace_tensor("TEST", x)
+                return x + 1
+
+        d0 = torch.export.Dim("d0")
+        args = (torch.empty(9, 8),)
+        dynamic_shapes = {"x": {0: d0}}
+        cm = aot.export(MyModule(), args=args, dynamic_shapes=dynamic_shapes)
+        asm = str(cm.mlir_module)
+        self.assertIn('flow.tensor.trace "TEST" =', asm)
+
+    def testAOT_DoesNotGetRemovedWhenArgIsUnused(self):
+        class MyModule(nn.Module):
+            def forward(self, x: torch.Tensor):
+                y = x.clone()
+                ops.iree.trace_tensor("TEST", y)
                 return x + 1
 
         cm = aot.export(MyModule(), args=(torch.empty(9, 8),))
