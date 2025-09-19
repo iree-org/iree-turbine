@@ -48,7 +48,7 @@ NDEBUG: bool = False
 
 @dataclass
 class DebugFlags:
-    log_level: int = logging.WARNING
+    log_level: int = logging.NOTSET
     asserts: bool = False
     runtime_trace_dir: Optional[str] = None
 

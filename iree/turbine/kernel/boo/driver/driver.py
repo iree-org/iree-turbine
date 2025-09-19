@@ -21,6 +21,7 @@ from torch.profiler import DeviceType, ProfilerActivity, profile
 from iree.turbine.kernel.boo.exports.signature import OpSignature
 from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
+from iree.turbine.kernel.boo.driver.utils import get_timing_parser
 
 ZoneData = dict[str, list[float]]
 
@@ -87,26 +88,25 @@ command-line arguments are appended to the arguments from the file.
     parser.add_argument(
         "--verbose",
         action="store_true",
-        default=False,
+        default=None,
         help="Print command/output on STDOUT.",
     )
-    return parser
-
-
-def _get_timing_parser() -> argparse.ArgumentParser:
-    """This parser separates out timing-specific args from miopen commands."""
-    timing_parser = argparse.ArgumentParser()
-    timing_parser.add_argument("--time", "-t", type=int, help="Enable timing")
-    timing_parser.add_argument(
-        "--iter", type=int, help="Number of iterations to run", default=100
+    parser.add_argument(
+        "--no-verbose",
+        action="store_false",
+        dest="verbose",
+        help="Disable printing command/output on STDOUT.",
     )
-    return timing_parser
+    return parser
 
 
 def main():
     # Parse input cli args into global driver args and miopen-style commands.
     driver_parser = _get_main_driver_parser()
     meta_args, extra_cli_args = driver_parser.parse_known_args()
+    # Default to verbose terminal output if we're not writing to a file.
+    if meta_args.verbose is None:
+        meta_args.verbose = meta_args.csv is None
     if meta_args.commands_file:
         with open(meta_args.commands_file) as f:
             mio_args = [
@@ -135,7 +135,7 @@ def main():
             csv_headers.extend([f"{b} {stat}"])
     csv_file.write(",".join(csv_headers) + "\n")
 
-    timing_parser = _get_timing_parser()
+    timing_parser = get_timing_parser()
 
     devices = _get_devices(meta_args.gpu_id)
     testCount = 0

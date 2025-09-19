@@ -51,10 +51,10 @@ conv = get_launchable(sample_signature)
 
 ## Benchmarking
 
-The `driver.py` script allows for running kernels from the command line. It uses the same interface as `MIOpenDriver`:
+The [`iree-boo-driver`](./driver.py) tool allows for running kernels from the command line. It uses the same interface as `MIOpenDriver`:
 
 ```console
-$ python driver.py convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+$ iree-boo-driver convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
 convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
 >>> tensor([...], device='cuda:0', size=(128, 24, 48, 384), dtype=torch.bfloat16)
 >>> min=85.24us max=371.23us mean=255.28us stddev=92.66us
@@ -63,7 +63,7 @@ convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j
 The driver commands can also be supplied through a file, using `--commands-file`:
 
 ```console
-$ python driver.py --commands-file sample_commands.txt
+$ iree-boo-driver --commands-file sample_commands.txt
 convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
 >>> tensor([...], device='cuda:0', size=(128, 24, 48, 384), dtype=torch.bfloat16)
 >>> min=77.76us max=115.29us mean=82.99us stddev=5.07us

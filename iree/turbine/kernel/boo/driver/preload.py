@@ -12,7 +12,7 @@ import argparse
 import torch
 
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
-from iree.turbine.kernel.boo.driver.utils import load_commands
+from iree.turbine.kernel.boo.driver.utils import load_commands, get_timing_parser
 from iree.turbine.kernel.boo.driver.launch import get_module_asm
 from iree.turbine.kernel.boo.runtime import BOO_TUNING_SPEC_PATH
 from iree.turbine.kernel.boo.runtime import out_of_process_compile, set_cache_dir
@@ -69,11 +69,19 @@ class CachePopulator:
         self.vmfb_cache_status = {}
 
     def _assemble_signatures(self):
+        # Filter out timing arguments that should be ignored, otherwise the
+        # op-specific parser will report them as unhandled.
+        timing_parser = get_timing_parser()
+
+        def parse_one(command: str) -> OpSignature:
+            _, remaining = timing_parser.parse_known_args(command.split())
+            return BooOpRegistry.parse_command(" ".join(remaining))
+
         if self.commands_file:
             self.commands += load_commands(self.commands_file)
             self.commands_file = None
         if len(self.commands) > 0:
-            new_signatures = [BooOpRegistry.parse_command(c) for c in self.commands]
+            new_signatures = [parse_one(c) for c in self.commands]
             self.signatures = list(self.signatures) + list(new_signatures)
             self.commands = None
         # de-duplicate signatures
