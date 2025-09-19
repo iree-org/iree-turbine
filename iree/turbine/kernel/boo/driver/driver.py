@@ -88,8 +88,14 @@ command-line arguments are appended to the arguments from the file.
     parser.add_argument(
         "--verbose",
         action="store_true",
-        default=False,
+        default=None,
         help="Print command/output on STDOUT.",
+    )
+    parser.add_argument(
+        "--no-verbose",
+        action="store_false",
+        dest="verbose",
+        help="Disable printing command/output on STDOUT.",
     )
     return parser
 
@@ -98,6 +104,9 @@ def main():
     # Parse input cli args into global driver args and miopen-style commands.
     driver_parser = _get_main_driver_parser()
     meta_args, extra_cli_args = driver_parser.parse_known_args()
+    # Default to verbose terminal output if we're not writing to a file.
+    if meta_args.verbose is None:
+        meta_args.verbose = meta_args.csv is None
     if meta_args.commands_file:
         with open(meta_args.commands_file) as f:
             mio_args = [
