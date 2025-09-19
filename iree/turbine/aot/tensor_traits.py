@@ -17,17 +17,12 @@ __all__ = [
 ]
 
 
+@dataclass(frozen=True)
 class DeviceAffinity:
     """This is used to provide device affinities to exported function arguments."""
 
-    def __init__(self, ordinal: int, queues: Optional[list] = None):
-        self.ordinal = ordinal
-        self.queues = queues
-
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, DeviceAffinity):
-            return False
-        return self.ordinal == other.ordinal and self.queues == other.queues
+    ordinal: int
+    queues: Optional[list] = None
 
     def __repr__(self) -> str:
         if self.queues is None:
