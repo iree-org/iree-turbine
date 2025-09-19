@@ -39,25 +39,78 @@ class LayoutCustomizableSample1(torch.nn.Module):
         )
 
 
+class LayoutCustomizableBackwardSample(torch.nn.Module):
+    def __init__(self, mask: tuple[bool, bool, bool]):
+        super().__init__()
+        self.mask = mask
+
+    def forward(self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor):
+        grads = torch.ops.boo.layout_customizable_convolution_backward(
+            dLdy,
+            x,
+            w,
+            [1, 1],
+            [0, 0],
+            [1, 1],
+            1,
+            "NHWC",
+            "NHWC",
+            "NHWC",
+            self.mask,
+        )
+        return tuple([g for g in grads if g is not None])
+
+
 devices = [torch.device("cpu")] + (
     [torch.device("cuda:0")] if torch.cuda.is_available() else []
 )
 
 
-@pytest.mark.parametrize("device", devices)
-def test_AOT_layout_customizable(device: torch.device):
+def test_AOT_layout_customizable():
     N = 2
     C = 32
     H = 16
     W = 16
     k = 1
     f = 2
-    x = torch.randn([N, H, W, C], device=device)
-    w = torch.randn([f, k, k, C], device=device)
+    x = torch.randn([N, H, W, C])
+    w = torch.randn([f, k, k, C])
     e = aot.export(LayoutCustomizableSample0(), args=(x, w))
     e.mlir_module.verify()
     assert (
         "call @conv_2d_float32_forward_2x16x16x32_nhwc_2x1x1x32_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
+        in str(e.mlir_module)
+    )
+
+
+@pytest.mark.parametrize(
+    "mask,expected",
+    [
+        ([True, False, False], "input"),
+        ([False, True, False], "weight"),
+        ([False, False, True], "bias"),
+        ([True, True, False], "input_weight"),
+        ([True, False, True], "input_bias"),
+        ([False, True, True], "weight_bias"),
+        ([True, True, True], "all"),
+    ],
+)
+def test_AOT_layout_customizable_backward(mask, expected):
+    N = 2
+    C = 32
+    H = 16
+    W = 16
+    k = 1
+    f = 2
+    Hout = ((H - 1) - 1 * (k - 1)) // 1 + 1
+    Wout = ((W - 1) - 1 * (k - 1)) // 1 + 1
+    dLdy = torch.randn([N, Hout, Wout, f])
+    x = torch.randn([N, H, W, C])
+    w = torch.randn([f, k, k, C])
+    e = aot.export(LayoutCustomizableBackwardSample(mask), args=(dLdy, x, w))
+    e.mlir_module.verify()
+    assert (
+        f"call @conv_2d_float32_{expected}_backward_2x16x16x32_nhwc_2x1x1x32_fhwc_nhwf_1x1s_0x0p_1x1d_1g"
         in str(e.mlir_module)
     )
 

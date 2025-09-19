@@ -12,7 +12,11 @@ from typing import Callable, Dict, Sequence
 import torch
 from torch.fx.node import Target, Node
 
-from .replacement import ReplacementSchema, replace_aten_convolution
+from .replacement import (
+    ReplacementSchema,
+    replace_aten_convolution,
+    replace_aten_convolution_backward,
+)
 
 
 @dataclass
@@ -62,6 +66,13 @@ def _conv_transpose_filter(node: Node) -> bool:
     return transposed == False
 
 
+def _conv_bwd_transpose_filter(node: Node) -> bool:
+    if node.target != torch.ops.aten.convolution_backward.default:
+        return True
+    transposed = node.args[-4]
+    return transposed == False
+
+
 def _layernorm_permute_filter(node: Node) -> bool:
     if node.target != torch.ops.aten.native_layer_norm.default:
         return True
@@ -91,6 +102,11 @@ DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
 }
 
 EXPERIMENTAL_SUPPORTED_BOO_FUSIONS: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS | {
+    torch.ops.aten.convolution_backward.default: OpFusionSpec(
+        recursive=False,
+        make_single_dispatch=False,
+        match_filters=(_conv_bwd_transpose_filter,),
+    ),
     torch.ops.aten.native_layer_norm.default: OpFusionSpec(
         recursive=False,
         make_single_dispatch=True,
@@ -98,5 +114,12 @@ EXPERIMENTAL_SUPPORTED_BOO_FUSIONS: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS
 }
 
 DEFAULT_POST_FUSION_REPLACEMENTS: ReplacementSchema = {
-    torch.ops.aten.convolution.default: replace_aten_convolution
+    torch.ops.aten.convolution.default: replace_aten_convolution,
 }
+
+EXPERIMENTAL_POST_FUSION_REPLACEMENTS: ReplacementSchema = (
+    DEFAULT_POST_FUSION_REPLACEMENTS
+    | {
+        torch.ops.aten.convolution_backward.default: replace_aten_convolution_backward,
+    }
+)

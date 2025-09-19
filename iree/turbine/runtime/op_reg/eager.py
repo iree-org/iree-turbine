@@ -38,6 +38,7 @@ from .base import (
     AttrArg,
     IntArg,
     KernelSelection,
+    EmptyOptionalTensorArg,
 )
 
 from .compiler import (
@@ -128,7 +129,7 @@ def eager_dispatch(ksel: KernelSelection):
             tensor_arg = tensor_arg.contiguous()
         # Since we know we are on the same device, we can use the unsafe
         # import_torch_tensor.
-        arg_list.push_ref(device.import_torch_tensor(tensor_arg))
+        arg_list.push_ref(device.import_torch_tensor(tensor_arg.data))
 
     for arg_desc in ksel.get_provided_arg_descs():
         assert arg_desc is not None, "Uninitialized argument descriptor"
@@ -173,8 +174,12 @@ def eager_dispatch(ksel: KernelSelection):
         _log_eager_dispatch(config, arg_list, invoke_time * 1000)
 
     # Unpack results.
-    results = []
-    for i, result_desc in enumerate(ksel.result_descs):
+    results: list[torch.Tensor | None] = []
+    bv_index = 0
+    for result_desc in ksel.result_descs:
+        if isinstance(result_desc, EmptyOptionalTensorArg):
+            results.append(None)
+            continue
         arity = result_desc.ir_arity
         meta_tensor_value = result_desc.maybe_tensor_value
         if meta_tensor_value is None:
@@ -187,7 +192,10 @@ def eager_dispatch(ksel: KernelSelection):
         # Tensor return. The meta tensor value already has the correct torch
         # dtype and shape, so we just need to export and return it for the
         # appropriate device.
-        bv: HalBufferView = HalBufferView.__iree_vm_cast__(ret_list.get_as_ref(i))
+        bv: HalBufferView = HalBufferView.__iree_vm_cast__(
+            ret_list.get_as_ref(bv_index)
+        )
+        bv_index += 1
         results.append(device.export_torch_tensor(bv, meta_tensor_value))
 
     if len(results) == 1:

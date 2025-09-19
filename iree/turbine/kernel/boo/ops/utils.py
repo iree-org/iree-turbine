@@ -28,6 +28,7 @@ __all__ = [
     "CONTIGUOUS_TO_CHANNELS_LAST_PERMUTATION",
     "get_arg_spec_name",
     "generate_custom_op_compatible_ir",
+    "get_memory_format_permutation",
 ]
 
 # Toggle Using Boo Backward Kernels #
