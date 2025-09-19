@@ -202,13 +202,21 @@ class layout_customizable_convolution_backward(CustomOp):
             backward_mask=mask.v,
         )
         dLdx = ksel.maybe_return_tensor(
-            torch.empty(input.spec_dims, device="meta") if mask.v[0] else None
+            torch.empty(input.spec_dims, dtype=input.t.dtype, device="meta")
+            if mask.v[0]
+            else None
         )
         dLdw = ksel.maybe_return_tensor(
-            torch.empty(weight.spec_dims, device="meta") if mask.v[1] else None
+            torch.empty(weight.spec_dims, dtype=weight.t.dtype, device="meta")
+            if mask.v[1]
+            else None
         )
         dLdb = ksel.maybe_return_tensor(
-            torch.empty(weight.spec_dims[kernel_layout.v.find("N")], device="meta")
+            torch.empty(
+                weight.spec_dims[kernel_layout.v.find("N")],
+                dtype=weight.t.dtype,
+                device="meta",
+            )
             if mask.v[2]
             else None
         )
@@ -253,16 +261,6 @@ def _boo_layout_customizable_convolution_backward_impl(
     output_layout: str,
     mask: Tuple[bool, bool, bool],
 ) -> Tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
-
-    kwargs = {
-        "stride": stride,
-        "padding": padding,
-        "dilation": dilation,
-        "groups": groups,
-        "input_layout": input_layout,
-        "kernel_layout": kernel_layout,
-        "output_layout": output_layout,
-    }
 
     input_grad = weight_grad = bias_grad = None
 
