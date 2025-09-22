@@ -187,7 +187,7 @@ def _define_custom_graph_op(
                 output_mem_format_perms=output_mem_format_perms,
                 source_module=gm,
             ),
-            lambda: handled_inputs,
+            lambda: tuple([torch.empty_like(h_out) for h_out in handled_inputs]),
             func_name=spec_name,
             force_single_dispatch=force_single_dispatch,
         )
