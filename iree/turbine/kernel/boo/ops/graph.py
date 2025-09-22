@@ -181,13 +181,14 @@ def _define_custom_graph_op(
         handled_inputs = _handle_layouts(
             args, perms=input_mem_format_perms, perm_item="permutation"
         )
+        # We pass some empty sample args here to avoid having unneccessary input details possibly interfere with torch.export.
         launch = get_launchable(
             lambda: _LayoutManagedModuleForAOTMlirExport(
                 input_mem_format_perms=input_mem_format_perms,
                 output_mem_format_perms=output_mem_format_perms,
                 source_module=gm,
             ),
-            lambda: tuple([torch.empty_like(h_out) for h_out in handled_inputs]),
+            lambda: tuple(torch.empty_like(h_out) for h_out in handled_inputs),
             func_name=spec_name,
             force_single_dispatch=force_single_dispatch,
         )
