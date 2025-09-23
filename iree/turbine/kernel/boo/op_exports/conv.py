@@ -449,18 +449,9 @@ class ConvSignature(OpSignature):
         assert (
             num_grads > 0 and num_grads <= 3
         ), f"Expected between one and three backward computations for mode: {self.mode}."
-        match num_grads:
-            case 1:
-                return ConvBackwardOneGrad(self, use_custom)
-            case 2:
-                return ConvBackwardTwoGrad(self, use_custom)
-            case 3:
-                return ConvBackwardThreeGrad(self, use_custom)
-            case _:
-                assert False, "Unreachable"
-        raise ValueError(
-            f"Reached an unhandled case: `use_custom={use_custom}` with signature: \n{self}"
-        )
+        if use_custom:
+            return ConvCustomBackward(self)
+        return ConvBackward(self)
 
     def get_output_size(self) -> int:
         numel = 0
@@ -831,7 +822,7 @@ class ConvBackwardBiasCustomGeneric(torch.nn.Module):
         return torch.sum(dLdy, self.reduction_dims)
 
 
-class ConvBackwardBase(torch.nn.Module):
+class ConvBackward(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
         super().__init__()
         self.perms = [
@@ -855,7 +846,7 @@ class ConvBackwardBase(torch.nn.Module):
 
     def forward(
         self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+    ) -> tuple[torch.Tensor, ...] | torch.Tensor:
         dLdy = self.perms[0](dLdy)
         x = self.perms[1](x)
         w = self.perms[2](w)
@@ -872,13 +863,19 @@ class ConvBackwardBase(torch.nn.Module):
             self.groups,
             self.mask,
         )
-        dLdx = None if grads[0] is None else self.perms[3](grads[0])
-        dLdw = None if grads[1] is None else self.perms[4](grads[1])
-        dLdb = None if grads[2] is None else grads[2]
-        return (dLdx, dLdw, dLdb)
+        grads = (
+            None if grads[0] is None else self.perms[3](grads[0]),
+            None if grads[1] is None else self.perms[4](grads[1]),
+            None if grads[2] is None else grads[2],
+        )
+
+        rets = tuple(g for g in grads if g is not None)
+        if len(rets) == 1:
+            return rets[0]
+        return rets
 
 
-class ConvCustomBackwardBase(torch.nn.Module):
+class ConvCustomBackward(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
         super().__init__()
         self.grad_modules = [
@@ -890,65 +887,16 @@ class ConvCustomBackwardBase(torch.nn.Module):
 
     def forward(
         self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
-        return (
+    ) -> tuple[torch.Tensor, ...] | torch.Tensor:
+        grads = (
             self.grad_modules[0].forward(dLdy, x, w) if self.mask[0] else None,
             self.grad_modules[1].forward(dLdy, x, w) if self.mask[1] else None,
             self.grad_modules[2].forward(dLdy, x, w) if self.mask[2] else None,
         )
-
-
-class ConvBackwardOneGrad(torch.nn.Module):
-    def __init__(self, sig: ConvSignature, use_custom: bool = False):
-        super().__init__()
-        mask = sig.backward_mask
-        assert (
-            sum([int(m) for m in mask]) == 1
-        ), f"Expected one `True` in backward mask, got {mask}"
-        self._m = (
-            ConvBackwardBase(sig) if not use_custom else ConvCustomBackwardBase(sig)
-        )
-        self.index = [idx for idx, m in enumerate(mask) if m][0]
-
-    def forward(
-        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
-    ) -> torch.Tensor:
-        outs = self._m(dLdy, x, w)
-        return outs[self.index]
-
-
-class ConvBackwardTwoGrad(torch.nn.Module):
-    def __init__(self, sig: ConvSignature, use_custom: bool = False):
-        super().__init__()
-        mask = sig.backward_mask
-        assert (
-            sum([int(m) for m in mask]) == 2
-        ), f"Expected one `False in backward mask, got {mask}"
-        self._m = (
-            ConvBackwardBase(sig) if not use_custom else ConvCustomBackwardBase(sig)
-        )
-        self.skip_index = [idx for idx, m in enumerate(mask) if not m][0]
-
-    def forward(
-        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        outs = self._m(dLdy, x, w)
-        return outs[: self.skip_index] + outs[self.skip_index + 1 :]
-
-
-class ConvBackwardThreeGrad(torch.nn.Module):
-    def __init__(self, sig: ConvSignature, use_custom: bool = False):
-        super().__init__()
-        mask = sig.backward_mask
-        assert all(mask), f"Expected all `True` in backward mask, got {mask}"
-        self._m = (
-            ConvBackwardBase(sig) if not use_custom else ConvCustomBackwardBase(sig)
-        )
-
-    def forward(
-        self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        return self._m(dLdy, x, w)
+        rets = tuple(g for g in grads if g is not None)
+        if len(rets) == 1:
+            return rets[0]
+        return rets
 
 
 class ConvParser(OpCLIParser):
