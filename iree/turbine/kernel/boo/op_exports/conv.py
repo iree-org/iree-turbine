@@ -33,8 +33,8 @@ class Mode(ModeBase, IntEnum):
     FORWARD = 0
     INPUT_BACKWARD = 1
     WEIGHT_BACKWARD = 2
-    BIAS_BACKWARD = 3
-    INPUT_WEIGHT_BACKWARD = 4
+    INPUT_WEIGHT_BACKWARD = 3
+    BIAS_BACKWARD = 4
     INPUT_BIAS_BACKWARD = 5
     WEIGHT_BIAS_BACKWARD = 6
     ALL_BACKWARD = 7
@@ -47,51 +47,31 @@ class Mode(ModeBase, IntEnum):
     def __str__(self) -> str:
         return self.name
 
+    def __add__(self, other) -> "Mode":
+        if not isinstance(other, (int, Mode)):
+            raise TypeError(f"Invalid add operation: Mode + ({type(other) = }).")
+        return Mode(self.value + int(other))
+
     @staticmethod
     def from_backward_mask(mask: list[bool]) -> "Mode":
-        if len(mask) != 3:
-            raise ValueError(
-                f"Expected a list of three bool values for mask, got {mask}."
-            )
-        if mask == [False, False, False]:
-            return Mode.FORWARD
-        if mask == [True, True, True]:
-            return Mode.ALL_BACKWARD
-        if mask == [True, False, False]:
-            return Mode.INPUT_BACKWARD
-        if mask == [False, True, False]:
-            return Mode.WEIGHT_BACKWARD
-        if mask == [False, False, True]:
-            return Mode.BIAS_BACKWARD
-        if mask == [True, True, False]:
-            return Mode.INPUT_WEIGHT_BACKWARD
-        if mask == [True, False, True]:
-            return Mode.INPUT_BIAS_BACKWARD
-        if mask == [False, True, True]:
-            return Mode.WEIGHT_BIAS_BACKWARD
-        assert False, "Unreachable"
+        mode = Mode.FORWARD
+        for m, bwd_mode in zip(
+            mask,
+            [Mode.INPUT_BACKWARD, Mode.WEIGHT_BACKWARD, Mode.BIAS_BACKWARD],
+            strict=True,
+        ):
+            if m:
+                mode = mode + bwd_mode
+        return mode
 
     @property
     def backward_mask(self) -> list[bool]:
-        match self.value:
-            case 0:
-                return [False, False, False]
-            case 1:
-                return [True, False, False]
-            case 2:
-                return [False, True, False]
-            case 3:
-                return [False, False, True]
-            case 4:
-                return [True, True, False]
-            case 5:
-                return [True, False, True]
-            case 6:
-                return [False, True, True]
-            case 7:
-                return [True, True, True]
-            case _:
-                assert False, f"Unreachable enum value for mode {self}."
+        v = self.value
+        return [
+            bool(v % 2),
+            bool((v >> 1) % 2),
+            bool((v >> 2) % 2),
+        ]
 
 
 DEFAULT_LAYOUTS = {1: "NCH", 2: "NCHW", 3: "NCDHW"}
