@@ -70,7 +70,7 @@ def replace_aten_convolution(args: tuple[Argument, ...], meta: dict[str, object]
 
 def replace_aten_convolution_backward(
     args: tuple[Argument, ...], meta: dict[str, object]
-):
+) -> tuple[Callable, tuple[Argument, ...]] | None:
     "Replace 'torch.ops.aten.convolution' with custom BOO implementation."
     (
         grad_output,
