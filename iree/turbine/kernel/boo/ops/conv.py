@@ -249,17 +249,13 @@ def _boo_convolution_backward_impl(
             outputs[o_idx] = grads[g_idx]
             g_idx += 1
 
+    handle_return = lambda ret, perms: (
+        ret if ret is None or perms is None else ret.permute(perms.inverse_permutation)
+    )
+
     return (
-        (
-            outputs[0]
-            if outputs[0] is None or input_perms is None
-            else outputs[0].permute(input_perms.inverse_permutation)
-        ),
-        (
-            outputs[1]
-            if outputs[1] is None or kernel_perms is None
-            else outputs[1].permute(kernel_perms.inverse_permutation)
-        ),
+        handle_return(outputs[0], input_perms),
+        handle_return(outputs[1], kernel_perms),
         outputs[2],
     )
 
