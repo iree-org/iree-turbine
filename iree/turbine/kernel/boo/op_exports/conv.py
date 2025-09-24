@@ -30,7 +30,7 @@ __all__ = [
 
 
 class Mode(ModeBase, IntEnum):
-    FORWARD = 0
+    FORWARD = 0  # Special value in that `FOWARD | <other-mode> = <other-mode>`
     INPUT_BACKWARD = 1
     WEIGHT_BACKWARD = 2
     INPUT_WEIGHT_BACKWARD = 3
@@ -47,7 +47,7 @@ class Mode(ModeBase, IntEnum):
     def __str__(self) -> str:
         return self.name
 
-    def __add__(self, other) -> "Mode":
+    def __or__(self, other) -> "Mode":
         if not isinstance(other, (int, Mode)):
             raise TypeError(f"Invalid add operation: Mode + ({type(other) = }).")
         return Mode(self.value + int(other))
@@ -61,7 +61,7 @@ class Mode(ModeBase, IntEnum):
             strict=True,
         ):
             if m:
-                mode = mode + bwd_mode
+                mode = mode | bwd_mode
         return mode
 
     @property
