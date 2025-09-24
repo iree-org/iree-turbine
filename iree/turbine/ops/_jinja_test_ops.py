@@ -118,7 +118,7 @@ class test_linear_trailing_optional(CustomOp):
 
 @CustomOp.register(library=LIBRARY)
 class test_optional_returns(CustomOp):
-    """A CustomOp version of linear, but with the bias passed as an optional second argument rather than trailing argument."""
+    """A CustomOp testing optional return tensors."""
 
     @property
     def signature(self) -> str:
