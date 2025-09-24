@@ -219,7 +219,14 @@ def import_exported_program(
         n.name: n for n in exported_program.graph.nodes
     }
     for user_output in exported_program.graph_signature.user_outputs:
-        output_node = node_map[user_output]
+        try:
+            output_node = node_map[user_output]
+        except KeyError as e:
+            if user_output == None:
+                raise NotImplementedError(
+                    "Importing a program with an output of `None` is not yet implemented."
+                )
+            raise e
         tensor_meta = output_node.meta.get("tensor_meta")
         fake_val = output_node.meta.get("val")
         dtype = None

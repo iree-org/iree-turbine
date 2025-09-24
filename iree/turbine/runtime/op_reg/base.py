@@ -400,6 +400,15 @@ class KernelSelection(ABC):
         ...
 
     @abstractmethod
+    def attr_list_bool(self, arg: int) -> "AttrArg":
+        """Declares an argument to be a list<bool> attribute.
+
+        Such arguments are not materialized in the IR as Values but may be used to
+        generate the IR. In AOT contexts, they must be derived from static values.
+        """
+        ...
+
+    @abstractmethod
     def attr_list_int(self, arg: int) -> "AttrArg":
         """Declares an argument to be a list<integer> attribute.
 
@@ -429,6 +438,19 @@ class KernelSelection(ABC):
     @abstractmethod
     def return_tensor(self, t: Tensor) -> "TensorArg":
         """Marks the next return value as a Tensor.
+
+        By default, it will be rank and dtype specialized but have completely dynamic
+        dimensions. Dimensions can be further constrained by modifying the returned
+        descriptor.
+        """
+        ...
+
+    @abstractmethod
+    def maybe_return_tensor(
+        self, t: Tensor | None
+    ) -> Union["TensorArg", "EmptyOptionalTensorArg"]:
+        """Marks the next return value as an optional Tensor.
+        If `None` is passed, this will create a sentinel Arg for the missing return value.
 
         By default, it will be rank and dtype specialized but have completely dynamic
         dimensions. Dimensions can be further constrained by modifying the returned
@@ -525,6 +547,20 @@ class EagerKernelSelection(KernelSelection):
         arg_descs[arg] = desc = AttrArg(arg_value)
         return desc
 
+    def attr_list_bool(self, arg: int) -> "AttrArg":
+        arg_descs = self.arg_descs
+        arg_value = self.args[arg]
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        assert isinstance(
+            arg_value, list
+        ), f"Argument type mismatch from Torch for {arg}: Expected list, got {type(arg_value)}"
+        if len(arg_value) > 0:
+            assert isinstance(
+                arg_value[0], bool
+            ), f"Argument type mismatch from Torch for {arg}: Expected list of int, got element type of {type(arg_value[0])}"
+        arg_descs[arg] = desc = AttrArg(arg_value)
+        return desc
+
     def attr_list_int(self, arg: int) -> "AttrArg":
         arg_descs = self.arg_descs
         arg_value = self.args[arg]
@@ -565,6 +601,15 @@ class EagerKernelSelection(KernelSelection):
 
     def return_tensor(self, t: Tensor) -> "TensorArg":
         desc = TensorArg(t)
+        self.result_descs.append(desc)
+        return desc
+
+    def maybe_return_tensor(
+        self, t: Tensor | None
+    ) -> Union["TensorArg", "EmptyOptionalTensorArg"]:
+        desc: TensorArg | EmptyOptionalTensorArg = (
+            EmptyOptionalTensorArg() if t is None else TensorArg(t)
+        )
         self.result_descs.append(desc)
         return desc
 
@@ -797,6 +842,14 @@ class EmptyOptionalTensorArg:
     def generate_meta(self) -> None:
         return None
 
+    def specialize_all_dims(self):
+        """Does nothing. Added to enable simple use with `maybe_return_tensor`."""
+        return
+
+    def specialize_dims(self, *indices: int):
+        """Does nothing. Added to enable simple use with `maybe_return_tensor`."""
+        return
+
 
 ArgDescriptor = Union[AttrArg, IntArg, TensorArg, TensorListArg, EmptyOptionalTensorArg]
 
@@ -960,7 +1013,13 @@ class FreeFuncKernelBuilder(KernelBuilder):
         """Yields results of the kernel computation."""
         assert not self.yielded, "yield_results has already been called"
         ksel = self.ksel
-        expected_count = len(ksel.result_descs) + len(ksel.inplace_tied_arg_descs)
+        expected_count = len(
+            [
+                desc
+                for desc in ksel.result_descs
+                if not isinstance(desc, EmptyOptionalTensorArg)
+            ]
+        ) + len(ksel.inplace_tied_arg_descs)
         assert (
             len(results) == expected_count
         ), f"Mismatched yielded results and declared+inplace: Expected={expected_count}, Got={len(results)}"

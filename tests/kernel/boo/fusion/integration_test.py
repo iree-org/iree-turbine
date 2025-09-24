@@ -12,7 +12,10 @@ from torch import fx
 from torch._dynamo.testing import EagerAndRecordGraphs
 
 from iree.turbine.dynamo.backends import boo
-from iree.turbine.kernel.boo.fusion.schema import EXPERIMENTAL_SUPPORTED_BOO_FUSIONS
+from iree.turbine.kernel.boo.fusion.schema import (
+    EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
+    EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
+)
 
 
 def test_custom_boo_conv_used():
@@ -153,11 +156,13 @@ def test_boo_layer_norm_used(permuted: bool, experimental: bool):
 
     recorder = EagerAndRecordGraphs()
     backend = (
-        boo.backend(nested_backend=recorder)
-        if not experimental
-        else boo.backend(
-            nested_backend=recorder, fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS
+        boo.backend(
+            fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
+            post_fusion_replacements=EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
+            nested_backend=recorder,
         )
+        if experimental
+        else boo.backend(nested_backend=recorder)
     )
     compiled_layer_norm = torch.compile(
         torch.nn.LayerNorm(
@@ -183,3 +188,63 @@ def test_boo_layer_norm_used(permuted: bool, experimental: bool):
         assert "fused_op_native_layer_norm" in str(node_target)
     else:
         assert node_target is None, "BOO op used when should have been disabled"
+
+
+@pytest.mark.parametrize("input_grad", [False, True])
+@pytest.mark.parametrize("experimental", [False, True])
+def test_boo_convolution_backward_replacement(input_grad: bool, experimental: bool):
+    """Test that backward convolution replacement works."""
+    recorder = EagerAndRecordGraphs()
+    N, C, H, W = (1, 16, 4, 4)
+    F = 32
+    K = 3
+    m = torch.nn.Conv2d(
+        in_channels=C,
+        out_channels=F,
+        kernel_size=K,
+        stride=[1, 1],
+        dilation=[1, 1],
+        padding=[1, 1],
+    )
+    backend = (
+        boo.backend(
+            fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
+            post_fusion_replacements=EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
+            nested_backend=recorder,
+        )
+        if experimental
+        else boo.backend(nested_backend=recorder)
+    )
+    compiled_conv = torch.compile(m, backend=backend)
+
+    input = torch.randn((N, C, H, W), requires_grad=input_grad)
+    y = compiled_conv(
+        input,
+    )
+    [compiled_module] = recorder.graphs
+    assert isinstance(compiled_module, fx.GraphModule)
+    call_nodes = [n for n in compiled_module.graph.nodes if n.op == "call_function"]
+    # Make sure we're using 'boo.ops.convolution_replacement'. We have to do a
+    # string check unfortunately, as the target is a fused custom op that we
+    # can't inspect.
+    call_strings = "\n".join([str(n.target) for n in call_nodes])
+    assert "boo.fused_op_convolution_replacement_" in call_strings
+
+    # Perform backward pass
+    y.sum().backward()
+
+    compiled_module = recorder.graphs[-1]
+    assert isinstance(compiled_module, fx.GraphModule)
+    call_nodes = [n for n in compiled_module.graph.nodes if n.op == "call_function"]
+    call_strings = "\n".join([str(n.target) for n in call_nodes])
+    if experimental:
+        assert "boo.fused_op_convolution_backward_replacement_" in call_strings
+    else:
+        assert "boo.fused_op_convolution_backward_replacement_" not in call_strings
+        assert "aten.convolution_backward" in call_strings
+    if input_grad:
+        assert input.grad is not None and torch.sum(torch.abs(input.grad)) != 0
+    else:
+        assert input.grad is None
+    assert m.weight.grad is not None and torch.sum(torch.abs(m.weight.grad)) != 0
+    assert m.bias.grad is not None and torch.sum(torch.abs(m.bias.grad)) != 0
