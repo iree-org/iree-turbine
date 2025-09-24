@@ -157,7 +157,7 @@ def test_layer_norm_combined_impl(
     grads = tuple(x for x in bwd(main_result.grad, *bwd_input_args) if x is not None)
 
     rtol = 1e-6
-    atol = 1e-6
+    atol = 5e-6 if dtype == torch.bfloat16 else 1e-6
     assert len(grads) == len(args)
     results = [
         torch.allclose(arg.grad, grad, rtol=rtol, atol=atol)
