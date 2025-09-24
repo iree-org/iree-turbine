@@ -36,7 +36,7 @@ class CustomOptionalReturns(nn.Module):
         [True, True],
     ],
 )
-def test_aot_middle_optional_with_bias(mask):
+def test_aot_optional_returns(mask):
     a = torch.randn([2, 3, 4])
     b = torch.randn([5])
     e = aot.export(CustomOptionalReturns(mask), args=(a, b))
@@ -52,7 +52,7 @@ def test_aot_middle_optional_with_bias(mask):
         [True, True],
     ],
 )
-def test_eager_middle_optional_with_bias(mask):
+def test_eager_optional_returns(mask):
     a = torch.randn([2, 3, 4])
     b = torch.randn([5])
     results = ops.test_optional_returns(a, b, mask)
