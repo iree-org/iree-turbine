@@ -805,13 +805,13 @@ class ConvBackwardBiasCustomGeneric(torch.nn.Module):
 class ConvBackward(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
         super().__init__()
-        self.perms = [
-            sig.output_perms.inv(),
-            sig.input_perms,
-            sig.kernel_perms,
-            sig.input_perms.inv(),
-            sig.kernel_perms.inv(),
-        ]
+        self.perms = {
+            "dLdy": sig.output_perms.inv(),
+            "x": sig.input_perms,
+            "w": sig.kernel_perms,
+            "dLdx": sig.input_perms.inv(),
+            "dLdw": sig.kernel_perms.inv(),
+        }
         # remainder from forward output_shape calculation needs to be accounted for
         ker_shape_p = sig.kernel_perms(sig.kernel_shape)
         # get arguments for substitute conv
@@ -827,10 +827,10 @@ class ConvBackward(torch.nn.Module):
     def forward(
         self, dLdy: torch.Tensor, x: torch.Tensor, w: torch.Tensor
     ) -> tuple[torch.Tensor, ...] | torch.Tensor:
-        dLdy = self.perms[0](dLdy)
-        x = self.perms[1](x)
-        w = self.perms[2](w)
-        grads = torch.ops.aten.convolution_backward(
+        dLdy = self.perms["dLdy"](dLdy)
+        x = self.perms["x"](x)
+        w = self.perms["w"](w)
+        dLdx, dLdw, dLdb = torch.ops.aten.convolution_backward(
             dLdy,
             x,
             w,
@@ -844,9 +844,9 @@ class ConvBackward(torch.nn.Module):
             self.mask,
         )
         grads = (
-            None if grads[0] is None else self.perms[3](grads[0]),
-            None if grads[1] is None else self.perms[4](grads[1]),
-            None if grads[2] is None else grads[2],
+            None if dLdx is None else self.perms["dLdx"](dLdx),
+            None if dLdw is None else self.perms["dLdw"](dLdw),
+            dLdb,
         )
 
         rets = tuple(g for g in grads if g is not None)
