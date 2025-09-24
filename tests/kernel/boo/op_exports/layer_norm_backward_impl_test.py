@@ -13,7 +13,7 @@ from iree.turbine.kernel.boo.op_exports.layer_norm import (
 )
 
 
-def _marked_xfail(*args):
+def _requires_gpu(*args):
     return pytest.param(
         *args,
         marks=pytest.mark.xfail(
@@ -109,7 +109,7 @@ def test_layer_norm_impl(
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-@pytest.mark.parametrize("device", ["cpu", _marked_xfail("cuda")])
+@pytest.mark.parametrize("device", ["cpu", _requires_gpu("cuda")])
 @pytest.mark.parametrize("input_shape", [(10, 12, 14, 16), (11, 13, 15)])
 @pytest.mark.parametrize(
     "elementwise_affine_bias", [(False, False), (True, False), (True, True)]
@@ -139,12 +139,9 @@ def test_layer_norm_combined_impl(
         "use_aten": use_aten,
     }
     fwd_sig = LayerNormSignature(**kwargs)
-    args = fwd_sig.get_sample_args(seed=1)
+    args = fwd_sig.get_sample_args(seed=1, device=device)
 
-    args = tuple(
-        arg.to(device=device).requires_grad_(True) if arg is not None else None
-        for arg in args
-    )
+    args = tuple(arg.requires_grad_(True) if arg is not None else None for arg in args)
     fwd = fwd_sig.get_nn_module(use_custom=True).to(device=device)
     bwd_sig = LayerNormSignature(**kwargs, mode=Mode.FULL_BACKWARD)
     bwd = bwd_sig.get_nn_module(use_custom=True).to(device=device)
