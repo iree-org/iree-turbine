@@ -317,11 +317,6 @@ def run(
 
 
 def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
-    mod = signature.get_nn_module(use_custom=False)
-    return torch.compile(mod, dynamic=False, backend=backend)
-
-
-def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
     """Returns the module defined by the signature compiled using the specified
     backend."""
     mod = signature.get_nn_module(use_custom=False)
