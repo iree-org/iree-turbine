@@ -158,6 +158,7 @@ def main():
         output_num_bytes = signature.get_output_size()
 
         for backend in backends:
+            torch.compiler.reset()
             _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
             try:
                 prof = run(
