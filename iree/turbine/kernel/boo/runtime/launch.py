@@ -231,6 +231,9 @@ def default_compiler_flags_callback(device: Device, cache_dir: Path) -> list[str
         flags.append(
             "--iree-dispatch-creation-enable-fuse-padding-into-linalg-consumer-ops"
         )
+        flags.append(
+            "--iree-preprocessing-pass-pipeline=builtin.module(iree-preprocessing-transpose-convolution-filter-pipeline)"
+        )
         if BOO_TUNING_SPEC_PATH != "":
             assert Path(
                 BOO_TUNING_SPEC_PATH
