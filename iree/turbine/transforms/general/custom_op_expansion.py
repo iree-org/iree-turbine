@@ -251,6 +251,18 @@ class AOTKernelSelection(KernelSelection):
         arg_descs[arg] = desc = AttrArg(int_value)
         return desc
 
+    def attr_list_bool(self, arg: int) -> AttrArg:
+        arg_descs = self.arg_descs
+        assert arg_descs[arg] is None, f"Already constrained argument {arg}"
+        operand = self.operands[arg]
+        ty = operand.type
+        assert (
+            str(ty) == "!torch.list<bool>"
+        ), f"Argument type mismatch from Torch IR for {arg}: Expected !torch.list<bool>, got {ty}"
+        list_value = _get_constant_list_bool_from_value(operand)
+        arg_descs[arg] = desc = AttrArg(list_value)
+        return desc
+
     def attr_list_int(self, arg: int) -> AttrArg:
         arg_descs = self.arg_descs
         assert arg_descs[arg] is None, f"Already constrained argument {arg}"
@@ -292,6 +304,15 @@ class AOTKernelSelection(KernelSelection):
         self.result_descs.append(desc)
         return desc
 
+    def maybe_return_tensor(
+        self, t: Tensor | None
+    ) -> TensorArg | EmptyOptionalTensorArg:
+        desc: TensorArg | EmptyOptionalTensorArg = (
+            EmptyOptionalTensorArg() if t is None else TensorArg(t)
+        )
+        self.result_descs.append(desc)
+        return desc
+
 
 def _get_constant_str_from_value(v: Value) -> str:
     """Given a constant str producer, return the str.
@@ -303,6 +324,31 @@ def _get_constant_str_from_value(v: Value) -> str:
         constant_op.name == "torch.constant.str"
     ), f"Expected constant !torch.str to be produced by a torch.constant.str op but got: {constant_op}"
     return StringAttr(constant_op.attributes["value"]).value
+
+
+def _get_constant_bool_from_value(v: Value) -> bool:
+    """Given a constant bool producer, return the bool.
+
+    Example: %bool = torch.constant.bool False
+    """
+    constant_op = OpResult(v).owner
+    assert (
+        constant_op.name == "torch.constant.bool"
+    ), f"Expected constant !torch.bool to be produced by a torch.constant.bool op but got: {constant_op}"
+    return bool(IntegerAttr(constant_op.attributes["value"]).value)
+
+
+def _get_constant_list_bool_from_value(v: Value) -> list[bool]:
+    """Given a constant bool list producer, return the list."""
+    constant_op = OpResult(v).owner
+    assert (
+        constant_op.name == "torch.prim.ListConstruct"
+    ), f"Expected constant !torch.list<bool> to be produced by a torch.prim.ListConstruct op but got: {constant_op}"
+    lst = []
+    for i in constant_op.operands:
+        item = _get_constant_bool_from_value(i)
+        lst.append(item)
+    return lst
 
 
 def _get_constant_int_from_value(v: Value) -> int:
@@ -325,8 +371,8 @@ def _get_constant_list_int_from_value(v: Value) -> list[int]:
     ), f"Expected constant !torch.list<int> to be produced by a torch.prim.ListConstruct op but got: {constant_op}"
     lst = []
     for i in constant_op.operands:
-        v = _get_constant_int_from_value(i)
-        lst.append(v)
+        item = _get_constant_int_from_value(i)
+        lst.append(item)
     return lst
 
 
@@ -350,8 +396,8 @@ def _get_constant_list_float_from_value(v: Value) -> list[float]:
     ), f"Expected constant !torch.list<float> to be produced by a torch.prim.ListConstruct op but got: {constant_op}"
     lst = []
     for i in constant_op.operands:
-        v = _get_constant_int_from_value(i)
-        lst.append(v)
+        item = _get_constant_float_from_value(i)
+        lst.append(item)
     return lst
 
 
@@ -404,12 +450,26 @@ class InlineKernelBuilder(KernelBuilder):
         """Yields results of the kernel computation."""
         assert not self.yielded, "yield_results has already been called"
         ksel = self.ksel
-        expected_count = len(ksel.result_descs) + len(ksel.inplace_tied_arg_descs)
+        expected_count = len(
+            [
+                desc
+                for desc in ksel.result_descs
+                if not isinstance(desc, EmptyOptionalTensorArg)
+            ]
+        ) + len(ksel.inplace_tied_arg_descs)
         assert (
             len(results) == expected_count
         ), f"Mismatched yielded results and declared+inplace: Expected={expected_count}, Got={len(results)}"
+
+        none_type = IrType.parse("!torch.none", context=self.context)
+        is_none = lambda value: value.type == none_type
         with self.ip, self.location:
-            torch_op_results: list[Value] = list(self.torch_op.results)
+            torch_op_results: list[Value] = list(
+                [res for res in self.torch_op.results if not is_none(res)]
+            )
+            torch_op_none_returns: list[Value] = list(
+                [res for res in self.torch_op.results if is_none(res)]
+            )
             assert len(results) == len(
                 torch_op_results
             ), f"Mismatched yield_results with custom op results"
@@ -421,4 +481,10 @@ class InlineKernelBuilder(KernelBuilder):
                     static_info_cast=True,
                 )
                 old_result.replace_all_uses_with(new_result)
+            if len(torch_op_none_returns) > 0:
+                constant_none = Operation.create(
+                    "torch.constant.none", results=[none_type]
+                ).result
+                for none_ret in torch_op_none_returns:
+                    none_ret.replace_all_uses_with(constant_none)
         self.yielded = True

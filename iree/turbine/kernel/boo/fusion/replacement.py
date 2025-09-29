@@ -66,3 +66,36 @@ def replace_aten_convolution(args: tuple[Argument, ...], meta: dict[str, object]
         groups,
         output_is_channels_last,
     )
+
+
+def replace_aten_convolution_backward(
+    args: tuple[Argument, ...], meta: dict[str, object]
+) -> tuple[Callable, tuple[Argument, ...]] | None:
+    "Replace 'torch.ops.aten.convolution' with custom BOO implementation."
+    (
+        grad_output,
+        input,
+        weight,
+        _bias_sizes,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        _output_padding,
+        groups,
+        output_mask,
+    ) = args
+
+    if transposed is not False:
+        return None
+
+    return boo_ops.convolution_backward_replacement, (
+        grad_output,
+        input,
+        weight,
+        stride,
+        padding,
+        dilation,
+        groups,
+        output_mask,
+    )

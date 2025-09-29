@@ -18,10 +18,11 @@ from ..exports.parser import OpCLIParser
 class Mode(ModeBase, IntEnum):
     """Mode selector for layer normalization, with each gradient being its own mode."""
 
-    FORWARD = 0
-    INPUT_BACKWARD = 1
-    WEIGHT_BACKWARD = 2
-    BIAS_BACKWARD = 3
+    FORWARD = 1
+    INPUT_BACKWARD = 2
+    WEIGHT_BACKWARD = 4
+    BIAS_BACKWARD = 8
+    FULL_BACKWARD = INPUT_BACKWARD | WEIGHT_BACKWARD | BIAS_BACKWARD
 
 
 class LayerNormSignature(OpSignature):
@@ -48,6 +49,7 @@ class LayerNormSignature(OpSignature):
         mode: str | Mode = Mode.FORWARD,
         forwarded_args_dtype: torch.dtype | None = None,
         input_permutation: Sequence[int] | None = None,
+        use_aten: bool = True,
     ):
         if (
             len(normalized_shape) > len(input_shape)
@@ -68,6 +70,7 @@ class LayerNormSignature(OpSignature):
         self.input_permutation = input_permutation or list(
             Permutation.identity(len(input_shape)).items
         )
+        self.use_aten = use_aten
 
     @property
     def output_shape(self) -> list[int]:
@@ -138,6 +141,7 @@ class LayerNormSignature(OpSignature):
                 if self.input_permutation != sorted(self.input_permutation)
                 else ""
             ),
+            "aten" if self.use_aten else "",
         ]
         return "_".join(name_items)
 
@@ -175,6 +179,7 @@ class LayerNormSignature(OpSignature):
         input = forward_args[0]
         # TODO: is this possible at this level?
         weight = forward_args[1] if len(forward_args) > 1 else None
+        bias = forward_args[2] if len(forward_args) > 2 else None
         _, mean, rstd = forward_results
         if self.mode == Mode.INPUT_BACKWARD:
             return (input, weight, mean, rstd)
@@ -182,6 +187,8 @@ class LayerNormSignature(OpSignature):
             return (input, mean, rstd)
         if self.mode == Mode.BIAS_BACKWARD:
             return ()
+        if self.mode == Mode.FULL_BACKWARD:
+            return (input, weight, bias, mean, rstd)
         assert False, "Unsupported mode."
 
     def as_init_kwargs(self) -> dict[str, Any]:
@@ -195,17 +202,29 @@ class LayerNormSignature(OpSignature):
             "mode": self.Mode,
             "forwarded_args_dtype": self.forwarded_args_dtype,
             "input_permutation": self.input_permutation,
+            "use_aten": self.use_aten,
         }
 
     def get_output_size(self) -> int:
-        if self.mode == Mode.FORWARD:
-            return (
-                math.prod(self.output_shape) + 2 * math.prod(self.aggregate_shape)
-            ) * int(self.dtype.itemsize)
-        if self.mode == Mode.INPUT_BACKWARD:
-            return math.prod(self.output_shape) * int(self.dtype.itemsize)
-        if self.mode == Mode.BIAS_BACKWARD or self.mode == Mode.WEIGHT_BACKWARD:
-            return math.prod(self.normalized_shape) * int(self.dtype.itemsize)
+        def get_output_size(mode: Mode) -> int:
+            if mode == Mode.FORWARD:
+                return (
+                    math.prod(self.output_shape) + 2 * math.prod(self.aggregate_shape)
+                ) * int(self.dtype.itemsize)
+            if mode == Mode.INPUT_BACKWARD:
+                return math.prod(self.output_shape) * int(self.dtype.itemsize)
+            if mode == Mode.BIAS_BACKWARD or mode == Mode.WEIGHT_BACKWARD:
+                return math.prod(self.normalized_shape) * int(self.dtype.itemsize)
+            if mode == Mode.FULL_BACKWARD:
+                return sum(
+                    map(
+                        get_output_size,
+                        (Mode.INPUT_BACKWARD, Mode.BIAS_BACKWARD, Mode.WEIGHT_BACKWARD),
+                    )
+                )
+            raise AssertionError(f"Unhandled mode {mode}")
+
+        return get_output_size(self.mode)
 
     def get_nn_module(self, **kwargs) -> torch.nn.Module:
         # TODO: this is specific to conv and may need to be refactored further
@@ -218,6 +237,9 @@ class LayerNormSignature(OpSignature):
             return LayerNormBackwardWeight(self)
         if self.mode == Mode.BIAS_BACKWARD:
             return LayerNormBackwardBias(self)
+        if self.mode == Mode.FULL_BACKWARD:
+            return LayerNormBackwardFull(self)
+        assert False, f"Unknown mode: {self.mode.name}."
 
     def get_sample_args(
         self,
@@ -269,6 +291,15 @@ class LayerNormSignature(OpSignature):
         if self.mode == Mode.BIAS_BACKWARD:
             # (dLdy,)
             return (get(self.output_shape),)
+        if self.mode == Mode.FULL_BACKWARD:
+            return (
+                get(self.output_shape),
+                get(self.input_shape),
+                get(self.normalized_shape) if self.elementwise_affine else None,
+                get(self.normalized_shape) if self.bias else None,
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
+                get(self.aggregate_shape).to(dtype=self.forwarded_args_dtype),
+            )
         raise ValueError(f"Unknown mode: {self.mode}")
 
 
@@ -396,6 +427,71 @@ class LayerNormBackwardBias(torch.nn.Module):
         return grad_output.sum(dim=self.keep_dim)
 
 
+class LayerNormBackwardFull(torch.nn.Module):
+    """Module computing, as its forward computation, the gradients of the input,
+    weights, and bias of the layer normalization given the gradient of its
+    output."""
+
+    def __init__(self, signature: LayerNormSignature):
+        super().__init__()
+        self.use_aten = signature.use_aten
+        self.normalized_shape = signature.normalized_shape
+        self.need_bias = signature.bias
+        self.need_weight = signature.elementwise_affine
+        self.normalized_dim = list(
+            range(len(signature.input_shape))[-len(self.normalized_shape) :]
+        )
+        self.keep_dim = list(
+            range(len(signature.input_shape))[: -len(signature.normalized_shape)]
+        )
+
+    def forward(
+        self,
+        grad_output: torch.Tensor,
+        input: torch.Tensor,
+        weight: torch.Tensor | None,
+        bias: torch.Tensor | None,
+        mean: torch.Tensor,
+        rstd: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        assert self.need_weight != (
+            weight is None
+        ), "Weight must be provided if its gradient is requested."
+        assert self.need_bias != (
+            bias is None
+        ), "Bias must be provided if its gradient is requested."
+        if self.use_aten:
+            return torch.ops.aten.native_layer_norm_backward(
+                grad_output,
+                input,
+                self.normalized_shape,
+                mean,
+                rstd,
+                weight,
+                bias,
+                (True, self.need_weight, self.need_bias),
+            )
+
+        # Recompute norm instead of saving it. Judging by the signature, this is the same
+        # decision as ATen.
+        norm = (input - mean) * rstd
+        # norm = norm.to(dtype=input.dtype)
+        dnorm = grad_output * weight if weight is not None else grad_output
+        dx = (
+            dnorm
+            - dnorm.mean(dim=self.normalized_dim, keepdim=True)
+            - norm * (dnorm * norm).mean(dim=self.normalized_dim, keepdim=True)
+        ) * rstd
+        # dx = dx.to(dtype=input.dtype)
+        dw = None
+        if self.need_weight:
+            dw = (grad_output * norm).sum(self.keep_dim)
+        db = None
+        if self.need_bias:
+            db = grad_output.sum(dim=self.keep_dim)
+        return dx, dw, db
+
+
 def _parse_shape(shape: str) -> list[int]:
     for symbol in shape:
         assert symbol in "0123456789x", "Unsupported shape syntax."
@@ -432,17 +528,10 @@ class LayerNormParser(OpCLIParser):
         ), "Can only normalize one trailing dimension for now (MIOpen limitation)."
         normalized_shape = shape[args.normalized_dim :]
 
-        match args.forw:
-            case 1:
-                mode = Mode.FORWARD
-            case 2:
-                mode = Mode.INPUT_BACKWARD
-            case 3:
-                mode = Mode.WEIGHT_BACKWARD
-            case 4:
-                mode = Mode.BIAS_BACKWARD
-            case _:
-                raise ValueError(f"Unsupported mode {args.forw}.")
+        try:
+            mode = Mode(args.forw)
+        except Exception as e:
+            raise ValueError(f"Unsupported mode {args.forw}.") from e
 
         return LayerNormSignature(
             input_shape=shape,
@@ -453,6 +542,7 @@ class LayerNormParser(OpCLIParser):
             dtype=_DTypeCommandDispatcher.get_dtype(args.command),
             mode=mode,
             input_permutation=args.input_permutation,
+            use_aten=args.use_aten,
         )
 
     def get_miopen_parser() -> argparse.ArgumentParser:
@@ -461,7 +551,11 @@ class LayerNormParser(OpCLIParser):
             "command", default="layernorm", choices=_DTypeCommandDispatcher.choices()
         )
         parser.add_argument(
-            "--forw", "-F", type=int, default=1, help="Run only forward LayerNorm"
+            "--forw",
+            "-F",
+            type=int,
+            default=1,
+            help="Kind of kernel to run, not compatible with MIOpen (1 forward, 2 backward input, 4 backward weight, 8 backward bias, 14 full backward)",
         )
         parser.add_argument(
             "--input",
@@ -482,6 +576,12 @@ class LayerNormParser(OpCLIParser):
             "--normalized_dim", "-o", type=int, default=3, help="Normalized dim"
         )
         parser.add_argument("--input-permutation", type=int, nargs="*", default=None)
+        parser.add_argument(
+            "--use-aten",
+            type=bool,
+            default=True,
+            help="Use core ATen op instead of a manual implementation",
+        )
         return parser
 
     @classmethod

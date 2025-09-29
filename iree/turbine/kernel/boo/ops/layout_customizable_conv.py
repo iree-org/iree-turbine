@@ -8,7 +8,7 @@ from typing import Sequence, Tuple
 
 import torch
 
-from .library import register_meta, BOO_LIBRARY
+from .library import BOO_LIBRARY
 from .utils import *
 
 from ..op_exports.conv import (
@@ -23,11 +23,12 @@ from ..runtime import LaunchableRuntimeCache
 
 from ....runtime.op_reg import CustomOp, KernelBuilder, KernelSelection, impl_helper
 from ....transforms.merger import Merger
-from ....support.ir_imports import Operation, StringAttr
 
 __all__ = [
     "boo_layout_customizable_convolution",
     "convolution_replacement",
+    "layout_customizable_convolution_backward",
+    "convolution_backward_replacement",
 ]
 
 # Forward Convolution Implementations #
@@ -162,24 +163,95 @@ def _boo_layout_customizable_convolution_impl(
 
 
 # Backward Convolution Implementations #
-@CustomOp.register(library=BOO_LIBRARY, register_meta=False)
+@CustomOp.register(library=BOO_LIBRARY)
 class layout_customizable_convolution_backward(CustomOp):
-    signature = "layout_customizable_convolution_backward(Tensor input, Tensor weight, Tensor grad_output, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
 
-    def select(self, ksel):
-        raise NotImplementedError("convolution_backward select NYI")
+    @property
+    def signature(self) -> str:
+        return "layout_customizable_convolution_backward(Tensor grad_output, Tensor input, Tensor weight, int[] stride, int[] padding, int[] dilation, int groups, str input_layout, str kernel_layout, str output_layout, bool[] mask) -> (Tensor?, Tensor?, Tensor?)"
 
-    def generate(self, ksel, kb):
-        raise NotImplementedError("convolution_backward generate NYI")
+    def select(self, ksel: KernelSelection):
+        # Declare args.
+        grad_output = ksel.arg_tensor(0)
+        input = ksel.arg_tensor(1)
+        weight = ksel.arg_tensor(2)
+        stride = ksel.attr_list_int(3)
+        padding = ksel.attr_list_int(4)
+        dilation = ksel.attr_list_int(5)
+        groups = ksel.attr_int(6)
+        input_layout = ksel.attr_str(7)
+        kernel_layout = ksel.attr_str(8)
+        output_layout = ksel.attr_str(9)
+        mask = ksel.attr_list_bool(10)
+        # Specialize args.
+        grad_output.specialize_all_dims()
+        input.specialize_all_dims()
+        weight.specialize_all_dims()
+
+        self.conv_sig = ConvSignature(
+            input_shape=input.spec_dims,
+            kernel_shape=weight.spec_dims,
+            input_layout=input_layout.v,
+            kernel_layout=kernel_layout.v,
+            output_layout=output_layout.v,
+            dtype=input.t.dtype,
+            stride=stride.v,
+            padding=padding.v,
+            dilation=dilation.v,
+            groups=groups.v,
+            backward_mask=mask.v,
+        )
+        dLdx = ksel.maybe_return_tensor(
+            torch.empty(input.spec_dims, dtype=input.t.dtype, device="meta")
+            if mask.v[0]
+            else None
+        )
+        dLdw = ksel.maybe_return_tensor(
+            torch.empty(weight.spec_dims, dtype=weight.t.dtype, device="meta")
+            if mask.v[1]
+            else None
+        )
+        dLdb = ksel.maybe_return_tensor(
+            torch.empty(
+                weight.spec_dims[kernel_layout.v.find("N")],
+                dtype=weight.t.dtype,
+                device="meta",
+            )
+            if mask.v[2]
+            else None
+        )
+        dLdx.specialize_all_dims()
+        dLdw.specialize_all_dims()
+        dLdb.specialize_all_dims()
+
+    def generate(self, ksel: KernelSelection, kb: KernelBuilder):
+        sample_args = (ksel.arg_descs[0].t, ksel.arg_descs[1].t, ksel.arg_descs[2].t)
+        func_name = self.conv_sig.func_name
+        # Get a module containing the func op for our custom convolution.
+        # This IR is a combination of expanded CustomOps and torch code.
+        # We are essentially fusing these things together into one inline-able op.
+        module_op = generate_custom_op_compatible_ir(
+            self.conv_sig.get_nn_module(use_custom=True),
+            args=sample_args,
+            func_name=func_name,
+            context=kb.context,
+        )
+        merger = Merger(
+            module_op, kb.module_body.owner, target_symbol_table=kb.symbol_table
+        )
+        merger.merge()
+        func_op = kb.symbol_table[merger.translate_symbol(func_name)]
+        outputs = impl_helper.call_function(func_op, *kb.arg_bindings[0:3])
+        kb.yield_results(*outputs)
 
     def eager_execute(self, *args):
         return _boo_layout_customizable_convolution_backward_impl(*args)
 
 
 def _boo_layout_customizable_convolution_backward_impl(
+    grad_output: torch.Tensor,
     x: torch.Tensor,
     w: torch.Tensor,
-    grad_output: torch.Tensor,
     stride: Sequence[int],
     padding: Sequence[int],
     dilation: Sequence[int],
@@ -190,62 +262,39 @@ def _boo_layout_customizable_convolution_backward_impl(
     mask: Tuple[bool, bool, bool],
 ) -> Tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
 
-    kwargs = {
-        "stride": stride,
-        "padding": padding,
-        "dilation": dilation,
-        "groups": groups,
-        "input_layout": input_layout,
-        "kernel_layout": kernel_layout,
-        "output_layout": output_layout,
-    }
-
     input_grad = weight_grad = bias_grad = None
 
-    if mask[0]:
-        bwd_sig = ConvSignature.get(x, w, mode="bwd", **kwargs)
-        bwd_conv = get_launchable(bwd_sig)
-        input_grad = bwd_conv(grad_output, x.data, w.data)
+    if not any(mask):
+        return input_grad, weight_grad, bias_grad
 
-    if mask[1]:
-        wrw_conv = get_launchable(ConvSignature.get(x, w, mode="wrw", **kwargs))
-        weight_grad = wrw_conv(grad_output, x.data, w.data)
+    sig = ConvSignature(
+        input_shape=list(x.shape),
+        kernel_shape=list(w.shape),
+        input_layout=input_layout,
+        kernel_layout=kernel_layout,
+        output_layout=output_layout,
+        dtype=x.dtype,
+        stride=list(stride),
+        padding=list(padding),
+        dilation=list(dilation),
+        groups=groups,
+        backward_mask=list(mask),
+    )
 
-    if mask[2]:
-        # TODO: use iree to perform the reduce sum?
-        output_layout = output_layout
-        reduce_dims = []
-        for i, char in enumerate(output_layout):
-            if char != "C":
-                reduce_dims.append(i)
-        bias_grad = torch.sum(grad_output, reduce_dims)
+    bwd_op = get_launchable(sig, use_custom=True)
+    grads = bwd_op(grad_output.data, x.data, w.data)
+    if isinstance(grads, torch.Tensor):
+        grads = (grads,)
 
-    return input_grad, weight_grad, bias_grad
+    outputs = [input_grad, weight_grad, bias_grad]
+    g_idx = 0
 
+    for o_idx, m in enumerate(mask):
+        if m:
+            outputs[o_idx] = grads[g_idx]
+            g_idx += 1
 
-@register_meta("layout_customizable_convolution_backward")
-def _boo_layout_customizable_convolution_backward_meta(
-    x: torch.Tensor,
-    w: torch.Tensor,
-    grad_output: torch.Tensor,
-    stride: Sequence[int],
-    padding: Sequence[int],
-    dilation: Sequence[int],
-    groups: int,
-    input_layout: str,
-    kernel_layout: str,
-    output_layout: str,
-    mask: Tuple[bool, bool, bool],
-) -> Tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
-    input_grad = weight_grad = bias_grad = None
-    if mask[0]:
-        input_grad = torch.empty_like(x)
-    if mask[1]:
-        weight_grad = torch.empty_like(w)
-    if mask[2]:
-        output_channels = w.shape[kernel_layout.find("N")]
-        bias_grad = torch.empty([output_channels], dtype=x.dtype, device=x.device)
-    return input_grad, weight_grad, bias_grad
+    return outputs[0], outputs[1], outputs[2]
 
 
 def pytorch_layout_customizable_convolution_backward(ctx, grad_output):
@@ -349,9 +398,9 @@ class _Boolayout_customizable_Convolution(torch.autograd.Function):
             weight_grad,
             bias_grad,
         ) = torch.ops.boo.layout_customizable_convolution_backward(
+            grad_output,
             x,
             w,
-            grad_output,
             ctx.stride,
             ctx.padding,
             ctx.dilation,
@@ -470,3 +519,69 @@ def convolution_replacement(
         output_layout=output_layout,
     )
     return result if not output_is_channels_last else result.permute(contig_cl_perm)
+
+
+def convolution_backward_replacement(
+    dLdy: torch.Tensor,
+    x: torch.Tensor,
+    w: torch.Tensor,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    groups: int,
+    mask: list[bool],
+):
+    num_spatial_dims = len(x.shape) - 2
+
+    default_layout = DEFAULT_LAYOUTS[num_spatial_dims]
+
+    input_perms = get_memory_format_permutation(x, num_spatial_dims)
+    kernel_perms = get_memory_format_permutation(w, num_spatial_dims)
+    output_perms = get_memory_format_permutation(dLdy, num_spatial_dims)
+
+    input_layout = (
+        default_layout
+        if input_perms is None
+        else "".join([default_layout[i] for i in input_perms.permutation])
+    )
+    kernel_layout = (
+        default_layout
+        if kernel_perms is None
+        else "".join([default_layout[i] for i in kernel_perms.permutation])
+    )
+    output_layout = (
+        default_layout
+        if output_perms is None
+        else "".join([default_layout[i] for i in output_perms.permutation])
+    )
+
+    x_contig = x if input_perms is None else x.permute(input_perms.permutation)
+    w_contig = w if kernel_perms is None else w.permute(kernel_perms.permutation)
+    dLdy_contig = (
+        dLdy if output_perms is None else dLdy.permute(output_perms.permutation)
+    )
+
+    dLdx_contig, dLdw_contig, dLdb = layout_customizable_convolution_backward(
+        dLdy_contig,
+        x_contig,
+        w_contig,
+        stride,
+        padding,
+        dilation,
+        groups,
+        input_layout=input_layout,
+        kernel_layout=kernel_layout,
+        output_layout=output_layout,
+        mask=mask,
+    )
+    dLdx = (
+        dLdx_contig
+        if dLdx_contig is None or input_perms is None
+        else dLdx_contig.permute(input_perms.inverse_permutation)
+    )
+    dLdw = (
+        dLdw_contig
+        if dLdw_contig is None or kernel_perms is None
+        else dLdw_contig.permute(kernel_perms.inverse_permutation)
+    )
+    return dLdx, dLdw, dLdb

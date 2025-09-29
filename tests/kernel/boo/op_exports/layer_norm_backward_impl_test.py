@@ -13,6 +13,16 @@ from iree.turbine.kernel.boo.op_exports.layer_norm import (
 )
 
 
+def _requires_gpu(*args):
+    return pytest.param(
+        *args,
+        marks=pytest.mark.xfail(
+            condition=not torch.cuda.is_available(),
+            reason="Cannot run on GPU with no GPU.",
+        ),
+    )
+
+
 # Note that elementwise_affine and bias flags are grouped together to avoid an
 # invalid combination.
 @pytest.mark.parametrize("dtype", [torch.float32])
@@ -82,6 +92,72 @@ def test_layer_norm_impl(
 
     rtol = 1e-4
     atol = 1e-4
+    assert len(grads) == len(args)
+    results = [
+        torch.allclose(arg.grad, grad, rtol=rtol, atol=atol)
+        for arg, grad in zip(args, grads)
+    ]
+    if all(results):
+        return
+
+    for i, r in enumerate(results):
+        if r:
+            continue
+        print(f"Expected for gradient #{i}: ", args[i].grad)
+        print(f"Actual for gradient #{i}: ", grads[i])
+    raise RuntimeError(f"Tensor matches: {results}")
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+@pytest.mark.parametrize("device", ["cpu", _requires_gpu("cuda")])
+@pytest.mark.parametrize("input_shape", [(10, 12, 14, 16), (11, 13, 15)])
+@pytest.mark.parametrize(
+    "elementwise_affine_bias", [(False, False), (True, False), (True, True)]
+)
+@pytest.mark.parametrize("use_aten", [True, False])
+def test_layer_norm_combined_impl(
+    input_shape: tuple[int, ...],
+    device: str,
+    dtype: torch.dtype,
+    elementwise_affine_bias: tuple[bool, bool],
+    use_aten: bool,
+):
+    # Account for ATen weirdness on GPU.
+    if device == "cuda" and dtype == torch.bfloat16 and use_aten:
+        forwarded_args_dtype = torch.float32
+    else:
+        forwarded_args_dtype = dtype
+
+    elementwise_affine, bias = elementwise_affine_bias
+    kwargs = {
+        "input_shape": input_shape,
+        "normalized_shape": input_shape[-1:],
+        "elementwise_affine": elementwise_affine,
+        "bias": bias,
+        "dtype": dtype,
+        "forwarded_args_dtype": forwarded_args_dtype,
+        "use_aten": use_aten,
+    }
+    fwd_sig = LayerNormSignature(**kwargs)
+    args = fwd_sig.get_sample_args(seed=1, device=device)
+
+    args = tuple(arg.requires_grad_(True) if arg is not None else None for arg in args)
+    fwd = fwd_sig.get_nn_module(use_custom=True).to(device=device)
+    bwd_sig = LayerNormSignature(**kwargs, mode=Mode.FULL_BACKWARD)
+    bwd = bwd_sig.get_nn_module(use_custom=True).to(device=device)
+
+    fwd_results = fwd(*args)
+
+    main_result = fwd_results[fwd_sig.main_result_index]
+    main_result.retain_grad()
+    loss = main_result.mean() / main_result.numel()
+    loss.backward(retain_graph=True)
+
+    bwd_input_args = bwd_sig.arrange_backward_launch_args(args, fwd_results)
+    grads = tuple(x for x in bwd(main_result.grad, *bwd_input_args) if x is not None)
+
+    rtol = 1e-6
+    atol = 5e-6 if dtype == torch.bfloat16 else 1e-6
     assert len(grads) == len(args)
     results = [
         torch.allclose(arg.grad, grad, rtol=rtol, atol=atol)
