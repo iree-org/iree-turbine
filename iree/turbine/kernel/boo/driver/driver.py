@@ -58,7 +58,7 @@ command-line arguments are appended to the arguments from the file.
     parser.add_argument(
         "--reference-backend",
         type=str,
-        choices=[k for k in BACKEND_TO_FUNC_GENERATOR.keys() if k != "iree_boo"],
+        choices=[k for k in BACKEND_TO_FUNC_GENERATOR.keys() if k != DEFAULT_BACKEND],
         action="append",
         default=[],
         required=False,
@@ -122,7 +122,7 @@ def main():
 
     # Setup a csv output file with headers.
     csv_stats = ALL_STATS
-    backends = ["iree_boo"] + ref_backends
+    backends = [DEFAULT_BACKEND] + ref_backends
     csv_file = open(meta_args.csv if meta_args.csv is not None else os.devnull, "w")
     csv_headers = ["arguments"]
     for b in backends:
@@ -327,6 +327,7 @@ def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
     return torch.compile(mod, dynamic=False, backend=backend)
 
 
+DEFAULT_BACKEND = "iree_boo_experimental"
 BACKEND_TO_FUNC_GENERATOR: dict[str, Callable[[OpSignature], Callable]] = {
     "torch": (lambda signature: signature.get_nn_module(use_custom=False)),
     "inductor": partial(get_torch_compiled_module, backend="inductor"),
