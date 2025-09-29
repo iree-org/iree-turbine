@@ -849,7 +849,7 @@ class ConvBackward(torch.nn.Module):
             dLdb,
         )
 
-        rets = tuple(g for g in grads if g is not None)
+        rets = tuple(g for g, m in zip(grads, self.mask) if m)
         if len(rets) == 1:
             return rets[0]
         return rets
@@ -873,7 +873,7 @@ class ConvCustomBackward(torch.nn.Module):
             self.grad_modules[1].forward(dLdy, x, w) if self.mask[1] else None,
             self.grad_modules[2].forward(dLdy, x, w) if self.mask[2] else None,
         )
-        rets = tuple(g for g in grads if g is not None)
+        rets = tuple(g for g, m in zip(grads, self.mask) if m)
         if len(rets) == 1:
             return rets[0]
         return rets
