@@ -152,6 +152,8 @@ def _run(
             for i in range(num_results):
                 summary[i][f"{cmp_key} vs. {ref_key}"] = comparison_results[i]
         results[c] = tuple(summary)
+        # Reset the cache to ensure we don't silently hit re-compile limits.
+        torch.compiler.reset()
 
     return results
 
