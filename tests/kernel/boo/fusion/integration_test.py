@@ -46,11 +46,9 @@ def test_custom_boo_conv_used():
     [compiled_module] = recorder.graphs
     assert isinstance(compiled_module, fx.GraphModule)
     [call_node] = [n for n in compiled_module.graph.nodes if n.op == "call_function"]
-    # Make sure we're using 'boo.ops.convolution_replacement'. We have to do a
-    # string check unfortunately, as the target is a fused custom op that we
-    # can't inspect.
+    # Make sure we're using layout customizable op.
     call_node_target_str = str(call_node.target)
-    assert call_node_target_str.startswith("boo.fused_op_convolution_replacement_")
+    assert call_node_target_str.startswith("boo.fused_op_layout_cus")
 
 
 def test_filter_transpose_conv():
@@ -185,7 +183,7 @@ def test_boo_layer_norm_used(permuted: bool, experimental: bool):
     # mode, and not using it otherwise.
     if not permuted or experimental:
         assert node_target is not None, "No BOO op found in the graph"
-        assert "fused_op_native_layer_norm" in str(node_target)
+        assert "fused_op_native_lay" in str(node_target)
     else:
         assert node_target is None, "BOO op used when should have been disabled"
 
@@ -228,7 +226,7 @@ def test_boo_convolution_backward_replacement(input_grad: bool, experimental: bo
     # string check unfortunately, as the target is a fused custom op that we
     # can't inspect.
     call_strings = "\n".join([str(n.target) for n in call_nodes])
-    assert "boo.fused_op_convolution_replacement_" in call_strings
+    assert "boo.fused_op_layout_cus" in call_strings
 
     # Perform backward pass
     y.sum().backward()
@@ -238,13 +236,17 @@ def test_boo_convolution_backward_replacement(input_grad: bool, experimental: bo
     call_nodes = [n for n in compiled_module.graph.nodes if n.op == "call_function"]
     call_strings = "\n".join([str(n.target) for n in call_nodes])
     if experimental:
-        assert "boo.fused_op_convolution_backward_replacement_" in call_strings
+        assert "boo.fused_op_layout_cus" in call_strings
     else:
-        assert "boo.fused_op_convolution_backward_replacement_" not in call_strings
+        assert "boo.fused_op_layout_cus" not in call_strings
         assert "aten.convolution_backward" in call_strings
     if input_grad:
         assert input.grad is not None and torch.sum(torch.abs(input.grad)) != 0
     else:
         assert input.grad is None
     assert m.weight.grad is not None and torch.sum(torch.abs(m.weight.grad)) != 0
-    assert m.bias.grad is not None and torch.sum(torch.abs(m.bias.grad)) != 0
+    assert (
+        m.bias is not None
+        and m.bias.grad is not None
+        and torch.sum(torch.abs(m.bias.grad)) != 0
+    )

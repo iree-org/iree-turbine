@@ -11,11 +11,15 @@ import warnings
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Callable, Iterable, Tuple, Sequence, TypeAlias
+from typing import Callable, Iterable, Tuple, Sequence, TypeAlias
 
 import torch
 
 from iree.runtime import VmModule
+from iree.compiler.extras.fx_importer import FxImporter
+
+from ....support.ir_imports import PassManager, Context
+from ....transforms.general.custom_op_expansion import ExpandCustomOpsPass
 
 from .cache import *
 from ....aot import export
@@ -283,5 +287,82 @@ def get_launchable(
             ),
             entry_point=f"{func_name}$async",
         )
+    LaunchableRuntimeCache.add(session_cache_key, launch)
+    return launch
+
+
+def get_module_asm_from_graph_module(
+    graph_module: torch.fx.GraphModule,
+    func_name: str = "main",
+    *,
+    force_single_dispatch: bool = False,
+) -> str:
+    cache_dir = set_cache_dir() / func_name
+    mlir_path = cache_dir / f"{func_name}.mlir"
+
+    if is_cache_enabled() and mlir_path.is_file():
+        logger.debug("Loading cached mlir file at %s", str(mlir_path))
+        return mlir_path.read_text()
+
+    with Context():
+        importer = FxImporter(context=Context())
+        importer.import_stateless_graph(
+            graph_module.graph, func_name=func_name, func_visibility="public"
+        )
+        module_op = importer.module_op
+        expansion_pass = ExpandCustomOpsPass(module_op)
+        expansion_pass.run()
+        if force_single_dispatch:
+            pm = PassManager.parse(
+                "builtin.module(canonicalize, torch-to-iree)",
+                module_op.context,
+            )
+            pm.run(module_op)
+            func_op = module_op.regions[0].blocks[0].operations[0]
+            try:
+                pipeline_attr = Attribute.parse(
+                    '#util.preprocessing_pipeline<"iree-preprocessing-make-single-dispatch">'
+                )
+                func_op.attributes["preprocessing_pipeline"] = pipeline_attr
+            except MLIRError:
+                warnings.warn(
+                    f"Failed to attach #util.preprocessing_pipeline attr to func op. Please try using a newer version of IREE."
+                )
+
+    module_asm = module_op.get_asm()
+
+    if is_cache_enabled():
+        logger.debug("Saving newly generated mlir file to %s", str(mlir_path))
+        cache_dir = set_cache_dir() / func_name
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        mlir_path = cache_dir / f"{func_name}.mlir"
+        mlir_path.write_text(module_asm)
+
+    return module_asm
+
+
+def get_launchable_from_graph_module(
+    graph_module: torch.fx.GraphModule,
+    func_name: str = "main",
+    *,
+    force_single_dispatch: bool = False,
+    compiler_flags_callback: CompilerFlagsCallback = default_compiler_flags_callback,
+) -> Launchable:
+    """A utility to mimic the behavior of `get_launchable` when we already have a graph module."""
+    session_cache_key = func_name
+    launch = LaunchableRuntimeCache.get(session_cache_key)
+    if launch:
+        return launch
+    module_asm = get_module_asm_from_graph_module(
+        graph_module, func_name, force_single_dispatch=force_single_dispatch
+    )
+    launch = Launchable.from_vm_module(
+        user_flags_jit_callback(
+            func_name,
+            compiler_flags_callback,
+            module_asm,
+        ),
+        entry_point=f"{func_name}$async",
+    )
     LaunchableRuntimeCache.add(session_cache_key, launch)
     return launch
