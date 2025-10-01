@@ -322,25 +322,6 @@ class ConvSignature(OpSignature):
             )
         }
 
-    def make_signature_copy_for_forward(self) -> "ConvSignature":
-        kwargs = self.as_init_kwargs()
-        kwargs["mode"] = "fwd"
-        return ConvSignature(**kwargs)
-
-    def get_arg_index_for_backward(self) -> int | None:
-        assert not self.is_forward
-        # TODO: should we just use the index of the argument we are computing
-        # the derivative of as mode and -1 as forward instead?
-        match self.mode:
-            case Mode.INPUT_BACKWARD:
-                return 0
-            case Mode.WEIGHT_BACKWARD:
-                return 1
-            case Mode.BIAS_BACKWARD:
-                return 2
-            case _:
-                return None
-
     def arrange_backward_launch_args(
         self,
         forward_args: tuple[torch.Tensor, ...],
@@ -849,7 +830,7 @@ class ConvBackward(torch.nn.Module):
             dLdb,
         )
 
-        rets = tuple(g for g in grads if g is not None)
+        rets = tuple(g for g, m in zip(grads, self.mask) if m)
         if len(rets) == 1:
             return rets[0]
         return rets
@@ -873,7 +854,7 @@ class ConvCustomBackward(torch.nn.Module):
             self.grad_modules[1].forward(dLdy, x, w) if self.mask[1] else None,
             self.grad_modules[2].forward(dLdy, x, w) if self.mask[2] else None,
         )
-        rets = tuple(g for g in grads if g is not None)
+        rets = tuple(g for g, m in zip(grads, self.mask) if m)
         if len(rets) == 1:
             return rets[0]
         return rets
