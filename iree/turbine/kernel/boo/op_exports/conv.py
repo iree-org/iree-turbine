@@ -435,7 +435,12 @@ class ConvForward(torch.nn.Module):
         if "bias" not in self.kwargs.keys():
             mod_args.append(args[2])
         output = torch.convolution(*mod_args, **self.kwargs)
-        return self.perms[2](output)
+        result: torch.Tensor = self.perms[2](output)
+        if not result.is_contiguous():
+            raise ValueError(
+                f"Inferred output layout is not contiguous in requested layout: {self.perms[2]=}, {result.stride()=}"
+            )
+        return result
 
 
 class ConvForwardCustomNHWC(torch.nn.Module):
