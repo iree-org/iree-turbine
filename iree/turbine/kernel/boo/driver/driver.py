@@ -22,6 +22,7 @@ from iree.turbine.kernel.boo.exports.signature import OpSignature
 from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.utils import get_timing_parser
+from iree.turbine.runtime.device import get_device_from_torch
 
 ZoneData = dict[str, list[float]]
 
@@ -247,6 +248,10 @@ def run(
     verbose: bool,
 ) -> None:
     """Distributes `iter`-many applications of `func` to `per_device_args`."""
+    # HIP backend caches allocations by default and can OOM if not explicitly cleared.
+    for device in devices:
+        get_device_from_torch(device).hal_device.allocator.trim()
+
     num_devices = len(per_device_args)
     iter_per_device = iter // num_devices
     rem_iter = iter % num_devices
