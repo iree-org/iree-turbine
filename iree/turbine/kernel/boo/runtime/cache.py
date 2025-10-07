@@ -20,6 +20,7 @@ __all__ = [
     "clear_cache",
     "is_cache_enabled",
     "toggle_cache_on",
+    "OpCacheFiles",
     "LaunchableRuntimeCache",
 ]
 
@@ -28,6 +29,20 @@ __all__ = [
 _default_cache_base_dir = Path.home() / ".cache" / "turbine_kernels" / "boo"
 BOO_CACHE_DIR = Path(os.environ.get("BOO_CACHE_DIR", _default_cache_base_dir))
 BOO_CACHE_ON = int(os.environ.get("BOO_CACHE_ON", 0))
+
+
+class OpCacheFiles:
+    """Utility class for standardizing paths to various cached files."""
+
+    def __init__(self, func_name: str):
+        self.base_dir = set_cache_dir() / func_name
+        self.mlir_path = self.base_dir / f"{func_name}.mlir"
+
+    def vmfb_path(self, device_key: str) -> Path:
+        return self.base_dir / f"{device_key}.vmfb"
+
+    def compile_command_log(self, device_key: str) -> Path:
+        return self.base_dir / f"compile_command_{device_key}.txt"
 
 
 def set_cache_dir(cache_dir: Union[Path, str, None] = None) -> Path:
