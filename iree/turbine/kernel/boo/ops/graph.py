@@ -86,6 +86,7 @@ def permute_metadata(source_node: Node, perm: Sequence[int]) -> dict:
         is_quantized=og_meta.is_quantized,
         qparams=og_meta.qparams,
     )
+    # We only require `val` and `tensor_meta` for torch-mlir import.
     new_meta = {
         "val": permuted_val,
         "tensor_meta": permuted_meta,
@@ -140,6 +141,8 @@ def get_graph_module_with_contiguous_boundary(
     2. Memory format permutations used to force inputs to be contiguous.
     3. Memory format permutations used to force outputs to be contiguous.
 
+    Returned permutations will be `None` whenever the corresponding boundary tensor is already contiguous.
+
     If `canonicalize` is set to True (default), this will canonicalize the output graph module for better caching.
     """
     src = src_gm.graph
@@ -157,8 +160,10 @@ def get_graph_module_with_contiguous_boundary(
     # Copy source graph body.
     output_og_args = g.graph_copy(src, val_map=val_map)
 
-    # Convert outputs to contiguous format and collect perms.
+    # For boo.fusion, all subgraphs we extract return tuples of tensors.
+    # E.g. single-output subgraphs should return `(output,)`.
     assert isinstance(output_og_args, tuple)
+    # Convert outputs to contiguous format and collect perms.
     permuted_output_args = []
     output_perms = []
     for ret in output_og_args:
