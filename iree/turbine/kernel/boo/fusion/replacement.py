@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Literal
+from typing import Literal, Sequence
 
 from operator import getitem
 import torch
@@ -108,6 +108,50 @@ def replace_aten_convolution(node: Node):
     graph.lint()
 
 
+def replace_getitem_users(
+    og_node: Node,
+    replacement_node: Node,
+    permutations: Sequence[MemoryFormatPermutation | None],
+):
+    """This is a helper function for handling multi-output node replacements.
+
+    E.g., if `og_node` has three tensor outputs, typically we expect the only users of this node to be `getitem` users.
+
+    Each item of the output tuple for `replacement_node` may have a shape that is a permutation of the corresponding output shape from `og_node`.
+    The argument `permutations` should be a Sequence of `MemoryFormatPermutation | None` which would permute `og_node` output shape
+    to `replacement_node` output shape. If `None` is passed for a permutation, it is expected these outputs have the same shape and strides.
+
+    This function assumes:
+        1. `og_node` and `replacement_node` are multi-output nodes with the same number of output tensors.
+        2. `og_node` and `replacement_node` are members of the same graph.
+        3. The only users of `og_node` are `getitem` nodes.
+
+    Each `getitem(og_node, i)` will be replaced with `permute(getitem(replacement_node, i), permutations[i].inverse_permutation)`.
+    """
+    graph = og_node.graph
+    if replacement_node.graph != graph:
+        raise ValueError("Nodes must be members of the same graph.")
+    original_users = list(og_node.users.keys())
+    for use in original_users:
+        assert (
+            use.op == "call_function" and use.target == getitem
+        ), f"This function assumes all users are `getitem` ops for the given multi-output node, {og_node}."
+        assert (
+            isinstance(use.args, tuple) and len(use.args) == 2
+        ), f"Node `getitem` should have args=(multi-output-op, index), got {use.args}."
+        index = use.args[-1]
+        assert isinstance(index, int) and index in range(len(permutations))
+        _perm = permutations[index]
+        with graph.inserting_before(use):
+            new_output = graph.call_function(getitem, args=(replacement_node, index))
+            new_output.meta = (
+                use.meta if _perm is None else permute_metadata(use, _perm.permutation)
+            )
+            replacement = _apply_perms(new_output, _perm, "inverse_permutation")
+            use.replace_all_uses_with(replace_with=replacement)
+            graph.erase_node(use)
+
+
 def replace_aten_convolution_backward(node: Node):
     "Replace 'torch.ops.aten.convolution_backward' with custom BOO implementation."
     (
@@ -184,29 +228,11 @@ def replace_aten_convolution_backward(node: Node):
             (
                 val
                 if val is None or perms is None
-                else permute_metadata(val, perms.inverse_permutation)
+                else permute_metadata(val, perms.permutation)
             )
             for val, perms in zip(old_val, ret_grad_perms)
         )
         replacement_conv.meta["val"] = new_val
-    original_users = list(node.users.keys())
-    for consumer in original_users:
-        assert consumer.op == "call_function"
-        assert consumer.target == getitem
-        assert isinstance(consumer.args, tuple) and len(consumer.args) == 2
-        index = consumer.args[-1]
-        assert isinstance(index, int) and index in range(3)
-        _perm = ret_grad_perms[index]
-        with graph.inserting_before(consumer):
-            new_output = graph.call_function(getitem, args=(replacement_conv, index))
-            new_output.meta = (
-                consumer.meta
-                if _perm is None
-                else permute_metadata(consumer, _perm.permutation)
-            )
-            replacement = _apply_perms(new_output, _perm, "inverse_permutation")
-            consumer.replace_all_uses_with(replace_with=replacement)
-            graph.erase_node(consumer)
-
+    replace_getitem_users(node, replacement_conv, ret_grad_perms)
     graph.erase_node(node)
     graph.lint()
