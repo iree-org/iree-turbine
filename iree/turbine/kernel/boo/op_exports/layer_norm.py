@@ -156,21 +156,6 @@ class LayerNormSignature(OpSignature):
     def is_forward(self) -> bool:
         return self.mode == Mode.FORWARD
 
-    def make_signature_copy_for_forward(self) -> "LayerNormSignature":
-        kwargs = self.as_init_kwargs()
-        kwargs["mode"] = Mode.FORWARD
-        return LayerNormSignature(**kwargs)
-
-    def get_arg_index_for_backward(self) -> int | None:
-        assert not self.is_forward
-        match self.mode:
-            case Mode.INPUT_BACKWARD:
-                return 0
-            case Mode.WEIGHT_BACKWARD:
-                return 1
-            case Mode.BIAS_BACKWARD:
-                return 2
-
     def arrange_backward_launch_args(
         self,
         forward_args: tuple[torch.Tensor, ...],

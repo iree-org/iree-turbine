@@ -44,13 +44,19 @@ class BooOpRegistry:
         return entry.parser_cls
 
     @classmethod
-    def parse_command(cls, command: str) -> OpSignature | None:
+    def parse_command(
+        cls, command: str, ignore_unhandled_args: bool = False
+    ) -> OpSignature | None:
         """Parse the given command using an op-specific parser selected based on the presence of the op key in the command."""
         key = cls.find_key_from_command(command)
         if key is None:
             return None
         parser_cls = cls.get_parser(key)
-        return parser_cls.command_to_signature(command)
+        if parser_cls is None:
+            return None
+        return parser_cls.command_to_signature(
+            command, ignore_unhandled_args=ignore_unhandled_args
+        )
 
     @classmethod
     def find_key_from_command(

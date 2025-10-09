@@ -143,4 +143,4 @@ And several other variables are useful for debugging:
 
 ## Advanced Usage
 
-For benchmarking, launchable cache pre-population, and numerics debugging see [driver documentation](driver/README.md).
+For benchmarking, and numerics debugging see [driver documentation](driver/README.md).

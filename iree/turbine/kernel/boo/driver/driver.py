@@ -22,6 +22,7 @@ from iree.turbine.kernel.boo.exports.signature import OpSignature
 from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.utils import get_timing_parser
+from iree.turbine.runtime.device import get_device_from_torch
 
 ZoneData = dict[str, list[float]]
 
@@ -238,6 +239,10 @@ def run(
     """Distributes `iter`-many applications of `func` to `per_device_args`. If
     timing is requested, returns a torch profiler object that can be inspected
     to recover time-related information."""
+    # HIP backend caches allocations by default and can OOM if not explicitly cleared.
+    for device in devices:
+        get_device_from_torch(device).hal_device.allocator.trim()
+
     num_devices = len(per_device_args)
     # This is a rough threshold: Mi300x 192 GB memory divided by 2.
     mem_bytes_threshold = 96 * (10**9)
