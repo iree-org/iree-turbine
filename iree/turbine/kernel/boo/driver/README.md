@@ -41,7 +41,7 @@ convbfp16 -n 128 -c 35 -H 48 -W 32 -k 35 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1
 The `--time 1` (or `-t 1` for short) option to collect timing is implemented by
 launching the kernel, which is then profiled using `torch.profiler`. Overall GPU
 time is reported, including memory and other operations not necessarily included
-in the kernel itself. Note: you can statistics to a csv file with
+in the kernel itself. Note: you can output statistics to a csv file with
 `--csv=results.csv`.
 
 BOO operations can be compared against a set of reference backends by providing
@@ -49,8 +49,10 @@ one or more `--reference-backend` flags. Currently supported backends include:
 
 - `torch`: Eager Pytorch.
 - `inductor`: Pytorch Inductor (`torch.compile` default).
+- `iree_boo`: Invoke kernel through `torch.compile` with the default BOO configuration. May fall back to eager pytorch.
 - `iree_boo_inductor`: BOO where applicable and Inductor otherwise.
-- `iree_boo_legacy`: direct call of BOO kernel without `torch.compile`.
+- `iree_boo_experimental`: BOO with support enabled for additional operations.
+- `iree_boo_legacy`: Direct call of BOO kernel without `torch.compile`.
 
 #### Misc requirements Q&A:
 
