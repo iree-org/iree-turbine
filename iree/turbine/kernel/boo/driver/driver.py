@@ -329,7 +329,7 @@ def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
     return torch.compile(mod, dynamic=False, backend=backend)
 
 
-DEFAULT_BACKEND = "iree_boo_experimental"
+DEFAULT_BACKEND = "iree_boo_legacy"
 BACKEND_TO_FUNC_GENERATOR: dict[str, Callable[[OpSignature], Callable]] = {
     "torch": (lambda signature: signature.get_nn_module(use_custom=False)),
     "inductor": partial(get_torch_compiled_module, backend="inductor"),
