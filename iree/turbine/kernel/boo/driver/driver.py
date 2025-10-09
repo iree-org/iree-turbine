@@ -229,7 +229,7 @@ def get_aggregate_stats(
 
 def run(
     func: Callable,
-    timing_args: argparse.ArgumentParser,
+    timing_args: argparse.Namespace,
     output_num_bytes: int,
     per_device_args: Sequence[tuple[torch.Tensor, ...]],
     devices: Sequence[torch.device],
@@ -308,7 +308,8 @@ def run(
                 for device in devices:
                     torch.cuda.synchronize(device)
                 gc.collect()
-            prof.step()
+            if prof is not None:
+                prof.step()
 
     if results is None:
         results = ()
