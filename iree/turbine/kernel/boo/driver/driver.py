@@ -59,7 +59,7 @@ command-line arguments are appended to the arguments from the file.
     parser.add_argument(
         "--reference-backend",
         type=str,
-        choices=[k for k in BACKEND_TO_FUNC_GENERATOR.keys() if k != "iree_boo_legacy"],
+        choices=[k for k in BACKEND_TO_FUNC_GENERATOR.keys() if k != DEFAULT_BACKEND],
         action="append",
         default=[],
         required=False,
@@ -120,15 +120,10 @@ def main():
 
     # Check the reference backend
     ref_backends = meta_args.reference_backend
-    # TODO: Add ability to benchmark against torch-compile (inductor).
-    if "torch-compile" in ref_backends:
-        raise NotImplementedError(
-            "Comparing against torch-compiled reference not yet implemented."
-        )
 
     # Setup a csv output file with headers.
     csv_stats = ALL_STATS
-    backends = ["iree_boo_legacy"] + ref_backends
+    backends = [DEFAULT_BACKEND] + ref_backends
     csv_file = open(meta_args.csv if meta_args.csv is not None else os.devnull, "w")
     csv_headers = ["arguments"]
     for b in backends:
@@ -163,24 +158,17 @@ def main():
         )
         output_num_bytes = signature.get_output_size()
 
-        profile_context = (
-            profile(activities=[ProfilerActivity.CUDA])
-            if timing_args.time
-            else nullcontext()
-        )
-
         for backend in backends:
             _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
             try:
-                with profile_context as prof:
-                    run(
-                        _func,
-                        timing_args.iter,
-                        output_num_bytes,
-                        sample_inputs,
-                        devices,
-                        meta_args.verbose,
-                    )
+                prof = run(
+                    _func,
+                    timing_args,
+                    output_num_bytes,
+                    sample_inputs,
+                    devices,
+                    meta_args.verbose,
+                )
             except Exception as exc:
                 if meta_args.verbose:
                     print(f">>> ERROR: {exc}")
@@ -241,41 +229,88 @@ def get_aggregate_stats(
 
 def run(
     func: Callable,
-    iter: int,
+    timing_args: argparse.Namespace,
     output_num_bytes: int,
     per_device_args: Sequence[tuple[torch.Tensor, ...]],
     devices: Sequence[torch.device],
     verbose: bool,
-) -> None:
-    """Distributes `iter`-many applications of `func` to `per_device_args`."""
+) -> profile | None:
+    """Distributes `iter`-many applications of `func` to `per_device_args`. If
+    timing is requested, returns a torch profiler object that can be inspected
+    to recover time-related information."""
     # HIP backend caches allocations by default and can OOM if not explicitly cleared.
     for device in devices:
         get_device_from_torch(device).hal_device.allocator.trim()
+    # Reset torch.compile caches to avoid hitting re-compile limits.
+    torch.compiler.reset()
 
     num_devices = len(per_device_args)
-    iter_per_device = iter // num_devices
-    rem_iter = iter % num_devices
     # This is a rough threshold: Mi300x 192 GB memory divided by 2.
     mem_bytes_threshold = 96 * (10**9)
     iter_thresh = int(mem_bytes_threshold // output_num_bytes)
+    assert (
+        iter_thresh > 1 or not timing_args.time
+    ), "Cannot reliably profile if cleanup is needed after every step."
+
+    # Cleanup is performed after every iter_thresh steps, including the
+    # initialization step and the cleanup steps themselves:
+    #   num_cleanups = (iter // num_devices + num_cleanups + 1) // iter_thresh
+    # Solving which leads to the form below.
+    num_cleanups = (timing_args.iter // num_devices + 1) // (iter_thresh - 1)
+
+    # The total number of iterations includes cleanups and the initial
+    # initialization operation that are not profiled, so the profiler records
+    # the expected number of iterations. When not profiling, just run as many
+    # times as requested.
+    total_num_iters = (
+        timing_args.iter + (num_cleanups + 1) * num_devices
+        if timing_args.time
+        else timing_args.iter
+    )
+
+    def needs_cleanup(step: int) -> bool:
+        per_device_step = step // num_devices
+        return (per_device_step + 1) % iter_thresh == 0
+
+    def schedule_fn(step: int) -> torch.profiler.ProfilerAction:
+        """Scheduling function for the profiler. Ensures it doesn't capture the
+        first iteration and the cleanup iterations where additional overhead may
+        happen."""
+        # Skip fist run on each device.
+        if step < num_devices:
+            return torch.profiler.ProfilerAction.NONE
+
+        # Skip the step on which cleanup happens.
+        if needs_cleanup(step):
+            return torch.profiler.ProfilerAction.NONE
+
+        # Save the results at the last iteration.
+        if step == total_num_iters:
+            return torch.profiler.ProfilerAction.RECORD_AND_SAVE
+        return torch.profiler.ProfilerAction.RECORD
+
+    profile_context = (
+        profile(activities=[ProfilerActivity.CUDA], schedule=schedule_fn)
+        if timing_args.time
+        else nullcontext()
+    )
 
     results: tuple[torch.Tensor, ...] | torch.Tensor | None = None
-    for iter in range(iter_per_device + 1):
-        for device_idx, launch_args in enumerate(per_device_args):
-            if iter == iter_per_device and device_idx >= rem_iter:
-                break
+    with profile_context as prof:
+        for iter in range(total_num_iters):
+            device_idx = iter % num_devices
+            launch_args = per_device_args[device_idx]
             results = func(*launch_args)
-        if (iter + 1) % iter_thresh == 0:
-            if verbose:
+            if needs_cleanup(iter):
                 print(
                     f">>>\tSynchronizing all devices on iter {iter} and collecting garbage."
                 )
-            for device in devices:
-                torch.cuda.synchronize(device)
-            gc.collect()
+                for device in devices:
+                    torch.cuda.synchronize(device)
+                gc.collect()
+            if prof is not None:
+                prof.step()
 
-    for device in devices:
-        torch.cuda.synchronize(device)
     if results is None:
         results = ()
     if isinstance(results, torch.Tensor):
@@ -285,7 +320,7 @@ def run(
             print(
                 f">>>\tresult #{i} shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
             )
-    return
+    return prof if timing_args.time else None
 
 
 def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
@@ -295,6 +330,7 @@ def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
     return torch.compile(mod, dynamic=False, backend=backend)
 
 
+DEFAULT_BACKEND = "iree_boo_legacy"
 BACKEND_TO_FUNC_GENERATOR: dict[str, Callable[[OpSignature], Callable]] = {
     "torch": (lambda signature: signature.get_nn_module(use_custom=False)),
     "inductor": partial(get_torch_compiled_module, backend="inductor"),
