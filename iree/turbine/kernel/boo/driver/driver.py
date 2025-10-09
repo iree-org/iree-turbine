@@ -159,7 +159,6 @@ def main():
         output_num_bytes = signature.get_output_size()
 
         for backend in backends:
-            torch.compiler.reset()
             _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
             try:
                 prof = run(
@@ -242,6 +241,8 @@ def run(
     # HIP backend caches allocations by default and can OOM if not explicitly cleared.
     for device in devices:
         get_device_from_torch(device).hal_device.allocator.trim()
+    # Reset torch.compile caches to avoid hitting re-compile limits.
+    torch.compiler.reset()
 
     num_devices = len(per_device_args)
     # This is a rough threshold: Mi300x 192 GB memory divided by 2.
