@@ -62,36 +62,62 @@ def _get_schema(
     return schema
 
 
-def permute_metadata(source_node: Node, perm: Sequence[int]) -> dict:
+def permute_metadata(
+    source_node: Node, perms: Sequence[int] | None | tuple[Sequence[int] | None, ...]
+) -> dict:
     """Returns a node meta resulting from applying `perm` to `source_node.meta`.
-    Only handles 'val' and 'tensor_meta' entries of type Tensor and TensorMetadata, respectively.
+
+    If `source_node` returns multiple outputs, this will only return `val` metadata, and a tuple of permutations are expected.
     """
-    og_meta = source_node.meta.get("tensor_meta")
-    og_val = source_node.meta.get("val")
-    if not isinstance(og_meta, TensorMetadata) or not isinstance(og_val, torch.Tensor):
-        raise ValueError(
-            f"Source graph has a node without valid metadata. Got node {source_node} with meta dict: {source_node.meta}. See graph:\n {source_node.graph}."
+
+    def _permute_fake_tensor(og_val, perm) -> torch.Tensor | None:
+        if perm is None or og_val is None:
+            return og_val
+        if not isinstance(og_val, torch.Tensor):
+            raise ValueError(
+                f"Source graph has a node without valid metadata. Got node {source_node} with meta dict: {source_node.meta}. See graph:\n {source_node.graph}."
+            )
+        permuted_val = og_val.permute(*perm)
+        return permuted_val
+
+    def _permute_tensor_meta(og_meta, permuted_val) -> TensorMetadata:
+        assert isinstance(
+            og_meta, TensorMetadata
+        ), f"Must have valid metadata, got metadata of type {type(og_meta)} for node {source_node}."
+        if og_meta.is_quantized:
+            raise NotImplementedError(
+                f"Quantized layout handling NYI. Got meta {og_meta} for node {source_node}."
+            )
+        permuted_meta = TensorMetadata(
+            shape=permuted_val.shape,
+            dtype=permuted_val.dtype,
+            requires_grad=og_meta.requires_grad,
+            stride=permuted_val.stride(),
+            memory_format=torch.contiguous_format,
+            is_quantized=og_meta.is_quantized,
+            qparams=og_meta.qparams,
         )
-    if og_meta.is_quantized:
-        raise NotImplementedError(
-            f"Quantized layout handling NYI. Got meta {og_meta} for node {src_pl}."
-        )
-    permuted_val = og_val.permute(*perm)
-    permuted_meta = TensorMetadata(
-        shape=permuted_val.shape,
-        dtype=permuted_val.dtype,
-        requires_grad=og_meta.requires_grad,
-        stride=permuted_val.stride(),
-        memory_format=torch.contiguous_format,
-        is_quantized=og_meta.is_quantized,
-        qparams=og_meta.qparams,
-    )
-    # We only require `val` and `tensor_meta` for torch-mlir import.
-    new_meta = {
+        return permuted_meta
+
+    og_metas = source_node.meta.get("tensor_meta")
+    og_vals = source_node.meta.get("val")
+    if isinstance(og_vals, tuple):
+        assert (
+            og_metas is None
+        ), f"`tensor_meta` expected to be None for multi-ouptut node. Got {source_node.meta=}"
+        assert isinstance(
+            perms, tuple
+        ), "Permutation for multi-output node must be tuple."
+        new_vals = []
+        for og_val, perm in zip(og_vals, perms, strict=True):
+            new_vals.append(_permute_fake_tensor(og_val, perm))
+        return {"val": tuple(new_vals)}
+
+    permuted_val = _permute_fake_tensor(og_vals, perms)
+    return {
+        "tensor_meta": _permute_tensor_meta(og_metas, permuted_val),
         "val": permuted_val,
-        "tensor_meta": permuted_meta,
     }
-    return new_meta
 
 
 def call_permute(node: Node, perm: Sequence[int]) -> Node:

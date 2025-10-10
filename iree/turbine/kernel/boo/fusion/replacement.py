@@ -219,20 +219,12 @@ def replace_aten_convolution_backward(node: Node):
             torch.ops.boo.layout_customizable_convolution_backward.default,
             args=call_args,
         )
-        replacement_conv.meta = node.meta
-        old_val = node.meta.get("val")
-        assert (
-            isinstance(old_val, tuple) and len(old_val) == 3
-        ), f'Invalid metadata for backward conv. Got node.meta["val"] = {old_val}.'
-        new_val = tuple(
-            (
-                val
-                if val is None or perms is None
-                else permute_metadata(val, perms.permutation)
-            )
-            for val, perms in zip(old_val, ret_grad_perms)
-        )
-        replacement_conv.meta["val"] = new_val
+
+    forward_perms = tuple(
+        (None if p is None else p.permutation) for p in ret_grad_perms
+    )
+    replacement_conv.meta = permute_metadata(node, forward_perms)
+
     replace_getitem_users(node, replacement_conv, ret_grad_perms)
     graph.erase_node(node)
     graph.lint()
