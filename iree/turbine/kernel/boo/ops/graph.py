@@ -161,7 +161,7 @@ PermsTuple: TypeAlias = tuple[MemoryFormatPermutation | None, ...]
 
 
 def get_graph_module_with_contiguous_boundary(
-    src_gm: GraphModule, canonicalize: bool = True
+    src_gm: GraphModule,
 ) -> tuple[GraphModule, PermsTuple, PermsTuple]:
     """Returns a tuple containing:
     1. A GraphModule which applies `src_gm`, but contains contiguous boundary tensors.
@@ -169,8 +169,6 @@ def get_graph_module_with_contiguous_boundary(
     3. Memory format permutations used to force outputs to be contiguous.
 
     Returned permutations will be `None` whenever the corresponding boundary tensor is already contiguous.
-
-    If `canonicalize` is set to True (default), this will canonicalize the output graph module for better caching.
     """
     src = src_gm.graph
     g = Graph()
@@ -203,10 +201,6 @@ def get_graph_module_with_contiguous_boundary(
 
     # Create an output node.
     g.create_node(op="output", target="output", args=(tuple(permuted_output_args),))
-    if canonicalize:
-        # TODO: sanitize node names
-        for n in g.nodes:
-            n.stack_trace = None
 
     # Make a GraphModule from the constructed Graph.
     new_gm = GraphModule(root=src_gm, graph=g)
@@ -223,9 +217,7 @@ def get_custom_graph_op(
     This function infers input/output signature from the graph metadata, and produces a specialized op.
     The returned op will not automatically re-specialize for different inputs.
     """
-    gm, input_perms, output_perms = get_graph_module_with_contiguous_boundary(
-        src_gm, canonicalize=True
-    )
+    gm, input_perms, output_perms = get_graph_module_with_contiguous_boundary(src_gm)
     gm_string = str(gm.print_readable(print_output=False, include_stride=True))
     hash = sha1(gm_string.encode(), usedforsecurity=False).hexdigest()
     call_function_names = "_".join(
