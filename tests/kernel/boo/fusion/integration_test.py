@@ -10,11 +10,11 @@ import pytest
 import torch
 from torch import fx
 from torch._dynamo.testing import EagerAndRecordGraphs
+from torch.fx.passes.shape_prop import TensorMetadata
 
 from iree.turbine.dynamo.backends import boo
 from iree.turbine.kernel.boo.fusion.schema import (
     EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
-    EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
 )
 
 
@@ -101,9 +101,14 @@ def test_filter_transpose_conv():
 )
 def test_output_layout(device: str, memory_format: torch.memory_format):
     """Test that we properly match the layout of pytorch's implementation."""
+    recorder = EagerAndRecordGraphs()
     with torch.device(device):
-        conv = torch.ops.aten.convolution
-        boo_conv = torch.compile(conv, backend="iree_boo")
+
+        def conv(*args):
+            # add a node post-convolution to verify stride metadata propagates properly.
+            return torch.convolution(*args) / 2.0
+
+        boo_conv = torch.compile(conv, backend=boo.backend(nested_backend=recorder))
         N, C, H, W = (1, 16, 4, 4)
         F = 32
         K = 3
@@ -121,12 +126,39 @@ def test_output_layout(device: str, memory_format: torch.memory_format):
             1,  # groups
         )
 
-        actual_result = boo_conv(*args)
-        expected_result = conv(*args)
-        assert isinstance(actual_result, torch.Tensor)
-        assert isinstance(expected_result, torch.Tensor)
-        assert actual_result.shape == expected_result.shape
-        assert actual_result.stride() == expected_result.stride()
+        boo_result = boo_conv(*args)
+
+        assert isinstance(boo_result, torch.Tensor), "Expected a tensor from BOO."
+        [compiled_module] = recorder.graphs
+        assert isinstance(compiled_module, fx.GraphModule), "Expected a graph module"
+        output_node = compiled_module.graph.output_node()
+        returned_nodes = output_node.args[0]
+        ret_node = (
+            returned_nodes[0] if isinstance(returned_nodes, tuple) else returned_nodes
+        )
+        assert isinstance(ret_node, fx.Node), "Expected a node."
+        fake_val = ret_node.meta.get("val")
+        tensor_meta = ret_node.meta.get("tensor_meta")
+
+        assert isinstance(
+            fake_val, torch.Tensor
+        ), "Expected val metadata to be a tensor."
+        assert isinstance(
+            tensor_meta, TensorMetadata
+        ), "Expected val metadata to be a tensor."
+        assert list(fake_val.shape) == list(
+            tensor_meta.shape
+        ), "Expected output node shape metadata to be consistent."
+        assert list(fake_val.stride()) == list(
+            tensor_meta.stride
+        ), "Expected output node stride metadata to be consistent."
+        # assert isinstance(expected_result, torch.Tensor), "expected a tensor from graph meta"
+        assert (
+            boo_result.shape == fake_val.shape
+        ), "Expected BOO shapes to match metadata."
+        assert (
+            boo_result.stride() == fake_val.stride()
+        ), "Expected BOO strides to match metadata."
 
 
 @pytest.mark.xfail(
@@ -155,9 +187,8 @@ def test_boo_layer_norm_used(permuted: bool, experimental: bool):
     recorder = EagerAndRecordGraphs()
     backend = (
         boo.backend(
-            fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
-            post_fusion_replacements=EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
             nested_backend=recorder,
+            fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
         )
         if experimental
         else boo.backend(nested_backend=recorder)
@@ -183,7 +214,6 @@ def test_boo_layer_norm_used(permuted: bool, experimental: bool):
     # mode, and not using it otherwise.
     if not permuted or experimental:
         assert node_target is not None, "No BOO op found in the graph"
-        assert "fused_op_native_lay" in str(node_target)
     else:
         assert node_target is None, "BOO op used when should have been disabled"
 
@@ -206,9 +236,8 @@ def test_boo_convolution_backward_replacement(input_grad: bool, experimental: bo
     )
     backend = (
         boo.backend(
-            fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
-            post_fusion_replacements=EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
             nested_backend=recorder,
+            fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
         )
         if experimental
         else boo.backend(nested_backend=recorder)

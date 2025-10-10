@@ -12,12 +12,6 @@ from typing import Callable, Dict, Sequence
 import torch
 from torch.fx.node import Target, Node
 
-from .replacement import (
-    ReplacementSchema,
-    replace_aten_convolution,
-    replace_aten_convolution_backward,
-)
-
 
 @dataclass
 class OpFusionSpec:
@@ -112,14 +106,3 @@ EXPERIMENTAL_SUPPORTED_BOO_FUSIONS: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS
         make_single_dispatch=True,
     ),
 }
-
-DEFAULT_POST_FUSION_REPLACEMENTS: ReplacementSchema = {
-    torch.ops.aten.convolution.default: replace_aten_convolution,
-}
-
-EXPERIMENTAL_POST_FUSION_REPLACEMENTS: ReplacementSchema = (
-    DEFAULT_POST_FUSION_REPLACEMENTS
-    | {
-        torch.ops.aten.convolution_backward.default: replace_aten_convolution_backward,
-    }
-)

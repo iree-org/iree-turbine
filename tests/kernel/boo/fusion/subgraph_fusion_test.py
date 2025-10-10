@@ -240,7 +240,8 @@ class TestSubgraphReplacement:
         [fwd_gm] = recorder.graphs
         assert "torch.ops.aten." not in str(fwd_gm)
         assert list(y.shape) == list(expected_y.shape)
-        assert list(y.stride()) == list(expected_y.stride())
+        # We are forcing channels-last outputs, even if miopen doesn't want this.
+        assert y.is_contiguous(memory_format=torch.channels_last)
 
     def testReplacementMultiOutputNode(self):
         schema: FusionSchema = {
