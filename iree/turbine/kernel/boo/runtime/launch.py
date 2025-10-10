@@ -180,10 +180,13 @@ def user_flags_jit_callback(
 
     cache_files = OpCacheFiles(func_name)
 
-    def _compile(flags, mlir_path, vmfb_path, command_log_path):
+    def _compile(
+        flags, mlir_path: Path, vmfb_path: Path, command_log_path: Path | None = None
+    ):
         cl_list = ["iree-compile"] + flags + [str(mlir_path), "-o", str(vmfb_path)]
         command = shlex.join(cl_list)
-        command_log_path.write_text(command)
+        if command_log_path:
+            command_log_path.write_text(command)
         ret = subprocess.run(command, capture_output=True, shell=True, timeout=10)
         if ret.returncode != 0:
             raise RuntimeError(
@@ -218,11 +221,12 @@ def user_flags_jit_callback(
             vmfb = _compile(flags, mlir_path, vmfb_path, command_log_path)
             return VmModule.copy_buffer(vm_instance, vmfb)
 
+        # Since cache is disabled, compile in a temporary directory.
         with TemporaryDirectory() as td:
             mlir_path = Path(td) / "source.mlir"
             mlir_path.write_text(source)
             vmfb_path = Path(td) / "target.vmfb"
-            vmfb = _compile(flags, mlir_path, vmfb_path, command_log_path)
+            vmfb = _compile(flags, mlir_path, vmfb_path)
             return VmModule.copy_buffer(vm_instance, vmfb)
 
     return callback
