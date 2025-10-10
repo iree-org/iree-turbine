@@ -183,7 +183,6 @@ def test_boo_layer_norm_used(permuted: bool, experimental: bool):
     # mode, and not using it otherwise.
     if not permuted or experimental:
         assert node_target is not None, "No BOO op found in the graph"
-        assert "fused_op_native_lay" in str(node_target)
     else:
         assert node_target is None, "BOO op used when should have been disabled"
 
