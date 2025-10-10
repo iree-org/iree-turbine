@@ -5,19 +5,22 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from hashlib import sha1
-from typing import Sequence, Literal
+from typing import Sequence, Literal, TypeAlias
 
 import torch
 from torch.fx.graph_module import GraphModule
-from torch.fx.node import Target
+from torch.fx.graph import Graph
+from torch.fx.node import Target, Node
+from torch.fx.passes.shape_prop import TensorMetadata
 
 from .library import *
 from .utils import (
     MemoryFormatPermutation,
     get_arg_spec_name_and_memory_format_permutations,
+    get_arg_spec_name,
     get_memory_format_permutation,
 )
-from ..runtime import get_launchable
+from ..runtime.launch import get_launchable_from_graph_module
 from ....support.logging import aot_logger as logger
 
 __all__ = [
@@ -59,18 +62,170 @@ def _get_schema(
     return schema
 
 
+def permute_metadata(
+    source_node: Node, perms: Sequence[int] | None | tuple[Sequence[int] | None, ...]
+) -> dict:
+    """Returns a node meta resulting from applying `perm` to `source_node.meta`.
+
+    If `source_node` returns multiple outputs, this will only return `val` metadata, and a tuple of permutations are expected.
+    This is only handling `tensor_meta` and `val` entries, since only these are being used by the mlir import path.
+    """
+
+    def _permute_fake_tensor(og_val, perm) -> torch.Tensor | None:
+        if perm is None or og_val is None:
+            return og_val
+        if not isinstance(og_val, torch.Tensor):
+            raise ValueError(
+                f"Source graph has a node without valid metadata. Got node {source_node} with meta dict: {source_node.meta}. See graph:\n {source_node.graph}."
+            )
+        permuted_val = og_val.permute(*perm)
+        return permuted_val
+
+    def _permute_tensor_meta(og_meta, permuted_val) -> TensorMetadata:
+        assert isinstance(
+            og_meta, TensorMetadata
+        ), f"Must have valid metadata, got metadata of type {type(og_meta)} for node {source_node}."
+        if og_meta.is_quantized:
+            raise NotImplementedError(
+                f"Quantized layout handling NYI. Got meta {og_meta} for node {source_node}."
+            )
+        permuted_meta = TensorMetadata(
+            shape=permuted_val.shape,
+            dtype=permuted_val.dtype,
+            requires_grad=og_meta.requires_grad,
+            stride=permuted_val.stride(),
+            memory_format=torch.contiguous_format,
+            is_quantized=og_meta.is_quantized,
+            qparams=og_meta.qparams,
+        )
+        return permuted_meta
+
+    og_metas = source_node.meta.get("tensor_meta")
+    og_vals = source_node.meta.get("val")
+    if isinstance(og_vals, tuple):
+        assert (
+            og_metas is None
+        ), f"`tensor_meta` expected to be None for multi-ouptut node. Got {source_node.meta=}"
+        assert isinstance(
+            perms, tuple
+        ), "Permutation for multi-output node must be tuple."
+        new_vals = []
+        for og_val, perm in zip(og_vals, perms, strict=True):
+            new_vals.append(_permute_fake_tensor(og_val, perm))
+        return {"val": tuple(new_vals)}
+
+    permuted_val = _permute_fake_tensor(og_vals, perms)
+    return {
+        "tensor_meta": _permute_tensor_meta(og_metas, permuted_val),
+        "val": permuted_val,
+    }
+
+
+def call_permute(node: Node, perm: Sequence[int]) -> Node:
+    """Returns the result of a permute operation as a node in the same fx graph.
+
+    Does not attach metadata.
+    """
+    with node.graph.inserting_after(node):
+        return node.graph.call_function(
+            torch.ops.aten.permute.default, (node, list(perm))
+        )
+
+
+def convert_output(curr_output: Node) -> tuple[Node, MemoryFormatPermutation | None]:
+    """Permutes the given node to contiguous format. Returns the created node and permutation used."""
+    og_val = curr_output.meta["val"]
+    perms = get_memory_format_permutation(og_val)
+    if perms is None:
+        return curr_output, perms
+    new_out = call_permute(curr_output, perms.permutation)
+    new_out.meta = permute_metadata(curr_output, perms.permutation)
+    return new_out, perms
+
+
+def convert_placeholder(
+    src_pl: Node, target_graph: Graph
+) -> tuple[Node, MemoryFormatPermutation | None]:
+    perms = get_memory_format_permutation(src_pl.meta["val"])
+    if perms is None:
+        return target_graph.node_copy(src_pl), perms
+    name = f"{src_pl.name}_boo"
+    pl = target_graph.placeholder(name=name)
+    pl.meta = permute_metadata(src_pl, perms.permutation)
+    target_replacement = call_permute(pl, perms.inverse_permutation)
+    target_replacement.meta = {k: v for k, v in src_pl.meta.items()}
+    return target_replacement, perms
+
+
+PermsTuple: TypeAlias = tuple[MemoryFormatPermutation | None, ...]
+
+
+def get_graph_module_with_contiguous_boundary(
+    src_gm: GraphModule,
+) -> tuple[GraphModule, PermsTuple, PermsTuple]:
+    """Returns a tuple containing:
+    1. A GraphModule which applies `src_gm`, but contains contiguous boundary tensors.
+    2. Memory format permutations used to force inputs to be contiguous.
+    3. Memory format permutations used to force outputs to be contiguous.
+
+    Returned permutations will be `None` whenever the corresponding boundary tensor is already contiguous.
+    """
+    src = src_gm.graph
+    g = Graph()
+
+    # Convert placeholders to contiguous placeholder + permute back to original format.
+    src_placeholders = src.find_nodes(op="placeholder")
+    val_map: dict[Node, Node] = {}
+    input_perms = []
+    for src_pl in src_placeholders:
+        pl_replacement, _perms = convert_placeholder(src_pl, g)
+        val_map[src_pl] = pl_replacement
+        input_perms.append(_perms)
+
+    # Copy source graph body.
+    output_og_args = g.graph_copy(src, val_map=val_map)
+
+    # For boo.fusion, all subgraphs we extract return tuples of tensors.
+    # E.g. single-output subgraphs should return `(output,)`.
+    assert isinstance(output_og_args, tuple)
+    # Convert outputs to contiguous format and collect perms.
+    permuted_output_args = []
+    output_perms = []
+    for ret in output_og_args:
+        assert isinstance(
+            ret, Node
+        ), f"Expected returns to be nodes. Got {ret} with type {type(ret)}."
+        new_ret, _perm = convert_output(ret)
+        permuted_output_args.append(new_ret)
+        output_perms.append(_perm)
+
+    # Create an output node.
+    g.create_node(op="output", target="output", args=(tuple(permuted_output_args),))
+
+    # Make a GraphModule from the constructed Graph.
+    new_gm = GraphModule(root=src_gm, graph=g)
+    g.lint()
+    new_gm.recompile()
+    return new_gm, tuple(input_perms), tuple(output_perms)
+
+
 def get_custom_graph_op(
-    gm: GraphModule, *, force_single_dispatch: bool = False
+    src_gm: GraphModule, *, force_single_dispatch: bool = False
 ) -> torch._ops.OpOverloadPacket:
     """Converts a graph module into a custom operator.
 
     This function infers input/output signature from the graph metadata, and produces a specialized op.
     The returned op will not automatically re-specialize for different inputs.
     """
+    gm, input_perms, output_perms = get_graph_module_with_contiguous_boundary(src_gm)
     gm_string = str(gm.print_readable(print_output=False, include_stride=True))
     hash = sha1(gm_string.encode(), usedforsecurity=False).hexdigest()
     call_function_names = "_".join(
-        n.name for n in gm.graph.nodes if n.op == "call_function"
+        n.name[0:10]
+        for n in gm.graph.nodes
+        if n.op == "call_function"
+        and not n.name.startswith("getitem")
+        and not n.name.startswith("permute")
     )
 
     # Evidently, there is a limit to the number of characters in a path.
@@ -85,7 +240,12 @@ def get_custom_graph_op(
 
     if not hasattr(torch.ops.boo, op_name):
         _define_custom_graph_op(
-            gm, op_name, force_single_dispatch=force_single_dispatch
+            gm,
+            src_gm,
+            op_name,
+            input_perms,
+            output_perms,
+            force_single_dispatch=force_single_dispatch,
         )
 
     return get_library_op(op_name)
@@ -146,7 +306,13 @@ class _LayoutManagedModuleForAOTMlirExport(torch.nn.Module):
 
 
 def _define_custom_graph_op(
-    gm: GraphModule, op_name: str, *, force_single_dispatch: bool = False
+    gm: GraphModule,
+    og_gm: GraphModule,
+    op_name: str,
+    input_mem_format_perms,
+    output_mem_format_perms,
+    *,
+    force_single_dispatch: bool = False,
 ):
     """Defines a custom op from the graph module with given op_name in the boo library."""
     inputs, outputs = _get_io_from_gm(gm)
@@ -154,49 +320,31 @@ def _define_custom_graph_op(
     has_a_none_output = any(is_none_output)
     schema = _get_schema(inputs, outputs)
     define_schema(op_name, schema)
+    spec_name = get_arg_spec_name(
+        op_name, *[n.meta.get("val") for n in gm.graph.find_nodes(op="placeholder")]
+    )
     # Get memory format permutations for output tensors based on graph metadata.
-    output_mem_format_perms = [
-        get_memory_format_permutation(t, strict=True) for t in outputs if t is not None
-    ]
-    logger.debug(
-        "Output fake tensors:\n%s\nOutput MemoryFormatPermutation:\n%s",
-        str(outputs),
-        str(output_mem_format_perms),
-    )
-
-    input_fake_tensors: list[torch.Tensor | None] = [
-        n.meta.get("val") for n in gm.graph.find_nodes(op="placeholder")
-    ]
-
-    assert all(
-        [t is not None for t in input_fake_tensors]
-    ), f"Expected fake input tensors for graph module:\n{gm}\nGot {input_fake_tensors}."
-
-    spec_name, input_mem_format_perms = (
-        get_arg_spec_name_and_memory_format_permutations(op_name, *input_fake_tensors)
-    )
 
     @register_impl(op_name)
     def _(*args):
         handled_inputs = _handle_layouts(
             args, perms=input_mem_format_perms, perm_item="permutation"
         )
-        # We pass some empty sample args here to avoid having unneccessary input details possibly interfere with torch.export.
-        launch = get_launchable(
-            lambda: _LayoutManagedModuleForAOTMlirExport(
-                input_mem_format_perms=input_mem_format_perms,
-                output_mem_format_perms=output_mem_format_perms,
-                source_module=gm,
-            ),
-            lambda: tuple(torch.empty_like(h_out) for h_out in handled_inputs),
+        launch = get_launchable_from_graph_module(
+            graph_module=gm,
             func_name=spec_name,
             force_single_dispatch=force_single_dispatch,
         )
         outputs = launch(*[arg.data for arg in handled_inputs])
         single_output = False
         if isinstance(outputs, torch.Tensor):
-            outputs = [outputs]
+            outputs = (outputs,)
             single_output = True
+        if outputs is None:
+            outputs = tuple()
+        assert isinstance(
+            outputs, (list, tuple)
+        ), f"Got outputs {outputs} of unhandled type {type(outputs)}."
         handled_outputs = _handle_layouts(
             outputs, perms=output_mem_format_perms, perm_item="inverse_permutation"
         )
@@ -217,7 +365,7 @@ def _define_custom_graph_op(
 
     @register_meta(op_name)
     def _meta(*args):
-        outputs = gm.forward(*args)
+        outputs = og_gm.forward(*args)
         if len(outputs) == 1:
             return outputs[0]
         return outputs
