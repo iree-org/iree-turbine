@@ -68,6 +68,7 @@ def permute_metadata(
     """Returns a node meta resulting from applying `perm` to `source_node.meta`.
 
     If `source_node` returns multiple outputs, this will only return `val` metadata, and a tuple of permutations are expected.
+    This is only handling `tensor_meta` and `val` entries, since only these are being used by the mlir import path.
     """
 
     def _permute_fake_tensor(og_val, perm) -> torch.Tensor | None:
