@@ -80,8 +80,6 @@ def _get_default_decomposition_ops() -> DecompositionOpsList:
         aten.norm.ScalarOpt_dim,
         aten.native_group_norm,
         aten.upsample_bilinear2d.vec,
-        aten.split.Tensor,
-        aten.split_with_sizes,
         aten.native_layer_norm,
         aten.masked_fill.Tensor,
         aten.masked_fill.Scalar,
