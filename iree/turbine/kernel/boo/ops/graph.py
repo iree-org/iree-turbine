@@ -265,46 +265,6 @@ def _handle_layouts(
     )
 
 
-class _LayoutManagedModuleForAOTMlirExport(torch.nn.Module):
-    """This conjugates the forward call of a source module with permutations.
-
-    The use of this module is the following:
-
-    1. In an aot situation, identify non-contiguous inputs and outputs.
-    2. For each non-contiguous input/output, identify a shape permutation which would result in a contiguous tensor.
-    3. Outside the function boundary given to IREE, permute the input tensors to contiguous format.
-    4. Inside this module (which is to be compiled with IREE), the inverse permutations are applied to inputs.
-    5. To the outputs, we also apply the forward permutations inside this module.
-    6. Since the outputs of IREE are always contiguous, those permutations produce outputs with data stored in the desired layout.
-    7. In pytorch, permute the outputs of IREE back to the original shape.
-    """
-
-    def __init__(
-        self,
-        input_mem_format_perms: Sequence[MemoryFormatPermutation | None],
-        output_mem_format_perms: Sequence[MemoryFormatPermutation | None],
-        source_module: torch.nn.Module,
-    ):
-        super().__init__()
-        self.input_mem_format_perms = input_mem_format_perms
-        self.output_mem_format_perms = output_mem_format_perms
-        self.src_module = source_module
-
-    def forward(self, *args):
-        handled_args = _handle_layouts(
-            args, perms=self.input_mem_format_perms, perm_item="inverse_permutation"
-        )
-        outputs = self.src_module(*handled_args)
-        single_output = False
-        if isinstance(outputs, torch.Tensor):
-            outputs = [outputs]
-            single_output = True
-        handled_outputs = _handle_layouts(
-            outputs, perms=self.output_mem_format_perms, perm_item="permutation"
-        )
-        return handled_outputs[0] if single_output else tuple(handled_outputs)
-
-
 def _define_custom_graph_op(
     gm: GraphModule,
     og_gm: GraphModule,
