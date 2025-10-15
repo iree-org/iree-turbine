@@ -247,13 +247,12 @@ def binary_broadcast(
         # Not vectors: return as-is.
         return False, lhs, rhs
 
-    # Promote to vector.
-    if not lhs_is_vector:
-        lhs = IRProxyValue(vector_d.splat(VectorType.get([], lhs_type), lhs.ir_value))
-    if not rhs_is_vector:
-        rhs = IRProxyValue(vector_d.splat(VectorType.get([], rhs_type), rhs.ir_value))
-    lhs_type = VectorType(lhs.ir_value.type)
-    rhs_type = VectorType(rhs.ir_value.type)
+    lhs_type = (
+        VectorType(lhs.ir_value.type) if lhs_is_vector else VectorType.get([], lhs_type)
+    )
+    rhs_type = (
+        VectorType(rhs.ir_value.type) if rhs_is_vector else VectorType.get([], rhs_type)
+    )
 
     broadcast_shape = lhs_type.shape
     rhs_shape = rhs_type.shape
@@ -604,7 +603,7 @@ def emit_reduction(
         scalar_result = vector_d.multi_reduction(
             combiner, input, acc, list(range(rank))
         )
-        result = vector_d.splat(VectorType.get([], element_type), scalar_result)
+        result = vector_d.broadcast(VectorType.get([], element_type), scalar_result)
         emitter.bind_node_proxy(node, IRProxyValue(result), attrs=attrs)
     else:
         # Reduce to vector.
@@ -865,7 +864,7 @@ def cast_vector(
         # Scalar -> vector.
         element_type = value.type
         vector_type = VectorType.get([], element_type)
-        return vector_d.splat(vector_type, value)
+        return vector_d.broadcast(vector_type, value)
 
 
 def cast_scalar(emitter: ThreadEmitter, value):
