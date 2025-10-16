@@ -13,7 +13,9 @@ from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 def get_timing_parser() -> argparse.ArgumentParser:
     """This parser separates out timing-specific args from MIOpen commands."""
     timing_parser = argparse.ArgumentParser()
-    timing_parser.add_argument("--time", "-t", type=int, help="Enable timing")
+    timing_parser.add_argument(
+        "--time", "-t", type=int, help="Enable timing", default=1
+    )
     timing_parser.add_argument(
         "--iter", type=int, help="Number of iterations to run", default=100
     )
