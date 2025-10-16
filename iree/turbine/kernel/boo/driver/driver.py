@@ -51,7 +51,9 @@ Currently supports convolution, layernorm, and matrix multiply.
 
 If COMMANDS_FILE is specified, driver commands are read from the file. Each
 line is treated as a separate invocation of the driver, and any additional
-command-line arguments are appended to the arguments from the file.
+command-line arguments are appended to the arguments from the file. If the
+commands file has a '.tsv' extension, each line is treated as a tab-separated
+list of arguments.
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -108,10 +110,21 @@ def main():
     # Default to verbose terminal output if we're not writing to a file.
     if meta_args.verbose is None:
         meta_args.verbose = meta_args.csv is None
-    if meta_args.commands_file:
-        with open(meta_args.commands_file) as f:
+
+    # Allow tabs as an argument separator for easier copy-pasting from tsv files, i.e.
+    #   $ iree-boo-driver "foo\tbar"
+    # separates to ['foo', 'bar']
+    extra_cli_args = [a for arg in extra_cli_args for a in arg.split("\t")]
+    commands_file: str | None = meta_args.commands_file
+    if commands_file:
+        with open(commands_file) as f:
+            splitter: Callable[[str], list[str]]
+            if commands_file.endswith(".tsv"):
+                splitter = lambda s: s.split("\t")
+            else:
+                splitter = shlex.split
             mio_args = [
-                shlex.split(s) + extra_cli_args
+                splitter(s) + extra_cli_args
                 for s in f.readlines()
                 if not s.startswith("#")
             ]
