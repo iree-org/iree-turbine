@@ -190,27 +190,6 @@ class LayerNormSignature(OpSignature):
             "use_aten": self.use_aten,
         }
 
-    def get_output_size(self) -> int:
-        def get_output_size(mode: Mode) -> int:
-            if mode == Mode.FORWARD:
-                return (
-                    math.prod(self.output_shape) + 2 * math.prod(self.aggregate_shape)
-                ) * int(self.dtype.itemsize)
-            if mode == Mode.INPUT_BACKWARD:
-                return math.prod(self.output_shape) * int(self.dtype.itemsize)
-            if mode == Mode.BIAS_BACKWARD or mode == Mode.WEIGHT_BACKWARD:
-                return math.prod(self.normalized_shape) * int(self.dtype.itemsize)
-            if mode == Mode.FULL_BACKWARD:
-                return sum(
-                    map(
-                        get_output_size,
-                        (Mode.INPUT_BACKWARD, Mode.BIAS_BACKWARD, Mode.WEIGHT_BACKWARD),
-                    )
-                )
-            raise AssertionError(f"Unhandled mode {mode}")
-
-        return get_output_size(self.mode)
-
     def get_nn_module(self, **kwargs) -> torch.nn.Module:
         # TODO: this is specific to conv and may need to be refactored further
         # Note: `use_custom` kwarg is intentionally ignored, since no custom impl is provided.

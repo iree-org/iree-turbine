@@ -414,27 +414,6 @@ class ConvSignature(OpSignature):
             return ConvCustomBackward(self)
         return ConvBackward(self)
 
-    def get_output_size(self) -> int:
-        numel = 0
-        dtype_bytes = int(self.dtype.itemsize)
-        mask = self.backward_mask
-        if not any(mask):
-            numel = math.prod(self.output_shape)
-            return numel * dtype_bytes
-        for m, shape in zip(
-            mask,
-            [
-                self.input_shape,
-                self.kernel_shape,
-                [self.kernel_shape[self.kernel_layout.find("N")]],
-            ],
-            strict=True,
-        ):
-            if not m:
-                continue
-            numel += math.prod(shape)
-        return numel * dtype_bytes
-
 
 class ConvForward(torch.nn.Module):
     def __init__(self, sig: ConvSignature):

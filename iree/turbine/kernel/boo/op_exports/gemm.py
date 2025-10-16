@@ -52,12 +52,6 @@ class GEMMSignature(OpSignature):
         self.dtype = dtype
         self.mode = mode
 
-    def get_output_size(self) -> int:
-        """Returns the size of the output tensor in bytes."""
-        m = self.a_shape[0]
-        n = self.b_shape[1]
-        return math.prod([m, n]) * self.dtype.itemsize
-
     def get_nn_module(self, **kwargs) -> torch.nn.Module:
         if self.mode == Mode.FORWARD:
             return GEMMForward(self)
