@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from ..exports.signature import OpSignature
 from ..exports.parser import OpCLIParser
 
+from .aten import AtenParser, AtenSignature
 from .conv import ConvParser, ConvSignature
 from .gemm import GEMMParser, GEMMSignature
 from .layer_norm import LayerNormParser, LayerNormSignature
@@ -92,6 +93,8 @@ class BooOpRegistry:
 
 
 # Register ops.
+BooOpRegistry._register("aten::bmm", AtenSignature, AtenParser)
+BooOpRegistry._register("aten::mm", AtenSignature, AtenParser)
 BooOpRegistry._register("conv", ConvSignature, ConvParser)
 BooOpRegistry._register("gemm", GEMMSignature, GEMMParser)
 BooOpRegistry._register("layernorm", LayerNormSignature, LayerNormParser)
