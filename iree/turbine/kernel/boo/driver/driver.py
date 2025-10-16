@@ -138,14 +138,13 @@ def main():
 
     for driver_args in mio_args:
         testCount = testCount + 1
-        command = shlex.join(driver_args)
         if meta_args.verbose:
-            print(f"\n>>> {command}\n")
+            print(f"\n>>> {shlex.join(driver_args)}\n")
         else:
             print("Running test :", testCount)
         timing_args, runner_args = timing_parser.parse_known_args(driver_args)
         csv_file.write(shlex.join(driver_args) + ",")
-        signature = BooOpRegistry.parse_command(shlex.join(runner_args))
+        signature = BooOpRegistry.parse_command(runner_args)
 
         if signature is None:
             if meta_args.verbose:
