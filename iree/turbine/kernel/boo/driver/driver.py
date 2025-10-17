@@ -6,6 +6,7 @@
 
 from collections import defaultdict
 from contextlib import nullcontext
+import csv
 import gc
 import argparse
 from typing import Callable, Sequence, NamedTuple
@@ -135,12 +136,16 @@ def main():
     # Setup a csv output file with headers.
     csv_stats = ALL_STATS
     backends = [DEFAULT_BACKEND] + ref_backends
-    csv_file = open(meta_args.csv if meta_args.csv is not None else os.devnull, "w")
+    csv_file = csv.writer(
+        open(
+            meta_args.csv if meta_args.csv is not None else os.devnull, "w", newline=""
+        )
+    )
     csv_headers = ["arguments"]
     for b in backends:
         for stat in csv_stats:
             csv_headers.extend([f"{b} {stat}"])
-    csv_file.write(",".join(csv_headers) + "\n")
+    csv_file.writerow(csv_headers)
 
     timing_parser = get_timing_parser()
 
@@ -148,6 +153,7 @@ def main():
     testCount = 0
 
     for driver_args in mio_args:
+        csv_row: list[str] = []
         testCount = testCount + 1
         command = shlex.join(driver_args)
         if meta_args.verbose:
@@ -155,13 +161,13 @@ def main():
         else:
             print("Running test :", testCount)
         timing_args, runner_args = timing_parser.parse_known_args(driver_args)
-        csv_file.write(shlex.join(driver_args) + ",")
+        csv_row.append(shlex.join(driver_args))
         signature = BooOpRegistry.parse_command(shlex.join(runner_args))
 
         if signature is None:
             if meta_args.verbose:
                 print(f">>> Boo op registry failed to parse {shlex.join(runner_args)}.")
-            csv_file.write("N.A.\n")
+            csv_row.append("N.A.")
             continue
 
         sample_inputs = _get_sample_args(
@@ -181,11 +187,11 @@ def main():
             except Exception as exc:
                 if meta_args.verbose:
                     print(f">>> ERROR: {exc}")
-                csv_file.write("N.A.," * len(csv_stats))
+                csv_row += ["N.A."] * len(csv_stats)
                 continue
 
             if not timing_args.time:
-                csv_file.write("untimed," * len(csv_stats))
+                csv_row += ["untimed"] * len(csv_stats)
                 continue
 
             zones = _extract_zones(prof)
@@ -193,7 +199,7 @@ def main():
             if len(zones.keys()) == 0:
                 if meta_args.verbose:
                     print(">>> FAILED TO COLLECT TIMING INFO")
-                csv_file.write("failed to collect timing info," * len(csv_stats))
+                csv_row += ["failed to collect timing info"] * len(csv_stats)
                 continue
 
             # Get iree stats and print.
@@ -211,9 +217,9 @@ def main():
                 )
 
             for stat in csv_stats:
-                csv_file.write(f"{aggregate_stats._asdict()[stat]},")
+                csv_row.append(f"{aggregate_stats._asdict()[stat]}")
 
-        csv_file.write("\n")
+        csv_file.writerow(csv_row)
 
 
 SUPPORTED_AGGREGATE_STATS = ["mean", "num_dispatches"]
