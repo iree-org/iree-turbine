@@ -74,6 +74,8 @@ class AtenSignature(OpSignature):
 
             # Handle tensor arguments.
             match type:
+                case "float":
+                    dtype = float
                 case "c10::BFloat16":
                     dtype = torch.bfloat16
                 case _:
