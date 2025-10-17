@@ -120,7 +120,7 @@ def main():
         with open(commands_file) as f:
             splitter: Callable[[str], list[str]]
             if commands_file.endswith(".tsv"):
-                splitter = lambda s: s.split("\t")
+                splitter = lambda s: s.strip().split("\t")
             else:
                 splitter = shlex.split
             mio_args = [
