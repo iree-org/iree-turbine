@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import ast
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 import torch
 
@@ -40,15 +40,52 @@ class AtenSignature(OpSignature):
     input_strides: Sequence[Sequence[int]]
     concrete_inputs: Sequence[str]
 
+    @property
+    def torch_op(self) -> torch._ops.OpOverload:
+        # Translate e.g. "aten::convolution" -> torch.ops.aten.convolution.default
+        [op_namespace, op_unqualified_name] = self.name.split("::")
+        return getattr(getattr(torch.ops, op_namespace), op_unqualified_name).default
+
+    def get_concrete_args(self) -> Iterable[tuple[torch.Argument, object]]:
+        for dims, type, strides, concrete, schema in zip(
+            self.input_dims,
+            self.input_type,
+            self.input_strides,
+            self.concrete_inputs,
+            self.torch_op._schema.arguments,
+            strict=True,
+        ):
+            if concrete == "":
+                continue
+            assert len(dims) == 0
+            assert type == "Scalar"
+            assert len(strides) == 0
+            yield schema, ast.literal_eval(concrete)
+
+    def get_non_concrete_args(
+        self,
+    ) -> Sequence[tuple[Sequence[int], str, Sequence[int]]]:
+        return [
+            (dims, type, strides)
+            for dims, type, strides, concrete in zip(
+                self.input_dims,
+                self.input_type,
+                self.input_strides,
+                self.concrete_inputs,
+                strict=True,
+            )
+            if concrete == ""
+        ]
+
     @override
     def get_nn_module(self, **kwargs) -> torch.nn.Module:
-        # Translate e.g. "aten::convolution" -> torch.ops.aten.convolution
-        [op_namespace, op_unqualified_name] = self.name.split("::")
-        func = getattr(getattr(torch.ops, op_namespace), op_unqualified_name)
+        func = self.torch_op
+        # Assume all concrete args should be baked into the module.
+        kwargs = {schema.name: val for schema, val in self.get_concrete_args()}
 
         class FuncModule(torch.nn.Module):
             def forward(self, *args):
-                return func(*args)
+                return func(*args, **kwargs)
 
         return FuncModule()
 
@@ -65,13 +102,10 @@ class AtenSignature(OpSignature):
             gen = gen.manual_seed(seed)
 
         def get(
-            dims: Sequence[int], type: str, strides: Sequence[int], concrete: str
+            dims: Sequence[int],
+            type: str,
+            strides: Sequence[int],
         ) -> torch.Tensor:
-            if concrete != "":
-                raise NotImplementedError(
-                    f"Concrete inputs not supported yet: {concrete}"
-                )
-
             # Handle tensor arguments.
             match type:
                 case "float":
@@ -88,16 +122,7 @@ class AtenSignature(OpSignature):
             )
             return torch.as_strided(val, dims, strides)
 
-        return tuple(
-            get(*args)
-            for args in zip(
-                self.input_dims,
-                self.input_type,
-                self.input_strides,
-                self.concrete_inputs,
-                strict=True,
-            )
-        )
+        return tuple(get(*args) for args in self.get_non_concrete_args())
 
     @property
     @override
