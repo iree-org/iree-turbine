@@ -24,6 +24,7 @@ from iree.turbine.kernel.boo.exports.signature import OpSignature
 from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.utils import get_timing_parser
+from iree.turbine.kernel.boo.runtime import LaunchableRuntimeCache
 from iree.turbine.runtime.device import get_device_from_torch
 
 ZoneData = dict[str, list[float]]
@@ -255,6 +256,8 @@ def run(
         get_device_from_torch(device).hal_device.allocator.trim()
     # Reset torch.compile caches to avoid hitting re-compile limits.
     torch.compiler.reset()
+    # Reset BOO caches to isolate tests.
+    LaunchableRuntimeCache.reset()
 
     example_results = func(*per_device_args[0])
     output_num_bytes = sum(x.element_size() * x.numel() for x in example_results)
