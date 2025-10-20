@@ -86,7 +86,7 @@ class AtenSignature(OpSignature):
                 if splat_value is not None
                 else torch.randn(dims, generator=gen, dtype=dtype, device=device)
             )
-            return torch.as_strided_copy(val, dims, strides)
+            return torch.as_strided(val, dims, strides)
 
         return tuple(
             get(*args)
