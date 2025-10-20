@@ -44,8 +44,8 @@ time is reported, including memory and other operations not necessarily included
 in the kernel itself. Note: you can output statistics to a csv file with
 `--csv=results.csv`.
 
-BOO operations can be compared against a set of reference backends by providing
-one or more `--reference-backend` flags. Currently supported backends include:
+The BOO driver can execute using alternative backends by providing one or more
+`--backend` flags. Currently supported backends include:
 
 - `torch`: Eager Pytorch.
 - `inductor`: Pytorch Inductor (`torch.compile` default).
