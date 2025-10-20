@@ -117,12 +117,10 @@ def main():
     extra_cli_args = [a for arg in extra_cli_args for a in arg.split("\t")]
     commands_file: str | None = meta_args.commands_file
     if commands_file:
+        splitter: Callable[[str], list[str]] = lambda s: (
+            s.strip().split("\t") if commands_file.endswith(".tsv") else shlex.split(s)
+        )
         with open(commands_file) as f:
-            splitter: Callable[[str], list[str]]
-            if commands_file.endswith(".tsv"):
-                splitter = lambda s: s.strip().split("\t")
-            else:
-                splitter = shlex.split
             mio_args = [
                 splitter(s) + extra_cli_args
                 for s in f.readlines()
