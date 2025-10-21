@@ -9,6 +9,7 @@ from contextlib import nullcontext
 import csv
 import gc
 import argparse
+import traceback
 from typing import Callable, Sequence, NamedTuple
 import os
 import shlex
@@ -170,13 +171,13 @@ def main():
             csv_row.append("N.A.")
             continue
 
-        sample_inputs = _get_sample_args(
-            signature, meta_args.splat_input_value, devices
-        )
-
         for backend in backends:
-            _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
             try:
+                _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
+                sample_inputs = _get_sample_args(
+                    signature, meta_args.splat_input_value, devices
+                )
+
                 prof = run(
                     _func,
                     timing_args,
@@ -186,7 +187,7 @@ def main():
                 )
             except Exception as exc:
                 if meta_args.verbose:
-                    print(f">>> ERROR: {exc}")
+                    traceback.print_exception(exc)
                 csv_row += ["N.A."] * len(csv_stats)
                 continue
 
