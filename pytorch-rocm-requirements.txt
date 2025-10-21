@@ -1,5 +1,4 @@
---index-url https://download.pytorch.org/whl/rocm6.3
---extra-index-url https://download.pytorch.org/whl/rocm6.2
-torch>=2.5,<2.8
+--index-url https://download.pytorch.org/whl/rocm6.4
+torch>=2.5,<=2.9
 torchaudio
 torchvision
