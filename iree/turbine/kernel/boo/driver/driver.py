@@ -61,13 +61,14 @@ list of arguments.
     )
     parser.add_argument("--commands-file", type=str, help="read commands from file")
     parser.add_argument(
-        "--reference-backend",
+        "--backend",
+        dest="backends",
         type=str,
-        choices=[k for k in BACKEND_TO_FUNC_GENERATOR.keys() if k != DEFAULT_BACKEND],
+        choices=list(BACKEND_TO_FUNC_GENERATOR.keys()),
         action="append",
         default=[],
         required=False,
-        help="Choose reference backends to compare performance against.",
+        help=f"Choose backends to run. Can be specified multiple times (defaults to '{DEFAULT_BACKEND}')",
     )
     parser.add_argument(
         "--csv",
@@ -131,12 +132,9 @@ def main():
     else:
         mio_args = [extra_cli_args]  # use CLI arguments
 
-    # Check the reference backend
-    ref_backends = meta_args.reference_backend
-
     # Setup a csv output file with headers.
     csv_stats = ALL_STATS
-    backends = [DEFAULT_BACKEND] + ref_backends
+    backends: list[str] = meta_args.backends or [DEFAULT_BACKEND]
     csv_file = csv.writer(
         open(
             meta_args.csv if meta_args.csv is not None else os.devnull, "w", newline=""
