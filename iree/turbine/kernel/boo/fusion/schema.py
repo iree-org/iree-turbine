@@ -111,6 +111,9 @@ EXPERIMENTAL_SUPPORTED_BOO_FUSIONS: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS
         recursive=False,
         make_single_dispatch=True,
     ),
+    torch.ops.aten.mm.default: OpFusionSpec(),
+    torch.ops.aten.bmm.default: OpFusionSpec(),
+    torch.ops.aten.addmm.default: OpFusionSpec(),
 }
 
 DEFAULT_POST_FUSION_REPLACEMENTS: ReplacementSchema = {
