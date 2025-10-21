@@ -187,7 +187,6 @@ def main():
                 )
             except Exception as exc:
                 if meta_args.verbose:
-                    print(f">>> ERROR: {exc}")
                     traceback.print_exception(exc)
                 csv_row += ["N.A."] * len(csv_stats)
                 continue
