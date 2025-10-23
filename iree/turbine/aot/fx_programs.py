@@ -10,10 +10,14 @@ This uses the `torch.export` machinery. However, it provides some extra
 services for handling multiple modules, save/load, and state management.
 """
 
+from collections.abc import Callable, Mapping
+import inspect
 import json
 import os
 from pathlib import Path
 from typing import Any, Optional, Union
+
+from ..support.logging import aot_logger as logger
 from .compiled_module import ExportTargetDef
 
 import functools
@@ -193,39 +197,7 @@ class FxProgramsBuilder(FxPrograms):
         if name in fx_builder.programs:
             raise ValueError(f"Attempt to export program '{name}' multiple times")
 
-        class LambdaModule(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.add_module("root", fx_builder.root_module)
-
-        # Here we do a tricky thing: The free-function that we take has
-        # signature:
-        #   def free_function(root_module, arg1, *, kwarg1)
-        # Since the export machinery expects to be able to inspect and query
-        # based on user-specified argument names ("arg1", "kwarg1" above),
-        # we use the usual @functools.wraps to copy metadata. Because we wrap
-        # it before adding it to the class, the first-arg of the free function
-        # ("root_module" above) lines up with the usual "self" arg of a method
-        # attached to a class. When instantiated and created, this synthetic
-        # 'forward' method will inspect as only taking the user-specified
-        # argument names (i.e. "arg1", "kwarg1") because the class machinery
-        # swallowed the first, which is exactly the one we wanted to elide
-        # from Dynamo's view anyway.
-        # If we weren't doing this, we would need to munge the signature
-        # descriptors to line up because the export machinery needs to see
-        # the user-specified function arguments, not our "pseudo-self" root
-        # module argument that we always pass.
-        # Note that to keep Dynamo happy, we are careful to only access
-        # names and attributes in the module tree (vs from the surrounding
-        # closure, which goes down less well-trodden paths).
-        @functools.wraps(f)
-        def new_forward(self, *forward_args, **forward_kwargs):
-            return f(self.root, *forward_args, **forward_kwargs)
-
-        setattr(LambdaModule, "forward", new_forward)
-        lambda_module = LambdaModule()
-
-        # Export our franken-module.
+        lambda_module = fx_builder._make_lambda_module(f)
         extra_kwargs = {}
         if dynamic_shapes:
             extra_kwargs["dynamic_shapes"] = dynamic_shapes
@@ -240,6 +212,70 @@ class FxProgramsBuilder(FxPrograms):
             arg_device=arg_device,
         )
         return program
+
+    def _make_lambda_module(fx_builder, free_function: Callable) -> nn.Module:
+        # Here we do a tricky thing: The free-function that we take has
+        # signature:
+        #   def free_function(root_module, arg1, *, kwarg1)
+        # and we want to invoke this from a module, with 'root_module' as
+        # 'fx_builder.root_module', i.e.:
+        #   class LambdaModule(nn.Module):
+        #     ... set self.root_module to fx_builder.root_module ...
+        #     def forward(self, arg1, *, kwarg1):
+        #       return free_function(self.root_module, arg, kwarg1=kwarg1)
+        #
+        # Forwarding of arguments to 'free_function' would ideally be done with
+        # '*args/**kwargs', however:
+        # - Dynamo expects to be to be able to inspect and query based on
+        #   user-specified argument names ("arg1", "kwarg1" above), and
+        # - in newer pytorch versions, 'functools.wraps' is not sufficient for
+        #   achieving this. Dynamo sees through its tricks, and we unfortunately
+        #   hit this bug with variadics: https://github.com/pytorch/pytorch/issues/162831
+        # Instead, we dynamically define the forward method using 'exec', so it
+        # *really* has a signature matching 'free_function'.
+        #
+        # Note that to keep Dynamo happy, we are careful to only access
+        # names and attributes in the module tree (vs from the surrounding
+        # closure, which goes down less well-trodden paths).
+        arg_strs: list[str] = ["self"]
+        call_strs: list[str] = ["self.root_module"]
+        f_sig = inspect.signature(free_function)
+        for param in list(f_sig.parameters.values())[1:]:  # Skip the 'root_module' arg.
+            match param.kind:
+                case (
+                    inspect.Parameter.POSITIONAL_ONLY
+                    | inspect.Parameter.POSITIONAL_OR_KEYWORD
+                ):
+                    arg_strs.append(param.name)
+                    call_strs.append(param.name)
+                case inspect.Parameter.KEYWORD_ONLY:
+                    arg_strs.append(param.name)
+                    call_strs.append(f"{param.name}={param.name}")
+                case inspect.Parameter.VAR_POSITIONAL:
+                    arg_strs.append(f"*{param.name}")
+                    call_strs.append(f"*{param.name}")
+                case inspect.Parameter.VAR_KEYWORD:
+                    arg_strs.append(f"**{param.name}")
+                    call_strs.append(f"**{param.name}")
+                case _:
+                    raise RuntimeError(f"Unexpected parameter kind: {param.kind}")
+        func_def = f"""
+def new_forward({', '.join(arg_strs)}):
+    return ___free_function({', '.join(call_strs)})
+        """
+        logger.debug(f"defining function: {func_def}")
+        exec_globals = {"___free_function": free_function}
+        exec(func_def, exec_globals, exec_globals)
+        new_forward = exec_globals["new_forward"]
+
+        class LambdaModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.add_module("root_module", fx_builder.root_module)
+
+            forward = new_forward
+
+        return LambdaModule()
 
 
 class SharedStateTensor(torch.Tensor):
