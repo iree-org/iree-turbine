@@ -10,7 +10,10 @@ Facilities to launch BOO kernels in standalone processes.
 
 ## Benchmarking
 
-The [`iree-boo-driver`](./driver.py) tool allows for running kernels from the command line. It uses the same interface as `MIOpenDriver`:
+The [`iree-boo-driver`](./driver.py) script allows for running kernels from the
+command line. It uses an interface similar to that of `MIOpenDriver`: some
+additional flags or flag values are added to support scenarios not supported by
+the driver such as non-default layouts.
 
 ```console
 $ iree-boo-driver convbfp16 -n 128 -c 128 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
@@ -35,7 +38,21 @@ convbfp16 -n 128 -c 35 -H 48 -W 32 -k 35 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1
 ...
 ```
 
-The `--time 1` (or `-t 1` for short) option to collect timing is implemented by launching the kernel, which is then profiled using `torch.profiler`. Only the actual IREE kernel dispatch time is reported. Note: you can output `min_time (us)` to a csv file with `--csv=results.csv`.
+The `--time 1` (or `-t 1` for short) option to collect timing is implemented by
+launching the kernel, which is then profiled using `torch.profiler`. Overall GPU
+time is reported, including memory and other operations not necessarily included
+in the kernel itself. Note: you can output statistics to a csv file with
+`--csv=results.csv`.
+
+The BOO driver can execute using alternative backends by providing one or more
+`--backend` flags. Currently supported backends include:
+
+- `torch`: Eager Pytorch.
+- `inductor`: Pytorch Inductor (`torch.compile` default).
+- `iree_boo`: Invoke kernel through `torch.compile` with the default BOO configuration. May fall back to eager pytorch.
+- `iree_boo_inductor`: BOO where applicable and Inductor otherwise.
+- `iree_boo_experimental`: BOO with support enabled for additional operations.
+- `iree_boo_legacy`: Direct call of BOO kernel without `torch.compile`.
 
 #### Misc requirements Q&A:
 

@@ -156,21 +156,6 @@ class LayerNormSignature(OpSignature):
     def is_forward(self) -> bool:
         return self.mode == Mode.FORWARD
 
-    def make_signature_copy_for_forward(self) -> "LayerNormSignature":
-        kwargs = self.as_init_kwargs()
-        kwargs["mode"] = Mode.FORWARD
-        return LayerNormSignature(**kwargs)
-
-    def get_arg_index_for_backward(self) -> int | None:
-        assert not self.is_forward
-        match self.mode:
-            case Mode.INPUT_BACKWARD:
-                return 0
-            case Mode.WEIGHT_BACKWARD:
-                return 1
-            case Mode.BIAS_BACKWARD:
-                return 2
-
     def arrange_backward_launch_args(
         self,
         forward_args: tuple[torch.Tensor, ...],
@@ -204,27 +189,6 @@ class LayerNormSignature(OpSignature):
             "input_permutation": self.input_permutation,
             "use_aten": self.use_aten,
         }
-
-    def get_output_size(self) -> int:
-        def get_output_size(mode: Mode) -> int:
-            if mode == Mode.FORWARD:
-                return (
-                    math.prod(self.output_shape) + 2 * math.prod(self.aggregate_shape)
-                ) * int(self.dtype.itemsize)
-            if mode == Mode.INPUT_BACKWARD:
-                return math.prod(self.output_shape) * int(self.dtype.itemsize)
-            if mode == Mode.BIAS_BACKWARD or mode == Mode.WEIGHT_BACKWARD:
-                return math.prod(self.normalized_shape) * int(self.dtype.itemsize)
-            if mode == Mode.FULL_BACKWARD:
-                return sum(
-                    map(
-                        get_output_size,
-                        (Mode.INPUT_BACKWARD, Mode.BIAS_BACKWARD, Mode.WEIGHT_BACKWARD),
-                    )
-                )
-            raise AssertionError(f"Unhandled mode {mode}")
-
-        return get_output_size(self.mode)
 
     def get_nn_module(self, **kwargs) -> torch.nn.Module:
         # TODO: this is specific to conv and may need to be refactored further

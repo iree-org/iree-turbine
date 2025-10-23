@@ -61,11 +61,6 @@ class OpSignature(ABC):
         """Generates a PyTorch neural network module containing this operation."""
         ...
 
-    @abstractmethod
-    def get_output_size(self) -> int:
-        """Returns the size of this operation outputs in bytes."""
-        ...
-
     @property
     @abstractmethod
     def is_forward(self) -> bool:
@@ -77,22 +72,6 @@ class OpSignature(ABC):
     def as_init_kwargs(self) -> dict[str, Any]:
         """Return a dictionary that can be used as kwargs of the __init__
         function to construct a copy of this signature."""
-        ...
-
-    @abstractmethod
-    def make_signature_copy_for_forward(self) -> "OpSignature":
-        """Returns a copy of this signature, but set up for forward mode."""
-        ...
-
-    @abstractmethod
-    def get_arg_index_for_backward(self) -> int | None:
-        """For a backward mode, returns the index of the argument whose
-        back-propagated gradient is computed by the kernel with this
-        signature.
-
-        Returns None if a compiled kernel is not available for computing the
-        derivative with the current mode.
-        """
         ...
 
     @abstractmethod

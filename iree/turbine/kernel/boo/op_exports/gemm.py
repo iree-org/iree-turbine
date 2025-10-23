@@ -52,12 +52,6 @@ class GEMMSignature(OpSignature):
         self.dtype = dtype
         self.mode = mode
 
-    def get_output_size(self) -> int:
-        """Returns the size of the output tensor in bytes."""
-        m = self.a_shape[0]
-        n = self.b_shape[1]
-        return math.prod([m, n]) * self.dtype.itemsize
-
     def get_nn_module(self, **kwargs) -> torch.nn.Module:
         if self.mode == Mode.FORWARD:
             return GEMMForward(self)
@@ -96,22 +90,6 @@ class GEMMSignature(OpSignature):
     @property
     def is_forward(self) -> bool:
         return self.mode == Mode.FORWARD
-
-    @property
-    def main_result_index(self) -> int:
-        return 0  # GEMM only has one output
-
-    def make_signature_copy_for_forward(self) -> "GEMMSignature":
-        kwargs = self.as_init_kwargs()
-        kwargs["mode"] = Mode.FORWARD
-        return GEMMSignature(**kwargs)
-
-    def get_arg_index_for_backward(self) -> int:
-        if self.mode == Mode.A_BACKWARD:
-            return 0
-        elif self.mode == Mode.B_BACKWARD:
-            return 1
-        raise ValueError("Unknown mode.")
 
     def arrange_backward_launch_args(self, forward_args, forward_results):
         # forward: C = A @ B

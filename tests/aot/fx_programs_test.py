@@ -17,9 +17,6 @@ from iree.turbine.aot import (
 
 
 def test_save_load_dynamic_shapes():
-    if torch.__version__ < "2.3.0.dev1":
-        pytest.skip("Unsupported PyTorch version")
-
     class M(torch.nn.Module):
         def __init__(self):
             super().__init__()

@@ -315,9 +315,6 @@ def export(
             strict=strict_export,
         )
         if current_decomps:
-            from .decompositions import _patch_op_dispatch_for_export
-
-            _patch_op_dispatch_for_export()
             exported_program = exported_program.run_decompositions(current_decomps)
 
         TransformedModule = CompiledModule.create_from_dict(

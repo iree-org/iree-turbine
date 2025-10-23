@@ -6,8 +6,10 @@
 
 from collections import defaultdict
 from contextlib import nullcontext
+import csv
 import gc
 import argparse
+import traceback
 from typing import Callable, Sequence, NamedTuple
 import os
 import shlex
@@ -22,6 +24,7 @@ from iree.turbine.kernel.boo.exports.signature import OpSignature
 from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.utils import get_timing_parser
+from iree.turbine.runtime.device import get_device_from_torch
 
 ZoneData = dict[str, list[float]]
 
@@ -50,19 +53,22 @@ Currently supports convolution, layernorm, and matrix multiply.
 
 If COMMANDS_FILE is specified, driver commands are read from the file. Each
 line is treated as a separate invocation of the driver, and any additional
-command-line arguments are appended to the arguments from the file.
+command-line arguments are appended to the arguments from the file. If the
+commands file has a '.tsv' extension, each line is treated as a tab-separated
+list of arguments.
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--commands-file", type=str, help="read commands from file")
     parser.add_argument(
-        "--reference-backend",
+        "--backend",
+        dest="backends",
         type=str,
-        choices=[k for k in BACKEND_TO_FUNC_GENERATOR.keys() if k != "iree_boo_legacy"],
+        choices=list(BACKEND_TO_FUNC_GENERATOR.keys()),
         action="append",
         default=[],
         required=False,
-        help="Choose reference backends to compare performance against.",
+        help=f"Choose backends to run. Can be specified multiple times (defaults to '{DEFAULT_BACKEND}')",
     )
     parser.add_argument(
         "--csv",
@@ -107,33 +113,38 @@ def main():
     # Default to verbose terminal output if we're not writing to a file.
     if meta_args.verbose is None:
         meta_args.verbose = meta_args.csv is None
-    if meta_args.commands_file:
-        with open(meta_args.commands_file) as f:
+
+    # Allow tabs as an argument separator for easier copy-pasting from tsv files, i.e.
+    #   $ iree-boo-driver "foo\tbar"
+    # separates to ['foo', 'bar']
+    extra_cli_args = [a for arg in extra_cli_args for a in arg.split("\t")]
+    commands_file: str | None = meta_args.commands_file
+    if commands_file:
+        splitter: Callable[[str], list[str]] = lambda s: (
+            s.strip().split("\t") if commands_file.endswith(".tsv") else shlex.split(s)
+        )
+        with open(commands_file) as f:
             mio_args = [
-                shlex.split(s) + extra_cli_args
+                splitter(s) + extra_cli_args
                 for s in f.readlines()
                 if not s.startswith("#")
             ]
     else:
         mio_args = [extra_cli_args]  # use CLI arguments
 
-    # Check the reference backend
-    ref_backends = meta_args.reference_backend
-    # TODO: Add ability to benchmark against torch-compile (inductor).
-    if "torch-compile" in ref_backends:
-        raise NotImplementedError(
-            "Comparing against torch-compiled reference not yet implemented."
-        )
-
     # Setup a csv output file with headers.
     csv_stats = ALL_STATS
-    backends = ["iree_boo_legacy"] + ref_backends
-    csv_file = open(meta_args.csv if meta_args.csv is not None else os.devnull, "w")
+    backends: list[str] = meta_args.backends or [DEFAULT_BACKEND]
+    csv_file = csv.writer(
+        open(
+            meta_args.csv if meta_args.csv is not None else os.devnull, "w", newline=""
+        )
+    )
     csv_headers = ["arguments"]
     for b in backends:
         for stat in csv_stats:
             csv_headers.extend([f"{b} {stat}"])
-    csv_file.write(",".join(csv_headers) + "\n")
+    csv_file.writerow(csv_headers)
 
     timing_parser = get_timing_parser()
 
@@ -141,6 +152,7 @@ def main():
     testCount = 0
 
     for driver_args in mio_args:
+        csv_row: list[str] = []
         testCount = testCount + 1
         command = shlex.join(driver_args)
         if meta_args.verbose:
@@ -148,46 +160,37 @@ def main():
         else:
             print("Running test :", testCount)
         timing_args, runner_args = timing_parser.parse_known_args(driver_args)
-        csv_file.write(shlex.join(driver_args) + ",")
+        csv_row.append(shlex.join(driver_args))
         signature = BooOpRegistry.parse_command(shlex.join(runner_args))
 
         if signature is None:
             if meta_args.verbose:
                 print(f">>> Boo op registry failed to parse {shlex.join(runner_args)}.")
-            csv_file.write("N.A.\n")
+            csv_row.append("N.A.")
             continue
 
-        sample_inputs = _get_sample_args(
-            signature, meta_args.splat_input_value, devices
-        )
-        output_num_bytes = signature.get_output_size()
-
-        profile_context = (
-            profile(activities=[ProfilerActivity.CUDA])
-            if timing_args.time
-            else nullcontext()
-        )
-
         for backend in backends:
-            _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
             try:
-                with profile_context as prof:
-                    run(
-                        _func,
-                        timing_args.iter,
-                        output_num_bytes,
-                        sample_inputs,
-                        devices,
-                        meta_args.verbose,
-                    )
+                _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
+                sample_inputs = _get_sample_args(
+                    signature, meta_args.splat_input_value, devices
+                )
+
+                prof = run(
+                    _func,
+                    timing_args,
+                    sample_inputs,
+                    devices,
+                    meta_args.verbose,
+                )
             except Exception as exc:
                 if meta_args.verbose:
-                    print(f">>> ERROR: {exc}")
-                csv_file.write("N.A.," * len(csv_stats))
+                    traceback.print_exception(exc)
+                csv_row += ["N.A."] * len(csv_stats)
                 continue
 
             if not timing_args.time:
-                csv_file.write("untimed," * len(csv_stats))
+                csv_row += ["untimed"] * len(csv_stats)
                 continue
 
             zones = _extract_zones(prof)
@@ -195,7 +198,7 @@ def main():
             if len(zones.keys()) == 0:
                 if meta_args.verbose:
                     print(">>> FAILED TO COLLECT TIMING INFO")
-                csv_file.write("failed to collect timing info," * len(csv_stats))
+                csv_row += ["failed to collect timing info"] * len(csv_stats)
                 continue
 
             # Get iree stats and print.
@@ -213,9 +216,9 @@ def main():
                 )
 
             for stat in csv_stats:
-                csv_file.write(f"{aggregate_stats._asdict()[stat]},")
+                csv_row.append(f"{aggregate_stats._asdict()[stat]}")
 
-        csv_file.write("\n")
+        csv_file.writerow(csv_row)
 
 
 SUPPORTED_AGGREGATE_STATS = ["mean", "num_dispatches"]
@@ -240,37 +243,89 @@ def get_aggregate_stats(
 
 def run(
     func: Callable,
-    iter: int,
-    output_num_bytes: int,
+    timing_args: argparse.Namespace,
     per_device_args: Sequence[tuple[torch.Tensor, ...]],
     devices: Sequence[torch.device],
     verbose: bool,
-) -> None:
-    """Distributes `iter`-many applications of `func` to `per_device_args`."""
+) -> profile | None:
+    """Distributes `iter`-many applications of `func` to `per_device_args`. If
+    timing is requested, returns a torch profiler object that can be inspected
+    to recover time-related information."""
+    # HIP backend caches allocations by default and can OOM if not explicitly cleared.
+    for device in devices:
+        get_device_from_torch(device).hal_device.allocator.trim()
+    # Reset torch.compile caches to avoid hitting re-compile limits.
+    torch.compiler.reset()
+
+    example_results = func(*per_device_args[0])
+    output_num_bytes = sum(x.element_size() * x.numel() for x in example_results)
     num_devices = len(per_device_args)
-    iter_per_device = iter // num_devices
-    rem_iter = iter % num_devices
     # This is a rough threshold: Mi300x 192 GB memory divided by 2.
     mem_bytes_threshold = 96 * (10**9)
     iter_thresh = int(mem_bytes_threshold // output_num_bytes)
+    assert (
+        iter_thresh > 1 or not timing_args.time
+    ), "Cannot reliably profile if cleanup is needed after every step."
+
+    # Cleanup is performed after every iter_thresh steps, including the
+    # initialization step and the cleanup steps themselves:
+    #   num_cleanups = (iter // num_devices + num_cleanups + 1) // iter_thresh
+    # Solving which leads to the form below.
+    num_cleanups = (timing_args.iter // num_devices + 1) // (iter_thresh - 1)
+
+    # The total number of iterations includes cleanups and the initial
+    # initialization operation that are not profiled, so the profiler records
+    # the expected number of iterations. When not profiling, just run as many
+    # times as requested.
+    total_num_iters = (
+        timing_args.iter + (num_cleanups + 1) * num_devices
+        if timing_args.time
+        else timing_args.iter
+    )
+
+    def needs_cleanup(step: int) -> bool:
+        per_device_step = step // num_devices
+        return (per_device_step + 1) % iter_thresh == 0
+
+    def schedule_fn(step: int) -> torch.profiler.ProfilerAction:
+        """Scheduling function for the profiler. Ensures it doesn't capture the
+        first iteration and the cleanup iterations where additional overhead may
+        happen."""
+        # Skip fist run on each device.
+        if step < num_devices:
+            return torch.profiler.ProfilerAction.NONE
+
+        # Skip the step on which cleanup happens.
+        if needs_cleanup(step):
+            return torch.profiler.ProfilerAction.NONE
+
+        # Save the results at the last iteration.
+        if step == total_num_iters:
+            return torch.profiler.ProfilerAction.RECORD_AND_SAVE
+        return torch.profiler.ProfilerAction.RECORD
+
+    profile_context = (
+        profile(activities=[ProfilerActivity.CUDA], schedule=schedule_fn)
+        if timing_args.time
+        else nullcontext()
+    )
 
     results: tuple[torch.Tensor, ...] | torch.Tensor | None = None
-    for iter in range(iter_per_device + 1):
-        for device_idx, launch_args in enumerate(per_device_args):
-            if iter == iter_per_device and device_idx >= rem_iter:
-                break
+    with profile_context as prof:
+        for iter in range(total_num_iters):
+            device_idx = iter % num_devices
+            launch_args = per_device_args[device_idx]
             results = func(*launch_args)
-        if (iter + 1) % iter_thresh == 0:
-            if verbose:
+            if needs_cleanup(iter):
                 print(
                     f">>>\tSynchronizing all devices on iter {iter} and collecting garbage."
                 )
-            for device in devices:
-                torch.cuda.synchronize(device)
-            gc.collect()
+                for device in devices:
+                    torch.cuda.synchronize(device)
+                gc.collect()
+            if prof is not None:
+                prof.step()
 
-    for device in devices:
-        torch.cuda.synchronize(device)
     if results is None:
         results = ()
     if isinstance(results, torch.Tensor):
@@ -280,7 +335,7 @@ def run(
             print(
                 f">>>\tresult #{i} shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
             )
-    return
+    return prof if timing_args.time else None
 
 
 def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
@@ -290,6 +345,7 @@ def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
     return torch.compile(mod, dynamic=False, backend=backend)
 
 
+DEFAULT_BACKEND = "iree_boo_legacy"
 BACKEND_TO_FUNC_GENERATOR: dict[str, Callable[[OpSignature], Callable]] = {
     "torch": (lambda signature: signature.get_nn_module(use_custom=False)),
     "inductor": partial(get_torch_compiled_module, backend="inductor"),

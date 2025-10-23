@@ -99,9 +99,10 @@ setup(
     include_package_data=True,
     package_data={
         "iree.turbine": [
-            "ops/templates/*.mlir",
+            "py.typed",
+            "ops/templates/*.mlir",  # Include MLIR templates
             "kernel/boo/runtime/tuning_specs.mlir",
-        ],  # Include MLIR templates
+        ],
     },
     entry_points={
         "console_scripts": [

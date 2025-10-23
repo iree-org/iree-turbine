@@ -29,9 +29,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .compiled_module import ExportTargetDef
 
-# The dynamic_shapes support showed up in the Torch 2.3 timeframe.
-_supports_dynamic_shapes = hasattr(torch.export, "Dim")
-
 
 class FxPrograms:
     """Represents a named set of ExportedPrograms.
@@ -100,7 +97,7 @@ class FxPrograms:
             # disable since we are violating the spec.
             ep._validate()
             orig_state_dict = dict(ep.state_dict)
-            constants_dict = _get_optional_constants(ep)
+            constants_dict = ep.constants
             orig_constants = dict(constants_dict)
 
             try:
@@ -137,7 +134,7 @@ class FxPrograms:
             program_file_name = descriptor["program_files"][program_name]
             ep = torch.export.load(path.parent / program_file_name)
             _unsharify_state_dict(shared_state_dict, ep.state_dict)
-            _unsharify_state_dict(shared_constants, _get_optional_constants(ep))
+            _unsharify_state_dict(shared_constants, ep.constants)
             instance.programs[program_name] = ExportTargetDef(ep)
         return instance
 
@@ -231,19 +228,12 @@ class FxProgramsBuilder(FxPrograms):
         # Export our franken-module.
         extra_kwargs = {}
         if dynamic_shapes:
-            if not _supports_dynamic_shapes:
-                raise ValueError(
-                    f"torch.export with dynamic_shapes= not supported for this version of torch"
-                )
             extra_kwargs["dynamic_shapes"] = dynamic_shapes
         program = torch.export.export(
             lambda_module, args=args, kwargs=kwargs, strict=strict, **extra_kwargs
         )
         current_decomps = current_aot_decompositions()
         if current_decomps:
-            from .decompositions import _patch_op_dispatch_for_export
-
-            _patch_op_dispatch_for_export()
             program = program.run_decompositions(current_decomps)
         fx_builder.programs[name] = ExportTargetDef(
             program,
@@ -335,15 +325,3 @@ def _unsharify_state_dict(shared_dict: dict, local_dict: dict):
         else:
             # Remember this one for later.
             shared_dict[key] = local_value
-
-
-def _get_optional_constants(ep: torch.export.ExportedProgram) -> dict[str, Any]:
-    """Constants showed up in early 2.3 timeframe.
-
-    Returns an empty dict if not supported.
-    """
-    try:
-        return ep.constants  # type: ignore
-    except AttributeError:
-        assert torch.__version__ < "2.3.dev1", "Constants should be available"
-        return dict()

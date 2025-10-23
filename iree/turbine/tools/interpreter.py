@@ -223,12 +223,15 @@ class Interpreter:
                     value = self.symbol_table[op.dest].clone()
                     position = self.symbol_table[op.position]
                     value[int(position[0])] = source
-                case vector_d.SplatOp:
+                case vector_d.BroadcastOp:
                     mtype = op.result.type
                     shape = mtype.shape
                     dtype = mtype.element_type
                     input = self.symbol_table[op.input][0]
-                    value = torch.full(shape, input, dtype=self.get_dtype(dtype))
+                    if isinstance(input, torch.Tensor):
+                        value = torch.broadcast_to(input, shape)
+                    else:
+                        value = torch.full(shape, input, dtype=self.get_dtype(dtype))
                 case stream_d.DispatchWorkgroupIDOp:
                     index = int(op.attributes["dimension"])
                     value = self.workgroup_ids[index]
