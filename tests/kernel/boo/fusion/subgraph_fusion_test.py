@@ -113,7 +113,7 @@ class TestSubgraphReplacement:
         mlir_files = list(boo_cache_dir.glob("*/*.mlir"))
         assert len(mlir_files) == 1, f"Expected one mlir file, got {mlir_files}."
         mlir_string = mlir_files[0].read_text()
-        assert "linalg.transpose" in mlir_string
+        assert "torch.aten.permute" in mlir_string
 
     def testReplacementWithPytorchBackward(self):
         m = SampleModule(in_features=16, out_features=32)

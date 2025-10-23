@@ -135,4 +135,4 @@ def test_AOT_layout_conv_replacement(device: torch.device, boo_cache_dir: Path):
     cached_items = list(Path.glob(boo_cache_dir, "*/"))
     assert len(cached_items) == 1, f"Expected one cached item, got {cached_items}."
     p = cached_items[0]
-    assert p.name.endswith("_2x32x16x16xfloat32_perm_0231_2x32x1x1xfloat32_perm_0231")
+    assert p.name.endswith("_2x16x16x32xfloat32_2x1x1x32xfloat32")
