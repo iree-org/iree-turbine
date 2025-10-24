@@ -111,7 +111,15 @@ class AtenSignature(OpSignature):
     @property
     @override
     def func_name(self) -> str:
-        return self.name
+        return ":".join(
+            [
+                self.name,
+                str(self.input_dims),
+                str(self.input_type),
+                str(self.input_strides),
+                str(self.concrete_inputs),
+            ]
+        )
 
     @override
     def as_init_kwargs(self) -> dict[str, Any]:
