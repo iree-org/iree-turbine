@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from ..exports.signature import OpSignature
 from ..exports.parser import OpCLIParser
 
+from .aten import AtenParser, AtenSignature
 from .conv import ConvParser, ConvSignature
 from .gemm import GEMMParser, GEMMSignature
 from .layer_norm import LayerNormParser, LayerNormSignature
@@ -45,10 +46,10 @@ class BooOpRegistry:
 
     @classmethod
     def parse_command(
-        cls, command: str, ignore_unhandled_args: bool = False
+        cls, command: list[str], ignore_unhandled_args: bool = False
     ) -> OpSignature | None:
         """Parse the given command using an op-specific parser selected based on the presence of the op key in the command."""
-        key = cls.find_key_from_command(command)
+        key = cls.find_key_from_command(command[0])
         if key is None:
             return None
         parser_cls = cls.get_parser(key)
@@ -92,6 +93,8 @@ class BooOpRegistry:
 
 
 # Register ops.
+BooOpRegistry._register("aten::bmm", AtenSignature, AtenParser)
+BooOpRegistry._register("aten::mm", AtenSignature, AtenParser)
 BooOpRegistry._register("conv", ConvSignature, ConvParser)
 BooOpRegistry._register("gemm", GEMMSignature, GEMMParser)
 BooOpRegistry._register("layernorm", LayerNormSignature, LayerNormParser)
