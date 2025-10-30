@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import ast
+import base64
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 import torch
@@ -111,15 +112,18 @@ class AtenSignature(OpSignature):
     @property
     @override
     def func_name(self) -> str:
-        return ":".join(
-            [
-                self.name,
-                str(self.input_dims),
-                str(self.input_type),
-                str(self.input_strides),
-                str(self.concrete_inputs),
-            ]
-        )
+        # This name is used as a file system path, but the fields here may
+        # contain special characters. A URL-safe b64 encode ensures only valid
+        # characters are used.
+        return base64.urlsafe_b64encode(
+            (
+                self.name
+                + str(self.input_dims)
+                + str(self.input_type)
+                + str(self.input_strides)
+                + str(self.concrete_inputs)
+            ).encode()
+        ).decode()
 
     @override
     def as_init_kwargs(self) -> dict[str, Any]:
