@@ -49,6 +49,8 @@ class BooOpRegistry:
         cls, command: list[str], ignore_unhandled_args: bool = False
     ) -> OpSignature | None:
         """Parse the given command using an op-specific parser selected based on the presence of the op key in the command."""
+        if len(command) < 1:
+            return None
         key = cls.find_key_from_command(command[0])
         if key is None:
             return None

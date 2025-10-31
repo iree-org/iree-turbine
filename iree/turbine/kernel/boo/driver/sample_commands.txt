@@ -1,13 +1,20 @@
+# Convolution
 convbfp16 -n 128 -c 384 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 1 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
 convbfp16 -n 128 -c 384 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 2 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
 convbfp16 -n 128 -c 384 -H 24 -W 48 -k 384 -y 1 -x 1 -p 0 -q 0 -u 1 -v 1 -l 1 -j 1 -m conv -g 1 -F 4 -t 1 --iter 100 --in_layout NHWC --out_layout NHWC --fil_layout NHWC
+
+# Matrix Multiply
 gemmfp16 --a_w 32 --a_h 64 --b_w 128
 gemmfp16 --a_w 32 --a_h 64 --b_w 128 --transA 1
 gemmfp16 --a_w 32 --a_h 64 --b_w 128 --transB 1
+
+# Layernorm
 layernorm --input 10x32x42x32 -t 1 --iter 100
 layernorm --input 10x32x42x32 -t 1 -F 2 --iter 100
 layernorm --input 10x32x42x32 -t 1 -F 4 --iter 100
 layernorm --input 10x32x42x32 -t 1 -F 8 --iter 100
+
+# Aten ops
 aten::mm "[[3840, 4352], [4352, 3840]]" "['c10::BFloat16', 'c10::BFloat16']" "[[1, 3840], [3840, 1]]" "['', '']"
 aten::bmm "[[128, 3, 3], [128, 3, 1152]]" "['float', 'float']" "[[9, 3, 1], [3456, 1152, 1]]" "['', '']"
 aten::addmm "[[512], [24576, 512], [512, 512], [], []]" "['c10::BFloat16', 'c10::BFloat16', 'c10::BFloat16', 'Scalar', 'Scalar']" "[[1], [512, 1], [1, 512], [], []]" "['', '', '', '1', '1']"
