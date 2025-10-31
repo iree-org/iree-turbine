@@ -231,6 +231,9 @@ def default_compiler_flags_callback(device: Device, cache_dir: Path) -> list[str
         flags.append(
             "--iree-dispatch-creation-enable-fuse-padding-into-linalg-consumer-ops"
         )
+        flags.append("--iree-dispatch-creation-enable-split-reduction")
+        # Temporary flags to transpose filter layout without fusing into the computation dispatch.
+        flags.append("--iree-global-opt-experimental-enable-edge-reshape-propagation")
         flags.append(
             "--iree-preprocessing-pass-pipeline=builtin.module(iree-preprocessing-convert-conv-filter-to-channels-last)"
         )
