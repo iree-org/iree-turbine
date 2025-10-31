@@ -93,6 +93,7 @@ class BooOpRegistry:
 
 
 # Register ops.
+BooOpRegistry._register("aten::addmm", AtenSignature, AtenParser)
 BooOpRegistry._register("aten::bmm", AtenSignature, AtenParser)
 BooOpRegistry._register("aten::mm", AtenSignature, AtenParser)
 BooOpRegistry._register("conv", ConvSignature, ConvParser)
