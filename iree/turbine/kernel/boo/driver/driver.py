@@ -127,7 +127,7 @@ def main():
             mio_args = [
                 splitter(s) + extra_cli_args
                 for s in f.readlines()
-                if not s.startswith("#")
+                if s.strip() and not s.startswith("#")
             ]
     else:
         mio_args = [extra_cli_args]  # use CLI arguments
@@ -164,7 +164,9 @@ def main():
 
         if signature is None:
             if meta_args.verbose:
-                print(f">>> Boo op registry failed to parse {shlex.join(runner_args)}.")
+                print(
+                    f">>> Boo op registry failed to parse '{shlex.join(runner_args)}'."
+                )
             csv_row.append("N.A.")
             continue
 
