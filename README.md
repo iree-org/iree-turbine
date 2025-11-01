@@ -121,9 +121,6 @@ pip install -r requirements.txt -e .
 ```bash
 # Python unit tests
 pytest .
-
-# Lit tests
-lit lit_tests/ -v
 ```
 
 ### Optional: Pre-commits and developer settings
