@@ -28,17 +28,21 @@ __all__ = [
 
 def infer_example_inputs(
     graph_module: fx.GraphModule,
-) -> tuple[torch.Tensor | None, ...]:
-    return tuple(
-        n.meta.get("val") for n in graph_module.graph.find_nodes(op="placeholder")
+) -> tuple[torch.Tensor, ...]:
+    fake_inputs = tuple(
+        n.meta["val"] for n in graph_module.graph.find_nodes(op="placeholder")
     )
+    assert all(
+        [isinstance(fake_inp, torch.Tensor) for fake_inp in fake_inputs]
+    ), f"Expected all placeholder `meta['val']` to be tensors. Got {fake_inputs}."
+    return fake_inputs
 
 
 def fusion_transform(
     module: fx.GraphModule,
     *,
     fusion_schema: FusionSchema,
-    post_fusion_replacements: ReplacementSchema
+    post_fusion_replacements: ReplacementSchema,
 ) -> None:
     """Applies fusions to the underlying fx graph of a GraphModule by offloading subgraphs to IREE compiler/runtime."""
 

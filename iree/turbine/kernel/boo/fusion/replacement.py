@@ -25,12 +25,19 @@ def apply_replacements(graph: fx.Graph, replacements: ReplacementSchema):
 def _apply_perms(
     src_node: Node,
     perms: MemoryFormatPermutation | None,
-    perm_item: Literal["permutation", "inverse_permutation"],
+    forward_perm: bool,
 ) -> Node:
+    """
+    Does `call_permute` on `src_node` and handles newly created node metadata.
+
+    If `forward_perm=True`, this will use `perms.permutation`. Otherwise, this
+    will use `perms.inverse_permutation`.
+    """
     if perms is None:
         return src_node
-    new = call_permute(src_node, getattr(perms, perm_item))
-    new.meta = permute_metadata(src_node, getattr(perms, perm_item))
+    p = perms.permutation if forward_perm else perms.inverse_permutation
+    new = call_permute(src_node, p)
+    new.meta = permute_metadata(src_node, p)
     return new
 
 
@@ -69,8 +76,8 @@ def replace_aten_convolution(node: Node):
     w_perms = get_memory_format_permutation(w_fake, num_spatial_dims)
     output_perms = get_memory_format_permutation(output_fake, num_spatial_dims)
 
-    x_contig = _apply_perms(x, x_perms, "permutation")
-    w_contig = _apply_perms(w, w_perms, "permutation")
+    x_contig = _apply_perms(x, x_perms, forward_perm=True)
+    w_contig = _apply_perms(w, w_perms, forward_perm=True)
 
     to_layout = lambda perms: (
         pytorch_layout
@@ -99,9 +106,7 @@ def replace_aten_convolution(node: Node):
             if output_perms is None
             else permute_metadata(node, output_perms.permutation)
         )
-        post_permute = _apply_perms(
-            replacement_conv, output_perms, "inverse_permutation"
-        )
+        post_permute = _apply_perms(replacement_conv, output_perms, forward_perm=False)
 
     node.replace_all_uses_with(replace_with=post_permute)
     graph.erase_node(node)
@@ -147,7 +152,7 @@ def replace_getitem_users(
             new_output.meta = (
                 use.meta if _perm is None else permute_metadata(use, _perm.permutation)
             )
-            replacement = _apply_perms(new_output, _perm, "inverse_permutation")
+            replacement = _apply_perms(new_output, _perm, forward_perm=False)
             use.replace_all_uses_with(replace_with=replacement)
             graph.erase_node(use)
 
@@ -190,9 +195,9 @@ def replace_aten_convolution_backward(node: Node):
     w_perms = get_memory_format_permutation(w_fake, num_spatial_dims)
     output_perms = get_memory_format_permutation(output_fake, num_spatial_dims)
 
-    x_contig = _apply_perms(x, x_perms, "permutation")
-    w_contig = _apply_perms(w, w_perms, "permutation")
-    grad_output_contig = _apply_perms(grad_output, output_perms, "permutation")
+    x_contig = _apply_perms(x, x_perms, forward_perm=True)
+    w_contig = _apply_perms(w, w_perms, forward_perm=True)
+    grad_output_contig = _apply_perms(grad_output, output_perms, forward_perm=True)
 
     to_layout = lambda perms: (
         pytorch_layout
