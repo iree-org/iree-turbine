@@ -14,6 +14,7 @@ from typing import Callable, Sequence, NamedTuple
 import os
 import shlex
 import statistics
+import sys
 from functools import partial
 
 import torch
@@ -106,10 +107,10 @@ list of arguments.
     return parser
 
 
-def main():
+def main(args: list[str] = sys.argv[1:]) -> int:
     # Parse input cli args into global driver args and miopen-style commands.
     driver_parser = _get_main_driver_parser()
-    meta_args, extra_cli_args = driver_parser.parse_known_args()
+    meta_args, extra_cli_args = driver_parser.parse_known_args(args)
     # Default to verbose terminal output if we're not writing to a file.
     if meta_args.verbose is None:
         meta_args.verbose = meta_args.csv is None
@@ -149,15 +150,16 @@ def main():
     timing_parser = get_timing_parser()
 
     devices = _get_devices(meta_args.gpu_id)
-    testCount = 0
+    test_count = 0
+    test_error = 0
 
     for driver_args in mio_args:
         csv_row: list[str] = []
-        testCount = testCount + 1
+        test_count = test_count + 1
         if meta_args.verbose:
             print(f"\n>>> {shlex.join(driver_args)}\n")
         else:
-            print("Running test :", testCount)
+            print("Running test :", test_count)
         timing_args, runner_args = timing_parser.parse_known_args(driver_args)
         csv_row.append(shlex.join(driver_args))
         signature = BooOpRegistry.parse_command(runner_args)
@@ -166,6 +168,7 @@ def main():
             if meta_args.verbose:
                 print(f">>> Boo op registry failed to parse {shlex.join(runner_args)}.")
             csv_row.append("N.A.")
+            test_error += 1
             continue
 
         for backend in backends:
@@ -186,10 +189,12 @@ def main():
                 if meta_args.verbose:
                     traceback.print_exception(exc)
                 csv_row += ["N.A."] * len(csv_stats)
+                test_error += 1
                 continue
 
             if not timing_args.time:
                 csv_row += ["untimed"] * len(csv_stats)
+                test_error += 1
                 continue
 
             zones = _extract_zones(prof)
@@ -198,6 +203,7 @@ def main():
                 if meta_args.verbose:
                     print(">>> FAILED TO COLLECT TIMING INFO")
                 csv_row += ["failed to collect timing info"] * len(csv_stats)
+                test_error += 1
                 continue
 
             # Get iree stats and print.
@@ -218,6 +224,8 @@ def main():
                 csv_row.append(f"{aggregate_stats._asdict()[stat]}")
 
         csv_file.writerow(csv_row)
+    # Exit code: zero if no errors, non-zero otherwise.
+    return 0 if test_error == 0 else 1
 
 
 SUPPORTED_AGGREGATE_STATS = ["mean", "num_dispatches"]
@@ -446,4 +454,4 @@ def _print_zone_stats(results: ZoneStatsSummary) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
