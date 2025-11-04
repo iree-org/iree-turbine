@@ -14,6 +14,7 @@ from torch.fx.node import Target, Node
 
 from .replacement import (
     ReplacementSchema,
+    replace_aten_batch_norm,
     replace_aten_convolution,
     replace_aten_convolution_backward,
 )
@@ -123,5 +124,6 @@ EXPERIMENTAL_POST_FUSION_REPLACEMENTS: ReplacementSchema = (
     DEFAULT_POST_FUSION_REPLACEMENTS
     | {
         torch.ops.aten.convolution_backward.default: replace_aten_convolution_backward,
+        torch.ops.aten._native_batch_norm_legit_functional.default: replace_aten_batch_norm,
     }
 )
