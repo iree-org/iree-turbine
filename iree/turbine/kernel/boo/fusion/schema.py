@@ -87,7 +87,6 @@ def _layernorm_permute_filter(node: Node) -> bool:
 DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
     torch.ops.aten.convolution.default: OpFusionSpec(
         recursive=True,
-        make_single_dispatch=True,
         match_filters=(_conv_transpose_filter,),
         consumers=(
             torch.ops.aten.relu.default,
@@ -96,7 +95,7 @@ DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
     ),
     torch.ops.aten.native_layer_norm.default: OpFusionSpec(
         recursive=False,
-        make_single_dispatch=True,
+        make_single_dispatch=True,  # TODO: Remove once IREE issue is resolved: https://github.com/iree-org/iree/issues/22528
         match_filters=(_layernorm_permute_filter,),
     ),
 }
@@ -104,12 +103,11 @@ DEFAULT_SUPPORTED_BOO_FUSIONS: FusionSchema = {
 EXPERIMENTAL_SUPPORTED_BOO_FUSIONS: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS | {
     torch.ops.aten.convolution_backward.default: OpFusionSpec(
         recursive=False,
-        make_single_dispatch=False,
         match_filters=(_conv_bwd_transpose_filter,),
     ),
     torch.ops.aten.native_layer_norm.default: OpFusionSpec(
         recursive=False,
-        make_single_dispatch=True,
+        make_single_dispatch=True,  # TODO: Remove once IREE issue is resolved: https://github.com/iree-org/iree/issues/22528
     ),
     torch.ops.aten.mm.default: OpFusionSpec(),
     torch.ops.aten.bmm.default: OpFusionSpec(),
