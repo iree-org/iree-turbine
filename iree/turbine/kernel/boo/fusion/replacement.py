@@ -55,7 +55,7 @@ def replace_aten_convolution(args: tuple[Argument, ...], meta: dict[str, object]
     assert isinstance(example_out, torch.Tensor)
     output_is_channels_last = example_out.is_contiguous(
         memory_format=torch.channels_last
-    )
+    ) or example_out.is_contiguous(memory_format=torch.channels_last_3d)
     return boo_ops.convolution_replacement, (
         input,
         weight,
