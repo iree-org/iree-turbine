@@ -101,7 +101,6 @@ setup(
         "iree.turbine": [
             "py.typed",
             "ops/templates/*.mlir",  # Include MLIR templates
-            "kernel/boo/runtime/tuning_specs.mlir",
         ],
     },
     entry_points={

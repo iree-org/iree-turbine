@@ -33,9 +33,7 @@ __all__ = [
 
 ## environment variables
 
-BOO_TUNING_SPEC_PATH = os.environ.get(
-    "BOO_TUNING_SPEC_PATH", str(Path(__file__).parent / "tuning_specs.mlir")
-)
+BOO_TUNING_SPEC_PATH = os.environ.get("BOO_TUNING_SPEC_PATH")
 
 
 def get_module_asm(
@@ -237,7 +235,7 @@ def default_compiler_flags_callback(device: Device, cache_dir: Path) -> list[str
         flags.append(
             "--iree-preprocessing-pass-pipeline=builtin.module(iree-preprocessing-convert-conv-filter-to-channels-last)"
         )
-        if BOO_TUNING_SPEC_PATH != "":
+        if BOO_TUNING_SPEC_PATH is not None:
             assert Path(
                 BOO_TUNING_SPEC_PATH
             ).is_file(), "Provided path for tuning specs is invalid."
