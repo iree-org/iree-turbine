@@ -1,0 +1,11 @@
+# AOT
+/iree/turbine/aot @Groverkss
+
+# Kernel
+/iree/turbine/kernel @Groverkss
+
+# Ops
+/iree/turbine/ops @Groverkss
+
+# Runtime
+/iree/turbine/runtime @Groverkss
