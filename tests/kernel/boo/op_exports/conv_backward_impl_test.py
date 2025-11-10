@@ -94,3 +94,22 @@ def test_conv_custom_impl(groups: int, dtype):
     y_ref = default_mod(*args)
     y = custom_mod(*args)
     assert torch.allclose(y, y_ref, rtol=1e-4, atol=1e-4)
+
+
+def test_conv_invalid_layout():
+    sig = ConvSignature(
+        input_shape=[1, 16, 16, 2],
+        kernel_shape=[4, 3, 3, 2],
+        input_layout="NHWC",
+        kernel_layout="NHWC",
+        output_layout="NCHW",
+        dtype=torch.float32,
+    )
+    module = sig.get_compiled_module(backend="iree_boo")
+    args = sig.get_sample_args(seed=10)
+
+    # Pytorch infers an NHWC output layout, which doesn't match the requested layout (NCHW).
+    with pytest.raises(
+        Exception, match="Inferred output layout is not contiguous in requested layout"
+    ):
+        module(*args)

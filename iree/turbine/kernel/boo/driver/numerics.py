@@ -115,9 +115,7 @@ def _run(
             raise ValueError(f"Failed parsing a command: {c}.")
 
         reference_module = sig.get_nn_module(use_custom=False)
-        boo_module = torch.compile(
-            reference_module, dynamic=False, backend="iree_boo_experimental"
-        )
+        boo_module = sig.get_compiled_module(backend="iree_boo_experimental")
         sample_args = sig.get_sample_args(device=cpu, seed=seed)
         arg_tensors = {
             "cpu": sample_args,
