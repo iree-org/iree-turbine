@@ -18,6 +18,7 @@ from .compiled_module import ExportTargetDef
 
 import functools
 
+import decorator
 import torch
 import torch.nn as nn
 
@@ -193,24 +194,27 @@ class FxProgramsBuilder(FxPrograms):
         if name in fx_builder.programs:
             raise ValueError(f"Attempt to export program '{name}' multiple times")
 
-        class LambdaModule(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.add_module("root", fx_builder.root_module)
-
         # Here we do a tricky thing: The free-function that we take has
         # signature:
         #   def free_function(root_module, arg1, *, kwarg1)
         # Since the export machinery expects to be able to inspect and query
         # based on user-specified argument names ("arg1", "kwarg1" above),
-        # we use the usual @functools.wraps to copy metadata. Because we wrap
-        # it before adding it to the class, the first-arg of the free function
-        # ("root_module" above) lines up with the usual "self" arg of a method
-        # attached to a class. When instantiated and created, this synthetic
-        # 'forward' method will inspect as only taking the user-specified
-        # argument names (i.e. "arg1", "kwarg1") because the class machinery
-        # swallowed the first, which is exactly the one we wanted to elide
-        # from Dynamo's view anyway.
+        # we need to wrap the function in a signature preserving way.
+        # PyTorch 2.9 introduced a bug that doesn't allow Dynamo to look
+        # through variadic args/kwargs
+        # (https://github.com/pytorch/pytorch/issues/162831) and Dynamo's
+        # introspection requires the signature to be preserved at the
+        # '__code__' object level, which means we need to specifically use
+        # 'decorator.decoratorx'; both 'functools.wraps' and
+        # 'decorator.decorator' aren't enough:
+        # https://github.com/micheles/decorator/issues/129.
+        # Because we wrap it before adding it to the class, the first-arg of
+        # the free function ("root_module" above) lines up with the usual
+        # "self" arg of a method attached to a class. When instantiated and
+        # created, this synthetic 'forward' method will inspect as only taking
+        # the user-specified argument names (i.e. "arg1", "kwarg1") because
+        # the class machinery swallowed the first, which is exactly the one we
+        # wanted to elide from Dynamo's view anyway.
         # If we weren't doing this, we would need to munge the signature
         # descriptors to line up because the export machinery needs to see
         # the user-specified function arguments, not our "pseudo-self" root
@@ -218,11 +222,17 @@ class FxProgramsBuilder(FxPrograms):
         # Note that to keep Dynamo happy, we are careful to only access
         # names and attributes in the module tree (vs from the surrounding
         # closure, which goes down less well-trodden paths).
-        @functools.wraps(f)
-        def new_forward(self, *forward_args, **forward_kwargs):
-            return f(self.root, *forward_args, **forward_kwargs)
+        @decorator.decoratorx
+        def call_with_root(func, self, *forward_args, **forward_kwargs):
+            return func(self.root, *forward_args, **forward_kwargs)
 
-        setattr(LambdaModule, "forward", new_forward)
+        class LambdaModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.add_module("root", fx_builder.root_module)
+
+            forward = call_with_root(f)
+
         lambda_module = LambdaModule()
 
         # Export our franken-module.

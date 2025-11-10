@@ -65,3 +65,24 @@ def test_save_load_dynamic_shapes():
     for key, value_0 in prog_0.target.constants.items():
         value_1 = prog_1.target.constants[key]
         assert value_0 is value_1, f"Constant item {key} was not aliased on load"
+
+
+def test_export_signature():
+    class M(torch.nn.Module):
+        def forward(self, x1, *args, kw_only, **kwargs):
+            return 123
+
+    fxb = FxProgramsBuilder(M())
+
+    @fxb.export_program(
+        args=(
+            torch.randn(32, 64),
+            torch.randn(32, 128),
+        ),
+        kwargs={
+            "kw_only": torch.randn(32, 64),
+            "foo": torch.randn(32, 128),
+        },
+    )
+    def entrypoint(module: M, x: torch.Tensor, *args, kw_only, **kwargs):
+        return module.forward(x, *args, kw_only=kw_only, **kwargs)
