@@ -347,29 +347,22 @@ def run(
     for i, result in enumerate(results):
         if verbose:
             print(
-                f">>>\tresult #{i} shape: {result.shape}; dtype: {result.dtype}; device type: {result.device.type}"
+                f">>>\tresult #{i} shape: {list(result.shape)}; stride: {list(result.stride())}; dtype: {result.dtype}; device type: {result.device.type}"
             )
     return prof if timing_args.time else None
-
-
-def get_torch_compiled_module(signature: OpSignature, backend: str) -> Callable:
-    """Returns the module defined by the signature compiled using the specified
-    backend."""
-    mod = signature.get_nn_module(use_custom=False)
-    return torch.compile(mod, dynamic=False, backend=backend)
 
 
 DEFAULT_BACKEND = "iree_boo_legacy"
 BACKEND_TO_FUNC_GENERATOR: dict[str, Callable[[OpSignature], Callable]] = {
     "torch": (lambda signature: signature.get_nn_module(use_custom=False)),
-    "inductor": partial(get_torch_compiled_module, backend="inductor"),
+    "inductor": (lambda signature: signature.get_compiled_module(backend="inductor")),
     "iree_boo_legacy": get_launchable,
-    "iree_boo": partial(get_torch_compiled_module, backend="iree_boo"),
-    "iree_boo_experimental": partial(
-        get_torch_compiled_module, backend="iree_boo_experimental"
+    "iree_boo": (lambda signature: signature.get_compiled_module(backend="iree_boo")),
+    "iree_boo_experimental": (
+        lambda signature: signature.get_compiled_module(backend="iree_boo_experimental")
     ),
-    "iree_boo_inductor": partial(
-        get_torch_compiled_module, backend="iree_boo_inductor"
+    "iree_boo_inductor": (
+        lambda signature: signature.get_compiled_module(backend="iree_boo_inductor")
     ),
 }
 

@@ -19,7 +19,7 @@ from iree.turbine.kernel.boo.op_exports.conv import Mode, ConvSignature
 @pytest.mark.parametrize("W", [16])
 @pytest.mark.parametrize("KH", [2, 3])
 @pytest.mark.parametrize("KW", [1])
-@pytest.mark.parametrize("layout", ["NHWC", "NCHW"])
+@pytest.mark.parametrize("layout", ["NHWC", "WCHN"])
 @pytest.mark.parametrize("dilation", [1, 2])
 @pytest.mark.parametrize("padding", [0, 2])
 @pytest.mark.parametrize("stride", [1, 3])
@@ -105,7 +105,7 @@ def test_conv_invalid_layout():
         output_layout="NCHW",
         dtype=torch.float32,
     )
-    module = torch.compile(sig.get_nn_module(), backend="iree_boo")
+    module = sig.get_compiled_module(backend="iree_boo")
     args = sig.get_sample_args(seed=10)
 
     # Pytorch infers an NHWC output layout, which doesn't match the requested layout (NCHW).

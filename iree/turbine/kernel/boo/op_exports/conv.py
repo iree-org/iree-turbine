@@ -5,10 +5,10 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import argparse
-from typing import Any
 from enum import IntEnum
 from functools import lru_cache
-import math
+from typing import Any
+from typing_extensions import override
 
 import torch
 
@@ -414,6 +414,18 @@ class ConvSignature(OpSignature):
             return ConvCustomBackward(self)
         return ConvBackward(self)
 
+    @override
+    def _verify_outputs(self, outputs: object) -> None:
+        if isinstance(outputs, torch.Tensor):
+            outputs = (outputs,)
+        assert isinstance(outputs, tuple)
+        for output in outputs:
+            assert isinstance(output, torch.Tensor)
+            if not output.is_contiguous():
+                raise ValueError(
+                    f"Inferred output layout is not contiguous in requested layout: {self.output_layout=}, {output.stride()=}"
+                )
+
 
 class ConvForward(torch.nn.Module):
     def __init__(self, sig: ConvSignature):
@@ -435,12 +447,7 @@ class ConvForward(torch.nn.Module):
         if "bias" not in self.kwargs.keys():
             mod_args.append(args[2])
         output = torch.convolution(*mod_args, **self.kwargs)
-        result: torch.Tensor = self.perms[2](output)
-        if not result.is_contiguous():
-            raise ValueError(
-                f"Inferred output layout is not contiguous in requested layout: {self.perms[2]=}, {result.stride()=}"
-            )
-        return result
+        return self.perms[2](output)
 
 
 class ConvForwardCustomNHWC(torch.nn.Module):
