@@ -78,7 +78,7 @@ class LayerNormSignature(OpSignature):
 
     @property
     def force_single_dispatch(self) -> bool:
-        return True
+        return self.mode == Mode.FORWARD
 
     @staticmethod
     def get(

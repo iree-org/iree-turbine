@@ -101,7 +101,6 @@ setup(
         "iree.turbine": [
             "py.typed",
             "ops/templates/*.mlir",  # Include MLIR templates
-            "kernel/boo/runtime/tuning_specs.mlir",
         ],
     },
     entry_points={
@@ -117,6 +116,7 @@ setup(
         ],
     },
     install_requires=[
+        f"decorator{get_version_spec('decorator')}",
         f"numpy{get_version_spec('numpy')}",
         f"iree-base-compiler{get_version_spec('iree-base-compiler')}",
         f"iree-base-runtime{get_version_spec('iree-base-runtime')}",

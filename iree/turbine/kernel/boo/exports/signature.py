@@ -5,7 +5,9 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any, Optional, TypeVar, Union
+from typing_extensions import final
 
 import torch
 
@@ -60,6 +62,22 @@ class OpSignature(ABC):
     def get_nn_module(self, **kwargs) -> torch.nn.Module:
         """Generates a PyTorch neural network module containing this operation."""
         ...
+
+    def _verify_outputs(self, outputs: object) -> None:
+        """Override to verify metadata (e.g. layout) of the outputs of this operation."""
+        return
+
+    @final
+    def get_compiled_module(self, *, backend: str) -> Callable:
+        """Returns a 'torch.compile'd module implementing this operation."""
+        compiled = torch.compile(self.get_nn_module(), dynamic=False, backend=backend)
+
+        def run_and_verify(*args, **kwargs):
+            result = compiled(*args, **kwargs)
+            self._verify_outputs(result)
+            return result
+
+        return run_and_verify
 
     @property
     @abstractmethod

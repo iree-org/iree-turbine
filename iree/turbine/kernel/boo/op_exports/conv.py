@@ -5,10 +5,10 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import argparse
-from typing import Any
 from enum import IntEnum
 from functools import lru_cache
-import math
+from typing import Any
+from typing_extensions import override
 
 import torch
 
@@ -413,6 +413,18 @@ class ConvSignature(OpSignature):
         if use_custom:
             return ConvCustomBackward(self)
         return ConvBackward(self)
+
+    @override
+    def _verify_outputs(self, outputs: object) -> None:
+        if isinstance(outputs, torch.Tensor):
+            outputs = (outputs,)
+        assert isinstance(outputs, tuple)
+        for output in outputs:
+            assert isinstance(output, torch.Tensor)
+            if not output.is_contiguous():
+                raise ValueError(
+                    f"Inferred output layout is not contiguous in requested layout: {self.output_layout=}, {output.stride()=}"
+                )
 
 
 class ConvForward(torch.nn.Module):
