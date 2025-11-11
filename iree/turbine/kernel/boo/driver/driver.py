@@ -273,10 +273,11 @@ def run(
 
     example_results = func(*per_device_args[0])
     output_num_bytes = sum(x.element_size() * x.numel() for x in example_results)
+    input_num_bytes = sum(x.element_size() * x.numel() for x in per_device_args[0])
     num_devices = len(per_device_args)
-    # This is a rough threshold: Mi300x 192 GB memory divided by 2.
-    mem_bytes_threshold = 96 * (10**9)
-    iter_thresh = int(mem_bytes_threshold // output_num_bytes)
+    # This is a rough threshold: try to only use half the available device memory.
+    mem_bytes_threshold = torch.cuda.get_device_properties(devices[0]).total_memory // 2
+    iter_thresh = (mem_bytes_threshold - input_num_bytes) // output_num_bytes
     assert (
         iter_thresh > 1 or not timing_args.time
     ), "Cannot reliably profile if cleanup is needed after every step."
