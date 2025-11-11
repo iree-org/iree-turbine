@@ -63,28 +63,30 @@ def _get_schema(
 
 
 def permute_metadata(
-    source_node: Node, perms: Sequence[int] | None | tuple[Sequence[int] | None, ...]
+    source_node: Node, perms: tuple[Sequence[int] | None, ...]
 ) -> dict:
     """Returns a node meta resulting from applying `perm` to `source_node.meta`.
 
     If `source_node` returns multiple outputs, this will only return `val` metadata, and a tuple of permutations are expected.
     This is only handling `tensor_meta` and `val` entries, since only these are being used by the mlir import path.
+
+    This function only supports nodes with at least one tensor output with a valid tensor meta dict.
     """
 
-    def _permute_fake_tensor(og_val, perm) -> torch.Tensor | None:
-        if perm is None or og_val is None:
+    def _permute_fake_tensor(
+        og_val: torch.Tensor, perm: Sequence[int] | None
+    ) -> torch.Tensor:
+        if perm is None:
             return og_val
-        if not isinstance(og_val, torch.Tensor):
-            raise ValueError(
-                f"Source graph has a node without valid metadata. Got node {source_node} with meta dict: {source_node.meta}. See graph:\n {source_node.graph}."
-            )
+        assert len(perm) == len(
+            og_val.shape
+        ), f"Invalid permutation, {perm} for value {og_val}."
         permuted_val = og_val.permute(*perm)
         return permuted_val
 
-    def _permute_tensor_meta(og_meta, permuted_val) -> TensorMetadata:
-        assert isinstance(
-            og_meta, TensorMetadata
-        ), f"Must have valid metadata, got metadata of type {type(og_meta)} for node {source_node}."
+    def _permute_tensor_meta(
+        og_meta: TensorMetadata, permuted_val: torch.Tensor
+    ) -> TensorMetadata:
         if og_meta.is_quantized:
             raise NotImplementedError(
                 f"Quantized layout handling NYI. Got meta {og_meta} for node {source_node}."
@@ -102,6 +104,8 @@ def permute_metadata(
 
     og_metas = source_node.meta.get("tensor_meta")
     og_vals = source_node.meta.get("val")
+
+    # Nodes with multiple outputs will have no "tensor_meta" and a tuple "val".
     if isinstance(og_vals, tuple):
         assert (
             og_metas is None
@@ -114,9 +118,20 @@ def permute_metadata(
             new_vals.append(_permute_fake_tensor(og_val, perm))
         return {"val": tuple(new_vals)}
 
-    permuted_val = _permute_fake_tensor(og_vals, perms)
+    # Single output nodes are expected to have both "tensor_meta" and "val".
+    # Nodes without output tensors are unexpected here.
+    assert isinstance(
+        og_vals, torch.Tensor
+    ), f"Expected tensor value metadata for node {source_node}."
+    assert isinstance(
+        og_metas, TensorMetadata
+    ), f"Must have valid metadata, got metadata of type {type(og_metas)} for node {source_node}."
+    assert len(perms) == 1, f"Expected one permutation, got {perms}."
+    perm = perms[0]
+    permuted_val = _permute_fake_tensor(og_vals, perm)
+    permuted_meta = _permute_tensor_meta(og_metas, permuted_val)
     return {
-        "tensor_meta": _permute_tensor_meta(og_metas, permuted_val),
+        "tensor_meta": permuted_meta,
         "val": permuted_val,
     }
 
@@ -139,7 +154,7 @@ def convert_output(curr_output: Node) -> tuple[Node, MemoryFormatPermutation | N
     if perms is None:
         return curr_output, perms
     new_out = call_permute(curr_output, perms.permutation)
-    new_out.meta = permute_metadata(curr_output, perms.permutation)
+    new_out.meta = permute_metadata(curr_output, (perms.permutation,))
     return new_out, perms
 
 
@@ -151,7 +166,7 @@ def convert_placeholder(
         return target_graph.node_copy(src_pl), perms
     name = f"{src_pl.name}_boo"
     pl = target_graph.placeholder(name=name)
-    pl.meta = permute_metadata(src_pl, perms.permutation)
+    pl.meta = permute_metadata(src_pl, (perms.permutation,))
     target_replacement = call_permute(pl, perms.inverse_permutation)
     target_replacement.meta = {k: v for k, v in src_pl.meta.items()}
     return target_replacement, perms

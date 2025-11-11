@@ -37,7 +37,7 @@ def _apply_perms(
         return src_node
     p = perms.permutation if forward_perm else perms.inverse_permutation
     new = call_permute(src_node, p)
-    new.meta = permute_metadata(src_node, p)
+    new.meta = permute_metadata(src_node, (p,))
     return new
 
 
@@ -104,7 +104,7 @@ def replace_aten_convolution(node: Node):
         replacement_conv.meta = (
             node.meta
             if output_perms is None
-            else permute_metadata(node, output_perms.permutation)
+            else permute_metadata(node, (output_perms.permutation,))
         )
         post_permute = _apply_perms(replacement_conv, output_perms, forward_perm=False)
 
@@ -150,7 +150,9 @@ def replace_getitem_users(
         with graph.inserting_before(use):
             new_output = graph.call_function(getitem, args=(replacement_node, index))
             new_output.meta = (
-                use.meta if _perm is None else permute_metadata(use, _perm.permutation)
+                use.meta
+                if _perm is None
+                else permute_metadata(use, (_perm.permutation,))
             )
             replacement = _apply_perms(new_output, _perm, forward_perm=False)
             use.replace_all_uses_with(replace_with=replacement)
