@@ -74,9 +74,10 @@ def permute_metadata(
     """
 
     def _permute_fake_tensor(
-        og_val: torch.Tensor, perm: Sequence[int] | None
-    ) -> torch.Tensor:
-        if perm is None:
+        og_val: torch.Tensor | None, perm: Sequence[int] | None
+    ) -> torch.Tensor | None:
+        """Some `None` og_vals are allowed here since some ops return `None`."""
+        if perm is None or og_val is None:
             return og_val
         assert len(perm) == len(
             og_val.shape
@@ -121,14 +122,14 @@ def permute_metadata(
     # Single output nodes are expected to have both "tensor_meta" and "val".
     # Nodes without output tensors are unexpected here.
     assert isinstance(
-        og_vals, torch.Tensor
-    ), f"Expected tensor value metadata for node {source_node}."
-    assert isinstance(
         og_metas, TensorMetadata
     ), f"Must have valid metadata, got metadata of type {type(og_metas)} for node {source_node}."
     assert len(perms) == 1, f"Expected one permutation, got {perms}."
     perm = perms[0]
     permuted_val = _permute_fake_tensor(og_vals, perm)
+    assert isinstance(
+        permuted_val, torch.Tensor
+    ), f"Expected tensor value metadata for node {source_node}."
     permuted_meta = _permute_tensor_meta(og_metas, permuted_val)
     return {
         "tensor_meta": permuted_meta,
