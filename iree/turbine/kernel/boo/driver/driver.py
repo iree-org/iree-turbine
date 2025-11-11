@@ -352,7 +352,7 @@ def run(
     return prof if timing_args.time else None
 
 
-DEFAULT_BACKEND = "iree_boo_legacy"
+DEFAULT_BACKEND = "iree_boo_experimental"
 BACKEND_TO_FUNC_GENERATOR: dict[str, Callable[[OpSignature], Callable]] = {
     "torch": (lambda signature: signature.get_nn_module(use_custom=False)),
     "inductor": (lambda signature: signature.get_compiled_module(backend="inductor")),
