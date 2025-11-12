@@ -6,7 +6,9 @@
 
 from collections.abc import Sequence
 
+import torch
 from torch import fx
+from torch.fx.experimental.proxy_tensor import make_fx
 from operator import getitem
 
 from iree.turbine.kernel.boo.ops.graph import get_custom_graph_op
@@ -17,17 +19,30 @@ from .subgraph import (
     extract_fusion_subgraph_modules,
 )
 from ....support.logging import aot_logger as logger
+from ....dynamo.decompositions import DEFAULT_DECOMPOSITION_TABLE
 
 __all__ = [
     "fusion_transform",
 ]
 
 
+def infer_example_inputs(
+    graph_module: fx.GraphModule,
+) -> tuple[torch.Tensor, ...]:
+    fake_inputs = tuple(
+        n.meta["val"] for n in graph_module.graph.find_nodes(op="placeholder")
+    )
+    assert all(
+        [isinstance(fake_inp, torch.Tensor) for fake_inp in fake_inputs]
+    ), f"Expected all placeholder `meta['val']` to be tensors. Got {fake_inputs}."
+    return fake_inputs
+
+
 def fusion_transform(
     module: fx.GraphModule,
     *,
     fusion_schema: FusionSchema,
-    post_fusion_replacements: ReplacementSchema
+    post_fusion_replacements: ReplacementSchema,
 ) -> None:
     """Applies fusions to the underlying fx graph of a GraphModule by offloading subgraphs to IREE compiler/runtime."""
 
@@ -36,14 +51,25 @@ def fusion_transform(
     subgraphs = extract_fusion_subgraph_modules(module, fusion_schema)
 
     # Replace subgraphs with custom (templated MLIR) kernels if required.
-    for subgraph in subgraphs:
-        apply_replacements(subgraph.module.graph, post_fusion_replacements)
-        subgraph.module.recompile()
-
     subgraph_replacements: list[tuple[FusedSubgraph, fx.Node]] = []
     for subgraph in subgraphs:
+        # Unfortunately, we need to do two stages of replacement/decomposition.
+        # Firstly, direct graph modifications are done for specific ops.
+        apply_replacements(subgraph.module.graph, post_fusion_replacements)
+        subgraph.module.recompile()
+        # Secondly, we apply some default fx decompositions.
+        # This will re-trace the graph in a fake execution context.
+        # An added benefit is the canonicalization of each subgraph, which
+        # reduces the number of redundant custom ops being generated.
+        decomposed_gm = make_fx(
+            subgraph.module,
+            decomposition_table=DEFAULT_DECOMPOSITION_TABLE,
+            tracing_mode="fake",
+        )(*infer_example_inputs(subgraph.module))
+        _log_graph_module("Decomposed module", decomposed_gm)
+
         custom_op = get_custom_graph_op(
-            subgraph.module, force_single_dispatch=subgraph.single_dispatch
+            decomposed_gm, force_single_dispatch=subgraph.single_dispatch
         )
         # Insert call as early as possible, to maintain topological order.
         insert_pt = sorted(subgraph.arguments)[-1]

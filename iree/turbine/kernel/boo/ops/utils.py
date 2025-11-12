@@ -10,7 +10,6 @@ import math
 from typing import Tuple, Iterable, NamedTuple, Sequence
 
 import torch
-from torch.fx.passes.shape_prop import TensorMetadata
 from iree.compiler.extras.fx_importer import FxImporter
 
 from ....support.logging import runtime_logger as logger
