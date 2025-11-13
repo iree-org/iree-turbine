@@ -265,6 +265,7 @@ def run(
     """Distributes `iter`-many applications of `func` to `per_device_args`. If
     timing is requested, returns a torch profiler object that can be inspected
     to recover time-related information."""
+    torch.cuda.memory.empty_cache()
     # HIP backend caches allocations by default and can OOM if not explicitly cleared.
     for device in devices:
         get_device_from_torch(device).hal_device.allocator.trim()
