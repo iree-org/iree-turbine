@@ -265,11 +265,22 @@ def run(
     """Distributes `iter`-many applications of `func` to `per_device_args`. If
     timing is requested, returns a torch profiler object that can be inspected
     to recover time-related information."""
-    # HIP backend caches allocations by default and can OOM if not explicitly cleared.
-    for device in devices:
-        get_device_from_torch(device).hal_device.allocator.trim()
+
+    def pause_and_collect_mem():
+        for device in devices:
+            torch.cuda.synchronize(device)
+        gc.collect()
+
     # Reset torch.compile caches to avoid hitting re-compile limits.
     torch.compiler.reset()
+
+    # Reclaim all allocations so we have a clean slate. Pytorch and the IREE HIP
+    # backend both cache allocations by default so we need to explicitly clear
+    # them.
+    pause_and_collect_mem()
+    torch.cuda.memory.empty_cache()
+    for device in devices:
+        get_device_from_torch(device).hal_device.allocator.trim()
 
     example_results = func(*per_device_args[0])
     output_num_bytes = sum(x.element_size() * x.numel() for x in example_results)
@@ -335,9 +346,7 @@ def run(
                 print(
                     f">>>\tSynchronizing all devices on iter {iter} and collecting garbage."
                 )
-                for device in devices:
-                    torch.cuda.synchronize(device)
-                gc.collect()
+                pause_and_collect_mem()
             if prof is not None:
                 prof.step()
 
