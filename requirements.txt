@@ -18,9 +18,7 @@ types-decorator==5.2.0.20251101
 typing_extensions
 wheel
 
-# It is expected that you have installed a PyTorch version/variant specific
-# to your needs, so we only include a minimum version spec.
-torch>=2.5
+torch>=2.5,<=2.9
 torchaudio
 torchvision
 
