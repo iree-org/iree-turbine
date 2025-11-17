@@ -298,6 +298,54 @@ class ConvSignature(OpSignature):
             **kwargs,
         )
 
+    def as_command(self) -> str:
+        """Prints the driver command string for this `ConvSignature`. Useful for creating a list of conv commands for a given model."""
+        base = "conv"
+        if self.dtype == torch.bfloat16:
+            base += "bfp16"
+        if self.dtype == torch.float16:
+            base += "fp16"
+        input_shape_p = self.input_perms(self.input_shape)
+        kernel_shape_p = self.kernel_perms(self.kernel_shape)
+        spatial_rank = len(input_shape_p) - 2
+        input_shape_flags = (
+            ["-n", "-c"] + (["--in_d"] if spatial_rank == 3 else []) + ["-H", "-W"]
+        )
+        kernel_shape_flags = (
+            ["-k", "-c"] + (["--fil_d"] if spatial_rank == 3 else []) + ["-y", "-x"]
+        )
+        padding_flags = (["--pad_d"] if spatial_rank == 3 else []) + ["-p", "-q"]
+        stride_flags = (["--str_d"] if spatial_rank == 3 else []) + ["-u", "-v"]
+        dilation_flags = (["--dil_d"] if spatial_rank == 3 else []) + ["-l", "-j"]
+        layout_flags = ["--in_layout", "--fil_layout", "--out_layout"]
+        group_flag = "-g"
+        bias_flag = "-b"
+        mode_flag = "-F"
+
+        def _join_zip(flags: list[str], vals: list, sep: str = " ") -> str:
+            return sep.join(
+                f"{f}{sep}{str(val)}" for f, val in zip(flags, vals, strict=True)
+            )
+
+        miopen_forw_int = 1 if self.mode == Mode.FORWARD else int(self.mode) * 2
+
+        ret_items = [
+            base,
+            _join_zip(input_shape_flags, input_shape_p),
+            _join_zip(kernel_shape_flags, kernel_shape_p),
+            _join_zip(padding_flags, self.padding),
+            _join_zip(stride_flags, self.stride),
+            _join_zip(dilation_flags, self.dilation),
+            f"{group_flag} {self.groups}",
+            _join_zip(
+                layout_flags,
+                [self.input_layout, self.kernel_layout, self.output_layout],
+            ),
+            f"{bias_flag} {int(self.bias)}",
+            f"{mode_flag} {miopen_forw_int}",
+        ]
+        return " ".join(ret_items)
+
     def as_init_kwargs(self) -> dict[str, Any]:
         # "num_spatial_dims" is a derived value and is not needed for
         # construction, therefore it is intentionally excluded from the list
@@ -935,27 +983,18 @@ class ConvParser(OpCLIParser):
             for key in conv_config_dicts.keys()
         }
 
-        match args.forw:
-            case 1:
-                mode = Mode.FORWARD
-            case 2:
-                mode = Mode.INPUT_BACKWARD
-            case 4:
-                mode = Mode.WEIGHT_BACKWARD
-            case 6:
-                mode = Mode.INPUT_WEIGHT_BACKWARD
-            case 7:
-                mode = Mode.BIAS_BACKWARD
-            case 8:
-                mode = Mode.INPUT_BIAS_BACKWARD
-            case 9:
-                mode = Mode.WEIGHT_BIAS_BACKWARD
-            case 10:
-                mode = Mode.ALL_BACKWARD
-            case _:
-                raise NotImplementedError(
-                    f"Mixed forward and backward kernels unsupported. Got {args.forw = }. Unsupported values = [3: fwd+bwd, 5: fwd+wrw]."
-                )
+        if args.forw % 2 == 1 and args.forw != 1:
+            # Combined fwd + backward, which is unsupported here.
+            raise NotImplementedError("fwd + backward conv signature not implemented.")
+        elif args.forw == 0:
+            # This corresponds to `fwd + bwd + wrw` in the MIOpenDriver, which we also don't support.
+            raise NotImplementedError(
+                "Setting '-F 0' in the driver command unsupported."
+            )
+        else:
+            # Mode.FORWARD is zero, and we shift down other boolean flags.
+            mode_int = args.forw // 2
+            mode = Mode(mode_int)
         transposed = args.mode == "trans"
         dtype_dict = {
             "convbfp16": torch.bfloat16,
