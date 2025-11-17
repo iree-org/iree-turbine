@@ -362,11 +362,9 @@ def _hack_inplace_exported_program(
     fake_graph_signature = ExportGraphSignature(
         input_specs=input_specs, output_specs=output_specs
     )
-    # print(fake_graph_signature)
+    std_g.eliminate_dead_code()
     std_g.lint()
-    # print(std_g)
     std_gm.recompile()
-    # std_gm.print_readable()
 
     fake_ep = ExportedProgram(
         root=std_gm,
@@ -390,14 +388,19 @@ def _define_custom_graph_op(
     output_mem_format_perms: Sequence[MemoryFormatPermutation | None],
     *,
     force_single_dispatch: bool = False,
+    inplace_convert: bool = True,
 ):
     """Defines a custom op from the graph module with given op_name in the boo library."""
     inputs, outputs = _get_io_from_gm(gm)
     is_none_output = _maybe_trim_none_outputs(gm)
     has_a_none_output = any(is_none_output)
-    (ep, init_perms, init_fakes) = _hack_inplace_exported_program(
-        gm, output_mem_format_perms
-    )
+    init_fakes = []
+    if inplace_convert:
+        (program, init_perms, init_fakes) = _hack_inplace_exported_program(
+            gm, output_mem_format_perms
+        )
+    else:
+        program = gm
     # print(ep)
     schema = _get_schema(inputs, outputs)
     define_schema(op_name, schema)
@@ -408,20 +411,22 @@ def _define_custom_graph_op(
 
     @register_impl(op_name)
     def _(*args):
-        _device = lambda fake: args[0].device if len(args) > 0 else fake.device
-        init_tensors = tuple(
-            torch.empty(*fake.shape, dtype=fake.dtype, device=_device(fake))
-            for fake in reversed(init_fakes)
-        )
         handled_inputs = _handle_layouts(
             args, perms=input_mem_format_perms, perm_item="permutation"
         )
+        if inplace_convert:
+            _device = lambda fake: args[0].device if len(args) > 0 else fake.device
+            init_tensors = tuple(
+                torch.empty(*fake.shape, dtype=fake.dtype, device=_device(fake))
+                for fake in reversed(init_fakes)
+            )
+            handled_inputs = init_tensors + handled_inputs
         launch = get_launchable_from_traced_object(
-            program=ep,
+            program=program,
             func_name=spec_name,
             force_single_dispatch=force_single_dispatch,
         )
-        outputs = launch(*[arg.data for arg in init_tensors + handled_inputs])
+        outputs = launch(*[arg.data for arg in handled_inputs])
         single_output = False
         if isinstance(outputs, torch.Tensor):
             outputs = (outputs,)
