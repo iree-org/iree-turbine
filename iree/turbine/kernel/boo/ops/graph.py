@@ -394,6 +394,11 @@ def _define_custom_graph_op(
     inputs, outputs = _get_io_from_gm(gm)
     is_none_output = _maybe_trim_none_outputs(gm)
     has_a_none_output = any(is_none_output)
+    schema = _get_schema(inputs, outputs)
+    define_schema(op_name, schema)
+    spec_name = get_arg_spec_name(
+        op_name, *[n.meta.get("val") for n in gm.graph.find_nodes(op="placeholder")]
+    )
     init_fakes = []
     if inplace_convert:
         (program, init_perms, init_fakes) = _hack_inplace_exported_program(
@@ -401,13 +406,6 @@ def _define_custom_graph_op(
         )
     else:
         program = gm
-    # print(ep)
-    schema = _get_schema(inputs, outputs)
-    define_schema(op_name, schema)
-    spec_name = get_arg_spec_name(
-        op_name, *[n.meta.get("val") for n in gm.graph.find_nodes(op="placeholder")]
-    )
-    # Get memory format permutations for output tensors based on graph metadata.
 
     @register_impl(op_name)
     def _(*args):
