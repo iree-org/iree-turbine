@@ -16,6 +16,10 @@ import iree.turbine.aot as aot
 import iree.turbine.ops as ops
 import iree.turbine.support.debugging as debugging
 
+from parameterized import parameterized
+from iree.turbine.aot import DeviceAffinity
+from iree.turbine.support.torch import has_torch_device, torch_device_equal
+
 
 # See runtime/op_reg/kernel_aot_test.py for additional tests of the trace
 # op.
@@ -73,6 +77,50 @@ class TransferToLogicalDeviceTest(unittest.TestCase):
         t1 = torch.randn(3, 4)
         t2 = ops.iree.transfer_to_logical_device("1", t1)
         assert torch.all(t1 == t2)
+
+    @parameterized.expand(
+        [
+            ("cpu", "cpu"),
+            ("cpu", "cuda"),
+            ("cuda", "cpu"),
+            ("cuda", "cuda"),
+            ("cuda", "cuda:0"),
+        ]
+    )
+    def testEagerWithTorchDeviceTransferring(
+        self, src_torch_device_name: str, dst_torch_device_name: str
+    ):
+        """We can't test this properly on machines with just a CPU device.
+        There is no way in torch to make a second fake CPU device.
+        We resort just to sanity checking then."""
+
+        if not (
+            has_torch_device(src_torch_device_name)
+            and has_torch_device(dst_torch_device_name)
+        ):
+            # Skip if we don't have all required devices.
+            return
+
+        src_torch_device = torch.device(src_torch_device_name)
+        dst_torch_device = torch.device(dst_torch_device_name)
+
+        src_tensor = torch.tensor(
+            [1, 2, 3, 4], device=src_torch_device, dtype=torch.int
+        )
+        with ops.iree.IreeDeviceAffinityToTorchDevice(
+            {
+                DeviceAffinity(0): src_torch_device,
+                DeviceAffinity(1): dst_torch_device,
+            }
+        ):
+            dst_tensor: torch.Tensor = ops.iree.transfer_to_logical_device(
+                "1", src_tensor
+            )
+
+        torch.testing.assert_close(
+            src_tensor, dst_tensor, rtol=0, atol=0, check_device=False
+        )
+        assert torch_device_equal(dst_torch_device, dst_tensor.device)
 
     def testAOT(self):
         class MyModule(nn.Module):
