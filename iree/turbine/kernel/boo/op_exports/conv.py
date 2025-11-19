@@ -706,8 +706,8 @@ class ConvBackwardWeightCustomGeneric(torch.nn.Module):
             raise NotImplementedError(
                 "unimplemented weight grad decomposition: transposed conv"
             )
-        self.stride = sig.dilation
-        self.dilation = sig.stride
+        self.stride = sig.stride
+        self.dilation = sig.dilation
         self.groups = sig.groups
         self.dtype = sig.dtype
         # Note: need to swap reduction dim to N
