@@ -5,6 +5,7 @@ from operator import getitem
 import torch
 from torch import fx
 from torch.fx.node import Target, Node
+from torch.fx.passes.shape_prop import TensorMetadata
 
 from ..op_exports.conv import DEFAULT_LAYOUTS
 from iree.turbine.kernel.boo import ops as boo_ops
@@ -149,12 +150,41 @@ def replace_getitem_users(
         _perm = permutations[index]
         with graph.inserting_before(use):
             new_output = graph.call_function(getitem, args=(replacement_node, index))
-            new_output.meta = (
-                use.meta
-                if _perm is None
-                else permute_metadata(use, (_perm.permutation,))
-            )
-            replacement = _apply_perms(new_output, _perm, forward_perm=False)
+            # Handle metadata: if getitem node doesn't have metadata (common after decomposition),
+            # derive it from the parent node's multi-output metadata
+            new_output.meta = use.meta
+            replacement = new_output
+            if _perm:
+                # Check if use has valid metadata, otherwise derive from og_node
+                use_meta = use.meta.get("tensor_meta")
+                use_val = use.meta.get("val")
+                if use_meta is None and use_val is None:
+                    # Metadata missing - derive from parent node's multi-output metadata
+                    # This can happen when getitem nodes are created during decomposition
+                    og_vals = og_node.meta.get("val")
+                    if isinstance(og_vals, tuple) and index < len(og_vals):
+                        og_val = og_vals[index]
+                        if og_val:
+                            assert isinstance(
+                                og_val, torch.Tensor
+                            ), f"Expected tensor at index {index}, got {type(og_val)}"
+                            use_meta = TensorMetadata(
+                                shape=og_val.shape,
+                                dtype=og_val.dtype,
+                                requires_grad=og_val.requires_grad,
+                                stride=og_val.stride(),
+                                memory_format=torch.contiguous_format,
+                                is_quantized=False,
+                                qparams={},
+                            )
+                            use.meta = {"tensor_meta": use_meta, "val": og_val}
+                    else:
+                        raise ValueError(
+                            f"Cannot derive metadata for getitem node {use} (index {index}) from "
+                            f"parent node {og_node}. Parent node metadata: {og_node.meta}"
+                        )
+                new_output.meta = permute_metadata(use, (_perm.permutation,))
+                replacement = _apply_perms(new_output, _perm, forward_perm=False)
             use.replace_all_uses_with(replace_with=replacement)
             graph.erase_node(use)
 
