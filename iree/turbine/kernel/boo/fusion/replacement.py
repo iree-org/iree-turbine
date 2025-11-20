@@ -183,8 +183,8 @@ def replace_getitem_users(
                             f"Cannot derive metadata for getitem node {use} (index {index}) from "
                             f"parent node {og_node}. Parent node metadata: {og_node.meta}"
                         )
-                new_output.meta = permute_metadata(use, (_perm.permutation,))
-                replacement = _apply_perms(new_output, _perm, forward_perm=False)
+                    new_output.meta = permute_metadata(use, (_perm.permutation,))
+                    replacement = _apply_perms(new_output, _perm, forward_perm=False)
             use.replace_all_uses_with(replace_with=replacement)
             graph.erase_node(use)
 
