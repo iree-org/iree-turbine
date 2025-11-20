@@ -54,19 +54,25 @@ def fusion_transform(
     subgraph_replacements: list[tuple[FusedSubgraph, fx.Node]] = []
     for subgraph in subgraphs:
         # Unfortunately, we need to do two stages of replacement/decomposition.
-        # Firstly, direct graph modifications are done for specific ops.
-        apply_replacements(subgraph.module.graph, post_fusion_replacements)
-        subgraph.module.recompile()
-        # Secondly, we apply some default fx decompositions.
+        # Firstly, we apply some default fx decompositions.
         # This will re-trace the graph in a fake execution context.
         # An added benefit is the canonicalization of each subgraph, which
         # reduces the number of redundant custom ops being generated.
+
         decomposed_gm = make_fx(
             subgraph.module,
             decomposition_table=DEFAULT_DECOMPOSITION_TABLE,
             tracing_mode="fake",
         )(*infer_example_inputs(subgraph.module))
         _log_graph_module("Decomposed module", decomposed_gm)
+
+        # Next, direct graph modifications are done for specific ops.
+        apply_replacements(decomposed_gm.graph, post_fusion_replacements)
+        decomposed_gm.graph.eliminate_dead_code()
+        decomposed_gm.recompile()
+        _log_graph_module("Post-replace module", decomposed_gm)
+        # NOTE: We did replacement -> decomposition first, but that
+        # could overwrite some replacements (Check Patch notes).
 
         custom_op = get_custom_graph_op(
             decomposed_gm, force_single_dispatch=subgraph.single_dispatch
