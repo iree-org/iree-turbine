@@ -71,7 +71,7 @@ def fusion_transform(
         decomposed_gm.recompile()
         _log_graph_module("Post-replace module", decomposed_gm)
         # NOTE: We did replacement -> decomposition first, but that
-        # could overwrite some replacements (Check Patch notes).
+        # could overwrite some replacements.
 
         custom_op = get_custom_graph_op(
             decomposed_gm, force_single_dispatch=subgraph.single_dispatch
