@@ -58,7 +58,6 @@ def fusion_transform(
         # This will re-trace the graph in a fake execution context.
         # An added benefit is the canonicalization of each subgraph, which
         # reduces the number of redundant custom ops being generated.
-
         decomposed_gm = make_fx(
             subgraph.module,
             decomposition_table=DEFAULT_DECOMPOSITION_TABLE,
@@ -72,7 +71,7 @@ def fusion_transform(
         decomposed_gm.recompile()
         _log_graph_module("Post-replace module", decomposed_gm)
         # NOTE: We did replacement -> decomposition first, but that
-        # could overwrite some replacements (Check Patch notes).
+        # could overwrite some replacements.
 
         custom_op = get_custom_graph_op(
             decomposed_gm, force_single_dispatch=subgraph.single_dispatch
