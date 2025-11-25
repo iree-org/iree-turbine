@@ -96,7 +96,7 @@ list of arguments.
         "--max-stddev-allowed",
         default=None,
         type=float,
-        help="Maximum allowed standard deviation (in microseconds). If exceeded, the run will be retried up to 5 times.",
+        help="Maximum allowed standard deviation as a ratio of the mean (e.g., 0.1 for 10%%). If exceeded, the run will be retried up to 5 times.",
     )
     parser.add_argument(
         "--verbose",
@@ -232,8 +232,8 @@ def main(args: list[str] = sys.argv[1:]) -> int:
 
                 aggregate_stats = get_aggregate_stats(csv_stats, results, timing_args.iter)
 
-                # Check if stddev exceeds threshold
-                exceeds_threshold, max_stddev_found = _check_stddev_threshold(
+                # Check if stddev/mean ratio exceeds threshold
+                exceeds_threshold, max_ratio_found = _check_stddev_threshold(
                     results, meta_args.max_stddev_allowed
                 )
 
@@ -242,15 +242,15 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                     if retry_count < max_retries:
                         if meta_args.verbose:
                             print(
-                                f">>> WARNING: Standard deviation {max_stddev_found:.2f}us exceeds threshold "
-                                f"{meta_args.max_stddev_allowed}us. Retrying... (attempt {retry_count + 1}/{max_retries})"
+                                f">>> WARNING: Standard deviation ratio {max_ratio_found:.2%} exceeds threshold "
+                                f"{meta_args.max_stddev_allowed:.2%}. Retrying... (attempt {retry_count + 1}/{max_retries})"
                             )
                     else:
                         # Exhausted all retries
                         raise RuntimeError(
                             f"Failed to achieve stable results after {max_retries} attempts. "
-                            f"Maximum standard deviation observed: {max_stddev_found:.2f}us, "
-                            f"but threshold is {meta_args.max_stddev_allowed}us. "
+                            f"Maximum stddev/mean ratio observed: {max_ratio_found:.2%}, "
+                            f"but threshold is {meta_args.max_stddev_allowed:.2%}. "
                             f"Consider increasing --max-stddev-allowed or investigating system load."
                         )
                 else:
@@ -504,26 +504,33 @@ def _print_zone_stats(results: ZoneStatsSummary) -> None:
 
 
 def _check_stddev_threshold(
-    results: ZoneStatsSummary, max_stddev_allowed: float | None
+    results: ZoneStatsSummary, max_stddev_ratio_allowed: float | None
 ) -> tuple[bool, float]:
-    """Check if any zone's stddev exceeds the allowed threshold.
+    """Check if any zone's stddev/mean ratio exceeds the allowed threshold.
+
+    Args:
+        results: Statistics summary for all zones.
+        max_stddev_ratio_allowed: Maximum allowed stddev as a ratio of mean
+            (e.g., 0.1 means stddev can be at most 10% of mean).
 
     Returns:
-        (exceeds_threshold, max_stddev_found): A tuple where the first value
+        (exceeds_threshold, max_ratio_found): A tuple where the first value
         indicates if threshold was exceeded, and second value is the maximum
-        stddev found across all zones.
+        stddev/mean ratio found across all zones.
     """
-    if max_stddev_allowed is None:
+    if max_stddev_ratio_allowed is None:
         return (False, 0.0)
 
-    max_stddev_found = 0.0
+    max_ratio_found = 0.0
     for zone_stats in results.values():
-        if isinstance(zone_stats.stddev, float):
-            max_stddev_found = max(max_stddev_found, zone_stats.stddev)
-            if zone_stats.stddev > max_stddev_allowed:
-                return (True, max_stddev_found)
+        if isinstance(zone_stats.stddev, float) and isinstance(zone_stats.mean, float):
+            assert zone_stats.mean != 0, "Mean cannot be zero for profiled zones"
+            ratio = zone_stats.stddev / zone_stats.mean
+            max_ratio_found = max(max_ratio_found, ratio)
+            if ratio > max_stddev_ratio_allowed:
+                return (True, max_ratio_found)
 
-    return (False, max_stddev_found)
+    return (False, max_ratio_found)
 
 
 if __name__ == "__main__":
