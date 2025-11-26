@@ -545,10 +545,12 @@ def _device_import_torch_tensor_cuda_hip(
     # We currently only support contiguous, so ensure that.
     if not t.is_contiguous():
         t = t.contiguous()
-    # The None passed to tensor.__dlpack__ indicates we are doing no stream synchronization here.
+    # No explicit synchronization is made during the pointer handoff to IREE.
     # We launch kernels through IREE runtime on the same stream as pytorch. If using multiple
     # streams, the user is expected to properly manage stream synchronization.
-    capsule = t.__dlpack__(stream=None)
+    # The lower level `_C._to_dlpack` is used to bypass redundant checks in `Tensor.__dlpack__`.
+    # E.g., we know `t`` has a strided layout since we force it to be continuous.
+    capsule = torch._C._to_dlpack(t)
     bv = device.hal_device.from_dlpack_capsule(capsule)
     return bv
 
