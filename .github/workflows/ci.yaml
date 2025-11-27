@@ -68,6 +68,8 @@ jobs:
           pip install --no-compile -r ${{ matrix.pytorch_requirements }}
           pip install --no-cache-dir -r requirements-iree-pinned.txt
           pip install -r requirements.txt -e .
+          echo "Installed dependencies:"
+          pip freeze
 
       - name: Run unit tests
         if: ${{ !cancelled() }}
