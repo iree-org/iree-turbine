@@ -8,6 +8,15 @@ from hashlib import sha1
 from typing import Sequence, Literal, TypeAlias
 
 import torch
+from torch.export import ExportedProgram
+from torch.export.graph_signature import (
+    ExportGraphSignature,
+    InputSpec,
+    OutputSpec,
+    InputKind,
+    OutputKind,
+    TensorArgument,
+)
 from torch.fx.graph_module import GraphModule
 from torch.fx.graph import Graph
 from torch.fx.node import Target, Node
@@ -20,7 +29,7 @@ from .utils import (
     get_arg_spec_name,
     get_memory_format_permutation,
 )
-from ..runtime.launch import get_launchable_from_graph_module
+from ..runtime.launch import get_launchable_from_traced_object
 from ....support.logging import aot_logger as logger
 
 __all__ = [
@@ -281,14 +290,105 @@ def _handle_layouts(
     )
 
 
+def _hack_inplace_exported_program(
+    std_gm: GraphModule,
+    output_mem_format_perms: Sequence[MemoryFormatPermutation | None],
+) -> tuple[ExportedProgram, list[MemoryFormatPermutation | None], list[torch.Tensor]]:
+    std_g = std_gm.graph
+    output_node = std_g.output_node()
+    outs = output_node.args[0]
+    outs = outs if isinstance(outs, (tuple, list)) else (outs,)
+    input_mutations = {}
+    seen_names = []
+    init_perms = []
+    init_fakes = []
+    for idx, o in enumerate(outs):
+        assert isinstance(o, torch.fx.Node)
+        with std_g.inserting_before():
+            init_name = o.name + "_init"
+            # Only create an init tensor once for repeated outputs.
+            if init_name in seen_names:
+                continue
+            seen_names.append(init_name)
+            init_plh = std_g.placeholder(name=init_name)
+            v = o.meta.get("val")
+            init_plh.meta = {
+                "tensor_meta": o.meta.get("tensor_meta"),
+                "val": o.meta.get("val"),
+            }
+            assert (
+                isinstance(v, torch.Tensor) and v.is_contiguous()
+            ), f"Expected only contiguous tensor outputs, got returned node {o} with metadata {o.meta}."
+            init_perms.append(output_mem_format_perms[idx])
+            init_fakes.append(v)
+            print(f"{v.device=}")
+        with std_g.inserting_after(o):
+            copy_node = std_g.call_function(
+                torch.ops.aten.copy.default, args=(init_plh, o, True)
+            )
+            copy_node.meta = {k: v for k, v in init_plh.meta.items()}
+            input_mutations[init_name] = copy_node
+
+    new_outputs = tuple(input_mutations.values()) + tuple(outs)
+    output_node.args = (new_outputs,) + tuple(output_node.args[1:])
+    input_specs = [
+        InputSpec(
+            kind=InputKind.USER_INPUT,
+            arg=TensorArgument(name=str(p.target)),
+            target=None,
+            persistent=None,
+        )
+        for p in std_g.find_nodes(op="placeholder")
+    ]
+    output_specs = list(
+        OutputSpec(
+            kind=OutputKind.USER_INPUT_MUTATION,
+            arg=TensorArgument(name=o_init.name),
+            target=key,
+        )
+        for key, o_init in input_mutations.items()
+    )
+    output_specs.extend(
+        [
+            OutputSpec(
+                kind=OutputKind.USER_OUTPUT,
+                arg=TensorArgument(name=o.name),
+                target=None,
+            )
+            for o in outs
+        ]
+    )
+
+    fake_graph_signature = ExportGraphSignature(
+        input_specs=input_specs, output_specs=output_specs
+    )
+    std_g.eliminate_dead_code()
+    std_g.lint()
+    std_gm.recompile()
+
+    fake_ep = ExportedProgram(
+        root=std_gm,
+        graph=std_gm.graph,
+        graph_signature=fake_graph_signature,
+        state_dict={},
+        range_constraints={},
+        module_call_graph=[],
+        example_inputs=tuple(
+            n.meta["val"] for n in std_gm.graph.find_nodes(op="placeholder")
+        ),
+    )
+    return fake_ep, init_perms, init_fakes
+
+
 def _define_custom_graph_op(
     gm: GraphModule,
     og_gm: GraphModule,
     op_name: str,
-    input_mem_format_perms,
-    output_mem_format_perms,
+    input_mem_format_perms: Sequence[MemoryFormatPermutation | None],
+    output_mem_format_perms: Sequence[MemoryFormatPermutation | None],
     *,
     force_single_dispatch: bool = False,
+    inplace_convert: bool = True,
 ):
     """Defines a custom op from the graph module with given op_name in the boo library."""
     inputs, outputs = _get_io_from_gm(gm)
@@ -299,15 +399,28 @@ def _define_custom_graph_op(
     spec_name = get_arg_spec_name(
         op_name, *[n.meta.get("val") for n in gm.graph.find_nodes(op="placeholder")]
     )
-    # Get memory format permutations for output tensors based on graph metadata.
+    init_fakes = []
+    if inplace_convert:
+        (program, init_perms, init_fakes) = _hack_inplace_exported_program(
+            gm, output_mem_format_perms
+        )
+    else:
+        program = gm
 
     @register_impl(op_name)
     def _(*args):
         handled_inputs = _handle_layouts(
             args, perms=input_mem_format_perms, perm_item="permutation"
         )
-        launch = get_launchable_from_graph_module(
-            graph_module=gm,
+        if inplace_convert:
+            _device = lambda fake: args[0].device if len(args) > 0 else fake.device
+            init_tensors = tuple(
+                torch.empty(*fake.shape, dtype=fake.dtype, device=_device(fake))
+                for fake in reversed(init_fakes)
+            )
+            handled_inputs = init_tensors + handled_inputs
+        launch = get_launchable_from_traced_object(
+            program=program,
             func_name=spec_name,
             force_single_dispatch=force_single_dispatch,
         )
@@ -321,6 +434,7 @@ def _define_custom_graph_op(
         assert isinstance(
             outputs, (list, tuple)
         ), f"Got outputs {outputs} of unhandled type {type(outputs)}."
+        assert len(outputs) == len(output_mem_format_perms)
         handled_outputs = _handle_layouts(
             outputs, perms=output_mem_format_perms, perm_item="inverse_permutation"
         )
