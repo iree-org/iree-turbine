@@ -235,7 +235,10 @@ def get_graph_module_with_contiguous_boundary(
 
 
 def get_custom_graph_op(
-    src_gm: GraphModule, *, force_single_dispatch: bool = False
+    src_gm: GraphModule,
+    *,
+    force_single_dispatch: bool = False,
+    inplace_convert: bool = True,
 ) -> torch._ops.OpOverloadPacket:
     """Converts a graph module into a custom operator.
 
@@ -271,6 +274,7 @@ def get_custom_graph_op(
             input_perms,
             output_perms,
             force_single_dispatch=force_single_dispatch,
+            inplace_convert=inplace_convert,
         )
 
     return get_library_op(op_name)
@@ -294,14 +298,24 @@ def _hack_inplace_exported_program(
     std_gm: GraphModule,
     output_mem_format_perms: Sequence[MemoryFormatPermutation | None],
 ) -> tuple[ExportedProgram, list[MemoryFormatPermutation | None], list[torch.Tensor]]:
+    """Generates an `ExportedProgram` for a simple `GraphModule`, and converts output tensors to in-place mutations.
+
+    The `torch.export` function isn't usable within `torch.compile`, and this function is a workaround to tell the
+    `FxImporter` that we want inplace invocations.
+
+    Some implicit assumptions:
+
+    1. The graph modules we are encountering are stateless.
+    2. All inputs/outputs are tensors with valid metadata.
+    """
     std_g = std_gm.graph
     output_node = std_g.output_node()
     outs = output_node.args[0]
     outs = outs if isinstance(outs, (tuple, list)) else (outs,)
     input_mutations = {}
-    seen_names = []
-    init_perms = []
-    init_fakes = []
+    seen_names: list[str] = []
+    init_perms: list[MemoryFormatPermutation | None] = []
+    init_fakes: list[torch.Tensor] = []
     for idx, o in enumerate(outs):
         assert isinstance(o, torch.fx.Node)
         with std_g.inserting_before():
@@ -321,7 +335,6 @@ def _hack_inplace_exported_program(
             ), f"Expected only contiguous tensor outputs, got returned node {o} with metadata {o.meta}."
             init_perms.append(output_mem_format_perms[idx])
             init_fakes.append(v)
-            print(f"{v.device=}")
         with std_g.inserting_after(o):
             copy_node = std_g.call_function(
                 torch.ops.aten.copy.default, args=(init_plh, o, True)
