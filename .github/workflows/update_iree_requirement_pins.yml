@@ -32,7 +32,7 @@ jobs:
       branch-exists: ${{ steps.check-exists.outputs.branch-exists }}
 
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - name: Check for existing integrate branch
         id: check-exists
         run: |
@@ -48,7 +48,7 @@ jobs:
     if: ${{ needs.check-for-existing-branch.outputs.branch-exists == 0 }}
 
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: "Setting up Python"
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
@@ -59,7 +59,7 @@ jobs:
       - name: Update IREE requirement pins
         run: build_tools/update_iree_requirement_pins.py
 
-      - uses: actions/create-github-app-token@7e473efe3cb98aa54f8d4bac15400b15fad77d94 # v2.2.0
+      - uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
         if: ${{ env.CREATE_PULL_REQUEST_TOKEN_APP_ID != '' && env.CREATE_PULL_REQUEST_TOKEN_APP_PRIVATE_KEY != '' }}
         id: generate-token
         with:
@@ -73,7 +73,7 @@ jobs:
           ${{ env.CURRENT_IREE_BASE_COMPILER_VERSION }} != ${{ env.LATEST_IREE_BASE_COMPILER_VERSION }} || \
           ${{ env.CURRENT_IREE_BASE_RUNTIME_VERSION }} != ${{ env.LATEST_IREE_BASE_RUNTIME_VERSION }}
         id: cpr
-        uses: peter-evans/create-pull-request@84ae59a2cdc2258d6fa0732dd66352dddae2a412 # v7.0.9
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7.0.11
         with:
           token: ${{ steps.generate-token.outputs.token || secrets.GITHUB_TOKEN }}
           base: main
