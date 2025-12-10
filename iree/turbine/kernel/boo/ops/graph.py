@@ -264,6 +264,10 @@ def get_custom_graph_op(
         if len(call_function_names) < 120
         else f"fused_op_{hash}"
     )
+    op_name += "_inplace" if inplace_convert else ""
+    op_name = get_arg_spec_name(
+        op_name, *[n.meta.get("val") for n in gm.graph.find_nodes(op="placeholder")]
+    )
     logger.debug("Got hash str '%s' for GraphModule: \n %s", hash, gm_string)
 
     if not hasattr(torch.ops.boo, op_name):
@@ -409,9 +413,6 @@ def _define_custom_graph_op(
     has_a_none_output = any(is_none_output)
     schema = _get_schema(inputs, outputs)
     define_schema(op_name, schema)
-    spec_name = get_arg_spec_name(
-        op_name, *[n.meta.get("val") for n in gm.graph.find_nodes(op="placeholder")]
-    )
     init_fakes = []
     if inplace_convert:
         (program, init_perms, init_fakes) = _hack_inplace_exported_program(
@@ -434,7 +435,7 @@ def _define_custom_graph_op(
             handled_inputs = init_tensors + handled_inputs
         launch = get_launchable_from_traced_object(
             program=program,
-            func_name=spec_name,
+            func_name=op_name,
             force_single_dispatch=force_single_dispatch,
         )
         outputs = launch(*[arg.data for arg in handled_inputs])

@@ -133,6 +133,10 @@ def test_AOT_layout_conv_replacement(device: torch.device, boo_cache_dir: Path):
         memory_format=torch.channels_last
     ), "Output must be in channels last format."
     cached_items = list(Path.glob(boo_cache_dir, "*/"))
-    assert len(cached_items) == 1, f"Expected one cached item, got {cached_items}."
-    p = cached_items[0]
-    assert p.name.endswith("_2x16x16x32xfloat32_2x1x1x32xfloat32")
+    op_name = graph_op._qualified_op_name.split(":")[-1]
+    # Re-running this test may not re-save to the cache if the torch-op still exists.
+    assert (
+        len(cached_items) <= 1
+    ), f"Expected at most one cached item. Got {len(cached_items)}."
+    if len(cached_items) == 1:
+        assert cached_items[0].name == op_name, "Expected op name to match cache entry."
