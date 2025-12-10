@@ -60,10 +60,13 @@ class AtenSignature(OpSignature):
         ):
             if concrete == "":
                 continue
-            # Concrete arguments should be scalars with placeholder dims/strides data.
+            # Concrete arguments should have placeholder dims/strides data.
             assert len(dims) == 0
-            assert type == "Scalar"
             assert len(strides) == 0
+            # optional types like Optional[Tensor] or Optional[float] should also be supported.
+            assert type in ("Scalar", ""), ValueError(
+                f"Unsupported concrete argument type: {type}"
+            )
             yield schema, ast.literal_eval(concrete)
 
     def get_non_concrete_args(
