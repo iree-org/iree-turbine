@@ -296,8 +296,8 @@ def get_launchable(
     return launch
 
 
-def get_module_asm_from_graph_module(
-    graph_module: torch.fx.GraphModule,
+def get_module_asm_from_traced_object(
+    traced_object: torch.fx.GraphModule | torch.export.ExportedProgram,
     func_name: str = "main",
     *,
     force_single_dispatch: bool = False,
@@ -311,9 +311,14 @@ def get_module_asm_from_graph_module(
 
     with Context():
         importer = FxImporter(context=Context())
-        importer.import_stateless_graph(
-            graph_module.graph, func_name=func_name, func_visibility="public"
-        )
+        if isinstance(traced_object, torch.fx.GraphModule):
+            importer.import_stateless_graph(
+                traced_object.graph, func_name=func_name, func_visibility="public"
+            )
+        else:
+            importer.import_program(
+                traced_object, func_name=func_name, func_visibility="public"
+            )
         module_op = importer.module_op
         expansion_pass = ExpandCustomOpsPass(module_op)
         expansion_pass.run()
@@ -344,8 +349,8 @@ def get_module_asm_from_graph_module(
     return module_asm
 
 
-def get_launchable_from_graph_module(
-    graph_module: torch.fx.GraphModule,
+def get_launchable_from_traced_object(
+    program: torch.fx.GraphModule | torch.export.ExportedProgram,
     func_name: str = "main",
     *,
     force_single_dispatch: bool = False,
@@ -355,8 +360,8 @@ def get_launchable_from_graph_module(
     launch = LaunchableRuntimeCache.get(func_name)
     if launch:
         return launch
-    module_asm = get_module_asm_from_graph_module(
-        graph_module, func_name, force_single_dispatch=force_single_dispatch
+    module_asm = get_module_asm_from_traced_object(
+        program, func_name, force_single_dispatch=force_single_dispatch
     )
     launch = Launchable.from_vm_module(
         user_flags_jit_callback(
