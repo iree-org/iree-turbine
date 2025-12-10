@@ -98,6 +98,7 @@ class BooOpRegistry:
 BooOpRegistry._register("aten::addmm", AtenSignature, AtenParser)
 BooOpRegistry._register("aten::bmm", AtenSignature, AtenParser)
 BooOpRegistry._register("aten::mm", AtenSignature, AtenParser)
+BooOpRegistry._register("aten::scaled_dot_product_attention", AtenSignature, AtenParser)
 BooOpRegistry._register("conv", ConvSignature, ConvParser)
 BooOpRegistry._register("gemm", GEMMSignature, GEMMParser)
 BooOpRegistry._register("layernorm", LayerNormSignature, LayerNormParser)
