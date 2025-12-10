@@ -433,6 +433,7 @@ def _define_custom_graph_op(
                 for fake in reversed(init_fakes)
             )
             handled_inputs = init_tensors + handled_inputs
+        # TODO: hoist this out of runtime once we remove the last torch.export from conv custom ops.
         launch = get_launchable_from_traced_object(
             program=program,
             func_name=op_name,
