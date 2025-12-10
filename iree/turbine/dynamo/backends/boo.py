@@ -20,6 +20,7 @@ def backend(
     nested_backend: str | CompilerFn = "eager",
     fusion_schema: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS,
     post_fusion_replacements: ReplacementSchema = DEFAULT_POST_FUSION_REPLACEMENTS,
+    post_decomposition_replacements: ReplacementSchema = None,
 ):
     """
     A 'torch.compile' backend that selectively offloads operations to IREE.
@@ -39,6 +40,7 @@ def backend(
             model,
             fusion_schema=fusion_schema,
             post_fusion_replacements=post_fusion_replacements,
+            post_decomposition_replacements=post_decomposition_replacements,
         )
         return make_boxed_func(nested_backend_fn(model, example_args))
 
