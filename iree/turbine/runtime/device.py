@@ -9,6 +9,7 @@ from hashlib import sha1
 from typing import Any, Callable, Dict, Optional, Union
 from threading import local, Lock
 
+import os
 import warnings
 import platform
 import atexit
@@ -704,9 +705,43 @@ def _create_cuda_device(torch_device: torch.device, props) -> Optional[Device]:
     return device
 
 
+def _align_hip_library_with_torch() -> None:
+    """
+    This should ensure pytorch and IREE use the same `libamdhip64.so` (or equivalent .dll).
+
+    The benefits of doing this:
+
+    1. If the only rocm install is through python, IREE won't be able to find it.
+    2. If there is an existing install of rocm, e.g. in `/opt/rocm`, there may be
+       version incompatibilty between this version and the one pytorch is using.
+       this incompatibility can cause issues with the torch profiler.
+
+    If `rocm_sdk` is available to python, pytorch uses it for runtime libraries.
+    Otherwise it looks in the same places as IREE, so we shouldn't need to set this explicitly.
+
+    Pytorch does have a utility function `torch.cuda._utils._get_gpu_runtime_library`; however,
+    there is not a great way to extract a path from the returned `ctypes.CDLL` object.
+    """
+    if getattr(_CURRENT_THREAD, "hip_dylib_set", False):
+        return
+    try:
+        import rocm_sdk
+        from iree.runtime.flags import parse_flags
+
+        dylib_path = str(rocm_sdk.find_libraries("amdhip64")[0].absolute())
+        parse_flags(f"--hip_dylib_path=file:{dylib_path}")
+        logger.debug("Successfully set hip_dylib_path to:\n\t%s", dylib_path)
+    except (ImportError, KeyError):
+        pass
+    # Whether we were successful or not, don't try again.
+    _CURRENT_THREAD.hip_dylib_set = True
+
+
 def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
     stream = torch.cuda.current_stream(torch_device).cuda_stream
     device_params = {"hip_external_stream": str(stream)}
+    # Ensure rocm libraries being used by pytorch and IREE are the same.
+    _align_hip_library_with_torch()
     # Note that the dlpack device type code for ROCM is 10.
     device = _create_cuda_like_device(torch_device, props, "hip", 10, device_params)
     # The gcnArchName comes back like gfx90a:sramecc+:xnack- for a fully
