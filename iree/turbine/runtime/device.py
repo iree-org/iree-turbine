@@ -725,10 +725,10 @@ def _align_hip_library_with_torch() -> None:
     if getattr(_CURRENT_THREAD, "hip_dylib_set", False):
         return
     try:
-        import rocm_sdk
+        import rocm_sdk  # type: ignore
         from iree.runtime.flags import parse_flags
 
-        dylib_path = str(rocm_sdk.find_libraries("amdhip64")[0].absolute())
+        dylib_path = str(rocm_sdk.find_libraries("amdhip64")[0].absolute())  # type: ignore
         parse_flags(f"--hip_dylib_path=file:{dylib_path}")
         logger.debug("Successfully set hip_dylib_path to:\n\t%s", dylib_path)
     except (ImportError, KeyError):
