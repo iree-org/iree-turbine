@@ -303,3 +303,48 @@ def replace_aten_batch_norm(node: Node) -> None:
     node.replace_all_uses_with(replace_with=replacement_node, propagate_meta=True)
     node.graph.erase_node(node)
     node.graph.lint()
+
+
+def replace_aten_scaled_dot_product_flash_attention(node: Node):
+    """Replace 'torch.ops.aten._scaled_dot_product_flash_attention' with 'torch.ops.aten.scaled_dot_product_attention'.
+
+    Flash attention returns a tuple (output, logsumexp, ...), but we only need the output tensor.
+    This replacement extracts the query, key, value, and scale arguments and creates a simpler
+    scaled_dot_product_attention call, then replaces getitem users appropriately.
+    """
+    # Extract arguments from flash attention call
+    # _scaled_dot_product_flash_attention signature:
+    # (query, key, value, dropout_p, is_causal, return_debug_mask, scale)
+    query, key, value = node.args[0], node.args[1], node.args[2]
+
+    graph = node.graph
+
+    # Enable GQA (Grouped Query Attention) support
+    node.kwargs["enable_gqa"] = True
+
+    # Insert replacement call before the original node
+    with graph.inserting_before(node):
+        replacement = graph.call_function(
+            torch.ops.aten.scaled_dot_product_attention.default,
+            args=(query, key, value),
+            kwargs=node.kwargs,
+        )
+
+    # Flash attention returns a tuple (output, logsumexp, ...)
+    # We need to replace getitem(node, 0) with the replacement output
+    # and remove other getitem users
+    users_to_process = list(node.users.keys())
+    for user in users_to_process:
+        if user.op == "call_function" and user.target == getitem:
+            assert isinstance(user.args, tuple) and len(user.args) == 2
+            index = user.args[1]
+            if index == 0:
+                # Replace getitem(flash_attn, 0) with our replacement
+                replacement.meta = user.meta
+                user.replace_all_uses_with(replacement)
+            # Erase all getitem users (including index 0 which is now replaced)
+            graph.erase_node(user)
+
+    # Erase the original flash attention node
+    graph.erase_node(node)
+    graph.lint()
