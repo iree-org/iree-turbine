@@ -151,7 +151,7 @@ def replace_getitem_users(
         with graph.inserting_before(use):
             new_output = graph.call_function(getitem, args=(replacement_node, index))
             # Handle metadata: if getitem node doesn't have metadata (common after decomposition),
-            # derive it from the parent node's multi-output metadata
+            # derive it from the parent node's multi-output metadata.
             new_output.meta = use.meta
             replacement = new_output
             if _perm:
@@ -312,17 +312,17 @@ def replace_aten_scaled_dot_product_flash_attention(node: Node):
     This replacement extracts the query, key, value, and scale arguments and creates a simpler
     scaled_dot_product_attention call, then replaces getitem users appropriately.
     """
-    # Extract arguments from flash attention call
+    # Extract arguments from flash attention call.
     # _scaled_dot_product_flash_attention signature:
-    # (query, key, value, dropout_p, is_causal, return_debug_mask, scale)
+    # (query, key, value, dropout_p, is_causal, return_debug_mask, scale).
     query, key, value = node.args[0], node.args[1], node.args[2]
 
     graph = node.graph
 
-    # Enable GQA (Grouped Query Attention) support
+    # Enable GQA (Grouped Query Attention) support.
     node.kwargs["enable_gqa"] = True
 
-    # Insert replacement call before the original node
+    # Insert replacement call before the original node.
     with graph.inserting_before(node):
         replacement = graph.call_function(
             torch.ops.aten.scaled_dot_product_attention.default,
@@ -330,21 +330,21 @@ def replace_aten_scaled_dot_product_flash_attention(node: Node):
             kwargs=node.kwargs,
         )
 
-    # Flash attention returns a tuple (output, logsumexp, ...)
+    # Flash attention returns a tuple (output, logsumexp, ...).
     # We need to replace getitem(node, 0) with the replacement output
-    # and remove other getitem users
+    # and remove other getitem users.
     users_to_process = list(node.users.keys())
     for user in users_to_process:
         if user.op == "call_function" and user.target == getitem:
             assert isinstance(user.args, tuple) and len(user.args) == 2
             index = user.args[1]
             if index == 0:
-                # Replace getitem(flash_attn, 0) with our replacement
+                # Replace getitem(flash_attn, 0) with our replacement.
                 replacement.meta = user.meta
                 user.replace_all_uses_with(replacement)
-            # Erase all getitem users (including index 0 which is now replaced)
+            # Erase all getitem users (including index 0 which is now replaced).
             graph.erase_node(user)
 
-    # Erase the original flash attention node
+    # Erase the original flash attention node.
     graph.erase_node(node)
     graph.lint()
