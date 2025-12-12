@@ -319,7 +319,6 @@ def replace_aten_scaled_dot_product_flash_attention(node: Node):
 
     graph = node.graph
 
-    # Enable GQA (Grouped Query Attention) support.
     node.kwargs["enable_gqa"] = True
 
     # Insert replacement call before the original node.
@@ -339,12 +338,9 @@ def replace_aten_scaled_dot_product_flash_attention(node: Node):
             assert isinstance(user.args, tuple) and len(user.args) == 2
             index = user.args[1]
             if index == 0:
-                # Replace getitem(flash_attn, 0) with our replacement.
                 replacement.meta = user.meta
                 user.replace_all_uses_with(replacement)
-            # Erase all getitem users (including index 0 which is now replaced).
             graph.erase_node(user)
 
-    # Erase the original flash attention node.
     graph.erase_node(node)
     graph.lint()
