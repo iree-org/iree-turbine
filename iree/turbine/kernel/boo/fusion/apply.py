@@ -69,10 +69,10 @@ def fusion_transform(
         )(*infer_example_inputs(subgraph.module))
         _log_graph_module("Decomposed module", decomposed_gm)
 
-        if post_decomposition_replacements:
-            apply_replacements(decomposed_gm.graph, post_decomposition_replacements)
-            decomposed_gm.graph.eliminate_dead_code()
-            decomposed_gm.recompile()
+        # For ops that require replacements after decomposition.
+        apply_replacements(decomposed_gm.graph, post_decomposition_replacements)
+        decomposed_gm.graph.eliminate_dead_code()
+        decomposed_gm.recompile()
 
         custom_op = get_custom_graph_op(
             decomposed_gm, force_single_dispatch=subgraph.single_dispatch
