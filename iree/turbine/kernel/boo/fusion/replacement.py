@@ -289,20 +289,23 @@ def replace_aten_scaled_dot_product_flash_attention(node: Node):
     scaled_dot_product_attention call, then replaces getitem users appropriately.
     """
     # Extract arguments from flash attention call.
-    # _scaled_dot_product_flash_attention signature:
-    # (query, key, value, dropout_p, is_causal, return_debug_mask, scale).
-    query, key, value = node.args[0], node.args[1], node.args[2]
-
+    query, key, value, dropout_p, is_causal = (
+        node.args[0],
+        node.args[1],
+        node.args[2],
+        node.args[3],
+        node.args[4],
+    )
     graph = node.graph
-
-    node.kwargs["enable_gqa"] = True
+    # Only scale=1.0 is currently supported.
+    new_kwargs = {"enable_gqa": True, "scale": 1.0}
 
     # Insert replacement call before the original node.
     with graph.inserting_before(node):
         replacement = graph.call_function(
             torch.ops.aten.scaled_dot_product_attention.default,
-            args=(query, key, value),
-            kwargs=node.kwargs,
+            args=(query, key, value, None, dropout_p, is_causal),
+            kwargs=new_kwargs,
         )
 
     # Flash attention returns a tuple (output, logsumexp, ...).
