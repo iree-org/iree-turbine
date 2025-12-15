@@ -63,6 +63,7 @@ from iree.compiler.dialects import (
     builtin as builtin_d,
     flow as flow_d,
     func as func_d,
+    iree_tensor_ext as iree_tensor_ext_d,
     util as util_d,
     arith as arith_d,
     tensor as tensor_d,

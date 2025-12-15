@@ -16,6 +16,7 @@ from ..support.ir_imports import (
     StringAttr,
     Value,
     flow_d,
+    iree_tensor_ext_d,
     tensor_d,
 )
 
@@ -148,6 +149,50 @@ class barrier_on_logical_device(CustomOp):
         _append_dynamic_dims(kb, dynamic_dims, t)
         target = Attribute.parse(f'#hal.device.promise<@"__device_{moniker}">')
         result = flow_d.TensorBarrierOp(t, dynamic_dims, target).result
+        kb.yield_results(result)
+
+
+@CustomOp.register(library=IREE_LIBRARY)
+class compute_barrier_start(CustomOp):
+    signature = "compute_barrier_start(Tensor tensor) -> Tensor"
+
+    def select(self, ksel: KernelSelection):
+        ta = ksel.arg_tensor(0)
+        spec = [i for i, s in enumerate(ta.t.shape) if isinstance(s, int)]
+        ta.specialize_dims(*spec)
+        ksel.return_tensor(ta.t).specialize_dims(*spec)
+
+    def eager_execute(self, tensor: torch.Tensor):
+        return tensor.clone()
+
+    def generate(self, ksel: KernelSelection, kb: KernelBuilder):
+        t = kb.arg_bindings[0]
+        assert isinstance(t, Value)
+        dynamic_dims: list[Value] = []
+        _append_dynamic_dims(kb, dynamic_dims, t)
+        result = iree_tensor_ext_d.compute_barrier_start(t.type, t, dynamic_dims)
+        kb.yield_results(result)
+
+
+@CustomOp.register(library=IREE_LIBRARY)
+class compute_barrier_end(CustomOp):
+    signature = "compute_barrier_end(Tensor tensor) -> Tensor"
+
+    def select(self, ksel: KernelSelection):
+        ta = ksel.arg_tensor(0)
+        spec = [i for i, s in enumerate(ta.t.shape) if isinstance(s, int)]
+        ta.specialize_dims(*spec)
+        ksel.return_tensor(ta.t).specialize_dims(*spec)
+
+    def eager_execute(self, tensor: torch.Tensor):
+        return tensor.clone()
+
+    def generate(self, ksel: KernelSelection, kb: KernelBuilder):
+        t = kb.arg_bindings[0]
+        assert isinstance(t, Value)
+        dynamic_dims: list[Value] = []
+        _append_dynamic_dims(kb, dynamic_dims, t)
+        result = iree_tensor_ext_d.compute_barrier_end(t.type, t, dynamic_dims)
         kb.yield_results(result)
 
 
