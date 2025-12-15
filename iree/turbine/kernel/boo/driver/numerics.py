@@ -12,6 +12,7 @@ import json
 import csv
 import shlex
 
+from iree.turbine.dynamo.backends.boo import experimental_backend
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.utils import load_commands
 
@@ -114,7 +115,7 @@ def _run(
             raise ValueError(f"Failed parsing a command: {c}.")
 
         reference_module = sig.get_nn_module(use_custom=False)
-        boo_module = sig.get_compiled_module(backend="iree_boo_experimental")
+        boo_module = sig.get_compiled_module(backend=experimental_backend)
         sample_args = sig.get_sample_args(device=cpu, seed=seed)
         arg_tensors = {
             "cpu": sample_args,
