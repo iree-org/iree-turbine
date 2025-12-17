@@ -238,7 +238,7 @@ def get_custom_graph_op(
     src_gm: GraphModule,
     *,
     force_single_dispatch: bool = False,
-    inplace_convert: bool = False,
+    inplace_convert: bool = True,
 ) -> torch._ops.OpOverloadPacket:
     """Converts a graph module into a custom operator.
 
@@ -395,7 +395,7 @@ def _define_custom_graph_op(
     output_mem_format_perms: Sequence[MemoryFormatPermutation | None],
     *,
     force_single_dispatch: bool = False,
-    inplace_convert: bool = False,
+    inplace_convert: bool = True,
 ):
     """Defines a custom op from the graph module with given op_name in the boo library."""
     inputs, outputs = _get_io_from_gm(gm)
