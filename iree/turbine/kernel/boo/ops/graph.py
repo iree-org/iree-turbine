@@ -346,7 +346,7 @@ def _hack_inplace_exported_program(
             copy_node.meta = {k: v for k, v in init_plh.meta.items()}
             input_mutations[init_name] = copy_node
 
-    new_outputs = tuple(input_mutations.values()) + tuple(outs)
+    new_outputs = tuple(input_mutations.values())
     output_node.args = (new_outputs,) + tuple(output_node.args[1:])
     input_specs = [
         InputSpec(
@@ -364,16 +364,6 @@ def _hack_inplace_exported_program(
             target=key,
         )
         for key, o_init in input_mutations.items()
-    )
-    output_specs.extend(
-        [
-            OutputSpec(
-                kind=OutputKind.USER_OUTPUT,
-                arg=TensorArgument(name=o.name),
-                target=None,
-            )
-            for o in outs
-        ]
     )
 
     fake_graph_signature = ExportGraphSignature(
@@ -426,6 +416,7 @@ def _define_custom_graph_op(
         handled_inputs = _handle_layouts(
             args, perms=input_mem_format_perms, perm_item="permutation"
         )
+        init_tensors: tuple[torch.Tensor, ...] = ()
         if inplace_convert:
             _device = lambda fake: args[0].device if len(args) > 0 else fake.device
             init_tensors = tuple(
@@ -440,6 +431,9 @@ def _define_custom_graph_op(
             force_single_dispatch=force_single_dispatch,
         )
         outputs = launch(*[arg.data for arg in handled_inputs])
+        if inplace_convert:
+            assert len(init_tensors) > 0
+            outputs = init_tensors if len(init_tensors) > 1 else init_tensors[0]
         single_output = False
         if isinstance(outputs, torch.Tensor):
             outputs = (outputs,)
