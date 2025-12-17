@@ -10,7 +10,7 @@ from pathlib import Path
 import argparse
 import json
 import csv
-
+import shlex
 
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 from iree.turbine.kernel.boo.driver.utils import load_commands
@@ -107,10 +107,9 @@ def _run(
     results: ResultSummary = dict()
     cuda = torch.device(f"cuda:{device}")
     cpu = torch.device("cpu")
-
     for c in commands:
         print(c)
-        sig = BooOpRegistry.parse_command(c, True)
+        sig = BooOpRegistry.parse_command(shlex.split(c), True)
         if sig is None:
             raise ValueError(f"Failed parsing a command: {c}.")
 
