@@ -8,6 +8,7 @@ import logging
 import unittest
 import tempfile
 import torch
+from torch.export import Dim
 import torch.nn as nn
 import numpy as np
 import os
@@ -85,6 +86,39 @@ class TransferToLogicalDeviceTest(unittest.TestCase):
         asm = str(cm.mlir_module)
         self.assertRegex(
             asm, "flow.tensor.transfer %.+ to #hal.device.promise<@__device.1>"
+        )
+
+
+class TensorBarrierTest(unittest.TestCase):
+    def testEager(self):
+        t1 = torch.randn(3, 4)
+        t2 = ops.iree.compute_barrier_start(t1)
+        t3 = ops.iree.compute_barrier_end(t2)
+        assert torch.all(t1 == t2)
+        assert torch.all(t2 == t3)
+        assert t1 is not t2 is not t3
+
+    def testAOT(self):
+        class MyModule(nn.Module):
+            def forward(self, x):
+                y = ops.iree.compute_barrier_start(x)
+                z = ops.iree.compute_barrier_end(y)
+                return z
+
+        cm = aot.export(
+            MyModule(),
+            args=(torch.empty(10, 8),),
+            dynamic_shapes={"x": {0: Dim.DYNAMIC}},
+        )
+        asm = str(cm.mlir_module)
+        print(asm)
+        self.assertRegex(
+            asm,
+            r"iree_tensor_ext.compute_barrier.start %.+ : tensor<\?x8xf32>{%.+} -> tensor<\?x8xf32>",
+        )
+        self.assertRegex(
+            asm,
+            r"iree_tensor_ext.compute_barrier.end %.+ : tensor<\?x8xf32>{%.+} -> tensor<\?x8xf32>",
         )
 
 
