@@ -42,8 +42,8 @@ def _get_io_from_gm(
 ) -> tuple[list[Target], list[torch.Tensor | None]]:
     """Returns input nodes and output fake tensors from the graph module."""
 
-    inputs = []
-    meta_outputs = []
+    inputs: list[Target] = []
+    meta_outputs: list[torch.Tensor | None] = []
     for node in gm.graph.nodes:
         if node.op == "placeholder":
             inputs.append(node.target)
@@ -123,7 +123,7 @@ def permute_metadata(
         assert isinstance(
             perms, tuple
         ), "Permutation for multi-output node must be tuple."
-        new_vals = []
+        new_vals: list[torch.Tensor | None] = []
         for og_val, perm in zip(og_vals, perms, strict=True):
             new_vals.append(_permute_fake_tensor(og_val, perm))
         return {"val": tuple(new_vals)}
@@ -201,7 +201,7 @@ def get_graph_module_with_contiguous_boundary(
     # Convert placeholders to contiguous placeholder + permute back to original format.
     src_placeholders = src.find_nodes(op="placeholder")
     val_map: dict[Node, Node] = {}
-    input_perms = []
+    input_perms: list[MemoryFormatPermutation | None] = []
     for src_pl in src_placeholders:
         pl_replacement, _perms = convert_placeholder(src_pl, g)
         val_map[src_pl] = pl_replacement
@@ -214,8 +214,8 @@ def get_graph_module_with_contiguous_boundary(
     # E.g. single-output subgraphs should return `(output,)`.
     assert isinstance(output_og_args, tuple)
     # Convert outputs to contiguous format and collect perms.
-    permuted_output_args = []
-    output_perms = []
+    permuted_output_args: list[torch.fx.Node] = []
+    output_perms: list[MemoryFormatPermutation | None] = []
     for ret in output_og_args:
         assert isinstance(
             ret, Node
@@ -316,7 +316,7 @@ def _hack_inplace_exported_program(
     output_node = std_g.output_node()
     outs = output_node.args[0]
     outs = outs if isinstance(outs, (tuple, list)) else (outs,)
-    input_mutations = {}
+    input_mutations: dict[str, torch.fx.Node] = {}
     seen_names: list[str] = []
     init_perms: list[MemoryFormatPermutation | None] = []
     init_fakes: list[torch.Tensor] = []
@@ -413,7 +413,7 @@ def _define_custom_graph_op(
     has_a_none_output = any(is_none_output)
     schema = _get_schema(inputs, outputs)
     define_schema(op_name, schema)
-    init_fakes = []
+    init_fakes: list[torch.Tensor] = []
     if inplace_convert:
         (program, init_perms, init_fakes) = _hack_inplace_exported_program(
             gm, output_mem_format_perms
@@ -457,7 +457,7 @@ def _define_custom_graph_op(
             return handled_outputs[0] if single_output else handled_outputs
         # We have at least one None output that needs to be included.
         # Handle this better.
-        all_results = []
+        all_results: list[torch.Tensor | None] = []
         i = 0
         for is_none in is_none_output:
             if is_none:
