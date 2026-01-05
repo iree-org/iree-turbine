@@ -6,6 +6,7 @@
 
 from hashlib import sha1
 from typing import Sequence, Literal, TypeAlias
+from dataclasses import dataclass
 
 import torch
 from torch.export import ExportedProgram
@@ -18,7 +19,7 @@ from torch.export.graph_signature import (
     TensorArgument,
 )
 from torch.fx.graph_module import GraphModule
-from torch.fx.graph import Graph
+from torch.fx.graph import Graph, Argument
 from torch.fx.node import Target, Node
 from torch.fx.passes.shape_prop import TensorMetadata
 
@@ -185,6 +186,154 @@ def convert_placeholder(
 PermsTuple: TypeAlias = tuple[MemoryFormatPermutation | None, ...]
 
 
+@dataclass
+class GraphInfo:
+    """Dataclass for storing useful `GraphModule` information."""
+
+    # NEXT: source GM contig boundary.
+    # Basic metadata for original graph.
+    graph_module: GraphModule
+    placeholders: tuple[Node, ...]
+    output_node: Node
+    outputs: tuple[Argument, ...]
+    has_none_output: bool
+    # Deduplicated outputs. If a `None` output is present, it will appear at the back.
+    # TODO: detect possible aliasing between outputs.
+    # Unique output target for each original output.
+    unique_outputs: tuple[Node | None, ...]
+    output_reassociation: tuple[int, ...]
+    # 1-1 with placeholders. All graph inputs should be Tensors.
+    input_mem_format_perms: PermsTuple
+    # Only includes output memory format permuations for unique outputs.
+    output_mem_format_perms: PermsTuple
+
+    @staticmethod
+    def from_graph_module(graph_module: GraphModule):
+        placeholders = graph_module.graph.find_nodes(op="placeholder", sort=True)
+        assert all(isinstance(pl.meta.get("val"), torch.Tensor) for pl in placeholders)
+        input_mem_format_perms = list(
+            [get_memory_format_permutation(pl.meta["val"]) for pl in placeholders]
+        )
+        output_node = graph_module.graph.output_node()
+        _output_args = output_node.args
+        assert isinstance(_output_args, tuple) and len(_output_args) >= 2
+        outputs = _output_args[0]
+        if not isinstance(outputs, tuple):
+            assert isinstance(outputs, Node) or outputs is None
+            outputs = (outputs,)
+        unique_output_indices: dict[Node, int] = {}
+        output_mem_format_perms: list[MemoryFormatPermutation | None] = []
+        output_reassociation: list[int] = []
+        has_none_output = False
+        for out in outputs:
+            if out is None:
+                has_none_output = True
+                output_reassociation.append(-1)
+                continue
+            assert isinstance(out, Node)
+            # Check if we have seen this output before.
+            maybe_idx = unique_output_indices.get(out)
+            if maybe_idx is not None:
+                output_reassociation.append(maybe_idx)
+                continue
+            # This is a new unique output. Handle it.
+            new_idx = len(unique_output_indices.keys())
+            unique_output_indices[out] = new_idx
+            output_reassociation.append(new_idx)
+            out_fake = out.meta.get("val")
+            assert isinstance(out_fake, torch.Tensor)
+            output_mem_format_perms.append(
+                get_memory_format_permutation(out_fake, strict=True)
+            )
+
+        unique_outputs: list[Node | None] = list(unique_output_indices.keys())
+        num_unique_output_tensors = len(unique_outputs)
+        assert num_unique_output_tensors == len(output_mem_format_perms)
+        unique_outputs = unique_outputs + [None] if has_none_output else unique_outputs
+
+        return GraphInfo(
+            graph_module=graph_module,
+            placeholders=tuple(placeholders),
+            output_node=output_node,
+            outputs=outputs,
+            has_none_output=has_none_output,
+            unique_outputs=tuple(unique_outputs),
+            output_reassociation=tuple(output_reassociation),
+            input_mem_format_perms=tuple(input_mem_format_perms),
+            output_mem_format_perms=tuple(output_mem_format_perms),
+        )
+
+    def hack_inplace_exported_program(self):
+        pass
+
+    def insert_contiguous_placeholders(
+        self,
+        empty_graph: Graph,
+    ) -> dict[Node, Node]:
+        val_map: dict[Node, Node] = {}
+        """Generates contiguous placeholders which are permuted back to the original memory format.
+
+        Returns a dictionary mapping source placeholders to their equivalents in the new graph.
+        """
+        assert len(empty_graph.nodes) == 0, "Expected an empty graph."
+        for src_pl, perms in zip(
+            self.placeholders, self.input_mem_format_perms, strict=True
+        ):
+            if perms is None:
+                val_map[src_pl] = empty_graph.node_copy(src_pl)
+                continue
+            name = f"{src_pl.name}_boo"
+            pl = empty_graph.placeholder(name=name)
+            pl.meta = permute_metadata(src_pl, (perms.permutation,))
+            target_replacement = call_permute(pl, perms.inverse_permutation)
+            target_replacement.meta = {k: v for k, v in src_pl.meta.items()}
+            val_map[src_pl] = target_replacement
+        return val_map
+
+    def get_contiguous_boundary_module(
+        self,
+    ) -> tuple[GraphModule, dict[Node, Node]]:
+        """
+        Creates a new GraphModule with contiguous boundary tensors and trimmed outputs.
+
+        Also contains the value mapping from source graph to new graph.
+        """
+        src = self.graph_module.graph
+        g = Graph()
+
+        # Convert placeholders to contiguous placeholder + permute back to original format.
+        val_map = self.insert_contiguous_placeholders(g)
+
+        # Copy source graph body.
+        output_og_args = g.graph_copy(src, val_map=val_map)
+
+        # For boo.fusion, all subgraphs we extract return tuples of tensors.
+        # E.g. single-output subgraphs should return `(output,)`.
+        assert isinstance(output_og_args, tuple)
+        # Convert outputs to contiguous format and collect perms.
+        permuted_output_args: list[Node] = []
+        for src_out, perm in zip(
+            self.unique_outputs, self.output_mem_format_perms, strict=True
+        ):
+            if src_out is None:
+                continue
+            _out = val_map[src_out]
+            if perm is None:
+                permuted_output_args.append(_out)
+                continue
+            new_out = call_permute(_out, perm.permutation)
+            new_out.meta = permute_metadata(_out, (perm.permutation,))
+
+        # Create an output node.
+        g.create_node(op="output", target="output", args=(tuple(permuted_output_args),))
+
+        # Make a GraphModule from the constructed Graph.
+        new_gm = GraphModule(root=self.graph_module, graph=g)
+        g.lint()
+        new_gm.recompile()
+        return new_gm, val_map
+
+
 def get_graph_module_with_contiguous_boundary(
     src_gm: GraphModule,
 ) -> tuple[GraphModule, PermsTuple, PermsTuple]:
@@ -302,7 +451,9 @@ def _hack_inplace_exported_program(
     std_gm: GraphModule,
     output_mem_format_perms: Sequence[MemoryFormatPermutation | None],
 ) -> tuple[ExportedProgram, list[MemoryFormatPermutation | None], list[torch.Tensor]]:
-    """Generates an `ExportedProgram` for a simple `GraphModule`, and converts output tensors to in-place mutations.
+    """Converts all outputs for `std_gm` to inplace input mutations.
+
+    Returns an `ExportedProgram` assembled from the resulting inplace module.
 
     The `torch.export` function isn't usable within `torch.compile`, and this function is a workaround to tell the
     `FxImporter` that we want inplace invocations.
@@ -443,7 +594,9 @@ def _define_custom_graph_op(
         assert isinstance(
             outputs, (list, tuple)
         ), f"Got outputs {outputs} of unhandled type {type(outputs)}."
-        assert len(outputs) == len(output_mem_format_perms)
+        assert len(outputs) == len(
+            output_mem_format_perms
+        ), f"Incompatible number of outputs and perms. Got {len(outputs) = } with {output_mem_format_perms = }."
         handled_outputs = _handle_layouts(
             outputs, perms=output_mem_format_perms, perm_item="inverse_permutation"
         )

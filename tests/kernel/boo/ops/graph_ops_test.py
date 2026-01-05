@@ -162,3 +162,6 @@ def test_multi_output_inplace(boo_cache_dir: Path):
         assert (
             len(func_op.arguments) == 4
         ), f"Expected two buffers + two input tensors, got {func_op.type}."
+        assert (
+            len(func_op.returns) == 0
+        ), f"Expected zero returns for inplace function, got {func_op.type}."
