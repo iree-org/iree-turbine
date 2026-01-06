@@ -711,7 +711,7 @@ def _align_hip_library_with_torch() -> None:
 
     The benefits of doing this:
 
-    1. If the only rocm install is through python, IREE won't be able to find it.
+    1. If the only rocm install is through python, IREE won't find it without help.
     2. If there is an existing install of rocm, e.g. in `/opt/rocm`, there may be
        version incompatibilty between this version and the one pytorch is using.
        this incompatibility can cause issues with the torch profiler.
