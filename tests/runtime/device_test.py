@@ -8,6 +8,7 @@ import logging
 import unittest
 import threading
 import warnings
+import pytest
 
 import torch
 
@@ -25,6 +26,39 @@ from iree.turbine.runtime.device import (
 )
 
 from iree.turbine.support.exceptions import *
+
+
+@pytest.fixture
+def dylib_path() -> str | None:
+    try:
+        import rocm_sdk
+
+        paths = rocm_sdk.find_libraries("amdhip64")
+    except (ImportError, ModuleNotFoundError, KeyError):
+        print("Not using python install of rocm_sdk.")
+        return
+    assert len(paths) != 0
+    return str(paths[0].absolute())
+
+
+def test_hip_dylib_path(dylib_path: str | None):
+    if dylib_path is None or not torch.cuda.is_available():
+        # This skip isn't a mark, since we are skipping based on a fixture value.
+        pytest.skip(reason="Test requires pytorch with `rocm_sdk` python install.")
+    d = get_device_from_torch(torch.device("cuda:0"))
+    device_info = d.dump_device_info().splitlines()
+    found_path = ""
+    for line in device_info:
+        items = line.split(" ")
+        if len(items) < 3:
+            continue
+        if items[1] == "amdhip64_dylib_path:":
+            found_path = items[2]
+            break
+    assert found_path != "", "Must have a nonempty value for dylib path!"
+    assert (
+        found_path == dylib_path
+    ), "Inconsistent dylib paths between hal device and rocm_sdk library."
 
 
 class DeviceTest(unittest.TestCase):

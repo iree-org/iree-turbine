@@ -731,7 +731,7 @@ def _align_hip_library_with_torch() -> None:
         dylib_path = str(rocm_sdk.find_libraries("amdhip64")[0].absolute())  # type: ignore
         parse_flags(f"--hip_dylib_path=file:{dylib_path}")
         logger.debug("Successfully set hip_dylib_path to:\n\t%s", dylib_path)
-    except (ImportError, KeyError):
+    except (ImportError, ModuleNotFoundError, KeyError):
         pass
     # Whether we were successful or not, don't try again.
     _CURRENT_THREAD.hip_dylib_set = True
