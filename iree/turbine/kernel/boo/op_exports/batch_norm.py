@@ -118,6 +118,8 @@ class BatchNormParser(OpCLIParser):
             raise NotImplementedError("Only alpha=1.0 is supported")
         if args.beta != 0.0:
             raise NotImplementedError("Only beta=0.0 is supported")
+        if args.forw != 1:
+            raise NotImplementedError("Only forw=1 (train) is supported")
         if args.back != 0:
             raise NotImplementedError("Only back=0 is supported")
         if args.mode != 0:
