@@ -1,8 +1,14 @@
+# Default reviewers if no other rules match
+* @rkayaith @zjgarvey
+
 # AOT
 /iree/turbine/aot @Groverkss
 
 # Kernel
 /iree/turbine/kernel @Groverkss
+
+# BOO
+/iree/turbine/kernel/boo @rkayaith @zjgarvey
 
 # Ops
 /iree/turbine/ops @Groverkss
