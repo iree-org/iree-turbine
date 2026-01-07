@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import ctypes
 import logging
 import unittest
 import threading
@@ -41,7 +42,7 @@ def dylib_path() -> str | None:
     return str(paths[0].absolute())
 
 
-def test_hip_dylib_path(dylib_path: str | None):
+def test_hip_dylib_path_iree(dylib_path: str | None):
     if dylib_path is None or not torch.cuda.is_available():
         # This skip isn't a mark, since we are skipping based on a fixture value.
         pytest.skip(reason="Test requires pytorch with `rocm_sdk` python install.")
@@ -59,6 +60,16 @@ def test_hip_dylib_path(dylib_path: str | None):
     assert (
         found_path == dylib_path
     ), "Inconsistent dylib paths between hal device and rocm_sdk library."
+
+
+def test_hip_dylib_pytorch(dylib_path: str | None):
+    if dylib_path is None or not torch.cuda.is_available():
+        # This skip isn't a mark, since we are skipping based on a fixture value.
+        pytest.skip(reason="Test requires pytorch with `rocm_sdk` python install.")
+    # It is annoying to extract the file path from a CDLL, so we compare handles instead.
+    torch_hip_lib = torch.cuda._utils._get_gpu_runtime_library()
+    hip_lib = ctypes.CDLL(dylib_path)
+    assert torch_hip_lib._handle == hip_lib._handle
 
 
 class DeviceTest(unittest.TestCase):
