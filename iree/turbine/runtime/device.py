@@ -741,7 +741,8 @@ def _align_hip_library_with_torch() -> None:
         _CURRENT_THREAD.hip_dylib_set = True
     hip_dylib_path = str(rocm_sdk.find_libraries("amdhip64")[0].absolute())  # type: ignore
     loaded_library = ctypes.CDLL(hip_dylib_path)
-    if loaded_library._handle != torch.cuda._utils._get_gpu_runtime_library()._handle:
+    torch_gpu_library = torch.cuda._utils._get_gpu_runtime_library()._handle  # type: ignore
+    if loaded_library._handle != torch_gpu_library:
         raise RuntimeError(
             """Runtime library inconsistency found between pytorch and IREE.\n
 
