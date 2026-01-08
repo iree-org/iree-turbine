@@ -32,6 +32,8 @@ from iree.runtime import (
     get_driver,
 )
 
+from iree.runtime.flags import parse_flags
+
 from ..support.conversions import (
     dtype_to_element_type,
     torch_dtype_to_numpy,
@@ -709,32 +711,48 @@ def _align_hip_library_with_torch() -> None:
     """
     This should ensure pytorch and IREE use the same `libamdhip64.so` (or equivalent .dll).
 
-    The benefits of doing this:
+    If the only rocm install is through python, IREE won't find it without help.
+    Furthermore, if there is an existing install of rocm, e.g. in `/opt/rocm`,
+    there may be version incompatibilty between this install and the one pytorch
+    is using. This incompatibility can cause a variety of runtime errors, including
+    an inability to record IREE launches in the (rocprof-based) torch profiler, and
+    the fact that we pass a stream pointer from torch to IREE. Inconsistencies in
+    the definition of a `hipStream` between library versions would be problematic.
 
-    1. If the only rocm install is through python, IREE won't find it without help.
-    2. If there is an existing install of rocm, e.g. in `/opt/rocm`, there may be
-       version incompatibilty between this version and the one pytorch is using.
-       this incompatibility can cause issues with the torch profiler.
+    If `rocm_sdk` is available to python, pytorch should be using it for runtime libraries.
+    Otherwise it looks in the same places as IREE, so we shouldn't need to set this explicity.
 
-    If `rocm_sdk` is available to python, pytorch uses it for runtime libraries.
-    Otherwise it looks in the same places as IREE, so we shouldn't need to set this explicitly.
+    For context, see the documentation for python packaging in `TheRock`, in particular the
+    section on dynamic library resolution:
 
-    Pytorch does have a utility function `torch.cuda._utils._get_gpu_runtime_library`; however,
-    there is not a great way to extract a path from the returned `ctypes.CDLL` object.
+    https://github.com/ROCm/TheRock/blob/main/docs/packaging/python_packaging.md
+
+    Note that we aren't using their other recommendations (e.g., using a global `_rocm_init.py`),
+    since IREE-Turbine is not AMD-GPU exclusive software.
     """
     if getattr(_CURRENT_THREAD, "hip_dylib_set", False):
         return
     try:
         import rocm_sdk  # type: ignore
-        from iree.runtime.flags import parse_flags
+    except ModuleNotFoundError:
+        return
+    finally:
+        # Whether we were successful or not, don't try again.
+        _CURRENT_THREAD.hip_dylib_set = True
+    hip_dylib_path = str(rocm_sdk.find_libraries("amdhip64")[0].absolute())  # type: ignore
+    loaded_library = ctypes.CDLL(hip_dylib_path)
+    if loaded_library._handle != torch.cuda._utils._get_gpu_runtime_library()._handle:
+        raise RuntimeError(
+            """Runtime library inconsistency found between pytorch and IREE.\n
 
-        dylib_path = str(rocm_sdk.find_libraries("amdhip64")[0].absolute())  # type: ignore
-        parse_flags(f"--hip_dylib_path=file:{dylib_path}")
-        logger.debug("Successfully set hip_dylib_path to:\n\t%s", dylib_path)
-    except (ImportError, ModuleNotFoundError, KeyError):
-        pass
-    # Whether we were successful or not, don't try again.
-    _CURRENT_THREAD.hip_dylib_set = True
+            Please consider updating to a newer version of pytorch+rocm, or following the
+            recommendations in the following documentation for your project:\n
+
+            https://github.com/ROCm/TheRock/blob/main/docs/packaging/python_packaging.md
+            """
+        )
+    parse_flags(f"--hip_dylib_path=file:{hip_dylib_path}")
+    logger.debug("Successfully set hip_dylib_path to:\n\t%s", hip_dylib_path)
 
 
 def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
