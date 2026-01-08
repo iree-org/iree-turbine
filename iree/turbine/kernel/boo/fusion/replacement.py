@@ -281,38 +281,34 @@ def replace_aten_convolution_backward(node: Node):
     graph.lint()
 
 
-def replace_aten_scaled_dot_product_flash_attention(node: Node):
-    """Replace 'torch.ops.aten._scaled_dot_product_flash_attention' with 'torch.ops.aten.scaled_dot_product_attention'.
+def _replace_sdpa_variant(
+    node: Node,
+    query,
+    key,
+    value,
+    attn_mask,
+    dropout_p,
+    is_causal,
+    scale,
+):
+    """Common helper to replace SDPA variants with torch.ops.aten.scaled_dot_product_attention.
 
-    Flash attention returns a tuple (output, logsumexp, cum_seq_q, cum_seq_k, max_q, max_k,
-    philox_seed, philox_offset, debug_attn_mask). For inference without dropout, only the
-    output tensor (index 0) is needed.
-
-    This replacement only supports cases where the auxiliary outputs are unused. If any
-    output other than index 0 has downstream consumers, we bail out without modifying the graph.
+    This handles the common logic of replacing a multi-output SDPA variant (flash or efficient)
+    with the single-output scaled_dot_product_attention op.
     """
-
-    # Extract arguments from flash attention call.
-    query, key, value, dropout_p, is_causal = (
-        node.args[0],
-        node.args[1],
-        node.args[2],
-        node.args[3],
-        node.args[4],
-    )
     graph = node.graph
-    # enable_gqa is not preset in the flash_attn op, so we need to add it to the kwargs.
-    new_kwargs = {"enable_gqa": True, "scale": node.kwargs.get("scale", None)}
+    # enable_gqa is not preset in the internal SDPA ops, so we need to add it to the kwargs.
+    new_kwargs = {"enable_gqa": True, "scale": scale}
+
     # Insert replacement call before the original node.
-    # Attn mask is not preset in the flash_attn op; pass None.
     with graph.inserting_before(node):
         replacement = graph.call_function(
             torch.ops.aten.scaled_dot_product_attention.default,
-            args=(query, key, value, None, dropout_p, is_causal),
+            args=(query, key, value, attn_mask, dropout_p, is_causal),
             kwargs=new_kwargs,
         )
 
-    # Flash attention returns a tuple (output, logsumexp, ...).
+    # These SDPA variants return a tuple (output, ...).
     # We need to replace getitem(node, 0) with the replacement output
     # and remove other getitem users.
     users_to_process = list(
@@ -331,10 +327,67 @@ def replace_aten_scaled_dot_product_flash_attention(node: Node):
         elif user.args[1] == 0:
             user_to_replace = user
 
-    replacement.meta = user_to_replace.meta
-    user_to_replace.replace_all_uses_with(replacement)
+    user_to_replace.replace_all_uses_with(replacement, propagate_meta=True)
     for user in users_to_process:
         graph.erase_node(user)
 
     graph.erase_node(node)
     graph.lint()
+
+
+def replace_aten_scaled_dot_product_flash_attention(node: Node):
+    """Replace 'torch.ops.aten._scaled_dot_product_flash_attention' with 'torch.ops.aten.scaled_dot_product_attention'.
+
+    Flash attention returns a tuple (output, logsumexp, cum_seq_q, cum_seq_k, max_q, max_k,
+    philox_seed, philox_offset, debug_attn_mask). For inference without dropout, only the
+    output tensor (index 0) is needed.
+
+    This replacement only supports cases where the auxiliary outputs are unused. If any
+    output other than index 0 has downstream consumers, we bail out without modifying the graph.
+
+    Flash attention signature:
+        _scaled_dot_product_flash_attention(query, key, value, dropout_p, is_causal, *, scale=None)
+    """
+    # Extract arguments from flash attention call.
+    # Flash attention signature: (query, key, value, dropout_p, is_causal, *, scale=None)
+    query, key, value, dropout_p, is_causal = (
+        node.args[0],
+        node.args[1],
+        node.args[2],
+        node.args[3],
+        node.args[4],
+    )
+    scale = node.kwargs.get("scale", None)
+
+    # Attn mask is not present in the flash_attn op; pass None.
+    _replace_sdpa_variant(node, query, key, value, None, dropout_p, is_causal, scale)
+
+
+def replace_aten_scaled_dot_product_efficient_attention(node: Node):
+    """Replace 'torch.ops.aten._scaled_dot_product_efficient_attention' with 'torch.ops.aten.scaled_dot_product_attention'.
+
+    Efficient attention returns a tuple (output, log_sumexp, philox_seed, philox_offset).
+    For inference without dropout, only the output tensor (index 0) is needed.
+
+    This replacement only supports cases where the auxiliary outputs are unused. If any
+    output other than index 0 has downstream consumers, we bail out without modifying the graph.
+
+    Efficient attention signature:
+        _scaled_dot_product_efficient_attention(query, key, value, attn_bias, compute_log_sumexp, dropout_p, is_causal, *, scale=None)
+    """
+    # Extract arguments from efficient attention call.
+    # Efficient attention signature: (query, key, value, attn_bias, compute_log_sumexp, dropout_p, is_causal, *, scale=None)
+    query, key, value, attn_bias, _compute_log_sumexp, dropout_p, is_causal = (
+        node.args[0],
+        node.args[1],
+        node.args[2],
+        node.args[3],
+        node.args[4],
+        node.args[5],
+        node.args[6],
+    )
+    scale = node.kwargs.get("scale", None)
+
+    _replace_sdpa_variant(
+        node, query, key, value, attn_bias, dropout_p, is_causal, scale
+    )

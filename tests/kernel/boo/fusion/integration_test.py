@@ -251,31 +251,24 @@ def test_boo_convolution_backward_replacement(input_grad: bool, experimental: bo
     )
 
 
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="requires GPU"
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("experimental", [False, True])
-def test_boo_sdpa_replacement(experimental: bool):
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_boo_sdpa_replacement(device: str, experimental: bool, dtype: torch.dtype):
     """Test that scaled dot product attention replacement works."""
     recorder = EagerAndRecordGraphs()
-
     N, Hq, H, S, L, E, Ev = 32, 8, 8, 128, 128, 64, 64
-
-    class ScaledDotProductAttentionModule(torch.nn.Module):
-        """A simple module that wraps scaled_dot_product_attention."""
-
-        def __init__(self):
-            super().__init__()
-
-        def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor):
-            return torch.nn.functional.scaled_dot_product_attention(
-                query,
-                key,
-                value,
-                None,  # attn_mask
-                0.0,  # dropout_p
-                True,  # is_causal
-                scale=1,
-            )
-
-    m = ScaledDotProductAttentionModule()
     backend = (
         boo.backend(
             fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
@@ -285,20 +278,34 @@ def test_boo_sdpa_replacement(experimental: bool):
         if experimental
         else boo.backend(nested_backend=recorder)
     )
-    compiled_module = torch.compile(m, backend=backend)
 
-    query = torch.randn((N, Hq, L, E))
-    key = torch.randn((N, H, S, E))
-    value = torch.randn((N, H, S, Ev))
+    query = torch.randn((N, Hq, L, E), device=device, dtype=dtype)
+    key = torch.randn((N, H, S, E), device=device, dtype=dtype)
+    value = torch.randn((N, H, S, Ev), device=device, dtype=dtype)
+    compiled_sdpa = torch.compile(
+        torch.nn.functional.scaled_dot_product_attention, backend=backend
+    )
+    compiled_sdpa(
+        query,
+        key,
+        value,
+        None,
+        0.0,
+        True,
+        scale=1,
+    )
 
-    y = compiled_module(query, key, value)
-
-    [graph_module] = recorder.graphs
-    assert isinstance(graph_module, fx.GraphModule)
-    call_nodes = [n for n in graph_module.graph.nodes if n.op == "call_function"]
+    [compiled_module] = recorder.graphs
+    assert isinstance(compiled_module, fx.GraphModule)
+    call_nodes = [n for n in compiled_module.graph.nodes if n.op == "call_function"]
     call_strings = "\n".join([str(n.target) for n in call_nodes])
     if experimental:
         assert "boo.fused_op_scaled_dot" in call_strings
     else:
-        # Without experimental, should use regular aten ops
-        assert "scaled_dot_product" in call_strings or "aten." in call_strings
+        if device == "cuda":
+            if dtype == torch.float32:
+                assert "aten._scaled_dot_product_efficient_attention" in call_strings
+            else:
+                assert "aten._scaled_dot_product_flash_attention" in call_strings
+        else:
+            assert "aten._scaled_dot_product_flash_attention_for_cpu" in call_strings
