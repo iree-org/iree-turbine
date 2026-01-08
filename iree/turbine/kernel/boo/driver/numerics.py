@@ -109,7 +109,7 @@ def _run(
     cpu = torch.device("cpu")
     for c in commands:
         print(c)
-        sig = BooOpRegistry.parse_command(c, True)
+        sig = BooOpRegistry.parse_command(shlex.split(c), True)
         if sig is None:
             raise ValueError(f"Failed parsing a command: {c}.")
 
