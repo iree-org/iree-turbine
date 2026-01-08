@@ -6,10 +6,12 @@
 
 import ctypes
 import logging
-import unittest
-import threading
-import warnings
 import pytest
+import threading
+import unittest
+import warnings
+
+from pathlib import Path
 
 import torch
 
@@ -30,45 +32,47 @@ from iree.turbine.support.exceptions import *
 
 
 @pytest.fixture
-def dylib_path() -> str | None:
+def hip_dylib_path() -> str:
     try:
         import rocm_sdk
 
-        paths = rocm_sdk.find_libraries("amdhip64")
-    except (ImportError, ModuleNotFoundError, KeyError):
-        print("Not using python install of rocm_sdk.")
-        return
-    assert len(paths) != 0
+    except ModuleNotFoundError:
+        pytest.skip(reason="Not using python install of rocm_sdk.")
+
+    # This raises `ModuleNotFoundError` if failed.
+    paths = rocm_sdk.find_libraries("amdhip64")
+    assert len(paths) != 0, "Must have at least one hip runtime library."
+    # If `rocm_sdk` is installed, but pytorch does not have rocm support, throw here.
+    assert (
+        torch.cuda.is_available() and torch.version.hip
+    ), "Invalid pytorch + rocm install."
+    # TODO: Consider raising a warning if multiple paths are found?
     return str(paths[0].absolute())
 
 
-def test_hip_dylib_path_iree(dylib_path: str | None):
-    if dylib_path is None or not torch.cuda.is_available():
-        # This skip isn't a mark, since we are skipping based on a fixture value.
-        pytest.skip(reason="Test requires pytorch with `rocm_sdk` python install.")
+def test_hip_dylib_path_iree(hip_dylib_path: str):
     d = get_device_from_torch(torch.device("cuda:0"))
     device_info = d.dump_device_info().splitlines()
     found_path = ""
     for line in device_info:
-        items = line.split(" ")
-        if len(items) < 3:
+        # This device info should contain a line of the form "   - amdhip64_dylib_path: <path>"
+        if "amdhip64_dylib_path" not in line:
             continue
-        if items[1] == "amdhip64_dylib_path:":
-            found_path = items[2]
-            break
-    assert found_path != "", "Must have a nonempty value for dylib path!"
+        found_path = line.split(" ")[-1]
+        break
+    assert found_path != "", "Device info did not include a hip dylib path!"
+    assert Path(
+        found_path
+    ).is_file(), f'Device info provided "{found_path}", which is not a file.'
     assert (
-        found_path == dylib_path
+        found_path == hip_dylib_path
     ), "Inconsistent dylib paths between hal device and rocm_sdk library."
 
 
-def test_hip_dylib_pytorch(dylib_path: str | None):
-    if dylib_path is None or not torch.cuda.is_available():
-        # This skip isn't a mark, since we are skipping based on a fixture value.
-        pytest.skip(reason="Test requires pytorch with `rocm_sdk` python install.")
+def test_hip_dylib_pytorch(hip_dylib_path: str):
     # It is annoying to extract the file path from a CDLL, so we compare handles instead.
     torch_hip_lib = torch.cuda._utils._get_gpu_runtime_library()
-    hip_lib = ctypes.CDLL(dylib_path)
+    hip_lib = ctypes.CDLL(hip_dylib_path)
     assert torch_hip_lib._handle == hip_lib._handle
 
 
