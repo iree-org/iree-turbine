@@ -5,7 +5,6 @@ from operator import getitem
 import torch
 from torch import fx
 from torch.fx.node import Target, Node
-from torch.fx.passes.shape_prop import TensorMetadata
 
 from ..op_exports.conv import DEFAULT_LAYOUTS
 from iree.turbine.ops import iree
@@ -156,8 +155,8 @@ def replace_getitem_users(
                 else permute_metadata(use, (_perm.permutation,))
             )
             replacement = _apply_perms(new_output, _perm, forward_perm=False)
-        use.replace_all_uses_with(replace_with=replacement)
-        graph.erase_node(use)
+            use.replace_all_uses_with(replace_with=replacement)
+            graph.erase_node(use)
 
 
 def replace_aten_convolution_backward(node: Node):
