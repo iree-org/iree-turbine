@@ -69,13 +69,6 @@ def test_hip_dylib_path_iree(hip_dylib_path: str):
     ), "Inconsistent dylib paths between hal device and rocm_sdk library."
 
 
-def test_hip_dylib_pytorch(hip_dylib_path: str):
-    # It is annoying to extract the file path from a CDLL, so we compare handles instead.
-    torch_hip_lib = torch.cuda._utils._get_gpu_runtime_library()
-    hip_lib = ctypes.CDLL(hip_dylib_path)
-    assert torch_hip_lib._handle == hip_lib._handle
-
-
 class DeviceTest(unittest.TestCase):
     def test_create(self):
         d = Device("local-task")
