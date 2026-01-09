@@ -4,10 +4,14 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import ctypes
 import logging
-import unittest
+import pytest
 import threading
+import unittest
 import warnings
+
+from pathlib import Path
 
 import torch
 
@@ -25,6 +29,51 @@ from iree.turbine.runtime.device import (
 )
 
 from iree.turbine.support.exceptions import *
+
+
+@pytest.fixture
+def hip_dylib_path() -> str:
+    try:
+        import rocm_sdk
+
+    except ModuleNotFoundError:
+        pytest.skip(reason="Not using python install of rocm_sdk.")
+
+    # This raises `ModuleNotFoundError` if failed.
+    paths = rocm_sdk.find_libraries("amdhip64")
+    assert len(paths) != 0, "Must have at least one hip runtime library."
+    # If `rocm_sdk` is installed, but pytorch does not have rocm support, throw here.
+    assert (
+        torch.cuda.is_available() and torch.version.hip
+    ), "Invalid pytorch + rocm install."
+    # TODO: Consider raising a warning if multiple paths are found?
+    return str(paths[0].absolute())
+
+
+def test_hip_dylib_path_iree(hip_dylib_path: str):
+    d = get_device_from_torch(torch.device("cuda:0"))
+    device_info = d.dump_device_info().splitlines()
+    found_path = ""
+    for line in device_info:
+        # This device info should contain a line of the form "   - amdhip64_dylib_path: <path>"
+        if "amdhip64_dylib_path" not in line:
+            continue
+        found_path = line.split(" ")[-1]
+        break
+    assert found_path != "", "Device info did not include a hip dylib path!"
+    assert Path(
+        found_path
+    ).is_file(), f'Device info provided "{found_path}", which is not a file.'
+    assert (
+        found_path == hip_dylib_path
+    ), "Inconsistent dylib paths between hal device and rocm_sdk library."
+
+
+def test_hip_dylib_pytorch(hip_dylib_path: str):
+    # It is annoying to extract the file path from a CDLL, so we compare handles instead.
+    torch_hip_lib = torch.cuda._utils._get_gpu_runtime_library()
+    hip_lib = ctypes.CDLL(hip_dylib_path)
+    assert torch_hip_lib._handle == hip_lib._handle
 
 
 class DeviceTest(unittest.TestCase):
