@@ -112,7 +112,7 @@ def cast_tensor_dim_decl(
 def cast_scalar_to_element_type(scalar: Value, element_type: IrType) -> Value:
     scalar_type = scalar.type
     # Support cast from Index -> Integer.
-    if scalar_type == IndexType.get() and IntegerType.isinstance(element_type):
+    if scalar_type == IndexType.get() and isinstance(element_type, IntegerType):
         return arith_d.IndexCastUIOp(element_type, scalar).result
     raise ValueError(
         f"Provided splat value ({scalar_type}) does not match dtype {element_type} (and cannot be cast)"
@@ -121,7 +121,7 @@ def cast_scalar_to_element_type(scalar: Value, element_type: IrType) -> Value:
 
 def assert_value_is_index(x: Value):
     t = x.type
-    if not IndexType.isinstance(t):
+    if not isinstance(t, IndexType):
         raise ValueError(f"Expected an index value but got {t}")
 
 
