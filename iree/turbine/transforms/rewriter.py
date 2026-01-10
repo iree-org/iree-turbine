@@ -76,9 +76,10 @@ class OpMatcher(Generic[OpMatchResultT]):
         elif isinstance(maybe_op, OpView):
             op = maybe_op.operation
         elif isinstance(maybe_op, Value):
-            if OpResult.isinstance(maybe_op):
-                op = _op_as_operation(OpResult(maybe_op).owner)
-            elif BlockArgument.isinstance(maybe_op):
+            if isinstance(maybe_op.owner, OpView):
+                op = maybe_op.owner.operation
+            else:
+                assert isinstance(maybe_op.owner, Block)
                 return None
         else:
             raise ValueError(f"Unexpected OpMatcher input: {type(maybe_op)}")
@@ -310,8 +311,8 @@ class Pass:
                     continue
                 if not _op_is_live(op):
                     for operand in op.operands:
-                        if OpResult.isinstance(operand):
-                            worklist.add(operand.owner)
+                        if isinstance(operand.owner, OpView):
+                            worklist.add(operand.owner.operation)
                     op.erase()
 
 
@@ -342,8 +343,9 @@ def pass_main(pass_class: Type[Pass], *, argv=None):
 
 
 def _value_as_op_or_none(value: Value) -> Optional[Operation]:
-    if OpResult.isinstance(value):
-        return _op_as_operation(OpResult(value).owner)
+    if isinstance(value.owner, OpView):
+        return value.owner.operation
+    assert isinstance(value.owner, Block)
     return None
 
 

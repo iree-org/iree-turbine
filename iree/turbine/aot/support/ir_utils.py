@@ -393,7 +393,7 @@ class ModuleBuilder:
     def _create_initial_value_for_type(self, t: IrType) -> Attribute:
         # TODO(#169): Implement something upstream for this (it exists in the C++ API)
         # and use it.
-        if RankedTensorType.isinstance(t):
+        if isinstance(t, RankedTensorType):
             rtt = RankedTensorType(t)
             if not rtt.has_static_shape:
                 raise ValueError(
@@ -401,12 +401,12 @@ class ModuleBuilder:
                 )
             element_attr = self._create_initial_value_for_type(rtt.element_type)
             return DenseElementsAttr.get_splat(t, element_attr)
-        elif IntegerType.isinstance(t):
+        elif isinstance(t, IntegerType):
             return IntegerAttr.get(t, 0)
-        elif F32Type.isinstance(t) or F64Type.isinstance(t) or F16Type.isinstance(t):
+        elif isinstance(t, (F32Type, F64Type, F16Type)):
             # TODO(#170): There should be a common way to check if a FloatType.
             return FloatAttr.get(t, 0.0)
-        elif IndexType.isinstance(t):
+        elif isinstance(t, IndexType):
             return IntegerAttr.get(IndexType.get(), 0)
         else:
             raise ValueError(

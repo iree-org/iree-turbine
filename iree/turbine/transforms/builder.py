@@ -35,7 +35,7 @@ class Builder:
         return self.native_type_conversion.torch_type_to_native(t)
 
     def to_native_tensor_type(self, t: IrType) -> RankedTensorType:
-        if not RankedTensorType.isinstance(t):
+        if not isinstance(t, RankedTensorType):
             try:
                 return RankedTensorType(self.to_native_type(t))
             except Exception as e:
