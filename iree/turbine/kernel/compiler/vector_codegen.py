@@ -241,8 +241,8 @@ def binary_broadcast(
     assert NDEBUG or (isinstance(lhs, IRProxyValue) and isinstance(rhs, IRProxyValue))
     lhs_type = lhs.ir_value.type
     rhs_type = rhs.ir_value.type
-    lhs_is_vector = VectorType.isinstance(lhs_type)
-    rhs_is_vector = VectorType.isinstance(rhs_type)
+    lhs_is_vector = isinstance(lhs_type, VectorType)
+    rhs_is_vector = isinstance(rhs_type, VectorType)
     if not lhs_is_vector and not rhs_is_vector:
         # Not vectors: return as-is.
         return False, lhs, rhs
@@ -308,7 +308,7 @@ def _define_arithmetic_handlers():
                 raise ValidationError("Malformed arguments") from e
 
             val = cast_py_value(emitter, val)
-            is_vector = VectorType.isinstance(val.ir_value.type)
+            is_vector = isinstance(val.ir_value.type, VectorType)
             if is_vector:
                 result = ScalarBuilder.unary_vector_arithmetic(mnemonic, val)
             else:
@@ -828,7 +828,7 @@ def cast_kernel_buffer(
     ir_type = value.type
     py_type = node.type
 
-    if not MemRefType.isinstance(ir_type):
+    if not isinstance(ir_type, MemRefType):
         raise CodegenError(
             f"Expected a KernelBuffer (aka. `memref`) but got `{ir_type}`"
         )
@@ -847,14 +847,14 @@ def cast_vector(
     proxy_value = cast_py_value(emitter, value)
 
     # Cast scalar types correctly first.
-    if element_type and not ShapedType.isinstance(proxy_value.ir_value.type):
+    if element_type and not isinstance(proxy_value.ir_value.type, ShapedType):
         # Implicit scalar type promotion.
         proxy_value = ScalarBuilder.to_dtype(proxy_value, element_type)
 
     value = proxy_value.ir_value
 
     # After scalar promotion, promote to vector.
-    if VectorType.isinstance(value.type):
+    if isinstance(value.type, VectorType):
         # Already a vector. Coerce or return.
         if element_type is not None:
             value = ScalarBuilder.to_dtype(proxy_value, element_type).ir_value
@@ -872,7 +872,7 @@ def cast_scalar(emitter: ThreadEmitter, value):
     value = proxy_value.ir_value
 
     # After scalar promotion, promote to vector.
-    if VectorType.isinstance(value.type):
+    if isinstance(value.type, VectorType):
         # Vector -> scalar.
         zero = arith_d.ConstantOp(IndexType.get(), 0)
         return vector_d.extractelement(value, position=zero)
