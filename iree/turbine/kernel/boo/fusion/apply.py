@@ -43,6 +43,7 @@ def fusion_transform(
     *,
     fusion_schema: FusionSchema,
     post_fusion_replacements: ReplacementSchema,
+    post_decomposition_replacements: ReplacementSchema,
 ) -> None:
     """Applies fusions to the underlying fx graph of a GraphModule by offloading subgraphs to IREE compiler/runtime."""
 
@@ -67,6 +68,11 @@ def fusion_transform(
             tracing_mode="fake",
         )(*infer_example_inputs(subgraph.module))
         _log_graph_module("Decomposed module", decomposed_gm)
+
+        # For ops that require replacements after decomposition.
+        apply_replacements(decomposed_gm.graph, post_decomposition_replacements)
+        decomposed_gm.graph.eliminate_dead_code()
+        decomposed_gm.recompile()
 
         custom_op = get_custom_graph_op(
             decomposed_gm, force_single_dispatch=subgraph.single_dispatch
