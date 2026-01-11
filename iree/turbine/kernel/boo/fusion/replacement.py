@@ -276,18 +276,6 @@ def _replace_sdpa_variant(
     This handles the common logic of replacing a multi-output SDPA variant (flash or efficient)
     with the single-output scaled_dot_product_attention op.
     """
-    graph = node.graph
-    # enable_gqa is not preset in the internal SDPA ops, so we need to add it to the kwargs.
-    new_kwargs = {"enable_gqa": True, "scale": scale}
-
-    # Insert replacement call before the original node.
-    with graph.inserting_before(node):
-        replacement = graph.call_function(
-            torch.ops.aten.scaled_dot_product_attention.default,
-            args=(query, key, value, attn_mask, dropout_p, is_causal),
-            kwargs=new_kwargs,
-        )
-
     # These SDPA variants return a tuple (output, ...).
     # We need to replace getitem(node, 0) with the replacement output
     # and remove other getitem users.
@@ -307,6 +295,18 @@ def _replace_sdpa_variant(
         elif user.args[1] == 0:
             user_to_replace = user
 
+    graph = node.graph
+
+    # enable_gqa is not forwarded through flash_attention, so we can drop it from kwargs.
+    new_kwargs = {"scale": scale}
+
+    # Insert replacement call before the original node.
+    with graph.inserting_before(node):
+        replacement = graph.call_function(
+            torch.ops.aten.scaled_dot_product_attention.default,
+            args=(query, key, value, attn_mask, dropout_p, is_causal),
+            kwargs=new_kwargs,
+        )
     user_to_replace.replace_all_uses_with(replacement, propagate_meta=True)
     for user in users_to_process:
         graph.erase_node(user)
