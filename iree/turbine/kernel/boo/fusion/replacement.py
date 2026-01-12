@@ -7,7 +7,7 @@ from torch import fx
 from torch.fx.node import Target, Node
 
 from ..op_exports.conv import DEFAULT_LAYOUTS
-from iree.turbine.kernel.boo import ops as boo_ops
+from iree.turbine.ops import iree
 from ..ops.utils import get_memory_format_permutation, MemoryFormatPermutation
 from ..ops.graph import call_permute, permute_metadata
 
@@ -347,3 +347,27 @@ def replace_aten_scaled_dot_product_efficient_attention(node: Node):
     _replace_sdpa_variant(
         node, query, key, value, attn_bias, dropout_p, is_causal, scale
     )
+
+
+def replace_aten_batch_norm(node: Node) -> None:
+    """
+    Force batch norm to be computed in CNHW layout, with separate transpose
+    dispatches. This is currently the preferred approach for IREE as batch norm
+    contains reductions that are parallel over the channels dimension, and IREE
+    codegen currently performs best on outer-parallel reductions.
+    """
+
+    def replacement_fn(input_nchw: torch.Tensor, *args):
+        input_cnhw: torch.Tensor = iree.compute_barrier_start(input_nchw.swapdims(0, 1))
+        result_nchw: torch.Tensor
+        result_nchw, *rest = torch.ops.aten._native_batch_norm_legit_functional(
+            input_cnhw.swapdims(1, 0), *args
+        )
+        result_cnhw: torch.Tensor = iree.compute_barrier_end(result_nchw.swapdims(0, 1))
+        return result_cnhw.swapdims(0, 1), *rest
+
+    with node.graph.inserting_before(node):
+        replacement_node = node.graph.call_function(replacement_fn, args=node.args)
+    node.replace_all_uses_with(replace_with=replacement_node, propagate_meta=True)
+    node.graph.erase_node(node)
+    node.graph.lint()
