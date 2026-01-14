@@ -18,7 +18,7 @@ types-decorator==5.2.0.20251101
 typing_extensions
 wheel
 
-torch>=2.5,<=2.9.1
+torch>=2.5
 torchaudio
 torchvision
 
