@@ -22,7 +22,7 @@ jobs:
           - name: ubuntu-24.04
             version: "3.12"
             runs-on: ubuntu-24.04
-            pytorch_requirements: "build_tools/pytorch-cpu-requirements.txt"
+            pytorch_requirements: "build_tools/pytorch-cpu-requirements-nightly.txt"
 
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 60
@@ -53,6 +53,7 @@ jobs:
           # unnecessary libraries included in default pytorch.
           pip install --no-compile -r ${{ matrix.pytorch_requirements }}
           pip install --no-cache-dir -r requirements-iree-pinned.txt
+          pip install -r requirements.txt
           pip install -e .
 
       - name: Run unit tests
