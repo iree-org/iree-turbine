@@ -1,4 +1,4 @@
-# Copyright 2025 The IREE Authors
+# Copyright 2026 The IREE Authors
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
@@ -53,7 +53,7 @@ jobs:
           # unnecessary libraries included in default pytorch.
           pip install --no-compile -r ${{ matrix.pytorch_requirements }}
           pip install --no-cache-dir -r requirements-iree-pinned.txt
-          pip install -r requirements.txt -e .
+          pip install -e .
 
       - name: Run unit tests
         if: ${{ !cancelled() }}
@@ -64,7 +64,7 @@ jobs:
 
 
   # Depends on all other jobs to provide an aggregate job status.
-  ci_summary:
+  test_pytorch_nightly_summary:
     if: always()
     runs-on: ubuntu-24.04
     needs:
