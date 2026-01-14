@@ -32,12 +32,20 @@ jobs:
         version: ["3.10", "3.11", "3.12"]
         runs-on: [ubuntu-24.04]
         pytorch_requirements: ["pytorch-cpu-requirements.txt"]
+        type_check: true
 
         include:
           - name: linux-mi325
             version: "3.11"
             runs-on: linux-mi325-1gpu-ossci-iree-org
             pytorch_requirements: "pytorch-rocm-requirements.txt"
+            type_check: false
+
+          - name: pytorch-nightly_ubuntu-24.04
+            version: "3.12"
+            runs-on: ubuntu-24.04
+            pytorch_requirements: "build_tools/pytorch-cpu-nightly-requirements.txt"
+            type_check: false
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 60
     env:
@@ -75,7 +83,7 @@ jobs:
           pytest -n 4 --timeout=300 --capture=tee-sys -vv .
 
       - name: MyPy Type Checking
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.type_check == true }}
         run: |
           mypy
 

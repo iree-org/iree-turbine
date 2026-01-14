@@ -238,7 +238,15 @@ class TestSubgraphReplacement:
         )
         y = compiled_m(x)
         [fwd_gm] = recorder.graphs
-        assert "torch.ops.aten." not in str(fwd_gm)
+        for node in fwd_gm.graph.nodes:
+            if not node.op == "call_function":
+                continue
+            if not str(node.target).startswith("aten."):
+                continue
+            assert (
+                str(node.target) == "aten.detach.default"
+            ), f"Got an unexpected op {node} in graph:\n {fwd_gm.print_readable(print_output=False)}."
+
         assert list(y.shape) == list(expected_y.shape)
         assert list(y.stride()) == list(expected_y.stride())
 
@@ -343,8 +351,21 @@ class TestSubgraphReplacement:
 
         # Only the backward module should contain aten ops.
         forward_module, backward_module = recorder.graphs
-        assert "torch.ops.aten." in str(backward_module)
-        assert "torch.ops.aten." not in str(forward_module)
+        for node in forward_module.graph.nodes:
+            if node.op != "call_function":
+                continue
+            if str(node.target).startswith("aten."):
+                assert (
+                    str(node.target) == "aten.detach.default"
+                ), f"Got unexpected node: {node}.\nSee:\n{forward_module.print_readable(print_output=False)}."
+
+        assert not any(
+            [
+                str(node.target).startswith("boo.")
+                for node in backward_module.graph.nodes
+                if node.target == "call_function"
+            ]
+        ), "Expected no boo ops for backward graph."
 
         assert isinstance(
             compiled_m.get_parameter("layer0.0.weight").grad, torch.Tensor
