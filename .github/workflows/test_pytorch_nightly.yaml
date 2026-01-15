@@ -1,43 +1,29 @@
-# Copyright 2024 The IREE Authors
+# Copyright 2026 The IREE Authors
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions.
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-name: CI
+name: Nightly PyTorch Tests
 
 on:
   workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-      - main
-
-concurrency:
-  # A PR number if a pull request and otherwise the commit hash. This cancels
-  # queued and in-progress runs for the same PR (presubmit) or commit
-  # (postsubmit). The workflow name is prepended to avoid conflicts between
-  # different workflows.
-  group: ${{ github.workflow }}-${{ github.event.number || github.sha }}
-  cancel-in-progress: true
+  schedule:
+    # Scheduled for 2pm UTC
+    - cron: "0 14 * * *"
 
 jobs:
   test:
-    name: "${{ matrix.name }} :: ${{ matrix.version }} :: Unit Tests and Type Checking"
+    name: "PyTorch Nightly"
     strategy:
       fail-fast: false
       matrix:
-        # Support for Python 3.13 depends on https://github.com/pytorch/pytorch/issues/130249
-        name: [ubuntu-24.04]
-        version: ["3.10", "3.11", "3.12"]
-        runs-on: [ubuntu-24.04]
-        pytorch_requirements: ["pytorch-cpu-requirements.txt"]
-
         include:
-          - name: linux-mi325
-            version: "3.11"
-            runs-on: linux-mi325-1gpu-ossci-iree-org
-            pytorch_requirements: "pytorch-rocm-requirements.txt"
+          - name: ubuntu-24.04
+            version: "3.12"
+            runs-on: ubuntu-24.04
+            pytorch_requirements: "build_tools/pytorch-cpu-requirements-nightly.txt"
+
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 60
     env:
@@ -68,15 +54,13 @@ jobs:
       - name: Run unit tests
         if: ${{ !cancelled() }}
         run: |
+          echo "Running unit tests for torch nightly."
+          echo $(pip list | grep torch)
           pytest -n 4 --timeout=300 --capture=tee-sys -vv .
 
-      - name: MyPy Type Checking
-        if: ${{ !cancelled() }}
-        run: |
-          mypy
 
   # Depends on all other jobs to provide an aggregate job status.
-  ci_summary:
+  test_pytorch_nightly_summary:
     if: always()
     runs-on: ubuntu-24.04
     needs:
