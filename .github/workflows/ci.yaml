@@ -61,10 +61,6 @@ jobs:
       - name: Install pip deps
         run: |
           python -m pip install --no-compile --upgrade pip
-          # Note: We install in three steps in order to satisfy requirements
-          # from non default locations first. Additionally, installing
-          # cpu/rocm-specific pytorch wheels first avoids installing
-          # unnecessary libraries included in default pytorch.
           pip install --no-compile -r ${{ matrix.pytorch_requirements }}
           pip install --no-cache-dir -r requirements-iree-pinned.txt
           pip install -r requirements.txt -e .
