@@ -91,10 +91,10 @@ class _ScalarBuilder:
         return str(t) in FLOAT_BITWIDTHS
 
     def is_integer_type(self, t: IrType) -> bool:
-        return IntegerType.isinstance(t)
+        return isinstance(t, IntegerType)
 
     def is_index_type(self, t: IrType) -> bool:
-        return IndexType.isinstance(t)
+        return isinstance(t, IndexType)
 
     def get_typeclass(self, t: IrType, index_same_as_integer=False) -> str:
         # If this is a vector type, get the element type.

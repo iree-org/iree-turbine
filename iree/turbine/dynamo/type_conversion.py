@@ -99,7 +99,7 @@ class NativeTypeConverter:
         # signed IntegerTypes which we must convert to signless for the native
         # type system.
         if signless:
-            if IntegerType.isinstance(torch_type):
+            if isinstance(torch_type, IntegerType):
                 signed_int_type = IntegerType(torch_type)
                 return IntegerType.get_signless(signed_int_type.width)
         return torch_type
@@ -108,7 +108,7 @@ class NativeTypeConverter:
         self, native_value: Value, torch_type: IrType, *, static_info_cast: bool = False
     ) -> Value:
         native_type = native_value.type
-        if RankedTensorType.isinstance(native_type):
+        if isinstance(native_type, RankedTensorType):
             # Convert to vtensor.
             if static_info_cast:
                 required_native_type = self.torch_type_to_native(torch_type)
@@ -119,7 +119,7 @@ class NativeTypeConverter:
                 results=[torch_type],
                 operands=[native_value],
             ).result
-        elif IntegerType.isinstance(native_type):
+        elif isinstance(native_type, IntegerType):
             # Convert to !torch.int
             int_type = IntegerType(native_type)
             width = int_type.width
@@ -134,7 +134,7 @@ class NativeTypeConverter:
             return Operation.create(
                 op_name, results=[torch_type], operands=[native_value]
             ).result
-        elif F64Type.isinstance(native_type):
+        elif isinstance(native_type, F64Type):
             # Convert to !torch.float
             return Operation.create(
                 "torch_c.from_f64", results=[torch_type], operands=[native_type]
@@ -148,7 +148,7 @@ class NativeTypeConverter:
         self, torch_value: Value, *, static_info_cast_to: Optional[IrType] = None
     ) -> Value:
         native_type = self.torch_type_to_native(torch_value.type)
-        if RankedTensorType.isinstance(native_type):
+        if isinstance(native_type, RankedTensorType):
             # Convert to vtensor.
             builtin_tensor_value = Operation.create(
                 "torch_c.to_builtin_tensor",
@@ -161,7 +161,7 @@ class NativeTypeConverter:
                     static_info_cast_to, builtin_tensor_value
                 )
             return builtin_tensor_value
-        elif IntegerType.isinstance(native_type):
+        elif isinstance(native_type, IntegerType):
             # Convert to !torch.int
             int_type = IntegerType(native_type)
             width = int_type.width
@@ -176,7 +176,7 @@ class NativeTypeConverter:
             return Operation.create(
                 op_name, results=[native_type], operands=[torch_value]
             ).result
-        elif F64Type.isinstance(native_type):
+        elif isinstance(native_type, F64Type):
             # Convert to !torch.float
             return Operation.create(
                 "torch_c.to_f64", results=[native_type], operands=[torch_value]
