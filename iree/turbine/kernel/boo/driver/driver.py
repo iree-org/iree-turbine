@@ -93,6 +93,12 @@ list of arguments.
         help="Use a splat value for inputs (defaults to random values).",
     )
     parser.add_argument(
+        "--max-stddev-allowed",
+        default=None,
+        type=float,
+        help="Maximum allowed standard deviation as a ratio of the mean (e.g., 0.1 for 10%%). If exceeded, the run will be retried up to 5 times.",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         default=None,
@@ -179,56 +185,90 @@ def main(args: list[str] = sys.argv[1:]) -> int:
             continue
 
         for backend in backends:
-            try:
-                _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
-                sample_inputs = _get_sample_args(
-                    signature, meta_args.splat_input_value, devices
-                )
+            max_retries = 5
+            retry_count = 0
+            results = None
+            aggregate_stats = None
 
-                prof = run(
-                    _func,
-                    timing_args,
-                    sample_inputs,
-                    devices,
-                    meta_args.verbose,
-                )
-            except Exception as exc:
+            while retry_count < max_retries:
+                try:
+                    _func = BACKEND_TO_FUNC_GENERATOR[backend](signature)
+                    sample_inputs = _get_sample_args(
+                        signature, meta_args.splat_input_value, devices
+                    )
+
+                    prof = run(
+                        _func,
+                        timing_args,
+                        sample_inputs,
+                        devices,
+                        meta_args.verbose,
+                    )
+                except Exception as exc:
+                    if meta_args.verbose:
+                        traceback.print_exception(exc)
+                    csv_row += ["N.A."] * len(csv_stats)
+                    test_error += 1
+                    break
+
+                if not timing_args.time:
+                    csv_row += ["untimed"] * len(csv_stats)
+                    test_error += 1
+                    break
+
+                zones = _extract_zones(prof)
+
+                if len(zones.keys()) == 0:
+                    if meta_args.verbose:
+                        print(">>> FAILED TO COLLECT TIMING INFO")
+                    csv_row += ["failed to collect timing info"] * len(csv_stats)
+                    test_error += 1
+                    break
+
+                # Get iree stats and print.
+                results = _get_zone_stats(zones)
                 if meta_args.verbose:
-                    traceback.print_exception(exc)
-                csv_row += ["N.A."] * len(csv_stats)
-                test_error += 1
-                continue
+                    _print_zone_stats(results)
 
-            if not timing_args.time:
-                csv_row += ["untimed"] * len(csv_stats)
-                test_error += 1
-                continue
+                aggregate_stats = get_aggregate_stats(csv_stats, results, timing_args.iter)
 
-            zones = _extract_zones(prof)
+                # Check if stddev/mean ratio exceeds threshold
+                exceeds_threshold, max_ratio_found = _check_stddev_threshold(
+                    results, meta_args.max_stddev_allowed
+                )
 
-            if len(zones.keys()) == 0:
+                if exceeds_threshold:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        if meta_args.verbose:
+                            print(
+                                f">>> WARNING: Standard deviation ratio {max_ratio_found:.2%} exceeds threshold "
+                                f"{meta_args.max_stddev_allowed:.2%}. Retrying... (attempt {retry_count + 1}/{max_retries})"
+                            )
+                    else:
+                        # Exhausted all retries
+                        raise RuntimeError(
+                            f"Failed to achieve stable results after {max_retries} attempts. "
+                            f"Maximum stddev/mean ratio observed: {max_ratio_found:.2%}, "
+                            f"but threshold is {meta_args.max_stddev_allowed:.2%}. "
+                            f"Consider increasing --max-stddev-allowed or investigating system load."
+                        )
+                else:
+                    # Success - stddev is within threshold or no threshold set
+                    break
+
+            # Only print and record stats if we succeeded
+            if results is not None and aggregate_stats is not None:
                 if meta_args.verbose:
-                    print(">>> FAILED TO COLLECT TIMING INFO")
-                csv_row += ["failed to collect timing info"] * len(csv_stats)
-                test_error += 1
-                continue
+                    print(
+                        f">>>\tPer-launch # GPU kernel dispatches ({backend}): {aggregate_stats.num_dispatches / timing_args.iter}"
+                    )
+                    print(
+                        f">>>\tPer-launch GPU mean time ({backend}): {aggregate_stats.mean}us"
+                    )
 
-            # Get iree stats and print.
-            results = _get_zone_stats(zones)
-            if meta_args.verbose:
-                _print_zone_stats(results)
-
-            aggregate_stats = get_aggregate_stats(csv_stats, results, timing_args.iter)
-            if meta_args.verbose:
-                print(
-                    f">>>\tPer-launch # GPU kernel dispatches ({backend}): {aggregate_stats.num_dispatches / timing_args.iter}"
-                )
-                print(
-                    f">>>\tPer-launch GPU mean time ({backend}): {aggregate_stats.mean}us"
-                )
-
-            for stat in csv_stats:
-                csv_row.append(f"{aggregate_stats._asdict()[stat]}")
+                for stat in csv_stats:
+                    csv_row.append(f"{aggregate_stats._asdict()[stat]}")
 
         csv_file.writerow(csv_row)
     # Exit code: zero if no errors, non-zero otherwise.
@@ -461,6 +501,36 @@ def _print_zone_stats(results: ZoneStatsSummary) -> None:
             [f"{key}={decorate_val(value)}" for key, value in stats._asdict().items()]
         )
         print(s)
+
+
+def _check_stddev_threshold(
+    results: ZoneStatsSummary, max_stddev_ratio_allowed: float | None
+) -> tuple[bool, float]:
+    """Check if any zone's stddev/mean ratio exceeds the allowed threshold.
+
+    Args:
+        results: Statistics summary for all zones.
+        max_stddev_ratio_allowed: Maximum allowed stddev as a ratio of mean
+            (e.g., 0.1 means stddev can be at most 10% of mean).
+
+    Returns:
+        (exceeds_threshold, max_ratio_found): A tuple where the first value
+        indicates if threshold was exceeded, and second value is the maximum
+        stddev/mean ratio found across all zones.
+    """
+    if max_stddev_ratio_allowed is None:
+        return (False, 0.0)
+
+    max_ratio_found = 0.0
+    for zone_stats in results.values():
+        if isinstance(zone_stats.stddev, float) and isinstance(zone_stats.mean, float):
+            assert zone_stats.mean != 0, "Mean cannot be zero for profiled zones"
+            ratio = zone_stats.stddev / zone_stats.mean
+            max_ratio_found = max(max_ratio_found, ratio)
+            if ratio > max_stddev_ratio_allowed:
+                return (True, max_ratio_found)
+
+    return (False, max_ratio_found)
 
 
 if __name__ == "__main__":
