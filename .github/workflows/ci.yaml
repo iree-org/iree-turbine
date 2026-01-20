@@ -65,6 +65,10 @@ jobs:
           pip install --no-cache-dir -r requirements-iree-pinned.txt
           pip install -r requirements.txt -e .
 
+      - name: List installed packages
+        run: |
+          pip freeze
+
       - name: Run unit tests
         if: ${{ !cancelled() }}
         run: |
