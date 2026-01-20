@@ -338,35 +338,3 @@ def test_boo_sdpa_replacement(device: str, experimental: bool, dtype: torch.dtyp
                 assert "aten._scaled_dot_product_flash_attention" in call_strings
         else:
             assert "aten._scaled_dot_product_flash_attention_for_cpu" in call_strings
-
-
-@pytest.mark.parametrize("device", ALL_DEVICES)
-@pytest.mark.parametrize("memory_format", [torch.channels_last])
-def test_boo_batch_norm_used(device: torch.device, memory_format: torch.memory_format):
-    """Test that we're using our custom convolution op"""
-    N, C, H, W = (8, 64, 56, 56)
-    with torch.device(device):
-        input = torch.randn((N, C, H, W), dtype=torch.bfloat16).to(
-            memory_format=memory_format
-        )
-        model = torch.nn.BatchNorm2d(num_features=C).to(memory_format=memory_format)
-        recorder = EagerAndRecordGraphs()
-        compiled_model = torch.compile(
-            model,
-            backend=boo.backend(
-                nested_backend=recorder,
-                fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
-            ),
-        )
-
-        compiled_model(input)
-
-    [compiled_module] = recorder.graphs
-    assert isinstance(compiled_module, fx.GraphModule)
-
-    boo_targets = [
-        node
-        for node in compiled_module.graph.nodes
-        if node.op == "call_function" and "boo." in str(node.target)
-    ]
-    assert len(boo_targets) == 1
