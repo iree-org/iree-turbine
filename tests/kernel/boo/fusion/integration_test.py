@@ -318,9 +318,9 @@ def test_boo_sdpa_replacement(device: str, experimental: bool, dtype: torch.dtyp
         query,
         key,
         value,
-        None,
-        0.0,
-        True,
+        attn_mask=None,
+        dropout_p=0.0,
+        is_causal=True,
         scale=1,
     )
 
