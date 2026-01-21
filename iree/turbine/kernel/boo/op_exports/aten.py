@@ -119,6 +119,10 @@ class AtenSignature(OpSignature):
             match type:
                 case "float":
                     dtype = float
+                case "c10::Float":
+                    dtype = torch.float32
+                case "c10::Half":
+                    dtype = torch.float16
                 case "c10::BFloat16":
                     dtype = torch.bfloat16
                 case _:
