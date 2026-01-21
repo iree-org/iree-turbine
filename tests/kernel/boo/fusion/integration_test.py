@@ -278,3 +278,63 @@ def test_boo_batch_norm_used(device: torch.device, memory_format: torch.memory_f
         if node.op == "call_function" and "boo." in str(node.target)
     ]
     assert len(boo_targets) == 1
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="requires GPU"
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize("experimental", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_boo_sdpa_replacement(device: str, experimental: bool, dtype: torch.dtype):
+    """Test that scaled dot product attention replacement works."""
+    recorder = EagerAndRecordGraphs()
+    N, Hq, H, S, L, E, Ev = 32, 8, 8, 128, 128, 64, 64
+    backend = (
+        boo.backend(
+            fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
+            post_fusion_replacements=EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
+            nested_backend=recorder,
+        )
+        if experimental
+        else boo.backend(nested_backend=recorder)
+    )
+
+    query = torch.randn((N, Hq, L, E), device=device, dtype=dtype)
+    key = torch.randn((N, H, S, E), device=device, dtype=dtype)
+    value = torch.randn((N, H, S, Ev), device=device, dtype=dtype)
+    compiled_sdpa = torch.compile(
+        torch.nn.functional.scaled_dot_product_attention, backend=backend
+    )
+    compiled_sdpa(
+        query,
+        key,
+        value,
+        attn_mask=None,
+        dropout_p=0.0,
+        is_causal=True,
+        scale=1,
+    )
+
+    [compiled_module] = recorder.graphs
+    assert isinstance(compiled_module, fx.GraphModule)
+    call_nodes = [n for n in compiled_module.graph.nodes if n.op == "call_function"]
+    call_strings = "\n".join([str(n.target) for n in call_nodes])
+    if experimental:
+        assert "boo.fused_op_scaled_dot" in call_strings
+    else:
+        if device == "cuda":
+            if dtype == torch.float32:
+                assert "aten._scaled_dot_product_efficient_attention" in call_strings
+            else:
+                assert "aten._scaled_dot_product_flash_attention" in call_strings
+        else:
+            assert "aten._scaled_dot_product_flash_attention_for_cpu" in call_strings
