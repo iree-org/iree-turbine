@@ -34,7 +34,7 @@ def test_aten_parser():
     assert alpha_val == 20
 
 
-@pytest.mark.parametrize('aten_dtype, expected_dtype', [('c10::Half', torch.float16), ('c1::Float', torch.float32)])
+@pytest.mark.parametrize('aten_dtype, expected_dtype', [('c10::Half', torch.float16), ('c10::Float', torch.float32)])
 def test_aten_parser_sdpa(aten_dtype: str, expected_dtype: torch.dtype):
     sig = AtenParser.command_to_signature(
         [
