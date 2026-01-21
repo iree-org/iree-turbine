@@ -54,20 +54,3 @@ def test_aten_parser_sdpa(aten_dtype: str, expected_dtype: torch.dtype):
     assert list(arg_0.shape) == [32, 8, 128, 64]
     assert list(arg_0.stride()) == [65536, 8192, 64, 1]
     assert arg_0.dtype == expected_dtype
-
-
-def test_aten_parser_float():
-    sig = AtenParser.command_to_signature(
-        [
-            "aten::scaled_dot_product_attention",
-            "[[32, 8, 128, 64], [32, 8, 128, 64], [32, 8, 128, 64], [], [], [], [], []]",
-            "['c10::Float', 'c10::Float', 'c10::Float', '', 'Scalar', 'Scalar', '', 'Scalar']",
-            "[[65536, 8192, 64, 1], [65536, 8192, 64, 1], [65536, 8192, 64, 1], [], [], [], [], []]",
-            "['', '', '', 'None', '0.0', 'False', 'None', 'False']",
-        ]
-    )
-
-    [arg_0, arg_1, arg_2] = sig.get_sample_args()
-    assert list(arg_0.shape) == [32, 8, 128, 64]
-    assert list(arg_0.stride()) == [65536, 8192, 64, 1]
-    assert arg_0.dtype == torch.float32
