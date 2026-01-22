@@ -321,7 +321,7 @@ def test_boo_sdpa_replacement(device: str, experimental: bool, dtype: torch.dtyp
         attn_mask=None,
         dropout_p=0.0,
         is_causal=True,
-        scale=1,
+        scale=None,
     )
 
     [compiled_module] = recorder.graphs
