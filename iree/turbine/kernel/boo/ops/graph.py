@@ -4,8 +4,10 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from dataclasses import dataclass
+from enum import Enum
 from hashlib import sha1
-from typing import Sequence, Literal, TypeAlias
+from typing import Sequence, Literal, TypeAlias, Callable, Any
 
 import torch
 from torch.export import ExportedProgram
@@ -35,6 +37,120 @@ from ....support.logging import aot_logger as logger
 __all__ = [
     "get_custom_graph_op",
 ]
+
+
+class BoundaryClassification(Enum):
+    # Standard input
+    USER_INPUT = 0
+    # An unused input
+    UNUSED_INPUT = 1
+    # A mutable input
+    MUTABLE_INPUT = 2
+
+    # Standard output
+    UNIQUE_OUTPUT = 3
+    # A repeat of a prior output
+    REPEATED_OUTPUT = 4
+    # An output of `None`
+    NONE_OUTPUT = 5
+    # An output which trivially returns an input
+    NO_OP_OUTPUT = 6
+    # An output which shares the same data as an input
+    VIEW_ONLY_OUTPUT = 7
+
+    def is_placeholder(self) -> bool:
+        return self.value < 3
+
+    def is_output(self) -> bool:
+        return not self.is_placeholder()
+
+
+@dataclass
+class BoundaryValue:
+    node: Node
+    classification: BoundaryClassification
+    index: int
+    # How to get this boundary value from inner inputs/outputs.
+    composition_rule: Callable[[Sequence[Any], Sequence[Any]], Any]
+
+
+class GraphSchema:
+    def __init__(
+        self,
+        placeholders: list[BoundaryValue],
+        outputs: list[BoundaryValue],
+        src_gm: GraphModule,
+    ):
+        self.src_gm = src_gm
+        self.placeholders = placeholders
+        self.outputs = outputs
+
+    @staticmethod
+    def from_gm(src_gm: GraphModule) -> "GraphSchema":
+        schema = GraphSchema([], [], src_gm)
+        schema._initialize()
+        return schema
+
+    def _initialize(self):
+        placeholder_nodes = list(
+            self.src_gm.graph.find_nodes(op="placeholder", sort=True)
+        )
+        # TODO: Detect useless inputs
+        self.placeholders = list(
+            BoundaryValue(
+                pl,
+                BoundaryClassification.USER_INPUT,
+                index,
+                lambda ins, outs: ins[index],
+            )
+            for (pl, index) in placeholder_nodes
+        )
+        output_node = self.src_gm.graph.output_node()
+        unique_outputs: dict[Node, int] = {}
+        for o, index in enumerate(output_node.args[0]):
+            maybe_output_index = unique_outputs.get(o, None)
+            if maybe_output_index is not None:
+                self.outputs.append(
+                    BoundaryValue(
+                        o,
+                        BoundaryClassification.REPEATED_OUTPUT,
+                        index,
+                        lambda ins, outs: outs[maybe_output_index],
+                    )
+                )
+                continue
+            if o is None:
+                self.outputs.append(
+                    BoundaryValue(
+                        o,
+                        BoundaryClassification.NONE_OUTPUT,
+                        index,
+                        lambda ins, outs: None,
+                    )
+                )
+                continue
+            if o in placeholder_nodes:
+                self.outputs.append(
+                    BoundaryValue(
+                        o,
+                        BoundaryClassification.NO_OP_OUTPUT,
+                        index,
+                        lambda ins, outs: ins[placeholder_nodes.index(o)],
+                    )
+                )
+                continue
+            # TODO: detect view-only outputs?
+            # New non-trivial unique output.
+            new_unique_idx = len(unique_outputs.keys())
+            self.outputs.append(
+                BoundaryValue(
+                    o,
+                    BoundaryClassification.UNIQUE_OUTPUT,
+                    index,
+                    lambda ins, outs: outs[new_unique_idx],
+                )
+            )
+            unique_outputs[o] = new_unique_idx
 
 
 def _get_io_from_gm(
@@ -238,7 +354,7 @@ def get_custom_graph_op(
     src_gm: GraphModule,
     *,
     force_single_dispatch: bool = False,
-    inplace_convert: bool = False,
+    inplace_convert: bool = True,
 ) -> torch._ops.OpOverloadPacket:
     """Converts a graph module into a custom operator.
 
