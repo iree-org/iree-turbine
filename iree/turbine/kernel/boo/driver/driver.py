@@ -219,9 +219,24 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                 _print_zone_stats(results)
 
             aggregate_stats = get_aggregate_stats(csv_stats, results, timing_args.iter)
+
+            # Check that the number of dispatches per launch is an integer
+            dispatches_per_launch = aggregate_stats.num_dispatches / timing_args.iter
+            if not dispatches_per_launch.is_integer():
+                if meta_args.verbose:
+                    print(
+                        f">>> ERROR: Number of dispatches per launch is fractional: {dispatches_per_launch} "
+                        f"(total dispatches: {aggregate_stats.num_dispatches}, iterations: {timing_args.iter}). "
+                        f"This usually indicates the torch profiler failed to capture data for the entire run. "
+                        f"Try lowering the iteration count with --iter."
+                    )
+                csv_row += ["incomplete profiling data"] * len(csv_stats)
+                test_error += 1
+                continue
+
             if meta_args.verbose:
                 print(
-                    f">>>\tPer-launch # GPU kernel dispatches ({backend}): {aggregate_stats.num_dispatches / timing_args.iter}"
+                    f">>>\tPer-launch # GPU kernel dispatches ({backend}): {dispatches_per_launch}"
                 )
                 print(
                     f">>>\tPer-launch GPU mean time ({backend}): {aggregate_stats.mean}us"
