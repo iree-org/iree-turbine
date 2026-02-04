@@ -270,6 +270,66 @@ def get_aggregate_stats(
     return ZoneStats(**ret)
 
 
+def make_profiler_schedule(
+    timing_iter: int,
+    num_devices: int,
+    iter_thresh: int,
+) -> tuple[Callable[[int], torch.profiler.ProfilerAction], int, Callable[[int], bool]]:
+    """
+    Create a profiler schedule function.
+
+    Args:
+        timing_iter: Total iterations that should be profiled
+        num_devices: Number of devices being used
+        iter_thresh: Number of iterations before cleanup is required
+
+    Returns:
+        A tuple of:
+        - schedule_fn: Function that maps step number to ProfilerAction
+        - total_num_iters: Total iterations to run (including warmup and cleanup)
+        - needs_cleanup: Function that returns True if cleanup is needed at a given step
+    """
+    # Cleanup is performed after every iter_thresh steps, including the
+    # initialization step and the cleanup steps themselves:
+    #   num_cleanups = (iter // num_devices + num_cleanups + 1) // iter_thresh
+    # Solving which leads to the form below.
+    num_cleanups = (timing_iter // num_devices + 1) // (iter_thresh - 1)
+    total_num_iters = timing_iter + (num_cleanups + 1) * num_devices
+
+    def needs_cleanup(step: int) -> bool:
+        per_device_step = step // num_devices
+        return (per_device_step + 1) % iter_thresh == 0
+
+    def schedule_fn(step: int) -> torch.profiler.ProfilerAction:
+        """Scheduling function for the profiler. Ensures it doesn't capture the
+        first iteration and the cleanup iterations where additional overhead may
+        happen."""
+        # Skip fist run on each device.
+        if step < num_devices:
+            return torch.profiler.ProfilerAction.NONE
+
+        # Save the results at the last iteration.
+        if step == total_num_iters - 1:
+            return torch.profiler.ProfilerAction.RECORD_AND_SAVE
+
+        # After RECORD_AND_SAVE, transition to NONE.
+        if step >= total_num_iters:
+            return torch.profiler.ProfilerAction.NONE
+
+        # Skip the step on which cleanup happens.
+        if needs_cleanup(step):
+            return torch.profiler.ProfilerAction.NONE
+
+        # If cleanup is needed on the next step and we're not already in a cleanup,
+        # save results now to avoid transitioning directly from RECORD to NONE.
+        if needs_cleanup(step + 1) and not needs_cleanup(step):
+            return torch.profiler.ProfilerAction.RECORD_AND_SAVE
+
+        return torch.profiler.ProfilerAction.RECORD
+
+    return schedule_fn, total_num_iters, needs_cleanup
+
+
 def run(
     func: Callable,
     timing_args: argparse.Namespace,
@@ -308,52 +368,13 @@ def run(
         iter_thresh > 1 or not timing_args.time
     ), "Cannot reliably profile if cleanup is needed after every step."
 
-    # Cleanup is performed after every iter_thresh steps, including the
-    # initialization step and the cleanup steps themselves:
-    #   num_cleanups = (iter // num_devices + num_cleanups + 1) // iter_thresh
-    # Solving which leads to the form below.
-    num_cleanups = (timing_args.iter // num_devices + 1) // (iter_thresh - 1)
-
-    # The total number of iterations includes cleanups and the initial
-    # initialization operation that are not profiled, so the profiler records
-    # the expected number of iterations. When not profiling, just run as many
-    # times as requested.
-    total_num_iters = (
-        timing_args.iter + (num_cleanups + 1) * num_devices
-        if timing_args.time
-        else timing_args.iter
+    schedule_fn, total_num_iters, needs_cleanup = make_profiler_schedule(
+        timing_args.iter, num_devices, iter_thresh
     )
 
-    def needs_cleanup(step: int) -> bool:
-        per_device_step = step // num_devices
-        return (per_device_step + 1) % iter_thresh == 0
-
-    def schedule_fn(step: int) -> torch.profiler.ProfilerAction:
-        """Scheduling function for the profiler. Ensures it doesn't capture the
-        first iteration and the cleanup iterations where additional overhead may
-        happen."""
-        # Skip fist run on each device.
-        if step < num_devices:
-            return torch.profiler.ProfilerAction.NONE
-
-        # Save the results at the last iteration.
-        if step == total_num_iters - 1:
-            return torch.profiler.ProfilerAction.RECORD_AND_SAVE
-
-        # After RECORD_AND_SAVE, transition to NONE.
-        if step >= total_num_iters:
-            return torch.profiler.ProfilerAction.NONE
-
-        # Skip the step on which cleanup happens.
-        if needs_cleanup(step):
-            return torch.profiler.ProfilerAction.NONE
-
-        # If cleanup is needed on the next step and we're not already in a cleanup,
-        # save results now to avoid transitioning directly from RECORD to NONE.
-        if needs_cleanup(step + 1) and not needs_cleanup(step):
-            return torch.profiler.ProfilerAction.RECORD_AND_SAVE
-
-        return torch.profiler.ProfilerAction.RECORD
+    # When not profiling, just run as many times as requested.
+    if not timing_args.time:
+        total_num_iters = timing_args.iter
 
     profile_context = (
         profile(activities=[ProfilerActivity.CUDA], schedule=schedule_fn)
