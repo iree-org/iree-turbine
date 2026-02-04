@@ -330,6 +330,17 @@ def make_profiler_schedule(
     return schedule_fn, total_num_iters, needs_cleanup
 
 
+def make_profiler_context(
+    schedule_fn: Callable[[int], torch.profiler.ProfilerAction],
+):
+    """Create a configured profiler context manager."""
+    return profile(
+        activities=[ProfilerActivity.CUDA],
+        schedule=schedule_fn,
+        acc_events=True,  # Accumulate events across RECORD_AND_SAVE boundaries
+    )
+
+
 def run(
     func: Callable,
     timing_args: argparse.Namespace,
@@ -372,15 +383,12 @@ def run(
         timing_args.iter, num_devices, iter_thresh
     )
 
-    # When not profiling, just run as many times as requested.
-    if not timing_args.time:
+    if timing_args.time:
+        profile_context = make_profiler_context(schedule_fn)
+    else:
+        # When not profiling, just run as many times as requested.
         total_num_iters = timing_args.iter
-
-    profile_context = (
-        profile(activities=[ProfilerActivity.CUDA], schedule=schedule_fn)
-        if timing_args.time
-        else nullcontext()
-    )
+        profile_context = nullcontext()
 
     results: tuple[torch.Tensor, ...] | torch.Tensor | None = None
     with profile_context as prof:
