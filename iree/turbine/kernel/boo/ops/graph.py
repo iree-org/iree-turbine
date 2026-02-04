@@ -67,7 +67,7 @@ class BoundaryClassification(Enum):
 
 @dataclass
 class BoundaryValue:
-    node: Node
+    value: Node | None
     classification: BoundaryClassification
     index: int
     # How to get this boundary value from inner inputs/outputs.
@@ -91,23 +91,39 @@ class GraphSchema:
         schema._initialize()
         return schema
 
+    def get_inner_boundary(self) -> tuple[list[BoundaryValue], list[BoundaryValue]]:
+        inner_inputs = list(
+            pl
+            for pl in self.placeholders
+            if pl.classification != BoundaryClassification.UNUSED_INPUT
+        )
+        inner_outputs = list(
+            out
+            for out in self.outputs
+            if out.classification == BoundaryClassification.UNIQUE_OUTPUT
+        )
+        return inner_inputs, inner_outputs
+
     def _initialize(self):
         placeholder_nodes = list(
             self.src_gm.graph.find_nodes(op="placeholder", sort=True)
         )
-        # TODO: Detect useless inputs
-        self.placeholders = list(
-            BoundaryValue(
+        for index, pl in enumerate(placeholder_nodes):
+            assert isinstance(pl, Node), f"Expected placeholder, {pl}, to be a Node."
+            bv = BoundaryValue(
                 pl,
-                BoundaryClassification.USER_INPUT,
+                (
+                    BoundaryClassification.UNUSED_INPUT
+                    if len(pl.users) == 0
+                    else BoundaryClassification.USER_INPUT
+                ),
                 index,
-                lambda ins, outs: ins[index],
+                (lambda index: (lambda ins, outs: ins[index]))(index),
             )
-            for (pl, index) in placeholder_nodes
-        )
+            self.placeholders.append(bv)
         output_node = self.src_gm.graph.output_node()
         unique_outputs: dict[Node, int] = {}
-        for o, index in enumerate(output_node.args[0]):
+        for index, o in enumerate(output_node.args[0]):
             maybe_output_index = unique_outputs.get(o, None)
             if maybe_output_index is not None:
                 self.outputs.append(
@@ -115,7 +131,9 @@ class GraphSchema:
                         o,
                         BoundaryClassification.REPEATED_OUTPUT,
                         index,
-                        lambda ins, outs: outs[maybe_output_index],
+                        (lambda index: (lambda ins, outs: outs[index]))(
+                            maybe_output_index
+                        ),
                     )
                 )
                 continue
@@ -135,7 +153,9 @@ class GraphSchema:
                         o,
                         BoundaryClassification.NO_OP_OUTPUT,
                         index,
-                        lambda ins, outs: ins[placeholder_nodes.index(o)],
+                        (lambda index: lambda ins, outs: ins[index])(
+                            placeholder_nodes.index(o)
+                        ),
                     )
                 )
                 continue
@@ -147,7 +167,7 @@ class GraphSchema:
                     o,
                     BoundaryClassification.UNIQUE_OUTPUT,
                     index,
-                    lambda ins, outs: outs[new_unique_idx],
+                    (lambda index: lambda ins, outs: outs[index])(new_unique_idx),
                 )
             )
             unique_outputs[o] = new_unique_idx
