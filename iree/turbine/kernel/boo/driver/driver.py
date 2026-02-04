@@ -336,13 +336,23 @@ def run(
         if step < num_devices:
             return torch.profiler.ProfilerAction.NONE
 
+        # Save the results at the last iteration.
+        if step == total_num_iters - 1:
+            return torch.profiler.ProfilerAction.RECORD_AND_SAVE
+
+        # After RECORD_AND_SAVE, transition to NONE.
+        if step >= total_num_iters:
+            return torch.profiler.ProfilerAction.NONE
+
         # Skip the step on which cleanup happens.
         if needs_cleanup(step):
             return torch.profiler.ProfilerAction.NONE
 
-        # Save the results at the last iteration.
-        if step == total_num_iters:
+        # If cleanup is needed on the next step and we're not already in a cleanup,
+        # save results now to avoid transitioning directly from RECORD to NONE.
+        if needs_cleanup(step + 1) and not needs_cleanup(step):
             return torch.profiler.ProfilerAction.RECORD_AND_SAVE
+
         return torch.profiler.ProfilerAction.RECORD
 
     profile_context = (
