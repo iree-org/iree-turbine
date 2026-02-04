@@ -126,7 +126,7 @@ def test_profiler_integration():
     timing_iter = 100
     schedule_fn, total_num_iters, _ = make_profiler_schedule(
         timing_iter=timing_iter,
-        num_devices=4,
+        num_devices=1,
         iter_thresh=16,
     )
 
