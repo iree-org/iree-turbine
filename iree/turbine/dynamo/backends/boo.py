@@ -39,6 +39,14 @@ def _make_inductor_compiler(
             post_fusion_replacements=post_fusion_replacements,
             post_decomposition_replacements=post_decomposition_replacements,
         )
+        # NOTE: By calling compile_fx_inner directly we skip the following
+        # optimization passes that compile_fx normally applies:
+        #   - run_pre_grad_passes (pre-autograd torch-level optimizations)
+        #   - _recursive_joint_graph_passes (post-autograd pattern opts, e.g. SDPA)
+        #   - User-visible output stride tracking for compile_fx_forward
+        # These are performance optimizations, not correctness requirements.
+        # They can be added back if needed for performance parity with
+        # standalone inductor.
         return compile_fx_inner(model, example_inputs, is_backward=is_backward)
 
     return compiler_fn

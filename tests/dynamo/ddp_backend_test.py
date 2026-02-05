@@ -20,12 +20,6 @@ import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 
-def _find_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
-
-
 class SmallModel(nn.Module):
     """Small model that exercises BOO fusion patterns (conv + bn + relu)."""
 
@@ -45,6 +39,12 @@ class SmallModel(nn.Module):
         x = x.flatten(1)
         x = self.fc(x)
         return x
+
+
+def _find_free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
 
 
 _DDP_ENV_KEYS = ("MASTER_ADDR", "MASTER_PORT", "RANK", "WORLD_SIZE")
