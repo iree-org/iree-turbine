@@ -27,13 +27,7 @@ def is_op_defined(name: str) -> bool:
 
 
 def get_library_op(name: str) -> Any:
-    op = getattr(torch.ops.boo, name)
-    # Return the concrete OpOverload (e.g. .default) rather than the
-    # OpOverloadPacket so that the iree_boo_inductor backend works correctly.
-    # Inductor's GraphLowering requires OpOverload instances in FX graphs.
-    if isinstance(op, torch._ops.OpOverloadPacket):
-        op = op.default
-    return op
+    return getattr(torch.ops.boo, name)
 
 
 def define_schema(name: str, schema: str):

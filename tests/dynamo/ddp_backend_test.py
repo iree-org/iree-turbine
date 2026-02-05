@@ -11,12 +11,19 @@ that previously broke with double aot_autograd wrapping.
 """
 
 import os
+import socket
 from unittest.mock import patch
 import pytest
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
+
+
+def _find_free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
 
 
 class SmallModel(nn.Module):
@@ -56,7 +63,7 @@ def ddp_env(request):
     dist_backend = getattr(request, "param", "gloo")
     saved = {k: os.environ.get(k) for k in _DDP_ENV_KEYS}
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29500"
+    os.environ["MASTER_PORT"] = str(_find_free_port())
     os.environ["RANK"] = "0"
     os.environ["WORLD_SIZE"] = "1"
     dist.init_process_group(backend=dist_backend, rank=0, world_size=1)

@@ -77,6 +77,12 @@ def fusion_transform(
         custom_op = get_custom_graph_op(
             decomposed_gm, force_single_dispatch=subgraph.single_dispatch
         )
+        # Resolve OpOverloadPacket to OpOverload (.default) for the FX graph
+        # node target. This is required for backends like iree_boo_inductor
+        # that pass the graph to inductor's compile_fx_inner, whose
+        # GraphLowering expects OpOverload instances.
+        if isinstance(custom_op, torch._ops.OpOverloadPacket):
+            custom_op = custom_op.default
         # Insert call as early as possible, to maintain topological order.
         insert_pt = sorted(subgraph.arguments)[-1]
         with module.graph.inserting_after(insert_pt):
