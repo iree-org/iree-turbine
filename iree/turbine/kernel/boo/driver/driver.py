@@ -104,6 +104,46 @@ list of arguments.
         dest="verbose",
         help="Disable printing command/output on STDOUT.",
     )
+    # Numerics verification arguments
+    parser.add_argument(
+        "--verify-numerics",
+        action="store_true",
+        help="Run statistical numerics verification instead of timing.",
+    )
+    parser.add_argument(
+        "--numerics-verbose",
+        action="store_true",
+        help="Print detailed statistics for numerics verification.",
+    )
+    parser.add_argument(
+        "--numerics-min-samples",
+        type=int,
+        default=1000,
+        help="Minimum number of error samples for statistical analysis (default: 1000).",
+    )
+    parser.add_argument(
+        "--numerics-stddev-tolerance",
+        type=float,
+        default=1.2,
+        help="Maximum allowed ratio of BOO stddev to PyTorch stddev (default: 1.2).",
+    )
+    parser.add_argument(
+        "--numerics-alpha",
+        type=float,
+        default=0.05,
+        help="Significance level for normality test (default: 0.05).",
+    )
+    parser.add_argument(
+        "--numerics-mean-threshold",
+        type=float,
+        default=1e-6,
+        help="Maximum allowed absolute mean error (default: 1e-6).",
+    )
+    parser.add_argument(
+        "--no-structured-tests",
+        action="store_true",
+        help="Disable structured pattern tests for numerics verification.",
+    )
     return parser
 
 
@@ -125,6 +165,48 @@ def main(args: list[str] = sys.argv[1:]) -> int:
     # separates to ['foo', 'bar']
     extra_cli_args = [a for arg in extra_cli_args for a in arg.split("\t")]
     commands_file: str | None = meta_args.commands_file
+
+    # Handle numerics verification mode
+    if meta_args.verify_numerics:
+        from iree.turbine.kernel.boo.driver.numerics import (
+            verify_numerics,
+            print_verification_summary,
+        )
+
+        # Build command list
+        if commands_file:
+            splitter: Callable[[str], list[str]] = lambda s: (
+                s.strip().split("\t") if commands_file.endswith(".tsv") else shlex.split(s)
+            )
+            with open(commands_file) as f:
+                commands = [
+                    shlex.join(splitter(s) + extra_cli_args)
+                    for s in f.readlines()
+                    if s.strip() and not s.startswith("#")
+                ]
+        else:
+            commands = [shlex.join(extra_cli_args)]
+
+        # Run verification
+        gpu_id = meta_args.gpu_id if meta_args.gpu_id >= 0 else 0
+        verdicts = verify_numerics(
+            commands,
+            device=gpu_id,
+            verbose=meta_args.numerics_verbose,
+            min_samples=meta_args.numerics_min_samples,
+            stddev_tolerance=meta_args.numerics_stddev_tolerance,
+            alpha=meta_args.numerics_alpha,
+            mean_threshold=meta_args.numerics_mean_threshold,
+            run_structured_tests=not meta_args.no_structured_tests,
+        )
+
+        # Print results
+        print_verification_summary(verdicts, verbose=meta_args.numerics_verbose)
+
+        # Return exit code
+        all_passed = all(v.passed for v in verdicts)
+        return 0 if all_passed else 1
+
     if commands_file:
         splitter: Callable[[str], list[str]] = lambda s: (
             s.strip().split("\t") if commands_file.endswith(".tsv") else shlex.split(s)
