@@ -204,8 +204,6 @@ class TestGenerateStructuredTestPattern:
             shape=(100,),
             dtype=torch.float32,
             device=torch.device("cpu"),
-            block_offset=10,
-            block_size=20,
         )
 
         assert tensor.shape == (100,)
@@ -217,12 +215,14 @@ class TestGenerateStructuredTestPattern:
         assert 0.0 in unique_vals
         assert 1.0 in unique_vals
 
-        # Check that ones are in a contiguous block
+        # Block size should be numel // 4 = 25
         flat = tensor.flatten()
-        ones_mask = flat == 1.0
-        ones_indices = ones_mask.nonzero().squeeze()
-        assert ones_indices[0] == 10
-        assert len(ones_indices) == 20
+        ones_count = int((flat == 1.0).sum())
+        assert ones_count == 25
+
+        # Check that ones are in a contiguous block
+        ones_indices = (flat == 1.0).nonzero().squeeze()
+        assert ones_indices[-1] - ones_indices[0] + 1 == ones_count
 
     def test_2d_shape(self):
         """Test pattern generation for 2D tensor."""
@@ -230,8 +230,6 @@ class TestGenerateStructuredTestPattern:
             shape=(10, 20),
             dtype=torch.float32,
             device=torch.device("cpu"),
-            block_offset=17,
-            block_size=73,
         )
 
         assert tensor.shape == (10, 20)
@@ -242,18 +240,31 @@ class TestGenerateStructuredTestPattern:
         assert (flat == 0.0).sum() > 0
 
     def test_small_tensor(self):
-        """Test pattern generation for tensor smaller than block size."""
+        """Test pattern generation for tensor smaller than block size limit."""
         tensor = generate_structured_test_pattern(
-            shape=(50,),
+            shape=(8,),
             dtype=torch.float32,
             device=torch.device("cpu"),
-            block_offset=17,
-            block_size=73,  # Larger than tensor
         )
 
-        assert tensor.shape == (50,)
-        # Should still have some ones (adjusted to fit)
-        assert (tensor == 1.0).sum() > 0
+        assert tensor.shape == (8,)
+        # block_size = max(1, min(8 // 4, 128)) = 2
+        assert int((tensor == 1.0).sum()) == 2
+
+    def test_seed_varies_offset(self):
+        """Test that different seeds produce different block offsets."""
+        t0 = generate_structured_test_pattern(
+            shape=(200,), dtype=torch.float32, device=torch.device("cpu"), seed=0
+        )
+        t1 = generate_structured_test_pattern(
+            shape=(200,), dtype=torch.float32, device=torch.device("cpu"), seed=1
+        )
+
+        # Same block size, different offset
+        assert int((t0 == 1.0).sum()) == int((t1 == 1.0).sum())
+        idx0 = (t0 == 1.0).nonzero().squeeze()[0]
+        idx1 = (t1 == 1.0).nonzero().squeeze()[0]
+        assert idx0 != idx1
 
     def test_empty_tensor(self):
         """Test pattern generation for empty tensor."""

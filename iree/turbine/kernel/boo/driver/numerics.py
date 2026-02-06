@@ -42,8 +42,7 @@ STDDEV_TOLERANCE_DEFAULT = 1.2
 ALPHA_DEFAULT = 0.05
 MEAN_EPS_MULTIPLE_DEFAULT = 10
 STRUCTURED_TEST_ATOL = 1e-7
-STRUCTURED_BLOCK_SIZE = 73  # Prime number for block size
-STRUCTURED_BLOCK_OFFSET = 17  # Irregular offset
+STRUCTURED_BLOCK_SIZE_LIMIT = 128
 
 
 @dataclass
@@ -308,30 +307,33 @@ def generate_structured_test_pattern(
     shape: tuple[int, ...],
     dtype: torch.dtype,
     device: torch.device,
-    block_offset: int = STRUCTURED_BLOCK_OFFSET,
-    block_size: int = STRUCTURED_BLOCK_SIZE,
+    seed: int = 0,
+    block_size_limit: int = STRUCTURED_BLOCK_SIZE_LIMIT,
 ) -> torch.Tensor:
     """
     Generate a splat-0 tensor with a single block of 1's.
 
     Purpose: Catch indexing bugs as large, obvious differences.
 
+    The block size is adaptive: up to 1/4 of the tensor, capped by
+    block_size_limit. The offset is chosen randomly within valid bounds.
+
     Args:
         shape: Tensor shape
         dtype: Tensor dtype
         device: Target device
-        block_offset: Starting offset of the 1's block (irregular, e.g., 17)
-        block_size: Size of the 1's block (prime, e.g., 73)
+        seed: Random seed for offset selection
+        block_size_limit: Maximum block size
     """
     tensor = torch.zeros(shape, dtype=dtype, device=device)
     flat = tensor.flatten()
     numel = flat.numel()
 
     if numel > 0:
-        # Ensure block fits within tensor
-        actual_offset = block_offset % max(1, numel - block_size)
-        actual_size = min(block_size, numel - actual_offset)
-        flat[actual_offset : actual_offset + actual_size] = 1.0
+        block_size = max(1, min(numel // 4, block_size_limit))
+        gen = torch.Generator(device="cpu").manual_seed(seed)
+        offset = int(torch.randint(0, max(1, numel - block_size), (1,), generator=gen))
+        flat[offset : offset + block_size] = 1.0
 
     return tensor.view(shape)
 
@@ -355,13 +357,7 @@ def run_structured_test(
     # Create structured patterns for each input
     structured_args = tuple(
         (
-            generate_structured_test_pattern(
-                arg.shape,
-                arg.dtype,
-                cpu,
-                block_offset=STRUCTURED_BLOCK_OFFSET + i * 7,  # Vary offset per input
-                block_size=STRUCTURED_BLOCK_SIZE,
-            )
+            generate_structured_test_pattern(arg.shape, arg.dtype, cpu, seed=i)
             if arg.is_floating_point()
             else arg
         )
