@@ -7,7 +7,6 @@
 import pytest
 import torch
 
-from iree.turbine.kernel.boo.driver import numerics
 from iree.turbine.kernel.boo.driver.numerics import (
     ErrorStatistics,
     NumericsVerdict,
