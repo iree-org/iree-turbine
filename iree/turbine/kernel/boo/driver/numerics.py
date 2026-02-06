@@ -21,6 +21,7 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
+import numpy as np
 import torch
 
 from iree.turbine.kernel.boo.exports.signature import OpSignature
@@ -39,7 +40,7 @@ except ImportError:
 MIN_SAMPLES_DEFAULT = 1000
 STDDEV_TOLERANCE_DEFAULT = 1.2
 ALPHA_DEFAULT = 0.05
-MEAN_THRESHOLD_DEFAULT = 1e-6
+MEAN_EPS_MULTIPLE_DEFAULT = 10
 STRUCTURED_TEST_ATOL = 1e-7
 STRUCTURED_BLOCK_SIZE = 73  # Prime number for block size
 STRUCTURED_BLOCK_OFFSET = 17  # Irregular offset
@@ -109,9 +110,13 @@ def _compute_element_errors(
     reference: torch.Tensor,
 ) -> torch.Tensor:
     """
-    Compute element-wise absolute errors between two tensors.
+    Compute element-wise signed errors between two tensors.
 
-    Returns a 1D float32 tensor of absolute errors on the comparee's device.
+    Returns a 1D float32 tensor of signed errors (comparee - reference) on
+    the comparee's device. Signed errors allow bias detection: if the mean
+    is near zero, the compiler isn't introducing systematic positive/negative
+    drift.
+
     Both tensors are cast to float32 to avoid f64 operations on GPU (which
     may not be supported on all hardware) while still providing sufficient
     precision for bf16/f16/f32 error measurement.
@@ -119,7 +124,7 @@ def _compute_element_errors(
     reference_on_device = reference.to(
         device=comparee.device, dtype=torch.float32, non_blocking=True
     )
-    errors = (comparee.float() - reference_on_device).abs().flatten()
+    errors = (comparee.float() - reference_on_device).flatten()
     return errors
 
 
@@ -131,6 +136,7 @@ def collect_error_samples(
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.Tensor],
+    Optional[torch.dtype],
     Optional[str],
 ]:
     """
@@ -139,8 +145,8 @@ def collect_error_samples(
     If tensor.numel() < min_samples, runs multiple batches with different seeds.
 
     Returns:
-        (boo_gpu_errors, pytorch_gpu_errors, boo_pytorch_errors, error_message)
-        If an error occurs, the first three are None and error_message is set.
+        (boo_gpu_errors, pytorch_gpu_errors, boo_pytorch_errors, output_dtype, error_message)
+        If an error occurs, the first three are None, output_dtype is None, and error_message is set.
     """
     cpu = torch.device("cpu")
 
@@ -154,7 +160,7 @@ def collect_error_samples(
     try:
         boo_module = sig.get_compiled_module(backend="iree_boo_experimental")
     except Exception as e:
-        return None, None, None, f"BOO compilation failed: {e}"
+        return None, None, None, None, f"BOO compilation failed: {e}"
 
     main_result_idx = sig.main_result_index
     num_batches: Optional[int] = None
@@ -188,7 +194,7 @@ def collect_error_samples(
             if isinstance(boo_gpu_result, torch.Tensor):
                 boo_gpu_result = (boo_gpu_result,)
         except Exception as e:
-            return None, None, None, f"BOO runtime failed: {e}"
+            return None, None, None, None, f"BOO runtime failed: {e}"
 
         # Get main result tensors
         f64_ref_main = f64_ref[main_result_idx]
@@ -211,7 +217,8 @@ def collect_error_samples(
     pytorch_gpu_errors = torch.cat(pytorch_gpu_errors_list)
     boo_pytorch_errors = torch.cat(boo_pytorch_errors_list)
 
-    return boo_gpu_errors, pytorch_gpu_errors, boo_pytorch_errors, None
+    output_dtype = boo_gpu_main.dtype
+    return boo_gpu_errors, pytorch_gpu_errors, boo_pytorch_errors, output_dtype, None
 
 
 def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
@@ -223,7 +230,7 @@ def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
     errors_np = errors.cpu().float().numpy()
     mean = float(errors_np.mean())
     stddev = float(errors_np.std())
-    max_abs_err = float(errors_np.max())
+    max_abs_err = float(np.abs(errors_np).max())
     num_samples = len(errors_np)
 
     normality_pvalue: Optional[float] = None
@@ -247,7 +254,7 @@ def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
 def evaluate_statistical_criteria(
     boo_stats: ErrorStatistics,
     pytorch_stats: ErrorStatistics,
-    mean_threshold: float = MEAN_THRESHOLD_DEFAULT,
+    mean_threshold: float,
     stddev_tolerance: float = STDDEV_TOLERANCE_DEFAULT,
     alpha: float = ALPHA_DEFAULT,
 ) -> tuple[bool, bool, bool, list[str]]:
@@ -406,7 +413,7 @@ def verify_numerics(
     min_samples: int = MIN_SAMPLES_DEFAULT,
     stddev_tolerance: float = STDDEV_TOLERANCE_DEFAULT,
     alpha: float = ALPHA_DEFAULT,
-    mean_threshold: float = MEAN_THRESHOLD_DEFAULT,
+    mean_eps_multiple: float = MEAN_EPS_MULTIPLE_DEFAULT,
     run_structured_tests: bool = True,
 ) -> list[NumericsVerdict]:
     """
@@ -421,7 +428,8 @@ def verify_numerics(
         min_samples: Minimum number of error samples to collect
         stddev_tolerance: Maximum allowed ratio of BOO stddev to PyTorch stddev
         alpha: Significance level for normality test
-        mean_threshold: Maximum allowed absolute mean error
+        mean_eps_multiple: The mean bias threshold is computed as
+            mean_eps_multiple * torch.finfo(output_dtype).eps
         run_structured_tests: Whether to run structured pattern tests
     """
     if not torch.cuda.is_available():
@@ -448,8 +456,8 @@ def verify_numerics(
             continue
 
         # Collect error samples
-        boo_err, pytorch_err, boo_pytorch_err, err_msg = collect_error_samples(
-            sig, cuda_device, min_samples
+        boo_err, pytorch_err, boo_pytorch_err, output_dtype, err_msg = (
+            collect_error_samples(sig, cuda_device, min_samples)
         )
 
         if err_msg is not None:
@@ -470,10 +478,14 @@ def verify_numerics(
             boo_err is not None
             and pytorch_err is not None
             and boo_pytorch_err is not None
+            and output_dtype is not None
         )
         boo_stats = compute_error_statistics(boo_err)
         pytorch_stats = compute_error_statistics(pytorch_err)
         boo_pytorch_stats = compute_error_statistics(boo_pytorch_err)
+
+        # Compute mean threshold from dtype epsilon
+        mean_threshold = mean_eps_multiple * torch.finfo(output_dtype).eps
 
         # Evaluate criteria
         mean_near_zero, stddev_ratio_ok, normality_ok, failure_reasons = (

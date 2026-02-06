@@ -25,12 +25,12 @@ class TestComputeErrorStatistics:
 
     def test_basic_statistics(self):
         """Test that basic statistics are computed correctly."""
-        errors = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0])
+        errors = torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0])
         stats = compute_error_statistics(errors)
 
-        assert stats.mean == pytest.approx(3.0)
+        assert stats.mean == pytest.approx(0.0)
         assert stats.stddev == pytest.approx(1.4142135, rel=1e-5)
-        assert stats.max_abs_err == pytest.approx(5.0)
+        assert stats.max_abs_err == pytest.approx(2.0)
         assert stats.num_samples == 5
 
     def test_zero_errors(self):
@@ -45,10 +45,10 @@ class TestComputeErrorStatistics:
 
     def test_single_value(self):
         """Test statistics for a single value."""
-        errors = torch.tensor([0.5])
+        errors = torch.tensor([-0.5])
         stats = compute_error_statistics(errors)
 
-        assert stats.mean == pytest.approx(0.5)
+        assert stats.mean == pytest.approx(-0.5)
         assert stats.stddev == pytest.approx(0.0)
         assert stats.max_abs_err == pytest.approx(0.5)
         assert stats.num_samples == 1
@@ -93,7 +93,7 @@ class TestEvaluateStatisticalCriteria:
         )
 
         mean_ok, stddev_ok, norm_ok, reasons = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats
+            boo_stats, pytorch_stats, mean_threshold=1e-6
         )
 
         assert mean_ok is True
@@ -128,7 +128,7 @@ class TestEvaluateStatisticalCriteria:
         )
 
         mean_ok, stddev_ok, norm_ok, reasons = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats, stddev_tolerance=1.2
+            boo_stats, pytorch_stats, mean_threshold=1e-6, stddev_tolerance=1.2
         )
 
         assert stddev_ok is False
@@ -145,7 +145,7 @@ class TestEvaluateStatisticalCriteria:
         )
 
         mean_ok, stddev_ok, norm_ok, reasons = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats
+            boo_stats, pytorch_stats, mean_threshold=1e-6
         )
 
         # Both have zero stddev, should pass
@@ -165,7 +165,7 @@ class TestEvaluateStatisticalCriteria:
         )
 
         mean_ok, stddev_ok, norm_ok, reasons = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats, alpha=0.05
+            boo_stats, pytorch_stats, mean_threshold=1e-6, alpha=0.05
         )
 
         assert norm_ok is False
@@ -181,9 +181,9 @@ class TestEvaluateStatisticalCriteria:
             mean=1e-8, stddev=5e-5, max_abs_err=1e-4, num_samples=1000
         )
 
-        # With default thresholds, this should fail
+        # With strict threshold, this should fail
         mean_ok, stddev_ok, _, _ = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats
+            boo_stats, pytorch_stats, mean_threshold=1e-6
         )
         assert mean_ok is False  # 5e-5 > 1e-6
         assert stddev_ok is False  # 2.0 ratio > 1.2

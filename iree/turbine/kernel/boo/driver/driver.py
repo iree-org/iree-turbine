@@ -134,10 +134,10 @@ list of arguments.
         help="Significance level for normality test (default: 0.05).",
     )
     parser.add_argument(
-        "--numerics-mean-threshold",
+        "--numerics-mean-eps-multiple",
         type=float,
-        default=1e-6,
-        help="Maximum allowed absolute mean error (default: 1e-6).",
+        default=10,
+        help="Mean bias threshold as a multiple of output dtype epsilon (default: 10).",
     )
     parser.add_argument(
         "--no-structured-tests",
@@ -326,7 +326,7 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                     min_samples=meta_args.numerics_min_samples,
                     stddev_tolerance=meta_args.numerics_stddev_tolerance,
                     alpha=meta_args.numerics_alpha,
-                    mean_threshold=meta_args.numerics_mean_threshold,
+                    mean_eps_multiple=meta_args.numerics_mean_eps_multiple,
                     run_structured_tests=not meta_args.no_structured_tests,
                 )
                 verdict = verdicts[0]
