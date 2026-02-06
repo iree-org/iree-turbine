@@ -26,10 +26,10 @@ import torch
 from iree.turbine.kernel.boo.exports.signature import OpSignature
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 
-# Optional scipy for Shapiro-Wilk normality test
+# Optional scipy for D'Agostino-Pearson normality test
 SCIPY_AVAILABLE = False
 try:
-    from scipy.stats import shapiro
+    from scipy.stats import normaltest
 
     SCIPY_AVAILABLE = True
 except ImportError:
@@ -53,7 +53,7 @@ class ErrorStatistics:
     stddev: float
     max_abs_err: float
     num_samples: int
-    shapiro_pvalue: Optional[float] = None
+    normality_pvalue: Optional[float] = None
 
 
 @dataclass
@@ -85,9 +85,11 @@ def compute_f64_cpu_reference(
     cpu = torch.device("cpu")
     # Cast to float64 on CPU for high precision reference
     f64_args = tuple(
-        arg.to(device=cpu, dtype=torch.float64)
-        if arg.is_floating_point()
-        else arg.to(device=cpu)
+        (
+            arg.to(device=cpu, dtype=torch.float64)
+            if arg.is_floating_point()
+            else arg.to(device=cpu)
+        )
         for arg in sample_args
     )
 
@@ -109,12 +111,11 @@ def _compute_element_errors(
     """
     Compute element-wise absolute errors between two tensors.
 
-    Returns a 1D tensor of absolute errors.
+    Returns a 1D tensor of absolute errors on the comparee's device.
+    PyTorch automatically promotes mixed floating point dtypes for subtraction.
     """
-    # Cast both to float64 for accurate error computation
-    comparee_f64 = comparee.to(dtype=torch.float64, device="cpu")
-    reference_f64 = reference.to(dtype=torch.float64, device="cpu")
-    errors = (comparee_f64 - reference_f64).abs().flatten()
+    reference_on_device = reference.to(device=comparee.device, non_blocking=True)
+    errors = (comparee - reference_on_device).abs().flatten()
     return errors
 
 
@@ -139,33 +140,23 @@ def collect_error_samples(
     """
     cpu = torch.device("cpu")
 
-    # Generate initial sample to determine tensor sizes
-    sample_args = sig.get_sample_args(device=cpu, seed=0)
-
-    # Get reference module and compute expected output size
-    reference_module = sig.get_nn_module(use_custom=False)
-    with torch.no_grad():
-        ref_output = reference_module(*sample_args)
-    if isinstance(ref_output, torch.Tensor):
-        ref_output = (ref_output,)
-    main_result_idx = sig.main_result_index
-    output_numel = ref_output[main_result_idx].numel()
-
-    # Determine number of batches needed
-    num_batches = max(1, (min_samples + output_numel - 1) // output_numel)
-
     # Collect errors across batches
     boo_gpu_errors_list: list[torch.Tensor] = []
     pytorch_gpu_errors_list: list[torch.Tensor] = []
     boo_pytorch_errors_list: list[torch.Tensor] = []
 
-    # Get BOO compiled module
+    # Get reference and BOO compiled modules
+    reference_module = sig.get_nn_module(use_custom=False)
     try:
         boo_module = sig.get_compiled_module(backend="iree_boo_experimental")
     except Exception as e:
         return None, None, None, f"BOO compilation failed: {e}"
 
-    for batch_idx in range(num_batches):
+    main_result_idx = sig.main_result_index
+    num_batches: Optional[int] = None
+    batch_idx = 0
+
+    while num_batches is None or batch_idx < num_batches:
         seed = batch_idx * 12345 + 42  # Deterministic but varied seeds
 
         # Generate sample args for this batch
@@ -174,6 +165,11 @@ def collect_error_samples(
 
         # Compute f64 CPU reference
         f64_ref = compute_f64_cpu_reference(sig, sample_args)
+
+        # On first pass, determine how many batches we need
+        if num_batches is None:
+            output_numel = f64_ref[main_result_idx].numel()
+            num_batches = max(1, (min_samples + output_numel - 1) // output_numel)
 
         # Run PyTorch GPU
         with torch.no_grad():
@@ -204,6 +200,8 @@ def collect_error_samples(
             _compute_element_errors(boo_gpu_main, pytorch_gpu_main)
         )
 
+        batch_idx += 1
+
     # Concatenate all errors
     boo_gpu_errors = torch.cat(boo_gpu_errors_list)
     pytorch_gpu_errors = torch.cat(pytorch_gpu_errors_list)
@@ -216,31 +214,29 @@ def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
     """
     Compute statistics from a tensor of errors.
 
-    Statistics: mean, stddev, max_abs_err, num_samples, shapiro_pvalue (if scipy available)
+    Statistics: mean, stddev, max_abs_err, num_samples, normality_pvalue (if scipy available)
     """
-    errors_np = errors.numpy()
+    errors_np = errors.cpu().numpy()
     mean = float(errors_np.mean())
     stddev = float(errors_np.std())
     max_abs_err = float(errors_np.max())
     num_samples = len(errors_np)
 
-    shapiro_pvalue: Optional[float] = None
-    if SCIPY_AVAILABLE and num_samples >= 3:
-        # Shapiro-Wilk requires at least 3 samples
-        # Limit to 5000 samples for performance (scipy recommendation)
-        test_samples = errors_np[:5000] if num_samples > 5000 else errors_np
+    normality_pvalue: Optional[float] = None
+    if SCIPY_AVAILABLE and num_samples >= 20:
+        # D'Agostino-Pearson requires at least 20 samples
         try:
-            _, shapiro_pvalue = shapiro(test_samples)
+            _, normality_pvalue = normaltest(errors_np)
         except Exception:
-            # Shapiro can fail in edge cases (e.g., all zeros)
-            shapiro_pvalue = None
+            # normaltest can fail in edge cases (e.g., all zeros)
+            normality_pvalue = None
 
     return ErrorStatistics(
         mean=mean,
         stddev=stddev,
         max_abs_err=max_abs_err,
         num_samples=num_samples,
-        shapiro_pvalue=shapiro_pvalue,
+        normality_pvalue=normality_pvalue,
     )
 
 
@@ -267,7 +263,9 @@ def evaluate_statistical_criteria(
         )
 
     # Check stddev ratio
-    # Avoid division by zero; if pytorch stddev is 0, boo stddev should also be 0
+    # Avoid division by zero; if pytorch stddev is 0, boo stddev should also be 0.
+    # This could happen if testing f64 convolutions, for example. This edge case
+    # would be pretty much impossible otherwise.
     if pytorch_stats.stddev > 0:
         ratio = boo_stats.stddev / pytorch_stats.stddev
         stddev_ratio_ok = ratio <= stddev_tolerance
@@ -285,11 +283,11 @@ def evaluate_statistical_criteria(
 
     # Check normality (if scipy available and pvalue exists)
     normality_ok = True
-    if boo_stats.shapiro_pvalue is not None:
-        normality_ok = boo_stats.shapiro_pvalue > alpha
+    if boo_stats.normality_pvalue is not None:
+        normality_ok = boo_stats.normality_pvalue > alpha
         if not normality_ok:
             failure_reasons.append(
-                f"Normality test failed: p-value {boo_stats.shapiro_pvalue:.3f} <= alpha {alpha}"
+                f"Normality test failed: p-value {boo_stats.normality_pvalue:.3f} <= alpha {alpha}"
             )
 
     return mean_near_zero, stddev_ratio_ok, normality_ok, failure_reasons
@@ -345,15 +343,17 @@ def run_structured_test(
 
     # Create structured patterns for each input
     structured_args = tuple(
-        generate_structured_test_pattern(
-            arg.shape,
-            arg.dtype,
-            cpu,
-            block_offset=STRUCTURED_BLOCK_OFFSET + i * 7,  # Vary offset per input
-            block_size=STRUCTURED_BLOCK_SIZE,
+        (
+            generate_structured_test_pattern(
+                arg.shape,
+                arg.dtype,
+                cpu,
+                block_offset=STRUCTURED_BLOCK_OFFSET + i * 7,  # Vary offset per input
+                block_size=STRUCTURED_BLOCK_SIZE,
+            )
+            if arg.is_floating_point()
+            else arg
         )
-        if arg.is_floating_point()
-        else arg
         for i, arg in enumerate(sample_args)
     )
 
@@ -379,14 +379,17 @@ def run_structured_test(
     if isinstance(boo_result, torch.Tensor):
         boo_result = (boo_result,)
 
-    # Compare main results
+    # Compare main results on GPU
     main_idx = sig.main_result_index
-    pytorch_main = pytorch_result[main_idx].to(device=cpu, dtype=torch.float64)
-    boo_main = boo_result[main_idx].to(device=cpu, dtype=torch.float64)
+    pytorch_main = pytorch_result[main_idx]
+    boo_main = boo_result[main_idx]
 
     if not torch.allclose(boo_main, pytorch_main, atol=atol, rtol=0):
         max_diff = (boo_main - pytorch_main).abs().max().item()
-        return False, f"Structured test failed: max_diff={max_diff:.2e} > atol={atol:.2e}"
+        return (
+            False,
+            f"Structured test failed: max_diff={max_diff:.2e} > atol={atol:.2e}",
+        )
 
     return True, None
 
@@ -459,7 +462,11 @@ def verify_numerics(
             continue
 
         # Compute statistics
-        assert boo_err is not None and pytorch_err is not None and boo_pytorch_err is not None
+        assert (
+            boo_err is not None
+            and pytorch_err is not None
+            and boo_pytorch_err is not None
+        )
         boo_stats = compute_error_statistics(boo_err)
         pytorch_stats = compute_error_statistics(pytorch_err)
         boo_pytorch_stats = compute_error_statistics(boo_pytorch_err)
@@ -534,8 +541,8 @@ def format_verdict_verbose(verdict: NumericsVerdict) -> str:
             f"    max_abs:  {stats.max_abs_err:.2e}",
             f"    samples:  {stats.num_samples}",
         ]
-        if stats.shapiro_pvalue is not None:
-            result.append(f"    shapiro:  p={stats.shapiro_pvalue:.3f}")
+        if stats.normality_pvalue is not None:
+            result.append(f"    normality: p={stats.normality_pvalue:.3f}")
         return result
 
     lines.extend(_format_stats("BOO GPU vs f64 Reference", verdict.boo_gpu_err))
@@ -546,9 +553,7 @@ def format_verdict_verbose(verdict: NumericsVerdict) -> str:
     lines.append("")
 
     lines.append("Statistical Tests:")
-    lines.append(
-        f"  Mean near zero:    {'PASS' if verdict.mean_near_zero else 'FAIL'}"
-    )
+    lines.append(f"  Mean near zero:    {'PASS' if verdict.mean_near_zero else 'FAIL'}")
     lines.append(
         f"  Stddev ratio:      {'PASS' if verdict.stddev_ratio_ok else 'FAIL'}"
     )

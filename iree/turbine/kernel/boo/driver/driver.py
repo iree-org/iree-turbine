@@ -166,47 +166,6 @@ def main(args: list[str] = sys.argv[1:]) -> int:
     extra_cli_args = [a for arg in extra_cli_args for a in arg.split("\t")]
     commands_file: str | None = meta_args.commands_file
 
-    # Handle numerics verification mode
-    if meta_args.verify_numerics:
-        from iree.turbine.kernel.boo.driver.numerics import (
-            verify_numerics,
-            print_verification_summary,
-        )
-
-        # Build command list
-        if commands_file:
-            splitter: Callable[[str], list[str]] = lambda s: (
-                s.strip().split("\t") if commands_file.endswith(".tsv") else shlex.split(s)
-            )
-            with open(commands_file) as f:
-                commands = [
-                    shlex.join(splitter(s) + extra_cli_args)
-                    for s in f.readlines()
-                    if s.strip() and not s.startswith("#")
-                ]
-        else:
-            commands = [shlex.join(extra_cli_args)]
-
-        # Run verification
-        gpu_id = meta_args.gpu_id if meta_args.gpu_id >= 0 else 0
-        verdicts = verify_numerics(
-            commands,
-            device=gpu_id,
-            verbose=meta_args.numerics_verbose,
-            min_samples=meta_args.numerics_min_samples,
-            stddev_tolerance=meta_args.numerics_stddev_tolerance,
-            alpha=meta_args.numerics_alpha,
-            mean_threshold=meta_args.numerics_mean_threshold,
-            run_structured_tests=not meta_args.no_structured_tests,
-        )
-
-        # Print results
-        print_verification_summary(verdicts, verbose=meta_args.numerics_verbose)
-
-        # Return exit code
-        all_passed = all(v.passed for v in verdicts)
-        return 0 if all_passed else 1
-
     if commands_file:
         splitter: Callable[[str], list[str]] = lambda s: (
             s.strip().split("\t") if commands_file.endswith(".tsv") else shlex.split(s)
@@ -232,6 +191,26 @@ def main(args: list[str] = sys.argv[1:]) -> int:
     for b in backends:
         for stat in csv_stats:
             csv_headers.extend([f"{b} {stat}"])
+
+    # Add numerics CSV headers if requested
+    numerics_csv_cols: list[str] = []
+    if meta_args.verify_numerics:
+        numerics_csv_cols.append("numerics_pass")
+        if meta_args.numerics_verbose:
+            numerics_csv_cols += [
+                "boo_err_mean",
+                "boo_err_stddev",
+                "boo_err_max",
+                "pytorch_err_mean",
+                "pytorch_err_stddev",
+                "pytorch_err_max",
+                "boo_pytorch_mean",
+                "boo_pytorch_stddev",
+                "boo_pytorch_max",
+                "structured_test",
+            ]
+        csv_headers.extend(numerics_csv_cols)
+
     csv_file.writerow(csv_headers)
 
     timing_parser = get_timing_parser()
@@ -257,6 +236,8 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                     f">>> Boo op registry failed to parse '{shlex.join(runner_args)}'."
                 )
             csv_row.append("N.A.")
+            csv_row += ["N.A."] * len(numerics_csv_cols)
+            csv_file.writerow(csv_row)
             test_error += 1
             continue
 
@@ -326,6 +307,58 @@ def main(args: list[str] = sys.argv[1:]) -> int:
 
             for stat in csv_stats:
                 csv_row.append(f"{aggregate_stats._asdict()[stat]}")
+
+        # Run numerics verification if requested
+        if meta_args.verify_numerics:
+            from iree.turbine.kernel.boo.driver.numerics import (
+                verify_numerics,
+                format_verdict_verbose,
+                format_verdict_simple,
+            )
+
+            gpu_id = meta_args.gpu_id if meta_args.gpu_id >= 0 else 0
+            cmd = shlex.join(runner_args)
+            verdicts = verify_numerics(
+                [cmd],
+                device=gpu_id,
+                verbose=meta_args.numerics_verbose,
+                min_samples=meta_args.numerics_min_samples,
+                stddev_tolerance=meta_args.numerics_stddev_tolerance,
+                alpha=meta_args.numerics_alpha,
+                mean_threshold=meta_args.numerics_mean_threshold,
+                run_structured_tests=not meta_args.no_structured_tests,
+            )
+            verdict = verdicts[0]
+
+            csv_row.append("PASS" if verdict.passed else "FAIL")
+            if meta_args.numerics_verbose:
+                for stats in [
+                    verdict.boo_gpu_err,
+                    verdict.pytorch_gpu_err,
+                    verdict.boo_pytorch_diff,
+                ]:
+                    if stats is not None:
+                        csv_row += [
+                            f"{stats.mean:.2e}",
+                            f"{stats.stddev:.2e}",
+                            f"{stats.max_abs_err:.2e}",
+                        ]
+                    else:
+                        csv_row += ["N.A."] * 3
+                csv_row.append(
+                    "N.A."
+                    if verdict.structured_test_passed is None
+                    else ("PASS" if verdict.structured_test_passed else "FAIL")
+                )
+
+            if meta_args.verbose:
+                if meta_args.numerics_verbose:
+                    print(format_verdict_verbose(verdict))
+                else:
+                    print(format_verdict_simple(verdict))
+
+            if not verdict.passed:
+                test_error += 1
 
         csv_file.writerow(csv_row)
     # Exit code: zero if no errors, non-zero otherwise.

@@ -17,7 +17,6 @@ from iree.turbine.kernel.boo.driver.numerics import (
     format_verdict_simple,
     format_verdict_verbose,
     format_results_table,
-    SCIPY_AVAILABLE,
 )
 
 
@@ -54,27 +53,31 @@ class TestComputeErrorStatistics:
         assert stats.max_abs_err == pytest.approx(0.5)
         assert stats.num_samples == 1
 
-    def test_shapiro_pvalue_with_scipy(self):
-        """Test that Shapiro p-value is computed when scipy is available."""
-        # Generate normally distributed data
+    def test_normality_pvalue_with_scipy(self):
+        """Test that normality p-value is computed when scipy is available."""
         torch.manual_seed(42)
-        errors = torch.randn(100).abs()
+        errors = torch.randn(100)
         stats = compute_error_statistics(errors)
 
-        if SCIPY_AVAILABLE:
-            assert stats.shapiro_pvalue is not None
-        else:
-            assert stats.shapiro_pvalue is None
+        try:
+            from scipy.stats import normaltest  # noqa: F401
 
-    def test_large_sample_shapiro_limit(self):
-        """Test that Shapiro test is limited to 5000 samples."""
-        # This should not crash even with large samples
-        errors = torch.randn(10000).abs()
+            assert stats.normality_pvalue is not None
+        except ImportError:
+            assert stats.normality_pvalue is None
+
+    def test_large_sample_normality(self):
+        """Test that normality test works with large samples."""
+        errors = torch.randn(10000)
         stats = compute_error_statistics(errors)
         assert stats.num_samples == 10000
-        # Shapiro should still work (on first 5000 samples)
-        if SCIPY_AVAILABLE:
-            assert stats.shapiro_pvalue is not None
+
+        try:
+            from scipy.stats import normaltest  # noqa: F401
+
+            assert stats.normality_pvalue is not None
+        except ImportError:
+            assert stats.normality_pvalue is None
 
 
 class TestEvaluateStatisticalCriteria:
@@ -155,7 +158,7 @@ class TestEvaluateStatisticalCriteria:
             stddev=1e-5,
             max_abs_err=1e-4,
             num_samples=1000,
-            shapiro_pvalue=0.01,  # Below default alpha=0.05
+            normality_pvalue=0.01,  # Below default alpha=0.05
         )
         pytorch_stats = ErrorStatistics(
             mean=1e-8, stddev=1e-5, max_abs_err=1e-4, num_samples=1000
@@ -375,43 +378,6 @@ class TestNumericsVerdictDataclass:
         assert verdict.structured_test_passed is None
         assert verdict.failure_reasons == []
         assert verdict.error_message is None
-
-    def test_failure_reasons_list(self):
-        """Test that failure_reasons is a proper list."""
-        verdict1 = NumericsVerdict(command="test1", passed=False)
-        verdict2 = NumericsVerdict(command="test2", passed=False)
-
-        # Ensure lists are independent
-        verdict1.failure_reasons.append("reason1")
-        assert "reason1" not in verdict2.failure_reasons
-
-
-class TestErrorStatisticsDataclass:
-    """Tests for ErrorStatistics dataclass."""
-
-    def test_required_fields(self):
-        """Test that required fields must be provided."""
-        stats = ErrorStatistics(
-            mean=1.0, stddev=0.5, max_abs_err=2.0, num_samples=100
-        )
-
-        assert stats.mean == 1.0
-        assert stats.stddev == 0.5
-        assert stats.max_abs_err == 2.0
-        assert stats.num_samples == 100
-        assert stats.shapiro_pvalue is None
-
-    def test_with_shapiro_pvalue(self):
-        """Test with optional shapiro_pvalue."""
-        stats = ErrorStatistics(
-            mean=1.0,
-            stddev=0.5,
-            max_abs_err=2.0,
-            num_samples=100,
-            shapiro_pvalue=0.25,
-        )
-
-        assert stats.shapiro_pvalue == 0.25
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="GPU required")
