@@ -318,17 +318,26 @@ def main(args: list[str] = sys.argv[1:]) -> int:
 
             gpu_id = meta_args.gpu_id if meta_args.gpu_id >= 0 else 0
             cmd = shlex.join(runner_args)
-            verdicts = verify_numerics(
-                [cmd],
-                device=gpu_id,
-                verbose=meta_args.numerics_verbose,
-                min_samples=meta_args.numerics_min_samples,
-                stddev_tolerance=meta_args.numerics_stddev_tolerance,
-                alpha=meta_args.numerics_alpha,
-                mean_threshold=meta_args.numerics_mean_threshold,
-                run_structured_tests=not meta_args.no_structured_tests,
-            )
-            verdict = verdicts[0]
+            try:
+                verdicts = verify_numerics(
+                    [cmd],
+                    device=gpu_id,
+                    verbose=meta_args.numerics_verbose,
+                    min_samples=meta_args.numerics_min_samples,
+                    stddev_tolerance=meta_args.numerics_stddev_tolerance,
+                    alpha=meta_args.numerics_alpha,
+                    mean_threshold=meta_args.numerics_mean_threshold,
+                    run_structured_tests=not meta_args.no_structured_tests,
+                )
+                verdict = verdicts[0]
+            except Exception as exc:
+                if meta_args.verbose:
+                    traceback.print_exception(exc)
+                csv_row += ["N.A."] * len(numerics_csv_cols)
+                test_error += 1
+                csv_file.writerow(csv_row)
+                torch.compiler.reset()
+                continue
 
             csv_row.append("PASS" if verdict.passed else "FAIL")
             if meta_args.numerics_verbose:

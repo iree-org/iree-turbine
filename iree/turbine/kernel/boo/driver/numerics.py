@@ -111,11 +111,15 @@ def _compute_element_errors(
     """
     Compute element-wise absolute errors between two tensors.
 
-    Returns a 1D tensor of absolute errors on the comparee's device.
-    PyTorch automatically promotes mixed floating point dtypes for subtraction.
+    Returns a 1D float32 tensor of absolute errors on the comparee's device.
+    Both tensors are cast to float32 to avoid f64 operations on GPU (which
+    may not be supported on all hardware) while still providing sufficient
+    precision for bf16/f16/f32 error measurement.
     """
-    reference_on_device = reference.to(device=comparee.device, non_blocking=True)
-    errors = (comparee - reference_on_device).abs().flatten()
+    reference_on_device = reference.to(
+        device=comparee.device, dtype=torch.float32, non_blocking=True
+    )
+    errors = (comparee.float() - reference_on_device).abs().flatten()
     return errors
 
 
@@ -216,7 +220,7 @@ def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
 
     Statistics: mean, stddev, max_abs_err, num_samples, normality_pvalue (if scipy available)
     """
-    errors_np = errors.cpu().numpy()
+    errors_np = errors.cpu().float().numpy()
     mean = float(errors_np.mean())
     stddev = float(errors_np.std())
     max_abs_err = float(errors_np.max())
