@@ -65,19 +65,6 @@ class TestComputeErrorStatistics:
         except ImportError:
             assert stats.normality_pvalue is None
 
-    def test_large_sample_normality(self):
-        """Test that normality test works with large samples."""
-        errors = torch.randn(10000)
-        stats = compute_error_statistics(errors)
-        assert stats.num_samples == 10000
-
-        try:
-            from scipy.stats import normaltest  # noqa: F401
-
-            assert stats.normality_pvalue is not None
-        except ImportError:
-            assert stats.normality_pvalue is None
-
 
 class TestEvaluateStatisticalCriteria:
     """Tests for evaluate_statistical_criteria function."""

@@ -303,6 +303,28 @@ def evaluate_statistical_criteria(
     return mean_near_zero, stddev_ratio_ok, normality_ok, failure_reasons
 
 
+def _apply_block_pattern(
+    tensor: torch.Tensor,
+    seed: int = 0,
+    block_size_limit: int = STRUCTURED_BLOCK_SIZE_LIMIT,
+) -> None:
+    """
+    Write a contiguous block of 1's into a tensor (in-place).
+
+    The block size is adaptive: up to 1/4 of the tensor, capped by
+    block_size_limit. The offset is chosen randomly within valid bounds.
+    The caller is responsible for zero-initializing the tensor first.
+    """
+    flat = tensor.flatten()
+    numel = flat.numel()
+
+    if numel > 0:
+        block_size = max(1, min(numel // 4, block_size_limit))
+        gen = torch.Generator(device="cpu").manual_seed(seed)
+        offset = int(torch.randint(0, max(1, numel - block_size), (1,), generator=gen))
+        flat[offset : offset + block_size] = 1.0
+
+
 def generate_structured_test_pattern(
     shape: tuple[int, ...],
     dtype: torch.dtype,
@@ -313,29 +335,11 @@ def generate_structured_test_pattern(
     """
     Generate a splat-0 tensor with a single block of 1's.
 
-    Purpose: Catch indexing bugs as large, obvious differences.
-
-    The block size is adaptive: up to 1/4 of the tensor, capped by
-    block_size_limit. The offset is chosen randomly within valid bounds.
-
-    Args:
-        shape: Tensor shape
-        dtype: Tensor dtype
-        device: Target device
-        seed: Random seed for offset selection
-        block_size_limit: Maximum block size
+    Convenience wrapper around _apply_block_pattern for testing.
     """
     tensor = torch.zeros(shape, dtype=dtype, device=device)
-    flat = tensor.flatten()
-    numel = flat.numel()
-
-    if numel > 0:
-        block_size = max(1, min(numel // 4, block_size_limit))
-        gen = torch.Generator(device="cpu").manual_seed(seed)
-        offset = int(torch.randint(0, max(1, numel - block_size), (1,), generator=gen))
-        flat[offset : offset + block_size] = 1.0
-
-    return tensor.view(shape)
+    _apply_block_pattern(tensor, seed=seed, block_size_limit=block_size_limit)
+    return tensor
 
 
 def run_structured_test(
@@ -351,20 +355,13 @@ def run_structured_test(
     """
     cpu = torch.device("cpu")
 
-    # Generate structured test inputs
-    sample_args = sig.get_sample_args(device=cpu, seed=0)
+    # Generate zero-splatted inputs, then apply block-of-ones pattern
+    sample_args = sig.get_sample_args(device=cpu, splat_value=0)
+    for i, arg in enumerate(sample_args):
+        if arg.is_floating_point():
+            _apply_block_pattern(arg, seed=i)
 
-    # Create structured patterns for each input
-    structured_args = tuple(
-        (
-            generate_structured_test_pattern(arg.shape, arg.dtype, cpu, seed=i)
-            if arg.is_floating_point()
-            else arg
-        )
-        for i, arg in enumerate(sample_args)
-    )
-
-    gpu_args = tuple(arg.to(device=device, copy=True) for arg in structured_args)
+    gpu_args = tuple(arg.to(device=device, copy=True) for arg in sample_args)
 
     # Get reference and BOO modules
     reference_module = sig.get_nn_module(use_custom=False)
