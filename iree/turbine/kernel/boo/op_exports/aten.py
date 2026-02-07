@@ -128,10 +128,16 @@ class AtenSignature(OpSignature):
                 case _:
                     raise ValueError(f"Unsupported input type: {type}")
 
+            # Non-contiguous strides may address beyond prod(dims) elements.
+            storage_size = (
+                sum((d - 1) * s for d, s in zip(dims, strides)) + 1 if dims else 1
+            )
             val = (
-                torch.full(dims, splat_value, dtype=dtype, device=device)
+                torch.full((storage_size,), splat_value, dtype=dtype, device=device)
                 if splat_value is not None
-                else torch.randn(dims, generator=gen, dtype=dtype, device=device)
+                else torch.randn(
+                    storage_size, generator=gen, dtype=dtype, device=device
+                )
             )
             return torch.as_strided(val, dims, strides)
 
