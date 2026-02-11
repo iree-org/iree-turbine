@@ -129,6 +129,7 @@ setup(
             f"pytest{get_version_spec('pytest')}",
             f"pytest-xdist{get_version_spec('pytest-xdist')}",
             f"parameterized{get_version_spec('parameterized')}",
+            f"scipy{get_version_spec('scipy')}",
         ],
     },
     cmdclass={"build": BuildCommand},
