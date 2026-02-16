@@ -52,19 +52,6 @@ class TestComputeErrorStatistics:
         assert stats.max_abs_err == pytest.approx(0.5)
         assert stats.num_samples == 1
 
-    def test_normality_pvalue_with_scipy(self):
-        """Test that normality p-value is computed when scipy is available."""
-        torch.manual_seed(42)
-        errors = torch.randn(100)
-        stats = compute_error_statistics(errors)
-
-        try:
-            from scipy.stats import normaltest  # noqa: F401
-
-            assert stats.normality_pvalue is not None
-        except ImportError:
-            assert stats.normality_pvalue is None
-
 
 class TestEvaluateStatisticalCriteria:
     """Tests for evaluate_statistical_criteria function."""
@@ -78,13 +65,16 @@ class TestEvaluateStatisticalCriteria:
             mean=1e-8, stddev=1e-5, max_abs_err=1e-4, num_samples=1000
         )
 
-        mean_ok, stddev_ok, norm_ok, reasons = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats, mean_threshold=1e-6
+        mean_ok, stddev_ok, reasons = evaluate_statistical_criteria(
+            boo_stats,
+            pytorch_stats,
+            mean_check_atol=1e-6,
+            mean_check_rtol=0.0,
+            ref_abs_max=0.0,
         )
 
         assert mean_ok is True
         assert stddev_ok is True
-        assert norm_ok is True
         assert len(reasons) == 0
 
     def test_mean_too_large(self):
@@ -96,8 +86,12 @@ class TestEvaluateStatisticalCriteria:
             mean=1e-8, stddev=1e-5, max_abs_err=1e-4, num_samples=1000
         )
 
-        mean_ok, stddev_ok, norm_ok, reasons = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats, mean_threshold=1e-6
+        mean_ok, stddev_ok, reasons = evaluate_statistical_criteria(
+            boo_stats,
+            pytorch_stats,
+            mean_check_atol=1e-6,
+            mean_check_rtol=0.0,
+            ref_abs_max=0.0,
         )
 
         assert mean_ok is False
@@ -113,8 +107,13 @@ class TestEvaluateStatisticalCriteria:
             mean=1e-8, stddev=1e-4, max_abs_err=1e-4, num_samples=1000
         )
 
-        mean_ok, stddev_ok, norm_ok, reasons = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats, mean_threshold=1e-6, stddev_tolerance=1.2
+        mean_ok, stddev_ok, reasons = evaluate_statistical_criteria(
+            boo_stats,
+            pytorch_stats,
+            mean_check_atol=1e-6,
+            mean_check_rtol=0.0,
+            ref_abs_max=0.0,
+            stddev_tolerance=1.2,
         )
 
         assert stddev_ok is False
@@ -130,33 +129,16 @@ class TestEvaluateStatisticalCriteria:
             mean=0.0, stddev=0.0, max_abs_err=0.0, num_samples=1000
         )
 
-        mean_ok, stddev_ok, norm_ok, reasons = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats, mean_threshold=1e-6
+        mean_ok, stddev_ok, reasons = evaluate_statistical_criteria(
+            boo_stats,
+            pytorch_stats,
+            mean_check_atol=1e-6,
+            mean_check_rtol=0.0,
+            ref_abs_max=0.0,
         )
 
-        # Both have zero stddev, should pass
+        # Both have zero stddev (below floor), should pass
         assert stddev_ok is True
-
-    def test_normality_failure(self):
-        """Test failure when normality test fails."""
-        boo_stats = ErrorStatistics(
-            mean=1e-8,
-            stddev=1e-5,
-            max_abs_err=1e-4,
-            num_samples=1000,
-            normality_pvalue=0.01,  # Below default alpha=0.05
-        )
-        pytorch_stats = ErrorStatistics(
-            mean=1e-8, stddev=1e-5, max_abs_err=1e-4, num_samples=1000
-        )
-
-        mean_ok, stddev_ok, norm_ok, reasons = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats, mean_threshold=1e-6, alpha=0.05
-        )
-
-        assert norm_ok is False
-        assert len(reasons) >= 1
-        assert any("Normality" in r for r in reasons)
 
     def test_custom_thresholds(self):
         """Test with custom threshold values."""
@@ -168,18 +150,78 @@ class TestEvaluateStatisticalCriteria:
         )
 
         # With strict threshold, this should fail
-        mean_ok, stddev_ok, _, _ = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats, mean_threshold=1e-6
+        mean_ok, stddev_ok, _ = evaluate_statistical_criteria(
+            boo_stats,
+            pytorch_stats,
+            mean_check_atol=1e-6,
+            mean_check_rtol=0.0,
+            ref_abs_max=0.0,
         )
         assert mean_ok is False  # 5e-5 > 1e-6
         assert stddev_ok is False  # 2.0 ratio > 1.2
 
         # With relaxed thresholds, should pass
-        mean_ok, stddev_ok, _, _ = evaluate_statistical_criteria(
-            boo_stats, pytorch_stats, mean_threshold=1e-4, stddev_tolerance=3.0
+        mean_ok, stddev_ok, _ = evaluate_statistical_criteria(
+            boo_stats,
+            pytorch_stats,
+            mean_check_atol=1e-4,
+            mean_check_rtol=0.0,
+            ref_abs_max=0.0,
+            stddev_tolerance=3.0,
         )
         assert mean_ok is True
         assert stddev_ok is True
+
+    def test_allclose_mean_with_large_ref(self):
+        """Test that mean threshold scales with ref_abs_max."""
+        boo_stats = ErrorStatistics(
+            mean=5e-2, stddev=1e-3, max_abs_err=1e-1, num_samples=1000
+        )
+        pytorch_stats = ErrorStatistics(
+            mean=1e-8, stddev=1e-3, max_abs_err=1e-1, num_samples=1000
+        )
+
+        # With small ref, mean 5e-2 should fail (threshold = 1e-5 + 1e-4*0 = 1e-5)
+        mean_ok, _, _ = evaluate_statistical_criteria(
+            boo_stats,
+            pytorch_stats,
+            mean_check_atol=1e-5,
+            mean_check_rtol=1e-4,
+            ref_abs_max=0.0,
+        )
+        assert mean_ok is False
+
+        # With large ref, mean 5e-2 should pass (threshold = 1e-5 + 1e-4*1000 = 0.1)
+        mean_ok, _, _ = evaluate_statistical_criteria(
+            boo_stats,
+            pytorch_stats,
+            mean_check_atol=1e-5,
+            mean_check_rtol=1e-4,
+            ref_abs_max=1000.0,
+        )
+        assert mean_ok is True
+
+    def test_stddev_floor_prevents_false_failure(self):
+        """Test that tiny stddevs below the floor don't fail on ratio."""
+        # ratio is 1.25 (> default 1.2) but both are negligibly small
+        boo_stats = ErrorStatistics(
+            mean=0.0, stddev=1e-10, max_abs_err=1e-9, num_samples=1000
+        )
+        pytorch_stats = ErrorStatistics(
+            mean=0.0, stddev=8e-11, max_abs_err=1e-9, num_samples=1000
+        )
+
+        _, stddev_ok, reasons = evaluate_statistical_criteria(
+            boo_stats,
+            pytorch_stats,
+            mean_check_atol=1e-5,
+            mean_check_rtol=1e-4,
+            ref_abs_max=1.0,
+            stddev_tolerance=1.2,
+        )
+        # Both stddevs are below floor (1e-5 + 1e-4*1.0 = 1.1e-4), so pass
+        assert stddev_ok is True
+        assert len(reasons) == 0
 
 
 class TestGenerateStructuredTestPattern:
@@ -315,7 +357,6 @@ class TestOutputFormatters:
             ),
             mean_near_zero=True,
             stddev_ratio_ok=True,
-            normality_ok=True,
             structured_test_passed=True,
         )
         output = format_verdict_verbose(verdict)
@@ -371,7 +412,6 @@ class TestNumericsVerdictDataclass:
         assert verdict.boo_pytorch_diff is None
         assert verdict.mean_near_zero is True
         assert verdict.stddev_ratio_ok is True
-        assert verdict.normality_ok is True
         assert verdict.structured_test_passed is None
         assert verdict.failure_reasons == []
         assert verdict.error_message is None

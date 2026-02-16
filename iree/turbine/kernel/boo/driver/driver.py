@@ -128,16 +128,16 @@ list of arguments.
         help="Maximum allowed ratio of BOO stddev to PyTorch stddev (default: 1.2).",
     )
     parser.add_argument(
-        "--numerics-alpha",
+        "--numerics-mean-atol",
         type=float,
-        default=0.05,
-        help="Significance level for normality test (default: 0.05).",
+        default=1e-5,
+        help="Absolute tolerance for mean bias check (default: 1e-5).",
     )
     parser.add_argument(
-        "--numerics-mean-eps-multiple",
+        "--numerics-mean-rtol",
         type=float,
-        default=10,
-        help="Mean bias threshold as a multiple of output dtype epsilon (default: 10).",
+        default=1e-4,
+        help="Relative tolerance for mean bias check, scaled by ref_abs_max (default: 1e-4).",
     )
     parser.add_argument(
         "--no-structured-tests",
@@ -325,8 +325,8 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                     verbose=meta_args.numerics_verbose,
                     min_samples=meta_args.numerics_min_samples,
                     stddev_tolerance=meta_args.numerics_stddev_tolerance,
-                    alpha=meta_args.numerics_alpha,
-                    mean_eps_multiple=meta_args.numerics_mean_eps_multiple,
+                    mean_check_atol=meta_args.numerics_mean_atol,
+                    mean_check_rtol=meta_args.numerics_mean_rtol,
                     run_structured_tests=not meta_args.no_structured_tests,
                 )
                 verdict = verdicts[0]

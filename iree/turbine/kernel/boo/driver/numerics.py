@@ -27,20 +27,12 @@ import torch
 from iree.turbine.kernel.boo.exports.signature import OpSignature
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 
-# Optional scipy for D'Agostino-Pearson normality test
-SCIPY_AVAILABLE = False
-try:
-    from scipy.stats import normaltest
-
-    SCIPY_AVAILABLE = True
-except ImportError:
-    pass
-
 # Constants
 MIN_SAMPLES_DEFAULT = 1000
 STDDEV_TOLERANCE_DEFAULT = 1.2
-ALPHA_DEFAULT = 0.05
-MEAN_EPS_MULTIPLE_DEFAULT = 10
+MEAN_CHECK_ATOL_DEFAULT = 1e-5
+MEAN_CHECK_RTOL_DEFAULT = 1e-4
+STDDEV_CHECK_ATOL_DEFAULT = 1e-5
 STRUCTURED_TEST_ATOL = 1e-7
 STRUCTURED_BLOCK_SIZE_LIMIT = 128
 
@@ -53,7 +45,6 @@ class ErrorStatistics:
     stddev: float
     max_abs_err: float
     num_samples: int
-    normality_pvalue: Optional[float] = None
 
 
 @dataclass
@@ -67,7 +58,6 @@ class NumericsVerdict:
     boo_pytorch_diff: Optional[ErrorStatistics] = None
     mean_near_zero: bool = True
     stddev_ratio_ok: bool = True
-    normality_ok: bool = True
     structured_test_passed: Optional[bool] = None
     failure_reasons: list[str] = field(default_factory=list)
     error_message: Optional[str] = None
@@ -107,24 +97,35 @@ def compute_f64_cpu_reference(
 def _compute_element_errors(
     comparee: torch.Tensor,
     reference: torch.Tensor,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, bool]:
     """
     Compute element-wise signed errors between two tensors.
 
-    Returns a 1D float32 tensor of signed errors (comparee - reference) on
-    the comparee's device. Signed errors allow bias detection: if the mean
-    is near zero, the compiler isn't introducing systematic positive/negative
-    drift.
+    Returns a tuple of (errors, nan_mismatch):
+    - errors: 1D float32 tensor of signed errors (comparee - reference) on
+      the comparee's device, excluding positions where both are NaN.
+    - nan_mismatch: True if one tensor has NaN where the other does not.
+
+    Signed errors allow bias detection: if the mean is near zero, the
+    compiler isn't introducing systematic positive/negative drift.
 
     Both tensors are cast to float32 to avoid f64 operations on GPU (which
     may not be supported on all hardware) while still providing sufficient
     precision for bf16/f16/f32 error measurement.
     """
-    reference_on_device = reference.to(
+    comparee_f32 = comparee.float()
+    ref_f32 = reference.to(
         device=comparee.device, dtype=torch.float32, non_blocking=True
     )
-    errors = (comparee.float() - reference_on_device).flatten()
-    return errors
+
+    comparee_nan = torch.isnan(comparee_f32)
+    ref_nan = torch.isnan(ref_f32)
+    nan_mismatch = bool((comparee_nan != ref_nan).any().item())
+
+    # Exclude positions where both are NaN
+    valid = ~(comparee_nan & ref_nan)
+    errors = (comparee_f32[valid] - ref_f32[valid]).flatten()
+    return errors, nan_mismatch
 
 
 def collect_error_samples(
@@ -136,6 +137,7 @@ def collect_error_samples(
     Optional[torch.Tensor],
     Optional[torch.Tensor],
     Optional[torch.dtype],
+    float,
     Optional[str],
 ]:
     """
@@ -144,8 +146,10 @@ def collect_error_samples(
     If tensor.numel() < min_samples, runs multiple batches with different seeds.
 
     Returns:
-        (boo_gpu_errors, pytorch_gpu_errors, boo_pytorch_errors, output_dtype, error_message)
-        If an error occurs, the first three are None, output_dtype is None, and error_message is set.
+        (boo_gpu_errors, pytorch_gpu_errors, boo_pytorch_errors, output_dtype,
+         ref_abs_max, error_message)
+        If an error occurs, the first three are None, output_dtype is None,
+        ref_abs_max is 0.0, and error_message is set.
     """
     cpu = torch.device("cpu")
 
@@ -153,13 +157,14 @@ def collect_error_samples(
     boo_gpu_errors_list: list[torch.Tensor] = []
     pytorch_gpu_errors_list: list[torch.Tensor] = []
     boo_pytorch_errors_list: list[torch.Tensor] = []
+    ref_abs_max: float = 0.0
 
     # Get reference and BOO compiled modules
     reference_module = sig.get_nn_module(use_custom=False)
     try:
         boo_module = sig.get_compiled_module(backend="iree_boo_experimental")
     except Exception as e:
-        return None, None, None, None, f"BOO compilation failed: {e}"
+        return None, None, None, None, 0.0, f"BOO compilation failed: {e}"
 
     main_result_idx = sig.main_result_index
     num_batches: Optional[int] = None
@@ -193,21 +198,45 @@ def collect_error_samples(
             if isinstance(boo_gpu_result, torch.Tensor):
                 boo_gpu_result = (boo_gpu_result,)
         except Exception as e:
-            return None, None, None, None, f"BOO runtime failed: {e}"
+            return None, None, None, None, 0.0, f"BOO runtime failed: {e}"
 
         # Get main result tensors
         f64_ref_main = f64_ref[main_result_idx]
         pytorch_gpu_main = pytorch_gpu_result[main_result_idx]
         boo_gpu_main = boo_gpu_result[main_result_idx]
 
-        # Compute errors
-        boo_gpu_errors_list.append(_compute_element_errors(boo_gpu_main, f64_ref_main))
-        pytorch_gpu_errors_list.append(
-            _compute_element_errors(pytorch_gpu_main, f64_ref_main)
-        )
-        boo_pytorch_errors_list.append(
-            _compute_element_errors(boo_gpu_main, pytorch_gpu_main)
-        )
+        # Track max absolute reference value across batches
+        ref_abs_max = max(ref_abs_max, f64_ref_main.abs().max().item())
+
+        # Compute errors, checking for NaN mismatches
+        boo_errs, boo_nan = _compute_element_errors(boo_gpu_main, f64_ref_main)
+        if boo_nan:
+            return None, None, None, None, 0.0, "NaN mismatch: BOO vs f64 reference"
+        boo_gpu_errors_list.append(boo_errs)
+
+        pt_errs, pt_nan = _compute_element_errors(pytorch_gpu_main, f64_ref_main)
+        if pt_nan:
+            return (
+                None,
+                None,
+                None,
+                None,
+                0.0,
+                "NaN mismatch: PyTorch GPU vs f64 reference",
+            )
+        pytorch_gpu_errors_list.append(pt_errs)
+
+        bp_errs, bp_nan = _compute_element_errors(boo_gpu_main, pytorch_gpu_main)
+        if bp_nan:
+            return (
+                None,
+                None,
+                None,
+                None,
+                0.0,
+                "NaN mismatch: BOO vs PyTorch GPU",
+            )
+        boo_pytorch_errors_list.append(bp_errs)
 
         batch_idx += 1
 
@@ -217,66 +246,65 @@ def collect_error_samples(
     boo_pytorch_errors = torch.cat(boo_pytorch_errors_list)
 
     output_dtype = boo_gpu_main.dtype
-    return boo_gpu_errors, pytorch_gpu_errors, boo_pytorch_errors, output_dtype, None
+    return (
+        boo_gpu_errors,
+        pytorch_gpu_errors,
+        boo_pytorch_errors,
+        output_dtype,
+        ref_abs_max,
+        None,
+    )
 
 
 def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
     """
     Compute statistics from a tensor of errors.
 
-    Statistics: mean, stddev, max_abs_err, num_samples, normality_pvalue (if scipy available)
+    Statistics: mean, stddev, max_abs_err, num_samples.
     """
     errors_np = errors.cpu().float().numpy()
-    mean = float(errors_np.mean())
-    stddev = float(errors_np.std())
-    max_abs_err = float(np.abs(errors_np).max())
-    num_samples = len(errors_np)
-
-    normality_pvalue: Optional[float] = None
-    if SCIPY_AVAILABLE and num_samples >= 20:
-        # D'Agostino-Pearson requires at least 20 samples
-        try:
-            _, normality_pvalue = normaltest(errors_np)
-        except Exception:
-            # normaltest can fail in edge cases (e.g., all zeros)
-            normality_pvalue = None
-
     return ErrorStatistics(
-        mean=mean,
-        stddev=stddev,
-        max_abs_err=max_abs_err,
-        num_samples=num_samples,
-        normality_pvalue=normality_pvalue,
+        mean=float(errors_np.mean()),
+        stddev=float(errors_np.std()),
+        max_abs_err=float(np.abs(errors_np).max()),
+        num_samples=len(errors_np),
     )
 
 
 def evaluate_statistical_criteria(
     boo_stats: ErrorStatistics,
     pytorch_stats: ErrorStatistics,
-    mean_threshold: float,
+    mean_check_atol: float,
+    mean_check_rtol: float,
+    ref_abs_max: float,
     stddev_tolerance: float = STDDEV_TOLERANCE_DEFAULT,
-    alpha: float = ALPHA_DEFAULT,
-) -> tuple[bool, bool, bool, list[str]]:
+    stddev_check_atol: float = STDDEV_CHECK_ATOL_DEFAULT,
+) -> tuple[bool, bool, list[str]]:
     """
     Evaluate pass/fail criteria based on statistics.
 
+    Uses allclose-style thresholds: threshold = atol + rtol * ref_abs_max.
+
     Returns:
-        (mean_near_zero, stddev_ratio_ok, normality_ok, failure_reasons)
+        (mean_near_zero, stddev_ratio_ok, failure_reasons)
     """
     failure_reasons: list[str] = []
 
-    # Check mean near zero
+    # Check mean near zero (allclose-style threshold)
+    mean_threshold = mean_check_atol + mean_check_rtol * ref_abs_max
     mean_near_zero = abs(boo_stats.mean) < mean_threshold
     if not mean_near_zero:
         failure_reasons.append(
             f"Mean error |{boo_stats.mean:.2e}| >= threshold {mean_threshold:.2e}"
         )
 
-    # Check stddev ratio
-    # Avoid division by zero; if pytorch stddev is 0, boo stddev should also be 0.
-    # This could happen if testing f64 convolutions, for example. This edge case
-    # would be pretty much impossible otherwise.
-    if pytorch_stats.stddev > 0:
+    # Check stddev ratio with absolute floor.
+    # When both stddevs are below the floor, they are negligible relative to
+    # output magnitude — pass without computing the ratio.
+    stddev_floor = stddev_check_atol + mean_check_rtol * ref_abs_max
+    if boo_stats.stddev < stddev_floor and pytorch_stats.stddev < stddev_floor:
+        stddev_ratio_ok = True
+    elif pytorch_stats.stddev > 0:
         ratio = boo_stats.stddev / pytorch_stats.stddev
         stddev_ratio_ok = ratio <= stddev_tolerance
         if not stddev_ratio_ok:
@@ -284,23 +312,13 @@ def evaluate_statistical_criteria(
                 f"Stddev ratio {ratio:.2f} > tolerance {stddev_tolerance:.2f}"
             )
     else:
-        # If pytorch has zero stddev, boo should also have near-zero stddev
-        stddev_ratio_ok = boo_stats.stddev < mean_threshold
-        if not stddev_ratio_ok:
-            failure_reasons.append(
-                f"BOO stddev {boo_stats.stddev:.2e} > 0 while PyTorch stddev is 0"
-            )
+        # pytorch stddev is 0 but boo stddev exceeds the floor
+        stddev_ratio_ok = False
+        failure_reasons.append(
+            f"BOO stddev {boo_stats.stddev:.2e} > 0 while PyTorch stddev is 0"
+        )
 
-    # Check normality (if scipy available and pvalue exists)
-    normality_ok = True
-    if boo_stats.normality_pvalue is not None:
-        normality_ok = boo_stats.normality_pvalue > alpha
-        if not normality_ok:
-            failure_reasons.append(
-                f"Normality test failed: p-value {boo_stats.normality_pvalue:.3f} <= alpha {alpha}"
-            )
-
-    return mean_near_zero, stddev_ratio_ok, normality_ok, failure_reasons
+    return mean_near_zero, stddev_ratio_ok, failure_reasons
 
 
 def _apply_block_pattern(
@@ -405,8 +423,8 @@ def verify_numerics(
     verbose: bool = False,
     min_samples: int = MIN_SAMPLES_DEFAULT,
     stddev_tolerance: float = STDDEV_TOLERANCE_DEFAULT,
-    alpha: float = ALPHA_DEFAULT,
-    mean_eps_multiple: float = MEAN_EPS_MULTIPLE_DEFAULT,
+    mean_check_atol: float = MEAN_CHECK_ATOL_DEFAULT,
+    mean_check_rtol: float = MEAN_CHECK_RTOL_DEFAULT,
     run_structured_tests: bool = True,
 ) -> list[NumericsVerdict]:
     """
@@ -420,9 +438,8 @@ def verify_numerics(
         verbose: Print verbose output during verification
         min_samples: Minimum number of error samples to collect
         stddev_tolerance: Maximum allowed ratio of BOO stddev to PyTorch stddev
-        alpha: Significance level for normality test
-        mean_eps_multiple: The mean bias threshold is computed as
-            mean_eps_multiple * torch.finfo(output_dtype).eps
+        mean_check_atol: Absolute tolerance for mean bias check
+        mean_check_rtol: Relative tolerance for mean bias check (scaled by ref_abs_max)
         run_structured_tests: Whether to run structured pattern tests
     """
     if not torch.cuda.is_available():
@@ -449,7 +466,7 @@ def verify_numerics(
             continue
 
         # Collect error samples
-        boo_err, pytorch_err, boo_pytorch_err, output_dtype, err_msg = (
+        boo_err, pytorch_err, boo_pytorch_err, output_dtype, ref_abs_max, err_msg = (
             collect_error_samples(sig, cuda_device, min_samples)
         )
 
@@ -477,13 +494,15 @@ def verify_numerics(
         pytorch_stats = compute_error_statistics(pytorch_err)
         boo_pytorch_stats = compute_error_statistics(boo_pytorch_err)
 
-        # Compute mean threshold from dtype epsilon
-        mean_threshold = mean_eps_multiple * torch.finfo(output_dtype).eps
-
         # Evaluate criteria
-        mean_near_zero, stddev_ratio_ok, normality_ok, failure_reasons = (
+        mean_near_zero, stddev_ratio_ok, failure_reasons = (
             evaluate_statistical_criteria(
-                boo_stats, pytorch_stats, mean_threshold, stddev_tolerance, alpha
+                boo_stats,
+                pytorch_stats,
+                mean_check_atol,
+                mean_check_rtol,
+                ref_abs_max,
+                stddev_tolerance,
             )
         )
 
@@ -495,7 +514,7 @@ def verify_numerics(
                 failure_reasons.append(struct_err)
 
         # Determine overall pass/fail
-        statistical_passed = mean_near_zero and stddev_ratio_ok and normality_ok
+        statistical_passed = mean_near_zero and stddev_ratio_ok
         overall_passed = statistical_passed and (
             structured_passed is None or structured_passed
         )
@@ -508,7 +527,6 @@ def verify_numerics(
             boo_pytorch_diff=boo_pytorch_stats,
             mean_near_zero=mean_near_zero,
             stddev_ratio_ok=stddev_ratio_ok,
-            normality_ok=normality_ok,
             structured_test_passed=structured_passed,
             failure_reasons=failure_reasons,
         )
@@ -543,16 +561,13 @@ def format_verdict_verbose(verdict: NumericsVerdict) -> str:
     def _format_stats(name: str, stats: Optional[ErrorStatistics]) -> list[str]:
         if stats is None:
             return [f"  {name}: N/A"]
-        result = [
+        return [
             f"  {name}:",
             f"    mean:     {stats.mean:.2e}",
             f"    stddev:   {stats.stddev:.2e}",
             f"    max_abs:  {stats.max_abs_err:.2e}",
             f"    samples:  {stats.num_samples}",
         ]
-        if stats.normality_pvalue is not None:
-            result.append(f"    normality: p={stats.normality_pvalue:.3f}")
-        return result
 
     lines.extend(_format_stats("BOO GPU vs f64 Reference", verdict.boo_gpu_err))
     lines.append("")
@@ -566,7 +581,6 @@ def format_verdict_verbose(verdict: NumericsVerdict) -> str:
     lines.append(
         f"  Stddev ratio:      {'PASS' if verdict.stddev_ratio_ok else 'FAIL'}"
     )
-    lines.append(f"  Normality (BOO):   {'PASS' if verdict.normality_ok else 'FAIL'}")
     lines.append("")
 
     if verdict.structured_test_passed is not None:
