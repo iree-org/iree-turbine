@@ -21,7 +21,6 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
-import numpy as np
 import torch
 
 from iree.turbine.kernel.boo.exports.signature import OpSignature
@@ -257,12 +256,11 @@ def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
 
     Statistics: mean, stddev, max_abs_err, num_samples.
     """
-    errors_np = errors.cpu().float().numpy()
     return ErrorStatistics(
-        mean=float(errors_np.mean()),
-        stddev=float(errors_np.std()),
-        max_abs_err=float(np.abs(errors_np).max()),
-        num_samples=len(errors_np),
+        mean=float(errors.mean().item()),
+        stddev=float(errors.std().item()),
+        max_abs_err=float(errors.abs().max().item()),
+        num_samples=errors.numel(),
     )
 
 
