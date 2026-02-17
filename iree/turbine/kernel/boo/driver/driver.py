@@ -122,10 +122,10 @@ list of arguments.
         help="Minimum number of error samples for statistical analysis (default: 1000).",
     )
     parser.add_argument(
-        "--numerics-stddev-tolerance",
+        "--numerics-stddev-rtol",
         type=float,
         default=1.2,
-        help="Maximum allowed ratio of BOO stddev to PyTorch stddev (default: 1.2).",
+        help="Relative tolerance for stddev check, scaled by PyTorch stddev (default: 1.2).",
     )
     parser.add_argument(
         "--numerics-mean-atol",
@@ -340,7 +340,7 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                     device=gpu_id,
                     verbose=meta_args.numerics_verbose,
                     min_samples=meta_args.numerics_min_samples,
-                    stddev_tolerance=meta_args.numerics_stddev_tolerance,
+                    stddev_check_rtol=meta_args.numerics_stddev_rtol,
                     stddev_check_atol=meta_args.numerics_stddev_atol,
                     mean_check_atol=meta_args.numerics_mean_atol,
                     mean_check_rtol=meta_args.numerics_mean_rtol,

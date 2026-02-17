@@ -28,7 +28,7 @@ from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 
 # Constants
 MIN_SAMPLES_DEFAULT = 1000
-STDDEV_TOLERANCE_DEFAULT = 1.2
+STDDEV_CHECK_RTOL_DEFAULT = 1.2
 MEAN_CHECK_ATOL_DEFAULT = 1e-5
 MEAN_CHECK_RTOL_DEFAULT = 1e-4
 STDDEV_CHECK_ATOL_DEFAULT = 1e-5
@@ -264,47 +264,64 @@ def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
     )
 
 
+def is_approximately_negligible(
+    value: float, reference: float, atol: float, rtol: float
+):
+    """Combined absolute + relative check for negligibility, similar in style to allclose."""
+    return abs(value) < atol + rtol * abs(reference)
+
+
 def evaluate_statistical_criteria(
     boo_stats: ErrorStatistics,
     pytorch_stats: ErrorStatistics,
     mean_check_atol: float,
     mean_check_rtol: float,
     ref_abs_max: float,
-    stddev_tolerance: float = STDDEV_TOLERANCE_DEFAULT,
+    stddev_check_rtol: float = STDDEV_CHECK_RTOL_DEFAULT,
     stddev_check_atol: float = STDDEV_CHECK_ATOL_DEFAULT,
 ) -> tuple[bool, bool, list[str]]:
     """
-    Evaluate pass/fail criteria based on statistics.
+    Evaluate pass/fail criteria for error statistics based on approximate negligibility.
 
-    Uses allclose-style thresholds: threshold = atol + rtol * ref_abs_max.
+    Checks:
+        `mean_near_zero` = `boo_stats.mean` approx. negligible relative to `ref_abs_max`.
+        `stddev_ok` = `boo_stats.stddev` approx. negligible relative to `pytorch_stats.stddev`.
+
+    The negligibility tolerances should be interpreted as:
+        `mean_check_atol`: Low-absolute bar. If |boo_stats.mean| < atol, mean check passes.
+        `mean_check_rtol`: Relative to the ref output's abs. max value (controls large-output false negatives).
+        `stddev_check_atol`: Low-absolute bar. If boo_stats.stddev < atol, stddev check passes.
+        `stddev_check_rtol`: Relative to `pytorch_stats.stddev`. These should be comparable ~ 1.0.
 
     Returns:
-        (mean_near_zero, stddev_ratio_ok, failure_reasons)
+        (mean_near_zero, stddev_ok, failure_reasons)
     """
     failure_reasons: list[str] = []
 
-    # Check mean near zero (allclose-style threshold).
-    # ref_abs_max is the maximum absolute value of the high-precision CPU
-    # reference output across all batches, providing the relative scale for
-    # the threshold (analogous to the "desired" value in torch.allclose).
-    mean_threshold = mean_check_atol + mean_check_rtol * ref_abs_max
-    mean_near_zero = abs(boo_stats.mean) < mean_threshold
+    mean_near_zero = is_approximately_negligible(
+        boo_stats.mean, ref_abs_max, atol=mean_check_atol, rtol=mean_check_rtol
+    )
     if not mean_near_zero:
         failure_reasons.append(
-            f"Mean error |{boo_stats.mean:.2e}| >= threshold {mean_threshold:.2e}"
+            f"Mean error |{boo_stats.mean:.2e}| >= threshold "
+            f"(atol={mean_check_atol:.2e} + "
+            f"{mean_check_rtol:.2f} * ref_abs_max={ref_abs_max:.2e})"
         )
 
-    # Check stddev (allclose-style: atol + tolerance * pytorch_stddev).
-    stddev_threshold = stddev_check_atol + stddev_tolerance * pytorch_stats.stddev
-    stddev_ratio_ok = boo_stats.stddev < stddev_threshold
-    if not stddev_ratio_ok:
+    stddev_ok = is_approximately_negligible(
+        boo_stats.stddev,
+        pytorch_stats.stddev,
+        atol=stddev_check_atol,
+        rtol=stddev_check_rtol,
+    )
+    if not stddev_ok:
         failure_reasons.append(
-            f"BOO stddev {boo_stats.stddev:.2e} >= threshold {stddev_threshold:.2e} "
+            f"BOO stddev {boo_stats.stddev:.2e} >= threshold "
             f"(atol={stddev_check_atol:.2e} + "
-            f"{stddev_tolerance:.2f} * pytorch_stddev={pytorch_stats.stddev:.2e})"
+            f"{stddev_check_rtol:.2f} * pytorch_stddev={pytorch_stats.stddev:.2e})"
         )
 
-    return mean_near_zero, stddev_ratio_ok, failure_reasons
+    return mean_near_zero, stddev_ok, failure_reasons
 
 
 def _apply_block_pattern(
@@ -408,7 +425,7 @@ def verify_numerics(
     device: int = 0,
     verbose: bool = False,
     min_samples: int = MIN_SAMPLES_DEFAULT,
-    stddev_tolerance: float = STDDEV_TOLERANCE_DEFAULT,
+    stddev_check_rtol: float = STDDEV_CHECK_RTOL_DEFAULT,
     stddev_check_atol: float = STDDEV_CHECK_ATOL_DEFAULT,
     mean_check_atol: float = MEAN_CHECK_ATOL_DEFAULT,
     mean_check_rtol: float = MEAN_CHECK_RTOL_DEFAULT,
@@ -425,7 +442,7 @@ def verify_numerics(
         device: GPU device index
         verbose: Print verbose output during verification
         min_samples: Minimum number of error samples to collect
-        stddev_tolerance: Maximum allowed ratio of BOO stddev to PyTorch stddev
+        stddev_check_rtol: Relative tolerance for the stddev check (scaled by pytorch stddev)
         stddev_check_atol: Absolute tolerance for the stddev check
         mean_check_atol: Absolute tolerance for mean bias check
         mean_check_rtol: Relative tolerance for mean bias check (scaled by ref_abs_max)
@@ -500,7 +517,7 @@ def verify_numerics(
                 mean_check_atol,
                 mean_check_rtol,
                 ref_abs_max,
-                stddev_tolerance,
+                stddev_check_rtol,
                 stddev_check_atol,
             )
         )

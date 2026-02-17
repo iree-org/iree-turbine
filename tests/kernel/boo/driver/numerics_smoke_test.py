@@ -113,7 +113,7 @@ class TestEvaluateStatisticalCriteria:
             mean_check_atol=1e-6,
             mean_check_rtol=0.0,
             ref_abs_max=0.0,
-            stddev_tolerance=1.2,
+            stddev_check_rtol=1.2,
         )
 
         assert stddev_ok is False
@@ -167,7 +167,7 @@ class TestEvaluateStatisticalCriteria:
             mean_check_atol=1e-4,
             mean_check_rtol=0.0,
             ref_abs_max=0.0,
-            stddev_tolerance=3.0,
+            stddev_check_rtol=3.0,
         )
         assert mean_ok is True
         assert stddev_ok is True
@@ -217,7 +217,7 @@ class TestEvaluateStatisticalCriteria:
             mean_check_atol=1e-5,
             mean_check_rtol=1e-4,
             ref_abs_max=1.0,
-            stddev_tolerance=1.2,
+            stddev_check_rtol=1.2,
         )
         # Both stddevs are below floor (1e-5 + 1e-4*1.0 = 1.1e-4), so pass
         assert stddev_ok is True
