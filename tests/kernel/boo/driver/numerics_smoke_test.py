@@ -28,7 +28,7 @@ class TestComputeErrorStatistics:
         stats = compute_error_statistics(errors)
 
         assert stats.mean == pytest.approx(0.0)
-        assert stats.stddev == pytest.approx(1.4142135, rel=1e-5)
+        assert stats.stddev == pytest.approx(1.5811388, rel=1e-5)
         assert stats.max_abs_err == pytest.approx(2.0)
         assert stats.num_samples == 5
 
@@ -48,7 +48,10 @@ class TestComputeErrorStatistics:
         stats = compute_error_statistics(errors)
 
         assert stats.mean == pytest.approx(-0.5)
-        assert stats.stddev == pytest.approx(0.0)
+        # Bessel's correction: std of a single sample is NaN (ddof=1)
+        import math
+
+        assert math.isnan(stats.stddev)
         assert stats.max_abs_err == pytest.approx(0.5)
         assert stats.num_samples == 1
 
@@ -363,8 +366,8 @@ class TestOutputFormatters:
 
         assert "gemm --size 32" in output
         assert "Error Statistics" in output
-        assert "BOO GPU vs f64 Reference" in output
-        assert "PyTorch GPU vs f64 Reference" in output
+        assert "BOO GPU vs float64 Reference" in output
+        assert "PyTorch GPU vs float64 Reference" in output
         assert "Statistical Tests" in output
         assert "Structured Test" in output
         assert "VERDICT: PASS" in output

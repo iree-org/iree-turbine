@@ -63,6 +63,22 @@ class NumericsVerdict:
     boo_pytorch_nan_mismatch: bool = False
     failure_reasons: list[str] = field(default_factory=list)
     error_message: Optional[str] = None
+    reference_dtype: torch.dtype = torch.float64
+
+
+@dataclass
+class ErrorSampleResult:
+    """Result of collecting error samples across batches."""
+
+    boo_gpu_errors: Optional[torch.Tensor] = None
+    pytorch_gpu_errors: Optional[torch.Tensor] = None
+    boo_pytorch_errors: Optional[torch.Tensor] = None
+    output_dtype: Optional[torch.dtype] = None
+    ref_abs_max: float = 0.0
+    error_message: Optional[str] = None
+    boo_nan_mismatch: bool = False
+    pytorch_nan_mismatch: bool = False
+    boo_pytorch_nan_mismatch: bool = False
 
 
 def compute_cpu_reference(
@@ -132,31 +148,16 @@ def collect_error_samples(
     device: torch.device,
     min_samples: int = MIN_SAMPLES_DEFAULT,
     reference_dtype: torch.dtype = torch.float64,
-) -> tuple[
-    Optional[torch.Tensor],
-    Optional[torch.Tensor],
-    Optional[torch.Tensor],
-    Optional[torch.dtype],
-    float,
-    Optional[str],
-    bool,
-    bool,
-    bool,
-]:
+) -> ErrorSampleResult:
     """
     Collect error samples for statistical analysis.
 
     If tensor.numel() < min_samples, runs multiple batches with different seeds.
 
-    Returns:
-        (boo_gpu_errors, pytorch_gpu_errors, boo_pytorch_errors, output_dtype,
-         ref_abs_max, error_message, boo_nan_mismatch, pt_nan_mismatch,
-         bp_nan_mismatch)
-        If an error occurs, the first three are None, output_dtype is None,
-        ref_abs_max is 0.0, error_message is set, and nan flags are False.
+    Returns an ErrorSampleResult.  On error the tensor fields are None,
+    output_dtype is None, ref_abs_max is 0.0, and error_message is set.
     """
     cpu = torch.device("cpu")
-    _err_ret = (None, None, None, None, 0.0)
 
     # Collect errors across batches
     boo_gpu_errors_list: list[torch.Tensor] = []
@@ -172,7 +173,7 @@ def collect_error_samples(
     try:
         boo_module = sig.get_compiled_module(backend="iree_boo_experimental")
     except Exception as e:
-        return *_err_ret, f"BOO compilation failed: {e}", False, False, False
+        return ErrorSampleResult(error_message=f"BOO compilation failed: {e}")
 
     main_result_idx = sig.main_result_index
     num_batches: Optional[int] = None
@@ -206,12 +207,16 @@ def collect_error_samples(
             if isinstance(boo_gpu_result, torch.Tensor):
                 boo_gpu_result = (boo_gpu_result,)
         except Exception as e:
-            return *_err_ret, f"BOO runtime failed: {e}", False, False, False
+            return ErrorSampleResult(error_message=f"BOO runtime failed: {e}")
 
         # Get main result tensors
         cpu_ref_main = cpu_ref[main_result_idx]
         pytorch_gpu_main = pytorch_gpu_result[main_result_idx]
         boo_gpu_main = boo_gpu_result[main_result_idx]
+
+        # Capture output dtype on first batch
+        if batch_idx == 0:
+            output_dtype = boo_gpu_main.dtype
 
         # Track max absolute reference value across batches
         ref_abs_max = max(ref_abs_max, cpu_ref_main.abs().max().item())
@@ -232,21 +237,15 @@ def collect_error_samples(
         batch_idx += 1
 
     # Concatenate all errors
-    boo_gpu_errors = torch.cat(boo_gpu_errors_list)
-    pytorch_gpu_errors = torch.cat(pytorch_gpu_errors_list)
-    boo_pytorch_errors = torch.cat(boo_pytorch_errors_list)
-
-    output_dtype = boo_gpu_main.dtype
-    return (
-        boo_gpu_errors,
-        pytorch_gpu_errors,
-        boo_pytorch_errors,
-        output_dtype,
-        ref_abs_max,
-        None,
-        boo_nan_mismatch,
-        pt_nan_mismatch,
-        bp_nan_mismatch,
+    return ErrorSampleResult(
+        boo_gpu_errors=torch.cat(boo_gpu_errors_list),
+        pytorch_gpu_errors=torch.cat(pytorch_gpu_errors_list),
+        boo_pytorch_errors=torch.cat(boo_pytorch_errors_list),
+        output_dtype=output_dtype,
+        ref_abs_max=ref_abs_max,
+        boo_nan_mismatch=boo_nan_mismatch,
+        pytorch_nan_mismatch=pt_nan_mismatch,
+        boo_pytorch_nan_mismatch=bp_nan_mismatch,
     )
 
 
@@ -468,30 +467,22 @@ def verify_numerics(
                     passed=False,
                     error_message=f"Failed to parse command: {cmd}",
                     failure_reasons=["Parse error"],
+                    reference_dtype=reference_dtype,
                 )
             )
             continue
 
         # Collect error samples
-        (
-            boo_err,
-            pytorch_err,
-            boo_pytorch_err,
-            output_dtype,
-            ref_abs_max,
-            err_msg,
-            boo_nan,
-            pt_nan,
-            bp_nan,
-        ) = collect_error_samples(sig, cuda_device, min_samples, reference_dtype)
+        result = collect_error_samples(sig, cuda_device, min_samples, reference_dtype)
 
-        if err_msg is not None:
+        if result.error_message is not None:
             verdicts.append(
                 NumericsVerdict(
                     command=cmd,
                     passed=False,
-                    error_message=err_msg,
+                    error_message=result.error_message,
                     failure_reasons=["Execution error"],
+                    reference_dtype=reference_dtype,
                 )
             )
             # Reset torch.compile cache
@@ -500,14 +491,14 @@ def verify_numerics(
 
         # Compute statistics
         assert (
-            boo_err is not None
-            and pytorch_err is not None
-            and boo_pytorch_err is not None
-            and output_dtype is not None
+            result.boo_gpu_errors is not None
+            and result.pytorch_gpu_errors is not None
+            and result.boo_pytorch_errors is not None
+            and result.output_dtype is not None
         )
-        boo_stats = compute_error_statistics(boo_err)
-        pytorch_stats = compute_error_statistics(pytorch_err)
-        boo_pytorch_stats = compute_error_statistics(boo_pytorch_err)
+        boo_stats = compute_error_statistics(result.boo_gpu_errors)
+        pytorch_stats = compute_error_statistics(result.pytorch_gpu_errors)
+        boo_pytorch_stats = compute_error_statistics(result.boo_pytorch_errors)
 
         # Evaluate criteria
         mean_near_zero, stddev_ratio_ok, failure_reasons = (
@@ -516,7 +507,7 @@ def verify_numerics(
                 pytorch_stats,
                 mean_check_atol,
                 mean_check_rtol,
-                ref_abs_max,
+                result.ref_abs_max,
                 stddev_check_rtol,
                 stddev_check_atol,
             )
@@ -525,11 +516,11 @@ def verify_numerics(
         # Report NaN mismatches.  Only BOO-vs-reference NaN mismatch is a
         # hard failure; PyTorch GPU may legitimately produce different NaN
         # patterns from the high-precision reference.
-        if boo_nan:
+        if result.boo_nan_mismatch:
             failure_reasons.append("NaN mismatch: BOO vs CPU reference")
-        if pt_nan:
+        if result.pytorch_nan_mismatch:
             failure_reasons.append("NaN mismatch (info): PyTorch GPU vs CPU reference")
-        if bp_nan:
+        if result.boo_pytorch_nan_mismatch:
             failure_reasons.append("NaN mismatch (info): BOO vs PyTorch GPU")
 
         # Run structured test if requested
@@ -540,7 +531,9 @@ def verify_numerics(
                 failure_reasons.append(struct_err)
 
         # Determine overall pass/fail
-        statistical_passed = mean_near_zero and stddev_ratio_ok and not boo_nan
+        statistical_passed = (
+            mean_near_zero and stddev_ratio_ok and not result.boo_nan_mismatch
+        )
         overall_passed = statistical_passed and (
             structured_passed is None or structured_passed
         )
@@ -554,10 +547,11 @@ def verify_numerics(
             mean_near_zero=mean_near_zero,
             stddev_ratio_ok=stddev_ratio_ok,
             structured_test_passed=structured_passed,
-            boo_nan_mismatch=boo_nan,
-            pytorch_nan_mismatch=pt_nan,
-            boo_pytorch_nan_mismatch=bp_nan,
+            boo_nan_mismatch=result.boo_nan_mismatch,
+            pytorch_nan_mismatch=result.pytorch_nan_mismatch,
+            boo_pytorch_nan_mismatch=result.boo_pytorch_nan_mismatch,
             failure_reasons=failure_reasons,
+            reference_dtype=reference_dtype,
         )
         verdicts.append(verdict)
 
@@ -598,9 +592,14 @@ def format_verdict_verbose(verdict: NumericsVerdict) -> str:
             f"    samples:  {stats.num_samples}",
         ]
 
-    lines.extend(_format_stats("BOO GPU vs f64 Reference", verdict.boo_gpu_err))
+    ref_label = str(verdict.reference_dtype).replace("torch.", "")
+    lines.extend(
+        _format_stats(f"BOO GPU vs {ref_label} Reference", verdict.boo_gpu_err)
+    )
     lines.append("")
-    lines.extend(_format_stats("PyTorch GPU vs f64 Reference", verdict.pytorch_gpu_err))
+    lines.extend(
+        _format_stats(f"PyTorch GPU vs {ref_label} Reference", verdict.pytorch_gpu_err)
+    )
     lines.append("")
     lines.extend(_format_stats("BOO GPU vs PyTorch GPU", verdict.boo_pytorch_diff))
     lines.append("")
