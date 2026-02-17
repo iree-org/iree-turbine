@@ -328,21 +328,62 @@ class TestOutputFormatters:
         verdict = NumericsVerdict(command="gemm --size 32", passed=True)
         output = format_verdict_simple(verdict)
 
-        assert "gemm --size 32" in output
-        assert "PASS" in output
-        assert "FAIL" not in output
+        assert output == "Numerics: PASS"
+        assert "gemm" not in output
 
     def test_format_verdict_simple_fail(self):
-        """Test simple format for failing verdict."""
+        """Test simple format for failing verdict with mean bias."""
         verdict = NumericsVerdict(
             command="gemm --size 32",
             passed=False,
+            mean_near_zero=False,
             failure_reasons=["Mean too large"],
         )
         output = format_verdict_simple(verdict)
 
-        assert "gemm --size 32" in output
-        assert "FAIL" in output
+        assert "Numerics: FAIL" in output
+        assert "mean bias" in output
+        assert "gemm" not in output
+
+    def test_format_verdict_simple_stddev_fail(self):
+        """Test simple format for failing verdict with stddev issue."""
+        verdict = NumericsVerdict(
+            command="gemm --size 32",
+            passed=False,
+            stddev_ratio_ok=False,
+        )
+        output = format_verdict_simple(verdict)
+
+        assert "Numerics: FAIL" in output
+        assert "stddev" in output
+
+    def test_format_verdict_simple_multiple_reasons(self):
+        """Test simple format showing multiple failure reasons."""
+        verdict = NumericsVerdict(
+            command="gemm --size 32",
+            passed=False,
+            mean_near_zero=False,
+            stddev_ratio_ok=False,
+            boo_nan_mismatch=True,
+        )
+        output = format_verdict_simple(verdict)
+
+        assert "Numerics: FAIL" in output
+        assert "mean bias" in output
+        assert "stddev" in output
+        assert "NaN mismatch" in output
+
+    def test_format_verdict_simple_error(self):
+        """Test simple format for verdict with an error message."""
+        verdict = NumericsVerdict(
+            command="gemm --size 32",
+            passed=False,
+            error_message="BOO compilation failed",
+        )
+        output = format_verdict_simple(verdict)
+
+        assert "Numerics: FAIL" in output
+        assert "error" in output
 
     def test_format_verdict_verbose_with_stats(self):
         """Test verbose format with full statistics."""
@@ -369,6 +410,7 @@ class TestOutputFormatters:
         assert "BOO GPU vs float64 Reference" in output
         assert "PyTorch GPU vs float64 Reference" in output
         assert "Statistical Tests" in output
+        assert "Stddev check" in output
         assert "Structured Test" in output
         assert "VERDICT: PASS" in output
 
@@ -386,19 +428,24 @@ class TestOutputFormatters:
         assert "VERDICT: FAIL" in output
 
     def test_format_results_table(self):
-        """Test table formatting for multiple verdicts."""
+        """Test summary formatting for multiple verdicts."""
         verdicts = [
             NumericsVerdict(command="gemm1", passed=True),
-            NumericsVerdict(command="gemm2", passed=False),
+            NumericsVerdict(command="gemm2", passed=False, mean_near_zero=False),
             NumericsVerdict(command="conv1", passed=True),
         ]
         output = format_results_table(verdicts)
 
-        assert "Command" in output
-        assert "Result" in output
-        assert "gemm1" in output
-        assert "gemm2" in output
-        assert "conv1" in output
+        lines = output.strip().split("\n")
+        assert len(lines) == 3
+        assert lines[0] == "Numerics: PASS"
+        assert "Numerics: FAIL" in lines[1]
+        assert "mean bias" in lines[1]
+        assert lines[2] == "Numerics: PASS"
+        # Command strings should not appear
+        assert "gemm1" not in output
+        assert "gemm2" not in output
+        assert "conv1" not in output
 
 
 class TestNumericsVerdictDataclass:

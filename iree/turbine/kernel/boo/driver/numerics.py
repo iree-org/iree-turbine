@@ -422,7 +422,6 @@ def verify_numerics(
     commands: Sequence[str],
     *,
     device: int = 0,
-    verbose: bool = False,
     min_samples: int = MIN_SAMPLES_DEFAULT,
     stddev_check_rtol: float = STDDEV_CHECK_RTOL_DEFAULT,
     stddev_check_atol: float = STDDEV_CHECK_ATOL_DEFAULT,
@@ -439,7 +438,6 @@ def verify_numerics(
     Args:
         commands: List of command strings to verify
         device: GPU device index
-        verbose: Print verbose output during verification
         min_samples: Minimum number of error samples to collect
         stddev_check_rtol: Relative tolerance for the stddev check (scaled by pytorch stddev)
         stddev_check_atol: Absolute tolerance for the stddev check
@@ -455,9 +453,6 @@ def verify_numerics(
     verdicts: list[NumericsVerdict] = []
 
     for cmd in commands:
-        if verbose:
-            print(f"Verifying: {cmd}")
-
         # Parse command
         sig = BooOpRegistry.parse_command(shlex.split(cmd), True)
         if sig is None:
@@ -519,9 +514,11 @@ def verify_numerics(
         if result.boo_nan_mismatch:
             failure_reasons.append("NaN mismatch: BOO vs CPU reference")
         if result.pytorch_nan_mismatch:
-            failure_reasons.append("NaN mismatch (info): PyTorch GPU vs CPU reference")
+            failure_reasons.append(
+                "NaN mismatch [warning]: PyTorch GPU vs CPU reference"
+            )
         if result.boo_pytorch_nan_mismatch:
-            failure_reasons.append("NaN mismatch (info): BOO vs PyTorch GPU")
+            failure_reasons.append("NaN mismatch [warning]: BOO vs PyTorch GPU")
 
         # Run structured test if requested
         structured_passed: Optional[bool] = None
@@ -562,9 +559,23 @@ def verify_numerics(
 
 
 def format_verdict_simple(verdict: NumericsVerdict) -> str:
-    """Format verdict as a single line."""
-    result = "PASS" if verdict.passed else "FAIL"
-    return f"{verdict.command:<60} | {result}"
+    """Format verdict as a single line with brief failure reasons."""
+    if verdict.passed:
+        return "Numerics: PASS"
+    reasons = []
+    if not verdict.mean_near_zero:
+        reasons.append("mean bias")
+    if not verdict.stddev_ratio_ok:
+        reasons.append("stddev")
+    if verdict.boo_nan_mismatch:
+        reasons.append("NaN mismatch")
+    if verdict.structured_test_passed is False:
+        reasons.append("structured test")
+    if verdict.error_message:
+        reasons.append("error")
+    if not reasons:
+        reasons.append("unknown")
+    return f"Numerics: FAIL ({', '.join(reasons)})"
 
 
 def format_verdict_verbose(verdict: NumericsVerdict) -> str:
@@ -607,7 +618,7 @@ def format_verdict_verbose(verdict: NumericsVerdict) -> str:
     lines.append("Statistical Tests:")
     lines.append(f"  Mean near zero:    {'PASS' if verdict.mean_near_zero else 'FAIL'}")
     lines.append(
-        f"  Stddev ratio:      {'PASS' if verdict.stddev_ratio_ok else 'FAIL'}"
+        f"  Stddev check:      {'PASS' if verdict.stddev_ratio_ok else 'FAIL'}"
     )
     lines.append("")
 
@@ -629,28 +640,5 @@ def format_verdict_verbose(verdict: NumericsVerdict) -> str:
 
 
 def format_results_table(verdicts: list[NumericsVerdict]) -> str:
-    """Format all verdicts as a summary table."""
-    lines: list[str] = []
-    lines.append(f"{'Command':<60} | Result")
-    lines.append("-" * 60 + "-|-------")
-    for verdict in verdicts:
-        lines.append(format_verdict_simple(verdict))
-    return "\n".join(lines)
-
-
-def print_verification_summary(
-    verdicts: list[NumericsVerdict], verbose: bool = False
-) -> None:
-    """Print verification summary to stdout."""
-    if verbose:
-        for verdict in verdicts:
-            print(format_verdict_verbose(verdict))
-            print()
-    else:
-        print(format_results_table(verdicts))
-
-    # Summary line
-    passed = sum(1 for v in verdicts if v.passed)
-    total = len(verdicts)
-    print()
-    print(f"Summary: {passed}/{total} commands passed")
+    """Format all verdicts as a summary list."""
+    return "\n".join(format_verdict_simple(v) for v in verdicts)

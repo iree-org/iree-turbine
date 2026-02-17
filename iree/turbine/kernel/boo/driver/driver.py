@@ -108,54 +108,54 @@ list of arguments.
     parser.add_argument(
         "--verify-numerics",
         action="store_true",
-        help="Run statistical numerics verification instead of timing.",
+        help="Run statistical numerics verification in addition to timing.",
     )
     parser.add_argument(
         "--numerics-verbose",
         action="store_true",
-        help="Print detailed statistics for numerics verification.",
+        help="Show detailed error statistics on the terminal. Without this, only PASS/FAIL with a brief reason is printed.",
     )
     parser.add_argument(
         "--numerics-min-samples",
         type=int,
         default=1000,
-        help="Minimum number of error samples for statistical analysis (default: 1000).",
+        help="Minimum number of error samples to collect before computing statistics (default: 1000).",
     )
     parser.add_argument(
         "--numerics-stddev-rtol",
         type=float,
         default=1.2,
-        help="Relative tolerance for stddev check, scaled by PyTorch stddev (default: 1.2).",
+        help="BOO stddev must be < atol + rtol * PyTorch_stddev. Values near 1.0 mean 'about the same noise' (default: 1.2).",
     )
     parser.add_argument(
         "--numerics-mean-atol",
         type=float,
         default=1e-5,
-        help="Absolute tolerance for mean bias check (default: 1e-5).",
+        help="Absolute tolerance for mean-bias check. Mean error below this always passes (default: 1e-5).",
     )
     parser.add_argument(
         "--numerics-mean-rtol",
         type=float,
         default=1e-4,
-        help="Relative tolerance for mean bias check, scaled by ref_abs_max (default: 1e-4).",
+        help="Relative tolerance for mean-bias check, scaled by max |ref output|. Allows larger absolute bias when outputs are large (default: 1e-4).",
     )
     parser.add_argument(
         "--numerics-stddev-atol",
         type=float,
         default=1e-5,
-        help="Absolute tolerance for the stddev check (default: 1e-5).",
+        help="Absolute tolerance for stddev check. BOO stddev below this always passes (default: 1e-5).",
     )
     parser.add_argument(
         "--numerics-reference-dtype",
         type=str,
         choices=["float32", "float64"],
         default="float64",
-        help="Reference dtype for high-precision CPU reference (default: float64).",
+        help="Dtype for high-precision CPU reference computation (default: float64).",
     )
     parser.add_argument(
-        "--no-structured-tests",
+        "--skip-structured-tests",
         action="store_true",
-        help="Disable structured pattern tests for numerics verification.",
+        help="Skip structured pattern tests during numerics verification.",
     )
     return parser
 
@@ -208,20 +208,19 @@ def main(args: list[str] = sys.argv[1:]) -> int:
     # Add numerics CSV headers if requested
     numerics_csv_cols: list[str] = []
     if meta_args.verify_numerics:
-        numerics_csv_cols.append("numerics_pass")
-        if meta_args.numerics_verbose:
-            numerics_csv_cols += [
-                "boo_err_mean",
-                "boo_err_stddev",
-                "boo_err_max",
-                "pytorch_err_mean",
-                "pytorch_err_stddev",
-                "pytorch_err_max",
-                "boo_pytorch_mean",
-                "boo_pytorch_stddev",
-                "boo_pytorch_max",
-                "structured_test",
-            ]
+        numerics_csv_cols = [
+            "numerics_pass",
+            "boo_vs_ref_mean",
+            "boo_vs_ref_stddev",
+            "boo_vs_ref_max",
+            "pytorch_vs_ref_mean",
+            "pytorch_vs_ref_stddev",
+            "pytorch_vs_ref_max",
+            "boo_vs_pytorch_mean",
+            "boo_vs_pytorch_stddev",
+            "boo_vs_pytorch_max",
+            "structured_test",
+        ]
         csv_headers.extend(numerics_csv_cols)
 
     csv_file.writerow(csv_headers)
@@ -338,13 +337,12 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                 verdicts = verify_numerics(
                     [cmd],
                     device=gpu_id,
-                    verbose=meta_args.numerics_verbose,
                     min_samples=meta_args.numerics_min_samples,
                     stddev_check_rtol=meta_args.numerics_stddev_rtol,
                     stddev_check_atol=meta_args.numerics_stddev_atol,
                     mean_check_atol=meta_args.numerics_mean_atol,
                     mean_check_rtol=meta_args.numerics_mean_rtol,
-                    run_structured_tests=not meta_args.no_structured_tests,
+                    run_structured_tests=not meta_args.skip_structured_tests,
                     reference_dtype=ref_dtype,
                 )
                 verdict = verdicts[0]
@@ -358,31 +356,29 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                 continue
 
             csv_row.append("PASS" if verdict.passed else "FAIL")
-            if meta_args.numerics_verbose:
-                for stats in [
-                    verdict.boo_gpu_err,
-                    verdict.pytorch_gpu_err,
-                    verdict.boo_pytorch_diff,
-                ]:
-                    if stats is not None:
-                        csv_row += [
-                            f"{stats.mean:.2e}",
-                            f"{stats.stddev:.2e}",
-                            f"{stats.max_abs_err:.2e}",
-                        ]
-                    else:
-                        csv_row += ["N.A."] * 3
-                csv_row.append(
-                    "N.A."
-                    if verdict.structured_test_passed is None
-                    else ("PASS" if verdict.structured_test_passed else "FAIL")
-                )
-
-            if meta_args.verbose:
-                if meta_args.numerics_verbose:
-                    print(format_verdict_verbose(verdict))
+            for stats in [
+                verdict.boo_gpu_err,
+                verdict.pytorch_gpu_err,
+                verdict.boo_pytorch_diff,
+            ]:
+                if stats is not None:
+                    csv_row += [
+                        f"{stats.mean:.2e}",
+                        f"{stats.stddev:.2e}",
+                        f"{stats.max_abs_err:.2e}",
+                    ]
                 else:
-                    print(format_verdict_simple(verdict))
+                    csv_row += ["N.A."] * 3
+            csv_row.append(
+                "N.A."
+                if verdict.structured_test_passed is None
+                else ("PASS" if verdict.structured_test_passed else "FAIL")
+            )
+
+            if meta_args.numerics_verbose:
+                print(format_verdict_verbose(verdict))
+            else:
+                print(format_verdict_simple(verdict))
 
             if not verdict.passed:
                 test_error += 1
