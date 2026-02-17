@@ -118,7 +118,7 @@ class TestEvaluateStatisticalCriteria:
 
         assert stddev_ok is False
         assert len(reasons) >= 1
-        assert any("Stddev ratio" in r for r in reasons)
+        assert any("BOO stddev" in r for r in reasons)
 
     def test_pytorch_zero_stddev(self):
         """Test handling when PyTorch has zero stddev."""
@@ -413,6 +413,9 @@ class TestNumericsVerdictDataclass:
         assert verdict.mean_near_zero is True
         assert verdict.stddev_ratio_ok is True
         assert verdict.structured_test_passed is None
+        assert verdict.boo_nan_mismatch is False
+        assert verdict.pytorch_nan_mismatch is False
+        assert verdict.boo_pytorch_nan_mismatch is False
         assert verdict.failure_reasons == []
         assert verdict.error_message is None
 

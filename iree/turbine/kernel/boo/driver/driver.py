@@ -140,6 +140,19 @@ list of arguments.
         help="Relative tolerance for mean bias check, scaled by ref_abs_max (default: 1e-4).",
     )
     parser.add_argument(
+        "--numerics-stddev-atol",
+        type=float,
+        default=1e-5,
+        help="Absolute tolerance for the stddev check (default: 1e-5).",
+    )
+    parser.add_argument(
+        "--numerics-reference-dtype",
+        type=str,
+        choices=["float32", "float64"],
+        default="float64",
+        help="Reference dtype for high-precision CPU reference (default: float64).",
+    )
+    parser.add_argument(
         "--no-structured-tests",
         action="store_true",
         help="Disable structured pattern tests for numerics verification.",
@@ -318,6 +331,9 @@ def main(args: list[str] = sys.argv[1:]) -> int:
 
             gpu_id = meta_args.gpu_id if meta_args.gpu_id >= 0 else 0
             cmd = shlex.join(runner_args)
+            ref_dtype = {"float32": torch.float32, "float64": torch.float64}[
+                meta_args.numerics_reference_dtype
+            ]
             try:
                 verdicts = verify_numerics(
                     [cmd],
@@ -325,9 +341,11 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                     verbose=meta_args.numerics_verbose,
                     min_samples=meta_args.numerics_min_samples,
                     stddev_tolerance=meta_args.numerics_stddev_tolerance,
+                    stddev_check_atol=meta_args.numerics_stddev_atol,
                     mean_check_atol=meta_args.numerics_mean_atol,
                     mean_check_rtol=meta_args.numerics_mean_rtol,
                     run_structured_tests=not meta_args.no_structured_tests,
+                    reference_dtype=ref_dtype,
                 )
                 verdict = verdicts[0]
             except Exception as exc:
