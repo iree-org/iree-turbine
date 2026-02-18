@@ -501,8 +501,12 @@ class LayerNormParser(OpCLIParser):
             input_shape=shape,
             normalized_shape=normalized_shape,
             eps=args.eps,
-            elementwise_affine=(args.mode == 0),
-            bias=True,
+            # Note: MIOPEN_ELEMENTWISE_AFFINE (mode 0) means "use default
+            # weight=1/bias=0", which is equivalent to no weight/bias in
+            # PyTorch (elementwise_affine=False). MIOPEN_WEIGHT_BIAS (mode 1)
+            # loads random weight/bias tensors.
+            elementwise_affine=(args.mode == 1),
+            bias=(args.mode == 1),
             dtype=_DTypeCommandDispatcher.get_dtype(args.command),
             mode=mode,
             input_permutation=args.input_permutation,
