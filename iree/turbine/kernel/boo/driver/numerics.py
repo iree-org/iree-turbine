@@ -180,7 +180,7 @@ def collect_error_samples(
     batch_idx = 0
 
     while num_batches is None or batch_idx < num_batches:
-        seed = batch_idx * 12345 + 42  # Deterministic but varied seeds
+        seed = batch_idx
 
         # Generate sample args for this batch
         sample_args = sig.get_sample_args(device=cpu, seed=seed)
@@ -267,7 +267,7 @@ def is_approximately_negligible(
     value: float, reference: float, atol: float, rtol: float
 ):
     """Combined absolute + relative check for negligibility, similar in style to allclose."""
-    return abs(value) < atol + rtol * abs(reference)
+    return abs(value) <= atol + rtol * abs(reference)
 
 
 def evaluate_statistical_criteria(
@@ -302,9 +302,9 @@ def evaluate_statistical_criteria(
     )
     if not mean_near_zero:
         failure_reasons.append(
-            f"Mean error |{boo_stats.mean:.2e}| >= threshold "
-            f"(atol={mean_check_atol:.2e} + "
-            f"{mean_check_rtol:.2f} * ref_abs_max={ref_abs_max:.2e})"
+            f"Mean error |{boo_stats.mean:.6e}| > threshold "
+            f"(atol={mean_check_atol:.6e} + "
+            f"rtol={mean_check_rtol:.6e} * ref_abs_max={ref_abs_max:.6e})"
         )
 
     stddev_ok = is_approximately_negligible(
@@ -315,9 +315,9 @@ def evaluate_statistical_criteria(
     )
     if not stddev_ok:
         failure_reasons.append(
-            f"BOO stddev {boo_stats.stddev:.2e} >= threshold "
-            f"(atol={stddev_check_atol:.2e} + "
-            f"{stddev_check_rtol:.2f} * pytorch_stddev={pytorch_stats.stddev:.2e})"
+            f"BOO stddev {boo_stats.stddev:.6e} > threshold "
+            f"(atol={stddev_check_atol:.6e} + "
+            f"rtol={stddev_check_rtol:.6e} * pytorch_stddev={pytorch_stats.stddev:.6e})"
         )
 
     return mean_near_zero, stddev_ok, failure_reasons
@@ -412,7 +412,7 @@ def run_structured_test(
         max_diff = (boo_main - pytorch_main).abs().max().item()
         return (
             False,
-            f"Structured test failed: max_diff={max_diff:.2e} > atol={atol:.2e}",
+            f"Structured test failed: max_diff={max_diff:.6e} > atol={atol:.6e}",
         )
 
     return True, None
@@ -597,9 +597,9 @@ def format_verdict_verbose(verdict: NumericsVerdict) -> str:
             return [f"  {name}: N/A"]
         return [
             f"  {name}:",
-            f"    mean:     {stats.mean:.2e}",
-            f"    stddev:   {stats.stddev:.2e}",
-            f"    max_abs:  {stats.max_abs_err:.2e}",
+            f"    mean:     {stats.mean:.6e}",
+            f"    stddev:   {stats.stddev:.6e}",
+            f"    max_abs:  {stats.max_abs_err:.6e}",
             f"    samples:  {stats.num_samples}",
         ]
 

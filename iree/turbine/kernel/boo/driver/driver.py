@@ -24,6 +24,13 @@ from torch.profiler import DeviceType, ProfilerActivity, profile
 from iree.turbine.kernel.boo.exports.signature import OpSignature
 from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
+from iree.turbine.kernel.boo.driver.numerics import (
+    MEAN_CHECK_ATOL_DEFAULT,
+    MEAN_CHECK_RTOL_DEFAULT,
+    MIN_SAMPLES_DEFAULT,
+    STDDEV_CHECK_ATOL_DEFAULT,
+    STDDEV_CHECK_RTOL_DEFAULT,
+)
 from iree.turbine.kernel.boo.driver.utils import get_timing_parser
 from iree.turbine.runtime.device import get_device_from_torch
 
@@ -118,39 +125,39 @@ list of arguments.
     parser.add_argument(
         "--numerics-min-samples",
         type=int,
-        default=1000,
-        help="Minimum number of error samples to collect before computing statistics (default: 1000).",
+        default=MIN_SAMPLES_DEFAULT,
+        help="Minimum number of error samples to collect before computing statistics (default: %(default)s).",
     )
     parser.add_argument(
         "--numerics-stddev-rtol",
         type=float,
-        default=1.2,
-        help="BOO stddev must be < atol + rtol * PyTorch_stddev. Values near 1.0 mean 'about the same noise' (default: 1.2).",
+        default=STDDEV_CHECK_RTOL_DEFAULT,
+        help="BOO stddev must be <= atol + rtol * PyTorch_stddev. Values near 1.0 mean 'about the same noise' (default: %(default)s).",
     )
     parser.add_argument(
         "--numerics-mean-atol",
         type=float,
-        default=1e-5,
-        help="Absolute tolerance for mean-bias check. Mean error below this always passes (default: 1e-5).",
+        default=MEAN_CHECK_ATOL_DEFAULT,
+        help="Absolute tolerance for mean-bias check. Mean error at or below this always passes (default: %(default)s).",
     )
     parser.add_argument(
         "--numerics-mean-rtol",
         type=float,
-        default=1e-4,
-        help="Relative tolerance for mean-bias check, scaled by max |ref output|. Allows larger absolute bias when outputs are large (default: 1e-4).",
+        default=MEAN_CHECK_RTOL_DEFAULT,
+        help="Relative tolerance for mean-bias check, scaled by max |ref output|. Allows larger absolute bias when outputs are large (default: %(default)s).",
     )
     parser.add_argument(
         "--numerics-stddev-atol",
         type=float,
-        default=1e-5,
-        help="Absolute tolerance for stddev check. BOO stddev below this always passes (default: 1e-5).",
+        default=STDDEV_CHECK_ATOL_DEFAULT,
+        help="Absolute tolerance for stddev check. BOO stddev at or below this always passes (default: %(default)s).",
     )
     parser.add_argument(
         "--numerics-reference-dtype",
         type=str,
         choices=["float32", "float64"],
         default="float64",
-        help="Dtype for high-precision CPU reference computation (default: float64).",
+        help="Dtype for high-precision CPU reference computation (default: %(default)s).",
     )
     parser.add_argument(
         "--skip-structured-tests",
@@ -363,9 +370,9 @@ def main(args: list[str] = sys.argv[1:]) -> int:
             ]:
                 if stats is not None:
                     csv_row += [
-                        f"{stats.mean:.2e}",
-                        f"{stats.stddev:.2e}",
-                        f"{stats.max_abs_err:.2e}",
+                        f"{stats.mean:.6e}",
+                        f"{stats.stddev:.6e}",
+                        f"{stats.max_abs_err:.6e}",
                     ]
                 else:
                     csv_row += ["N.A."] * 3
