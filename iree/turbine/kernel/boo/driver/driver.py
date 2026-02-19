@@ -354,7 +354,7 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                 )
                 verdict = verdicts[0]
             except Exception as exc:
-                if meta_args.verbose:
+                if meta_args.numerics_verbose:
                     traceback.print_exception(exc)
                 csv_row += ["N.A."] * len(numerics_csv_cols)
                 test_error += 1
