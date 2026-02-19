@@ -768,7 +768,7 @@ def _create_hip_device(torch_device: torch.device, props) -> Optional[Device]:
         hip_target = hip_sku
     if device:
         device.compile_target_flags = device.compile_target_flags + (
-            f"--iree-hip-target={hip_target}",
+            f"--iree-rocm-target={hip_target}",
         )
         device._recompute_target_keys()
     return device
