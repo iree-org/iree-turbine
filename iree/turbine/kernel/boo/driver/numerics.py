@@ -30,7 +30,7 @@ from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
 MIN_SAMPLES_DEFAULT = 1000
 STDDEV_CHECK_RTOL_DEFAULT = 1.2
 MEAN_CHECK_ATOL_DEFAULT = 1e-5
-MEAN_CHECK_RTOL_DEFAULT = 1e-4
+MEAN_CHECK_RTOL_DEFAULT = 0.2
 STDDEV_CHECK_ATOL_DEFAULT = 1e-5
 STRUCTURED_TEST_ATOL = 1e-7
 STRUCTURED_BLOCK_SIZE_LIMIT = 128
@@ -74,7 +74,6 @@ class ErrorSampleResult:
     pytorch_gpu_errors: Optional[torch.Tensor] = None
     boo_pytorch_errors: Optional[torch.Tensor] = None
     output_dtype: Optional[torch.dtype] = None
-    ref_abs_max: float = 0.0
     error_message: Optional[str] = None
     boo_nan_mismatch: bool = False
     pytorch_nan_mismatch: bool = False
@@ -155,7 +154,7 @@ def collect_error_samples(
     If tensor.numel() < min_samples, runs multiple batches with different seeds.
 
     Returns an ErrorSampleResult.  On error the tensor fields are None,
-    output_dtype is None, ref_abs_max is 0.0, and error_message is set.
+    output_dtype is None, and error_message is set.
     """
     cpu = torch.device("cpu")
 
@@ -163,7 +162,6 @@ def collect_error_samples(
     boo_gpu_errors_list: list[torch.Tensor] = []
     pytorch_gpu_errors_list: list[torch.Tensor] = []
     boo_pytorch_errors_list: list[torch.Tensor] = []
-    ref_abs_max: float = 0.0
     boo_nan_mismatch = False
     pt_nan_mismatch = False
     bp_nan_mismatch = False
@@ -218,9 +216,6 @@ def collect_error_samples(
         if batch_idx == 0:
             output_dtype = boo_gpu_main.dtype
 
-        # Track max absolute reference value across batches
-        ref_abs_max = max(ref_abs_max, cpu_ref_main.abs().max().item())
-
         # Compute errors, tracking NaN mismatches (but don't exit early)
         boo_errs, boo_nan = _compute_element_errors(boo_gpu_main, cpu_ref_main)
         boo_nan_mismatch = boo_nan_mismatch or boo_nan
@@ -242,7 +237,6 @@ def collect_error_samples(
         pytorch_gpu_errors=torch.cat(pytorch_gpu_errors_list),
         boo_pytorch_errors=torch.cat(boo_pytorch_errors_list),
         output_dtype=output_dtype,
-        ref_abs_max=ref_abs_max,
         boo_nan_mismatch=boo_nan_mismatch,
         pytorch_nan_mismatch=pt_nan_mismatch,
         boo_pytorch_nan_mismatch=bp_nan_mismatch,
@@ -265,7 +259,7 @@ def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
 
 def is_approximately_negligible(
     value: float, reference: float, atol: float, rtol: float
-):
+) -> bool:
     """Combined absolute + relative check for negligibility, similar in style to allclose."""
     return abs(value) <= atol + rtol * abs(reference)
 
@@ -275,7 +269,6 @@ def evaluate_statistical_criteria(
     pytorch_stats: ErrorStatistics,
     mean_check_atol: float,
     mean_check_rtol: float,
-    ref_abs_max: float,
     stddev_check_rtol: float = STDDEV_CHECK_RTOL_DEFAULT,
     stddev_check_atol: float = STDDEV_CHECK_ATOL_DEFAULT,
 ) -> tuple[bool, bool, list[str]]:
@@ -283,12 +276,13 @@ def evaluate_statistical_criteria(
     Evaluate pass/fail criteria for error statistics based on approximate negligibility.
 
     Checks:
-        `mean_near_zero` = `boo_stats.mean` approx. negligible relative to `ref_abs_max`.
+        `mean_near_zero` = `boo_stats.mean` approx. negligible relative to `boo_stats.stddev`.
         `stddev_ok` = `boo_stats.stddev` approx. negligible relative to `pytorch_stats.stddev`.
 
     The negligibility tolerances should be interpreted as:
         `mean_check_atol`: Low-absolute bar. If |boo_stats.mean| < atol, mean check passes.
-        `mean_check_rtol`: Relative to the ref output's abs. max value (controls large-output false negatives).
+        `mean_check_rtol`: Relative to `boo_stats.stddev` (the BOO error spread). A mean that
+            is small relative to the error spread indicates no detectable bias.
         `stddev_check_atol`: Low-absolute bar. If boo_stats.stddev < atol, stddev check passes.
         `stddev_check_rtol`: Relative to `pytorch_stats.stddev`. These should be comparable ~ 1.0.
 
@@ -298,13 +292,13 @@ def evaluate_statistical_criteria(
     failure_reasons: list[str] = []
 
     mean_near_zero = is_approximately_negligible(
-        boo_stats.mean, ref_abs_max, atol=mean_check_atol, rtol=mean_check_rtol
+        boo_stats.mean, boo_stats.stddev, atol=mean_check_atol, rtol=mean_check_rtol
     )
     if not mean_near_zero:
         failure_reasons.append(
             f"Mean error |{boo_stats.mean:.6e}| > threshold "
             f"(atol={mean_check_atol:.6e} + "
-            f"rtol={mean_check_rtol:.6e} * ref_abs_max={ref_abs_max:.6e})"
+            f"rtol={mean_check_rtol:.6e} * boo_stddev={boo_stats.stddev:.6e})"
         )
 
     stddev_ok = is_approximately_negligible(
@@ -442,7 +436,7 @@ def verify_numerics(
         stddev_check_rtol: Relative tolerance for the stddev check (scaled by pytorch stddev)
         stddev_check_atol: Absolute tolerance for the stddev check
         mean_check_atol: Absolute tolerance for mean bias check
-        mean_check_rtol: Relative tolerance for mean bias check (scaled by ref_abs_max)
+        mean_check_rtol: Relative tolerance for mean bias check (scaled by boo error stddev)
         run_structured_tests: Whether to run structured pattern tests
         reference_dtype: dtype for high-precision CPU reference (default: float64)
     """
@@ -502,7 +496,6 @@ def verify_numerics(
                 pytorch_stats,
                 mean_check_atol,
                 mean_check_rtol,
-                result.ref_abs_max,
                 stddev_check_rtol,
                 stddev_check_atol,
             )

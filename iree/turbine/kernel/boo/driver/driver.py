@@ -144,7 +144,7 @@ list of arguments.
         "--numerics-mean-rtol",
         type=float,
         default=MEAN_CHECK_RTOL_DEFAULT,
-        help="Relative tolerance for mean-bias check, scaled by max |ref output|. Allows larger absolute bias when outputs are large (default: %(default)s).",
+        help="Relative tolerance for mean-bias check, scaled by BOO error stddev. Allows larger absolute bias when error spread is large (default: %(default)s).",
     )
     parser.add_argument(
         "--numerics-stddev-atol",

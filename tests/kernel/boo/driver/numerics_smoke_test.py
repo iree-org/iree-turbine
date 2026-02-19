@@ -73,7 +73,6 @@ class TestEvaluateStatisticalCriteria:
             pytorch_stats,
             mean_check_atol=1e-6,
             mean_check_rtol=0.0,
-            ref_abs_max=0.0,
         )
 
         assert mean_ok is True
@@ -94,7 +93,6 @@ class TestEvaluateStatisticalCriteria:
             pytorch_stats,
             mean_check_atol=1e-6,
             mean_check_rtol=0.0,
-            ref_abs_max=0.0,
         )
 
         assert mean_ok is False
@@ -115,7 +113,6 @@ class TestEvaluateStatisticalCriteria:
             pytorch_stats,
             mean_check_atol=1e-6,
             mean_check_rtol=0.0,
-            ref_abs_max=0.0,
             stddev_check_rtol=1.2,
         )
 
@@ -137,7 +134,6 @@ class TestEvaluateStatisticalCriteria:
             pytorch_stats,
             mean_check_atol=1e-6,
             mean_check_rtol=0.0,
-            ref_abs_max=0.0,
         )
 
         # Both have zero stddev (below floor), should pass
@@ -158,7 +154,6 @@ class TestEvaluateStatisticalCriteria:
             pytorch_stats,
             mean_check_atol=1e-6,
             mean_check_rtol=0.0,
-            ref_abs_max=0.0,
         )
         assert mean_ok is False  # 5e-5 > 1e-6
         assert stddev_ok is False  # 2.0 ratio > 1.2
@@ -169,38 +164,40 @@ class TestEvaluateStatisticalCriteria:
             pytorch_stats,
             mean_check_atol=1e-4,
             mean_check_rtol=0.0,
-            ref_abs_max=0.0,
             stddev_check_rtol=3.0,
         )
         assert mean_ok is True
         assert stddev_ok is True
 
-    def test_allclose_mean_with_large_ref(self):
-        """Test that mean threshold scales with ref_abs_max."""
-        boo_stats = ErrorStatistics(
-            mean=5e-2, stddev=1e-3, max_abs_err=1e-1, num_samples=1000
-        )
+    def test_mean_scales_with_boo_stddev(self):
+        """Test that mean threshold scales with boo_stats.stddev."""
         pytorch_stats = ErrorStatistics(
             mean=1e-8, stddev=1e-3, max_abs_err=1e-1, num_samples=1000
         )
 
-        # With small ref, mean 5e-2 should fail (threshold = 1e-5 + 1e-4*0 = 1e-5)
+        # With small stddev, mean 5e-2 should fail
+        # threshold = 1e-5 + 0.2 * 1e-3 = 2.1e-4, and 5e-2 > 2.1e-4
+        boo_small_stddev = ErrorStatistics(
+            mean=5e-2, stddev=1e-3, max_abs_err=1e-1, num_samples=1000
+        )
         mean_ok, _, _ = evaluate_statistical_criteria(
-            boo_stats,
+            boo_small_stddev,
             pytorch_stats,
             mean_check_atol=1e-5,
-            mean_check_rtol=1e-4,
-            ref_abs_max=0.0,
+            mean_check_rtol=0.2,
         )
         assert mean_ok is False
 
-        # With large ref, mean 5e-2 should pass (threshold = 1e-5 + 1e-4*1000 = 0.1)
+        # With large stddev, mean 5e-2 should pass
+        # threshold = 1e-5 + 0.2 * 1.0 = 0.2, and 5e-2 <= 0.2
+        boo_large_stddev = ErrorStatistics(
+            mean=5e-2, stddev=1.0, max_abs_err=2.0, num_samples=1000
+        )
         mean_ok, _, _ = evaluate_statistical_criteria(
-            boo_stats,
+            boo_large_stddev,
             pytorch_stats,
             mean_check_atol=1e-5,
-            mean_check_rtol=1e-4,
-            ref_abs_max=1000.0,
+            mean_check_rtol=0.2,
         )
         assert mean_ok is True
 
@@ -219,10 +216,9 @@ class TestEvaluateStatisticalCriteria:
             pytorch_stats,
             mean_check_atol=1e-5,
             mean_check_rtol=1e-4,
-            ref_abs_max=1.0,
             stddev_check_rtol=1.2,
         )
-        # Both stddevs are below floor (1e-5 + 1e-4*1.0 = 1.1e-4), so pass
+        # Both stddevs are below floor (atol=1e-5), so pass
         assert stddev_ok is True
         assert len(reasons) == 0
 
