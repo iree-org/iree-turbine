@@ -24,6 +24,13 @@ from torch.profiler import DeviceType, ProfilerActivity, profile
 from iree.turbine.kernel.boo.exports.signature import OpSignature
 from iree.turbine.kernel.boo.driver.launch import get_launchable
 from iree.turbine.kernel.boo.op_exports.registry import BooOpRegistry
+from iree.turbine.kernel.boo.driver.numerics import (
+    MEAN_CHECK_ATOL_DEFAULT,
+    MEAN_CHECK_RTOL_DEFAULT,
+    MIN_SAMPLES_DEFAULT,
+    STDDEV_CHECK_ATOL_DEFAULT,
+    STDDEV_CHECK_RTOL_DEFAULT,
+)
 from iree.turbine.kernel.boo.driver.utils import get_timing_parser
 from iree.turbine.runtime.device import get_device_from_torch
 
@@ -104,6 +111,59 @@ list of arguments.
         dest="verbose",
         help="Disable printing command/output on STDOUT.",
     )
+    # Numerics verification arguments
+    parser.add_argument(
+        "--verify-numerics",
+        action="store_true",
+        help="Run statistical numerics verification in addition to timing.",
+    )
+    parser.add_argument(
+        "--numerics-verbose",
+        action="store_true",
+        help="Show detailed error statistics on the terminal. Without this, only PASS/FAIL with a brief reason is printed.",
+    )
+    parser.add_argument(
+        "--numerics-min-samples",
+        type=int,
+        default=MIN_SAMPLES_DEFAULT,
+        help="Minimum number of error samples to collect before computing statistics (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--numerics-stddev-rtol",
+        type=float,
+        default=STDDEV_CHECK_RTOL_DEFAULT,
+        help="BOO stddev must be <= atol + rtol * PyTorch_stddev. Values near 1.0 mean 'about the same noise' (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--numerics-mean-atol",
+        type=float,
+        default=MEAN_CHECK_ATOL_DEFAULT,
+        help="Absolute tolerance for mean-bias check. Mean error at or below this always passes (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--numerics-mean-rtol",
+        type=float,
+        default=MEAN_CHECK_RTOL_DEFAULT,
+        help="Relative tolerance for mean-bias check, scaled by BOO error stddev. Allows larger absolute bias when error spread is large (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--numerics-stddev-atol",
+        type=float,
+        default=STDDEV_CHECK_ATOL_DEFAULT,
+        help="Absolute tolerance for stddev check. BOO stddev at or below this always passes (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--numerics-reference-dtype",
+        type=str,
+        choices=["float32", "float64"],
+        default="float64",
+        help="Dtype for high-precision CPU reference computation (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--skip-structured-tests",
+        action="store_true",
+        help="Skip structured pattern tests during numerics verification.",
+    )
     return parser
 
 
@@ -125,6 +185,7 @@ def main(args: list[str] = sys.argv[1:]) -> int:
     # separates to ['foo', 'bar']
     extra_cli_args = [a for arg in extra_cli_args for a in arg.split("\t")]
     commands_file: str | None = meta_args.commands_file
+
     if commands_file:
         splitter: Callable[[str], list[str]] = lambda s: (
             s.strip().split("\t") if commands_file.endswith(".tsv") else shlex.split(s)
@@ -150,6 +211,25 @@ def main(args: list[str] = sys.argv[1:]) -> int:
     for b in backends:
         for stat in csv_stats:
             csv_headers.extend([f"{b} {stat}"])
+
+    # Add numerics CSV headers if requested
+    numerics_csv_cols: list[str] = []
+    if meta_args.verify_numerics:
+        numerics_csv_cols = [
+            "numerics_pass",
+            "boo_vs_ref_mean",
+            "boo_vs_ref_stddev",
+            "boo_vs_ref_max",
+            "pytorch_vs_ref_mean",
+            "pytorch_vs_ref_stddev",
+            "pytorch_vs_ref_max",
+            "boo_vs_pytorch_mean",
+            "boo_vs_pytorch_stddev",
+            "boo_vs_pytorch_max",
+            "structured_test",
+        ]
+        csv_headers.extend(numerics_csv_cols)
+
     csv_file.writerow(csv_headers)
 
     timing_parser = get_timing_parser()
@@ -175,6 +255,8 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                     f">>> Boo op registry failed to parse '{shlex.join(runner_args)}'."
                 )
             csv_row.append("N.A.")
+            csv_row += ["N.A."] * len(numerics_csv_cols)
+            csv_file.writerow(csv_row)
             test_error += 1
             continue
 
@@ -244,6 +326,69 @@ def main(args: list[str] = sys.argv[1:]) -> int:
 
             for stat in csv_stats:
                 csv_row.append(f"{aggregate_stats._asdict()[stat]}")
+
+        # Run numerics verification if requested
+        if meta_args.verify_numerics:
+            from iree.turbine.kernel.boo.driver.numerics import (
+                verify_numerics,
+                format_verdict_verbose,
+                format_verdict_simple,
+            )
+
+            gpu_id = meta_args.gpu_id if meta_args.gpu_id >= 0 else 0
+            cmd = shlex.join(runner_args)
+            ref_dtype = {"float32": torch.float32, "float64": torch.float64}[
+                meta_args.numerics_reference_dtype
+            ]
+            try:
+                verdicts = verify_numerics(
+                    [cmd],
+                    device=gpu_id,
+                    min_samples=meta_args.numerics_min_samples,
+                    stddev_check_rtol=meta_args.numerics_stddev_rtol,
+                    stddev_check_atol=meta_args.numerics_stddev_atol,
+                    mean_check_atol=meta_args.numerics_mean_atol,
+                    mean_check_rtol=meta_args.numerics_mean_rtol,
+                    run_structured_tests=not meta_args.skip_structured_tests,
+                    reference_dtype=ref_dtype,
+                )
+                verdict = verdicts[0]
+            except Exception as exc:
+                if meta_args.numerics_verbose:
+                    traceback.print_exception(exc)
+                csv_row += ["N.A."] * len(numerics_csv_cols)
+                test_error += 1
+                csv_file.writerow(csv_row)
+                torch.compiler.reset()
+                continue
+
+            csv_row.append("PASS" if verdict.passed else "FAIL")
+            for stats in [
+                verdict.boo_gpu_err,
+                verdict.pytorch_gpu_err,
+                verdict.boo_pytorch_diff,
+            ]:
+                if stats is not None:
+                    csv_row += [
+                        f"{stats.mean:.6e}",
+                        f"{stats.stddev:.6e}",
+                        f"{stats.max_abs_err:.6e}",
+                    ]
+                else:
+                    csv_row += ["N.A."] * 3
+            csv_row.append(
+                "N.A."
+                if verdict.structured_test_passed is None
+                else ("PASS" if verdict.structured_test_passed else "FAIL")
+            )
+
+            if meta_args.numerics_verbose:
+                print(format_verdict_verbose(verdict))
+            else:
+                print(format_verdict_simple(verdict))
+
+            if not verdict.passed:
+                test_error += 1
 
         csv_file.writerow(csv_row)
     # Exit code: zero if no errors, non-zero otherwise.
