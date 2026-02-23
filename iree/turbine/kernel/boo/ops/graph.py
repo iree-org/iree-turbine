@@ -70,11 +70,19 @@ class BoundaryValue:
     value: Node | None
     classification: BoundaryClassification
     index: int
-    # How to get this boundary value from inner inputs/outputs.
+    # How to get this boundary value from src_inputs + inner_outputs.
     composition_rule: Callable[[Sequence[Any], Sequence[Any]], Any]
 
 
 class GraphSchema:
+    """
+    Wrapper struct around a GraphModule that stores metadata about graph inputs and outputs.
+
+    To automatically determine the metadata from an existing GraphModule, don't initialize directly.
+    Instead, use the staticmethod `your_schema = GraphSchema.from_gm(your_gm)` to automatically
+    infer the boundary metadata.
+    """
+
     def __init__(
         self,
         placeholders: list[BoundaryValue],
@@ -87,11 +95,13 @@ class GraphSchema:
 
     @staticmethod
     def from_gm(src_gm: GraphModule) -> "GraphSchema":
+        """Creates a GraphSchema from src_gm and infers some input/output metadata."""
         schema = GraphSchema([], [], src_gm)
         schema._initialize()
         return schema
 
     def get_inner_boundary(self) -> tuple[list[BoundaryValue], list[BoundaryValue]]:
+        """Returns a minimal subset of inputs and outputs required for the graph to reconstruct original signature."""
         inner_inputs = list(
             pl
             for pl in self.placeholders
@@ -105,6 +115,9 @@ class GraphSchema:
         return inner_inputs, inner_outputs
 
     def _initialize(self):
+        """Used to populate `self.placeholders` and `self.outputs` from `self.src_gm`."""
+        assert len(self.placeholders) == 0, "Must have empty placeholders list."
+        assert len(self.outputs) == 0, "Must have empty outputs list."
         placeholder_nodes = list(
             self.src_gm.graph.find_nodes(op="placeholder", sort=True)
         )
@@ -171,6 +184,54 @@ class GraphSchema:
                 )
             )
             unique_outputs[o] = new_unique_idx
+
+
+@dataclass
+class GraphTransformation:
+    """This struct stores the arrows of a boundary transformation:
+
+    Src Inputs ----- src_gm --------> Src Outputs
+        |                                 ^
+    input_mod                             |
+        |                             output_mod**
+        V                                 |
+    Mod Inputs ----- mod_gm --------> Mod Outputs
+
+    Two transformations can be composed with *.
+
+    **Note: To capture trivial returns being hoisted from graphs, we require
+    that `output_mod` takes in `(Src Inputs, Mod Outputs)` and returns `Src Outputs`.
+    """
+
+    src_gm: GraphModule
+    mod_gm: GraphModule
+    input_mod: Callable[[list[torch.Tensor]], list[torch.Tensor]]
+    output_mod: Callable[[list[torch.Tensor], list[torch.Tensor]], list[torch.Tensor]]
+
+    def __mul__(self, other: "GraphTransformation") -> "GraphTransformation":
+        """Composes transformations like functions.
+
+        `composite = self*other` transforms `other.src_gm` to `self.mod_gm` by composing boundary maps.
+        """
+        assert (
+            self.src_gm == other.mod_gm
+        ), f"Mismatched contracting graph module for transformations {self} and {other}."
+        return GraphTransformation(
+            src_gm=other.src_gm,
+            mod_gm=self.mod_gm,
+            input_mod=lambda other_src_inputs: self.input_mod(
+                other.input_mod(other_src_inputs)
+            ),
+            output_mod=lambda other_src_inputs, self_mod_outputs: (
+                other.output_mod(
+                    other_src_inputs,
+                    self.output_mod(
+                        other.input_mod(other_src_inputs),  # self_src_inputs
+                        self_mod_outputs,
+                    ),
+                )
+            ),
+        )
 
 
 def _get_io_from_gm(
