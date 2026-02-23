@@ -4,31 +4,23 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import logging
+from pathlib import Path
 import sys
-import unittest
+
+import pytest
 
 import torch
 import torch._dynamo as dynamo
 
 # from torch._export.constraints import constrain_as_size, constrain_as_value
 from iree.compiler.extras.fx_importer import FxImporter
-from iree.turbine.dynamo.passes import turbine_cpu_pass_pipeline
-import torch
-import torch._dynamo as dynamo
-from torch._dynamo.backends.common import aot_autograd
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch._decomp import get_decompositions
 from torch.func import functionalize
 from torch.fx import (
     GraphModule,
 )
-from iree.compiler.api import (
-    Invocation,
-    Session,
-    Source,
-    Output,
-)
+from iree.compiler.api import Session
 
 from iree.compiler.passmanager import (
     PassManager,
@@ -43,7 +35,12 @@ DEFAULT_COMPILER_FLAGS = (
 )
 
 
-def import_compiler(gm: GraphModule, example_inputs, decompose_ops=None):
+def import_compiler(
+    gm: GraphModule,
+    example_inputs: list[torch.Tensor],
+    tmp_path: Path,
+    decompose_ops: list[torch._ops.OperatorBase] | None = None,
+) -> GraphModule:
     session = Session()
     session.set_flags(*DEFAULT_COMPILER_FLAGS)
     session.set_flags("--iree-hal-target-backends=llvm-cpu")
@@ -67,7 +64,7 @@ def import_compiler(gm: GraphModule, example_inputs, decompose_ops=None):
         imp.import_graph_module(gm)
         print(module, file=sys.stderr)
         with context:
-            with open("/tmp/module.mlir", "w") as file:
+            with open(tmp_path / "module.mlir", "w") as file:
                 file.write(str(module))
             pm = PassManager.parse("builtin.module(torch-to-iree)")
             pm.run(module.operation)
@@ -110,8 +107,8 @@ class DynamicShapeStridedModule(torch.nn.Module):
         return y
 
 
-class ImportSmokeTests(unittest.TestCase):
-    def testStaticExport(self):
+class TestImportSmoke:
+    def test_static_export(self, tmp_path: Path):
         """
         'tensor.collapse_shape' op expected dimension 0 of collapsed type to be static value of 1
         """
@@ -126,9 +123,9 @@ class ImportSmokeTests(unittest.TestCase):
             dynamic_shapes={"inp": {1: torch.export.Dim("dim", min=2)}, "bias": None},
         )
         g, guards = f(inp=inp_example, bias=bias_example)
-        g = import_compiler(g, [inp_example, bias_example])
+        g = import_compiler(g, [inp_example, bias_example], tmp_path)
 
-    def testStaticExportSameSignatureTrue(self):
+    def test_static_export_same_signature_true(self, tmp_path: Path):
         """
         'tensor.collapse_shape' op expected dimension 0 of collapsed type to be static value of 1
         """
@@ -143,7 +140,7 @@ class ImportSmokeTests(unittest.TestCase):
             dynamic_shapes={"inp": {1: torch.export.Dim("dim", min=2)}, "bias": None},
         )
         g, guards = f(inp=inp_example, bias=bias_example)
-        g = import_compiler(g, [inp_example, bias_example])
+        g = import_compiler(g, [inp_example, bias_example], tmp_path)
 
     # As of torch 2.4, symbolic float support for export is not fully flushed out yet.
     # Skipping test because behavior varies based on torch version.
@@ -160,8 +157,8 @@ class ImportSmokeTests(unittest.TestCase):
     #     g, guards = f(inp=inp_example)
     #     g = import_compiler(g, [inp_example])
 
-    @unittest.expectedFailure
-    def testDynamicShapeStrided(self):
+    @pytest.mark.xfail
+    def test_dynamic_shape_strided(self, tmp_path: Path):
         """
         Regardless of default stride=[12, 4, 1] provided, we get the following error.
          failed to legalize operation 'torch.constant.int'
@@ -180,9 +177,4 @@ class ImportSmokeTests(unittest.TestCase):
             dynamic_shapes={"inp": {1: torch.export.Dim("dim", min=2)}},
         )
         g, guards = f(a=inp_example)
-        g = import_compiler(g, [inp_example])
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    unittest.main()
+        g = import_compiler(g, [inp_example], tmp_path)
