@@ -1,5 +1,6 @@
 import torch
 from iree.turbine.kernel.boo.op_exports.aten import AtenParser, AtenSignature
+from iree.turbine.kernel.boo.op_exports.layer_norm import LayerNormParser
 import pytest
 
 
@@ -79,3 +80,27 @@ def test_aten_parser_non_contiguous_strides():
     assert list(arg_1.shape) == [672, 3, 25000]
     assert list(arg_1.stride()) == [75000, 25000, 1]
     assert arg_1.dtype == torch.float64
+
+
+def test_layer_norm_parser_mode_0():
+    """mode 0 (MIOPEN_ELEMENTWISE_AFFINE) should produce input-only signature."""
+    parser = LayerNormParser.get_miopen_parser()
+    args = parser.parse_args(["layernorm", "--input", "2x3x4x5", "--mode=0"])
+    sig = LayerNormParser.get_signature(args)
+
+    assert not sig.elementwise_affine
+    assert not sig.bias
+    sample_args = sig.get_sample_args(seed=0)
+    assert len(sample_args) == 1, "mode 0 should only have input"
+
+
+def test_layer_norm_parser_mode_1():
+    """mode 1 (MIOPEN_WEIGHT_BIAS) should produce input/weight/bias signature."""
+    parser = LayerNormParser.get_miopen_parser()
+    args = parser.parse_args(["layernorm", "--input", "2x3x4x5", "--mode=1"])
+    sig = LayerNormParser.get_signature(args)
+
+    assert sig.elementwise_affine
+    assert sig.bias
+    sample_args = sig.get_sample_args(seed=0)
+    assert len(sample_args) == 3, "mode 1 should have input, weight, bias"

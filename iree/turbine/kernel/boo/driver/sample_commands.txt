@@ -9,7 +9,8 @@ gemmfp16 --a_w 32 --a_h 64 --b_w 128 --transA 1
 gemmfp16 --a_w 32 --a_h 64 --b_w 128 --transB 1
 
 # Layernorm
-layernorm --input 10x32x42x32 -t 1 --iter 100
+layernorm --input 10x32x42x32 -t 1 --mode 0 --iter 100
+layernorm --input 10x32x42x32 -t 1 --mode 1 --iter 100
 layernorm --input 10x32x42x32 -t 1 -F 2 --iter 100
 layernorm --input 10x32x42x32 -t 1 -F 4 --iter 100
 layernorm --input 10x32x42x32 -t 1 -F 8 --iter 100
