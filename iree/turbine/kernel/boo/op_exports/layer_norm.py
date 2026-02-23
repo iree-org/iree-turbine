@@ -538,7 +538,7 @@ class LayerNormParser(OpCLIParser):
             type=int,
             default=0,
             choices=[0, 1],
-            help="elemwise affine mode (0), weight and bias mode (1)",
+            help="MIOpen norm mode: 0 = MIOPEN_ELEMENTWISE_AFFINE (default weight=1/bias=0), 1 = MIOPEN_WEIGHT_BIAS (random weight/bias)",
         )
         parser.add_argument(
             "--normalized_dim", "-o", type=int, default=3, help="Normalized dim"
