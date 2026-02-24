@@ -111,7 +111,7 @@ class BoundaryClassification(Enum):
 
     def is_inner(self) -> bool:
         """Whether this input/output is an essential part of the graph."""
-        return self.value in {
+        return self in {
             BoundaryClassification.USER_INPUT,
             BoundaryClassification.MUTABLE_INPUT,
             BoundaryClassification.UNIQUE_OUTPUT,
@@ -253,22 +253,13 @@ class GraphSchema:
         inner_inputs, inner_outputs = self.get_inner_boundary()
         new_outputs = list(val_map[o.value] for o in inner_outputs)
         new_inputs = list(val_map[p.value] for p in inner_inputs)
-        trash_outputs = set(val_map[o.value] for o in self.outputs).difference(
-            new_outputs
-        )
-        trash_inputs = (
-            set(val_map[p.value] for p in self.placeholders)
-            .difference(new_inputs)
-            .difference(trash_outputs)
-        )
-        for o in trash_outputs:
-            if not isinstance(o, Node):
-                continue
-            mod_graph.erase_node(o)
-        for p in trash_inputs:
-            assert isinstance(p, Node), "Expected placeholder"
-            mod_graph.erase_node(p)
         mod_graph.output(tuple(new_outputs))
+        mod_graph.eliminate_dead_code()
+        # DCE preserves placeholder nodes, so remove unused ones manually.
+        for p in self.placeholders:
+            copied_p = val_map[p.value]
+            if copied_p not in new_inputs and len(copied_p.users) == 0:
+                mod_graph.erase_node(copied_p)
         mod_graph.lint()
         mod_gm = GraphModule(root=self.src_gm, graph=mod_graph)
         # output_node.meta = self.src_gm.graph.output_node().meta
