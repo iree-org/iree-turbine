@@ -39,6 +39,54 @@ __all__ = [
 ]
 
 
+@dataclass
+class GraphTransformation:
+    """This struct stores the arrows of a boundary transformation:
+
+    Src Inputs ----- src_gm --------> Src Outputs
+        |                                 ^
+    input_mod                             |
+        |                             output_mod**
+        V                                 |
+    Mod Inputs ----- mod_gm --------> Mod Outputs
+
+    Two transformations can be composed with *.
+
+    **Note: To capture trivial returns being hoisted from graphs, we require
+    that `output_mod` takes in `(Src Inputs, Mod Outputs)` and returns `Src Outputs`.
+    """
+
+    src_gm: GraphModule
+    mod_gm: GraphModule
+    input_mod: Callable[[list[torch.Tensor]], list[torch.Tensor]]
+    output_mod: Callable[[list[torch.Tensor], list[torch.Tensor]], list[torch.Tensor]]
+
+    def __mul__(self, other: "GraphTransformation") -> "GraphTransformation":
+        """Composes transformations like functions.
+
+        `composite = self*other` transforms `other.src_gm` to `self.mod_gm` by composing boundary maps.
+        """
+        assert (
+            self.src_gm == other.mod_gm
+        ), f"Mismatched contracting graph module for transformations {self} and {other}."
+        return GraphTransformation(
+            src_gm=other.src_gm,
+            mod_gm=self.mod_gm,
+            input_mod=lambda other_src_inputs: self.input_mod(
+                other.input_mod(other_src_inputs)
+            ),
+            output_mod=lambda other_src_inputs, self_mod_outputs: (
+                other.output_mod(
+                    other_src_inputs,
+                    self.output_mod(
+                        other.input_mod(other_src_inputs),  # self_src_inputs
+                        self_mod_outputs,
+                    ),
+                )
+            ),
+        )
+
+
 class BoundaryClassification(Enum):
     # Standard input
     USER_INPUT = 0
@@ -60,6 +108,14 @@ class BoundaryClassification(Enum):
 
     def is_placeholder(self) -> bool:
         return self.value < 3
+
+    def is_inner(self) -> bool:
+        """Whether this input/output is an essential part of the graph."""
+        return self.value in {
+            BoundaryClassification.USER_INPUT,
+            BoundaryClassification.MUTABLE_INPUT,
+            BoundaryClassification.UNIQUE_OUTPUT,
+        }
 
     def is_output(self) -> bool:
         return not self.is_placeholder()
@@ -121,20 +177,22 @@ class GraphSchema:
         placeholder_nodes = list(
             self.src_gm.graph.find_nodes(op="placeholder", sort=True)
         )
+        output_node = self.src_gm.graph.output_node()
         for index, pl in enumerate(placeholder_nodes):
             assert isinstance(pl, Node), f"Expected placeholder, {pl}, to be a Node."
+            # If the only use of this placeholder is the output node, we consider it unused.
+            non_trivial_uses = set(pl.users.keys()).difference([output_node])
             bv = BoundaryValue(
                 pl,
                 (
                     BoundaryClassification.UNUSED_INPUT
-                    if len(pl.users) == 0
+                    if len(non_trivial_uses) == 0
                     else BoundaryClassification.USER_INPUT
                 ),
                 index,
                 (lambda index: (lambda ins, outs: ins[index]))(index),
             )
             self.placeholders.append(bv)
-        output_node = self.src_gm.graph.output_node()
         unique_outputs: dict[Node, int] = {}
         for index, o in enumerate(output_node.args[0]):
             maybe_output_index = unique_outputs.get(o, None)
@@ -185,52 +243,47 @@ class GraphSchema:
             )
             unique_outputs[o] = new_unique_idx
 
+    def get_inner_graph_transformation(self) -> GraphTransformation:
+        """Returns a graph transformation from src_gm to a GraphModule with only inner inputs/outputs."""
+        val_map: dict[Node, Node] = {}
+        mod_graph = Graph()
+        mod_graph.graph_copy(
+            self.src_gm.graph, val_map=val_map, return_output_node=False
+        )
+        inner_inputs, inner_outputs = self.get_inner_boundary()
+        new_outputs = list(val_map[o.value] for o in inner_outputs)
+        new_inputs = list(val_map[p.value] for p in inner_inputs)
+        trash_outputs = set(val_map[o.value] for o in self.outputs).difference(
+            new_outputs
+        )
+        trash_inputs = (
+            set(val_map[p.value] for p in self.placeholders)
+            .difference(new_inputs)
+            .difference(trash_outputs)
+        )
+        for o in trash_outputs:
+            if not isinstance(o, Node):
+                continue
+            mod_graph.erase_node(o)
+        for p in trash_inputs:
+            assert isinstance(p, Node), "Expected placeholder"
+            mod_graph.erase_node(p)
+        mod_graph.output(tuple(new_outputs))
+        mod_graph.lint()
+        mod_gm = GraphModule(root=self.src_gm, graph=mod_graph)
+        # output_node.meta = self.src_gm.graph.output_node().meta
+        output_mod = lambda src_inputs, mod_outputs: list(
+            o.composition_rule(src_inputs, mod_outputs) for o in self.outputs
+        )
+        input_mod = lambda src_inputs: list(
+            p.composition_rule(src_inputs, []) for p in inner_inputs
+        )
 
-@dataclass
-class GraphTransformation:
-    """This struct stores the arrows of a boundary transformation:
-
-    Src Inputs ----- src_gm --------> Src Outputs
-        |                                 ^
-    input_mod                             |
-        |                             output_mod**
-        V                                 |
-    Mod Inputs ----- mod_gm --------> Mod Outputs
-
-    Two transformations can be composed with *.
-
-    **Note: To capture trivial returns being hoisted from graphs, we require
-    that `output_mod` takes in `(Src Inputs, Mod Outputs)` and returns `Src Outputs`.
-    """
-
-    src_gm: GraphModule
-    mod_gm: GraphModule
-    input_mod: Callable[[list[torch.Tensor]], list[torch.Tensor]]
-    output_mod: Callable[[list[torch.Tensor], list[torch.Tensor]], list[torch.Tensor]]
-
-    def __mul__(self, other: "GraphTransformation") -> "GraphTransformation":
-        """Composes transformations like functions.
-
-        `composite = self*other` transforms `other.src_gm` to `self.mod_gm` by composing boundary maps.
-        """
-        assert (
-            self.src_gm == other.mod_gm
-        ), f"Mismatched contracting graph module for transformations {self} and {other}."
         return GraphTransformation(
-            src_gm=other.src_gm,
-            mod_gm=self.mod_gm,
-            input_mod=lambda other_src_inputs: self.input_mod(
-                other.input_mod(other_src_inputs)
-            ),
-            output_mod=lambda other_src_inputs, self_mod_outputs: (
-                other.output_mod(
-                    other_src_inputs,
-                    self.output_mod(
-                        other.input_mod(other_src_inputs),  # self_src_inputs
-                        self_mod_outputs,
-                    ),
-                )
-            ),
+            src_gm=self.src_gm,
+            mod_gm=mod_gm,
+            input_mod=input_mod,
+            output_mod=output_mod,
         )
 
 
