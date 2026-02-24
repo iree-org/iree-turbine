@@ -290,6 +290,32 @@ def _replace_sdpa_variant(
     graph.lint()
 
 
+def replace_miopen_batch_norm(node: Node):
+    """Replace 'torch.ops.aten.miopen_batch_norm' with 'torch.ops.aten._native_batch_norm_legit_functional'.
+
+    On ROCm, PyTorch 2.10+ decomposes BatchNorm to miopen_batch_norm instead of
+    _native_batch_norm_legit_functional. Since torch-mlir doesn't support
+    miopen_batch_norm (https://github.com/llvm/torch-mlir/issues/4476), we
+    replace it with the functional variant which has the same arguments and
+    compatible outputs. This mirrors PyTorch Inductor's own decomposition:
+    https://github.com/pytorch/pytorch/blob/449b1768410104d3ed79d3bcfe4ba1d65c7f22c0/torch/_inductor/decomposition.py#L867-L896
+
+    miopen_batch_norm returns: (output, save_mean, save_invstd)
+    _native_batch_norm_legit_functional returns: (output, save_mean, save_invstd,
+        running_mean_out, running_var_out)
+    """
+    graph = node.graph
+    with graph.inserting_before(node):
+        replacement = graph.call_function(
+            torch.ops.aten._native_batch_norm_legit_functional.default,
+            args=node.args,
+        )
+
+    node.replace_all_uses_with(replacement, propagate_meta=True)
+    graph.erase_node(node)
+    graph.lint()
+
+
 def replace_aten_scaled_dot_product_flash_attention(node: Node):
     """Replace 'torch.ops.aten._scaled_dot_product_flash_attention' with 'torch.ops.aten.scaled_dot_product_attention'.
 

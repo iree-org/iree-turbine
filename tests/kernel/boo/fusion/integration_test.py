@@ -264,6 +264,7 @@ def test_boo_batch_norm_used(device: torch.device, memory_format: torch.memory_f
             backend=boo.backend(
                 nested_backend=recorder,
                 fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
+                post_fusion_replacements=EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
             ),
         )
 
