@@ -156,8 +156,6 @@ def collect_error_samples(
     Returns an ErrorSampleResult.  On error the tensor fields are None,
     output_dtype is None, and error_message is set.
     """
-    cpu = torch.device("cpu")
-
     # Collect errors across batches
     boo_gpu_errors_list: list[torch.Tensor] = []
     pytorch_gpu_errors_list: list[torch.Tensor] = []
@@ -180,9 +178,10 @@ def collect_error_samples(
     while num_batches is None or batch_idx < num_batches:
         seed = batch_idx
 
-        # Generate sample args for this batch
-        sample_args = sig.get_sample_args(device=cpu, seed=seed)
-        gpu_args = tuple(arg.to(device=device, copy=True) for arg in sample_args)
+        # Generate sample args on GPU, then transfer to CPU for reference.
+        # GPU random generation is much faster than CPU for half-precision dtypes.
+        gpu_args = sig.get_sample_args(device=device, seed=seed)
+        sample_args = tuple(arg.cpu() for arg in gpu_args)
 
         # Compute high-precision CPU reference
         cpu_ref = compute_cpu_reference(sig, sample_args, dtype=reference_dtype)
