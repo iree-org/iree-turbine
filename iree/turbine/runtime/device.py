@@ -58,6 +58,8 @@ TORCH_DEVICE_NAME_TO_SKU = {
     "AMD Instinct MI300X": "mi300x",
     "AMD Instinct MI308X": "mi308x",
     "AMD Instinct MI325X": "mi325x",
+    "AMD Instinct MI350X": "mi350x",
+    "AMD Instinct MI355X": "mi355x",
     "AMD Instinct MI250X": "mi250x",
     "AMD Instinct MI250": "mi250",
     "AMD Instinct MI210": "mi210",
